@@ -75,6 +75,17 @@ def prepare(settings, env):
             raise RuntimeError("Install bootstrap dependencies: python -m pip install -r .azd-spring/requirements.txt")
     if env.get("SPRING_DATABASE_PASSWORD"):
         raise RuntimeError("Remove SPRING_DATABASE_PASSWORD before provisioning managed-identity authentication")
+    subscription = required(env, "AZURE_SUBSCRIPTION_ID")
+    try:
+        command(
+            "az", "account", "get-access-token", "--resource-type", "oss-rdbms",
+            "--subscription", subscription, "--output", "none",
+        )
+    except RuntimeError as error:
+        raise RuntimeError(
+            "Azure CLI token preflight failed; ensure Azure CLI is installed and run az login "
+            "for the selected subscription"
+        ) from error
     print("Managed-identity prerequisites checked; schema/grant SQL executes as the Entra administrator.")
 
 

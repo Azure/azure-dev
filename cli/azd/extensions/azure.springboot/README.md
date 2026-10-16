@@ -151,9 +151,11 @@ azd env set SPRING_DATABASE_BOOTSTRAP_IP "<bootstrap public IPv4>"
 azd env set SPRING_DATABASE_BOOTSTRAP_SQL "<path to reviewed application SQL>"
 ```
 
-The preprovision hook checks prerequisites before creating resources. The
-postprovision hook connects as that administrator using an in-memory Azure CLI
-token in the selected subscription and verified TLS. It maps the ACA object ID
+Authenticate Azure CLI with `az login` for the selected subscription; `azd auth login`
+alone is insufficient. The preprovision hook requests and discards a PostgreSQL
+access token before creating resources. This checks CLI authentication, not SQL permissions
+or database connectivity. The postprovision hook connects as that administrator
+using an in-memory Azure CLI token in the selected subscription and verified TLS. It maps the ACA object ID
 to non-admin role `azd_app`, then executes the supplied SQL in the application
 database. The script must initialize/migrate the schema as the administrator
 and grant only required table/schema/sequence permissions to `azd_app`.

@@ -19,6 +19,18 @@ with patch.object(sys, "dont_write_bytecode", True):
     spec.loader.exec_module(bootstrap)
 
 
+def prerequisite_environment(root):
+    script = Path(root) / "bootstrap.sql"
+    script.write_text("GRANT SELECT ON items TO azd_app;", encoding="utf-8")
+    return {
+        "AZURE_SUBSCRIPTION_ID": "example-subscription",
+        "SPRING_DATABASE_ADMIN_OID": "00000000-0000-0000-0000-000000000001",
+        "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
+        "SPRING_DATABASE_BOOTSTRAP_IP": "203.0.113.10",
+        "SPRING_DATABASE_BOOTSTRAP_SQL": str(script),
+    }
+
+
 class BootstrapTests(unittest.TestCase):
     def test_other_database_modes_are_rejected(self):
         for engine, auth in (("none", "password"), ("mysql", "password"), ("postgresql", "password")):
@@ -31,24 +43,72 @@ class BootstrapTests(unittest.TestCase):
 
     def test_identity_prerequisites_and_conflicts(self):
         with tempfile.TemporaryDirectory() as root:
-            script = Path(root) / "bootstrap.sql"
-            script.write_text("GRANT SELECT ON items TO azd_app;", encoding="utf-8")
-            env = {
-                "SPRING_DATABASE_ADMIN_OID": "00000000-0000-0000-0000-000000000001",
-                "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
-                "SPRING_DATABASE_BOOTSTRAP_IP": "203.0.113.10",
-                "SPRING_DATABASE_BOOTSTRAP_SQL": str(script),
-            }
+            env = prerequisite_environment(root)
             settings = {"engine": "postgresql", "auth": "managedIdentity"}
-            with patch.object(bootstrap.importlib.util, "find_spec", return_value=object()), patch("builtins.print"):
+            with patch.object(bootstrap.importlib.util, "find_spec", return_value=object()), \
+                    patch.object(bootstrap, "command", return_value="unused-token") as command, \
+                    patch("builtins.print"):
                 bootstrap.prepare(settings, env)
                 with self.assertRaisesRegex(RuntimeError, "Remove SPRING_DATABASE_PASSWORD"):
                     bootstrap.prepare(settings, env | {"SPRING_DATABASE_PASSWORD": "unused"})
                 with self.assertRaisesRegex(RuntimeError, "must not be 0.0.0.0"):
                     bootstrap.prepare(settings, env | {"SPRING_DATABASE_BOOTSTRAP_IP": "0.0.0.0"})
-                script.write_text("", encoding="utf-8")
+                Path(env["SPRING_DATABASE_BOOTSTRAP_SQL"]).write_text("", encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "reviewed schema"):
                     bootstrap.prepare(settings, env)
+                command.assert_called_once_with(
+                    "az", "account", "get-access-token", "--resource-type", "oss-rdbms",
+                    "--subscription", env["AZURE_SUBSCRIPTION_ID"], "--output", "none")
+
+    def test_cli_prerequisites_before_provisioning(self):
+        token, diagnostic = "sensitive-preflight-token", "sensitive-auth-diagnostic"
+        settings = {"engine": "postgresql", "auth": "managedIdentity"}
+        timeout = bootstrap.subprocess.TimeoutExpired("az account", 120, output=token, stderr=diagnostic)
+        for name, executable, code, failure in (
+            ("authenticated", "az", 0, None),
+            ("missing CLI", None, 0, None),
+            ("unusable login", "az", 1, None),
+            ("token request timeout", "az", 0, timeout),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as root:
+                env = prerequisite_environment(root)
+                result = MagicMock(returncode=code, stdout=token, stderr=diagnostic)
+                with patch.object(bootstrap.importlib.util, "find_spec", return_value=object()), \
+                        patch.object(bootstrap.shutil, "which", return_value=executable), \
+                        patch.object(bootstrap.subprocess, "run", return_value=result, side_effect=failure) as runner, \
+                        patch.object(bootstrap, "set_value") as setter, patch("builtins.print") as printer:
+                    if executable is None or code != 0 or failure is not None:
+                        with self.assertRaisesRegex(RuntimeError, "Azure CLI.*az login") as error:
+                            bootstrap.prepare(settings, env)
+                        formatted = "".join(traceback.format_exception(error.exception))
+                        self.assertNotIn(token, formatted)
+                        self.assertNotIn(diagnostic, formatted)
+                        printer.assert_not_called()
+                    else:
+                        bootstrap.prepare(settings, env)
+                        printer.assert_called_once_with(
+                            "Managed-identity prerequisites checked; schema/grant SQL executes as the Entra administrator.")
+                    setter.assert_not_called()
+                    if executable is None:
+                        runner.assert_not_called()
+                    else:
+                        runner.assert_called_once()
+                        self.assertEqual(runner.call_args.args[0], [
+                            "az", "account", "get-access-token", "--resource-type", "oss-rdbms",
+                            "--subscription", env["AZURE_SUBSCRIPTION_ID"], "--output", "none",
+                        ])
+                        self.assertTrue(runner.call_args.kwargs["capture_output"])
+
+    def test_preflight_requires_selected_subscription(self):
+        with tempfile.TemporaryDirectory() as root:
+            env = prerequisite_environment(root)
+            env.pop("AZURE_SUBSCRIPTION_ID")
+            with patch.object(bootstrap.importlib.util, "find_spec", return_value=object()), \
+                    patch.object(bootstrap, "command") as command, patch("builtins.print") as printer:
+                with self.assertRaisesRegex(RuntimeError, "AZURE_SUBSCRIPTION_ID"):
+                    bootstrap.prepare({"engine": "postgresql", "auth": "managedIdentity"}, env)
+                command.assert_not_called()
+                printer.assert_not_called()
 
     def test_command_errors_do_not_disclose_captured_credentials(self):
         result = MagicMock(returncode=1, stdout="secret-token", stderr="secret-password")

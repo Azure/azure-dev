@@ -519,6 +519,17 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	if len(environments) > 0 {
 		ejectEnv = environments[0]
 	}
+	existingAcrID, hasExistingAcr := ejectEnv["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if !hasExistingAcr {
+		existingAcrID = os.Getenv("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
+	}
+	if provider == project.TerraformProviderName && existingAcrID != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead with `azd ai agent init --infra=bicep`, or unset the existing registry selector",
+		)
+	}
 	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, ejectEnv)
 	if err != nil {
 		return exterrors.Validation(
@@ -557,6 +568,20 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		// the ejected main.parameters.json stays environment-portable; the
 		// on-disk provision flow resolves them from the azd environment.
 		PreserveVarRefs: true,
+	}
+	if !existingProject {
+		groupKey := "AZURE_RESOURCE_GROUP"
+		if plan.layer {
+			groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+		}
+		group := environment[groupKey]
+		if group == "" && environment["AZURE_ENV_NAME"] != "" {
+			group = "rg-" + environment["AZURE_ENV_NAME"]
+			if plan.layer {
+				group += "-foundry"
+			}
+		}
+		synthesisInput.ResourceGroupName = group
 	}
 	var res *synthesis.Result
 	if existingProject {
@@ -1731,8 +1756,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // Provider-runtime and existing-project files are skipped:
 //   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
 //     edits main.bicep.
-//   - existing-project.bicep and its modules: emitted only by the dedicated
-//     existing-project writer.
+//   - existing-project.bicep and its eject-only templates.
 func writeEmbeddedTemplates(
 	infraDir string,
 	artifactRoot string,
@@ -1795,8 +1819,7 @@ func writeEmbeddedTemplates(
 		}
 		switch base {
 		case "main.arm.json", "existing-project.bicep",
-			"existing-project-eject.bicep", "existing-project.arm.json",
-			"container-registry.bicep", "foundry-project.bicep":
+			"existing-project-eject.bicep", "existing-project.arm.json":
 			return nil
 		}
 

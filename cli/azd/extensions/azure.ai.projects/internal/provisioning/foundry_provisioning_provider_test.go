@@ -1049,6 +1049,29 @@ func TestArmParameters_UseValueEnvelopeForDeployments(t *testing.T) {
 	)
 }
 
+func TestParameters_ExistingRegistry(t *testing.T) {
+	const id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+	p := &FoundryProvisioningProvider{
+		synthResult: &synthesis.Result{
+			Parameters: map[string]any{"includeAcr": true, "existingAcrResourceId": id},
+		},
+	}
+	assert.Equal(t, map[string]any{"value": id}, p.armParameters()["existingAcrResourceId"])
+	params, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+	var registry *azdext.ProvisioningParameter
+	for _, param := range params {
+		if param.Name == "existingAcrResourceId" {
+			registry = param
+		}
+	}
+	require.NotNil(t, registry)
+	assert.Equal(t, id, registry.Value)
+	assert.Equal(t, []string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"}, registry.EnvVarMapping)
+	assert.True(t, registry.UsingEnvVarMapping)
+}
+
 func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {
 	// Destroy must NEVER silently delete (or, worse, silently leak)
 	// resources. Without --force the provider prompts for confirmation, but

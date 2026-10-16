@@ -517,6 +517,72 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 	}
 }
 
+func TestInitializeExistingRegistry(t *testing.T) {
+	const subscription = "11111111-1111-1111-1111-111111111111"
+	for _, tt := range []struct {
+		name     string
+		group    string
+		layer    bool
+		explicit bool
+		virtual  bool
+		rejected bool
+	}{
+		{name: "reuse", group: "shared"},
+		{name: "virtual env selector wins", group: "shared", virtual: true},
+		{name: "default group rejected", group: "rg-test", rejected: true},
+		{name: "explicit group rejected before prompting", group: "custom", explicit: true, rejected: true},
+		{name: "layer can reuse root registry", group: "root", layer: true},
+		{name: "layer default group rejected", group: "rg-test-foundry", layer: true, rejected: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			raw := "services:\n  project:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
+			if tt.layer {
+				raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n      path: infra/foundry\n"
+				options.Name = "foundry"
+				options.Path = "infra/foundry"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			id := "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
+				"/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+			values := map[string]string{
+				"AZURE_SUBSCRIPTION_ID": subscription,
+				"AZURE_LOCATION":        "eastus",
+				"AZURE_ENV_NAME":        "test",
+				"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": id,
+			}
+			if tt.layer {
+				values["AZURE_RESOURCE_GROUP"] = "root"
+			}
+			if tt.explicit {
+				values["AZURE_RESOURCE_GROUP"] = tt.group
+			}
+			if tt.rejected {
+				delete(values, "AZURE_LOCATION")
+			}
+			if tt.virtual {
+				options.VirtualEnv = map[string]string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": id}
+				values["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"] = "invalid-overridden-selector"
+			}
+			env := &resolveEnvStubEnvServer{envName: "test", get: values}
+			prompt := &resolveEnvStubPromptServer{}
+			provider := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+			err := provider.Initialize(t.Context(), root, options)
+			if tt.rejected {
+				require.ErrorContains(t, err, "azd down deletes")
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"value": id}, provider.armParameters()["existingAcrResourceId"])
+			}
+			assert.Zero(t, prompt.subscriptionN)
+			assert.Zero(t, prompt.locationN)
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {
 	tests := []struct {
 		name    string

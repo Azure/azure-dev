@@ -52,9 +52,13 @@ type Input struct {
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
 
-	// Env maps project-wide azd values used by network fields and conditions.
+	// Env maps project-wide azd values used by registry selection, network fields, and conditions.
 	// Missing values may fall back to the process environment.
 	Env map[string]string
+
+	// ResourceGroupName is the greenfield deployment group that azd down deletes.
+	// Callers supply the effective group, including any layer-specific default.
+	ResourceGroupName string
 
 	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
 	// them. Used by the eject path, where the synthesized main.parameters.json
@@ -210,6 +214,10 @@ func Synthesize(in Input) (*Result, error) {
 	if endpoint != "" {
 		return nil, ErrEndpointBrownfield
 	}
+	existingAcrResourceID, err := existingContainerRegistry(in)
+	if err != nil {
+		return nil, err
+	}
 
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
@@ -230,7 +238,7 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone {
+	if includeAcr && existingAcrResourceID == "" && netMode != NetworkModeNone {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
@@ -240,12 +248,41 @@ func Synthesize(in Input) (*Result, error) {
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
 	}
+	if existingAcrResourceID != "" {
+		params["existingAcrResourceId"] = existingAcrResourceID
+		if in.PreserveVarRefs {
+			params["existingAcrResourceId"] = "${AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID}"
+		}
+	}
 	maps.Copy(params, netParams)
 
 	return &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
 	}, nil
+}
+
+var containerRegistryIDPattern = regexp.MustCompile(
+	`(?i)^/subscriptions/[^/\s]+/resourceGroups/[^/\s]+/providers/Microsoft\.ContainerRegistry/registries/[^/\s]+$`,
+)
+
+func existingContainerRegistry(in Input) (string, error) {
+	lookup := projectConditionLookup(in.Env)
+	id := lookup("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
+	if id == "" {
+		return "", nil
+	}
+	if !containerRegistryIDPattern.MatchString(id) {
+		return "", errors.New("synthesis: AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID must be a full ARM ID " +
+			"of a Microsoft.ContainerRegistry/registries resource")
+	}
+	parts := strings.Split(id, "/")
+	if strings.EqualFold(parts[2], lookup("AZURE_SUBSCRIPTION_ID")) &&
+		strings.EqualFold(parts[4], in.ResourceGroupName) {
+		return "", errors.New("synthesis: AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
+			"resource group because azd down deletes that group")
+	}
+	return id, nil
 }
 
 // SynthesizeExistingProject derives parameters for editable infrastructure that
@@ -575,7 +612,7 @@ func validateAgentRootRefCoreFields(
 	return nil
 }
 
-// deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
+// deriveIncludeAcr reports whether provisioning needs an ACR. An ACR is
 // needed when any agent is a hosted, build-from-source agent: azd builds its
 // image and pushes it to the registry. Agents live on sibling azure.ai.agent
 // services in the split shape, or under agents[] in the legacy inline shape;

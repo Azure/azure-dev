@@ -41,6 +41,21 @@ no non-interactive equivalent is a bug.
 
 ## `azure.ai.projects`
 
+For a new Foundry project that needs a container registry, set
+`AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
+Provisioning reuses it, grants the project identity `AcrPull`, and creates the
+project connection without changing the registry's networking. Ensure the
+registry is reachable from the agent network. The registry must be outside the
+Foundry resource group (which `azd down` deletes). This is supported by Bicep,
+not Terraform eject. When unset or empty, provisioning retains its normal
+create-registry behavior. `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` remains an
+output, not the selector for a new project.
+Ejected Bicep parameters preserve the selector as
+`${AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID}` rather than a literal registry
+ID. The current value is still validated at eject time and resolved from the
+active environment when provisioning; an empty or unset value disables reuse.
+
 | Command or area | Interactive decision | Non-interactive input | Behavior when omitted in no-prompt mode |
 | --- | --- | --- | --- |
 | `microsoft.foundry` provisioning | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |

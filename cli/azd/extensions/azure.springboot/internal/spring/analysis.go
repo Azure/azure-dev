@@ -394,6 +394,7 @@ func managedIdentityOptions(options string) (string, error) {
 	values.Set("sslmode", "verify-full")
 	values.Set("authenticationPluginClassName",
 		"com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin")
+	values.Set("sslrootcert", "/etc/ssl/certs/ca-certificates.crt")
 	values.Set("azure.managedIdentityEnabled", "true")
 	return values.Encode(), nil
 }

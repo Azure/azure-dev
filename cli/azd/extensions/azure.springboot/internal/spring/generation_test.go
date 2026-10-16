@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -275,6 +276,9 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 				require.Contains(t, string(plan.Files["azure.yaml"]), "python .azd-spring/database.py bootstrap")
 				require.Contains(t, binding, "azure.managedIdentityEnabled=true")
 				require.Contains(t, binding, "sslmode=verify-full")
+				require.Contains(t, binding,
+					"sslrootcert="+url.QueryEscape("/etc/ssl/certs/ca-certificates.crt"))
+				require.NotContains(t, binding, "spring.datasource.hikari.")
 				require.Contains(t, binding, "spring.datasource.password=\n")
 				require.NotContains(t, binding, "_PASSWORD}")
 				require.Contains(t, binding, "spring.sql.init.mode=never")

@@ -4,6 +4,7 @@
 package spring
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,25 @@ func TestAnalyzePostgresIdentity(t *testing.T) {
 		_, err = Generate(t.Context(), application)
 		require.NoError(t, err)
 	}
+}
+
+func TestGeneratePostgresIdentityTLSForNonHikariPool(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.datasource.url=jdbc:postgresql://localhost/catalog\n"+
+			"spring.datasource.type=org.apache.tomcat.jdbc.pool.DataSource\n"+
+			"spring.datasource.azure.passwordless-enabled=true")
+	application, err := Analyze(t.Context(), directory, staticResolver{model: effectiveModel(
+		t, directory, allDrivers()+dependency("com.azure", "azure-identity-extensions", "runtime"))}, envLookup(nil))
+	require.NoError(t, err)
+
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	binding := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.Contains(t, binding, "sslmode=verify-full")
+	require.Contains(t, binding, "sslrootcert="+url.QueryEscape("/etc/ssl/certs/ca-certificates.crt"))
+	require.NotContains(t, binding, "spring.datasource.hikari.")
 }
 
 func TestIdentityDependencyMustBePackaged(t *testing.T) {

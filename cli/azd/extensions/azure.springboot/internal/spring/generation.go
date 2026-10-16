@@ -159,7 +159,6 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		fmt.Fprintf(&binding, "spring.datasource.username=${%s_USERNAME}\n", p)
 		if requirement.Authentication == "managedIdentity" {
 			binding.WriteString("spring.datasource.password=\n" +
-				"spring.datasource.hikari.data-source-properties.sslrootcert=/etc/ssl/certs/ca-certificates.crt\n" +
 				"spring.sql.init.mode=never\nspring.jpa.hibernate.ddl-auto=none\n")
 		} else {
 			fmt.Fprintf(&binding, "spring.datasource.password=${%s_PASSWORD}\n", p)

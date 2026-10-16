@@ -213,14 +213,9 @@ func parseModel(data []byte) (*model, int, error) {
 }
 
 func effectiveJavaVersion(m *model) (int, error) {
-	propertyVersion := func() (int, error) {
-		if m.Properties.Release != "" {
-			return parseJavaVersion(m.Properties.Release, "maven.compiler.release")
-		}
-		if m.Properties.Source != "" || m.Properties.Target != "" {
-			return compilerSourceTargetVersion(m.Properties.Source, m.Properties.Target)
-		}
-		return parseJavaVersion(m.Properties.JavaVersion, "java.version")
+	configurationVersion := func(config pluginConfiguration) (int, bool, error) {
+		return compilerConfigurationVersion(config,
+			m.Properties.Release, m.Properties.Source, m.Properties.Target, m.Properties.JavaVersion)
 	}
 	var versions []int
 	for _, plugin := range m.Build.Plugins {
@@ -234,38 +229,38 @@ func effectiveJavaVersion(m *model) (int, error) {
 				continue
 			}
 			active = true
-			version, configured, err := compilerConfigurationVersion(
+			version, configured, err := configurationVersion(
 				execution.Configuration.withDefaults(plugin.Configuration))
 			if err != nil {
 				return 0, err
 			}
 			if !configured {
-				version, err = propertyVersion()
-				if err != nil {
-					return 0, err
-				}
+				return 0, unsupportedConfiguration(
+					"a Java release of 17 or newer must be specified in the effective Maven model")
 			}
 			versions = append(versions, version)
 		}
 		if active {
 			continue
 		}
-		version, configured, err := compilerConfigurationVersion(plugin.Configuration)
+		version, configured, err := configurationVersion(plugin.Configuration)
 		if err != nil {
 			return 0, err
 		}
 		if !configured {
-			version, err = propertyVersion()
-			if err != nil {
-				return 0, err
-			}
+			return 0, unsupportedConfiguration(
+				"a Java release of 17 or newer must be specified in the effective Maven model")
 		}
 		versions = append(versions, version)
 	}
 	if len(versions) == 0 {
-		version, err := propertyVersion()
+		version, configured, err := configurationVersion(pluginConfiguration{})
 		if err != nil {
 			return 0, err
+		}
+		if !configured {
+			return 0, unsupportedConfiguration(
+				"a Java release of 17 or newer must be specified in the effective Maven model")
 		}
 		versions = append(versions, version)
 	}
@@ -277,13 +272,28 @@ func effectiveJavaVersion(m *model) (int, error) {
 	return java, nil
 }
 
-func compilerConfigurationVersion(config pluginConfiguration) (int, bool, error) {
+func compilerConfigurationVersion(
+	config pluginConfiguration, release, source, target, javaVersion string,
+) (int, bool, error) {
+	if config.Release == "" {
+		config.Release = release
+	}
+	if config.Source == "" {
+		config.Source = source
+	}
+	if config.Target == "" {
+		config.Target = target
+	}
 	if config.Release != "" {
 		version, err := parseJavaVersion(config.Release, "maven-compiler-plugin release")
 		return version, true, err
 	}
 	if config.Source == "" && config.Target == "" {
-		return 0, false, nil
+		if javaVersion == "" {
+			return 0, false, nil
+		}
+		version, err := parseJavaVersion(javaVersion, "java.version")
+		return version, true, err
 	}
 	version, err := compilerSourceTargetVersion(config.Source, config.Target)
 	return version, true, err

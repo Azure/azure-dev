@@ -785,12 +785,22 @@ func TestEffectiveModelCompilerConfiguration(t *testing.T) {
 			"<configuration>" + configuration + "</configuration></execution>"
 	}
 	for _, tt := range []struct {
-		name, plugin, executions, properties, errorText string
-		want                                            int
+		name, plugin, executions, properties, propertyRelease, errorText string
+		want                                                             int
 	}{
 		{name: "plugin release", plugin: "<release>21</release>", want: 21},
+		{name: "plugin property release fallback", plugin: "<source>17</source><target>17</target>",
+			propertyRelease: "21", want: 21},
+		{name: "plugin explicit release wins property", plugin: "<release>17</release>",
+			propertyRelease: "21", want: 17},
 		{name: "execution release", plugin: "<release>17</release>",
 			executions: execution("compile", "compile", "<release>21</release>"), want: 21},
+		{name: "execution property release fallback",
+			executions:      execution("compile", "compile", "<source>17</source><target>17</target>"),
+			propertyRelease: "21", want: 21},
+		{name: "execution explicit release wins property",
+			executions:      execution("compile", "compile", "<release>17</release>"),
+			propertyRelease: "21", want: 17},
 		{name: "execution override", plugin: "<release>21</release>",
 			executions: strings.Replace(execution("compile", "compile", "<release>17</release>"),
 				"<configuration>", `<configuration combine.self="override">`, 1), want: 17},
@@ -811,6 +821,10 @@ func TestEffectiveModelCompilerConfiguration(t *testing.T) {
 			if tt.properties != "" {
 				data = strings.Replace(data, tt.properties, "", 1)
 			}
+			if tt.propertyRelease != "" {
+				data = strings.Replace(data, "</properties>",
+					"<maven.compiler.release>"+tt.propertyRelease+"</maven.compiler.release></properties>", 1)
+			}
 			compiler := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
 				"<artifactId>maven-compiler-plugin</artifactId><configuration>" + tt.plugin +
 				"</configuration><executions>" + tt.executions + "</executions></plugin>"
@@ -826,12 +840,15 @@ func TestEffectiveModelCompilerConfiguration(t *testing.T) {
 	}
 }
 
-func TestAnalyzeUsesCompilerPluginReleaseForGeneratedContainer(t *testing.T) {
+func TestAnalyzeUsesCompilerPropertyFallbackForGeneratedContainer(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")
 	data := string(effectiveModel(t, directory, ""))
+	data = strings.Replace(data, "</properties>",
+		"<maven.compiler.release>21</maven.compiler.release></properties>", 1)
 	compiler := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
-		"<artifactId>maven-compiler-plugin</artifactId><configuration><release>21</release></configuration></plugin>"
+		"<artifactId>maven-compiler-plugin</artifactId><configuration>" +
+		"<source>17</source><target>17</target></configuration></plugin>"
 	data = strings.Replace(data, "</plugins>", compiler+"</plugins>", 1)
 	application, err := Analyze(t.Context(), directory, staticResolver{model: []byte(data)}, envLookup(nil))
 	require.NoError(t, err)

@@ -155,8 +155,10 @@ def bootstrap(settings, env):
             "has_database_privilege(%s, current_database(), 'TEMP'), "
             "EXISTS (SELECT 1 FROM pg_namespace WHERE has_schema_privilege(%s, oid, 'CREATE') "
             "AND nspname NOT LIKE 'pg_temp_%%' AND nspname NOT LIKE 'pg_toast_temp_%%'), "
-            "EXISTS (SELECT 1 FROM pg_class WHERE relowner = (SELECT oid FROM pg_roles WHERE rolname = %s))",
-            (ROLE, ROLE, ROLE, ROLE, ROLE),
+            "EXISTS (SELECT 1 FROM pg_class WHERE relowner = (SELECT oid FROM pg_roles WHERE rolname = %s)), "
+            "EXISTS (SELECT 1 FROM pg_class WHERE relowner <> (SELECT oid FROM pg_roles WHERE rolname = %s) "
+            "AND pg_has_role((SELECT oid FROM pg_roles WHERE rolname = %s), relowner, 'MEMBER'))",
+            (ROLE, ROLE, ROLE, ROLE, ROLE, ROLE, ROLE),
         ).fetchone()
         if any(unsafe):
             raise RuntimeError("Runtime SQL role must not have admin, DDL, TEMP, or object ownership")

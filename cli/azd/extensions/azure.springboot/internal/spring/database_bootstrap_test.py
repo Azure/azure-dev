@@ -167,13 +167,20 @@ class BootstrapTests(unittest.TestCase):
                 return json.dumps({"tenantId": "test-tenant"})
             raise AssertionError("Unexpected CLI call")
 
-        for repeat, unsafe in ((False, False), (True, False), (False, True)):
+        safe = (False, False, False, False, False, False)
+        cases = (
+            ("initial", False, safe),
+            ("repeat", True, safe),
+            ("direct unsafe privilege", False, (True, False, False, False, False, False)),
+            ("inherited object ownership", False, (False, False, False, False, False, True)),
+        )
+        for name, repeat, unsafe in cases:
             postgres, database = MagicMock(), MagicMock()
             postgres.__enter__.return_value = postgres
             database.__enter__.return_value = database
             postgres.execute.return_value.fetchone.return_value = (principal, 0) if repeat else None
             database.execute.return_value.fetchone.side_effect = [
-                (False, False, False), (unsafe, False, False, False, False),
+                (False, False, False), unsafe,
             ]
             psycopg = MagicMock()
             psycopg.connect.side_effect = [postgres, database]
@@ -181,11 +188,12 @@ class BootstrapTests(unittest.TestCase):
             if repeat:
                 current["SPRING_DATABASE_BOOTSTRAP_DIGEST"] = hashlib.sha256(
                     (host + "\n" + principal + "\n" + script).encode()).hexdigest()
-            with patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
+            with self.subTest(name=name), \
+                    patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
                     patch.object(bootstrap, "command", side_effect=command), \
                     patch.object(bootstrap, "bootstrap_sql", return_value=script), \
                     patch.object(bootstrap, "set_value") as setter, patch("builtins.print"):
-                if unsafe:
+                if any(unsafe):
                     with self.assertRaisesRegex(RuntimeError, "must not have admin"):
                         bootstrap.bootstrap(settings, current)
                     setter.assert_not_called()
@@ -199,7 +207,7 @@ class BootstrapTests(unittest.TestCase):
             if not repeat:
                 self.assertIn("pgaadauth_create_principal_with_oid", postgres.execute.call_args.args[0])
                 self.assertEqual(postgres.execute.call_args.args[1], ("azd_app", principal))
-            if not unsafe:
+            if not any(unsafe):
                 self.assertEqual(setter.call_args.args[0], "SPRING_DATABASE_BOOTSTRAP_DIGEST")
 
     def test_mapping_conflict_does_not_execute_schema(self):

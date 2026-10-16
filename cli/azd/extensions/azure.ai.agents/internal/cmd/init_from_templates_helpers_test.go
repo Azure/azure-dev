@@ -35,25 +35,35 @@ func TestResolveInitHarness(t *testing.T) {
 		{
 			// A manifest's `harness:` block arrives here as an implied value.
 			name:           "implied harness is honored",
+			impliedHarness: agent_api.ManagedAgentHarnessMicrosoftCopilot,
+			expected:       agent_api.ManagedAgentHarnessMicrosoftCopilot,
+		},
+		{
+			name:        "explicit harness is accepted case-insensitively",
+			harnessFlag: "Microsoft_Copilot_Preview",
+			expected:    agent_api.ManagedAgentHarnessMicrosoftCopilot,
+		},
+		{
+			name:           "legacy implied harness is preserved",
 			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
 			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
-			name:        "explicit harness is accepted case-insensitively",
+			name:        "legacy explicit harness is preserved",
 			harnessFlag: "GitHub_Copilot_Preview",
 			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
 			name:           "none opts out of an implied harness",
 			harnessFlag:    " none ",
-			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			impliedHarness: agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			expected:       "",
 		},
 		{
 			name:           "explicit harness overrides a harness-less context",
-			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
+			harnessFlag:    agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			impliedHarness: "",
-			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       agent_api.ManagedAgentHarnessMicrosoftCopilot,
 		},
 		{
 			name:        "unknown harness is rejected",

@@ -228,7 +228,7 @@ contains only bounded classifications (including a container mode for hosted age
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
-| `ext.agent.harness` | `none`, `github_copilot_preview`, `other` | Resolved prompt-agent harness classification. |
+| `ext.agent.harness` | `none`, `github_copilot_preview`, `microsoft_copilot_preview`, `other` | Resolved prompt-agent harness classification; preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other`. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 | `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
@@ -680,9 +680,9 @@ underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
 
-## GitHub Copilot harness built-in tools
+## Microsoft Copilot harness built-in tools
 
-The `github_copilot_preview` harness currently requires a Foundry project in one of
+The `microsoft_copilot_preview` harness currently requires a Foundry project in one of
 these regions: `eastus2`, `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
 `germanywestcentral`, `canadacentral`, or `westus2`.
 
@@ -699,13 +699,13 @@ services:
     model: gpt-5-mini
     instructions: Use web research when requested.
     harness:
-      type: github_copilot_preview
+      type: microsoft_copilot_preview
     skills:
       - local-review
       - name: published-review
         version: "2"
     tools:
-      - type: github_copilot_toolset_preview
+      - type: microsoft_copilot_toolset_preview
         defaultConfig:
           enabled: false
         configs:
@@ -717,6 +717,11 @@ Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
 and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
 `configs` override individual tools. Skills are declared in the top-level
 `skills` list. Harness compute and idle settings are service-managed.
+
+New definitions use `microsoft_copilot_preview` and `microsoft_copilot_toolset_preview`,
+with the backend feature gate `MicrosoftCopilot=V1Preview`. Existing definitions
+using `github_copilot_preview` or `github_copilot_toolset_preview` remain supported
+and retain their legacy values.
 
 The string form (`local-review`) requires a matching locally deployed skill;
 deploy the local skill dependency with `azd deploy --all` to supply its version.

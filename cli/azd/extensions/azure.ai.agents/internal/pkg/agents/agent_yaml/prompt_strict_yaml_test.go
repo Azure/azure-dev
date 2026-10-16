@@ -15,7 +15,7 @@ func TestPromptHarness_RejectsStringForm(t *testing.T) {
 	t.Parallel()
 
 	var agent PromptAgent
-	err := yaml.Unmarshal([]byte("kind: prompt\nname: a\nmodel: m\nharness: github_copilot_preview\n"), &agent)
+	err := yaml.Unmarshal([]byte("kind: prompt\nname: a\nmodel: m\nharness: microsoft_copilot_preview\n"), &agent)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "harness must be a block")
 }
@@ -46,7 +46,7 @@ func TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks(t *testing.T) {
 		{
 			name: "obsolete harness configuration",
 			yaml: "kind: prompt\nname: a\nmodel: m\n" +
-				"harness:\n  type: github_copilot_preview\n  builtin_tools:\n    allowed: []\n",
+				"harness:\n  type: microsoft_copilot_preview\n  builtin_tools:\n    allowed: []\n",
 			wantKey:  "builtin_tools",
 			wantHint: "harness:",
 		},
@@ -90,7 +90,7 @@ func TestPromptAgent_ToolsStayForwardCompatible(t *testing.T) {
 name: a
 model: m
 harness:
-  type: github_copilot_preview
+  type: microsoft_copilot_preview
 tools:
   - type: some_tool_invented_next_year
     some_property_azd_has_never_seen: true

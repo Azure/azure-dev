@@ -121,6 +121,39 @@ func TestLoadProjectServiceConfigRejectsDuplicates(t *testing.T) {
 	assert.Contains(t, err.Error(), "alpha, zeta")
 }
 
+func TestDefaultModelDeploymentName(t *testing.T) {
+	t.Parallel()
+
+	service := map[string]any{
+		"deployments": []any{map[string]any{"name": "yaml-chat"}},
+	}
+	encoded, err := provisioning.EncodeProjectDeployments([]synthesis.Deployment{{
+		Name: "env-chat",
+	}, {
+		Name: "env-embedding",
+	}})
+	require.NoError(t, err)
+
+	name, err := defaultModelDeploymentName(encoded, service)
+	require.NoError(t, err)
+	assert.Equal(t, "env-chat", name)
+
+	name, err = defaultModelDeploymentName(`[{"name":"raw-chat"}]`, service)
+	require.NoError(t, err)
+	assert.Equal(t, "raw-chat", name)
+
+	name, err = defaultModelDeploymentName("[]", service)
+	require.NoError(t, err)
+	assert.Empty(t, name)
+
+	name, err = defaultModelDeploymentName("  ", service)
+	require.NoError(t, err)
+	assert.Equal(t, "yaml-chat", name)
+
+	_, err = defaultModelDeploymentName("{", service)
+	require.ErrorContains(t, err, projectDeploymentsEnvKey)
+}
+
 func TestFirstProjectDeploymentName(t *testing.T) {
 	t.Parallel()
 

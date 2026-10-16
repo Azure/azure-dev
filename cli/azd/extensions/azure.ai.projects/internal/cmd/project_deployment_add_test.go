@@ -151,6 +151,10 @@ type selfInitializingEnvironmentServer struct {
 	current string
 	values  map[string]string
 	failKey string
+	// failValue, when non-nil, fails only a write of that exact value for failKey.
+	// A nil failValue keeps the first write of failKey as the failure.
+	failValue *string
+	setLog    []string
 }
 
 func (s *selfInitializingEnvironmentServer) GetCurrent(
@@ -189,7 +193,9 @@ func (s *selfInitializingEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.values[request.GetKey()] = request.GetValue()
-	if s.failKey == request.GetKey() {
+	s.setLog = append(s.setLog, request.GetKey()+"="+request.GetValue())
+	if s.failKey == request.GetKey() &&
+		(s.failValue == nil || *s.failValue == request.GetValue()) {
 		s.failKey = ""
 		return nil, errors.New("environment write failed after mutation")
 	}
@@ -434,6 +440,130 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 				assert.Equal(t, []synthesis.Deployment{selected}, deployments)
 			} else {
 				assert.Equal(t, []synthesis.Deployment{other, selected}, deployments)
+			}
+		})
+	}
+}
+
+func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
+	const (
+		endpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"
+		oldID    = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+	)
+	yamlDeployment := synthesis.Deployment{
+		Name:  "yaml-chat",
+		Model: synthesis.DeploymentModel{Name: "yaml-model", Format: "OpenAI", Version: "1"},
+		Sku:   synthesis.DeploymentSku{Name: "GlobalStandard", Capacity: 10},
+	}
+	envDeployment := yamlDeployment
+	envDeployment.Name = "env-chat"
+	encodedList, err := provisioning.EncodeProjectDeployments([]synthesis.Deployment{envDeployment})
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name        string
+		override    string
+		initialName string
+		infra       string
+		failValue   string
+		wantName    string
+		wantErr     bool
+	}{
+		{
+			name: "replacement uses environment list", override: "list",
+			initialName: "old-chat", wantName: "env-chat",
+		},
+		{
+			name: "empty override stays empty", override: "empty",
+			initialName: "old-chat", wantName: "",
+		},
+		{
+			name: "missing override uses yaml", initialName: "old-chat",
+			wantName: "yaml-chat",
+		},
+		{
+			name: "malformed override rolls back", override: "malformed",
+			initialName: "old-chat", wantErr: true, wantName: "old-chat",
+		},
+		{
+			name: "default write failure restores previous name", override: "list",
+			initialName: "old-chat", failValue: "env-chat",
+			wantErr: true, wantName: "old-chat",
+		},
+		{
+			name: "ejection failure clears restored name", override: "list",
+			infra: "bicep", wantErr: true, wantName: "",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600,
+			))
+			client, projectServer, envServer, _, _ := newSelfInitializingDeploymentClient(t, root)
+			projectServer.project.Infra = &azdext.InfraOptions{
+				Provider: provisioning.FoundryProviderName,
+			}
+			projectServer.project.Services["foundry"] = &azdext.ServiceConfig{
+				Name: "foundry", Host: aiProjectHost,
+			}
+			projectServer.services["foundry"] = map[string]any{
+				"host":        aiProjectHost,
+				"endpoint":    endpoint,
+				"deployments": []any{deploymentMap(yamlDeployment)},
+			}
+			envServer.values["AZURE_AI_PROJECT_ID"] = oldID
+			envServer.values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
+			envServer.values["AZURE_AI_ACCOUNT_NAME"] = "old-account"
+			envServer.values["AZURE_AI_PROJECT_NAME"] = "old-project"
+			if test.initialName != "" {
+				envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = test.initialName
+			}
+			switch test.override {
+			case "list":
+				envServer.values[projectDeploymentsEnvKey] = encodedList
+			case "empty":
+				envServer.values[projectDeploymentsEnvKey] = "[]"
+			case "malformed":
+				envServer.values[projectDeploymentsEnvKey] = "{"
+			}
+			if test.failValue != "" {
+				envServer.failKey = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+				envServer.failValue = &test.failValue
+			}
+			action := &ProjectAddAction{
+				client: client,
+				flags: &projectAddFlags{
+					newProject: true,
+					noPrompt:   true,
+					output:     "none",
+					infra:      test.infra,
+				},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			err := action.Run(t.Context())
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, test.wantName, envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+			if test.override == "list" {
+				assert.Contains(
+					t,
+					envServer.setLog,
+					"AZURE_AI_MODEL_DEPLOYMENT_NAME=env-chat",
+				)
+			}
+			if test.override == "empty" {
+				assert.NotContains(
+					t,
+					envServer.setLog,
+					"AZURE_AI_MODEL_DEPLOYMENT_NAME=yaml-chat",
+				)
 			}
 		})
 	}

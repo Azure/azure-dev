@@ -38,6 +38,23 @@ func firstProjectDeploymentName(value map[string]any) string {
 	return strings.TrimSpace(name)
 }
 
+// defaultModelDeploymentName chooses AZURE_AI_MODEL_DEPLOYMENT_NAME.
+// A present environment override supplies the name, and [] stays empty.
+// YAML is used only when AI_PROJECT_DEPLOYMENTS is missing.
+func defaultModelDeploymentName(envValue string, service map[string]any) (string, error) {
+	deployments, present, err := provisioning.DecodeProjectDeployments(envValue)
+	if err != nil {
+		return "", err
+	}
+	if present {
+		if len(deployments) == 0 {
+			return "", nil
+		}
+		return strings.TrimSpace(deployments[0].Name), nil
+	}
+	return firstProjectDeploymentName(service), nil
+}
+
 func projectLifecycleHandler(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,

@@ -5,6 +5,10 @@ package cmd
 
 import (
 	"errors"
+	"maps"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"azure.ai.connections/internal/exterrors"
@@ -120,14 +124,14 @@ credentials:
 				client := newConnectionAddProjectClientStub()
 				client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
 				client.services["second"] = map[string]any{"host": aiProjectServiceHost}
-				client.services["search-api"] = map[string]any{
+				client.services["search.api"] = map[string]any{
 					"host": aiConnectionHost, "uses": []any{"foundry"},
 					"category": "Search", "target": "old", "authType": "ApiKey",
 					"credentials": map[string]any{"key": "private-value"},
 					"config":      map[string]any{"large": int(9007199254740993)},
 					"env":         map[string]any{"dotted.key": "keep"},
 				}
-				plan, err := planConnectionAdd(t.Context(), client, root, "search-api",
+				plan, err := planConnectionAdd(t.Context(), client, root, "search.api",
 					file, true, "second", true, nil, nil)
 				require.NoError(t, err)
 				client.failAt = index + 1
@@ -141,17 +145,17 @@ credentials:
 				assert.Equal(t, operations[:index+1], client.mutationCalls)
 
 				client.failAt = 0
-				retry, err := planConnectionAdd(t.Context(), client, root, "search-api",
+				retry, err := planConnectionAdd(t.Context(), client, root, "search.api",
 					file, true, "second", true, nil, nil)
 				require.NoError(t, err)
 				require.NoError(t, retry.apply(t.Context(), client))
-				assert.Equal(t, plan.serviceSection, client.services["search-api"])
+				assert.Equal(t, plan.serviceSection, client.services["search.api"])
 				completed := index
 				if afterWrite {
 					completed++
 				}
 				assert.Equal(t, operations[completed:], client.mutationCalls[index+1:])
-				repeat, err := planConnectionAdd(t.Context(), client, root, "search-api",
+				repeat, err := planConnectionAdd(t.Context(), client, root, "search.api",
 					file, true, "second", true, nil, nil)
 				require.NoError(t, err)
 				require.Equal(t, "unchanged", repeat.mutation)
@@ -228,8 +232,7 @@ metadata:
 	}
 }
 
-func TestConnectionAddRejectsTargetExplicitEmptyEnvironment(t *testing.T) {
-	// Preserve the explicit no-inheritance intent by refusing writes until the host can retain env: {}.
+func TestConnectionAddPreservesTargetExplicitEmptyEnvironment(t *testing.T) {
 	root := t.TempDir()
 	file := writeConnectionAddDefinition(t, root, "connection.yaml",
 		"category: Search\ntarget: https://search.example.test\n")
@@ -243,23 +246,22 @@ func TestConnectionAddRejectsTargetExplicitEmptyEnvironment(t *testing.T) {
 		file, false, "", true, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "updated", plan.mutation)
-	before, err := client.readAuthoringManifest(t.Context())
-	require.NoError(t, err)
-	err = plan.apply(t.Context(), client)
-	localErr := requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "search.api")
-	assert.Contains(t, localErr.Message, "current azd host would drop its empty env")
-	assert.Contains(t, localErr.Message, "no changes were written")
-	assert.Equal(t, "Edit azure.yaml by hand, or upgrade azd.", localErr.Suggestion)
-	assert.Empty(t, client.mutationCalls)
-	after, err := client.readAuthoringManifest(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, before, after)
+	require.NoError(t, plan.apply(t.Context(), client))
+	assert.Equal(t, []string{"set:$ref"}, client.mutationCalls)
+	assert.Equal(t, plan.serviceSection, client.services["search.api"])
 	env, found := plan.serviceSection["env"]
 	assert.True(t, found)
 	assert.Equal(t, map[string]any{}, env)
+
+	repeat, err := planConnectionAdd(t.Context(), client, root, "search.api",
+		file, false, "", true, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "unchanged", repeat.mutation)
+	require.NoError(t, repeat.apply(t.Context(), client))
+	assert.Equal(t, []string{"set:$ref"}, client.mutationCalls)
 }
 
-func TestConnectionAddRejectsUnrelatedExplicitEmptyEnvironment(t *testing.T) {
+func TestConnectionAddPreservesUnrelatedExplicitEmptyEnvironment(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		for _, afterPlanning := range []bool{false, true} {
 			name := map[bool]string{false: "add", true: "update"}[existing] +
@@ -287,7 +289,7 @@ func TestConnectionAddRejectsUnrelatedExplicitEmptyEnvironment(t *testing.T) {
 				if afterPlanning {
 					worker["env"] = map[string]any{}
 				}
-				before, err := client.readAuthoringManifest(t.Context())
+				before, err := yaml.Marshal(worker)
 				require.NoError(t, err)
 				snapshot, err := loadConnectionProjectSnapshot(t.Context(), client, root)
 				require.NoError(t, err)
@@ -297,15 +299,20 @@ func TestConnectionAddRejectsUnrelatedExplicitEmptyEnvironment(t *testing.T) {
 				require.True(t, found, "the YAML round-trip must preserve the explicit env key")
 				require.Equal(t, map[string]any{}, env)
 
-				err = plan.apply(t.Context(), client)
-				localErr := requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "worker")
-				assert.Contains(t, localErr.Message, "current azd host would drop its empty env")
-				assert.Contains(t, localErr.Message, "no changes were written")
-				assert.Equal(t, "Edit azure.yaml by hand, or upgrade azd.", localErr.Suggestion)
-				assert.Empty(t, client.mutationCalls)
-				after, err := client.readAuthoringManifest(t.Context())
+				require.NoError(t, plan.apply(t.Context(), client))
+				assert.NotEmpty(t, client.mutationCalls)
+				assert.Equal(t, plan.serviceSection, client.services["search"])
+				after, err := yaml.Marshal(client.services["worker"])
 				require.NoError(t, err)
 				assert.Equal(t, before, after)
+
+				repeat, err := planConnectionAdd(t.Context(), client, root, "search",
+					file, false, "", true, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, "unchanged", repeat.mutation)
+				writes := len(client.mutationCalls)
+				require.NoError(t, repeat.apply(t.Context(), client))
+				assert.Len(t, client.mutationCalls, writes)
 			})
 		}
 	}
@@ -350,7 +357,7 @@ func TestConnectionAddAllowsNonEmptyAndMissingEnvironment(t *testing.T) {
 	}
 }
 
-func TestConnectionAddRejectsExplicitNullEnvironment(t *testing.T) {
+func TestConnectionAddPreservesExplicitNullEnvironment(t *testing.T) {
 	for _, envYAML := range []string{"env: null", "env:"} {
 		for _, target := range []bool{false, true} {
 			name := envYAML + map[bool]string{false: "/unrelated service", true: "/target service"}[target]
@@ -375,18 +382,31 @@ func TestConnectionAddRejectsExplicitNullEnvironment(t *testing.T) {
 				plan, err := planConnectionAdd(t.Context(), client, root, "search",
 					file, false, "", true, nil, nil)
 				require.NoError(t, err)
-				before, err := client.readAuthoringManifest(t.Context())
+				before, err := yaml.Marshal(service["env"])
 				require.NoError(t, err)
 
-				err = plan.apply(t.Context(), client)
-				localErr := requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, key)
-				assert.Contains(t, localErr.Message, "current azd host would drop its empty env")
-				assert.Contains(t, localErr.Message, "no changes were written")
-				assert.Equal(t, "Edit azure.yaml by hand, or upgrade azd.", localErr.Suggestion)
-				assert.Empty(t, client.mutationCalls)
-				after, err := client.readAuthoringManifest(t.Context())
+				require.NoError(t, plan.apply(t.Context(), client))
+				assert.NotEmpty(t, client.mutationCalls)
+				assert.Equal(t, plan.serviceSection, client.services["search"])
+				persisted, ok := client.services[key].(map[string]any)
+				require.True(t, ok)
+				env, found = persisted["env"]
+				require.True(t, found)
+				assert.Nil(t, env)
+				after, err := yaml.Marshal(env)
 				require.NoError(t, err)
 				assert.Equal(t, before, after)
+				for _, request := range client.serviceSetRequests {
+					assert.NotEqual(t, "env", request.GetPath())
+				}
+
+				repeat, err := planConnectionAdd(t.Context(), client, root, "search",
+					file, false, "", true, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, "unchanged", repeat.mutation)
+				writes := len(client.mutationCalls)
+				require.NoError(t, repeat.apply(t.Context(), client))
+				assert.Len(t, client.mutationCalls, writes)
 			})
 		}
 	}
@@ -479,26 +499,49 @@ func TestConnectionAddRejectsProjectChangedAfterPlanning(t *testing.T) {
 }
 
 func TestConnectionAddRejectsExistingServiceChangedAfterPlanning(t *testing.T) {
-	root := t.TempDir()
-	file := writeConnectionAddDefinition(t, root, "connection.yaml",
-		"category: Search\ntarget: https://search.example.test\n")
-	client := newConnectionAddProjectClientStub()
-	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
-	client.services["search"] = map[string]any{
-		"host": aiConnectionHost, "uses": []any{"foundry"}, "category": "Search", "target": "old",
-	}
-	plan, err := planConnectionAdd(t.Context(), client, root, "search",
-		file, false, "", true, nil, nil)
-	require.NoError(t, err)
-	require.Equal(t, "updated", plan.mutation)
+	for _, test := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{"host", "host", "containerapp"},
+		{"uses", "uses", []any{"other"}},
+		{"empty env to null", "env", nil},
+		{"env binding", "env", map[string]any{"KEEP": "private-binding"}},
+		{"config", "config", map[string]any{"keep": "private-config"}},
+		{"credentials", "credentials", map[string]any{"key": "private-key"}},
+		{"inline definition", "target", "https://other.example.test"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: https://search.example.test\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+			service := map[string]any{
+				"host": aiConnectionHost, "uses": []any{"foundry"}, "category": "Search", "target": "old",
+				"env": map[string]any{}, "config": map[string]any{"keep": "old"},
+			}
+			client.services["search"] = service
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "updated", plan.mutation)
 
-	client.services["search"] = map[string]any{"host": "containerapp", "language": "js"}
-	err = plan.apply(t.Context(), client)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Rerun the command")
-	assert.Contains(t, err.Error(), "no changes were written")
-	assert.Empty(t, client.mutationCalls)
-	assert.Equal(t, map[string]any{"host": "containerapp", "language": "js"}, client.services["search"])
+			service[test.field] = test.value
+			before, err := yaml.Marshal(client.services)
+			require.NoError(t, err)
+			err = plan.apply(t.Context(), client)
+			localErr := requireConnectionValidationError(t, err, exterrors.CodeProjectChanged, "project manifest changed")
+			assert.Contains(t, localErr.Suggestion, "Rerun the command")
+			assert.Contains(t, localErr.Message, "no changes were written")
+			assert.NotContains(t, err.Error(), "private-")
+			assert.Empty(t, client.mutationCalls)
+			after, err := yaml.Marshal(client.services)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
 }
 
 func TestConnectionAddRejectsResourceRemovedAfterPlanning(t *testing.T) {
@@ -543,23 +586,86 @@ func TestConnectionAddAllowsUnrelatedFieldChangesAfterPlanning(t *testing.T) {
 	assert.Equal(t, []string{"add"}, client.mutationCalls)
 }
 
-func TestConnectionAddRejectsDottedKeyUpdateThatRemovesFields(t *testing.T) {
-	root := t.TempDir()
-	file := writeConnectionAddDefinition(t, root, "connection.yaml",
-		"category: Search\ntarget: https://search.example.test\n")
-	client := newConnectionAddProjectClientStub()
-	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
-	client.services["search.api"] = map[string]any{
-		"host": aiConnectionHost, "uses": []any{"foundry"},
-		"category": "Search", "target": "old", "credentials": map[string]any{"key": "private-value"},
+func TestConnectionAddUpdatesDottedKeyAndRemovesOwnedFields(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "inline", true: "legacy config"}[legacy], func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: https://search.example.test\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+			client.services["search"] = map[string]any{
+				"host": "containerapp", "language": "js",
+				"api": map[string]any{
+					"category": "keep", "credentials": map[string]any{"key": "keep"},
+					"config": map[string]any{"large": uint64(9007199254740993)},
+				},
+			}
+			siblingBefore, err := yaml.Marshal(client.services["search"])
+			require.NoError(t, err)
+			service := map[string]any{
+				"host": aiConnectionHost, "uses": []any{"foundry"},
+				"env": map[string]any{"dotted.key": "${LITERAL_VALUE}"},
+			}
+			oldDefinition := map[string]any{
+				"category": "Search", "target": "old", "authType": "ApiKey",
+				"credentials": map[string]any{"key": "private-value"},
+			}
+			if legacy {
+				service["config"] = oldDefinition
+			} else {
+				maps.Copy(service, oldDefinition)
+				service["config"] = map[string]any{
+					"large": uint64(9007199254740993), "literal": "${LITERAL_VALUE}",
+				}
+			}
+			client.services["search.api"] = service
+			plan, err := planConnectionAdd(t.Context(), client, root, "search.api",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "updated", plan.mutation)
+			require.NoError(t, plan.apply(t.Context(), client))
+			expected, err := yaml.Marshal(plan.serviceSection)
+			require.NoError(t, err)
+			actual, err := yaml.Marshal(service)
+			require.NoError(t, err)
+			assert.Equal(t, expected, actual)
+			assert.Equal(t, "./connection.yaml", service["$ref"])
+			for key := range oldDefinition {
+				assert.NotContains(t, service, key)
+			}
+			if legacy {
+				assert.NotContains(t, service, "config")
+				assert.Equal(t, []string{"unset:config", "set:$ref"}, client.mutationCalls)
+			} else {
+				assert.Equal(t, map[string]any{
+					"large": uint64(9007199254740993), "literal": "${LITERAL_VALUE}",
+				}, service["config"])
+				assert.Equal(t, []string{
+					"set:$ref", "unset:authType", "unset:category",
+					"unset:credentials", "unset:target",
+				}, client.mutationCalls)
+			}
+			assert.Equal(t, map[string]any{"dotted.key": "${LITERAL_VALUE}"}, service["env"])
+			for _, request := range client.serviceSetRequests {
+				assert.Equal(t, "search.api", request.GetServiceName())
+			}
+			for _, request := range client.serviceUnsetRequests {
+				assert.Equal(t, "search.api", request.GetServiceName())
+			}
+			siblingAfter, err := yaml.Marshal(client.services["search"])
+			require.NoError(t, err)
+			assert.Equal(t, siblingBefore, siblingAfter)
+
+			repeat, err := planConnectionAdd(t.Context(), client, root, "search.api",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "unchanged", repeat.mutation)
+			writes := len(client.mutationCalls)
+			require.NoError(t, repeat.apply(t.Context(), client))
+			assert.Len(t, client.mutationCalls, writes)
+		})
 	}
-	_, err := planConnectionAdd(t.Context(), client, root, "search.api",
-		file, false, "", true, nil, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "contains a dot")
-	assert.Contains(t, err.Error(), "no changes were written")
-	assert.NotContains(t, err.Error(), "private-value")
-	assert.Empty(t, client.mutationCalls)
 }
 
 func TestConnectionAddAllowsDottedKeyAddAndSetOnlyUpdate(t *testing.T) {
@@ -594,17 +700,17 @@ func TestConnectionAddLegacyConfigMigrationRecoversFromInterruption(t *testing.T
 				"category: Search\ntarget: https://search.example.test\n")
 			client := newConnectionAddProjectClientStub()
 			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
-			client.services["search"] = map[string]any{
+			client.services["search.api"] = map[string]any{
 				"host": aiConnectionHost, "uses": []any{"foundry"},
 				"config": map[string]any{
 					"category": "Old", "target": "old-target",
 					"authType": "ApiKey", "credentials": map[string]any{"key": "private-value"},
 				},
 			}
-			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+			plan, err := planConnectionAdd(t.Context(), client, root, "search.api",
 				file, false, "", true, nil, nil)
 			require.NoError(t, err)
-			// Interrupt the write that follows the legacy config removal.
+			// Interrupt the write after legacy config removal.
 			client.failAt = 1
 			if !afterWrite {
 				client.failAt = 2
@@ -614,18 +720,18 @@ func TestConnectionAddLegacyConfigMigrationRecoversFromInterruption(t *testing.T
 			err = plan.apply(t.Context(), client)
 			require.ErrorIs(t, err, client.writeError)
 			assert.Equal(t, "unset:config", client.mutationCalls[0])
-			service, ok := client.services["search"].(map[string]any)
+			service, ok := client.services["search.api"].(map[string]any)
 			require.True(t, ok)
 			assert.NotContains(t, service, "config")
 			assert.NotContains(t, service, "$ref")
 
 			client.failAt = 0
-			retry, err := planConnectionAdd(t.Context(), client, root, "search",
+			retry, err := planConnectionAdd(t.Context(), client, root, "search.api",
 				file, false, "", true, nil, nil)
 			require.NoError(t, err)
 			require.Equal(t, "updated", retry.mutation)
 			require.NoError(t, retry.apply(t.Context(), client))
-			service, ok = client.services["search"].(map[string]any)
+			service, ok = client.services["search.api"].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, "./connection.yaml", service["$ref"])
 			assert.NotContains(t, service, "config")
@@ -652,4 +758,168 @@ func TestConnectionAddRejectsDuplicateNameAddedAfterPlanning(t *testing.T) {
 	assert.Contains(t, err.Error(), "resolve to the same Connection name")
 	assert.Empty(t, client.mutationCalls)
 	assert.NotContains(t, client.services, "search")
+}
+
+func TestConnectionAddRejectsDefinitionChangesAfterPlanning(t *testing.T) {
+	const original = `name: original-name
+category: Search
+target: ${SEARCH_ENDPOINT}
+authType: ApiKey
+credentials:
+  key: ${SEARCH_KEY}
+metadata:
+  region: ${OPTIONAL_REGION:-westus}
+`
+	outside := t.TempDir()
+	outsideFile := writeConnectionAddDefinition(t, outside, "private-outside.yaml", original)
+	outsideRef, err := yaml.Marshal(map[string]any{"$ref": outsideFile})
+	require.NoError(t, err)
+	for _, existing := range []bool{false, true} {
+		for _, nested := range []bool{false, true} {
+			for _, test := range []struct {
+				name    string
+				content string
+				remove  bool
+			}{
+				{"effective name conflict", strings.Replace(original, "original-name", "private-conflict", 1), false},
+				{"required binding", strings.Replace(original, "SEARCH_KEY", "NEW_KEY", 1), false},
+				{"optional binding", strings.Replace(original, "OPTIONAL_REGION", "NEW_REGION", 1), false},
+				{"required to optional", strings.Replace(original, "${SEARCH_KEY}", "${SEARCH_KEY:-private-fallback}", 1), false},
+				{"optional to required", strings.Replace(original, "${OPTIONAL_REGION:-westus}", "${OPTIONAL_REGION}", 1), false},
+				{"optional default", strings.Replace(original, "westus", "eastus", 1), false},
+				{"invalid authentication", strings.Replace(original, "ApiKey", "private-auth", 1), false},
+				{"core-owned field", original + "env: {}\n", false},
+				{"invalid shape", "- private-content\n", false},
+				{"malformed document", "credentials: [private-content\n", false},
+				{"outside ref", string(outsideRef), false},
+				{"credential URL", "$ref: https://private-user:private-password@example.test/file?sig=private-token\n", false},
+				{"missing file", "", true},
+			} {
+				name := map[bool]string{false: "add", true: "update"}[existing] +
+					map[bool]string{false: "/root/", true: "/nested/"}[nested] + test.name
+				t.Run(name, func(t *testing.T) {
+					root := t.TempDir()
+					file := writeConnectionAddDefinition(t, root, "connections/search.yaml", original)
+					changedFile := file
+					if nested {
+						writeConnectionAddDefinition(t, root, "connections/search.yaml",
+							"$ref: ./nested/details.yaml\n")
+						changedFile = writeConnectionAddDefinition(t, root, "connections/nested/details.yaml", original)
+					}
+					client := newConnectionAddProjectClientStub()
+					client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+					client.services["other"] = map[string]any{
+						"host": aiConnectionHost, "uses": []any{"foundry"},
+						"name": "private-conflict", "category": "Search", "target": "https://other.example.test",
+					}
+					if existing {
+						client.services["search"] = map[string]any{
+							"host": aiConnectionHost, "uses": []any{"foundry"},
+							"category": "Search", "target": "old",
+						}
+					}
+					manifest, err := client.readAuthoringManifest(t.Context())
+					require.NoError(t, err)
+					before, err := yaml.Marshal(manifest)
+					require.NoError(t, err)
+					manifestPath := filepath.Join(root, "azure.yaml")
+					require.NoError(t, os.WriteFile(manifestPath, before, 0o600))
+					diskClient := struct{ connectionAddProjectClient }{client}
+					plan, err := planConnectionAdd(t.Context(), diskClient, root, "search",
+						file, false, "", true, nil, nil)
+					require.NoError(t, err)
+					require.Equal(t, []string{"SEARCH_ENDPOINT", "SEARCH_KEY"}, plan.environmentVariables)
+					assert.Equal(t, []string{"OPTIONAL_REGION", "SEARCH_ENDPOINT", "SEARCH_KEY"}, plan.environmentBindings)
+
+					if test.remove {
+						require.NoError(t, os.Remove(changedFile))
+					} else {
+						require.NoError(t, os.WriteFile(changedFile, []byte(test.content), 0o600))
+					}
+					err = plan.apply(t.Context(), client)
+					localErr := requireConnectionValidationError(t, err, exterrors.CodeProjectChanged, "definition changed")
+					assert.Contains(t, localErr.Message, "no changes were written")
+					assert.Contains(t, localErr.Suggestion, "Rerun the command")
+					assert.NotContains(t, err.Error(), root)
+					assert.NotContains(t, err.Error(), outside)
+					assert.NotContains(t, err.Error(), "private-")
+					assert.Empty(t, client.mutationCalls)
+					assert.Empty(t, client.addRequests)
+					assert.Empty(t, client.serviceSetRequests)
+					assert.Empty(t, client.serviceUnsetRequests)
+					// #nosec G304 -- Reads a test fixture.
+					after, err := os.ReadFile(manifestPath)
+					require.NoError(t, err)
+					assert.Equal(t, before, after)
+				})
+			}
+		}
+	}
+}
+
+func TestConnectionAddRejectsNestedCredentialsChangedAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	file := writeConnectionAddDefinition(t, root, "connections/search.yaml", `
+category: Search
+target: https://search.example.test
+authType: ApiKey
+credentials:
+  $ref: ./credentials/keys.yaml
+`)
+	writeConnectionAddDefinition(t, root, "connections/credentials/keys.yaml", "key: ${OLD_KEY}\n")
+	client := newConnectionAddProjectClientStub()
+	client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+	plan, err := planConnectionAdd(t.Context(), client, root, "search",
+		file, false, "", true, nil, nil)
+	require.NoError(t, err)
+	before, err := yaml.Marshal(client.services)
+	require.NoError(t, err)
+
+	writeConnectionAddDefinition(t, root, "connections/credentials/keys.yaml", "key: ${NEW_KEY}\n")
+	err = plan.apply(t.Context(), client)
+	localErr := requireConnectionValidationError(t, err, exterrors.CodeProjectChanged, "definition changed")
+	assert.Contains(t, localErr.Message, "no changes were written")
+	assert.Contains(t, localErr.Suggestion, "Rerun the command")
+	assert.Empty(t, client.mutationCalls)
+	after, err := yaml.Marshal(client.services)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+func TestConnectionAddRejectsDefinitionSymlinkEscapeAfterPlanning(t *testing.T) {
+	const original = "category: Search\ntarget: https://search.example.test\n"
+	outsideFile := writeConnectionAddDefinition(t, t.TempDir(), "private-outside.yaml", original)
+	for _, nested := range []bool{false, true} {
+		t.Run(map[bool]string{false: "root", true: "nested"}[nested], func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connections/search.yaml", original)
+			changedFile := file
+			if nested {
+				writeConnectionAddDefinition(t, root, "connections/search.yaml", "$ref: ./details.yaml\n")
+				changedFile = writeConnectionAddDefinition(t, root, "connections/details.yaml", original)
+			}
+			client := newConnectionAddProjectClientStub()
+			client.services["foundry"] = map[string]any{"host": aiProjectServiceHost}
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, false, "", true, nil, nil)
+			require.NoError(t, err)
+			before, err := yaml.Marshal(client.services)
+			require.NoError(t, err)
+
+			require.NoError(t, os.Remove(changedFile))
+			if err := os.Symlink(outsideFile, changedFile); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			err = plan.apply(t.Context(), client)
+			localErr := requireConnectionValidationError(t, err, exterrors.CodeProjectChanged, "definition changed")
+			assert.Contains(t, localErr.Message, "no changes were written")
+			assert.Contains(t, localErr.Suggestion, "Rerun the command")
+			assert.NotContains(t, err.Error(), outsideFile)
+			assert.NotContains(t, err.Error(), root)
+			assert.Empty(t, client.mutationCalls)
+			after, err := yaml.Marshal(client.services)
+			require.NoError(t, err)
+			assert.Equal(t, before, after)
+		})
+	}
 }

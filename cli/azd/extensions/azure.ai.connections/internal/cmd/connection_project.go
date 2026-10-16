@@ -68,18 +68,17 @@ type connectionAddPlan struct {
 	ref                  string
 	projectKey           string
 	environmentVariables []string
+	environmentBindings  []string
 	serviceSection       map[string]any
 	addRequest           *azdext.AddServiceRequest
 	changes              []connectionServiceChange
 
-	// baseline holds the project services the plan was built from. apply
-	// re-reads the manifest through planClient and refuses to write when the
-	// state the plan depends on differs from it.
+	// baseline holds the project services the plan was built from.
+	// apply re-reads the manifest and checks the state it depends on.
 	baseline    map[string]any
 	planClient  connectionAddProjectClient
 	projectRoot string
-	// definition is the decoded candidate Connection definition, used to
-	// re-check effective-name uniqueness against the re-read services.
+	// definition is re-resolved before writing to check for changes.
 	definition *definition.Definition
 }
 
@@ -257,33 +256,16 @@ func planConnectionAdd(
 		env,
 		includeEnv,
 	)
-	candidateDefinition, err := connectionServiceDefinition(candidate)
-	if err != nil {
-		return nil, err
-	}
-	resolvedCandidate, err := foundry.ResolveContainedFileRefs(candidateDefinition, projectRoot)
-	if err != nil {
-		return nil, err
-	}
-	candidateInput, err := decodeResolvedConnectionDefinition(serviceName, resolvedCandidate)
-	if err != nil {
-		return nil, err
-	}
-	candidateVariables, candidateBindings, err := validateConnectionDefinitionForAuthoring(candidateInput)
+	candidateInput, candidateVariables, candidateBindings, err := resolveConnectionAuthoringDefinition(
+		serviceName, candidate, projectRoot,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if !reflect.DeepEqual(input, candidateInput) ||
 		!slices.Equal(environmentVariables, candidateVariables) ||
 		!slices.Equal(environmentBindings, candidateBindings) {
-		return nil, exterrors.Validation(
-			exterrors.CodeProjectChanged,
-			fmt.Sprintf(
-				"the Connection definition changed while service %q was being planned; no changes were written.",
-				serviceName,
-			),
-			"Rerun the command to plan against the current definition.",
-		)
+		return nil, connectionDefinitionChanged(serviceName)
 	}
 	if err := validateConnectionProjectCandidate(ctx, snapshot, serviceName, candidate); err != nil {
 		return nil, err
@@ -297,6 +279,7 @@ func planConnectionAdd(
 		ref:                  ref,
 		projectKey:           projectKey,
 		environmentVariables: slices.Clone(environmentVariables),
+		environmentBindings:  slices.Clone(environmentBindings),
 		serviceSection:       candidate,
 		definition:           candidateInput,
 	}
@@ -310,39 +293,18 @@ func planConnectionAdd(
 	if err := plan.prepareWrites(rawExisting, reconciledUses, env); err != nil {
 		return nil, err
 	}
-	if err := plan.rejectUnsupportedDottedUnset(); err != nil {
-		return nil, err
-	}
 	return plan, nil
 }
 
-// rejectUnsupportedDottedUnset refuses, before any write, to update a service
-// whose key contains a dot when the update must remove fields. azd hosts up to
-// at least v1.34.0 build the UnsetServiceConfig path as
-// "services.<name>.<path>" and split it on every dot, so for a key such as
-// "search.api" the removal silently does nothing and stale inline fields
-// (including credentials) would override the new $ref. SetServiceConfigValue
-// and AddService address the service key literally on those hosts, so adds
-// and set-only updates are not affected.
-func (plan *connectionAddPlan) rejectUnsupportedDottedUnset() error {
-	if plan.mutation != "updated" || !strings.Contains(plan.serviceName, ".") {
-		return nil
-	}
-	for _, change := range plan.changes {
-		if change.value != nil {
-			continue
-		}
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"cannot update Connection service %q: its key contains a dot, and updating it requires "+
-					"removing field %q, which azd cannot do reliably for dotted service keys; no changes were written.",
-				plan.serviceName, change.path,
-			),
-			"Edit the service in azure.yaml manually, or use a service key without dots.",
-		)
-	}
-	return nil
+func connectionDefinitionChanged(serviceName string) error {
+	return exterrors.Validation(
+		exterrors.CodeProjectChanged,
+		fmt.Sprintf(
+			"the Connection definition changed after service %q was validated; no changes were written.",
+			serviceName,
+		),
+		"Rerun the command to plan against the current definition.",
+	)
 }
 
 func loadConnectionProjectSnapshot(
@@ -882,7 +844,7 @@ func makeConnectionServiceSection(
 	candidate["uses"] = stringsToAny(uses)
 	if includeEnv {
 		if env == nil {
-			// Keep explicit null env equal to the existing section so unchanged reruns are detected.
+			// Preserve null so unchanged reruns remain no-ops.
 			candidate["env"] = nil
 		} else {
 			candidate["env"] = env
@@ -907,6 +869,30 @@ func connectionServiceDefinition(service map[string]any) (map[string]any, error)
 		return nil, fmt.Errorf("Connection service definition is empty")
 	}
 	return source, nil
+}
+
+func resolveConnectionAuthoringDefinition(
+	serviceName string,
+	service map[string]any,
+	projectRoot string,
+) (*definition.Definition, []string, []string, error) {
+	source, err := connectionServiceDefinition(service)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	resolved, err := foundry.ResolveContainedFileRefs(source, projectRoot)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	input, err := decodeResolvedConnectionDefinition(serviceName, resolved)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	variables, bindings, err := validateConnectionDefinitionForAuthoring(input)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return input, variables, bindings, nil
 }
 
 func (plan *connectionAddPlan) prepareWrites(
@@ -935,11 +921,8 @@ func (plan *connectionAddPlan) prepareWrites(
 		}
 		return nil
 	}
-	// Remove a legacy config definition before writing $ref. If the run stops
-	// between these steps, a rerun sees a service with no definition and
-	// writes $ref, instead of mistaking $ref for the definition and keeping
-	// the stale legacy config and its credentials. config is only removed
-	// when it holds the legacy definition; unrelated config is preserved.
+	// Remove legacy config before $ref so interrupted reruns finish
+	// migrating it. Keep config that is not a legacy definition.
 	if _, preserved := plan.serviceSection["config"]; !preserved {
 		if _, existed := existing["config"]; existed {
 			plan.changes = append(plan.changes, connectionServiceChange{path: "config"})
@@ -961,9 +944,8 @@ func (plan *connectionAddPlan) prepareWrites(
 		}
 		plan.changes = append(plan.changes, connectionServiceChange{path: field, value: encoded})
 	}
-	// Inline definition fields are removed after $ref is written. If the run
-	// stops in between, a rerun still sees the remaining inline fields next to
-	// $ref and removes them.
+	// Write $ref before removing inline fields so interrupted reruns
+	// can find and remove the remaining inline fields.
 	for _, field := range slices.Sorted(maps.Keys(existing)) {
 		if _, preserved := plan.serviceSection[field]; preserved {
 			continue
@@ -976,22 +958,14 @@ func (plan *connectionAddPlan) prepareWrites(
 	return nil
 }
 
-// verifyUnchanged re-reads the project manifest right before writing and
-// compares the state the plan depends on with the snapshot it was built from:
-// the planned service's host, uses, env, config (when it existed), and
-// Connection definition fields, plus the presence and host of the selected
-// Project service and every service in uses. It also validates uses against
-// the current services and resources. It returns a conflict error, asking the
-// user to rerun, when service state changed after planning.
-// Changes to unrelated services or to fields this plan never reads or writes
-// are left alone, so they do not cause a conflict. Explicit empty service env
-// maps and null env values are refused because the host would drop them when
-// saving the manifest.
+// verifyUnchanged re-reads the manifest and definition before writes.
+// It checks the planned service's managed fields, dependency presence
+// and hosts, definition contents, and environment references. It also
+// checks effective-name uniqueness and validates dependencies.
+// Changes to unrelated services and unowned fields are left alone.
 //
-// This narrows the race window between planning and applying but does not
-// eliminate it: the AddService, SetServiceConfigValue, and UnsetServiceConfig
-// RPCs have no compare-and-swap, so a change another process makes after this
-// check and before the writes finish can still be overwritten.
+// This narrows the race window, but the RPCs lack compare-and-swap.
+// Later concurrent changes can still be overwritten.
 func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 	if plan.baseline == nil || plan.planClient == nil {
 		return nil
@@ -1001,38 +975,21 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 		return fmt.Errorf("re-reading the project manifest before writing: %w", err)
 	}
 
-	// azd hosts up to at least v1.34.0 (and current main) re-serialize the whole typed manifest on
-	// AddService/SetServiceConfigValue/UnsetServiceConfig. ServiceConfig.Environment is yaml:"env,omitempty",
-	// dropping env: {} and env: null. For Connection services, missing env inherits all azd/process
-	// values instead of none.
-	// Remove this guard once requiredAzdVersion includes Azure/azure-dev#10479.
-	for _, key := range slices.Sorted(maps.Keys(current.services)) {
-		service, ok := current.services[key].(map[string]any)
-		if !ok {
-			continue
-		}
-		rawEnv, found := service["env"]
-		env, isMap := rawEnv.(map[string]any)
-		if found && (rawEnv == nil || (isMap && len(env) == 0)) {
-			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf(
-					"service %q has an explicitly empty env; the current azd host would drop its empty "+
-						"env when saving azure.yaml; no changes were written.",
-					key,
-				),
-				"Edit azure.yaml by hand, or upgrade azd.",
-			)
-		}
-	}
-
 	changed := !reflect.DeepEqual(
 		plan.plannedServiceState(plan.baseline),
 		plan.plannedServiceState(current.services),
 	)
 	if plan.definition != nil {
+		input, variables, bindings, err := resolveConnectionAuthoringDefinition(
+			plan.serviceName, plan.serviceSection, plan.projectRoot,
+		)
+		if err != nil || !reflect.DeepEqual(plan.definition, input) ||
+			!slices.Equal(plan.environmentVariables, variables) ||
+			!slices.Equal(plan.environmentBindings, bindings) {
+			return connectionDefinitionChanged(plan.serviceName)
+		}
 		if err := validateUniqueConnectionServiceNames(
-			current.services, plan.serviceName, plan.definition, plan.projectRoot,
+			current.services, plan.serviceName, input, plan.projectRoot,
 		); err != nil {
 			return err
 		}
@@ -1064,9 +1021,8 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 	)
 }
 
-// plannedServiceState projects the planned service entry onto the fields the
-// plan reads or writes. The field set is derived from the baseline so a field
-// added after planning that the plan never touches does not count as a change.
+// plannedServiceState selects fields the plan reads or writes.
+// The baseline field set excludes new unowned fields added later.
 func (plan *connectionAddPlan) plannedServiceState(services map[string]any) map[string]any {
 	raw, exists := services[plan.serviceName]
 	state := map[string]any{"exists": exists}

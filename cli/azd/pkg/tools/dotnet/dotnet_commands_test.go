@@ -900,6 +900,24 @@ func Test_Cli_GetMsBuildProperty(t *testing.T) {
 		require.Contains(t, captured.Args, "--getProperty:AssemblyName")
 	})
 
+	t.Run("configuration", func(t *testing.T) {
+		t.Parallel()
+		cli, runner := newCliWithMock(t)
+		runner.When(matchDotnetArg0("msbuild")).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				require.Equal(t, []string{
+					"msbuild", "p.csproj", "--ignore:.sln", "--getProperty:TargetFrameworkVersion",
+					"-property:Configuration=Release",
+				}, args.Args)
+				return exec.NewRunResult(0, "v10.0", ""), nil
+			})
+
+		val, err := cli.GetMsBuildProperty(t.Context(), "p.csproj", "TargetFrameworkVersion",
+			"-property:Configuration=Release")
+		require.NoError(t, err)
+		require.Equal(t, "v10.0", val)
+	})
+
 	t.Run("error", func(t *testing.T) {
 		t.Parallel()
 		cli, runner := newCliWithMock(t)

@@ -221,14 +221,25 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 }
 
 func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
-	for _, key := range []string{"spring.datasource.hikari.username", "spring.datasource.hikari.password"} {
-		if _, present := c.raw(key); present {
+	for _, setting := range []struct {
+		key         string
+		replacement string
+	}{
+		{"spring.datasource.hikari.username", "spring.datasource.username/password"},
+		{"spring.datasource.hikari.password", "spring.datasource.username/password"},
+		{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
+		{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
+		{"spring.datasource.tomcat.url", "spring.datasource.url"},
+		{"spring.datasource.tomcat.username", "spring.datasource.username"},
+		{"spring.datasource.tomcat.password", "spring.datasource.password"},
+		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+	} {
+		if _, present := c.raw(setting.key); present {
 			return nil, false, unsupportedConfiguration(
-				"%s is not supported; use spring.datasource.username/password instead", key)
+				"%s is not supported; use %s instead", setting.key, setting.replacement)
 		}
 	}
-	for _, key := range []string{"spring.datasource.hikari.jdbc-url", "spring.datasource.hikari.data-source-class-name",
-		"spring.datasource.jndi-name"} {
+	for _, key := range []string{"spring.datasource.jndi-name"} {
 		value, err := c.resolve(key)
 		if err != nil {
 			return nil, false, err

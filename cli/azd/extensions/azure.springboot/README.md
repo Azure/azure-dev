@@ -66,8 +66,9 @@ inherited settings, are supported. Relative repackage paths use the project root
 Active repackage executions must agree on one executable-JAR output directory.
 Missing/unresolved paths, directories outside the Docker context, and output
 directories overlapping application inputs or generated files are rejected.
-Custom Hikari username/password bindings, including empty values, are rejected;
-use `spring.datasource.username/password` instead. Ordinary Hikari pooling is supported.
+Hikari or Tomcat pool-specific connection bindings, including empty values, are
+rejected; use the common `spring.datasource` connection settings instead.
+Ordinary pool tuning is supported.
 The normalized Maven artifact ID must start with a letter, contain no consecutive
 hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure naming rules.
 

@@ -1081,6 +1081,46 @@ func TestAnalyzeHikariCredentialBindings(t *testing.T) {
 	}
 }
 
+func TestAnalyzePoolSpecificConnectionBindings(t *testing.T) {
+	const marker = "sensitive-pool-value"
+	for _, setting := range []struct {
+		key         string
+		replacement string
+	}{
+		{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
+		{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
+		{"spring.datasource.tomcat.url", "spring.datasource.url"},
+		{"spring.datasource.tomcat.username", "spring.datasource.username"},
+		{"spring.datasource.tomcat.password", "spring.datasource.password"},
+		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+	} {
+		t.Run(setting.key, func(t *testing.T) {
+			for _, value := range []string{marker, ""} {
+				directory := t.TempDir()
+				writeFixture(t, directory, "pom.xml", "<project/>")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					"spring.datasource.type=org.apache.tomcat.jdbc.pool.DataSource\n"+setting.key+"="+value)
+				_, err := Analyze(t.Context(), directory,
+					staticResolver{model: effectiveModel(t, directory, allDrivers())},
+					envLookup(map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}))
+				require.ErrorContains(t, err, setting.key)
+				require.ErrorContains(t, err, setting.replacement)
+				require.NotContains(t, err.Error(), marker)
+			}
+		})
+	}
+
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.datasource.type=org.apache.tomcat.jdbc.pool.DataSource\nspring.datasource.tomcat.max-active=20")
+	application, err := Analyze(t.Context(), directory,
+		staticResolver{model: effectiveModel(t, directory, allDrivers())},
+		envLookup(map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}))
+	require.NoError(t, err)
+	require.Equal(t, MySQL, application.Requirements[0].Kind)
+}
+
 func TestDerivedContainerAppNameValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name, artifact, expected string

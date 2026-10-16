@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -130,6 +132,142 @@ func TestUpdateLegacyProjectDeploymentsPrecedence(t *testing.T) {
 			}
 		})
 	}
+}
+
+type concurrentLegacyEnvServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	mu      sync.Mutex
+	current *azdext.Environment
+	values  map[string]map[string]string
+	reads   atomic.Int32
+	writes  atomic.Int32
+}
+
+func (s *concurrentLegacyEnvServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: s.current}, nil
+}
+
+func (s *concurrentLegacyEnvServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	s.reads.Add(1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	values := s.values[req.Name]
+	keyValues := make([]*azdext.KeyValue, 0, len(values))
+	for key, value := range values {
+		keyValues = append(keyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: keyValues}, nil
+}
+
+func (s *concurrentLegacyEnvServer) SetValue(
+	_ context.Context, req *azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	s.writes.Add(1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.values[req.EnvName] == nil {
+		s.values[req.EnvName] = map[string]string{}
+	}
+	s.values[req.EnvName][req.Key] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+type gatingLegacyPromptServer struct {
+	legacyDeploymentPromptServer
+	mu         sync.Mutex
+	entered    chan struct{}
+	release    chan struct{}
+	once       sync.Once
+	modelCalls atomic.Int32
+}
+
+func (s *gatingLegacyPromptServer) PromptAiModel(
+	ctx context.Context, request *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s.modelCalls.Add(1)
+	wait := false
+	s.once.Do(func() { wait = true })
+	if wait {
+		close(s.entered)
+		<-s.release
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.legacyDeploymentPromptServer.PromptAiModel(ctx, request)
+}
+
+func (s *gatingLegacyPromptServer) PromptAiDeployment(
+	ctx context.Context, request *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.legacyDeploymentPromptServer.PromptAiDeployment(ctx, request)
+}
+
+func TestUpdateLegacyProjectDeploymentsSerializesConcurrentHandlers(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	t.Setenv("AI_PROJECT_DEPLOYMENTS", `[{"name":"process-must-not-win"}]`)
+	env := &concurrentLegacyEnvServer{
+		current: &azdext.Environment{Name: "env-b"},
+		values: map[string]map[string]string{"env-b": {
+			"AZURE_SUBSCRIPTION_ID": "sub-b",
+			"AZURE_LOCATION":        "westus",
+		}},
+	}
+	prompt := &gatingLegacyPromptServer{
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() { close(prompt.release) })
+	}
+	t.Cleanup(release)
+	client := newTestAzdClient(t, env, nil, prompt)
+	declarations := []project.Deployment{
+		{Name: "chat", Model: project.DeploymentModel{Name: "yaml-model"}},
+		{Name: "embedding", Model: project.DeploymentModel{Name: "yaml-embedding"}},
+	}
+	service := mustMarshalConfig(t, &project.ServiceTargetAgentConfig{Deployments: declarations})
+	service.Name, service.Host = "agent", AiAgentHost
+	service.AdditionalProperties, service.Config = service.Config, nil
+	services := map[string]*azdext.ServiceConfig{"agent": service}
+
+	errs := make(chan error, 2)
+	go func() {
+		errs <- updateLegacyProjectDeployments(t.Context(), client, services, "")
+	}()
+	select {
+	case <-prompt.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first handler did not reach model selection")
+	}
+	started := make(chan struct{})
+	go func() {
+		close(started)
+		errs <- updateLegacyProjectDeployments(t.Context(), client, services, "")
+	}()
+	<-started
+	require.Never(t, func() bool {
+		return prompt.modelCalls.Load() > 1 || env.reads.Load() > 1
+	}, 200*time.Millisecond, 10*time.Millisecond)
+
+	release()
+	require.NoError(t, <-errs)
+	require.NoError(t, <-errs)
+	assert.Equal(t, int32(2), prompt.modelCalls.Load())
+	assert.Len(t, prompt.requests, 2)
+	assert.Len(t, prompt.deployments, 2)
+	assert.Equal(t, int32(1), env.writes.Load())
+	env.mu.Lock()
+	value := env.values["env-b"]["AI_PROJECT_DEPLOYMENTS"]
+	env.mu.Unlock()
+	assert.Contains(t, value, `\"name\":\"chat\"`)
+	assert.Contains(t, value, `\"name\":\"embedding\"`)
 }
 
 func TestUpdateLegacyProjectDeploymentsSplitNoOp(t *testing.T) {

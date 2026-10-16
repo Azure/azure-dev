@@ -394,7 +394,23 @@ func TestCollectExtensionMetadataFromFlagsInternalDefaultsToGo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "go", metadata.Language)
 	assert.Equal(t, "0.0.1", metadata.Version)
-	assert.Equal(t, ">=1.33.0", metadata.RequiredAzdVersion)
+	assert.Equal(t, ">=1.34.1", metadata.RequiredAzdVersion)
+}
+
+func TestCollectExtensionMetadataFromFlagsRequiredAzdVersion(t *testing.T) {
+	for _, language := range []string{"go", "dotnet", "javascript", "python"} {
+		t.Run(language, func(t *testing.T) {
+			metadata, err := collectExtensionMetadataFromFlags(&initFlags{
+				id:           "test.extension",
+				name:         "Test Extension",
+				capabilities: []string{string(extensions.CustomCommandCapability)},
+				language:     language,
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, ">=1.34.1", metadata.RequiredAzdVersion)
+		})
+	}
 }
 
 func TestCollectExtensionMetadataFromFlagsInternalRejectsNonGo(t *testing.T) {

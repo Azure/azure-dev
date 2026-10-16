@@ -75,6 +75,12 @@ produce an error rather than being overwritten. `azd ai project deployment add`
 also seeds or updates this environment list. Ejected infrastructure retains
 user-owned deployment parameters.
 
+Adopting an existing project reconciles the active environment's effective
+deployment list with reuse and skip choices, including an explicit `[]` when no
+managed deployments remain. Ejecting infrastructure seeds the generated Bicep
+or Terraform deployment parameters from that effective list. Subsequent edits
+to those parameter files remain authoritative.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just

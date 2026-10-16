@@ -319,6 +319,15 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if reconciledDefault != "" {
 		effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = reconciledDefault
 	}
+	if reconciledChanged {
+		refreshedValues, readErr := currentProjectEnvironment(ctx, client, envName)
+		if readErr != nil {
+			return rollbackProjectAdd(
+				readErr, restoreReconciled, restoreEnvironment, restoreService, restoreProvider,
+			)
+		}
+		effectiveValues = refreshedValues
+	}
 	restoreDeploymentDefault := func() error { return nil }
 	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
 		return rollbackProjectAdd(
@@ -329,6 +338,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			restoreProvider,
 		)
 	} else if reconciledService != nil &&
+		strings.TrimSpace(effectiveValues[projectDeploymentsEnvKey]) == "" &&
 		firstProjectDeploymentName(reconciledService.Resolved) != "" &&
 		strings.TrimSpace(effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]) == "" {
 		defaultName := firstProjectDeploymentName(reconciledService.Resolved)
@@ -1777,6 +1787,9 @@ func ejectProjectInfra(
 			fmt.Sprintf("cannot synthesize Foundry infrastructure: %s", err),
 			"fix the project service configuration and retry",
 		)
+	}
+	if err := applyProjectEjectDeployments(result, environment); err != nil {
+		return err
 	}
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {

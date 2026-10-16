@@ -272,6 +272,7 @@ func (s *selfInitializingAIService) ResolveModelDeployments(
 func newSelfInitializingDeploymentClient(
 	t *testing.T,
 	root string,
+	prompts ...azdext.PromptServiceServer,
 ) (
 	*azdext.AzdClient,
 	*selfInitializingProjectServer,
@@ -307,7 +308,11 @@ func newSelfInitializingDeploymentClient(
 	azdext.RegisterEnvironmentServiceServer(server, environmentServer)
 	azdext.RegisterAiModelServiceServer(server, aiServer)
 	azdext.RegisterWorkflowServiceServer(server, workflowServer)
-	azdext.RegisterPromptServiceServer(server, projectServer)
+	if len(prompts) > 0 {
+		azdext.RegisterPromptServiceServer(server, prompts[0])
+	} else {
+		azdext.RegisterPromptServiceServer(server, projectServer)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {

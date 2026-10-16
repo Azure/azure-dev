@@ -1686,6 +1686,7 @@ func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
 					assert.FileExists(t, filepath.Join(root, "infra", "main.tf"))
 				default:
 					require.NoError(t, err)
+					// #nosec G304 -- path is inside the test project directory.
 					raw, err := os.ReadFile(filepath.Join(root, "infra", "main.parameters.json"))
 					require.NoError(t, err)
 					var params struct {

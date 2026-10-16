@@ -561,13 +561,13 @@ func TestDeployVoiceTelephonyState_TransferTargetBehavior(t *testing.T) {
 		{name: "unmanaged", listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}},
 		{name: "equal ignores order", managed: true, listResults: [][]agent_api.GATelephonyBinding{
 			{twilioGABinding("connection")}, {twilioGABinding("connection")},
-		}, remote: equalReverse, wantGets: 1},
+		}, remote: equalReverse, wantGets: 2},
 		{name: "existing drift validates only", managed: true, listResults: [][]agent_api.GATelephonyBinding{
 			{twilioGABinding("connection")}, {twilioGABinding("connection")},
-		}, remote: []agent_api.TelephonyTransferTarget{}, wantErr: "differ", wantGets: 1},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantErr: "differ", wantGets: 2},
 		{name: "created then replaces", managed: true, listResults: [][]agent_api.GATelephonyBinding{
 			{}, {twilioGABinding("connection")},
-		}, remote: []agent_api.TelephonyTransferTarget{}, wantGets: 1, wantReplacements: 1},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantGets: 2, wantReplacements: 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -590,6 +590,24 @@ func TestDeployVoiceTelephonyState_TransferTargetBehavior(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeployVoiceTelephonyState_TargetDriftAfterInitialPreflightPreventsBindingCreate(t *testing.T) {
+	desiredTargets := typedTransferTargets("first")
+	changedTargets := typedTransferTargets("changed")
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}},
+		targetResults: []*agent_api.TelephonyTransferTargets{{
+			TransferTargets: changedTargets, ETag: "changed",
+		}},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: desiredTargets,
+		targetsManaged:  true,
+	}, voiceAgentObject())
+	require.ErrorContains(t, err, "changed during deployment")
+	require.Zero(t, client.createCalls)
 }
 
 func TestDeployVoiceTelephonyState_ConflictDoesNotAuthorizeTargetReplacement(t *testing.T) {
@@ -880,6 +898,7 @@ type fakeTelephonyBindingClient struct {
 	targetReplaceCalls  int
 	targetRequests      []agent_api.TelephonyTransferTargets
 	targetIfMatches     []string
+	lastTarget          *agent_api.TelephonyTransferTargets
 }
 
 func (c *fakeTelephonyBindingClient) ListAllTelephonyBindings(
@@ -953,6 +972,12 @@ func (c *fakeTelephonyBindingClient) GetTelephonyTransferTargets(
 	}
 	if len(c.targetResults) >= c.targetGetCalls {
 		result := *c.targetResults[c.targetGetCalls-1]
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		c.lastTarget = &result
+		return &result, nil
+	}
+	if c.lastTarget != nil {
+		result := *c.lastTarget
 		result.TransferTargets = slices.Clone(result.TransferTargets)
 		return &result, nil
 	}

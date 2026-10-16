@@ -2876,6 +2876,9 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyState(
 	desired desiredTelephonyState,
 	agentObject *agent_api.AgentObject,
 ) error {
+	if err := preflightPostDeployTransferTargets(ctx, agentClient, agentObject, desired); err != nil {
+		return err
+	}
 	createdCount, err := p.deployVoiceTelephonyBindingState(ctx, agentClient, desired.bindings, agentObject)
 	if err != nil {
 		return err
@@ -2889,6 +2892,33 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyState(
 		return telephonyPartialCompletionPreserveGuidance(createdCount, err)
 	}
 	return nil
+}
+
+func preflightPostDeployTransferTargets(
+	ctx context.Context,
+	client telephonyBindingClient,
+	agentObject *agent_api.AgentObject,
+	desired desiredTelephonyState,
+) error {
+	if !desired.targetsManaged {
+		return nil
+	}
+	if agentObject == nil || strings.TrimSpace(agentObject.Name) == "" {
+		return fmt.Errorf("transfer-target preflight requires a deployed agent name")
+	}
+	current, err := client.GetTelephonyTransferTargets(ctx, agentObject.Name)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, "get_telephony_transfer_targets")
+	}
+	if telephonyTransferTargetsEqual(current.TransferTargets, desired.transferTargets) ||
+		len(current.TransferTargets) == 0 {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeTelephonyBindingDrift,
+		"remote telephony transfer targets changed during deployment",
+		"inspect and reconcile the transfer-target singleton manually before deploying again",
+	)
 }
 
 func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindingState(

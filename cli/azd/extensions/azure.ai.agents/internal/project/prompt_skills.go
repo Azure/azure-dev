@@ -345,7 +345,7 @@ func skillsShellNode(
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox: is only available to an agent that names a harness",
-					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessGitHubCopilot+
+					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessMicrosoftCopilot+
 						" to the agent definition, or remove 'toolbox:' and put the "+
 						"skills in the agent project's skills/ folder",
 				)

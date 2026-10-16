@@ -124,7 +124,7 @@ func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
 		{"--runtime", "python_3_13"}, {"--entry-point", "app.py"}, {"--dep-resolution", "remote_build"},
 		{"--model-deployment", "my-deployment"}, {"--description", "description"},
 		{"--rai-policy", "none"}, {"--acr-connection", "registry"}, {"--registry-connection", "registry"},
-		{"--harness", "github_copilot_preview"}, {"--instructions", "Be helpful"},
+		{"--harness", "microsoft_copilot_preview"}, {"--instructions", "Be helpful"},
 	} {
 		for _, selector := range [][]string{
 			{"--kind", "prompt-voice", "--agent-name", "voice-test"},

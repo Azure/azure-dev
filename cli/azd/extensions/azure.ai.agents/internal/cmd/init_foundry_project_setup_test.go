@@ -42,7 +42,7 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 			azureContext, err := loadAzureContext(t.Context(), client, "test")
 			require.NoError(t, err)
 			_, err = configureFoundryProject(t.Context(), client, azureContext, "test", "", "",
-				true, true, false, false, promptHarnessRegionsForInit("github_copilot_preview"))
+				true, true, false, false, promptHarnessRegionsForInit("microsoft_copilot_preview"))
 			if location == "eastus" {
 				require.ErrorContains(t, err, "configured AZURE_LOCATION")
 				require.Equal(t, location, values["AZURE_LOCATION"])

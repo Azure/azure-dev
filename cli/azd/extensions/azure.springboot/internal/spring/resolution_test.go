@@ -55,6 +55,7 @@ func TestResolutionFixtures(t *testing.T) {
 		{fixture: "default-profile-choice", profiles: []string{"h2"}, kind: "h2"},
 		{fixture: "missing-url", decision: MissingInput},
 		{fixture: "missing-port", decision: MissingInput},
+		{fixture: "prompt-driver", decision: MissingInput},
 		{fixture: "driver-conflict", diagnostic: "invalid"},
 		{fixture: "file-storage", diagnostic: "unsupported"},
 	} {
@@ -77,7 +78,7 @@ func TestResolutionFixtures(t *testing.T) {
 					}
 					require.True(t, decision.Profiles)
 					require.Empty(t, decision.BindingIDs)
-				} else if tt.fixture == "missing-url" {
+				} else if tt.fixture == "missing-url" || tt.fixture == "prompt-driver" {
 					require.Empty(t, decision.Choices)
 					require.Equal(t, []string{"app/datasource:primary"}, decision.BindingIDs)
 					require.Len(t, result.Bindings, 1)
@@ -135,6 +136,73 @@ func TestResolutionIgnoresAmbientConfiguration(t *testing.T) {
 	result, err = AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{})
 	require.NoError(t, err)
 	require.Len(t, result.Decisions, 1)
+}
+
+func TestResolutionExternalDrivers(t *testing.T) {
+	for _, tt := range []struct {
+		name, scheme, driver, extra, want, diagnostic string
+		inputs                                        map[string]string
+	}{
+		{name: "automatic PostgreSQL driver", scheme: "postgresql"},
+		{name: "automatic MySQL driver", scheme: "mysql"},
+		{name: "explicit PostgreSQL driver", scheme: "postgresql",
+			driver: "org.postgresql.Driver", want: "org.postgresql.Driver"},
+		{name: "explicit MySQL driver", scheme: "mysql",
+			driver: "com.mysql.cj.jdbc.Driver", want: "com.mysql.cj.jdbc.Driver"},
+		{name: "legacy MySQL driver", scheme: "mysql",
+			driver: "com.mysql.jdbc.Driver", want: "com.mysql.jdbc.Driver"},
+		{name: "project driver property", scheme: "postgresql", driver: "${app.driver}",
+			extra: "app.driver=org.postgresql.Driver\n", want: "org.postgresql.Driver"},
+		{name: "driver placeholder default", scheme: "postgresql",
+			driver: "${JDBC_DRIVER:org.postgresql.Driver}", want: "org.postgresql.Driver"},
+		{name: "shared prompt input", scheme: "${DB_ENGINE}", driver: "org.${DB_ENGINE}.Driver",
+			inputs: map[string]string{"DB_ENGINE": "postgresql"}, want: "org.postgresql.Driver"},
+		{name: "conflicting driver", scheme: "postgresql", driver: "com.mysql.cj.jdbc.Driver", diagnostic: "invalid"},
+		{name: "custom driver", scheme: "postgresql", driver: "example.CustomDriver", diagnostic: "invalid"},
+		{name: "missing driver input is not a new prompt", scheme: "postgresql",
+			driver: "${JDBC_DRIVER}", diagnostic: "unsupported"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory, resolver := resolutionFixture(t, "three-engines")
+			properties := "spring.datasource.url=jdbc:" + tt.scheme + "://localhost/catalog\n" + tt.extra
+			if tt.driver != "" {
+				properties += "spring.datasource.driver-class-name=" + tt.driver + "\n"
+			}
+			writeFixture(t, directory, "src/main/resources/application.properties", properties)
+			analysis, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{Properties: tt.inputs})
+			require.NoError(t, err)
+			require.Empty(t, analysis.Decisions)
+			if tt.diagnostic != "" {
+				require.Len(t, analysis.Diagnostics, 1)
+				require.Equal(t, tt.diagnostic, analysis.Diagnostics[0].Kind)
+				_, err = analysis.ResolvedApplication()
+				require.Error(t, err)
+				return
+			}
+			require.Empty(t, analysis.Diagnostics)
+			require.Len(t, analysis.Bindings, 1)
+			require.Equal(t, tt.want, analysis.Bindings[0].Driver)
+			if tt.want != "" {
+				require.Contains(t, analysis.Bindings[0].Evidence, Evidence{
+					Property: "spring.datasource.driver-class-name", Source: "src/main/resources/application.properties",
+				})
+			}
+			application, err := analysis.ResolvedApplication()
+			require.NoError(t, err)
+			require.Len(t, application.Requirements, 1)
+			require.Equal(t, tt.want, application.Requirements[0].Driver)
+			plan, err := Generate(t.Context(), application)
+			require.NoError(t, err)
+			generated := string(plan.Files[".azd-spring/application-azd.properties"])
+			if tt.want == "" {
+				require.NotContains(t, generated, "spring.datasource.driver-class-name=")
+			} else {
+				require.Contains(t, generated, "spring.datasource.driver-class-name="+tt.want+"\n")
+			}
+			require.NotContains(t, generated, "${DB_ENGINE}")
+			require.NotContains(t, generated, "${JDBC_DRIVER}")
+		})
+	}
 }
 
 func TestResolutionAnswersAndProvenance(t *testing.T) {

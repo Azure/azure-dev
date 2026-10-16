@@ -14,6 +14,7 @@ runtime drivers; no Maven execution or Azure access is required.
 | `default-profile-choice` | Ambiguous: the default-profile selector is missing; explicit selection is pinned at runtime without re-evaluating that placeholder. |
 | `missing-url` | Missing input, not engine ambiguity: the datasource URL is unspecified; drivers do not establish choices. |
 | `missing-port` | Missing input: HTTP port; no resource selection question. |
+| `prompt-driver` | Missing input: `DB_ENGINE` is shared by the URL and driver. One answer resolves both; deployment must preserve the resolved driver without exporting that placeholder. |
 | `driver-conflict` | Invalid: H2 URL with PostgreSQL driver; never offer a prompt to repair it. |
 | `file-storage` | Unsupported: file-based H2 needs a persistence policy; never prompt for an alternative engine. |
 

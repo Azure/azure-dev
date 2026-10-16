@@ -147,6 +147,23 @@ func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
 	}
 }
 
+func TestGenerateRejectsInvalidExternalDrivers(t *testing.T) {
+	for _, driver := range []string{
+		"com.mysql.cj.jdbc.Driver", "example.CustomDriver", "org.postgresql.Driver\nunexpected.setting=true",
+	} {
+		t.Run(driver, func(t *testing.T) {
+			plan, err := Generate(t.Context(), &Application{
+				Name: "catalog", JavaVersion: 17, JarName: "catalog.jar", BuildDirectory: "target", Port: 8080,
+				Requirements: []Requirement{{
+					Kind: PostgreSQL, Name: "catalog", Authentication: "password", Driver: driver,
+				}},
+			})
+			require.ErrorContains(t, err, "configured JDBC driver does not match")
+			require.Nil(t, plan)
+		})
+	}
+}
+
 func TestContainerAppStartupProtection(t *testing.T) {
 	plan, err := Generate(t.Context(), &Application{
 		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,

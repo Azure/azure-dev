@@ -57,6 +57,8 @@ Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
+Resolved explicit JDBC driver classes are pinned with deployment URLs; omitted
+drivers retain Spring's automatic selection.
 Repackaging checks include plugin defaults and active execution configuration.
 The resolved Maven build directory and Boot `repackage.outputDirectory` determine
 the JAR copy path; project-local custom output directories, including spaces and

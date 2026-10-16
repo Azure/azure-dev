@@ -21,7 +21,7 @@ graph LR
 - **Application:** deployable identity, build facts, and selected Spring profiles.
 - **Resource:** stable logical identity and requirements, such as a PostgreSQL database.
 - **Binding:** an application's named dependency, configuration namespace, target
-  resource, authentication, and access requirements.
+  resource, authentication, JDBC driver/options, and access requirements.
 - **Evidence:** source/property, activation context, and placeholder dependencies;
   no credential values.
 - **Decision:** stable ID, missing selector/input, evidence, affected identities,

@@ -40,6 +40,7 @@ type Requirement struct {
 	Authentication string
 	Evidence       Evidence
 	JDBCOptions    string
+	Driver         string
 	Trace          []Evidence
 }
 
@@ -322,10 +323,8 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if driverClass != "" && (kind == MySQL &&
-		driverClass != "com.mysql.cj.jdbc.Driver" && driverClass != "com.mysql.jdbc.Driver" ||
-		kind == PostgreSQL && driverClass != "org.postgresql.Driver") {
-		return nil, false, invalidConfiguration("the configured JDBC driver does not match the supported datasource binding")
+	if err := validateExternalDriver(kind, driverClass); err != nil {
+		return nil, false, err
 	}
 	u, err := url.Parse(strings.TrimPrefix(jdbc, "jdbc:"))
 	if err != nil || u.Hostname() == "" || strings.Contains(u.Host, ",") || u.Fragment != "" {
@@ -366,11 +365,25 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 		return nil, false, err
 	}
 	source, _ := c.raw("spring.datasource.url")
+	trace := slices.Clone(c.traces["spring.datasource.url"])
+	for _, evidence := range c.traces["spring.datasource.driver-class-name"] {
+		if !slices.Contains(trace, evidence) {
+			trace = append(trace, evidence)
+		}
+	}
 	return &Requirement{
-		Kind: kind, Name: name, Authentication: authentication, JDBCOptions: options,
+		Kind: kind, Name: name, Authentication: authentication, JDBCOptions: options, Driver: driverClass,
 		Evidence: Evidence{Property: "spring.datasource.url", Source: source.source},
-		Trace:    slices.Clone(c.traces["spring.datasource.url"]),
+		Trace:    trace,
 	}, false, nil
+}
+
+func validateExternalDriver(kind ResourceKind, driver string) error {
+	if driver == "" || kind == PostgreSQL && driver == "org.postgresql.Driver" ||
+		kind == MySQL && slices.Contains([]string{"com.mysql.cj.jdbc.Driver", "com.mysql.jdbc.Driver"}, driver) {
+		return nil
+	}
+	return invalidConfiguration("the configured JDBC driver does not match the supported datasource binding")
 }
 
 func managedIdentityOptions(options string) (string, error) {

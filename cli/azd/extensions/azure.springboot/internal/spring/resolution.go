@@ -44,6 +44,7 @@ type Binding struct {
 	PropertyPrefix string
 	Authentication string
 	JDBCOptions    string
+	Driver         string
 	Embedded       *EmbeddedBinding
 	Evidence       []Evidence
 }
@@ -215,6 +216,7 @@ func AnalyzeProject(
 			ID: "app/datasource:primary", ApplicationID: "app", ResourceID: "datasource:primary",
 			PropertyPrefix: "spring.datasource", Authentication: requirement.Authentication,
 			JDBCOptions: requirement.JDBCOptions, Evidence: deploymentEvidence(requirement.Trace),
+			Driver: requirement.Driver,
 		})
 	}
 	if embedded != nil {
@@ -270,7 +272,7 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 			}
 			application.Requirements = []Requirement{{
 				Kind: resource.Kind, Name: resource.Name, Authentication: binding.Authentication,
-				JDBCOptions: binding.JDBCOptions, Trace: binding.Evidence,
+				JDBCOptions: binding.JDBCOptions, Driver: binding.Driver, Trace: binding.Evidence,
 			}}
 		default:
 			return nil, errors.New("the datasource has no supported deployment disposition")

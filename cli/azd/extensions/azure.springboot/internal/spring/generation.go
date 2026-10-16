@@ -109,6 +109,9 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		if !ok {
 			return nil, fmt.Errorf("no Azure provider is registered for resource kind %q", requirement.Kind)
 		}
+		if err := validateExternalDriver(requirement.Kind, requirement.Driver); err != nil {
+			return nil, err
+		}
 		if !databaseName.MatchString(requirement.Name) {
 			return nil, errors.New("database name is invalid")
 		}
@@ -150,6 +153,9 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		}
 		fmt.Fprintf(&binding, "spring.datasource.url=jdbc:%s://${%s_HOST}:${%s_PORT}/${%s_DATABASE}?%s\n",
 			provider.scheme, p, p, p, options)
+		if requirement.Driver != "" {
+			fmt.Fprintf(&binding, "spring.datasource.driver-class-name=%s\n", requirement.Driver)
+		}
 		fmt.Fprintf(&binding, "spring.datasource.username=${%s_USERNAME}\n", p)
 		if requirement.Authentication == "managedIdentity" {
 			binding.WriteString("spring.datasource.password=\n" +

@@ -266,6 +266,25 @@ func TestInitDependentDecisions(t *testing.T) {
 	require.Contains(t, output.String(), "postgresql")
 }
 
+func TestInitMaterializesPromptDerivedDriver(t *testing.T) {
+	prompts := &fakePrompter{answer: "postgresql"}
+	command, resolver, _ := fixtureCommand(t, "prompt-driver", func() (initPrompter, error) {
+		return prompts, nil
+	})
+	command.SetArgs([]string{"init", "--yes"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Len(t, prompts.decisions, 1)
+	require.Equal(t, "DB_ENGINE", prompts.decisions[0].Input)
+	require.Equal(t, 1, resolver.calls)
+	properties, err := os.ReadFile(filepath.Join(".azd-spring", "application-azd.properties"))
+	require.NoError(t, err)
+	require.Contains(t, string(properties), "spring.datasource.driver-class-name=org.postgresql.Driver\n")
+	require.NotContains(t, string(properties), "${DB_ENGINE}")
+	original, err := os.ReadFile(filepath.Join("src", "main", "resources", "application.properties"))
+	require.NoError(t, err)
+	require.Contains(t, string(original), "spring.datasource.driver-class-name=org.${DB_ENGINE}.Driver")
+}
+
 func TestInitDeclinesPlanWithoutWriting(t *testing.T) {
 	prompts := &fakePrompter{declinePlan: true}
 	command, _, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {

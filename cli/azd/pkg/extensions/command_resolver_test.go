@@ -4,6 +4,7 @@
 package extensions
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 
@@ -188,9 +189,11 @@ func TestResolveCommandPathEdgeCases(t *testing.T) {
 	}
 }
 
-func TestResolveCommandEnvironmentIndependent(t *testing.T) {
+func TestResolveCommandLaunch(t *testing.T) {
 	t.Parallel()
 
+	noAzdEnvironment := &CommandLaunch{NoAzdEnvironment: true}
+	defaultLaunch := &CommandLaunch{NoAzdEnvironment: false}
 	metadata := &ExtensionCommandMetadata{
 		Commands: []Command{
 			{
@@ -198,20 +201,25 @@ func TestResolveCommandEnvironmentIndependent(t *testing.T) {
 				Aliases: []string{"conn"},
 				Subcommands: []Command{
 					{
-						Name:                   []string{"connection", "add"},
-						Aliases:                []string{"create"},
-						EnvironmentIndependent: true,
-						Flags:                  []Flag{{Name: "file", Type: "string"}},
+						Name:    []string{"connection", "add"},
+						Aliases: []string{"create"},
+						Launch:  noAzdEnvironment,
+						Flags:   []Flag{{Name: "file", Type: "string"}},
 					},
 					{
 						Name:    []string{"connection", "manage"},
 						Aliases: []string{"mg"},
-						Subcommands: []Command{{
-							Name:                   []string{"connection", "manage", "add"},
-							Aliases:                []string{"create"},
-							EnvironmentIndependent: true,
-							Flags:                  []Flag{{Name: "file", Type: "string"}},
-						}},
+						Launch:  noAzdEnvironment,
+						Subcommands: []Command{
+							{
+								Name:    []string{"connection", "manage", "add"},
+								Aliases: []string{"create"},
+								Launch:  noAzdEnvironment,
+								Flags:   []Flag{{Name: "file", Type: "string"}},
+							},
+							{Name: []string{"connection", "manage", "list"}},
+							{Name: []string{"connection", "manage", "show"}, Launch: defaultLaunch},
+						},
 					},
 					{Name: []string{"connection", "list"}},
 				},
@@ -220,20 +228,27 @@ func TestResolveCommandEnvironmentIndependent(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name        string
-		args, path  []string
-		independent bool
+		name       string
+		args, path []string
+		launch     *CommandLaunch
 	}{
-		{"canonical", []string{"connection", "add"}, []string{"connection", "add"}, true},
-		{"parent alias", []string{"conn", "add"}, []string{"connection", "add"}, true},
-		{"child alias", []string{"connection", "create"}, []string{"connection", "add"}, true},
-		{"both aliases", []string{"conn", "create"}, []string{"connection", "add"}, true},
-		{"nested canonical", []string{"connection", "manage", "add"}, []string{"connection", "manage", "add"}, true},
-		{"nested parent alias", []string{"conn", "manage", "add"}, []string{"connection", "manage", "add"}, true},
-		{"multiple parent aliases", []string{"conn", "mg", "add"}, []string{"connection", "manage", "add"}, true},
-		{"all aliases", []string{"conn", "mg", "create"}, []string{"connection", "manage", "add"}, true},
-		{"unmarked descendant", []string{"conn", "list"}, []string{"connection", "list"}, false},
-		{"unknown descendant", []string{"conn", "unknown"}, []string{"connection"}, false},
+		{"canonical", []string{"connection", "add"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"parent alias", []string{"conn", "add"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"child alias", []string{"connection", "create"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"both aliases", []string{"conn", "create"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"marked parent", []string{"connection", "manage"}, []string{"connection", "manage"}, noAzdEnvironment},
+		{"marked parent alias", []string{"conn", "mg"}, []string{"connection", "manage"}, noAzdEnvironment},
+		{"nested canonical", []string{"connection", "manage", "add"},
+			[]string{"connection", "manage", "add"}, noAzdEnvironment},
+		{"nested parent alias", []string{"conn", "manage", "add"},
+			[]string{"connection", "manage", "add"}, noAzdEnvironment},
+		{"multiple parent aliases", []string{"conn", "mg", "add"},
+			[]string{"connection", "manage", "add"}, noAzdEnvironment},
+		{"all aliases", []string{"conn", "mg", "create"}, []string{"connection", "manage", "add"}, noAzdEnvironment},
+		{"unmarked descendant", []string{"conn", "mg", "list"}, []string{"connection", "manage", "list"}, nil},
+		{"explicit default", []string{"conn", "mg", "show"}, []string{"connection", "manage", "show"}, defaultLaunch},
+		{"unmarked sibling", []string{"conn", "list"}, []string{"connection", "list"}, nil},
+		{"unknown descendant", []string{"conn", "unknown"}, []string{"connection"}, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -242,13 +257,72 @@ func TestResolveCommandEnvironmentIndependent(t *testing.T) {
 			command := ResolveCommand(metadata, args)
 			require.NotNil(t, command)
 			require.Equal(t, tt.path, command.Name)
-			require.Equal(t, tt.independent, command.EnvironmentIndependent)
+			require.Equal(t, tt.launch, command.Launch)
+			require.Same(t, ResolveCommand(metadata, tt.path), command)
 			require.Equal(t, tt.path, ResolveCommandPath(metadata, args))
 			var flags []string
-			if tt.independent {
+			if slices.Equal(tt.path, []string{"connection", "add"}) ||
+				slices.Equal(tt.path, []string{"connection", "manage", "add"}) {
 				flags = []string{"file"}
 			}
 			require.Equal(t, flags, ResolveCommandFlags(metadata, args))
+		})
+	}
+}
+
+func TestCommandLaunchJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		input  string
+		launch *CommandLaunch
+		output string
+	}{
+		{
+			name:   "opted out",
+			input:  `{"name":["connection","add"],"launch":{"noAzdEnvironment":true}}`,
+			launch: &CommandLaunch{NoAzdEnvironment: true},
+			output: `{"name":["connection","add"],"short":"","launch":{"noAzdEnvironment":true}}`,
+		},
+		{
+			name:   "explicit default",
+			input:  `{"name":["connection","add"],"launch":{"noAzdEnvironment":false}}`,
+			launch: &CommandLaunch{NoAzdEnvironment: false},
+			output: `{"name":["connection","add"],"short":"","launch":{}}`,
+		},
+		{
+			name:   "no launch",
+			input:  `{"name":["connection","add"]}`,
+			output: `{"name":["connection","add"],"short":""}`,
+		},
+		{
+			name:   "legacy key ignored",
+			input:  `{"name":["connection","add"],"environmentIndependent":true}`,
+			output: `{"name":["connection","add"],"short":""}`,
+		},
+		{
+			name:   "legacy key cannot override launch",
+			input:  `{"name":["connection","add"],"environmentIndependent":true,"launch":{"noAzdEnvironment":false}}`,
+			launch: &CommandLaunch{NoAzdEnvironment: false},
+			output: `{"name":["connection","add"],"short":"","launch":{}}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var command Command
+			require.NoError(t, json.Unmarshal([]byte(tt.input), &command))
+			require.Equal(t, []string{"connection", "add"}, command.Name)
+			require.Equal(t, tt.launch, command.Launch)
+
+			data, err := json.Marshal(command)
+			require.NoError(t, err)
+			require.JSONEq(t, tt.output, string(data))
+
+			var roundTrip Command
+			require.NoError(t, json.Unmarshal(data, &roundTrip))
+			require.Equal(t, command, roundTrip)
 		})
 	}
 }

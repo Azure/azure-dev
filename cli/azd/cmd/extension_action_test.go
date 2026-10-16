@@ -147,7 +147,7 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 	require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
 }
 
-func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) {
+func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 	originalArgs := os.Args
 	os.Args = []string{"azd", "--output=json"}
 	t.Cleanup(func() {
@@ -156,6 +156,8 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 
 	configDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("EXTENSION_TEST_PARENT", "parent-value")
+	t.Setenv("EXTENSION_TEST_AZD_ENV", "")
 	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
 	fullPath := filepath.Join(configDir, extensionPath)
 	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
@@ -167,18 +169,26 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 		ID: "test-ext",
 		Commands: []extensions.Command{
 			{
-				Name:                   []string{"local"},
-				EnvironmentIndependent: true,
+				Name:   []string{"local"},
+				Launch: &extensions.CommandLaunch{NoAzdEnvironment: true},
+				Subcommands: []extensions.Command{{
+					Name: []string{"local", "child"},
+				}},
 			},
 			{
 				Name:    []string{"connection"},
 				Aliases: []string{"conn"},
+				Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
 				Subcommands: []extensions.Command{{
-					Name:                   []string{"connection", "add"},
-					Aliases:                []string{"create"},
-					EnvironmentIndependent: true,
+					Name:    []string{"connection", "add"},
+					Aliases: []string{"create"},
+					Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
+				}, {
+					Name: []string{"connection", "list"},
 				}},
 			},
+			{Name: []string{"default"}},
+			{Name: []string{"explicit-default"}, Launch: &extensions.CommandLaunch{NoAzdEnvironment: false}},
 		},
 	})
 	require.NoError(t, err)
@@ -197,14 +207,9 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 		Version:      "1.0.0",
 		Capabilities: []extensions.CapabilityType{extensions.MetadataCapability},
 	}
-	environmentLoads := 0
 	action := &extensionAction{
-		console:         mockCtx.Console,
-		extensionRunner: extensions.NewRunner(mockCtx.CommandRunner),
-		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
-			environmentLoads++
-			return nil, nil
-		}),
+		console:          mockCtx.Console,
+		extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
 		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
 		azdServer:        newExtensionActionTestServer(),
 		globalOptions: &internal.GlobalCommandOptions{
@@ -213,17 +218,27 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 		cmd: &cobra.Command{
 			Annotations: map[string]string{"extension.id": extension.Id},
 		},
-		args: []string{"--no-prompt", "-o", "json", "local", "--file", "connection.yaml"},
 	}
 
-	for _, commandArgs := range [][]string{
-		{"local"},
-		{"connection", "add"},
-		{"conn", "add"},
-		{"connection", "create"},
-		{"conn", "create"},
+	for _, tt := range []struct {
+		args             []string
+		noAzdEnvironment bool
+	}{
+		{[]string{"local"}, true},
+		{[]string{"connection"}, true},
+		{[]string{"conn"}, true},
+		{[]string{"connection", "add"}, true},
+		{[]string{"conn", "add"}, true},
+		{[]string{"connection", "create"}, true},
+		{[]string{"conn", "create"}, true},
+		{[]string{"default"}, false},
+		{[]string{"explicit-default"}, false},
+		{[]string{"local", "child"}, false},
+		{[]string{"connection", "list"}, false},
+		{[]string{"conn", "list"}, false},
+		{[]string{"unknown"}, false},
 	} {
-		t.Run(strings.Join(commandArgs, " "), func(t *testing.T) {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			for _, prefix := range [][]string{
 				{"--no-prompt", "-o", "json"},
 				{"--trace-log-file", "trace.json", "--no-prompt"},
@@ -234,15 +249,34 @@ func TestExtensionAction_RunSkipsEnvironmentForIndependentCommand(t *testing.T) 
 				{"--non-interactive"},
 			} {
 				t.Run(prefix[0], func(t *testing.T) {
-					action.args = append(slices.Clone(prefix), commandArgs...)
+					environmentLoads := 0
+					action.lazyEnv = lazy.NewLazy(func() (*environment.Environment, error) {
+						environmentLoads++
+						return environment.NewWithValues("test", map[string]string{
+							"EXTENSION_TEST_AZD_ENV": "azd-value",
+						}), nil
+					})
+					action.args = append(slices.Clone(prefix), tt.args...)
 					action.args = append(action.args, "--file", "connection.yaml")
 					action.azdServer = newExtensionActionTestServer()
 					result, err := action.Run(t.Context())
 
 					require.NoError(t, err)
 					require.Nil(t, result)
-					require.Equal(t, 0, environmentLoads)
+					if tt.noAzdEnvironment {
+						require.Zero(t, environmentLoads)
+						require.NotContains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
+					} else {
+						require.Equal(t, 1, environmentLoads)
+						require.Contains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
+					}
+					require.Contains(t, captured.Env, "EXTENSION_TEST_PARENT=parent-value")
 					require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+					for _, key := range []string{"AZD_SERVER", "AZD_ACCESS_TOKEN"} {
+						require.True(t, slices.ContainsFunc(captured.Env, func(value string) bool {
+							return strings.HasPrefix(value, key+"=") && len(value) > len(key)+1
+						}), "%s must be passed to the extension", key)
+					}
 				})
 			}
 		})

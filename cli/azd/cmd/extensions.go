@@ -236,7 +236,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fields.ExtensionId.String(extension.Id),
 		fields.ExtensionVersion.String(extension.Version))
 
-	environmentIndependent := a.isEnvironmentIndependentCommand(extension)
+	noAzdEnvironment := a.noAzdEnvironmentForCommand(extension)
 	allEnv := []string{}
 	allEnv = append(allEnv, os.Environ()...)
 
@@ -252,7 +252,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, fmt.Sprintf("COLUMNS=%d", width))
 	}
 
-	if !environmentIndependent {
+	if !noAzdEnvironment {
 		env, err := a.lazyEnv.GetValue()
 		if err == nil && env != nil {
 			// Resolve Key Vault references only in azd-managed variables.
@@ -347,7 +347,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return nil, nil
 }
 
-func (a *extensionAction) isEnvironmentIndependentCommand(extension *extensions.Extension) bool {
+func (a *extensionAction) noAzdEnvironmentForCommand(extension *extensions.Extension) bool {
 	if !extension.HasCapability(extensions.MetadataCapability) ||
 		!a.extensionManager.MetadataExists(extension.Id) {
 		return false
@@ -360,7 +360,7 @@ func (a *extensionAction) isEnvironmentIndependentCommand(extension *extensions.
 	}
 
 	command := extensions.ResolveCommand(metadata, internal.StripLeadingGlobalFlags(a.args))
-	return command != nil && command.EnvironmentIndependent
+	return command != nil && command.Launch != nil && command.Launch.NoAzdEnvironment
 }
 
 // updateCheckOutcome holds the result of an async update check

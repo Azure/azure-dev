@@ -147,11 +147,14 @@ multiple handlers and workflow steps are resolved.
 ## Detailed Reference
 
 Commands that do not need the selected azd environment can emit
-`"environmentIndependent": true` on their command metadata. The property is
-per-command, not inherited; it skips host environment loading and Key Vault
-resolution, but does not restrict explicit Environment RPC calls. Require
+`"launch": {"noAzdEnvironment": true}` on their command metadata. These launch
+settings are per-command, not inherited; they skip loading the selected azd
+environment, resolving its Key Vault references, and injecting its variables.
+Inherited parent-process environment variables and azd launch/protocol variables
+are still passed, and explicit Environment gRPC calls are unaffected. Omitting
+`launch` or setting `noAzdEnvironment` to `false` preserves the default behavior. Require
 azd 1.37.0 or later when relying on this behavior. See
-[environment-independent commands](../../cli/azd/docs/extensions/extension-sdk-reference.md#environment-independent-commands).
+[command launch settings](../../cli/azd/docs/extensions/extension-sdk-reference.md#command-launch-settings).
 
 Use `Project().AddService` for complete service creation or replacement.
 For updates, prefer service-specific setters for the fields your extension

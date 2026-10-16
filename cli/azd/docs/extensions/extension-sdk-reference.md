@@ -16,7 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
-  - [Environment-independent commands](#environment-independent-commands)
+  - [Command launch settings](#command-launch-settings)
   - [NewListenCommand](#newlistencommand)
   - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
@@ -207,21 +207,30 @@ rootCmd.AddCommand(newServeCommand(extCtx))
 azdext.Run(rootCmd)
 ```
 
-### Environment-independent commands
+### Command launch settings
 
-An extension's command metadata can set `"environmentIndependent": true`
-for a command that does not need the selected azd environment. This is a
-host-consumed JSON property, not an SDK helper. Extensions using a released
-SDK without support for generating the property can add it in their metadata
-command's JSON output. The property applies to the marked command, not its
-descendants. The host honors it starting with azd 1.37.0; extensions
+An extension's command metadata can include a `launch` object to control only
+how azd launches that command. Set `launch.noAzdEnvironment` to `true` for a
+command that does not need the selected azd environment:
+
+```json
+{"name":["connection","add"],"launch":{"noAzdEnvironment":true}}
+```
+
+This is host-consumed JSON metadata, not an SDK helper. Extensions using a
+released SDK without support for generating the object can add it in their
+metadata command's JSON output. The settings apply to the marked command, not its
+descendants. The host honors them starting with azd 1.37.0; extensions
 that rely on skipping environment loading should require that host version.
 Aliases on parent or child commands select the same metadata as their
 canonical names.
 
-When the command is included in extension metadata, azd skips loading that
-environment and resolving its Key Vault references before starting the
-extension. The command may still use the Environment gRPC service explicitly.
+When `noAzdEnvironment` is `true`, azd skips loading the selected environment,
+resolving its Key Vault references, and injecting its variables before starting
+the extension. Inherited parent-process environment variables and azd
+launch/protocol variables are still passed. Explicit Environment gRPC calls
+are unaffected. Omitting `launch` or setting `noAzdEnvironment` to `false`
+preserves the default environment loading, resolution, and injection.
 
 ### ExtensionCommandOptions
 

@@ -85,11 +85,15 @@ func projectLifecycleHandler(
 			return err
 		}
 		if ejected == nil {
+			location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+			if location == "" {
+				location = values["AZURE_LOCATION"]
+			}
 			cfg.Deployments, err = provisioning.PromptProjectDeployments(ctx, azdClient, &azdext.AzureContext{
 				Scope: &azdext.AzureScope{
 					SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
 					TenantId:       values["AZURE_TENANT_ID"],
-					Location:       values["AZURE_LOCATION"],
+					Location:       location,
 				},
 			}, cfg.Deployments)
 			if err != nil {

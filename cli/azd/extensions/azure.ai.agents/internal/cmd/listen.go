@@ -263,10 +263,14 @@ func updateLegacyProjectDeployments(
 		return nil
 	}
 	if !azdext.DetectInteractive().NoPrompt {
+		location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+		if location == "" {
+			location = values["AZURE_LOCATION"]
+		}
 		azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
 			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
 			TenantId:       values["AZURE_TENANT_ID"],
-			Location:       values["AZURE_LOCATION"],
+			Location:       location,
 		}}
 		resolved := make([]project.Deployment, 0, len(deployments))
 		for _, declaration := range deployments {

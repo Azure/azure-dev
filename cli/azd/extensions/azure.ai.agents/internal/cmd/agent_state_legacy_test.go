@@ -183,6 +183,77 @@ func TestAgentStateLegacyFailedMigrationCanRetry(t *testing.T) {
 	assert.Equal(t, "recovered-session", record.SessionID)
 }
 
+type markerFailureConfigServer struct {
+	*legacyStateConfigServer
+	markerPath string
+}
+
+func (s *markerFailureConfigServer) Get(
+	ctx context.Context, req *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	if err := os.Mkdir(s.markerPath, 0o700); err != nil {
+		return nil, err
+	}
+	return s.legacyStateConfigServer.Get(ctx, req)
+}
+
+func TestAgentStateLegacyMarkerFailureCanRetry(t *testing.T) {
+	t.Parallel()
+	const key = "example.com/agents/worker/versions/latest/remote"
+	for _, operation := range []string{"read", "update"} {
+		t.Run(operation, func(t *testing.T) {
+			t.Parallel()
+			server := &markerFailureConfigServer{
+				legacyStateConfigServer: newLegacyStateConfigServer(t, legacyAgentState{
+					Sessions: map[string]string{key: "old-session"},
+				}),
+			}
+			client := newInvokeTestAzdClient(t, server)
+			store, err := newAgentStateStoreForClient(client)
+			require.NoError(t, err)
+			server.markerPath = store.legacyMarkerPath(key)
+
+			_, err = store.get(t.Context(), key)
+			require.ErrorContains(t, err, "is not a regular file")
+			record, err := store.load(store.statePath(key), key)
+			require.NoError(t, err)
+			require.NotNil(t, record, "the record was written before the marker failed")
+			assert.Equal(t, "old-session", record.SessionID)
+
+			retry := func() error {
+				if operation == "update" {
+					return store.mutate(t.Context(), key, func(record *agentStateRecord) {
+						record.SessionID = "new-session"
+					})
+				}
+				_, err := store.get(t.Context(), key)
+				return err
+			}
+			require.ErrorContains(t, retry(), "is not a regular file",
+				"an existing record must not hide the marker failure")
+			require.NoError(t, os.Remove(server.markerPath))
+			require.NoError(t, retry())
+			marker, err := os.Stat(server.markerPath)
+			require.NoError(t, err, "retry must repair the missing marker")
+			require.True(t, marker.Mode().IsRegular())
+			record, err = store.get(t.Context(), key)
+			require.NoError(t, err)
+			require.NotNil(t, record)
+			if operation == "update" {
+				assert.Equal(t, "new-session", record.SessionID)
+			} else {
+				assert.Equal(t, "old-session", record.SessionID)
+			}
+
+			require.NoError(t, deleteContextValue(t.Context(), client, "sessions", key))
+			_, err = os.Stat(store.statePath(key))
+			require.ErrorIs(t, err, os.ErrNotExist)
+			assert.Nil(t, loadAgentStateForTest(t, client, key))
+			assert.EqualValues(t, 1, server.reads.Load(), "legacy state must not be imported again")
+		})
+	}
+}
+
 func TestAgentStateLegacyRedactsCredentialBearingKey(t *testing.T) {
 	t.Parallel()
 	const legacyKey = "secret-user:secret-password@HOST.example/agents/worker/versions/1" +

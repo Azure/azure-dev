@@ -38,6 +38,11 @@ func (s *agentStateStore) markLegacyChecked(agentKey string) error {
 	if err := validateAgentStateLockFile(path); err != nil {
 		return err
 	}
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect legacy state marker: %w", err)
+	}
 	if err := os.WriteFile(path, nil, osutil.PermissionFileOwnerOnly); err != nil {
 		return fmt.Errorf("mark legacy state checked: %w", err)
 	}
@@ -50,8 +55,14 @@ func (s *agentStateStore) loadOrMigrate(
 	ctx context.Context, path, agentKey string,
 ) (*agentStateRecord, error) {
 	record, err := s.load(path, agentKey)
-	if err != nil || record != nil {
-		return record, err
+	if err != nil {
+		return nil, err
+	}
+	if record != nil {
+		if err := s.markLegacyChecked(agentKey); err != nil {
+			return nil, err
+		}
+		return record, nil
 	}
 	record = &agentStateRecord{Version: agentStateSchemaVersion, AgentKey: agentKey}
 	if s.client == nil {

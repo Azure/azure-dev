@@ -122,6 +122,8 @@ When a record is missing, the extension imports matching runtime state from azd 
 values from the current project's `.foundry-agent.json`, if available. Existing new records always take
 precedence. Legacy data is left unchanged; a per-key marker prevents repeated imports after local state is
 deleted. Subsequent reads and writes use extension-owned state, not UserConfig.
+If the record is written but its marker fails, the next read or update repairs the missing marker under the
+same agent lock before succeeding; existing record values are preserved without re-reading legacy data.
 
 Agent keys omit URL credentials, query strings, and fragments, so credential changes do not change the lookup
 key or copy credentials into state files. Each record update and record deletion holds a cross-process lock.

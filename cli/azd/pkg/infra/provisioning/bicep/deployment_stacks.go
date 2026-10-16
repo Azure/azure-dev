@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/drone/envsubst/parse"
 )
 
 // deploymentStacksEnabled reports whether the Deployment Stacks alpha feature is active. This
@@ -137,41 +138,32 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 		return nil, nil
 	}
 
+	lookup := func(name string) string {
+		if v, has := p.options.VirtualEnv[name]; has {
+			return v
+		}
+		v, _ := p.env.LookupEnv(name)
+		return v
+	}
+
 	resolved := make([]string, 0, len(values))
 	for _, value := range values {
-		var lookedUpEmpty []string
-		substituted, err := value.Envsubst(func(name string) string {
-			if p.options.VirtualEnv != nil {
-				if v, has := p.options.VirtualEnv[name]; has {
-					if v == "" {
-						lookedUpEmpty = append(lookedUpEmpty, name)
-					}
-					return v
-				}
-			}
-
-			v, ok := p.env.LookupEnv(name)
-			if !ok || v == "" {
-				lookedUpEmpty = append(lookedUpEmpty, name)
-			}
-			return v
-		})
+		tree, err := parse.Parse(value.Raw())
 		if err != nil {
 			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
 		}
 
-		var unresolved []string
-		for _, name := range lookedUpEmpty {
-			if hasUnescapedReference(value.Raw(), name) {
-				unresolved = append(unresolved, name)
-			}
-		}
+		unresolved := unsetDeploymentStacksReferences(tree.Root, lookup)
 		if len(unresolved) > 0 {
 			return nil, fmt.Errorf(
 				"deploymentStacks references unset environment variable(s): %s",
 				strings.Join(unresolved, ", "))
 		}
 
+		substituted, err := value.Envsubst(lookup)
+		if err != nil {
+			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
+		}
 		if strings.TrimSpace(substituted) == "" {
 			return nil, fmt.Errorf("deploymentStacks value resolved to an empty string")
 		}
@@ -182,26 +174,30 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 	return resolved, nil
 }
 
-func hasUnescapedReference(template, name string) bool {
-	reference := "${" + name + "}"
-	for offset := 0; offset < len(template); {
-		index := strings.Index(template[offset:], reference)
-		if index == -1 {
-			return false
+func unsetDeploymentStacksReferences(node parse.Node, lookup func(string) string) []string {
+	var children []parse.Node
+	switch node := node.(type) {
+	case *parse.ListNode:
+		children = node.Nodes
+	case *parse.FuncNode:
+		switch node.Name {
+		case "", "=", ":=", ":-", ":?", ":+", "-", "+":
+			// Envsubst evaluates fallback arguments eagerly; only validate a fallback when it is selected.
+			if lookup(node.Param) != "" {
+				return nil
+			}
+			if node.Name == "" && len(node.Args) == 0 {
+				return []string{node.Param}
+			}
 		}
-		index += offset
-
-		dollarCount := 0
-		for i := index - 1; i >= 0 && template[i] == '$'; i-- {
-			dollarCount++
-		}
-		if dollarCount%2 == 0 {
-			return true
-		}
-		offset = index + 1
+		children = node.Args
 	}
 
-	return false
+	var unset []string
+	for _, child := range children {
+		unset = append(unset, unsetDeploymentStacksReferences(child, lookup)...)
+	}
+	return unset
 }
 
 // deploymentOptionsMap builds the generic options map handed to the deployment API layer,

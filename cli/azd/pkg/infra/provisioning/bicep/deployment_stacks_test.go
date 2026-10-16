@@ -327,6 +327,94 @@ func TestResolveDeploymentStacksMap_DefaultExpression(t *testing.T) {
 	}, denySettings["excludedPrincipals"])
 }
 
+func TestResolveDeploymentStacksMap_NestedDefaultExpressions(t *testing.T) {
+	const principal = "55555555-5555-5555-5555-555555555555"
+	for _, tt := range []struct {
+		name          string
+		value         string
+		env           map[string]string
+		virtualEnv    map[string]string
+		want          string
+		unsetVariable string
+	}{
+		{
+			name:  "unused fallback",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:       "unused fallback with plan-time primary",
+			value:      "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			virtualEnv: map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:       principal,
+		},
+		{
+			name:  "unused assignment fallback",
+			value: "${PRIMARY_PRINCIPAL:=${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:  "unused equals fallback",
+			value: "${PRIMARY_PRINCIPAL=${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"PRIMARY_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:  "selected fallback",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:   map[string]string{"FALLBACK_PRINCIPAL": principal},
+			want:  principal,
+		},
+		{
+			name:       "empty plan-time primary selects fallback",
+			value:      "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}",
+			env:        map[string]string{"PRIMARY_PRINCIPAL": "ignored", "FALLBACK_PRINCIPAL": principal},
+			virtualEnv: map[string]string{"PRIMARY_PRINCIPAL": ""},
+			want:       principal,
+		},
+		{
+			name:  "nested literal default",
+			value: "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL:-" + principal + "}}",
+			want:  principal,
+		},
+		{
+			name:          "missing selected fallback in composite",
+			value:         "prefix-${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}-suffix",
+			unsetVariable: "FALLBACK_PRINCIPAL",
+		},
+		{
+			name:          "missing reference outside unused fallback",
+			value:         "${PRIMARY_PRINCIPAL:-${FALLBACK_PRINCIPAL}}-${FALLBACK_PRINCIPAL}",
+			env:           map[string]string{"PRIMARY_PRINCIPAL": principal},
+			unsetVariable: "FALLBACK_PRINCIPAL",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), tt.env)
+			provider.options.VirtualEnv = tt.virtualEnv
+			provider.options.DeploymentStacks = &provisioning.DeploymentStacksConfig{
+				DenySettings: &provisioning.DenySettingsConfig{
+					Mode:               "denyDelete",
+					ExcludedPrincipals: expandableStrings(tt.value),
+				},
+			}
+
+			stacks, err := provider.resolveDeploymentStacksMap(true)
+			if tt.unsetVariable != "" {
+				require.ErrorContains(t, err, tt.unsetVariable)
+				return
+			}
+			require.NoError(t, err)
+			denySettings, ok := stacks["denySettings"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, []string{tt.want}, denySettings["excludedPrincipals"])
+		})
+	}
+}
+
 func TestResolveDeploymentStacksMap_EscapedUnsetVarIsLiteral(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 	provider := createBicepProviderWithEnv(t, mockContext, minimalArmTemplate(), nil)

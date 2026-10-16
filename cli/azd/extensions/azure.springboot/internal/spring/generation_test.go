@@ -70,6 +70,8 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.Contains(t, string(plan.Files["infra/application.bicep"]), "targetPort: placeholder ? 80 : port")
 			require.Contains(t, string(plan.Files["infra/application.bicep"]),
 				"{ name: 'SPRING_PROFILES_DEFAULT', value: 'none' }")
+			require.Contains(t, string(plan.Files["infra/application.bicep"]),
+				"{ name: 'SERVER_ADDRESS', value: '0.0.0.0' }")
 			var bicep strings.Builder
 			for name, content := range plan.Files {
 				if strings.HasSuffix(name, ".bicep") {

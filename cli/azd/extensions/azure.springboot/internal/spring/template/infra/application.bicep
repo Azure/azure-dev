@@ -46,6 +46,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           // The analyzed defaults are already included in the pinned active profiles.
           { name: 'SPRING_PROFILES_DEFAULT', value: 'none' }
           { name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/app/.azd-spring/application.properties' }
+          { name: 'SERVER_ADDRESS', value: '0.0.0.0' }
           { name: 'SERVER_PORT', value: string(port) }
         ], databaseEnv)
         probes: placeholder ? [] : [

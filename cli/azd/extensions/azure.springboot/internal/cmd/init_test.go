@@ -56,13 +56,13 @@ func TestInitPreflight(t *testing.T) {
 
 type fixtureResolver struct{ calls int }
 
-func (r *fixtureResolver) Resolve(_ context.Context, directory string) ([]byte, error) {
+func (r *fixtureResolver) Resolve(_ context.Context, directory string) (*spring.ModelData, error) {
 	r.calls++
 	var escaped strings.Builder
 	if err := xml.EscapeText(&escaped, []byte(filepath.Join(directory, "target"))); err != nil {
 		return nil, err
 	}
-	return fmt.Appendf(nil, `<project><artifactId>inventory</artifactId>
+	return &spring.ModelData{EffectivePom: fmt.Appendf(nil, `<project><artifactId>inventory</artifactId>
 <properties><java.version>17</java.version></properties>
 <build><directory>%s</directory><finalName>inventory</finalName><plugins><plugin>
 <groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId>
@@ -71,7 +71,7 @@ func (r *fixtureResolver) Resolve(_ context.Context, directory string) ([]byte, 
 <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId></dependency>
 <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId></dependency>
 <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
-</dependencies></project>`, escaped.String()), nil
+</dependencies></project>`, escaped.String())}, nil
 }
 
 type fakePrompter struct {

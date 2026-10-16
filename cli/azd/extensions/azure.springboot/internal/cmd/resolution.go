@@ -113,10 +113,10 @@ func confirm(
 
 type cachedResolver struct {
 	source spring.ModelResolver
-	model  []byte
+	model  *spring.ModelData
 }
 
-func (r *cachedResolver) Resolve(ctx context.Context, directory string) ([]byte, error) {
+func (r *cachedResolver) Resolve(ctx context.Context, directory string) (*spring.ModelData, error) {
 	if r.model == nil {
 		model, err := r.source.Resolve(ctx, directory)
 		if err != nil {

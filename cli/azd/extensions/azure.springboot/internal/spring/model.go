@@ -6,20 +6,37 @@ package spring
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"io"
+	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 )
 
-// ModelResolver resolves a trusted application's effective Maven model.
+// Dependency identifies a resolved Maven dependency.
+type Dependency struct {
+	Group    string
+	Artifact string
+	Scope    string
+}
+
+// ModelData contains the effective Maven model and resolved runtime dependencies.
+type ModelData struct {
+	EffectivePom        []byte
+	RuntimeDependencies []Dependency
+}
+
+// ModelResolver resolves a trusted application's effective Maven model and runtime dependencies.
 type ModelResolver interface {
-	Resolve(context.Context, string) ([]byte, error)
+	Resolve(context.Context, string) (*ModelData, error)
 }
 
 type mavenResolver struct {
@@ -31,18 +48,25 @@ func NewModelResolver(writer io.Writer) ModelResolver {
 	return &mavenResolver{writer: writer}
 }
 
-func (r *mavenResolver) Resolve(ctx context.Context, root string) ([]byte, error) {
-	runner := exec.NewCommandRunner(&exec.RunnerOptions{Stdout: r.writer, Stderr: r.writer})
+func (r *mavenResolver) Resolve(ctx context.Context, root string) (*ModelData, error) {
+	runner := azdexec.NewCommandRunner(&azdexec.RunnerOptions{Stdout: r.writer, Stderr: r.writer})
 	cli := maven.NewCli(runner)
 	cli.SetPath(root, root)
-	model, err := cli.EffectivePom(ctx, filepath.Join(root, "pom.xml"))
+	effectivePom, err := cli.EffectivePom(ctx, filepath.Join(root, "pom.xml"))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, &modelError{cause: err}
 	}
-	return []byte(model), nil
+	dependencies, err := resolveRuntimeDependencies(ctx, root, runner)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &modelError{cause: err}
+	}
+	return &ModelData{EffectivePom: []byte(effectivePom), RuntimeDependencies: dependencies}, nil
 }
 
 // Maven errors can contain repository URLs, credentials, or effective-model output.
@@ -51,7 +75,7 @@ type modelError struct {
 }
 
 func (e *modelError) Error() string {
-	return "Maven model resolution failed; run Maven help:effective-pom in the trusted project to diagnose"
+	return "Maven model resolution failed; run Maven help:effective-pom and dependency:list in the trusted project to diagnose"
 }
 
 func (e *modelError) Unwrap() error { return e.cause }
@@ -338,4 +362,85 @@ func projectName(artifact string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
+}
+
+func resolveRuntimeDependencies(
+	ctx context.Context, root string, runner azdexec.CommandRunner,
+) ([]Dependency, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	output, err := os.CreateTemp("", "azd-spring-maven-dependencies-*.txt")
+	if err != nil {
+		return nil, err
+	}
+	outputPath := output.Name()
+	defer os.Remove(outputPath)
+	if err := output.Close(); err != nil {
+		return nil, err
+	}
+
+	command, err := mavenExecutable(root)
+	if err != nil {
+		return nil, err
+	}
+	args := azdexec.NewRunArgs(command,
+		"dependency:list",
+		"-DincludeScope=runtime",
+		"-DexcludeTransitive=false",
+		"-DappendOutput=false",
+		"-DoutputAbsoluteArtifactFilename=false",
+		"-DoutputFile="+outputPath,
+		"-f", filepath.Join(root, "pom.xml"),
+	).WithCwd(root)
+	if _, err := runner.Run(ctx, args); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		return nil, err
+	}
+	return parseRuntimeDependencies(string(data)), nil
+}
+
+func mavenExecutable(root string) (string, error) {
+	names := []string{"mvnw"}
+	if runtime.GOOS == "windows" {
+		names = []string{"mvnw.cmd", "mvnw.bat", "mvnw"}
+	}
+	for _, name := range names {
+		candidate := filepath.Join(root, name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	command, err := osexec.LookPath("mvn")
+	if err != nil {
+		return "", errors.New("Maven or a root Maven wrapper is required")
+	}
+	return command, nil
+}
+
+func parseRuntimeDependencies(output string) []Dependency {
+	var result []Dependency
+	seen := map[string]bool{}
+	for line := range strings.Lines(output) {
+		parts := strings.Split(strings.TrimSpace(line), ":")
+		if len(parts) < 5 {
+			continue
+		}
+		scope := parts[len(parts)-1]
+		if scope != "compile" && scope != "runtime" {
+			continue
+		}
+		dependency := Dependency{Group: parts[0], Artifact: parts[1], Scope: scope}
+		key := dependency.Group + ":" + dependency.Artifact + ":" + dependency.Scope
+		if !safeName.MatchString(dependency.Group) || !safeName.MatchString(dependency.Artifact) || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, dependency)
+	}
+	return result
 }

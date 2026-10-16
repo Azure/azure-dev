@@ -93,9 +93,14 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, err
 	}
-	m, java, err := parseModel(data)
+	m, java, err := parseModel(data.EffectivePom)
 	if err != nil {
 		return nil, err
+	}
+	for _, dependency := range data.RuntimeDependencies {
+		m.Dependencies = append(m.Dependencies, coordinate{
+			Group: dependency.Group, Artifact: dependency.Artifact, Scope: dependency.Scope,
+		})
 	}
 	projectDirectory, err := filepath.Abs(directory)
 	if err != nil {

@@ -21,11 +21,17 @@ import (
 )
 
 type staticResolver struct {
-	model []byte
-	err   error
+	model               []byte
+	runtimeDependencies []Dependency
+	err                 error
 }
 
-func (r staticResolver) Resolve(context.Context, string) ([]byte, error) { return r.model, r.err }
+func (r staticResolver) Resolve(context.Context, string) (*ModelData, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &ModelData{EffectivePom: r.model, RuntimeDependencies: r.runtimeDependencies}, nil
+}
 
 func effectiveModel(t *testing.T, directory, drivers string) []byte {
 	t.Helper()
@@ -458,6 +464,37 @@ app:
 			}
 		})
 	}
+}
+
+func TestAnalyzeResolvedRuntimeDriver(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.datasource.url=jdbc:postgresql://localhost/catalog")
+	application, err := Analyze(t.Context(), directory, staticResolver{
+		model: effectiveModel(t, directory, ""),
+		runtimeDependencies: []Dependency{{
+			Group: "org.postgresql", Artifact: "postgresql", Scope: "runtime",
+		}},
+	}, envLookup(nil))
+	require.NoError(t, err)
+	require.Equal(t, PostgreSQL, application.Requirements[0].Kind)
+}
+
+func TestParseRuntimeDependencies(t *testing.T) {
+	dependencies := parseRuntimeDependencies(`
+The following files have been resolved:
+   org.postgresql:postgresql:jar:42.7.8:runtime
+   com.mysql:mysql-connector-j:jar:9.5.0:compile
+   com.example:classified-driver:jar:native:1.0:runtime
+   com.example:test-only:jar:1.0:test
+   org.postgresql:postgresql:jar:42.7.8:runtime
+`)
+	require.Equal(t, []Dependency{
+		{Group: "org.postgresql", Artifact: "postgresql", Scope: "runtime"},
+		{Group: "com.mysql", Artifact: "mysql-connector-j", Scope: "compile"},
+		{Group: "com.example", Artifact: "classified-driver", Scope: "runtime"},
+	}, dependencies)
 }
 
 func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {

@@ -951,6 +951,34 @@ func TestGetTelephonyTransferTargets_PreservesUnknownStructuredValues(t *testing
 	}
 }
 
+func TestUnknownTransferDestination_PreservesCompleteObject(t *testing.T) {
+	original := `{
+		"kind":"future_kind",
+		"value":{"agent_name":"transfer-agent"},
+		"routing_hint":"warm-transfer",
+		"options":{"priority":2}
+	}`
+	var destination TelephonyTransferDestination
+	require.NoError(t, json.Unmarshal([]byte(original), &destination))
+	require.Equal(t, "future_kind", destination.Kind)
+	require.JSONEq(t, original, string(destination.RawObject))
+
+	encoded, err := json.Marshal(destination)
+	require.NoError(t, err)
+	require.JSONEq(t, original, string(encoded))
+}
+
+func TestUnknownTransferDestination_RejectsRawObjectKindMismatch(t *testing.T) {
+	var destination TelephonyTransferDestination
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"kind":"future_kind","future_field":true}`),
+		&destination,
+	))
+	destination.Kind = "different_kind"
+	_, err := json.Marshal(destination)
+	require.ErrorContains(t, err, "does not match kind")
+}
+
 func TestUnknownTransferDestination_PreservesOmittedValue(t *testing.T) {
 	var destination TelephonyTransferDestination
 	require.NoError(t, json.Unmarshal([]byte(`{"kind":"future_kind"}`), &destination))
@@ -989,6 +1017,7 @@ func TestTransferDestinationRepeatedUnmarshalClearsPreviousValue(t *testing.T) {
 
 	require.NoError(t, json.Unmarshal([]byte(`{"kind":"future_kind"}`), &destination))
 	require.Empty(t, destination.RawValue)
+	require.JSONEq(t, `{"kind":"future_kind"}`, string(destination.RawObject))
 	require.Empty(t, destination.Value)
 	require.False(t, destination.HasValue)
 }

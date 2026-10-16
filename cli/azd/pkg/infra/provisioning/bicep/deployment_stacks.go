@@ -128,11 +128,10 @@ func (p *BicepProvider) resolveDeploymentStacksMap(includeDenySettings bool) (ma
 }
 
 // resolveDeploymentStacksValues evaluates ${VAR} references in each value, resolving from the
-// plan-time layer outputs (VirtualEnv) first and then the azd environment. A value that resolves
-// to an empty string is treated as a misconfiguration (a blank deny-list entry, for example an
-// empty excluded principal, is almost always a mistake) and returns an error. Shell-style default
-// expressions such as ${VAR:-fallback} are honored: Envsubst applies the default before this check,
-// so a reference with a usable default yields a non-blank value and is accepted.
+// plan-time layer outputs (VirtualEnv) first and then the azd environment. A bare ${VAR} reference
+// that remains unresolved or a value that resolves to an empty string is treated as a
+// misconfiguration. Shell-style default expressions such as ${VAR:-fallback} are honored:
+// Envsubst applies the default, so a reference with a usable default is accepted.
 func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.ExpandableString) ([]string, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -144,6 +143,9 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 		substituted, err := value.Envsubst(func(name string) string {
 			if p.options.VirtualEnv != nil {
 				if v, has := p.options.VirtualEnv[name]; has {
+					if v == "" {
+						lookedUpEmpty = append(lookedUpEmpty, name)
+					}
 					return v
 				}
 			}
@@ -158,12 +160,19 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
 		}
 
-		if strings.TrimSpace(substituted) == "" {
-			if len(lookedUpEmpty) > 0 {
-				return nil, fmt.Errorf(
-					"deploymentStacks references unset environment variable(s): %s",
-					strings.Join(lookedUpEmpty, ", "))
+		var unresolved []string
+		for _, name := range lookedUpEmpty {
+			if hasUnescapedReference(value.Raw(), name) {
+				unresolved = append(unresolved, name)
 			}
+		}
+		if len(unresolved) > 0 {
+			return nil, fmt.Errorf(
+				"deploymentStacks references unset environment variable(s): %s",
+				strings.Join(unresolved, ", "))
+		}
+
+		if strings.TrimSpace(substituted) == "" {
 			return nil, fmt.Errorf("deploymentStacks value resolved to an empty string")
 		}
 
@@ -171,6 +180,28 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 	}
 
 	return resolved, nil
+}
+
+func hasUnescapedReference(template, name string) bool {
+	reference := "${" + name + "}"
+	for offset := 0; offset < len(template); {
+		index := strings.Index(template[offset:], reference)
+		if index == -1 {
+			return false
+		}
+		index += offset
+
+		dollarCount := 0
+		for i := index - 1; i >= 0 && template[i] == '$'; i-- {
+			dollarCount++
+		}
+		if dollarCount%2 == 0 {
+			return true
+		}
+		offset = index + 1
+	}
+
+	return false
 }
 
 // deploymentOptionsMap builds the generic options map handed to the deployment API layer,

@@ -79,7 +79,7 @@ func InitDatasetNameInvalid(path, name string) error {
 	return exterrors.Validation(exterrors.CodeInvalidParameter,
 		fmt.Sprintf("Dataset file %q derives invalid catalog name %q", path, name),
 		"Rename the file so its stem uses only letters, digits, dashes and underscores, "+
-			"up to 255 characters.")
+			"up to 255 bytes.")
 }
 
 // InitFlagRange names both the input and its supported bounds.

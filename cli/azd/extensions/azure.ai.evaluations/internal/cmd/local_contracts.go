@@ -31,6 +31,13 @@ func (ec *evalContext) selectedEvaluatorContract(
 	return schema, nil
 }
 
+// readableContract reports whether a catalog entry carries the definition a
+// row is validated against. A listing entry without one is treated as missing,
+// so it is point-read and fails closed when the service has none either.
+func readableContract(schema *eval_api.EvaluatorSummary) bool {
+	return schema != nil && schema.Definition != nil
+}
+
 func (ec *evalContext) localEvaluatorSchemas(
 	ctx context.Context, group *project.Eval, pending map[string]bool,
 ) (map[string]*eval_api.EvaluatorSummary, error) {
@@ -44,7 +51,7 @@ func (ec *evalContext) localEvaluatorSchemas(
 	}
 	for _, ref := range group.Evaluators {
 		key := evaluatorSchemaKey(ref.Evaluator, ref.Version)
-		if ref.Version == "" && (index[key] != nil || pending[ref.Evaluator]) {
+		if ref.Version == "" && (readableContract(index[key]) || pending[ref.Evaluator]) {
 			continue
 		}
 		schema, err := ec.selectedEvaluatorContract(ctx, ref.Evaluator, ref.Version)

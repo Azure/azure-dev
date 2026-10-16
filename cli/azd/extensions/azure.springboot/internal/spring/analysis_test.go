@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,6 +33,30 @@ func (r staticResolver) Resolve(context.Context, string) (*ModelData, error) {
 	}
 	return &ModelData{EffectivePom: r.model, RuntimeDependencies: r.runtimeDependencies}, nil
 }
+
+type dependencyListRunner struct {
+	t      *testing.T
+	output string
+}
+
+func (r dependencyListRunner) Run(_ context.Context, args azdexec.RunArgs) (azdexec.RunResult, error) {
+	r.t.Helper()
+	for _, arg := range args.Args {
+		if outputPath, ok := strings.CutPrefix(arg, "-DoutputFile="); ok {
+			require.NoError(r.t, os.WriteFile(outputPath, []byte(r.output), 0o600))
+			return azdexec.NewRunResult(0, "", ""), nil
+		}
+	}
+	return azdexec.RunResult{}, errors.New("dependency output path was not provided")
+}
+
+func (r dependencyListRunner) RunList(
+	context.Context, []string, azdexec.RunArgs,
+) (azdexec.RunResult, error) {
+	return azdexec.RunResult{}, errors.New("unexpected command list")
+}
+
+func (r dependencyListRunner) ToolInPath(string) error { return nil }
 
 func effectiveModel(t *testing.T, directory, drivers string) []byte {
 	t.Helper()
@@ -495,6 +520,18 @@ The following files have been resolved:
 		{Group: "com.mysql", Artifact: "mysql-connector-j", Scope: "compile"},
 		{Group: "com.example", Artifact: "classified-driver", Scope: "runtime"},
 	}, dependencies)
+}
+
+func TestResolveRuntimeDependencies(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "mvnw", "")
+	dependencies, err := resolveRuntimeDependencies(t.Context(), directory, dependencyListRunner{
+		t: t, output: "org.postgresql:postgresql:jar:42.7.8:runtime\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, []Dependency{{
+		Group: "org.postgresql", Artifact: "postgresql", Scope: "runtime",
+	}}, dependencies)
 }
 
 func TestAnalyzePropertiesDocumentSeparators(t *testing.T) {

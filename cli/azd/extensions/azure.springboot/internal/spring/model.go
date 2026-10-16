@@ -145,10 +145,11 @@ type model struct {
 	Modules              []string     `xml:"modules>module"`
 	Dependencies         []coordinate `xml:"dependencies>dependency"`
 	Properties           struct {
-		JavaVersion string `xml:"java.version"`
-		Release     string `xml:"maven.compiler.release"`
-		Source      string `xml:"maven.compiler.source"`
-		Target      string `xml:"maven.compiler.target"`
+		JavaVersion   string `xml:"java.version"`
+		Release       string `xml:"maven.compiler.release"`
+		Source        string `xml:"maven.compiler.source"`
+		Target        string `xml:"maven.compiler.target"`
+		RepackageSkip string `xml:"spring-boot.repackage.skip"`
 	} `xml:"properties"`
 	Build struct {
 		Directory string        `xml:"directory"`
@@ -179,7 +180,11 @@ func parseModel(data []byte) (*model, int, error) {
 		for _, execution := range plugin.Executions {
 			if (execution.Phase == "" || execution.Phase == "package") && slices.Contains(execution.Goals, "repackage") {
 				config := execution.Configuration.withDefaults(plugin.Configuration)
-				if config.Skip != "" && config.Skip != "false" || config.Classifier != "" || config.Layout == "NONE" {
+				if config.Skip == "" {
+					config.Skip = m.Properties.RepackageSkip
+				}
+				if config.Skip != "" && !strings.EqualFold(config.Skip, "false") ||
+					config.Classifier != "" || config.Layout == "NONE" {
 					return nil, 0, unsupportedConfiguration(
 						"custom or disabled Spring Boot JAR repackaging is not yet supported")
 				}

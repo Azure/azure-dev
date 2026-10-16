@@ -295,9 +295,9 @@ func dockerfile(a *Application) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encoding Maven JAR paths: %w", err)
 	}
-	build := "RUN mvn -B -DskipTests package"
+	build := "RUN mvn -B -Dmaven.test.skip=true package"
 	if a.MavenWrapper {
-		build = "RUN chmod +x mvnw && ./mvnw -B -DskipTests package"
+		build = "RUN chmod +x mvnw && ./mvnw -B -Dmaven.test.skip=true package"
 	}
 	var external strings.Builder
 	for _, file := range a.ExternalConfigurations {

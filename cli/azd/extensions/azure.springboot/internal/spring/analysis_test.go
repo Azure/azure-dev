@@ -861,6 +861,27 @@ func TestAnalyzeUsesCompilerPropertyFallbackForGeneratedContainer(t *testing.T) 
 	require.Contains(t, dockerfile, "eclipse-temurin:21-jre")
 }
 
+func TestGeneratedImageSkipsCompilationForHigherTestRelease(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	data := string(effectiveModel(t, directory, ""))
+	compiler := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
+		"<artifactId>maven-compiler-plugin</artifactId><configuration>" +
+		"<release>17</release><testRelease>21</testRelease></configuration></plugin>"
+	data = strings.Replace(data, "</plugins>", compiler+"</plugins>", 1)
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: []byte(data)}, envLookup(nil))
+	require.NoError(t, err)
+	require.Equal(t, 17, application.JavaVersion)
+
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	dockerfile := string(plan.Files[".azd-spring/Dockerfile"])
+	require.Contains(t, dockerfile, "maven:3.9-eclipse-temurin-17")
+	require.Contains(t, dockerfile, "eclipse-temurin:17-jre")
+	require.Contains(t, dockerfile, "-Dmaven.test.skip=true package")
+}
+
 func TestEffectiveModelExecutionConfiguration(t *testing.T) {
 	execution := func(phase, configuration string) string {
 		return "<execution><phase>" + phase + "</phase><goals><goal>repackage</goal></goals>" +
@@ -907,6 +928,48 @@ func TestEffectiveModelExecutionConfiguration(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, 17, java)
 			}
+		})
+	}
+}
+
+func TestEffectiveModelRepackageSkipProperty(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		propertyValue string
+		pluginSkip    string
+		executionSkip string
+		errorText     string
+	}{
+		{"property disables repackage", "true", "", "", "custom or disabled"},
+		{"explicit plugin enables repackage", "true", "false", "", ""},
+		{"explicit execution enables repackage", "true", "", "false", ""},
+		{"false property keeps repackage", "false", "", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := string(effectiveModel(t, t.TempDir(), ""))
+			data = strings.Replace(data, "</properties>",
+				"<spring-boot.repackage.skip>"+tt.propertyValue+
+					"</spring-boot.repackage.skip></properties>", 1)
+			start := strings.Index(data, "<executions>")
+			end := strings.Index(data, "</executions>") + len("</executions>")
+			plugin := ""
+			if tt.pluginSkip != "" {
+				plugin = "<configuration><skip>" + tt.pluginSkip + "</skip></configuration>"
+			}
+			execution := "<executions><execution><goals><goal>repackage</goal></goals><configuration>"
+			if tt.executionSkip != "" {
+				execution += "<skip>" + tt.executionSkip + "</skip>"
+			}
+			execution += "</configuration></execution></executions>"
+			data = data[:start] + plugin + execution + data[end:]
+
+			_, java, err := parseModel([]byte(data))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, 17, java)
 		})
 	}
 }
@@ -1190,13 +1253,21 @@ func TestAnalyzePoolSpecificConnectionBindings(t *testing.T) {
 		{"spring.datasource.tomcat.username", "spring.datasource.username"},
 		{"spring.datasource.tomcat.password", "spring.datasource.password"},
 		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+		{"spring.datasource.dbcp2.url", "spring.datasource.url"},
+		{"spring.datasource.dbcp2.username", "spring.datasource.username"},
+		{"spring.datasource.dbcp2.password", "spring.datasource.password"},
+		{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
 	} {
 		t.Run(setting.key, func(t *testing.T) {
 			for _, value := range []string{marker, ""} {
 				directory := t.TempDir()
 				writeFixture(t, directory, "pom.xml", "<project/>")
+				datasourceType := "org.apache.tomcat.jdbc.pool.DataSource"
+				if strings.Contains(setting.key, ".dbcp2.") {
+					datasourceType = "org.apache.commons.dbcp2.BasicDataSource"
+				}
 				writeFixture(t, directory, "src/main/resources/application.properties",
-					"spring.datasource.type=org.apache.tomcat.jdbc.pool.DataSource\n"+setting.key+"="+value)
+					"spring.datasource.type="+datasourceType+"\n"+setting.key+"="+value)
 				_, err := Analyze(t.Context(), directory,
 					staticResolver{model: effectiveModel(t, directory, allDrivers())},
 					envLookup(map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}))
@@ -1216,6 +1287,37 @@ func TestAnalyzePoolSpecificConnectionBindings(t *testing.T) {
 		envLookup(map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}))
 	require.NoError(t, err)
 	require.Equal(t, MySQL, application.Requirements[0].Kind)
+}
+
+func TestAnalyzeDatasourceAutoConfigurationExclusions(t *testing.T) {
+	const datasourceAutoConfiguration = "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"
+	for _, tt := range []struct {
+		name      string
+		excluded  string
+		errorText string
+	}{
+		{"datasource", datasourceAutoConfiguration, "auto-configuration is disabled"},
+		{"datasource among others", "example.OtherAutoConfiguration, " + datasourceAutoConfiguration,
+			"auto-configuration is disabled"},
+		{"JNDI datasource", "org.springframework.boot.autoconfigure.jdbc.JndiDataSourceAutoConfiguration", ""},
+		{"XA datasource", "org.springframework.boot.autoconfigure.jdbc.XADataSourceAutoConfiguration", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.datasource.url=jdbc:postgresql://localhost/catalog\nspring.autoconfigure.exclude="+tt.excluded)
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				require.Nil(t, application)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, PostgreSQL, application.Requirements[0].Kind)
+		})
+	}
 }
 
 func TestGenerateOverridesLoopbackServerAddress(t *testing.T) {

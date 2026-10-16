@@ -240,6 +240,10 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 		{"spring.datasource.tomcat.username", "spring.datasource.username"},
 		{"spring.datasource.tomcat.password", "spring.datasource.password"},
 		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+		{"spring.datasource.dbcp2.url", "spring.datasource.url"},
+		{"spring.datasource.dbcp2.username", "spring.datasource.username"},
+		{"spring.datasource.dbcp2.password", "spring.datasource.password"},
+		{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
 	} {
 		if _, present := c.raw(setting.key); present {
 			return nil, false, unsupportedConfiguration(
@@ -277,7 +281,10 @@ func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if strings.Contains(excluded, "DataSourceAutoConfiguration") {
+	if slices.ContainsFunc(strings.Split(excluded, ","), func(value string) bool {
+		return strings.TrimSpace(value) ==
+			"org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration"
+	}) {
 		if jdbc != "" {
 			return nil, false, invalidConfiguration(
 				"datasource auto-configuration is disabled; cannot infer its runtime binding")

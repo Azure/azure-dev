@@ -75,7 +75,8 @@ type modelError struct {
 }
 
 func (e *modelError) Error() string {
-	return "Maven model resolution failed; run Maven help:effective-pom and dependency:list in the trusted project to diagnose"
+	return "Maven model resolution failed; run Maven help:effective-pom and dependency:list " +
+		"in the trusted project to diagnose"
 }
 
 func (e *modelError) Unwrap() error { return e.cause }
@@ -385,6 +386,7 @@ func resolveRuntimeDependencies(
 	if err != nil {
 		return nil, err
 	}
+	// cspell:ignore DincludeScope DexcludeTransitive DappendOutput DoutputAbsoluteArtifactFilename DoutputFile
 	args := azdexec.NewRunArgs(command,
 		"dependency:list",
 		"-DincludeScope=runtime",
@@ -397,7 +399,12 @@ func resolveRuntimeDependencies(
 	if _, err := runner.Run(ctx, args); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(outputPath)
+	tempRoot, err := os.OpenRoot(filepath.Dir(outputPath))
+	if err != nil {
+		return nil, err
+	}
+	defer tempRoot.Close()
+	data, err := tempRoot.ReadFile(filepath.Base(outputPath))
 	if err != nil {
 		return nil, err
 	}

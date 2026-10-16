@@ -435,10 +435,10 @@ func TestDeployVoiceTelephonyBindings_RejectsUnsupportedAndAmbiguousYAML(t *test
 		{name: "duplicate", bindings: []agent_yaml.VoiceTelephonyBinding{
 			twilioYAMLBinding(), twilioYAMLBinding(),
 		}, want: "declared more than once"},
-		{name: "transfer targets", bindings: []agent_yaml.VoiceTelephonyBinding{{
+		{name: "invalid transfer targets", bindings: []agent_yaml.VoiceTelephonyBinding{{
 			Provider: "twilio", Identifier: "+14255550123", Connection: "twilio",
 			TransferTargets: []map[string]any{{"kind": "phone"}},
-		}}, want: "unsupported transfer targets"},
+		}}, want: "unsupported field"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -449,6 +449,211 @@ func TestDeployVoiceTelephonyBindings_RejectsUnsupportedAndAmbiguousYAML(t *test
 			require.Zero(t, client.createCalls)
 		})
 	}
+}
+
+func TestDesiredTelephonyTransferTargets(t *testing.T) {
+	first := twilioYAMLBinding()
+	first.TransferTargets = yamlTransferTargets("second", "first")
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+		TransferTargets: yamlTransferTargets("first", "second"),
+	}
+	desired, targets, managed, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{first, second})
+	require.NoError(t, err)
+	require.Len(t, desired, 2)
+	require.True(t, managed)
+	require.Len(t, targets, 2)
+
+	second.TransferTargets[0]["description"] = "different"
+	_, _, _, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{first, second})
+	require.ErrorContains(t, err, "conflicting transfer targets")
+}
+
+func TestDesiredTelephonyTransferTargets_UnmanagedAndExplicitEmpty(t *testing.T) {
+	binding := twilioYAMLBinding()
+	_, targets, managed, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.NoError(t, err)
+	require.False(t, managed)
+	require.Nil(t, targets)
+
+	binding.TransferTargets = []map[string]any{}
+	_, targets, managed, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.NoError(t, err)
+	require.True(t, managed)
+	require.Empty(t, targets)
+	require.NotNil(t, targets)
+}
+
+func TestDesiredTelephonyTransferTargets_RejectsFutureYAMLFields(t *testing.T) {
+	binding := twilioYAMLBinding()
+	binding.TransferTargets = yamlTransferTargets("first")
+	binding.TransferTargets[0]["future_field"] = true
+	_, _, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.ErrorContains(t, err, "unsupported field")
+
+	binding.TransferTargets = yamlTransferTargets("first")
+	binding.TransferTargets[0]["destination"].(map[string]any)["future_field"] = true
+	_, _, _, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+	require.ErrorContains(t, err, "unsupported field")
+}
+
+func TestPreflightVoiceTelephonyState_RejectsUnreconcilableTargetDrift(t *testing.T) {
+	desired := desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: typedTransferTargets("first"),
+		targetsManaged:  true,
+	}
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		},
+		targetResults: []*agent_api.TelephonyTransferTargets{{TransferTargets: []agent_api.TelephonyTransferTarget{}}},
+	}
+	err := preflightVoiceTelephonyState(t.Context(), client, "agent", desired)
+	require.ErrorContains(t, err, "differ from the YAML")
+}
+
+func TestDeployVoiceTelephonyState_TransferTargetBehavior(t *testing.T) {
+	desiredTargets := typedTransferTargets("first", "second")
+	equalReverse := typedTransferTargets("second", "first")
+	tests := []struct {
+		name             string
+		managed          bool
+		listResults      [][]agent_api.GATelephonyBinding
+		remote           []agent_api.TelephonyTransferTarget
+		wantErr          string
+		wantGets         int
+		wantReplacements int
+	}{
+		{name: "unmanaged", listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}},
+		{name: "equal ignores order", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		}, remote: equalReverse, wantGets: 1},
+		{name: "existing drift validates only", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{twilioGABinding("connection")}, {twilioGABinding("connection")},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantErr: "differ", wantGets: 1},
+		{name: "created then replaces", managed: true, listResults: [][]agent_api.GATelephonyBinding{
+			{}, {twilioGABinding("connection")},
+		}, remote: []agent_api.TelephonyTransferTarget{}, wantGets: 1, wantReplacements: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{listResults: test.listResults}
+			client.targetResults = []*agent_api.TelephonyTransferTargets{{TransferTargets: test.remote, ETag: "current"}}
+			err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+				bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+				transferTargets: desiredTargets,
+				targetsManaged:  test.managed,
+			}, voiceAgentObject())
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+			require.Equal(t, test.wantGets, client.targetGetCalls)
+			require.Equal(t, test.wantReplacements, client.targetReplaceCalls)
+			if test.wantReplacements > 0 {
+				require.Equal(t, []string{"current"}, client.targetIfMatches)
+			}
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyState_ConflictDoesNotAuthorizeTargetReplacement(t *testing.T) {
+	useFastTelephonyPolling(t)
+	desiredTargets := typedTransferTargets("first")
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {twilioGABinding("connection")}, {twilioGABinding("connection")}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+		targetResults: []*agent_api.TelephonyTransferTargets{{
+			TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "etag",
+		}},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyState(t.Context(), client, desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: desiredTargets,
+		targetsManaged:  true,
+	}, voiceAgentObject())
+	require.ErrorContains(t, err, "differ from the YAML")
+	require.Zero(t, client.targetReplaceCalls)
+}
+
+func TestReconcileTelephonyTransferTargets_SafetyCases(t *testing.T) {
+	useFastTelephonyPolling(t)
+	desired := typedTransferTargets("first")
+	unknown := typedTransferTargets("remote")[0]
+	unknown.Destination.Kind = "future"
+	tests := []struct {
+		name     string
+		remote   []agent_api.TelephonyTransferTarget
+		etag     string
+		writeErr error
+		after    []*agent_api.TelephonyTransferTargets
+		wantErr  string
+		wantGets int
+	}{
+		{name: "unknown remote kind", remote: []agent_api.TelephonyTransferTarget{unknown}, etag: "etag", wantErr: "cannot be safely replaced", wantGets: 1},
+		{name: "missing etag", remote: []agent_api.TelephonyTransferTarget{}, wantErr: "current ETag", wantGets: 1},
+		{name: "get error", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			wantErr: "target get failed", wantGets: 1},
+		{name: "precondition converged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &azcore.ResponseError{StatusCode: http.StatusPreconditionFailed},
+			after:    []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "precondition nonconverged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &azcore.ResponseError{StatusCode: http.StatusPreconditionFailed},
+			wantErr:  "safely confirmed", wantGets: 6},
+		{name: "unknown converged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("private")},
+			after:    []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "stale success response converges", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			after: []*agent_api.TelephonyTransferTargets{{TransferTargets: desired, ETag: "new"}}, wantGets: 2},
+		{name: "unknown nonconverged", remote: []agent_api.TelephonyTransferTarget{}, etag: "etag",
+			writeErr: &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("private detail")},
+			wantErr:  "safely confirmed", wantGets: 6},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{targetReplaceErr: test.writeErr}
+			if test.name == "stale success response converges" {
+				client.targetReplaceResult = &agent_api.TelephonyTransferTargets{
+					TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "new",
+				}
+			}
+			if test.name == "get error" {
+				client.targetGetErr = errors.New("target get failed")
+			}
+			client.targetResults = append([]*agent_api.TelephonyTransferTargets{{
+				TransferTargets: test.remote, ETag: test.etag,
+			}}, test.after...)
+			err := reconcileTelephonyTransferTargets(t.Context(), client, "agent", desired, true)
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+				require.NotContains(t, err.Error(), "private")
+			}
+			require.Equal(t, test.wantGets, client.targetGetCalls)
+		})
+	}
+}
+
+func yamlTransferTargets(names ...string) []map[string]any {
+	targets := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		targets = append(targets, map[string]any{
+			"name": name, "description": name + " description",
+			"destination": map[string]any{"kind": "pstn", "value": "+14255550123"},
+		})
+	}
+	return targets
+}
+
+func typedTransferTargets(names ...string) []agent_api.TelephonyTransferTarget {
+	targets, err := transferTargetsFromYAML(yamlTransferTargets(names...))
+	if err != nil {
+		panic(err)
+	}
+	return targets
 }
 
 func TestDeployVoiceTelephonyBindings_DelegatesPagingToListAll(t *testing.T) {
@@ -621,18 +826,27 @@ func TestTelephonyErrorsDoNotExposeBindingIdentity(t *testing.T) {
 }
 
 type fakeTelephonyBindingClient struct {
-	listResults        [][]agent_api.GATelephonyBinding
-	listErr            error
-	createErr          error
-	createErrs         []error
-	listCalls          int
-	createCalls        int
-	listOptions        []agent_api.TelephonyBindingListOptions
-	createRequests     []agent_api.TelephonyBindingCreateRequest
-	repeatability      []agent_api.TelephonyRepeatabilityOptions
-	cancelCreate       context.CancelFunc
-	cancelAfterSuccess context.CancelFunc
-	lastList           []agent_api.GATelephonyBinding
+	listResults         [][]agent_api.GATelephonyBinding
+	listErr             error
+	createErr           error
+	createErrs          []error
+	listCalls           int
+	createCalls         int
+	listOptions         []agent_api.TelephonyBindingListOptions
+	createRequests      []agent_api.TelephonyBindingCreateRequest
+	repeatability       []agent_api.TelephonyRepeatabilityOptions
+	cancelCreate        context.CancelFunc
+	cancelAfterSuccess  context.CancelFunc
+	lastList            []agent_api.GATelephonyBinding
+	targetResults       []*agent_api.TelephonyTransferTargets
+	targetGetErr        error
+	targetGetErrs       []error
+	targetReplaceErr    error
+	targetReplaceResult *agent_api.TelephonyTransferTargets
+	targetGetCalls      int
+	targetReplaceCalls  int
+	targetRequests      []agent_api.TelephonyTransferTargets
+	targetIfMatches     []string
 }
 
 func (c *fakeTelephonyBindingClient) ListAllTelephonyBindings(
@@ -690,6 +904,47 @@ func (c *fakeTelephonyBindingClient) CreateGATelephonyBinding(
 		c.cancelAfterSuccess()
 	}
 	return created, nil
+}
+
+func (c *fakeTelephonyBindingClient) GetTelephonyTransferTargets(
+	ctx context.Context,
+	agentName string,
+) (*agent_api.TelephonyTransferTargets, error) {
+	c.targetGetCalls++
+	err := c.targetGetErr
+	if len(c.targetGetErrs) >= c.targetGetCalls {
+		err = c.targetGetErrs[c.targetGetCalls-1]
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(c.targetResults) >= c.targetGetCalls {
+		result := *c.targetResults[c.targetGetCalls-1]
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		return &result, nil
+	}
+	return &agent_api.TelephonyTransferTargets{TransferTargets: []agent_api.TelephonyTransferTarget{}, ETag: "etag"}, nil
+}
+
+func (c *fakeTelephonyBindingClient) ReplaceTelephonyTransferTargets(
+	ctx context.Context,
+	agentName string,
+	request agent_api.TelephonyTransferTargets,
+	ifMatch string,
+) (*agent_api.TelephonyTransferTargets, error) {
+	c.targetReplaceCalls++
+	c.targetRequests = append(c.targetRequests, request)
+	c.targetIfMatches = append(c.targetIfMatches, ifMatch)
+	if c.targetReplaceErr != nil {
+		return nil, c.targetReplaceErr
+	}
+	if c.targetReplaceResult != nil {
+		result := *c.targetReplaceResult
+		result.TransferTargets = slices.Clone(result.TransferTargets)
+		return &result, nil
+	}
+	request.ETag = "new-etag"
+	return &request, nil
 }
 
 func twilioYAMLBinding() agent_yaml.VoiceTelephonyBinding {

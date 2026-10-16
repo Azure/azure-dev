@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"net/url"
 	"os"
@@ -619,6 +620,36 @@ func TestAnalyzeRetainsActiveExternalConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGeneratedConfigurationDoesNotReplaceApplicationProfile(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties", "spring.profiles.active=azd")
+	const applicationConfig = "config/application-azd.properties"
+	const content = "spring.datasource.url=jdbc:postgresql://localhost/catalog\napp.required-setting=preserved\n"
+	writeFixture(t, directory, applicationConfig, content)
+	application, err := Analyze(t.Context(), directory,
+		staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+	require.NoError(t, err)
+	require.Equal(t, []string{applicationConfig}, application.ExternalConfigurations)
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	docker := string(plan.Files[".azd-spring/Dockerfile"])
+	require.Contains(t, docker,
+		`["/workspace/config/application-azd.properties","/app/config/application-azd.properties"]`)
+	require.Contains(t, docker,
+		"COPY --chown=10001:10001 .azd-spring/application-azd.properties /app/.azd-spring/application.properties")
+	require.Equal(t, 1, strings.Count(docker, "/app/config/application-azd.properties"))
+	require.Equal(t, 1, strings.Count(docker, "/app/.azd-spring/application.properties"))
+	require.Contains(t, string(plan.Files["infra/application.bicep"]),
+		"{ name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/app/.azd-spring/application.properties' }")
+	require.NotContains(t, string(plan.Files["infra/application.bicep"]),
+		"file:/app/config/application-azd.properties")
+	require.NoError(t, plan.Write(t.Context(), directory))
+	data, err := fs.ReadFile(os.DirFS(directory), applicationConfig)
+	require.NoError(t, err)
+	require.Equal(t, content, string(data))
 }
 
 func TestCredentialNonDisclosure(t *testing.T) {

@@ -103,7 +103,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.Contains(t, docker, "eclipse-temurin:21-jre")
 			require.Contains(t, docker, "target/inventory-1.0.jar")
 			require.Contains(t, docker, "./mvnw")
-			require.Contains(t, docker, "/app/config/application-azd.properties")
+			require.Contains(t, docker, "/app/.azd-spring/application.properties")
 			require.Contains(t, docker,
 				`["/workspace/config/application-release.properties","/app/config/application-release.properties"]`)
 			directory := t.TempDir()

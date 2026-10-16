@@ -94,7 +94,8 @@ File-based embedded databases require a persistence policy and are not adopted.
 
 The application source remains unchanged. The container builds through Maven
 (using the wrapper when present), and loads the generated properties through
-`SPRING_CONFIG_ADDITIONAL_LOCATION`. Active conventional external configuration,
+`SPRING_CONFIG_ADDITIONAL_LOCATION` from an extension-owned container directory.
+Active conventional external configuration,
 including profile-specific files, is retained in the runtime image. Password
 bindings use template-owned Container Apps secret references; literal credentials
 are not copied from source URLs.

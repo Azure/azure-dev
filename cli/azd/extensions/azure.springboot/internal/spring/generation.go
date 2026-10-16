@@ -316,7 +316,7 @@ COPY . .
 FROM eclipse-temurin:%d-jre
 WORKDIR /app
 COPY --from=build --chown=10001:10001 %s
-%sCOPY --chown=10001:10001 .azd-spring/application-azd.properties /app/config/application-azd.properties
+%sCOPY --chown=10001:10001 .azd-spring/application-azd.properties /app/.azd-spring/application.properties
 EXPOSE %d
 USER 10001
 ENTRYPOINT ["java", "-jar", "/app/application.jar"]

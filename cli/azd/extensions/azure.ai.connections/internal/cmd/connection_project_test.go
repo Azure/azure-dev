@@ -25,6 +25,7 @@ import (
 type connectionAddProjectClientStub struct {
 	services             map[string]any
 	resources            map[string]any
+	rawManifest          map[string]any
 	layersFound          bool
 	manifestFields       map[string]any
 	addRequests          []*azdext.AddServiceRequest
@@ -37,8 +38,11 @@ type connectionAddProjectClientStub struct {
 }
 
 func (s *connectionAddProjectClientStub) readAuthoringManifest(context.Context) (map[string]any, error) {
-	manifest := map[string]any{"name": "test", "services": s.services, "resources": s.resources}
-	maps.Copy(manifest, s.manifestFields)
+	manifest := s.rawManifest
+	if manifest == nil {
+		manifest = map[string]any{"name": "test", "services": s.services, "resources": s.resources}
+		maps.Copy(manifest, s.manifestFields)
+	}
 	if s.layersFound {
 		manifest["layers"] = []any{}
 	}

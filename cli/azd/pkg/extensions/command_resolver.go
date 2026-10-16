@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/pflag"
 )
 
@@ -62,7 +63,7 @@ type commandEntry struct {
 // It matches names and aliases throughout the command tree.
 // A matching entry always returns its canonical command path.
 func matchCommand(commands []Command, args []string) *commandEntry {
-	cmdArgs := extractCommandArgs(args)
+	cmdArgs := extractCommandArgs(internal.StripGlobalFlags(args))
 	if len(cmdArgs) == 0 {
 		return nil
 	}
@@ -107,12 +108,18 @@ func matchCommand(commands []Command, args []string) *commandEntry {
 // It uses pflag for robust POSIX-compliant parsing of long flags (--flag),
 // short flags (-f), combined short flags (-vq), and flags with values.
 func parseFlags(args []string, flags []Flag) []string {
-	fs := pflag.NewFlagSet("", pflag.ContinueOnError)
+	fs := internal.NewGlobalFlagSet()
 	fs.ParseErrorsAllowlist.UnknownFlags = true
 	fs.SetOutput(io.Discard)
+	fs.StringP("output", "o", "", "")
+	fs.BoolP("help", "h", false, "")
+	fs.Bool("docs", false, "")
 
 	for _, f := range flags {
 		if f.Name == "" {
+			continue
+		}
+		if fs.Lookup(f.Name) != nil {
 			continue
 		}
 		flagType := strings.ToLower(f.Type)
@@ -143,7 +150,11 @@ func parseFlags(args []string, flags []Flag) []string {
 
 	var result []string
 	fs.Visit(func(f *pflag.Flag) {
-		result = append(result, f.Name)
+		if slices.ContainsFunc(flags, func(definition Flag) bool {
+			return definition.Name == f.Name
+		}) {
+			result = append(result, f.Name)
+		}
 	})
 
 	if len(result) == 0 {

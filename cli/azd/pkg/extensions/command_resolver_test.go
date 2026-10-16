@@ -6,6 +6,7 @@ package extensions
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -249,6 +250,16 @@ func TestResolveCommandLaunch(t *testing.T) {
 		{"explicit default", []string{"conn", "mg", "show"}, []string{"connection", "manage", "show"}, defaultLaunch},
 		{"unmarked sibling", []string{"conn", "list"}, []string{"connection", "list"}, nil},
 		{"unknown descendant", []string{"conn", "unknown"}, []string{"connection"}, nil},
+		{"interspersed bool", []string{"conn", "--debug", "create"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"interspersed value", []string{"conn", "-e", "list", "create"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"interspersed attached", []string{"conn", "-odefault", "create"}, []string{"connection", "add"}, noAzdEnvironment},
+		{"marked parent unmarked child", []string{"conn", "mg", "--no-prompt", "list"},
+			[]string{"connection", "manage", "list"}, nil},
+		{"marked parent default child", []string{"conn", "mg", "--environment=add", "show"},
+			[]string{"connection", "manage", "show"}, defaultLaunch},
+		{"boundary", []string{"conn", "--", "add"}, []string{"connection"}, nil},
+		{"extension flag value", []string{"conn", "--file", "add"}, []string{"connection"}, nil},
+		{"unknown bool not guessed", []string{"conn", "--unknown", "add"}, []string{"connection"}, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -266,6 +277,32 @@ func TestResolveCommandLaunch(t *testing.T) {
 				flags = []string{"file"}
 			}
 			require.Equal(t, flags, ResolveCommandFlags(metadata, args))
+		})
+	}
+}
+
+func TestResolveCommandFlagsRespectGlobalFlagValues(t *testing.T) {
+	metadata := &ExtensionCommandMetadata{
+		Commands: []Command{{
+			Name: []string{"connection"},
+			Subcommands: []Command{{
+				Name:  []string{"connection", "add"},
+				Flags: []Flag{{Name: "file", Type: "string"}},
+			}},
+		}},
+	}
+	for _, tt := range []struct {
+		args  []string
+		flags []string
+	}{
+		{[]string{"connection", "-e", "--file", "add"}, nil},
+		{[]string{"connection", "-o", "--file", "add"}, nil},
+		{[]string{"connection", "-e", "--file", "add", "--file", "config.yaml"}, []string{"file"}},
+		{[]string{"connection", "--debug=false", "add", "--", "--file", "config.yaml"}, nil},
+	} {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			require.Equal(t, []string{"connection", "add"}, ResolveCommandPath(metadata, tt.args))
+			require.Equal(t, tt.flags, ResolveCommandFlags(metadata, tt.args))
 		})
 	}
 }

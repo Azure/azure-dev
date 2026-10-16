@@ -224,6 +224,9 @@ descendants. The host honors them starting with azd 1.37.0; extensions
 that rely on skipping environment loading should require that host version.
 Aliases on parent or child commands select the same metadata as their
 canonical names.
+Recognized azd global flags and their values may appear between command
+segments without changing the selected launch settings. Resolution stops at
+`--` or an unknown extension flag rather than treating its value as a command.
 
 When `noAzdEnvironment` is `true`, azd skips loading the selected environment,
 resolving its Key Vault references, and injecting its variables before starting

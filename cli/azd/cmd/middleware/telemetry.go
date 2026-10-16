@@ -152,9 +152,7 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 		return "", nil
 	}
 
-	// Leading azd global flags (e.g. `azd --no-prompt <ext> ...`) would stop
-	// command path resolution, so strip them the same way extension dispatch does.
-	args := internal.StripLeadingGlobalFlags(m.options.Args)
+	args := m.options.Args
 	commandPath := extensions.ResolveCommandPath(metadata, args)
 	commandFlags := extensions.ResolveCommandFlags(metadata, args)
 	if len(commandPath) == 0 {

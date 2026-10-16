@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -187,7 +188,15 @@ func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 					Name: []string{"connection", "list"},
 				}},
 			},
-			{Name: []string{"default"}},
+			{
+				Name:    []string{"default"},
+				Aliases: []string{"normal"},
+				Subcommands: []extensions.Command{{
+					Name:    []string{"default", "local"},
+					Aliases: []string{"offline"},
+					Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
+				}},
+			},
 			{Name: []string{"explicit-default"}, Launch: &extensions.CommandLaunch{NoAzdEnvironment: false}},
 		},
 	})
@@ -237,6 +246,13 @@ func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 		{[]string{"connection", "list"}, false},
 		{[]string{"conn", "list"}, false},
 		{[]string{"unknown"}, false},
+		{[]string{"local", "--debug", "child"}, false},
+		{[]string{"conn", "--environment", "add", "list"}, false},
+		{[]string{"conn", "--debug=false", "create"}, true},
+		{[]string{"conn", "-elist", "create"}, true},
+		{[]string{"conn", "-ojson", "list"}, false},
+		{[]string{"normal", "--debug", "offline"}, true},
+		{[]string{"normal", "--environment=local", "offline"}, true},
 	} {
 		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
 			for _, prefix := range [][]string{
@@ -250,10 +266,21 @@ func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 			} {
 				t.Run(prefix[0], func(t *testing.T) {
 					environmentLoads := 0
+					secretResolutions := 0
+					action.kvService = &mockExecKeyVaultService{
+						secretFromKeyVaultRefFn: func(_ context.Context, ref, subscription string) (string, error) {
+							secretResolutions++
+							require.Equal(t, "akvs://vault/secret", ref)
+							require.Equal(t, "test-subscription", subscription)
+							return "resolved-value", nil
+						},
+					}
 					action.lazyEnv = lazy.NewLazy(func() (*environment.Environment, error) {
 						environmentLoads++
 						return environment.NewWithValues("test", map[string]string{
 							"EXTENSION_TEST_AZD_ENV": "azd-value",
+							"EXTENSION_TEST_KVREF":   "akvs://vault/secret",
+							"AZURE_SUBSCRIPTION_ID":  "test-subscription",
 						}), nil
 					})
 					action.args = append(slices.Clone(prefix), tt.args...)
@@ -265,9 +292,13 @@ func TestExtensionAction_RunCommandLaunch(t *testing.T) {
 					require.Nil(t, result)
 					if tt.noAzdEnvironment {
 						require.Zero(t, environmentLoads)
+						require.Zero(t, secretResolutions)
+						require.NotContains(t, captured.Env, "EXTENSION_TEST_KVREF=resolved-value")
 						require.NotContains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
 					} else {
 						require.Equal(t, 1, environmentLoads)
+						require.Equal(t, 1, secretResolutions)
+						require.Contains(t, captured.Env, "EXTENSION_TEST_KVREF=resolved-value")
 						require.Contains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
 					}
 					require.Contains(t, captured.Env, "EXTENSION_TEST_PARENT=parent-value")

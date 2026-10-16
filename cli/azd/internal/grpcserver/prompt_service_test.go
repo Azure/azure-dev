@@ -241,6 +241,42 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 	mockPrompter.AssertExpectations(t)
 }
 
+func TestPromptLocationRoutesOutputToInjectedWriter(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		allowed []string
+	}{
+		{"unrestricted", nil},
+		{"explicit empty", []string{}},
+		{"filtered", []string{"westus3", "eastus2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var writer bytes.Buffer
+			prompter := &mockPromptService{
+				promptLocationFn: func(
+					_ context.Context, _ *prompt.AzureContext, options *prompt.SelectOptions,
+				) (*account.Location, error) {
+					require.NotNil(t, options)
+					require.Same(t, &writer, options.Writer)
+					require.Equal(t, tt.allowed, options.AllowedValues)
+					_, err := io.WriteString(options.Writer, "Select location")
+					require.NoError(t, err)
+					return &account.Location{Name: "eastus2"}, nil
+				},
+			}
+			service := NewPromptService(prompter, nil, nil, &internal.GlobalCommandOptions{}, &writer)
+			_, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
+				AzureContext: &azdext.AzureContext{
+					Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+				},
+				AllowedLocations: tt.allowed,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "Select location", writer.String())
+		})
+	}
+}
+
 func Test_PromptService_PromptLocation(t *testing.T) {
 	mockPrompter := &mockprompt.MockPromptService{}
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}

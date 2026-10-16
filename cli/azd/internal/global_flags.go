@@ -5,6 +5,7 @@ package internal
 
 import (
 	"io"
+	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -46,21 +47,31 @@ func NewGlobalFlagSet() *pflag.FlagSet {
 	return globalFlags
 }
 
-// StripLeadingGlobalFlags removes azd global flags (plus --output, --help, and
-// --docs) that appear before the first positional argument, so
-// `azd --no-prompt <ext> connection add` resolves the same extension command as
-// `azd <ext> connection add`. Parsing stops at the first positional argument,
-// so flags after it are kept for the extension. When the leading arguments
-// cannot be parsed, args is returned unchanged.
-func StripLeadingGlobalFlags(args []string) []string {
+// StripGlobalFlags removes recognized azd flags and their values.
+// It preserves the tail starting at "--" or an unrecognized or
+// invalid flag, so extension arguments are not guessed.
+func StripGlobalFlags(args []string) []string {
 	flags := NewGlobalFlagSet()
 	flags.SetOutput(io.Discard)
 	flags.SetInterspersed(false)
 	flags.StringP("output", "o", "", "")
 	flags.BoolP("help", "h", false, "")
 	flags.Bool("docs", false, "")
-	if err := flags.Parse(args); err != nil {
-		return args
+	result := make([]string, 0, len(args))
+	for len(args) > 0 {
+		if !strings.HasPrefix(args[0], "-") || args[0] == "-" {
+			result = append(result, args[0])
+			args = args[1:]
+			continue
+		}
+		if err := flags.Parse(args); err != nil {
+			return append(result, args...)
+		}
+		if flags.ArgsLenAtDash() >= 0 {
+			result = append(result, "--")
+			return append(result, flags.Args()...)
+		}
+		args = flags.Args()
 	}
-	return flags.Args()
+	return result
 }

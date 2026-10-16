@@ -359,7 +359,7 @@ func (a *extensionAction) noAzdEnvironmentForCommand(extension *extensions.Exten
 		return false
 	}
 
-	command := extensions.ResolveCommand(metadata, internal.StripLeadingGlobalFlags(a.args))
+	command := extensions.ResolveCommand(metadata, a.args)
 	return command != nil && command.Launch != nil && command.Launch.NoAzdEnvironment
 }
 

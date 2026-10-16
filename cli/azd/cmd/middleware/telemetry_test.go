@@ -331,6 +331,15 @@ func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing
 					{Name: "output", Type: "string"},
 				},
 			},
+			{
+				Name:    []string{"connection"},
+				Aliases: []string{"conn"},
+				Subcommands: []extensions.Command{{
+					Name:    []string{"connection", "add"},
+					Aliases: []string{"create"},
+					Flags:   []extensions.Flag{{Name: "file", Type: "string"}},
+				}},
+			},
 		},
 	}
 	metadataBytes, err := json.Marshal(metadata)
@@ -366,6 +375,18 @@ func TestTelemetryMiddleware_extensionCmdInfo_ResolvesCommandAndFlags(t *testing
 		eventName, flags := m.extensionCmdInfo("test.ext")
 		require.Equal(t, events.GetCommandEventName("azd test ext build"), eventName)
 		require.ElementsMatch(t, []string{"verbose"}, flags)
+	})
+
+	t.Run("interspersed global flags and aliases", func(t *testing.T) {
+		m := &TelemetryMiddleware{
+			options: &Options{
+				Args: []string{"conn", "--debug", "-e", "list", "create", "--file", "config.yaml"},
+			},
+			extensionManager: manager,
+		}
+		eventName, flags := m.extensionCmdInfo("test.ext")
+		require.Equal(t, events.GetCommandEventName("azd test ext connection add"), eventName)
+		require.Equal(t, []string{"file"}, flags)
 	})
 
 	t.Run("returns flags without an unknown command event", func(t *testing.T) {

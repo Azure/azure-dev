@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStripLeadingGlobalFlags(t *testing.T) {
+func TestStripGlobalFlags(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -23,9 +23,29 @@ func TestStripLeadingGlobalFlags(t *testing.T) {
 			want: []string{"connection", "add"},
 		},
 		{
-			name: "flags after command kept",
+			name: "flags after command removed",
 			args: []string{"--debug", "connection", "add", "--no-prompt", "-e", "dev"},
-			want: []string{"connection", "add", "--no-prompt", "-e", "dev"},
+			want: []string{"connection", "add"},
+		},
+		{
+			name: "interspersed flags",
+			args: []string{"conn", "--debug=false", "-e", "add", "-ojson", "create"},
+			want: []string{"conn", "create"},
+		},
+		{
+			name: "boundary preserved",
+			args: []string{"--debug", "conn", "--", "--environment", "dev", "add"},
+			want: []string{"conn", "--", "--environment", "dev", "add"},
+		},
+		{
+			name: "unknown flag stops stripping",
+			args: []string{"conn", "--file", "add", "--debug", "create"},
+			want: []string{"conn", "--file", "add", "--debug", "create"},
+		},
+		{
+			name: "missing value preserved",
+			args: []string{"conn", "--environment"},
+			want: []string{"conn", "--environment"},
 		},
 		{
 			name: "unknown leading flag leaves args unchanged",
@@ -36,7 +56,7 @@ func TestStripLeadingGlobalFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, StripLeadingGlobalFlags(tt.args))
+			require.Equal(t, tt.want, StripGlobalFlags(tt.args))
 		})
 	}
 }

@@ -321,12 +321,9 @@ func (s *promptService) PromptLocation(
 		return nil, err
 	}
 
-	var selectorOptions *prompt.SelectOptions
-	if len(req.AllowedLocations) > 0 {
-		selectorOptions = &prompt.SelectOptions{
-			Writer:        s.promptWriter,
-			AllowedValues: req.AllowedLocations,
-		}
+	selectorOptions := &prompt.SelectOptions{
+		Writer:        s.promptWriter,
+		AllowedValues: req.AllowedLocations,
 	}
 
 	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, selectorOptions)

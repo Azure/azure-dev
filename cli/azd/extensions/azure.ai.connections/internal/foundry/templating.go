@@ -85,7 +85,7 @@ func hasLiteralText(node parse.Node) bool {
 
 func hasOptionalEnvFallback(node *parse.FuncNode) bool {
 	switch node.Name {
-	case "=", ":=", ":-", ":+":
+	case "=", ":=", ":-", ":+", ":?":
 		return true
 	default:
 		return false
@@ -104,7 +104,8 @@ func mayExpandToEmpty(node parse.Node) bool {
 		}
 	case *parse.FuncNode:
 		switch typed.Name {
-		case "=", ":=", ":-":
+		case "=", ":=", ":-", ":+", ":?":
+			// The pinned SDK treats :+ and :? as defaults too.
 			// Defaults apply when the variable is empty. Both branches
 			// are nonempty if the fallback cannot expand to empty.
 			for _, arg := range typed.Args {
@@ -113,7 +114,7 @@ func mayExpandToEmpty(node parse.Node) bool {
 				}
 			}
 		}
-		// Leave alternatives and transformations conservative.
+		// Leave other transformations conservative.
 	}
 	return true
 }

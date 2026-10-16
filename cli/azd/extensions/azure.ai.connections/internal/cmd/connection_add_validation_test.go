@@ -452,6 +452,10 @@ func TestValidateConnectionDefinitionForAuthoringRejectsNonEmptyTemplates(t *tes
 		" ${VALUE} ",
 		"${VALUE:- }",
 		"${OUTER:-${INNER:-fallback}}",
+		"${VALUE:+fallback}",
+		"${VALUE:?message}",
+		"${OUTER:-${INNER:+fallback}}",
+		"${OUTER:-${INNER:?fallback}}",
 		"$${ESCAPED}",
 		"${{event.body}}",
 	} {
@@ -503,8 +507,8 @@ func TestValidateConnectionDefinitionForAuthoringRejectsNonEmptyTemplates(t *tes
 func TestValidateConnectionDefinitionForAuthoringDefersExactEmptyBranches(t *testing.T) {
 	for _, value := range []string{
 		"${VALUE}", "${VALUE:-}", "${OUTER:-${INNER}}",
-		"${OUTER:-${INNER:-}}", "${VALUE:+alternative}",
-		"${OUTER:-${INNER:+alternative}}", "${VALUE/old/new}",
+		"${OUTER:-${INNER:-}}", "${VALUE:+}",
+		"${OUTER:-${INNER:+}}", "${VALUE/old/new}", "${VALUE:?}",
 	} {
 		t.Run(value, func(t *testing.T) {
 			input := validConnectionAuthoringDefinition("None")
@@ -544,4 +548,46 @@ func TestValidateConnectionDefinitionForAuthoringOAuthExactEmptyConflicts(t *tes
 	managed.TokenURL = "${TOKEN_URL:-}"
 	_, _, err = validateConnectionDefinitionForAuthoring(managed)
 	require.NoError(t, err)
+}
+
+func TestValidateConnectionDefinitionForAuthoringCustomKeyPaths(t *testing.T) {
+	for _, value := range []string{"", " \t", "${NESTED}", "${NESTED:-fallback}", "literal"} {
+		for _, kind := range []string{"any", "string", "raw"} {
+			t.Run(kind+"/"+value, func(t *testing.T) {
+				var keys any
+				switch kind {
+				case "any":
+					keys = map[string]any{"apiKey": value}
+				case "string":
+					keys = map[string]string{"apiKey": value}
+				case "raw":
+					keys = rawCredentials{"apiKey": value}
+				}
+				input := validConnectionAuthoringDefinition("CustomKeys")
+				input.Credentials = map[string]any{
+					"keys": keys, "keys.apiKey": "${TOKEN}",
+				}
+				required, referenced, err := validateConnectionDefinitionForAuthoring(input)
+				if strings.TrimSpace(value) == "" {
+					require.Error(t, err)
+					assert.NotContains(t, err.Error(), "apiKey")
+					require.Error(t, validateConnectionProperties(rawConnectionProperties{
+						Category: input.Category, Target: input.Target,
+						AuthType:    "CustomKeys",
+						Credentials: new(rawCredentials(input.Credentials)),
+					}))
+					return
+				}
+				require.NoError(t, err)
+				assert.Contains(t, required, "TOKEN")
+				assert.Contains(t, referenced, "TOKEN")
+				if strings.Contains(value, "${NESTED") {
+					assert.Contains(t, referenced, "NESTED")
+				}
+				input.Credentials = map[string]any{"keys.apiKey": value}
+				_, _, err = validateConnectionDefinitionForAuthoring(input)
+				require.NoError(t, err)
+			})
+		}
+	}
 }

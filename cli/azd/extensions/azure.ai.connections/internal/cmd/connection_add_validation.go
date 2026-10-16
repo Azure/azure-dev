@@ -268,7 +268,7 @@ func validateConnectionAuthForAuthoring(
 	case "ApiKey":
 		return validateConnectionAPIKeyForAuthoring(input, analysis)
 	case "CustomKeys":
-		return validateConnectionCustomKeysForAuthoring(input, analysis)
+		return validateConnectionCustomKeysForAuthoring(input)
 	case "OAuth2":
 		return validateConnectionOAuthForAuthoring(input, analysis)
 	default:
@@ -301,26 +301,21 @@ func validateConnectionAPIKeyForAuthoring(
 
 func validateConnectionCustomKeysForAuthoring(
 	input *definition.Definition,
-	analysis connectionTemplateAnalysis,
 ) error {
 	credentials := input.Credentials
-	valid := connectionCustomCredentialMapIsValid(credentials, "credentials", analysis)
+	valid := nonBlankConnectionKeys(credentials)
 	if keys, found := credentials["keys"]; found {
 		switch typed := keys.(type) {
 		case map[string]any:
-			valid = connectionCustomCredentialMapIsValid(typed, "credentials.keys", analysis)
+			valid = nonBlankConnectionKeys(typed)
 		case map[string]string:
-			valid = connectionCustomStringMapIsValid(typed, "credentials.keys", analysis)
+			valid = nonBlankConnectionKeys(typed)
 		case rawCredentials:
-			valid = connectionCustomCredentialMapIsValid(
-				map[string]any(typed),
-				"credentials.keys",
-				analysis,
-			)
+			valid = nonBlankConnectionKeys(typed)
 		default:
 		}
 		if _, flat := keys.(string); flat {
-			valid = connectionCustomCredentialMapIsValid(credentials, "credentials", analysis)
+			valid = nonBlankConnectionKeys(credentials)
 		}
 	}
 	if !valid {
@@ -331,41 +326,6 @@ func validateConnectionCustomKeysForAuthoring(
 		)
 	}
 	return nil
-}
-
-func connectionCustomCredentialMapIsValid(
-	values map[string]any,
-	path string,
-	analysis connectionTemplateAnalysis,
-) bool {
-	if len(values) == 0 {
-		return false
-	}
-	for key, value := range values {
-		text, ok := value.(string)
-		if !ok || strings.TrimSpace(key) == "" ||
-			(!analysis.mayBeEmpty[path+"."+key] && strings.TrimSpace(text) == "") {
-			return false
-		}
-	}
-	return true
-}
-
-func connectionCustomStringMapIsValid(
-	values map[string]string,
-	path string,
-	analysis connectionTemplateAnalysis,
-) bool {
-	if len(values) == 0 {
-		return false
-	}
-	for key, value := range values {
-		if strings.TrimSpace(key) == "" ||
-			(!analysis.mayBeEmpty[path+"."+key] && strings.TrimSpace(value) == "") {
-			return false
-		}
-	}
-	return true
 }
 
 func validateConnectionOAuthForAuthoring(

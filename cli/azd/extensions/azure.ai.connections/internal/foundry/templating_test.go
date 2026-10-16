@@ -63,7 +63,6 @@ func TestAnalyzeEnvReferences(t *testing.T) {
 		{
 			name:           "supported default operators",
 			input:          "${A=default}${B:=default}${C:+default}${D:?message}",
-			want:           []string{"D"},
 			wantReferenced: []string{"A", "B", "C", "D"},
 			hasTemplate:    true,
 		},
@@ -171,8 +170,13 @@ func TestAnalyzeEnvReferencesExactEmptyExpansion(t *testing.T) {
 		"${A:-${B:-}}":            true,
 		"${A:-${B:-fallback}}":    false,
 		"${A:-prefix-${B}}":       false,
-		"${A:+alternative}":       true,
-		"${A:-${B:+alternative}}": true,
+		"${A:+alternative}":       false,
+		"${A:-${B:+alternative}}": false,
+		"${A:?message}":           false,
+		"${A:+}":                  true,
+		"${A:?}":                  true,
+		"${A:+${B:-}}":            true,
+		"${A:?${B:-fallback}}":    false,
 		"${A/old/new}":            true,
 		"$${ESCAPED}":             false,
 		"${{event.body}}":         false,
@@ -191,5 +195,33 @@ func TestAnalyzeEnvReferencesExactEmptyExpansion(t *testing.T) {
 				assert.NotEmpty(t, expanded)
 			}
 		})
+	}
+}
+
+func TestAnalyzeEnvReferencesSDKFallbackSemantics(t *testing.T) {
+	for _, operator := range []string{":-", ":+", ":?"} {
+		for _, fallback := range []string{"", "fallback", "${INNER:-}", "${INNER:-fallback}"} {
+			input := "${VALUE" + operator + fallback + "}"
+			t.Run(input, func(t *testing.T) {
+				analysis, err := AnalyzeEnvReferences(input)
+				require.NoError(t, err)
+				assert.Empty(t, analysis.RequiredVariables)
+				assert.Contains(t, analysis.ReferencedVariables, "VALUE")
+				for _, values := range []map[string]string{
+					{}, {"VALUE": ""}, {"VALUE": "value"}, {"VALUE": " "},
+				} {
+					actual, err := corefoundry.ExpandEnv(input, func(key string) string { return values[key] })
+					require.NoError(t, err)
+					expected, err := corefoundry.ExpandEnv(
+						"${VALUE:-"+fallback+"}", func(key string) string { return values[key] },
+					)
+					require.NoError(t, err)
+					assert.Equal(t, expected, actual)
+					if !analysis.MayBeEmpty {
+						assert.NotEmpty(t, actual)
+					}
+				}
+			})
+		}
 	}
 }

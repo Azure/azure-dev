@@ -52,6 +52,7 @@ These commands emit attributes or events beyond the global middleware span.
 | **Environment** | | | | | |
 | `env` | `set`, `set-secret`, `select`, `new`, `remove`, `refresh`, `get-values`, `get-value` | ✅ | ❌ | ❌ | Redundant — command name in global span captures operation |
 | `env list` | — | ✅ | ✅ | ❌ | `env.count` (measurement — number of environments) |
+| `env unset` | — | ✅ | ✅ | ❌ | `env.unset.outcome` (`success`, `no_change`, `user_declined`, `failed`), `env.unset.removed_count`, `env.unset.missing_count`; fixed labels and aggregate counts only, no key names or values |
 | `env config` | `get`, `set`, `unset` | ✅ | ❌ | ❌ | Thin wrappers — global telemetry sufficient |
 | **Hooks** | | | | | |
 | `hooks run` | — | ✅ | ✅ | ✅ | `hooks.name` (hashed unless built-in lifecycle name), `hooks.type` (project/service/**layer**), `hooks.kind` (script runtime — `sh`/`pwsh`/`js`/`ts`/`python`/`dotnet`); `hooks.exec` event emitted by the hooks runner on every lifecycle command |
@@ -118,6 +119,9 @@ command-specific telemetry fields provide analytical value beyond the command na
 | Auth method | `auth.method` | `auth login`, `auth logout` | Distinguishes authentication flow type (browser, device-code, SP, federated, etc.) |
 | Auth cache-clear failed | `auth.cache_clear_failed` | `auth login` | Identifies which credential cache failed to clear during the pre-login cleanup (`auth` / `subscriptions`) |
 | Env count | `env.count` | `env list` | Measurement — number of environments is a quantitative metric |
+| Env unset outcome | `env.unset.outcome` | `env unset` | Distinguishes fully successful removal saves (`success`), no-change operations (`no_change`), declined removal confirmation (`user_declined`), and failures (`failed`) |
+| Env unset removed count | `env.unset.removed_count` | `env unset` | Measurement — distinct keys removed by a fully successful save; failed/recovered saves are not counted as successful removals |
+| Env unset missing count | `env.unset.missing_count` | `env unset` | Measurement — distinct requested keys observed missing, including during confirmation |
 | Hooks name | `hooks.name` | `hooks run` | Identifies which hook script ran (hashed — user-defined name) |
 | Hooks type | `hooks.type` | `hooks run` | Distinguishes project / service / **layer** hooks |
 | Hooks kind | `hooks.kind` | `hooks run` | Distinguishes the script runtime used to execute the hook (`sh`, `pwsh`, `js`, `ts`, `python`, `dotnet`) |

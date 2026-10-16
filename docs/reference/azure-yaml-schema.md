@@ -110,6 +110,81 @@ have permission to pull the image through its managed identity or registry crede
 When `imagePassthrough` is omitted or `false`, an external service image can still be pulled and copied into the
 configured destination registry.
 
+## Infrastructure Layer Variable Aliases
+
+Each entry under `infra.layers[]` or `layers[].infra[]` can translate between
+the **[provider view](../concepts/glossary.md#provider-view)** and the
+**[project view](../concepts/glossary.md#project-view)**:
+
+- The provider view uses the variable names an infrastructure provider reads or emits.
+- The project view uses the environment variable names the project stores and supplies to CI.
+- The `aliases` map is written as `PROVIDER_VARIABLE: PROJECT_VARIABLE`.
+
+```yaml
+infra:
+  layers:
+    - name: producer
+      path: infra/producer
+      aliases:
+        PROVIDER_ENDPOINT: PROJECT_ENDPOINT
+    - name: consumer
+      path: infra/consumer
+      aliases:
+        PROVIDER_INPUT: PROJECT_ENDPOINT
+```
+
+An alias identifies the same variable in both views. Reads, writes, and deletes through
+the provider name use the project name. This includes values saved by prompts and
+deployment outputs. Names without a mapping keep their original names.
+For parameter inputs, the provider variable is the name referenced by the parameter
+file, not necessarily the IaC parameter name.
+
+Each provider name maps to one project variable for all operations. Aliases apply
+once: with `A: B` and `B: C`, a provider reference to `A` refers to project variable
+`B`, not `C`.
+
+Missing project variables remain missing through their provider names, including
+in Bicep parameter-file compilation. An explicitly empty project variable remains
+present with an empty value. Writing through the provider name creates or updates
+the project variable.
+
+Output aliases apply to built-in and custom provisioning providers because azd maps
+provider outputs into the project view after provisioning. Input aliases apply only
+to the built-in Bicep and Terraform providers. Custom providers do not receive the
+scoped environment that translates project-view names into provider-view input names.
+
+Names on both sides of the alias map must match `^[A-Za-z_][A-Za-z0-9_]*$`.
+azd checks this when it loads the project configuration.
+
+In this example, the producer's `PROVIDER_ENDPOINT` output is stored as
+`PROJECT_ENDPOINT`. The consumer reads that value as `PROVIDER_INPUT`. The producer
+can use any provisioning provider, but the consumer input alias requires Bicep or
+Terraform. For Bicep layers, azd uses the aliases during static dependency analysis,
+so the consumer waits for the producer.
+Terraform dependencies are not inferred from aliases. Declare
+`dependsOn: [producer]` on the consumer when it needs the producer's outputs.
+This also applies to Bicep consumers of Terraform outputs.
+
+Pipeline configuration exports parameter variables and secrets using project-view
+names. Outputs from earlier layers are also tracked in the project view while
+planning later layers.
+
+Service environment-update events also use project-view output names during
+provisioning and `azd env refresh`. This includes the .NET user-secrets integration,
+which converts `__` in those names to the .NET configuration separator `:`.
+
+Each project variable can be targeted by only one alias within an infrastructure
+entry. azd rejects duplicate destinations when it loads the project configuration,
+because aliases apply to writes as well as reads.
+
+An aliased deployment output can also collide with an output that has no alias.
+Since provider output names are not declared in `azure.yaml`, azd checks for these
+collisions after deployment, before writing any deployment outputs to the environment.
+
+Aliases do not bypass the environment filter for dynamic loader variables.
+Names in the `LD_` and `DYLD_` namespaces are excluded from `Dotenv()` and
+subprocess environments, including when introduced by an alias.
+
 ## Hooks
 
 Hooks run user-defined scripts at lifecycle points:

@@ -11,6 +11,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestApplyOutputAliases(t *testing.T) {
+	outputs := map[string]OutputParameter{
+		"LOCAL_OUTPUT": {Type: ParameterTypeString, Value: "value"},
+		"UNCHANGED":    {Type: ParameterTypeString, Value: "other"},
+	}
+
+	mapped, err := ApplyOutputAliases(outputs, map[string]string{
+		"LOCAL_OUTPUT": "SHARED_OUTPUT",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, outputs["LOCAL_OUTPUT"], mapped["SHARED_OUTPUT"])
+	require.Equal(t, outputs["UNCHANGED"], mapped["UNCHANGED"])
+	require.NotContains(t, mapped, "LOCAL_OUTPUT")
+}
+
+func TestApplyOutputAliasesRejectsDuplicateDestinations(t *testing.T) {
+	outputs := map[string]OutputParameter{
+		"FIRST":  {Type: ParameterTypeString, Value: "one"},
+		"SECOND": {Type: ParameterTypeString, Value: "two"},
+	}
+
+	_, err := ApplyOutputAliases(outputs, map[string]string{
+		"FIRST":  "SHARED",
+		"SECOND": "SHARED",
+	})
+
+	require.ErrorContains(t, err, `provider outputs "FIRST" and "SECOND" both target project variable "SHARED"`)
+}
+
 func TestOptions_GetWithDefaults(t *testing.T) {
 	// Save original defaultOptions and restore after tests
 	originalDefaults := defaultOptions

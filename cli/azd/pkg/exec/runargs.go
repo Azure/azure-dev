@@ -14,7 +14,11 @@ type RunArgs struct {
 	// Any string from SensitiveData will be redacted as *** if found in Args
 	SensitiveData []string
 	Cwd           string
-	Env           []string
+	// Env contains "NAME=value" entries, in the format used by os/exec.Cmd.Env.
+	Env []string
+	// EnvIsExact makes Env the complete child environment rather than overrides.
+	// When true, nil and empty slices both disable inheritance.
+	EnvIsExact bool
 
 	// Stderr will receive a copy of the text written to Stderr by
 	// the command.
@@ -67,9 +71,18 @@ func (b RunArgs) WithCwd(cwd string) RunArgs {
 	return b
 }
 
-// Updates the environment variables to used for the command
+// WithEnv supplies overrides for the inherited environment, replacing any previous environment mode.
 func (b RunArgs) WithEnv(env []string) RunArgs {
 	b.Env = env
+	b.EnvIsExact = false
+	return b
+}
+
+// WithExactEnv supplies the entire child environment, replacing any previous environment mode.
+// Nil and empty slices both mean no inherited variables.
+func (b RunArgs) WithExactEnv(env []string) RunArgs {
+	b.Env = env
+	b.EnvIsExact = true
 	return b
 }
 

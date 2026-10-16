@@ -4,20 +4,33 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/exegraph"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	provisioningtest "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -43,6 +56,300 @@ func TestNoopSaveEnvManager(t *testing.T) {
 	inner.On("Reload", mock.Anything, env).Return(nil)
 	require.NoError(t, noop.Reload(t.Context(), env))
 	inner.AssertCalled(t, "Reload", mock.Anything, env)
+}
+
+func TestProvisionServiceEnvUpdatedEventPreservesOutputsWithoutAliases(t *testing.T) {
+	t.Parallel()
+
+	for _, single := range []bool{true, false} {
+		name := "multi-layer"
+		if single {
+			name = "single layer"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			eventOutputs, providerOutputs, dotenv, _ := runProvisionServiceEnvUpdatedEvent(t, single, false, nil)
+			require.Equal(t, providerOutputs, eventOutputs)
+			for name, param := range providerOutputs {
+				require.Equal(t, param.Value, dotenv[name])
+			}
+		})
+	}
+}
+
+func TestProvisionServiceEnvUpdatedEventAppliesAliases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		single  bool
+		skipped bool
+	}{
+		{name: "single layer", single: true},
+		{name: "multi-layer"},
+		{name: "skipped multi-layer", skipped: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Event consumers need the same names as the saved environment. These aliases overlap
+			// to catch accidental remapping of an already-translated name.
+			aliases := map[string]string{"LOCAL_OUTPUT": "SHARED_OUTPUT", "SHARED_OUTPUT": "OTHER_OUTPUT"}
+			eventOutputs, providerOutputs, dotenv, _ := runProvisionServiceEnvUpdatedEvent(t, tt.single, tt.skipped, aliases)
+			expectedOutputs := map[string]provisioning.OutputParameter{
+				"SHARED_OUTPUT": providerOutputs["LOCAL_OUTPUT"],
+				"OTHER_OUTPUT":  providerOutputs["SHARED_OUTPUT"],
+				"UNCHANGED":     providerOutputs["UNCHANGED"],
+			}
+			require.NotContains(t, dotenv, "LOCAL_OUTPUT")
+			require.Equal(t, expectedOutputs, eventOutputs)
+			for name, param := range expectedOutputs {
+				require.Equal(t, param.Value, dotenv[name])
+			}
+		})
+	}
+}
+
+func TestProvisionServiceEnvUpdatedEventWritesAliasedDotNetSecrets(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		single  bool
+		skipped bool
+	}{
+		{name: "single layer", single: true},
+		{name: "multi-layer"},
+		{name: "skipped multi-layer", skipped: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			aliases := map[string]string{
+				"LOCAL_OUTPUT":  "ConnectionStrings__Database",
+				"SHARED_OUTPUT": "OTHER_OUTPUT",
+			}
+			_, _, dotenv, secrets := runProvisionServiceEnvUpdatedEvent(t, tt.single, tt.skipped, aliases)
+
+			// .NET uses ":" for hierarchical secret keys, while the environment keeps "__".
+			require.Equal(t, map[string]string{
+				"ConnectionStrings:Database": "local-value",
+				"OTHER_OUTPUT":               "shared-value",
+				"UNCHANGED":                  "unchanged-value",
+			}, secrets)
+			require.Equal(t, dotenv["ConnectionStrings__Database"], secrets["ConnectionStrings:Database"])
+		})
+	}
+}
+
+func runProvisionServiceEnvUpdatedEvent(
+	t *testing.T,
+	single bool,
+	skipped bool,
+	aliases map[string]string,
+) (
+	eventOutputs, providerOutputs map[string]provisioning.OutputParameter,
+	dotenv, secrets map[string]string,
+) {
+	t.Helper()
+
+	deps, envMu, _ := newPropagationTestDeps(t)
+	mockContext := mocks.NewMockContext(t.Context())
+	outputs := map[string]provisioning.OutputParameter{
+		"LOCAL_OUTPUT":  {Type: provisioning.ParameterTypeString, Value: "local-value"},
+		"SHARED_OUTPUT": {Type: provisioning.ParameterTypeString, Value: "shared-value"},
+		"UNCHANGED":     {Type: provisioning.ParameterTypeString, Value: "unchanged-value"},
+	}
+	providerOutputs = maps.Clone(outputs)
+	provider := &mockProvider{
+		deployResult: &provisioning.DeployResult{Deployment: &provisioning.Deployment{Outputs: outputs}},
+		stateResult:  &provisioning.StateResult{State: &provisioning.State{Outputs: outputs}},
+	}
+	if skipped {
+		provider.deployResult.SkippedReason = provisioning.DeploymentStateSkipped
+	}
+	const customProvider = provisioning.ProviderKind("contoso.custom")
+	ioc.RegisterNamedInstance[provisioning.Provider](mockContext.Container, string(customProvider), provider)
+
+	projectConfig := &project.ProjectConfig{
+		Name: "test-project", Path: t.TempDir(),
+		EventDispatcher: ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](project.ProjectEvents...),
+	}
+	service := &project.ServiceConfig{
+		Name: "api", Project: projectConfig, RelativePath: "api.csproj",
+		Host: project.AppServiceTarget, Language: project.ServiceLanguageDotNet,
+		EventDispatcher: ext.NewEventDispatcher[project.ServiceLifecycleEventArgs](project.ServiceEvents...),
+	}
+	projectConfig.Services = map[string]*project.ServiceConfig{service.Name: service}
+
+	require.NoError(t, os.WriteFile(service.Path(), []byte("<Project />\n"), 0o600))
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) >= 2 &&
+			args.Args[0] == "user-secrets" && args.Args[1] == "init"
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	// Service enumeration checks .NET projects for Aspire; this fixture is a regular App Service project.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) > 0 && args.Args[0] == "msbuild"
+	}).Respond(exec.NewRunResult(0,
+		`{"Properties":{"IsAspireHost":"false"},"Items":{"ProjectCapability":[]}}`, ""))
+
+	secretsWriteCount := 0
+	mockContext.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		return args.Cmd == "dotnet" && len(args.Args) >= 2 &&
+			args.Args[0] == "user-secrets" && args.Args[1] == "set"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		assert.Equal(t, []string{"user-secrets", "set", "--project", service.Path()}, args.Args)
+		if args.StdIn == nil {
+			return exec.RunResult{}, fmt.Errorf("user-secrets command is missing JSON input")
+		}
+		if err := json.NewDecoder(args.StdIn).Decode(&secrets); err != nil {
+			return exec.RunResult{}, fmt.Errorf("decoding user-secrets command input: %w", err)
+		}
+		secretsWriteCount++
+		return exec.NewRunResult(0, "", ""), nil
+	})
+	dotnetCli := dotnet.NewCli(mockContext.CommandRunner)
+	dotnetProject := project.NewDotNetProject(dotnetCli, deps.env)
+	require.NoError(t, dotnetProject.Initialize(t.Context(), service))
+
+	eventCount := 0
+	require.NoError(t, service.AddHandler(t.Context(), project.ServiceEventEnvUpdated,
+		func(_ context.Context, args project.ServiceLifecycleEventArgs) error {
+			var ok bool
+			eventOutputs, ok = args.Args["bicepOutput"].(map[string]provisioning.OutputParameter)
+			if !ok {
+				return fmt.Errorf("unexpected event output type %T", args.Args["bicepOutput"])
+			}
+			eventCount++
+			return nil
+		}))
+
+	deps.serviceLocator = mockContext.Container
+	deps.defaultProvider = func() (provisioning.ProviderKind, error) { return customProvider, nil }
+	deps.alphaFeatureManager = mockContext.AlphaFeaturesManager
+	deps.cloud = cloud.AzurePublic()
+	deps.projectPath = projectConfig.Path
+	deps.projectConfig = projectConfig
+	deps.importManager = project.NewImportManager(project.NewDotNetImporter(
+		dotnetCli, mockContext.Console, nil, nil, mockContext.AlphaFeaturesManager,
+	))
+	deps.hookMu = &sync.Mutex{}
+	layer := provisioning.Options{
+		Name: "producer", Provider: customProvider, Path: "infra", Aliases: aliases,
+	}
+
+	var jsonOutput bytes.Buffer
+	if single {
+		manager := provisioning.NewManager(
+			deps.serviceLocator, deps.defaultProvider, deps.envManager, deps.env,
+			mockContext.Console, deps.alphaFeatureManager, nil, deps.cloud,
+		)
+		action := &ProvisionAction{
+			flags: &ProvisionFlags{
+				global: &internal.GlobalCommandOptions{}, EnvFlag: &internal.EnvFlag{},
+			},
+			provisionManager: manager, envManager: deps.envManager, env: deps.env,
+			projectConfig: projectConfig, importManager: deps.importManager,
+			console: mockContext.Console, alphaFeatureManager: deps.alphaFeatureManager,
+			formatter: &output.JsonFormatter{}, writer: &jsonOutput,
+		}
+		_, err := action.provisionLayersGraph(t.Context(), []provisioning.Options{layer}, time.Now(), false)
+		require.NoError(t, err)
+	} else {
+		result, err := runProvisionSingleLayer(t.Context(), deps, layer, layer.Name, mockContext.Console, envMu)
+		require.NoError(t, err)
+		require.Same(t, provider.deployResult, result)
+	}
+
+	require.Equal(t, 1, eventCount)
+	require.Equal(t, 1, secretsWriteCount)
+	require.Equal(t, providerOutputs, provider.deployResult.Deployment.Outputs)
+	if single {
+		formatted := struct {
+			Outputs map[string]json.RawMessage `json:"outputs"`
+		}{}
+		require.NoError(t, json.Unmarshal(jsonOutput.Bytes(), &formatted))
+		require.Len(t, formatted.Outputs, len(eventOutputs))
+		for name := range eventOutputs {
+			require.Contains(t, formatted.Outputs, name)
+		}
+	}
+	return eventOutputs, providerOutputs, deps.env.Dotenv(), secrets
+}
+
+type savingParametersProvider struct {
+	provisioning.Provider
+	env        environment.ScopedEnvironment
+	envManager environment.Manager
+}
+
+func (p *savingParametersProvider) Initialize(ctx context.Context, path string, options provisioning.Options) error {
+	if err := p.Provider.Initialize(ctx, path, options); err != nil {
+		return err
+	}
+	if err := p.env.GetConfig().Set("infra.parameters.input", p.env.Getenv("LOCAL_INPUT")); err != nil {
+		return err
+	}
+	if err := p.env.GetConfig().SetSecret("infra.parameters.password", "generated-secret"); err != nil {
+		return err
+	}
+
+	return p.envManager.Save(ctx, p.env.BackingEnv())
+}
+
+func TestLayerProviderInitialization_PersistsRealEnvironment(t *testing.T) {
+	t.Setenv(environment.SubscriptionIdEnvVarName, "initialization-subscription")
+	t.Setenv(environment.LocationEnvVarName, "eastus2")
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+
+	deps, _, envPath := newPropagationTestDeps(t)
+	deps.env.DotenvSet("SHARED_INPUT", "live-input")
+
+	mockContext := mocks.NewMockContext(t.Context())
+	ioc.RegisterInstance[environment.ScopedEnvironment](mockContext.Container, deps.env)
+	ioc.RegisterInstance(mockContext.Container, deps.envManager)
+	mockContext.Container.MustRegisterNamedTransient(string(provisioning.Bicep),
+		func(env environment.ScopedEnvironment, manager environment.Manager) provisioning.Provider {
+			return &savingParametersProvider{
+				Provider:   provisioningtest.NewTestProvider(manager, env, mockContext.Console, nil),
+				env:        env,
+				envManager: manager,
+			}
+		})
+
+	layerEnv := environment.NewWithValues(deps.env.Name(), deps.env.Dotenv())
+	deps.env.DotenvSet("SHARED_INPUT", "updated-live-input")
+	noopManager := &noopSaveEnvManager{Manager: deps.envManager}
+
+	manager := provisioning.NewManager(
+		mockContext.Container, deps.defaultProvider, noopManager, layerEnv,
+		mockContext.Console, mockContext.AlphaFeaturesManager, nil, cloud.AzurePublic(),
+	)
+	require.NoError(t, manager.Initialize(t.Context(), "", provisioning.Options{
+		Provider: provisioning.Bicep,
+		Aliases:  map[string]string{"LOCAL_INPUT": "SHARED_INPUT"},
+	}))
+
+	contents, err := os.ReadFile(envPath)
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "initialization-subscription")
+	require.Equal(t, "initialization-subscription", deps.env.GetSubscriptionId())
+	require.Equal(t, "eastus2", deps.env.GetLocation())
+	require.Empty(t, layerEnv.Dotenv()[environment.SubscriptionIdEnvVarName])
+	require.Empty(t, layerEnv.Dotenv()[environment.LocationEnvVarName])
+	require.True(t, layerEnv.Config.IsEmpty())
+
+	require.NoError(t, deps.envManager.Reload(t.Context(), deps.env))
+	value, has := deps.env.Config.GetString("infra.parameters.input")
+	require.True(t, has)
+	require.Equal(t, "updated-live-input", value)
+	secret, has := deps.env.Config.GetString("infra.parameters.password")
+	require.True(t, has)
+	require.Equal(t, "generated-secret", secret)
 }
 
 func TestSyncConsole_SerializesMessages(t *testing.T) {
@@ -328,7 +635,7 @@ func TestMergeLayerOutputsLocked_PreservesSubprocessWrites(t *testing.T) {
 	}
 
 	require.NoError(t,
-		mergeLayerOutputsLocked(t.Context(), deps, envMu, "test-layer", outputs),
+		mergeLayerOutputsLocked(t.Context(), deps, envMu, "test-layer", outputs, nil),
 	)
 
 	// Disk must contain BOTH the subprocess write AND the deploy output.
@@ -426,12 +733,12 @@ func TestMergeLayerOutputsLocked_ConcurrentMergesConverge(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-a", outputsA),
+			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-a", outputsA, nil),
 		)
 	})
 	wg.Go(func() {
 		require.NoError(t,
-			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-b", outputsB),
+			mergeLayerOutputsLocked(t.Context(), deps, envMu, "layer-b", outputsB, nil),
 		)
 	})
 	wg.Wait()

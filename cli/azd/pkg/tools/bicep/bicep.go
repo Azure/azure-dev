@@ -426,13 +426,28 @@ func (cli *Cli) Build(ctx context.Context, file string) (BuildResult, error) {
 	return result, nil
 }
 
+// BuildBicepParam compiles a parameter file with overrides for the inherited environment.
 func (cli *Cli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
+	return cli.buildBicepParam(ctx, file, env, false)
+}
+
+// BuildBicepParamWithExactEnv compiles a parameter file with the complete child environment.
+func (cli *Cli) BuildBicepParamWithExactEnv(ctx context.Context, file string, env []string) (BuildResult, error) {
+	return cli.buildBicepParam(ctx, file, env, true)
+}
+
+func (cli *Cli) buildBicepParam(
+	ctx context.Context, file string, env []string, exactEnv bool,
+) (BuildResult, error) {
 	if err := cli.ensureInstalledOnce(ctx); err != nil {
 		return BuildResult{}, fmt.Errorf("ensuring bicep is installed: %w", err)
 	}
 
-	args := []string{"build-params", file, "--stdout"}
-	buildRes, err := cli.runCommand(ctx, env, args...)
+	runArgs := exec.NewRunArgs(cli.path, "build-params", file, "--stdout").WithEnv(env)
+	if exactEnv {
+		runArgs = runArgs.WithExactEnv(env)
+	}
+	buildRes, err := cli.runner.Run(ctx, runArgs)
 
 	if err != nil {
 		return BuildResult{}, fmt.Errorf(

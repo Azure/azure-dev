@@ -6,6 +6,7 @@ package terraform
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	osexec "os/exec"
@@ -20,6 +21,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	terraformTools "github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -30,6 +33,62 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type parameterScopedEnvironment struct {
+	*environment.Environment
+	value string
+}
+
+func (e *parameterScopedEnvironment) Getenv(key string) string {
+	if key == "LAYER_VALUE" {
+		return e.value
+	}
+	return e.Environment.Getenv(key)
+}
+
+func TestTerraformInputParameters_UsesScopedEnvironment(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	templatePath := filepath.Join(dir, "main.tfvars.json")
+	require.NoError(t, os.WriteFile(templatePath, []byte(`{"value":"${LAYER_VALUE}"}`), 0600))
+	backing := environment.NewWithValues("shared", map[string]string{"LAYER_VALUE": "backing"})
+	mockContext := mocks.NewMockContext(t.Context())
+	root := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance[*terraformTools.Cli](root, nil)
+	ioc.RegisterInstance[environment.Manager](root, &mockenv.MockEnvManager{})
+	ioc.RegisterInstance[input.Console](root, mockContext.Console)
+	ioc.RegisterInstance[provisioning.CurrentPrincipalIdProvider](root, &mockCurrentPrincipal{})
+	ioc.RegisterInstance[prompt.Prompter](root, &prompt.DefaultPrompter{})
+	ioc.RegisterInstance(root, backing)
+	root.MustRegisterScoped(func(env *environment.Environment) environment.ScopedEnvironment { return env })
+	root.MustRegisterScoped(NewTerraformProvider)
+	var parent provisioning.Provider
+	require.NoError(t, root.Resolve(&parent))
+
+	for _, value := range []string{"layer-a", "layer-b"} {
+		t.Run(value, func(t *testing.T) {
+			scope, err := root.NewScope()
+			require.NoError(t, err)
+			ioc.RegisterInstance[environment.ScopedEnvironment](
+				scope, &parameterScopedEnvironment{Environment: backing, value: value})
+			var resolved provisioning.Provider
+			require.NoError(t, scope.Resolve(&resolved))
+			require.NotSame(t, parent, resolved)
+			provider, ok := resolved.(*TerraformProvider)
+			require.True(t, ok)
+			outputPath := filepath.Join(dir, value, "main.tfvars.json")
+
+			require.NoError(t, provider.createInputParametersFile(t.Context(), templatePath, outputPath))
+			data, err := os.ReadFile(outputPath)
+			require.NoError(t, err)
+			var parameters map[string]string
+			require.NoError(t, json.Unmarshal(data, &parameters))
+			require.Equal(t, map[string]string{"value": value}, parameters)
+			require.Equal(t, "backing", backing.Getenv("LAYER_VALUE"))
+		})
+	}
+}
 
 func TestTerraformPlan(t *testing.T) {
 	skipIfTerraformNotInstalled(t)

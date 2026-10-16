@@ -1394,6 +1394,7 @@ func newTestEnvRefreshAction(
 
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterNamedInstance(container, string(provisioning.Test), provider)
+	ioc.RegisterNamedInstance(container, string(provisioning.Bicep), provider)
 
 	env := environment.New("test-env")
 	env.SetSubscriptionId("00000000-0000-0000-0000-000000000000")
@@ -1517,6 +1518,40 @@ func Test_EnvRefreshAction_Run_RefreshesOutputs(t *testing.T) {
 	require.Equal(t, "value", action.env.Dotenv()["MY_OUTPUT"])
 	envManager.AssertCalled(t, "Save", mock.Anything, mock.Anything)
 	pm.AssertExpectations(t)
+}
+
+func Test_EnvRefreshAction_Run_AppliesAliases(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockRefreshProvider{stateResult: &provisioning.StateResult{
+		State: &provisioning.State{
+			Outputs: map[string]provisioning.OutputParameter{
+				"LOCAL_OUTPUT": {Type: provisioning.ParameterTypeString, Value: "value"},
+			},
+		},
+	}}
+	action, _, envManager, pm := newTestEnvRefreshAction(t, provider, &envRefreshFlags{})
+	action.projectConfig.Infra = provisioning.Options{
+		Provider: provisioning.Bicep,
+		Layers: []provisioning.Options{{
+			Name:     "infra",
+			Provider: provisioning.Bicep,
+			Path:     "infra",
+			Aliases: map[string]string{
+				"LOCAL_OUTPUT":  "SHARED_OUTPUT",
+				"SHARED_OUTPUT": "OTHER_OUTPUT",
+			},
+		}},
+	}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	pm.On("InitializeFrameworks", mock.Anything, mock.Anything).Return(nil, nil, nil)
+
+	_, err := action.Run(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, "value", action.env.Dotenv()["SHARED_OUTPUT"])
+	require.NotContains(t, action.env.Dotenv(), "LOCAL_OUTPUT")
+	require.NotContains(t, action.env.Dotenv(), "OTHER_OUTPUT")
 }
 
 func Test_NewEnvSetSecretAction(t *testing.T) {

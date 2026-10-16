@@ -6,10 +6,14 @@ package exec
 import (
 	"bytes"
 	"context"
+	"io"
+	"log"
 	"os"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +123,101 @@ func TestAppendEnv(t *testing.T) {
 	sort.Strings(actualEnv)
 
 	require.Equal(t, expectedEnv, actualEnv)
+}
+
+func TestCommandEnvExact(t *testing.T) {
+	t.Setenv("AZD_EXEC_TEST_TARGET", "inherited")
+	for _, tt := range []struct {
+		name string
+		env  []string
+	}{
+		{name: "Nil"},
+		{name: "Empty", env: []string{}},
+		{name: "Explicit", env: []string{"KEY=value"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			before := slices.Clone(tt.env)
+			values := commandEnv(NewRunArgs("tool").WithExactEnv(tt.env))
+			require.NotNil(t, values)
+			require.ElementsMatch(t, tt.env, values)
+			if len(values) > 0 {
+				values[0] = "changed"
+				require.Equal(t, before, tt.env)
+			}
+		})
+	}
+	require.Nil(t, commandEnv(NewRunArgs("tool")))
+	require.Contains(t, commandEnv(NewRunArgs("tool").WithEnv([]string{"KEY=value"})), "AZD_EXEC_TEST_TARGET=inherited")
+}
+
+func TestExactEnvironmentIsNotLogged(t *testing.T) {
+	var output bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previous) })
+
+	message := logBuilder{
+		args: []string{"tool"}, env: []string{"INHERITED_VALUE=private-value"}, envIsExact: true,
+	}
+	message.Write(true, nil)
+	require.NotContains(t, output.String(), "INHERITED_VALUE")
+	require.NotContains(t, output.String(), "private-value")
+}
+
+func TestRunCommandEnvironmentModes(t *testing.T) {
+	t.Setenv("AZD_EXEC_TEST_TARGET", "inherited")
+
+	command := "/usr/bin/env"
+	if runtime.GOOS == "windows" {
+		command = "set"
+	}
+
+	for _, tt := range []struct {
+		name  string
+		env   []string
+		exact bool
+		want  string
+	}{
+		{name: "OverlayInheritance", want: "present:inherited"},
+		{name: "OverlayOverride", env: []string{"AZD_EXEC_TEST_TARGET=explicit"}, want: "present:explicit"},
+		{name: "ExactNil", exact: true, want: "missing"},
+		{name: "ExactEmpty", exact: true, env: []string{}, want: "missing"},
+		{name: "ExactMissing", exact: true, env: []string{"OTHER=value"}, want: "missing"},
+		{name: "ExactEmptyValue", exact: true, env: []string{"AZD_EXEC_TEST_TARGET="}, want: "present:"},
+		{name: "ExactExplicit", exact: true, env: []string{"AZD_EXEC_TEST_TARGET=explicit"}, want: "present:explicit"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			args := NewRunArgs(command).WithEnv(tt.env)
+			if tt.exact {
+				args = args.WithExactEnv(tt.env)
+			}
+			for _, method := range []string{"Run", "RunList"} {
+				t.Run(method, func(t *testing.T) {
+					runner := NewCommandRunner(&RunnerOptions{
+						Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+					})
+					var result RunResult
+					var err error
+					if method == "RunList" {
+						result, err = runner.RunList(t.Context(), []string{command}, args)
+					} else {
+						result, err = runner.Run(t.Context(), args)
+					}
+					require.NoError(t, err, "%s", result.Stderr)
+					lines := strings.Split(strings.ReplaceAll(result.Stdout, "\r\n", "\n"), "\n")
+					const prefix = "AZD_EXEC_TEST_TARGET="
+					if tt.want == "missing" {
+						require.Equal(t, -1, slices.IndexFunc(lines, func(line string) bool {
+							return strings.HasPrefix(line, prefix)
+						}))
+					} else {
+						require.Contains(t, lines, prefix+strings.TrimPrefix(tt.want, "present:"))
+					}
+					require.Equal(t, "inherited", os.Getenv("AZD_EXEC_TEST_TARGET"))
+				})
+			}
+		})
+	}
 }
 
 func TestRunList(t *testing.T) {

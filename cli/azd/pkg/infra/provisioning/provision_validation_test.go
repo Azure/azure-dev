@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +49,7 @@ func newProvisionValidationManager(
 ) *provisioning.Manager {
 	t.Helper()
 
-	registerContainerDependencies(mockContext, env)
+	envManager := registerContainerDependencies(mockContext, env)
 	mockContext.Container.MustRegisterSingleton(func() provisioning.ValidationCheckDispatcher {
 		return dispatcher
 	})
@@ -58,7 +57,7 @@ func newProvisionValidationManager(
 	mgr := provisioning.NewManager(
 		mockContext.Container,
 		defaultProvider,
-		&mockenv.MockEnvManager{},
+		envManager,
 		env,
 		mockContext.Console,
 		mockContext.AlphaFeaturesManager,

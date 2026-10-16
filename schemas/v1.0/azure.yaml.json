@@ -108,6 +108,18 @@
                                 "description": "Optional. Configuration passed to the infrastructure provisioning provider.",
                                 "additionalProperties": true
                             },
+                            "aliases": {
+                                "type": "object",
+                                "title": "Layer variable aliases",
+                                "description": "Optional. Maps provider-view variable names to project-view names for reads, writes, and deletes, including parameter inputs and deployment outputs. Keys are provider variables; values are project variables. Project-variable destinations must be unique within this infrastructure entry.",
+                                "propertyNames": {
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                },
+                                "additionalProperties": {
+                                    "type": "string",
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                }
+                            },
                             "dependsOn": {
                                 "type": "array",
                                 "title": "Layer names this layer must wait for",

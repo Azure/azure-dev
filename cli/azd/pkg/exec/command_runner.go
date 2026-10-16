@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -113,7 +114,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	var stdout, stderr bytes.Buffer
 
-	cmd.Env = appendEnv(args.Env)
+	cmd.Env = commandEnv(args)
 
 	if args.Interactive {
 		cmd.Stdin = r.stdin
@@ -139,8 +140,9 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	}
 
 	logMsg := logBuilder{
-		args: append([]string{args.Cmd}, args.Args...),
-		env:  args.Env,
+		args:       append([]string{args.Cmd}, args.Args...),
+		env:        args.Env,
+		envIsExact: args.EnvIsExact,
 	}
 	defer func() {
 		logMsg.Write(debugLogging, args.SensitiveData)
@@ -199,7 +201,7 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	}
 
 	process.Cmd.Dir = args.Cwd
-	process.Env = appendEnv(args.Env)
+	process.Env = commandEnv(args)
 
 	var stdOutBuf bytes.Buffer
 	var stdErrBuf bytes.Buffer
@@ -219,8 +221,9 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 
 	logMsg := logBuilder{
 		// use the actual shell command invoked in the log message
-		args: process.Cmd.Args,
-		env:  args.Env,
+		args:       process.Cmd.Args,
+		env:        args.Env,
+		envIsExact: args.EnvIsExact,
 	}
 	defer func() {
 		logMsg.Write(debugLogging, args.SensitiveData)
@@ -268,6 +271,17 @@ func (r *commandRunner) ToolInPath(name string) error {
 	}
 }
 
+func commandEnv(args RunArgs) []string {
+	if args.EnvIsExact {
+		// os/exec treats nil as inheritance, but an empty slice as an empty environment.
+		if args.Env == nil {
+			return []string{}
+		}
+		return slices.Clone(args.Env)
+	}
+	return appendEnv(args.Env)
+}
+
 func appendEnv(env []string) []string {
 	if len(env) > 0 {
 		return append(os.Environ(), env...)
@@ -278,8 +292,9 @@ func appendEnv(env []string) []string {
 
 // logBuilder builds messages for running of commands.
 type logBuilder struct {
-	args []string
-	env  []string
+	args       []string
+	env        []string
+	envIsExact bool
 
 	// Either result or err is expected to be set, but not both.
 	result *RunResult
@@ -297,7 +312,8 @@ func (l *logBuilder) Write(debug bool, sensitiveArgsData []string) {
 		msg.WriteString(fmt.Sprintf(", err: %v\n", l.err))
 	}
 
-	if debug && len(l.env) > 0 {
+	// Exact environments include inherited credentials that were not previously logged.
+	if debug && len(l.env) > 0 && !l.envIsExact {
 		msg.WriteString("Additional env:\n")
 		for _, kv := range l.env {
 			msg.WriteString(fmt.Sprintf("   %s\n", RedactSensitiveData(kv)))

@@ -266,7 +266,10 @@ func validateOutputDirectory(directory, setting string, externalConfigurations [
 			return fmt.Errorf("%s components cannot start or end with whitespace", setting)
 		}
 	}
-	inputs := []string{"pom.xml", "mvnw", "mvnw.cmd", "src", "config", ".mvn", ".git", ".azure", ".azd-spring"}
+	inputs := []string{
+		"pom.xml", "mvnw", "mvnw.cmd", "src", "config", ".mvn", ".git", ".azure",
+		"azure.yaml", "infra", ".azd-spring",
+	}
 	inputs = append(inputs, externalConfigurations...)
 	for _, input := range inputs {
 		if input == directory || strings.HasPrefix(input, directory+"/") ||

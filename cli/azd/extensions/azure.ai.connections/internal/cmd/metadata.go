@@ -26,7 +26,7 @@ func newMetadataCommand(rootCmd *cobra.Command) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("encoding extension metadata: %w", err)
 			}
-			data, err = markEnvironmentIndependentCommand(data, []string{"add"})
+			data, err = markNoAzdEnvironmentCommand(data, []string{"add"})
 			if err != nil {
 				return err
 			}
@@ -38,8 +38,8 @@ func newMetadataCommand(rootCmd *cobra.Command) *cobra.Command {
 	}
 }
 
-// The pinned SDK predates environment-independent command metadata.
-func markEnvironmentIndependentCommand(data []byte, target []string) ([]byte, error) {
+// The pinned SDK predates launch.noAzdEnvironment command metadata.
+func markNoAzdEnvironmentCommand(data []byte, target []string) ([]byte, error) {
 	var metadata map[string]json.RawMessage
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		return nil, fmt.Errorf("decoding extension metadata: %w", err)
@@ -54,7 +54,7 @@ func markEnvironmentIndependentCommand(data []byte, target []string) ([]byte, er
 		return nil, fmt.Errorf("decoding extension commands: %w", err)
 	}
 
-	marked, err := markEnvironmentIndependentCommandInTree(commands, target)
+	marked, err := markNoAzdEnvironmentCommandInTree(commands, target)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func markEnvironmentIndependentCommand(data []byte, target []string) ([]byte, er
 	return encoded, nil
 }
 
-func markEnvironmentIndependentCommandInTree(
+func markNoAzdEnvironmentCommandInTree(
 	commands []json.RawMessage,
 	target []string,
 ) (bool, error) {
@@ -88,7 +88,21 @@ func markEnvironmentIndependentCommandInTree(
 			return false, fmt.Errorf("decoding extension command name: %w", err)
 		}
 		if slices.Equal(name, target) {
-			command["environmentIndependent"] = json.RawMessage("true")
+			var launch map[string]json.RawMessage
+			if rawLaunch, found := command["launch"]; found {
+				if err := json.Unmarshal(rawLaunch, &launch); err != nil {
+					return false, fmt.Errorf("decoding extension command launch metadata: %w", err)
+				}
+			}
+			if launch == nil {
+				launch = make(map[string]json.RawMessage)
+			}
+			launch["noAzdEnvironment"] = json.RawMessage("true")
+			rawLaunch, err := json.Marshal(launch)
+			if err != nil {
+				return false, fmt.Errorf("encoding extension command launch metadata: %w", err)
+			}
+			command["launch"] = rawLaunch
 			encoded, err := json.Marshal(command)
 			if err != nil {
 				return false, fmt.Errorf("encoding extension command metadata: %w", err)
@@ -105,7 +119,7 @@ func markEnvironmentIndependentCommandInTree(
 		if err := json.Unmarshal(rawSubcommands, &subcommands); err != nil {
 			return false, fmt.Errorf("decoding extension subcommands: %w", err)
 		}
-		marked, err := markEnvironmentIndependentCommandInTree(subcommands, target)
+		marked, err := markNoAzdEnvironmentCommandInTree(subcommands, target)
 		if err != nil {
 			return false, err
 		}

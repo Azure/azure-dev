@@ -46,11 +46,13 @@ azd ai connection add search --file connections/search.yaml
 azd ai connection add search --file connections/search.yaml --project foundry
 ```
 
-This local-only workflow requires azd 1.36.0-beta.1 or later for
-environment-independent command dispatch and raw configuration preservation
-through the existing Project APIs. Older hosts read the active environment
-before starting an extension command. Output supports `--output json` and
-`--output table` (the default human-readable format).
+This local-only workflow requires azd 1.37.0 or later for
+`launch.noAzdEnvironment` command dispatch and raw configuration preservation
+through the existing Project APIs. This launch setting applies only to `add`,
+skipping loading, resolving, and injecting the selected azd environment;
+explicit Environment gRPC calls are unaffected. Older hosts read the active
+environment before starting an extension command. Output supports
+`--output json` and `--output table` (the default human-readable format).
 
 The command keeps the file in place and writes a project-relative `$ref` to
 the nearest `azure.yaml` or `azure.yml`, matching azd's project selection.

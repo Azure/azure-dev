@@ -1690,10 +1690,10 @@ func TestEjectInfra_ExistingRegistry(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
-			env := map[string]string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": id}
+			env := map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id}
 			if provider == "terraform" {
 				err := ejectInfra(dir, provider, env)
-				require.ErrorContains(t, err, "AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
+				require.ErrorContains(t, err, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 				require.ErrorContains(t, err, "not supported with Terraform")
 				assert.NoDirExists(t, filepath.Join(dir, "infra"))
 				raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml"))
@@ -1703,7 +1703,9 @@ func TestEjectInfra_ExistingRegistry(t *testing.T) {
 			}
 			env["AZURE_SUBSCRIPTION_ID"] = "11111111-1111-1111-1111-111111111111"
 			env["AZURE_RESOURCE_GROUP"] = "shared"
+			env["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
 			require.ErrorContains(t, ejectInfra(dir, provider, env), "azd down deletes")
+			delete(env, "AZD_FOUNDRY_ACR_MODE")
 			assert.NoDirExists(t, filepath.Join(dir, "infra"))
 			env["AZURE_RESOURCE_GROUP"] = "foundry"
 			withCapturedStdout(t, func() {
@@ -1720,7 +1722,7 @@ func TestEjectInfra_ExistingRegistry(t *testing.T) {
 				} `json:"parameters"`
 			}
 			require.NoError(t, json.Unmarshal(raw, &params))
-			assert.Equal(t, "${AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID}",
+			assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
 				params.Parameters["existingAcrResourceId"].Value)
 			assert.NotContains(t, string(raw), id)
 			if bicep, err := exec.LookPath("bicep"); err == nil {
@@ -1730,6 +1732,54 @@ func TestEjectInfra_ExistingRegistry(t *testing.T) {
 				require.NoError(t, err, "ejected template must compile: %s", compiled)
 			}
 		})
+	}
+}
+
+func TestEjectInfra_RecordedRegistryMode(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, provider := range []string{"bicep", "terraform"} {
+		for _, mode := range []string{"create", "reuse-connect", "already-connected"} {
+			t.Run(provider+"/"+mode, func(t *testing.T) {
+				dir := t.TempDir()
+				mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+				env := map[string]string{
+					"AZD_FOUNDRY_ACR_MODE": mode, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				}
+				var err error
+				withCapturedStdout(t, func() {
+					err = ejectInfra(dir, provider, env)
+				})
+				switch {
+				case mode == "already-connected":
+					require.ErrorContains(t, err, "AZD_FOUNDRY_ACR_MODE")
+					assert.NoDirExists(t, filepath.Join(dir, "infra"))
+				case provider == "terraform" && mode == "reuse-connect":
+					require.ErrorContains(t, err, "reuse mode")
+					require.ErrorContains(t, err, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+					assert.NoDirExists(t, filepath.Join(dir, "infra"))
+				case provider == "terraform":
+					require.NoError(t, err)
+					assert.FileExists(t, filepath.Join(dir, "infra", "main.tf"))
+				default:
+					require.NoError(t, err)
+					raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+					require.NoError(t, err)
+					var params struct {
+						Parameters map[string]struct {
+							Value any `json:"value"`
+						} `json:"parameters"`
+					}
+					require.NoError(t, json.Unmarshal(raw, &params))
+					if mode == "reuse-connect" {
+						assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
+							params.Parameters["existingAcrResourceId"].Value)
+					} else {
+						assert.NotContains(t, params.Parameters, "existingAcrResourceId")
+					}
+				}
+				assert.Equal(t, mode, env["AZD_FOUNDRY_ACR_MODE"], "eject must not mutate its snapshot")
+			})
+		}
 	}
 }
 

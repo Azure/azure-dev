@@ -86,6 +86,9 @@ type Result struct {
 	// NetworkMode is "none", "byo", or "managed" — derived from the
 	// network: block (or its absence). Exposed for telemetry.
 	NetworkMode string
+
+	// ACRMode is the greenfield registry mode: create, reuse-connect, or none.
+	ACRMode string
 }
 
 // Deployment mirrors the deploymentType in main.bicep.
@@ -214,11 +217,6 @@ func Synthesize(in Input) (*Result, error) {
 	if endpoint != "" {
 		return nil, ErrEndpointBrownfield
 	}
-	existingAcrResourceID, err := existingContainerRegistry(in)
-	if err != nil {
-		return nil, err
-	}
-
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
 		svc,
@@ -227,6 +225,28 @@ func Synthesize(in Input) (*Result, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	mode := in.Env["AZD_FOUNDRY_ACR_MODE"]
+	if !includeAcr {
+		mode = "none"
+	} else if mode == "" {
+		mode = "create"
+	}
+	var existingAcrResourceID string
+	switch mode {
+	case "create", "none":
+	case "reuse-connect":
+		existingAcrResourceID, err = existingContainerRegistry(in)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q; "+
+			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`", mode)
+	}
+	if includeAcr && mode == "none" {
+		return nil, errors.New("synthesis: AZD_FOUNDRY_ACR_MODE cannot be none when a registry is required; " +
+			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`")
 	}
 
 	deployments := svc.Deployments
@@ -251,7 +271,7 @@ func Synthesize(in Input) (*Result, error) {
 	if existingAcrResourceID != "" {
 		params["existingAcrResourceId"] = existingAcrResourceID
 		if in.PreserveVarRefs {
-			params["existingAcrResourceId"] = "${AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID}"
+			params["existingAcrResourceId"] = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
 		}
 	}
 	maps.Copy(params, netParams)
@@ -259,7 +279,32 @@ func Synthesize(in Input) (*Result, error) {
 	return &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
+		ACRMode:     mode,
 	}, nil
+}
+
+// GreenfieldACRMode selects a mode from an environment snapshot before synthesis.
+// A recorded mode wins over registry outputs from previous provisioning. With no
+// recorded mode, a non-empty AZURE_CONTAINER_REGISTRY_RESOURCE_ID selects
+// reuse-connect, except when it points into resourceGroup: that is the output
+// of a registry azd created before the mode was recorded (environments from
+// earlier versions), so create mode is kept instead of failing validation.
+func GreenfieldACRMode(env map[string]string, resourceGroup string) string {
+	if mode := env["AZD_FOUNDRY_ACR_MODE"]; mode != "" {
+		return mode
+	}
+	id := env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if id == "" {
+		return "create"
+	}
+	if containerRegistryIDPattern.MatchString(id) && resourceGroup != "" {
+		parts := strings.Split(id, "/")
+		sub := env["AZURE_SUBSCRIPTION_ID"]
+		if strings.EqualFold(parts[4], resourceGroup) && (sub == "" || strings.EqualFold(parts[2], sub)) {
+			return "create"
+		}
+	}
+	return "reuse-connect"
 }
 
 var containerRegistryIDPattern = regexp.MustCompile(
@@ -267,19 +312,19 @@ var containerRegistryIDPattern = regexp.MustCompile(
 )
 
 func existingContainerRegistry(in Input) (string, error) {
-	lookup := projectConditionLookup(in.Env)
-	id := lookup("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
+	id := in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	if id == "" {
-		return "", nil
+		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
 	}
 	if !containerRegistryIDPattern.MatchString(id) {
-		return "", errors.New("synthesis: AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID must be a full ARM ID " +
+		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be a full ARM ID " +
 			"of a Microsoft.ContainerRegistry/registries resource")
 	}
 	parts := strings.Split(id, "/")
-	if strings.EqualFold(parts[2], lookup("AZURE_SUBSCRIPTION_ID")) &&
+	if strings.EqualFold(parts[2], in.Env["AZURE_SUBSCRIPTION_ID"]) &&
 		strings.EqualFold(parts[4], in.ResourceGroupName) {
-		return "", errors.New("synthesis: AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
+		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
 			"resource group because azd down deletes that group")
 	}
 	return id, nil

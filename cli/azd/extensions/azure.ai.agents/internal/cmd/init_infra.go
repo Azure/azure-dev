@@ -519,17 +519,6 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 	if len(environments) > 0 {
 		ejectEnv = environments[0]
 	}
-	existingAcrID, hasExistingAcr := ejectEnv["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"]
-	if !hasExistingAcr {
-		existingAcrID = os.Getenv("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
-	}
-	if provider == project.TerraformProviderName && existingAcrID != "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
-			"eject Bicep instead with `azd ai agent init --infra=bicep`, or unset the existing registry selector",
-		)
-	}
 	endpoint, err := synthesis.ProjectEndpoint(rawYAML, svcName, projectRoot, ejectEnv)
 	if err != nil {
 		return exterrors.Validation(
@@ -570,6 +559,10 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		PreserveVarRefs: true,
 	}
 	if !existingProject {
+		environment = maps.Clone(environment)
+		if environment == nil {
+			environment = map[string]string{}
+		}
 		groupKey := "AZURE_RESOURCE_GROUP"
 		if plan.layer {
 			groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
@@ -581,6 +574,8 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 				group += "-foundry"
 			}
 		}
+		environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
+		synthesisInput.Env = environment
 		synthesisInput.ResourceGroupName = group
 	}
 	var res *synthesis.Result
@@ -599,6 +594,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		)
 	}
 	acrMode := infraEjectAcrNone
+	if !existingProject && provider == project.TerraformProviderName && res.ACRMode == "reuse-connect" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead with `azd ai agent init --infra=bicep`, or set AZD_FOUNDRY_ACR_MODE to create",
+		)
+	}
 	if existingProject {
 		values := environment
 		acrMode, err = resolveInfraEjectAcrMode(res.Parameters, values)

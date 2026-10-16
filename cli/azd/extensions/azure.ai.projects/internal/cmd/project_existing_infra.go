@@ -340,9 +340,6 @@ func ejectExistingProjectInfra(
 	if len(environments) > 0 && environments[0] != nil {
 		maps.Copy(environment, environments[0])
 	}
-	if err := validateExistingRegistryTerraformEject(provider, environment); err != nil {
-		return err
-	}
 	if strings.TrimSpace(endpoint) != "" {
 		environment["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
 	}

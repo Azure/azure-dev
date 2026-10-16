@@ -95,6 +95,7 @@ type FoundryProvisioningProvider struct {
 	existingProjectReuseOnly  bool
 	existingProjectID         string
 	existingAcrMode           string
+	greenfieldAcrMode         string
 	existingAcrEndpoint       string
 	existingAcrResourceID     string
 	existingAcrConnectionName string
@@ -321,7 +322,8 @@ func (p *FoundryProvisioningProvider) Initialize(
 				group += "-foundry"
 			}
 		}
-		_, validationErr := synthesis.Synthesize(synthesis.Input{
+		env["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(env, group)
+		validationResult, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:      rawYAML,
 			ServiceName:       svcName,
 			AcceptedHosts:     FoundryProvisioningServiceHosts,
@@ -333,6 +335,9 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
+		}
+		if validationErr == nil {
+			p.greenfieldAcrMode = validationResult.ACRMode
 		}
 	}
 
@@ -392,12 +397,23 @@ func (p *FoundryProvisioningProvider) Initialize(
 		p.brownfieldEndpoint = endpoint
 		res, err = synthesis.SynthesizeExistingProject(input)
 	} else {
+		if !onDisk {
+			input.Env["AZD_FOUNDRY_ACR_MODE"] = p.greenfieldAcrMode
+		}
 		res, err = synthesis.Synthesize(input)
 	}
 	if err != nil {
 		return foundrySynthesisError(svcName, err)
 	}
 	p.synthResult = res
+	if endpoint == "" {
+		p.greenfieldAcrMode = res.ACRMode
+		if !onDisk {
+			if err := p.setEnv(ctx, "AZD_FOUNDRY_ACR_MODE", p.greenfieldAcrMode); err != nil {
+				return err
+			}
+		}
+	}
 	if endpoint != "" {
 		if err := p.resolveExistingProjectInputs(ctx); err != nil {
 			return err
@@ -1745,7 +1761,13 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 			envKeyFoundryRGOwner,
 		}}
 	}
-	return invalidatedEnvKeysResult()
+	result := invalidatedEnvKeysResult()
+	if p.greenfieldAcrMode == "reuse-connect" {
+		result.InvalidatedEnvKeys = slices.DeleteFunc(result.InvalidatedEnvKeys, func(key string) bool {
+			return key == "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+		})
+	}
+	return result
 }
 
 // confirmDestroy asks the user to confirm resource-group deletion when the
@@ -2029,7 +2051,7 @@ func (p *FoundryProvisioningProvider) Parameters(
 		if id, ok := p.synthResult.Parameters["existingAcrResourceId"].(string); ok {
 			out = append(out, &azdext.ProvisioningParameter{
 				Name: "existingAcrResourceId", Value: id,
-				EnvVarMapping:      []string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"},
+				EnvVarMapping:      []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
 				UsingEnvVarMapping: true,
 			})
 		}

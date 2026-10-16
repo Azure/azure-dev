@@ -948,29 +948,45 @@ Supported providers and identifiers:
 
 - `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
 - `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
-  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
-  provider value `azure-communication-service`.
+  (the YAML provider name remains `acs` for compatibility). azd maps this to the
+  canonical `teams_phone_extensibility` provider and sends the GUID as
+  `resource_account_object_id`. Legacy `4:+<E.164>` ACS-purchased-number IDs
+  cannot be deployed through the canonical GA contract.
 
-Bindings are create-only in this preview. If a remote binding exists and matches
-the YAML, deploy continues. If the remote binding has different configuration,
-azd fails with a remediation message instead of silently keeping stale routing.
+Deploy lists every page of canonical bindings and matches provider identities
+without deriving binding IDs. If exactly one active remote binding matches the
+YAML, deploy continues. Missing bindings are created with repeatability headers.
+Drift or duplicate matches fail safely instead of changing or deleting remote
+routing. Existing per-binding `transferTargets` YAML remains migration-compatible:
+omitting it leaves the singleton unmanaged, while an explicit empty list manages
+an empty singleton. Multiple declarations must describe the same named targets
+(order does not matter). azd validates supported `pstn`, `teams`, and `sip`
+destinations locally. After binding reconciliation it validates the singleton;
+it replaces a drifted singleton only when this deployment created a binding, and
+uses the current ETag. Otherwise drift, unknown remote destination kinds, and
+unconfirmed writes fail safely with manual-reconciliation guidance.
 
 Cleanup: delete telephony bindings before deleting test agents. The service may
 leave bindings behind when an agent is deleted, so do not rely on agent deletion
 as binding cleanup.
 
-Delete a binding with the agent-scoped telephony API before deleting the agent:
+List bindings to obtain the service-generated opaque ID and ETag, then delete the
+binding before deleting the agent:
 
 ```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings?api-version=v1"
+
 curl -X DELETE \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Foundry-Features: VoiceAgents=V1Preview" \
-  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+  -H "If-Match: $BINDING_ETAG" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings/$BINDING_ID?api-version=v1"
 ```
 
-The binding ID is the service provider plus identifier, for example
-`twilio:%2B14255550123` for `+14255550123`, or
-`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+Treat `BINDING_ID` as opaque: URL-escape the value returned by the list API and
+do not construct it from the provider or phone number. Use the item `etag` from
+the list response (or the `ETag` header from binding GET) as `BINDING_ETAG`.
 
 ### Moderating invocations-protocol traffic
 

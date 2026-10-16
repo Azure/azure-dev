@@ -30,9 +30,10 @@ import (
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
 type AgentClient struct {
-	endpoint   string
-	pipeline   runtime.Pipeline
-	credential azcore.TokenCredential
+	endpoint          string
+	pipeline          runtime.Pipeline
+	telephonyPipeline runtime.Pipeline
+	credential        azcore.TokenCredential
 }
 
 const (
@@ -86,11 +87,35 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
+	telephonyOptions := *clientOptions
+	transport := telephonyOptions.Transport
+	if transport == nil {
+		transport = &http.Client{
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+	} else if client, ok := transport.(*http.Client); ok {
+		clone := *client
+		clone.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		transport = &clone
+	}
+	telephonyOptions.Transport = &telephonyResponseLimitTransport{next: transport}
+	telephonyPipeline := runtime.NewPipeline(
+		"azure-ai-agents",
+		"v1.0.0",
+		runtime.PipelineOptions{},
+		&telephonyOptions,
+	)
 
 	return &AgentClient{
-		endpoint:   endpoint,
-		pipeline:   pipeline,
-		credential: cred,
+		endpoint:          endpoint,
+		pipeline:          pipeline,
+		telephonyPipeline: telephonyPipeline,
+		credential:        cred,
 	}
 }
 

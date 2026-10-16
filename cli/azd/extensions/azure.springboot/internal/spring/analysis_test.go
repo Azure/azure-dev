@@ -512,6 +512,11 @@ DataSource other() { return externalFactory(); }`},
 			code: "@Bean public javax.sql.DataSource source() { return externalFactory(); }"},
 		{name: "connection factory return type", reject: true,
 			code: "@Bean ConnectionFactory factory() { return externalFactory(); }"},
+		{name: "builder-created Hikari return type", reject: true, code: `@Bean
+@ConfigurationProperties("app.datasource")
+HikariDataSource source() {
+	return DataSourceBuilder.create().type(HikariDataSource.class).build();
+}`},
 		{name: "qualified bean annotation", reject: true,
 			code: "@org.springframework.context.annotation.Bean DataSource source() { return externalFactory(); }"},
 		{name: "annotated datasource producer", reject: true, code: `@Bean(name = {"primary", "database"})
@@ -1089,6 +1094,7 @@ func TestAnalyzePoolSpecificConnectionBindings(t *testing.T) {
 	}{
 		{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
 		{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
+		{"spring.datasource.hikari.driver-class-name", "spring.datasource.driver-class-name"},
 		{"spring.datasource.tomcat.url", "spring.datasource.url"},
 		{"spring.datasource.tomcat.username", "spring.datasource.username"},
 		{"spring.datasource.tomcat.password", "spring.datasource.password"},
@@ -1119,6 +1125,20 @@ func TestAnalyzePoolSpecificConnectionBindings(t *testing.T) {
 		envLookup(map[string]string{"SPRING_DATASOURCE_URL": "jdbc:mysql://localhost/warehouse"}))
 	require.NoError(t, err)
 	require.Equal(t, MySQL, application.Requirements[0].Kind)
+}
+
+func TestGenerateOverridesLoopbackServerAddress(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties", "server.address=127.0.0.1")
+	application, err := Analyze(t.Context(), directory,
+		staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+	require.NoError(t, err)
+
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	require.Contains(t, string(plan.Files["infra/application.bicep"]),
+		"{ name: 'SERVER_ADDRESS', value: '0.0.0.0' }")
 }
 
 func TestDerivedContainerAppNameValidation(t *testing.T) {

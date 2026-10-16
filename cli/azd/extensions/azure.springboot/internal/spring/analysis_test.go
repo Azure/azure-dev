@@ -509,7 +509,7 @@ func TestAnalyzeResolvedRuntimeDriver(t *testing.T) {
 func TestParseRuntimeDependencies(t *testing.T) {
 	dependencies := parseRuntimeDependencies(`
 The following files have been resolved:
-   org.postgresql:postgresql:jar:42.7.8:runtime
+   org.postgresql:postgresql:jar:42.7.8:runtime -- module org.postgresql.jdbc [auto]
    com.mysql:mysql-connector-j:jar:9.5.0:compile
    com.example:classified-driver:jar:native:1.0:runtime
    com.example:test-only:jar:1.0:test
@@ -526,7 +526,7 @@ func TestResolveRuntimeDependencies(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "mvnw", "")
 	dependencies, err := resolveRuntimeDependencies(t.Context(), directory, dependencyListRunner{
-		t: t, output: "org.postgresql:postgresql:jar:42.7.8:runtime\n",
+		t: t, output: "org.postgresql:postgresql:jar:42.7.8:runtime -- module org.postgresql.jdbc [auto]\n",
 	})
 	require.NoError(t, err)
 	require.Equal(t, []Dependency{{

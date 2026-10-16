@@ -443,7 +443,11 @@ func parseRuntimeDependencies(output string) []Dependency {
 	var result []Dependency
 	seen := map[string]bool{}
 	for line := range strings.Lines(output) {
-		parts := strings.Split(strings.TrimSpace(line), ":")
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		parts := strings.Split(fields[0], ":")
 		if len(parts) < 5 {
 			continue
 		}

@@ -206,6 +206,25 @@ type VoiceTelephonyBinding struct {
 	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
 }
 
+// MarshalJSON preserves the difference between omitted transfer targets and an
+// explicitly empty list. The latter manages the singleton as empty during deploy.
+func (b VoiceTelephonyBinding) MarshalJSON() ([]byte, error) {
+	type bindingWire struct {
+		Provider        string            `json:"provider"`
+		Identifier      string            `json:"identifier"`
+		Connection      string            `json:"connection"`
+		TransferTargets *[]map[string]any `json:"transferTargets,omitempty"`
+	}
+	var transferTargets *[]map[string]any
+	if b.TransferTargets != nil {
+		transferTargets = &b.TransferTargets
+	}
+	return json.Marshal(bindingWire{
+		Provider: b.Provider, Identifier: b.Identifier, Connection: b.Connection,
+		TransferTargets: transferTargets,
+	})
+}
+
 // VoiceAudio bundles optional prompt voice input/output audio overrides.
 type VoiceAudio struct {
 	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`

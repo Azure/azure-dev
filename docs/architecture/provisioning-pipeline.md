@@ -34,7 +34,7 @@ The validation framework is pluggable — new checks can be added via `AddCheck(
 **UX behavior:**
 
 - No issues → proceed silently
-- Warnings only → display and prompt to continue
+- Warnings only → display indented warning details, separated suggestions, and a per-report total, then prompt to continue. Regular warnings default to **Yes**; the built-in missing-role-permission warning is **critical** and defaults to **No**, including with `--no-prompt`. Users can explicitly continue interactively. Intentional cancellation retains exit code 0.
 - Errors → display and cancel
 
 Disable local validation with: `azd config set validation.provision off`.

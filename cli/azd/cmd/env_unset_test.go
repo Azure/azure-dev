@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -81,9 +82,8 @@ func TestEnvUnsetCmd(t *testing.T) {
 			require.Contains(t, cmd.Long, "AZURE_ENV_NAME identifies the environment and cannot be unset.")
 			require.NotContains(t, cmd.Long, "managed by azd")
 			require.Contains(t, cmd.Long, "confirm removal (defaults to Yes)")
-			require.Contains(t, cmd.Long, "If input ends without an answer, no keys are removed.")
 			require.Contains(t, cmd.Long, "--force")
-			require.Contains(t, cmd.Long, "restore the previous values")
+			require.Contains(t, cmd.Long, "restore the previous values (defaults to Yes)")
 			require.Contains(t, cmd.Long, "With --force, restoration is attempted automatically without prompting.")
 			require.NotContains(t, cmd.Long, "Process environment variables")
 			require.NotContains(t, cmd.Long, "Managed values")
@@ -605,6 +605,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 		name                    string
 		persistedBeforeError    bool
 		restore                 bool
+		restoreInput            *string
 		force                   bool
 		noPrompt                bool
 		inspectionErr           error
@@ -629,6 +630,34 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 		{
 			name: "PartialSaveRestored", persistedBeforeError: true, restore: true,
 			errorText: "previous local .env values were restored",
+		},
+		{
+			name: "PartialSaveEnterRestored", persistedBeforeError: true, restore: true, restoreInput: new("\n"),
+			errorText: "previous local .env values were restored",
+		},
+		{
+			name: "PartialSaveWindowsEnterRestored", persistedBeforeError: true, restore: true, restoreInput: new("\r\n"),
+			errorText: "previous local .env values were restored",
+		},
+		{
+			name: "PartialSaveExplicitNo", persistedBeforeError: true, restoreInput: new("n\n"),
+			errorText: "local .env values changed and were not restored",
+		},
+		{
+			name: "PartialSaveEOFNotRestored", persistedBeforeError: true, restoreInput: new(""), promptErr: io.EOF,
+			errorText: "confirming restoration",
+		},
+		{
+			name: "PartialSaveWhitespaceEOFNotRestored", persistedBeforeError: true,
+			restoreInput: new(" \t\r"), promptErr: io.EOF, errorText: "confirming restoration",
+		},
+		{
+			name: "PartialSaveInvalidEOFNotRestored", persistedBeforeError: true,
+			restoreInput: new("invalid"), promptErr: io.EOF, errorText: "confirming restoration",
+		},
+		{
+			name: "PartialSaveInvalidLineEOFNotRestored", persistedBeforeError: true,
+			restoreInput: new("invalid\n"), promptErr: io.EOF, errorText: "confirming restoration",
 		},
 		{
 			name: "PreservesConcurrentUpdates", persistedBeforeError: true, restore: true, concurrentUpdate: true,
@@ -657,6 +686,14 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 		{
 			name: "RestoresAfterCancellationWithoutForce", persistedBeforeError: true, restore: true,
 			cancelDuringSave: true, errorText: "previous local .env values were restored",
+		},
+		{
+			name: "RestoresOnEnterAfterCancellation", persistedBeforeError: true, restore: true, restoreInput: new("\n"),
+			cancelDuringSave: true, errorText: "previous local .env values were restored",
+		},
+		{
+			name: "EOFRecoveryAfterCancellation", persistedBeforeError: true, restoreInput: new(""), promptErr: io.EOF,
+			cancelDuringSave: true, errorText: "confirming restoration",
 		},
 		{
 			name: "DeclinesRestorationAfterCancellation", persistedBeforeError: true,
@@ -774,6 +811,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 					}).Return(tt.restoreSaveErr).Once()
 				}
 			}
+			recoveryOutput := &bytes.Buffer{}
 			console := mockinput.NewMockConsole()
 			console.SetNoPromptMode(tt.noPrompt)
 			if !tt.force {
@@ -781,6 +819,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 					return strings.Contains(options.Message, "will be removed from environment")
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 					require.Equal(t, true, options.DefaultValue)
+					require.True(t, options.RequireInput)
 					if tt.updateDuringConfirm {
 						updated := maps.Clone(before)
 						updated["KEY"] = "fresh-private-value"
@@ -794,11 +833,29 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 				console.WhenConfirm(func(options input.ConsoleOptions) bool {
 					return strings.Contains(options.Message, "Restore the previous values")
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-					require.Equal(t, false, options.DefaultValue)
+					require.Equal(t, true, options.DefaultValue)
+					require.True(t, options.RequireInput)
 					require.Contains(t, options.Message, `"test-env"`)
 					require.Contains(t, options.Message, `"KEY"`)
 					if tt.concurrentUpdate {
 						updateUnrelated()
+					}
+					if tt.restoreInput != nil {
+						recoveryConsole := input.NewConsole(false, false, input.Writers{Output: recoveryOutput},
+							input.ConsoleHandles{
+								Stdin:  strings.NewReader(*tt.restoreInput),
+								Stdout: recoveryOutput,
+								Stderr: recoveryOutput,
+							}, &output.NoneFormatter{}, nil)
+						confirmed, err := recoveryConsole.Confirm(context.WithoutCancel(runCtx), options)
+						require.Equal(t, tt.restore, confirmed)
+						if tt.promptErr != nil {
+							require.ErrorIs(t, err, tt.promptErr)
+						} else {
+							require.NoError(t, err)
+						}
+						require.Contains(t, recoveryOutput.String(), " (Y/n)")
+						return confirmed, err
 					}
 					return tt.restore, tt.promptErr
 				})
@@ -844,7 +901,7 @@ func TestEnvUnsetActionSaveFailure(t *testing.T) {
 			} else {
 				require.JSONEq(t, string(configBefore), string(configAfter))
 			}
-			messages := strings.Join(console.Output(), "\n")
+			messages := strings.Join(console.Output(), "\n") + recoveryOutput.String()
 			if tt.force {
 				require.NotContains(t, messages, "will be removed from environment")
 				require.NotContains(t, messages, "Restore the previous values")

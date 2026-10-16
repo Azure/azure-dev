@@ -33,8 +33,7 @@ func newEnvUnsetCmd() *cobra.Command {
 			"Keys are case-sensitive. Missing keys are ignored with a warning.\n" +
 			environment.EnvNameEnvVarName + " identifies the environment and cannot be unset.\n" +
 			"You are prompted to confirm removal (defaults to Yes). Use --force to skip this confirmation.\n" +
-			"If input ends without an answer, no keys are removed.\n" +
-			"If saving fails after local values change, you can choose to restore the previous values.\n" +
+			"If saving fails after local values change, you can choose to restore the previous values (defaults to Yes).\n" +
 			"With --force, restoration is attempted automatically without prompting.\n" +
 			"Removing a Key Vault secret reference does not delete the secret.\n" +
 			"Configuration values in config.json are not removed.",
@@ -285,7 +284,8 @@ func (a *envUnsetAction) handleSaveError(
 			Message: fmt.Sprintf(
 				"Saving environment %q failed and its local .env values changed. Restore the previous values for %s?",
 				env.Name(), formatEnvUnsetKeys(keys)),
-			DefaultValue: false,
+			DefaultValue: true,
+			RequireInput: true,
 		})
 		if err != nil {
 			return errors.Join(saveErr, fmt.Errorf(

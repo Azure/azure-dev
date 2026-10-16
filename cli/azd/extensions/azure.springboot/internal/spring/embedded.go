@@ -42,6 +42,11 @@ func resolveEmbedded(m *model, c *configuration) (*EmbeddedBinding, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, evidence := range c.traces["spring.datasource.driver-class-name"] {
+		if !slices.Contains(trace, evidence) {
+			trace = append(trace, evidence)
+		}
+	}
 	for _, key := range []string{"spring.datasource.username", "spring.datasource.password"} {
 		if _, err := c.resolve(key); err != nil {
 			return nil, err

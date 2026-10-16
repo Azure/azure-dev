@@ -205,6 +205,34 @@ func TestResolutionExternalDrivers(t *testing.T) {
 	}
 }
 
+func TestResolutionEmbeddedDriverSharedPromptInput(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.datasource.url=jdbc:${DB_ENGINE}:mem:catalog\n"+
+			"spring.datasource.driver-class-name=org.${DB_ENGINE}.Driver\n")
+	analysis, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		Properties: map[string]string{"DB_ENGINE": "h2"},
+	})
+	require.NoError(t, err)
+	require.Empty(t, analysis.Diagnostics)
+	require.Empty(t, analysis.Decisions)
+	require.Len(t, analysis.Bindings, 1)
+	require.NotNil(t, analysis.Bindings[0].Embedded)
+	require.Equal(t, "org.h2.Driver", analysis.Bindings[0].Embedded.Driver)
+	require.Contains(t, analysis.Bindings[0].Evidence, Evidence{
+		Property: "spring.datasource.driver-class-name", Source: "src/main/resources/application.properties",
+	})
+
+	application, err := analysis.ResolvedApplication()
+	require.NoError(t, err)
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	generated := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.Contains(t, generated, "spring.datasource.url=jdbc:h2:mem:catalog\n")
+	require.Contains(t, generated, "spring.datasource.driver-class-name=org.h2.Driver\n")
+	require.NotContains(t, generated, "${DB_ENGINE}")
+}
+
 func TestResolutionAnswersAndProvenance(t *testing.T) {
 	directory, resolver := resolutionFixture(t, "missing-url")
 	address := url.URL{

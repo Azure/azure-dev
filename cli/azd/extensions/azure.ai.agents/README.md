@@ -898,8 +898,14 @@ Deploy lists every page of canonical bindings and matches provider identities
 without deriving binding IDs. If exactly one active remote binding matches the
 YAML, deploy continues. Missing bindings are created with repeatability headers.
 Drift or duplicate matches fail safely instead of changing or deleting remote
-routing. Per-binding `transferTargets` are not supported by this migration; remove
-them until singleton transfer-target reconciliation is available.
+routing. Existing per-binding `transferTargets` YAML remains migration-compatible:
+omitting it leaves the singleton unmanaged, while an explicit empty list manages
+an empty singleton. Multiple declarations must describe the same named targets
+(order does not matter). azd validates supported `pstn`, `teams`, and `sip`
+destinations locally. After binding reconciliation it validates the singleton;
+it replaces a drifted singleton only when this deployment created a binding, and
+uses the current ETag. Otherwise drift, unknown remote destination kinds, and
+unconfirmed writes fail safely with manual-reconciliation guidance.
 
 Cleanup: delete telephony bindings before deleting test agents. The service may
 leave bindings behind when an agent is deleted, so do not rely on agent deletion

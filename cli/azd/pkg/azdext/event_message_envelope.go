@@ -14,7 +14,8 @@ import (
 
 // EventMessageEnvelope provides message operations for EventMessage
 // It implements the grpcbroker.MessageEnvelope interface
-// This envelope extracts extension ID from gRPC context for correlation.
+// This envelope uses the configured listener identity for correlation and falls back
+// to validated gRPC claims when no listener identity is configured.
 type EventMessageEnvelope struct {
 	extensionId string
 }
@@ -24,7 +25,7 @@ func NewEventMessageEnvelope() *EventMessageEnvelope {
 	return &EventMessageEnvelope{}
 }
 
-// NewEventMessageEnvelopeWithExtensionId creates an EventMessageEnvelope with an extension ID fallback.
+// NewEventMessageEnvelopeWithExtensionId creates an EventMessageEnvelope with a configured listener identity.
 func NewEventMessageEnvelopeWithExtensionId(extensionId string) *EventMessageEnvelope {
 	return &EventMessageEnvelope{extensionId: extensionId}
 }
@@ -36,19 +37,23 @@ var _ grpcbroker.PersistentHandlerContextEnvelope[EventMessage] = (*EventMessage
 
 const eventHandlerCancelingStatus = "canceling"
 
-// getExtensionIdFromContext extracts the extension ID from the gRPC metadata context.
-func (ops *EventMessageEnvelope) getExtensionIdFromContext(ctx context.Context) string {
+// getExtensionId returns the configured listener identity or falls back to validated caller claims.
+func (ops *EventMessageEnvelope) getExtensionId(ctx context.Context) string {
+	if ops.extensionId != "" {
+		return ops.extensionId
+	}
+
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err == nil && claims.Subject != "" {
 		return claims.Subject
 	}
-	return ops.extensionId
+	return ""
 }
 
 // GetRequestId generates a correlation key from the message content and context.
-// For EventMessage, the correlation key is generated from extension.Id (from context) + eventName + serviceName.
+// For EventMessage, the correlation key is generated from the listener extension ID + eventName + serviceName.
 func (ops *EventMessageEnvelope) GetRequestId(ctx context.Context, msg *EventMessage) string {
-	extensionId := ops.getExtensionIdFromContext(ctx)
+	extensionId := ops.getExtensionId(ctx)
 	if extensionId == "" {
 		return ""
 	}

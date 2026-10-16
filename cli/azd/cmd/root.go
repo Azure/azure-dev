@@ -544,6 +544,7 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 		UseMiddlewareWhen("error", middleware.NewErrorMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTroubleshooting
 		}).
+		UseMiddleware("cancellation", middleware.NewCancellationMiddleware).
 		UseMiddlewareWhen("loginGuard", middleware.NewLoginGuardMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			// Check if the command or any of its parents require login
 			current := descriptor
@@ -554,10 +555,8 @@ func registerGlobalMiddleware(root *actions.ActionDescriptor) {
 
 				current = current.Parent()
 			}
-
 			return false
-		}).
-		UseMiddleware("cancellation", middleware.NewCancellationMiddleware)
+		})
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {

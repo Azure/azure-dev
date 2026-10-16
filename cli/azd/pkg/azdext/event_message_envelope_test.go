@@ -82,3 +82,42 @@ func TestEventMessageEnvelope_UsesConfiguredExtensionIdForEmptyClaims(t *testing
 
 	require.Equal(t, "test.extension.prepackage", env.GetRequestId(ctx, msg))
 }
+
+func TestEventMessageEnvelope_ConfiguredListenerIdentityOverridesCallerClaims(t *testing.T) {
+	env := NewEventMessageEnvelopeWithExtensionId("listener.extension")
+	callerClaims := &extensions.ExtensionClaims{}
+	callerClaims.Subject = "caller.extension"
+	callerCtx := extensions.WithClaimsContext(t.Context(), callerClaims)
+	listenerClaims := &extensions.ExtensionClaims{}
+	listenerClaims.Subject = "listener.extension"
+	listenerCtx := extensions.WithClaimsContext(t.Context(), listenerClaims)
+
+	request := &EventMessage{
+		MessageType: &EventMessage_InvokeProjectHandler{
+			InvokeProjectHandler: &InvokeProjectHandler{EventName: "prepackage"},
+		},
+	}
+	response := &EventMessage{
+		MessageType: &EventMessage_ProjectHandlerStatus{
+			ProjectHandlerStatus: &ProjectHandlerStatus{EventName: "prepackage"},
+		},
+	}
+
+	requestId := env.GetRequestId(callerCtx, request)
+	require.Equal(t, "listener.extension.prepackage", requestId)
+	require.Equal(t, requestId, env.GetRequestId(listenerCtx, response))
+}
+
+func TestEventMessageEnvelope_UsesClaimsWithoutConfiguredListenerIdentity(t *testing.T) {
+	env := NewEventMessageEnvelope()
+	claims := &extensions.ExtensionClaims{}
+	claims.Subject = "caller.extension"
+	ctx := extensions.WithClaimsContext(t.Context(), claims)
+	msg := &EventMessage{
+		MessageType: &EventMessage_InvokeProjectHandler{
+			InvokeProjectHandler: &InvokeProjectHandler{EventName: "prepackage"},
+		},
+	}
+
+	require.Equal(t, "caller.extension.prepackage", env.GetRequestId(ctx, msg))
+}

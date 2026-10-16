@@ -78,6 +78,39 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_BYOM(t *testing.T) {
 	require.Equal(t, "telephony-twilio", got.Telephony.Bindings[0].Connection)
 }
 
+func TestVoiceTelephonyTransferTargetsRoundTrip_OmittedVersusEmpty(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		targets []map[string]any
+		isNil   bool
+	}{
+		{name: "omitted", targets: nil, isNil: true},
+		{name: "explicit empty", targets: []map[string]any{}, isNil: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{
+					Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent",
+				},
+				ModelType: agent_yaml.VoiceModelTypeManaged,
+				Model:     &agent_yaml.Model{Id: "gpt-realtime"},
+				Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{{
+					Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+					TransferTargets: test.targets,
+				}}},
+			}, nil)
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name: "voice-agent", Host: "azure.ai.agent", AdditionalProperties: props,
+			}
+			got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+			require.NoError(t, err)
+			require.True(t, found)
+			require.Equal(t, test.isNil, got.Telephony.Bindings[0].TransferTargets == nil)
+		})
+	}
+}
+
 func TestAgentDefinitionFromStruct_RejectsTelephonyOnHosted(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"kind":      "hosted",

@@ -1763,13 +1763,28 @@ func ejectProjectInfra(
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
+	if err := validateExistingRegistryTerraformEject(provider, environment); err != nil {
+		return err
+	}
+	groupKey := "AZURE_RESOURCE_GROUP"
+	if target.layer {
+		groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	}
+	group := environment[groupKey]
+	if group == "" && environment["AZURE_ENV_NAME"] != "" {
+		group = "rg-" + environment["AZURE_ENV_NAME"]
+		if target.layer {
+			group += "-foundry"
+		}
+	}
 	result, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:    raw,
-		ServiceName:     serviceName,
-		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
-		Env:             environment,
-		ProjectRoot:     projectRoot,
-		PreserveVarRefs: true,
+		RawAzureYAML:      raw,
+		ServiceName:       serviceName,
+		AcceptedHosts:     provisioning.FoundryProvisioningServiceHosts,
+		Env:               environment,
+		ResourceGroupName: group,
+		ProjectRoot:       projectRoot,
+		PreserveVarRefs:   true,
 	})
 	if err != nil {
 		return exterrors.Validation(
@@ -1895,6 +1910,21 @@ func ejectProjectInfra(
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
 		}
+	}
+	return nil
+}
+
+func validateExistingRegistryTerraformEject(provider string, environment map[string]string) error {
+	id, found := environment["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if !found {
+		id = os.Getenv("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
+	}
+	if provider == provisioning.TerraformProviderName && id != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead, or unset the existing registry selector",
+		)
 	}
 	return nil
 }

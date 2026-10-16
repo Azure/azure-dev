@@ -1562,6 +1562,8 @@ services:
 
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	t.Setenv("ENABLE_AGENT", "false")
+	const existingRegistryID = "/subscriptions/sub/resourceGroups/shared/" +
+		"providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
@@ -1594,6 +1596,19 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
+	environment := map[string]string{
+		"ENABLE_AGENT": "true",
+		"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": existingRegistryID,
+		"AZURE_SUBSCRIPTION_ID":                         "sub",
+		"AZURE_RESOURCE_GROUP":                          "shared",
+	}
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "terraform", "", "", environment), "not supported with Terraform")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", "", "", environment), "azd down deletes")
+	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	environment["AZURE_RESOURCE_GROUP"] = "foundry"
 	require.NoError(t, ejectProjectInfraWithTarget(
 		t.Context(),
 		client,
@@ -1602,7 +1617,7 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		"bicep",
 		"",
 		"",
-		map[string]string{"ENABLE_AGENT": "true"},
+		environment,
 	))
 
 	// #nosec G304 -- path is inside the test project directory.
@@ -1615,7 +1630,21 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &parameters))
 	assert.Equal(t, true, parameters.Parameters["includeAcr"].Value)
+	assert.Equal(t, "${AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID}",
+		parameters.Parameters["existingAcrResourceId"].Value)
+	assert.NotContains(t, string(raw), existingRegistryID)
+	for _, module := range []string{"container-registry.bicep", "foundry-project.bicep"} {
+		assert.FileExists(t, filepath.Join(root, "infra", "modules", module))
+	}
 	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
+}
+
+func TestValidateExistingRegistryTerraformEject(t *testing.T) {
+	t.Setenv("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID", "existing-registry")
+	require.ErrorContains(t, validateExistingRegistryTerraformEject("terraform", nil), "not supported with Terraform")
+	require.NoError(t, validateExistingRegistryTerraformEject("bicep", nil))
+	require.NoError(t, validateExistingRegistryTerraformEject("terraform",
+		map[string]string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": ""}))
 }
 
 func TestEjectTerraformUsesFoundryLayerPathAndProvider(t *testing.T) {

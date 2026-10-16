@@ -22,12 +22,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
@@ -2616,6 +2616,10 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateHostedVoiceWrapperName(request.Name, hostedTarget); err != nil {
 		return nil, err
 	}
+	desiredTelephony, err := desiredTelephonyBindingsForAgent(va)
+	if err != nil {
+		return nil, err
+	}
 
 	projectEndpoint := azdEnv["FOUNDRY_PROJECT_ENDPOINT"]
 	if projectEndpoint == "" {
@@ -2634,6 +2638,11 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			return nil, err
 		}
 	}
+	if err := preflightVoiceTelephonyBindings(
+		ctx, agentClient, request.Name, desiredTelephony,
+	); err != nil {
+		return nil, err
+	}
 
 	agentObject, deployOp, err := p.deployVoiceAgentRemote(
 		ctx, agentClient, request, azdEnv, progress,
@@ -2644,9 +2653,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 	if err := validateVoiceAgentDeployResponse(agentObject); err != nil {
 		return nil, err
 	}
-	if err := p.deployVoiceTelephonyBindings(
-		ctx, agentClient, va, agentObject, azdEnv[voiceOverriddenHostEnvKey],
-	); err != nil {
+	if err := p.deployVoiceTelephonyBindings(ctx, agentClient, desiredTelephony, agentObject); err != nil {
 		return nil, err
 	}
 
@@ -2743,80 +2750,442 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 }
 
 type telephonyBindingClient interface {
-	GetTelephonyBinding(
+	ListAllTelephonyBindings(
 		ctx context.Context,
 		agentName string,
-		bindingID string,
-		apiVersion string,
-		overriddenHost string,
-	) (*agent_api.TelephonyBinding, error)
-	CreateTelephonyBinding(
+		options agent_api.TelephonyBindingListOptions,
+	) ([]agent_api.GATelephonyBinding, error)
+	CreateGATelephonyBinding(
 		ctx context.Context,
 		agentName string,
-		request *agent_api.TelephonyBindingRequest,
-		apiVersion string,
-		overriddenHost string,
-	) (*agent_api.TelephonyBinding, error)
+		request agent_api.TelephonyBindingCreateRequest,
+		repeatability agent_api.TelephonyRepeatabilityOptions,
+	) (*agent_api.GATelephonyBinding, error)
+}
+
+type desiredTelephonyBinding struct {
+	provider       string
+	identity       string
+	connectionName string
+	createRequest  agent_api.TelephonyBindingCreateRequest
+}
+
+func preflightVoiceTelephonyBindings(
+	ctx context.Context,
+	client telephonyBindingClient,
+	agentName string,
+	desired []desiredTelephonyBinding,
+) error {
+	if len(desired) == 0 {
+		return nil
+	}
+	remote, err := client.ListAllTelephonyBindings(ctx, agentName, agent_api.TelephonyBindingListOptions{})
+	if err != nil {
+		if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
+			responseErr.StatusCode == http.StatusNotFound {
+			return nil
+		}
+		return exterrors.ServiceFromAzure(err, exterrors.OpGetTelephonyBinding)
+	}
+	_, err = telephonyMissingBindings(remote, desired, true)
+	return err
 }
 
 func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	ctx context.Context,
 	agentClient telephonyBindingClient,
-	voiceAgent agent_yaml.VoiceAgent,
+	desired []desiredTelephonyBinding,
 	agentObject *agent_api.AgentObject,
-	overriddenHost string,
 ) error {
-	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+	if len(desired) == 0 {
 		return nil
 	}
-	for _, binding := range voiceAgent.Telephony.Bindings {
-		request := &agent_api.TelephonyBindingRequest{
-			Provider:        telephonyWireProvider(binding.Provider),
-			Identifier:      strings.TrimSpace(binding.Identifier),
-			ConnectionName:  strings.TrimSpace(binding.Connection),
-			TransferTargets: binding.TransferTargets,
-		}
-
-		bindingID := fmt.Sprintf("%s:%s", request.Provider, request.Identifier)
-		remoteBinding, getErr := agentClient.GetTelephonyBinding(
+	if agentObject == nil || strings.TrimSpace(agentObject.Name) == "" {
+		return fmt.Errorf("telephony reconciliation requires a deployed agent name")
+	}
+	missing, err := currentTelephonyMissingBindings(ctx, agentClient, agentObject.Name, desired)
+	if err != nil {
+		return err
+	}
+	createdCount := 0
+	for _, binding := range missing {
+		created, createErr := agentClient.CreateGATelephonyBinding(
 			ctx,
 			agentObject.Name,
-			bindingID,
-			agent_api.TelephonyBindingAPIVersion,
-			overriddenHost,
+			binding.createRequest,
+			agent_api.TelephonyRepeatabilityOptions{
+				RequestID: uuid.NewString(),
+				FirstSent: time.Now().UTC(),
+			},
 		)
-		if getErr == nil {
-			if !telephonyBindingMatches(remoteBinding, request) {
-				return exterrors.Validation(
-					exterrors.CodeTelephonyBindingDrift,
-					fmt.Sprintf("telephony binding %q already exists with different configuration", bindingID),
-					"delete the remote binding, then run azd deploy again",
-				)
+		if createErr == nil {
+			if created == nil {
+				return telephonyPartialCompletionError(createdCount,
+					fmt.Errorf("telephony create returned an empty response"))
 			}
-			_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			if !createdTelephonyBindingConverged(*created, binding) {
+				if err := reconcileTelephonyCreate(ctx, agentClient, agentObject.Name, binding,
+					fmt.Errorf("telephony create returned a non-converged response")); err != nil {
+					return telephonyPartialCompletionError(createdCount, err)
+				}
+			}
+			createdCount++
+			_, _ = fmt.Fprintln(os.Stderr, "Telephony binding created.")
 			continue
 		}
-		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
-			return exterrors.ServiceFromAzure(getErr, exterrors.OpGetTelephonyBinding)
+		if responseErr, ok := errors.AsType[*azcore.ResponseError](createErr); ok &&
+			responseErr.StatusCode == http.StatusConflict {
+			if err := reconcileTelephonyCreate(ctx, agentClient, agentObject.Name, binding, createErr); err != nil {
+				return telephonyPartialCompletionError(createdCount, err)
+			}
+			createdCount++
+			continue
 		}
-
-		created, err := agentClient.CreateTelephonyBinding(
-			ctx,
-			agentObject.Name,
-			request,
-			agent_api.TelephonyBindingAPIVersion,
-			overriddenHost,
-		)
-		if err != nil {
-			return exterrors.ServiceFromAzure(err, exterrors.OpCreateTelephonyBinding)
+		if _, unknown := errors.AsType[*agent_api.TelephonyWriteOutcomeUnknownError](createErr); !unknown {
+			return telephonyPartialCompletionError(createdCount,
+				exterrors.ServiceFromAzure(createErr, exterrors.OpCreateTelephonyBinding))
 		}
-		id := created.ID
-		if id == "" {
-			id = bindingID
+		if err := reconcileTelephonyCreate(ctx, agentClient, agentObject.Name, binding, createErr); err != nil {
+			return telephonyPartialCompletionError(createdCount, err)
 		}
-		_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+		createdCount++
+	}
+	if err := confirmAllTelephonyBindings(ctx, agentClient, agentObject.Name, desired); err != nil {
+		return telephonyPartialCompletionError(createdCount, err)
 	}
 	return nil
+}
+
+func desiredTelephonyBindingsForAgent(voiceAgent agent_yaml.VoiceAgent) ([]desiredTelephonyBinding, error) {
+	if voiceAgent.Telephony == nil || len(voiceAgent.Telephony.Bindings) == 0 {
+		return nil, nil
+	}
+	return desiredTelephonyBindings(voiceAgent.Telephony.Bindings)
+}
+
+func currentTelephonyMissingBindings(
+	ctx context.Context,
+	client telephonyBindingClient,
+	agentName string,
+	desired []desiredTelephonyBinding,
+) ([]desiredTelephonyBinding, error) {
+	remote, err := client.ListAllTelephonyBindings(ctx, agentName, agent_api.TelephonyBindingListOptions{})
+	if err != nil {
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpGetTelephonyBinding)
+	}
+	return telephonyMissingBindings(remote, desired, true)
+}
+
+func telephonyMissingBindings(
+	remote []agent_api.GATelephonyBinding,
+	desired []desiredTelephonyBinding,
+	allowCreating bool,
+) ([]desiredTelephonyBinding, error) {
+	missing := make([]desiredTelephonyBinding, 0, len(desired))
+	for _, binding := range desired {
+		matches := matchingGATelephonyBindings(remote, binding)
+		switch len(matches) {
+		case 0:
+			missing = append(missing, binding)
+		case 1:
+			if strings.TrimSpace(matches[0].ConnectionName) != binding.connectionName ||
+				(matches[0].Status != agent_api.TelephonyBindingStatusActive &&
+					!(allowCreating && matches[0].Status == "creating")) {
+				return nil, telephonyBindingDriftError(binding)
+			}
+		default:
+			return nil, exterrors.Validation(
+				exterrors.CodeTelephonyBindingDrift,
+				"multiple remote telephony bindings match one declared binding",
+				"remove duplicate remote bindings before running azd deploy again",
+			)
+		}
+	}
+	return missing, nil
+}
+
+func desiredTelephonyBindings(bindings []agent_yaml.VoiceTelephonyBinding) ([]desiredTelephonyBinding, error) {
+	desired := make([]desiredTelephonyBinding, 0, len(bindings))
+	seen := map[string]struct{}{}
+	for i, binding := range bindings {
+		if len(binding.TransferTargets) > 0 {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf(
+					"telephony.bindings[%d] contains unsupported transfer targets",
+					i,
+				),
+				"remove transfer targets before deploying",
+			)
+		}
+		converted, err := desiredTelephonyBindingFromYAML(binding)
+		if err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("invalid telephony.bindings[%d]: %s", i, err),
+				"use provider twilio with +<E.164>, or provider acs with 28:orgid:<uuid>",
+			)
+		}
+		key := converted.provider + ":" + converted.identity
+		if _, duplicate := seen[key]; duplicate {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"a telephony binding identity is declared more than once",
+				"keep exactly one YAML binding for each phone number or resource account",
+			)
+		}
+		seen[key] = struct{}{}
+		desired = append(desired, converted)
+	}
+	return desired, nil
+}
+
+func desiredTelephonyBindingFromYAML(binding agent_yaml.VoiceTelephonyBinding) (desiredTelephonyBinding, error) {
+	provider := strings.TrimSpace(binding.Provider)
+	identifier := strings.TrimSpace(binding.Identifier)
+	connection := strings.TrimSpace(binding.Connection)
+	if connection == "" {
+		return desiredTelephonyBinding{}, fmt.Errorf("connection is required")
+	}
+	if !utf8.ValidString(connection) || utf8.RuneCountInString(connection) > 256 {
+		return desiredTelephonyBinding{}, fmt.Errorf("connection must be valid UTF-8 and at most 256 characters")
+	}
+	switch provider {
+	case "twilio":
+		if !telephonyE164Pattern.MatchString(identifier) {
+			return desiredTelephonyBinding{}, fmt.Errorf("Twilio identifier must be a valid +<E.164> phone number")
+		}
+		return desiredTelephonyBinding{
+			provider:       agent_api.TelephonyProviderTwilio,
+			identity:       identifier,
+			connectionName: connection,
+			createRequest: &agent_api.CreateTwilioTelephonyBindingRequest{
+				ConnectionName: connection,
+				PhoneNumber:    identifier,
+			},
+		}, nil
+	case "acs":
+		if strings.HasPrefix(identifier, "4:") {
+			return desiredTelephonyBinding{}, fmt.Errorf("legacy ACS purchased-number identifiers are not supported")
+		}
+		resourceAccountID, ok := strings.CutPrefix(identifier, "28:orgid:")
+		if !ok || !canonicalUUIDPattern.MatchString(resourceAccountID) {
+			return desiredTelephonyBinding{}, fmt.Errorf("ACS identifier must be 28:orgid:<uuid>")
+		}
+		parsed, err := uuid.Parse(resourceAccountID)
+		if err != nil {
+			return desiredTelephonyBinding{}, fmt.Errorf("ACS resource account object ID must be a valid UUID")
+		}
+		normalizedID := parsed.String()
+		return desiredTelephonyBinding{
+			provider:       agent_api.TelephonyProviderTeamsPhoneExtensibility,
+			identity:       normalizedID,
+			connectionName: connection,
+			createRequest: &agent_api.CreateTeamsPhoneTelephonyBindingRequest{
+				ConnectionName:          connection,
+				ResourceAccountObjectID: normalizedID,
+			},
+		}, nil
+	default:
+		return desiredTelephonyBinding{}, fmt.Errorf("provider must be acs or twilio")
+	}
+}
+
+var (
+	telephonyE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
+	canonicalUUIDPattern = regexp.MustCompile(
+		`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`,
+	)
+)
+
+func matchingGATelephonyBindings(
+	remote []agent_api.GATelephonyBinding,
+	desired desiredTelephonyBinding,
+) []agent_api.GATelephonyBinding {
+	matches := []agent_api.GATelephonyBinding{}
+	for _, binding := range remote {
+		if binding.Provider != desired.provider {
+			continue
+		}
+		switch desired.provider {
+		case agent_api.TelephonyProviderTwilio:
+			if strings.TrimSpace(binding.PhoneNumber) == desired.identity {
+				matches = append(matches, binding)
+			}
+		case agent_api.TelephonyProviderTeamsPhoneExtensibility:
+			remoteID, err := uuid.Parse(strings.TrimSpace(binding.ResourceAccountObjectID))
+			if err == nil && remoteID.String() == desired.identity {
+				matches = append(matches, binding)
+			}
+		}
+	}
+	return matches
+}
+
+func gaTelephonyBindingConverged(remote agent_api.GATelephonyBinding, desired desiredTelephonyBinding) bool {
+	return remote.Status == agent_api.TelephonyBindingStatusActive &&
+		strings.TrimSpace(remote.ConnectionName) == desired.connectionName
+}
+
+func createdTelephonyBindingConverged(
+	remote agent_api.GATelephonyBinding,
+	desired desiredTelephonyBinding,
+) bool {
+	matches := matchingGATelephonyBindings([]agent_api.GATelephonyBinding{remote}, desired)
+	return len(matches) == 1 && gaTelephonyBindingConverged(remote, desired)
+}
+
+func telephonyPartialCompletionError(createdCount int, reason error) error {
+	if createdCount == 0 {
+		return reason
+	}
+	return &telephonyPartialCompletionCause{confirmed: createdCount, cause: reason}
+}
+
+type telephonyPartialCompletionCause struct {
+	confirmed int
+	cause     error
+}
+
+func (e *telephonyPartialCompletionCause) Error() string {
+	return fmt.Sprintf(
+		"telephony reconciliation stopped after confirming %d binding(s); rerun azd deploy to reconcile remaining bindings",
+		e.confirmed,
+	)
+}
+
+func (e *telephonyPartialCompletionCause) Unwrap() error {
+	return e.cause
+}
+
+func telephonyBindingDriftError(binding desiredTelephonyBinding) error {
+	return exterrors.Validation(
+		exterrors.CodeTelephonyBindingDrift,
+		"a remote telephony binding exists with different mutable configuration",
+		"align the YAML connection with the remote binding or delete the remote binding, then deploy again; "+
+			"this deployment does not PATCH telephony bindings",
+	)
+}
+
+func reconcileTelephonyCreate(
+	ctx context.Context,
+	client telephonyBindingClient,
+	agentName string,
+	desired desiredTelephonyBinding,
+	createErr error,
+) error {
+	relistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	var lastListErr error
+	for attempt := 0; attempt < telephonyPollMaxAttempts; attempt++ {
+		if attempt > 0 && !waitForTelephonyPoll(relistCtx) {
+			break
+		}
+		remote, listErr := client.ListAllTelephonyBindings(
+			relistCtx, agentName, agent_api.TelephonyBindingListOptions{},
+		)
+		if listErr != nil {
+			lastListErr = listErr
+			continue
+		}
+		lastListErr = nil
+		matches := matchingGATelephonyBindings(remote, desired)
+		if len(matches) == 1 && gaTelephonyBindingConverged(matches[0], desired) {
+			return nil
+		}
+		if len(matches) > 1 ||
+			(len(matches) == 1 && strings.TrimSpace(matches[0].ConnectionName) != desired.connectionName) {
+			return fmt.Errorf(
+				"telephony create outcome is unknown; safety relist found ambiguous or drifted state: %w",
+				createErr,
+			)
+		}
+	}
+	if lastListErr != nil {
+		return &telephonySafetyRelistError{createErr: createErr, listErr: lastListErr}
+	}
+	return fmt.Errorf(
+		"telephony create outcome is unknown; safety relist could not confirm one active converged binding: %w",
+		createErr,
+	)
+}
+
+func confirmAllTelephonyBindings(
+	ctx context.Context,
+	client telephonyBindingClient,
+	agentName string,
+	desired []desiredTelephonyBinding,
+) error {
+	if len(desired) == 0 {
+		return nil
+	}
+	verifyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var lastErr error
+	for attempt := 0; attempt < telephonyPollMaxAttempts; attempt++ {
+		if ctxErr := verifyCtx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if attempt > 0 && !waitForTelephonyPoll(verifyCtx) {
+			break
+		}
+		remote, err := client.ListAllTelephonyBindings(
+			verifyCtx, agentName, agent_api.TelephonyBindingListOptions{},
+		)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		lastErr = nil
+		allConverged := true
+		for _, binding := range desired {
+			matches := matchingGATelephonyBindings(remote, binding)
+			if len(matches) != 1 || !gaTelephonyBindingConverged(matches[0], binding) {
+				allConverged = false
+				break
+			}
+		}
+		if allConverged {
+			return nil
+		}
+	}
+	if ctxErr := verifyCtx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if lastErr != nil {
+		return exterrors.ServiceFromAzure(lastErr, exterrors.OpGetTelephonyBinding)
+	}
+	return fmt.Errorf("final telephony verification did not find one active converged binding")
+}
+
+type telephonySafetyRelistError struct {
+	createErr error
+	listErr   error
+}
+
+func (*telephonySafetyRelistError) Error() string {
+	return "telephony create outcome is unknown and safety relist failed"
+}
+
+func (e *telephonySafetyRelistError) Unwrap() []error {
+	return []error{e.createErr, e.listErr}
+}
+
+var telephonyPollWait = func(ctx context.Context) bool {
+	timer := time.NewTimer(500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+var telephonyPollMaxAttempts = 60
+
+func waitForTelephonyPoll(ctx context.Context) bool {
+	return telephonyPollWait(ctx)
 }
 
 func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
@@ -2875,69 +3244,6 @@ func fetchAndValidateHostedVoiceTarget(
 	return nil
 }
 
-func telephonyWireProvider(provider string) string {
-	switch strings.TrimSpace(provider) {
-	case "acs":
-		return "azure-communication-service"
-	default:
-		return strings.TrimSpace(provider)
-	}
-}
-
-func telephonyBindingMatches(remote *agent_api.TelephonyBinding, desired *agent_api.TelephonyBindingRequest) bool {
-	if remote == nil || desired == nil {
-		return false
-	}
-	desiredID := fmt.Sprintf("%s:%s", strings.TrimSpace(desired.Provider), strings.TrimSpace(desired.Identifier))
-	if remoteID := normalizedTelephonyBindingID(remote.ID); remoteID != desiredID {
-		return false
-	}
-	if strings.TrimSpace(remote.Provider) != "" &&
-		strings.TrimSpace(remote.Provider) != strings.TrimSpace(desired.Provider) &&
-		!(strings.TrimSpace(desired.Provider) == "azure-communication-service" &&
-			strings.TrimSpace(remote.Provider) == "teams_phone_extension") {
-		return false
-	}
-	if strings.TrimSpace(remote.Identifier) != "" &&
-		strings.TrimSpace(remote.Identifier) != strings.TrimSpace(desired.Identifier) {
-		return false
-	}
-	remoteConnection := telephonyBindingConnection(remote)
-	if remoteConnection != strings.TrimSpace(desired.ConnectionName) {
-		return false
-	}
-	return jsonEquivalentTransferTargets(remote.TransferTargets, desired.TransferTargets)
-}
-
-func telephonyBindingConnection(remote *agent_api.TelephonyBinding) string {
-	if remote == nil {
-		return ""
-	}
-	if strings.TrimSpace(remote.ConnectionName) != "" {
-		return strings.TrimSpace(remote.ConnectionName)
-	}
-	return strings.TrimSpace(remote.Connection)
-}
-
-func normalizedTelephonyBindingID(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	unescaped, err := url.PathUnescape(value)
-	if err != nil {
-		return value
-	}
-	return unescaped
-}
-
-func emptyTransferTargetsAsNil(targets []map[string]any) []map[string]any {
-	if len(targets) == 0 {
-		return nil
-	}
-	return targets
-}
-
 func hostedVoiceTargetName(target *hostedVoiceTarget) string {
 	if target == nil {
 		return ""
@@ -2987,25 +3293,6 @@ func validateHostedVoiceTargetVersion(version *agent_api.AgentVersionObject) err
 		return fmt.Errorf("target metadata bridgeProtocolVersion must be 1.0")
 	}
 	return nil
-}
-
-func jsonEquivalentTransferTargets(left, right []map[string]any) bool {
-	left = emptyTransferTargetsAsNil(left)
-	right = emptyTransferTargetsAsNil(right)
-	leftJSON, leftErr := json.Marshal(left)
-	rightJSON, rightErr := json.Marshal(right)
-	if leftErr != nil || rightErr != nil {
-		return false
-	}
-	var leftValue any
-	var rightValue any
-	if err := json.Unmarshal(leftJSON, &leftValue); err != nil {
-		return false
-	}
-	if err := json.Unmarshal(rightJSON, &rightValue); err != nil {
-		return false
-	}
-	return reflect.DeepEqual(leftValue, rightValue)
 }
 
 func validateVoiceAgentDeployResponse(agentObject *agent_api.AgentObject) error {

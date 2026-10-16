@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -276,156 +277,435 @@ func TestApplyAgentMetadata(t *testing.T) {
 	}
 }
 
-func TestTelephonyBindingMatches(t *testing.T) {
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:              "twilio:%2B14255550123",
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"kind": "phone", "target": "+14255550124"}},
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-	remote.ConnectionName = "other"
-	require.False(t, telephonyBindingMatches(remote, desired))
-	remote.ConnectionName = "telephony-twilio"
-	remote.TransferTargets = []map[string]any{}
-	desired.TransferTargets = nil
-	require.True(t, telephonyBindingMatches(remote, desired))
-}
-
-func TestTelephonyBindingMatches_ServiceOmittedFields(t *testing.T) {
-	// ACS binding responses can omit request fields while still returning the stable binding id.
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:       "azure-communication-service",
-		Identifier:     "28:orgid:00000000-0000-0000-0000-000000000001",
-		ConnectionName: "telephony-acs",
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:         "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000001",
-		Provider:   "teams_phone_extension",
-		Connection: "telephony-acs",
-		Status:     "active",
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-
-	remote.ID = "azure-communication-service:28:orgid:00000000-0000-0000-0000-000000000002"
-	require.False(t, telephonyBindingMatches(remote, desired))
-}
-
-func TestTelephonyBindingMatches_NumericTransferTargets(t *testing.T) {
-	desired := &agent_api.TelephonyBindingRequest{
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"digits": 1}},
-	}
-	remote := &agent_api.TelephonyBinding{
-		ID:              "twilio:%2B14255550123",
-		Provider:        "twilio",
-		Identifier:      "+14255550123",
-		ConnectionName:  "telephony-twilio",
-		TransferTargets: []map[string]any{{"digits": float64(1)}},
-	}
-	require.True(t, telephonyBindingMatches(remote, desired))
-}
-
 func TestDeployVoiceTelephonyBindings_CreateWhenMissing(t *testing.T) {
-	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+	client := &fakeTelephonyBindingClient{}
 
 	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
-		t.Context(), client, agent, agentObject, "regional.hyena.example.com")
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
 
 	require.NoError(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 2, client.listCalls)
 	require.Equal(t, 1, client.createCalls)
-	require.Equal(t, "twilio:+14255550123", client.bindingID)
-	require.Equal(t, "regional.hyena.example.com", client.overriddenHost)
+	require.IsType(t, &agent_api.CreateTwilioTelephonyBindingRequest{}, client.createRequests[0])
+	request := client.createRequests[0].(*agent_api.CreateTwilioTelephonyBindingRequest)
+	require.Equal(t, "+14255550123", request.PhoneNumber)
+	require.Equal(t, "connection", request.ConnectionName)
+	require.NotEmpty(t, client.repeatability[0].RequestID)
+	require.NotZero(t, client.repeatability[0].FirstSent)
 }
 
 func TestDeployVoiceTelephonyBindings_SkipsMatchingBinding(t *testing.T) {
-	client := &fakeTelephonyBindingClient{remote: &agent_api.TelephonyBinding{
-		ID:             "twilio:%2B14255550123",
-		Provider:       "twilio",
-		Identifier:     "+14255550123",
-		ConnectionName: "telephony-twilio",
-	}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}}
 
-	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
 
 	require.NoError(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.Equal(t, 1, client.listCalls)
 	require.Equal(t, 0, client.createCalls)
 }
 
-func TestDeployVoiceTelephonyBindings_ReturnsNonNotFoundGetError(t *testing.T) {
-	client := &fakeTelephonyBindingClient{getErr: &azcore.ResponseError{StatusCode: http.StatusForbidden}}
-	agentObject := &agent_api.AgentObject{Name: "voice-agent"}
-	agentObject.Versions.Latest.Version = "1"
-	agent := agent_yaml.VoiceAgent{Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{
-		{Provider: "twilio", Identifier: "+14255550123", Connection: "telephony-twilio"},
-	}}}
+func TestDeployVoiceTelephonyBindings_ConvertsTeamsResourceAccount(t *testing.T) {
+	client := &fakeTelephonyBindingClient{}
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+	}
 
-	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(t.Context(), client, agent, agentObject, "")
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, binding), voiceAgentObject())
 
-	require.Error(t, err)
-	require.Equal(t, 1, client.getCalls)
+	require.NoError(t, err)
+	require.Len(t, client.createRequests, 1)
+	request := client.createRequests[0].(*agent_api.CreateTeamsPhoneTelephonyBindingRequest)
+	require.Equal(t, "00000000-0000-0000-0000-000000000001", request.ResourceAccountObjectID)
+	require.Equal(t, "acs", request.ConnectionName)
+}
+
+func TestDeployVoiceTelephonyBindings_TeamsMatchNormalizesUUID(t *testing.T) {
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: agent_api.TelephonyProviderTeamsPhoneExtensibility,
+		ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, binding))
+
+	require.NoError(t, err)
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsDriftAndMultipleBeforeMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		remote []agent_api.GATelephonyBinding
+		want   string
+	}{
+		{name: "mutable drift", remote: []agent_api.GATelephonyBinding{twilioGABinding("other")}, want: "different mutable"},
+		{name: "multiple", remote: []agent_api.GATelephonyBinding{
+			twilioGABinding("connection"), twilioGABinding("connection"),
+		}, want: "multiple remote telephony bindings"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{test.remote}}
+			err := preflightVoiceTelephonyBindings(
+				t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+			require.ErrorContains(t, err, test.want)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_MultipleFoundBeforeAnyCreate(t *testing.T) {
+	duplicate := twilioGABinding("second")
+	duplicate.PhoneNumber = "+14255550124"
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{duplicate, duplicate}}}
+	bindings := []agent_yaml.VoiceTelephonyBinding{
+		twilioYAMLBinding(),
+		{Provider: "twilio", Identifier: "+14255550124", Connection: "second"},
+	}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, bindings...))
+
+	require.ErrorContains(t, err, "multiple remote telephony bindings")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_UnknownCreateOutcomeRelistsOnce(t *testing.T) {
+	useFastTelephonyPolling(t)
+	unknown := &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("connection reset")}
+	tests := []struct {
+		name       string
+		relist     []agent_api.GATelephonyBinding
+		wantErr    string
+		shouldPass bool
+	}{
+		{name: "one converged", relist: []agent_api.GATelephonyBinding{twilioGABinding("connection")}, shouldPass: true},
+		{name: "zero", wantErr: "could not confirm"},
+		{name: "one drifted", relist: []agent_api.GATelephonyBinding{twilioGABinding("other")}, wantErr: "ambiguous or drifted"},
+		{name: "multiple", relist: []agent_api.GATelephonyBinding{
+			twilioGABinding("connection"), twilioGABinding("connection"),
+		}, wantErr: "ambiguous or drifted"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{
+				listResults: [][]agent_api.GATelephonyBinding{{}, test.relist}, createErr: unknown,
+			}
+			err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+				t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+			if test.shouldPass {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+			if test.name == "zero" {
+				require.Equal(t, 6, client.listCalls)
+			} else if test.shouldPass {
+				require.Equal(t, 3, client.listCalls)
+			} else {
+				require.Equal(t, 2, client.listCalls)
+			}
+			require.Equal(t, 1, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsUnsupportedAndAmbiguousYAML(t *testing.T) {
+	tests := []struct {
+		name     string
+		bindings []agent_yaml.VoiceTelephonyBinding
+		want     string
+	}{
+		{name: "legacy ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "acs", Identifier: "4:+14255550123", Connection: "acs",
+		}}, want: "legacy ACS purchased-number"},
+		{name: "malformed ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "acs", Identifier: "28:orgid:not-a-uuid", Connection: "acs",
+		}}, want: "28:orgid:<uuid>"},
+		{name: "malformed Twilio", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "14255550123", Connection: "twilio",
+		}}, want: "valid +<E.164>"},
+		{name: "duplicate", bindings: []agent_yaml.VoiceTelephonyBinding{
+			twilioYAMLBinding(), twilioYAMLBinding(),
+		}, want: "declared more than once"},
+		{name: "transfer targets", bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "+14255550123", Connection: "twilio",
+			TransferTargets: []map[string]any{{"kind": "phone"}},
+		}}, want: "unsupported transfer targets"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{}
+			_, err := desiredTelephonyBindings(test.bindings)
+			require.ErrorContains(t, err, test.want)
+			require.Zero(t, client.listCalls)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_DelegatesPagingToListAll(t *testing.T) {
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{twilioGABinding("connection")}}}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+
+	require.NoError(t, err)
+	require.Equal(t, []agent_api.TelephonyBindingListOptions{{}}, client.listOptions)
+}
+
+func TestDeployVoiceTelephonyBindings_ReturnsListError(t *testing.T) {
+	client := &fakeTelephonyBindingClient{listErr: errors.New("list failed")}
+
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+
+	require.ErrorContains(t, err, "list failed")
+	require.Equal(t, 1, client.listCalls)
 	require.Equal(t, 0, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReconcilesCreateConflict(t *testing.T) {
+	useFastTelephonyPolling(t)
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {twilioGABinding("connection")}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.NoError(t, err)
+	require.Equal(t, 3, client.listCalls)
+	require.Equal(t, 1, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsInactiveBinding(t *testing.T) {
+	remote := twilioGABinding("connection")
+	remote.Status = agent_api.TelephonyBindingStatusSuspended
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+	err := preflightVoiceTelephonyBindings(
+		t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+	require.ErrorContains(t, err, "different mutable configuration")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_PollsCreatingBindingToActive(t *testing.T) {
+	useFastTelephonyPolling(t)
+	creating := twilioGABinding("connection")
+	creating.Status = "creating"
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{
+		{creating}, {creating}, {twilioGABinding("connection")},
+	}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.NoError(t, err)
+	require.Zero(t, client.createCalls)
+	require.Equal(t, 3, client.listCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_FinalRelistDetectsAllExistingDeletion(t *testing.T) {
+	useFastTelephonyPolling(t)
+	client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{
+		{twilioGABinding("connection")}, {}, {}, {}, {}, {},
+	}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	require.ErrorContains(t, err, "final telephony verification")
+	require.Zero(t, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_PartialCompletionCount(t *testing.T) {
+	first := twilioYAMLBinding()
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+	}
+	client := &fakeTelephonyBindingClient{createErrs: []error{nil, errors.New("second failed")}}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, first, second), voiceAgentObject())
+	require.ErrorContains(t, err, "after confirming 1 binding")
+	require.ErrorContains(t, errors.Unwrap(err), "second failed")
+}
+
+func TestTelephonyPartialCompletionPreservesCancellation(t *testing.T) {
+	err := telephonyPartialCompletionError(1, context.Canceled)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "after confirming 1 binding")
+}
+
+func TestDeployVoiceTelephonyBindings_CanceledUnknownWriteUsesSafetyRelist(t *testing.T) {
+	useFastTelephonyPolling(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	client := &fakeTelephonyBindingClient{
+		listResults:  [][]agent_api.GATelephonyBinding{{}},
+		createErr:    &agent_api.TelephonyWriteOutcomeUnknownError{Err: context.Canceled},
+		cancelCreate: cancel,
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		ctx, client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
+	var unknown *agent_api.TelephonyWriteOutcomeUnknownError
+	require.ErrorAs(t, err, &unknown)
+	require.Equal(t, 6, client.listCalls)
+}
+
+func TestConfirmAllTelephonyBindings_PreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	client := &fakeTelephonyBindingClient{}
+	err := confirmAllTelephonyBindings(
+		ctx, client, "agent", mustDesiredTelephonyBindings(t, twilioYAMLBinding()))
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestTelephonySafetyRelistErrorPreservesBothCauses(t *testing.T) {
+	unknown := &agent_api.TelephonyWriteOutcomeUnknownError{Err: errors.New("secret create detail")}
+	listErr := errors.New("secret list detail")
+	err := &telephonySafetyRelistError{createErr: unknown, listErr: listErr}
+	require.ErrorIs(t, err, unknown)
+	require.ErrorIs(t, err, listErr)
+	require.NotContains(t, err.Error(), "secret create detail")
+	require.NotContains(t, err.Error(), "secret list detail")
+}
+
+func TestDesiredTelephonyBindings_PrevalidatesAllConnections(t *testing.T) {
+	bindings := []agent_yaml.VoiceTelephonyBinding{
+		twilioYAMLBinding(),
+		{Provider: "twilio", Identifier: "+14255550124", Connection: strings.Repeat("界", 257)},
+	}
+	_, err := desiredTelephonyBindings(bindings)
+	require.ErrorContains(t, err, "256")
+}
+
+func TestDeployVoiceTelephonyBindings_RejectsMissingAgentName(t *testing.T) {
+	client := &fakeTelephonyBindingClient{}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), nil)
+	require.ErrorContains(t, err, "deployed agent name")
+	require.Zero(t, client.listCalls)
+}
+
+func TestTelephonyErrorsDoNotExposeBindingIdentity(t *testing.T) {
+	secret := "+14255550123"
+	desired := mustDesiredTelephonyBindings(t, agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: secret, Connection: "connection",
+	})
+	err := telephonyBindingDriftError(desired[0])
+	require.NotContains(t, err.Error(), secret)
 }
 
 type fakeTelephonyBindingClient struct {
-	remote         *agent_api.TelephonyBinding
-	getErr         error
+	listResults    [][]agent_api.GATelephonyBinding
+	listErr        error
 	createErr      error
-	getCalls       int
+	createErrs     []error
+	listCalls      int
 	createCalls    int
-	bindingID      string
-	overriddenHost string
+	listOptions    []agent_api.TelephonyBindingListOptions
+	createRequests []agent_api.TelephonyBindingCreateRequest
+	repeatability  []agent_api.TelephonyRepeatabilityOptions
+	cancelCreate   context.CancelFunc
+	lastList       []agent_api.GATelephonyBinding
 }
 
-func (c *fakeTelephonyBindingClient) GetTelephonyBinding(
+func (c *fakeTelephonyBindingClient) ListAllTelephonyBindings(
 	ctx context.Context,
 	agentName string,
-	bindingID string,
-	apiVersion string,
-	overriddenHost string,
-) (*agent_api.TelephonyBinding, error) {
-	c.getCalls++
-	c.bindingID = bindingID
-	c.overriddenHost = overriddenHost
-	return c.remote, c.getErr
+	options agent_api.TelephonyBindingListOptions,
+) ([]agent_api.GATelephonyBinding, error) {
+	c.listCalls++
+	c.listOptions = append(c.listOptions, options)
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	if len(c.listResults) < c.listCalls {
+		return slices.Clone(c.lastList), nil
+	}
+	result := c.listResults[c.listCalls-1]
+	c.lastList = slices.Clone(result)
+	return result, nil
 }
 
-func (c *fakeTelephonyBindingClient) CreateTelephonyBinding(
+func (c *fakeTelephonyBindingClient) CreateGATelephonyBinding(
 	ctx context.Context,
 	agentName string,
-	request *agent_api.TelephonyBindingRequest,
-	apiVersion string,
-	overriddenHost string,
-) (*agent_api.TelephonyBinding, error) {
+	request agent_api.TelephonyBindingCreateRequest,
+	repeatability agent_api.TelephonyRepeatabilityOptions,
+) (*agent_api.GATelephonyBinding, error) {
 	c.createCalls++
-	c.overriddenHost = overriddenHost
-	return &agent_api.TelephonyBinding{ID: request.Provider + ":" + request.Identifier}, c.createErr
+	c.createRequests = append(c.createRequests, request)
+	c.repeatability = append(c.repeatability, repeatability)
+	if c.cancelCreate != nil {
+		c.cancelCreate()
+	}
+	createErr := c.createErr
+	if len(c.createErrs) >= c.createCalls {
+		createErr = c.createErrs[c.createCalls-1]
+	}
+	if createErr != nil {
+		return nil, createErr
+	}
+	created := &agent_api.GATelephonyBinding{
+		ID: "opaque-service-id", Status: agent_api.TelephonyBindingStatusActive,
+	}
+	switch typed := request.(type) {
+	case *agent_api.CreateTwilioTelephonyBindingRequest:
+		created.Provider = agent_api.TelephonyProviderTwilio
+		created.PhoneNumber = typed.PhoneNumber
+		created.ConnectionName = typed.ConnectionName
+	case *agent_api.CreateTeamsPhoneTelephonyBindingRequest:
+		created.Provider = agent_api.TelephonyProviderTeamsPhoneExtensibility
+		created.ResourceAccountObjectID = typed.ResourceAccountObjectID
+		created.ConnectionName = typed.ConnectionName
+	}
+	c.lastList = append(c.lastList, *created)
+	return created, nil
 }
 
-func TestTelephonyWireProvider(t *testing.T) {
-	require.Equal(t, "azure-communication-service", telephonyWireProvider("acs"))
-	require.Equal(t, "twilio", telephonyWireProvider("twilio"))
+func twilioYAMLBinding() agent_yaml.VoiceTelephonyBinding {
+	return agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+	}
+}
+
+func twilioGABinding(connection string) agent_api.GATelephonyBinding {
+	return agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: agent_api.TelephonyProviderTwilio,
+		PhoneNumber: "+14255550123", ConnectionName: connection,
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+}
+
+func mustDesiredTelephonyBindings(
+	t *testing.T,
+	bindings ...agent_yaml.VoiceTelephonyBinding,
+) []desiredTelephonyBinding {
+	t.Helper()
+	desired, err := desiredTelephonyBindings(bindings)
+	require.NoError(t, err)
+	return desired
+}
+
+func useFastTelephonyPolling(t *testing.T) {
+	t.Helper()
+	previousWait := telephonyPollWait
+	previousAttempts := telephonyPollMaxAttempts
+	telephonyPollWait = func(context.Context) bool { return true }
+	telephonyPollMaxAttempts = 5
+	t.Cleanup(func() {
+		telephonyPollWait = previousWait
+		telephonyPollMaxAttempts = previousAttempts
+	})
+}
+
+func voiceAgentObject() *agent_api.AgentObject {
+	agent := &agent_api.AgentObject{Name: "voice-agent"}
+	agent.Versions.Latest.Version = "1"
+	return agent
 }
 
 type fakeProjectAgentChecker struct {

@@ -60,6 +60,7 @@ type Application struct {
 	ExternalConfigurations []string
 	IdentityExtensions     bool
 	InputEvidence          []Evidence
+	InputReferences        map[string][]Evidence
 }
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -142,6 +143,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 		InputEvidence:          slices.Clone(c.traces["server.port"]),
+		InputReferences:        c.placeholderReferences(),
 	}
 	if a.Name == "" {
 		return nil, invalidConfiguration("artifactId must contain at least one letter or digit")
@@ -392,9 +394,9 @@ func managedIdentityOptions(options string) (string, error) {
 		return "", errors.New("the JDBC query string is invalid")
 	}
 	values.Set("sslmode", "verify-full")
+	values.Set("sslrootcert", "/etc/ssl/certs/ca-certificates.crt")
 	values.Set("authenticationPluginClassName",
 		"com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin")
-	values.Set("sslrootcert", "/etc/ssl/certs/ca-certificates.crt")
 	values.Set("azure.managedIdentityEnabled", "true")
 	return values.Encode(), nil
 }

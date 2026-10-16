@@ -506,6 +506,40 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 	return text, nil
 }
 
+func (c *configuration) placeholderReferences() map[string][]Evidence {
+	result := map[string][]Evidence{}
+	for _, p := range c.values {
+		references := map[string]bool{}
+		c.collectPlaceholderReferences(p.text, references, map[string]bool{})
+		evidence := Evidence{Property: p.key, Source: p.source}
+		for name := range references {
+			result[name] = append(result[name], evidence)
+		}
+	}
+	return result
+}
+
+func (c *configuration) collectPlaceholderReferences(
+	text string, references map[string]bool, visiting map[string]bool,
+) {
+	for _, match := range placeholder.FindAllStringSubmatch(text, -1) {
+		name, _, _ := strings.Cut(match[1], ":")
+		if !propertyName.MatchString(name) {
+			continue
+		}
+		key := canonical(name)
+		references[key] = true
+		if visiting[key] {
+			continue
+		}
+		if p, ok := c.values[key]; ok {
+			visiting[key] = true
+			c.collectPlaceholderReferences(p.text, references, visiting)
+			delete(visiting, key)
+		}
+	}
+}
+
 func splitList(text string) []string {
 	var result []string
 	for name := range strings.SplitSeq(text, ",") {

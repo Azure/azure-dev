@@ -236,6 +236,47 @@ func TestResolutionAnswersAndProvenance(t *testing.T) {
 	require.Equal(t, 9090, result.Applications[0].Port)
 }
 
+func TestResolutionRejectsSharedPromptInputOutsideGeneratedBindings(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		properties string
+	}{
+		{
+			name: "direct reference",
+			properties: "server.port=${HTTP_PORT}\n" +
+				"management.server.port=${HTTP_PORT}\n",
+		},
+		{
+			name: "transitive reference",
+			properties: "server.port=${APP_PORT}\n" +
+				"management.server.port=${APP_PORT}\n" +
+				"APP_PORT=${HTTP_PORT}\n",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory, resolver := resolutionFixture(t, "three-engines")
+			writeFixture(t, directory, "src/main/resources/application.properties", tt.properties)
+			_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+				Properties: map[string]string{"HTTP_PORT": "9090"},
+			})
+			require.ErrorContains(t, err, "management.server.port")
+			require.ErrorContains(t, err, "src/main/resources/application.properties")
+			require.NotContains(t, err.Error(), "9090")
+		})
+	}
+}
+
+func TestResolutionAllowsPromptInputAliasChain(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"server.port=${APP_PORT}\nAPP_PORT=${HTTP_PORT}\n")
+	result, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		Properties: map[string]string{"HTTP_PORT": "9090"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 9090, result.Applications[0].Port)
+}
+
 func TestResolutionRejectsUnusedOrUnreproducibleInputs(t *testing.T) {
 	for _, properties := range []map[string]string{
 		{"unused": "value"},

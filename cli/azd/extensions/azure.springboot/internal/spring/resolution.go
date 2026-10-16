@@ -193,6 +193,25 @@ func AnalyzeProject(
 			return nil, fmt.Errorf("deployment input %s cannot affect the selected configuration", key)
 		}
 	}
+	supportedEvidence := slices.Clone(application.InputEvidence)
+	for _, requirement := range application.Requirements {
+		supportedEvidence = append(supportedEvidence, requirement.Trace...)
+	}
+	if application.Embedded != nil {
+		supportedEvidence = append(supportedEvidence, application.Embedded.Evidence...)
+	}
+	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
+		for _, reference := range application.InputReferences[canonical(key)] {
+			if slices.ContainsFunc(supportedEvidence, func(e Evidence) bool {
+				return canonical(e.Property) == canonical(reference.Property) && e.Source == reference.Source
+			}) {
+				continue
+			}
+			return nil, fmt.Errorf(
+				"deployment input %s also affects unsupported property %s in %s; configure that setting in the application",
+				key, reference.Property, reference.Source)
+		}
+	}
 	// Only these destinations have deployment-owned runtime overrides.
 	for key := range properties {
 		if key == canonical("spring.profiles.active") {
@@ -206,7 +225,7 @@ func AnalyzeProject(
 		}
 	}
 	requirements, embedded := application.Requirements, application.Embedded
-	application.Requirements, application.Embedded, application.InputEvidence = nil, nil, nil
+	application.Requirements, application.Embedded, application.InputEvidence, application.InputReferences = nil, nil, nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
 		result.Resources = append(result.Resources, Resource{

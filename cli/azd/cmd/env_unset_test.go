@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -80,6 +81,7 @@ func TestEnvUnsetCmd(t *testing.T) {
 			require.Contains(t, cmd.Long, "AZURE_ENV_NAME identifies the environment and cannot be unset.")
 			require.NotContains(t, cmd.Long, "managed by azd")
 			require.Contains(t, cmd.Long, "confirm removal (defaults to Yes)")
+			require.Contains(t, cmd.Long, "If input ends without an answer, no keys are removed.")
 			require.Contains(t, cmd.Long, "--force")
 			require.Contains(t, cmd.Long, "restore the previous values")
 			require.Contains(t, cmd.Long, "With --force, restoration is attempted automatically without prompting.")
@@ -478,6 +480,10 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 			name: "PromptFailure", args: []string{"KEY"}, promptErr: promptErr,
 			wantPrompt: true, errorText: "confirming environment value removal",
 		},
+		{
+			name: "ClosedStdin", args: []string{"KEY", "KEY2"}, promptErr: io.EOF,
+			wantPrompt: true, errorText: "input ended before removal was confirmed; no keys were removed",
+		},
 		{name: "ForceSkipsPrompt", args: []string{"KEY"}, force: true, wantModified: true},
 		{
 			name: "NoPromptRequiresForce", args: []string{"KEY"}, noPrompt: true,
@@ -509,6 +515,7 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 				console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).
 					RespondFn(func(options input.ConsoleOptions) (any, error) {
 						require.Equal(t, true, options.DefaultValue)
+						require.True(t, options.RequireInput)
 						require.Contains(t, options.Message, `environment "dev"`)
 						require.Contains(t, options.Message, `"KEY"`)
 						require.Equal(t, 1, strings.Count(options.Message, `"KEY"`))
@@ -536,6 +543,12 @@ func TestEnvUnsetActionConfirmation(t *testing.T) {
 				require.ErrorContains(t, err, tt.errorText)
 				if tt.promptErr != nil {
 					require.ErrorIs(t, err, tt.promptErr)
+					if errors.Is(tt.promptErr, io.EOF) {
+						suggestionErr, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+						require.True(t, ok)
+						require.Empty(t, suggestionErr.Message)
+						require.Contains(t, suggestionErr.Suggestion, "--force")
+					}
 				}
 				if tt.errorIs != nil {
 					require.ErrorIs(t, err, tt.errorIs)
@@ -859,6 +872,7 @@ func TestEnvUnsetActionTelemetry(t *testing.T) {
 		noPrompt    bool
 		loadErr     error
 		saveErr     error
+		promptErr   error
 		outcome     string
 		removed     int
 		missing     int
@@ -886,6 +900,10 @@ func TestEnvUnsetActionTelemetry(t *testing.T) {
 		{
 			name: "ConfirmationRequired", args: []string{"PRIVATE_KEY", "MISSING"},
 			noPrompt: true, outcome: "failed", missing: 1,
+		},
+		{
+			name: "ClosedStdin", args: []string{"PRIVATE_KEY", "MISSING"},
+			promptErr: io.EOF, outcome: "failed", missing: 1,
 		},
 		{name: "NoKeys", outcome: "failed"},
 		{name: "EmptyKey", args: []string{"PRIVATE_KEY", ""}, outcome: "failed"},
@@ -933,7 +951,7 @@ func TestEnvUnsetActionTelemetry(t *testing.T) {
 							if tt.disappeared {
 								env.DotenvDelete("PRIVATE_KEY")
 							}
-							return tt.confirmed, nil
+							return tt.confirmed, tt.promptErr
 						})
 				}
 				if tt.outcome == "success" || tt.saveErr != nil {
@@ -951,6 +969,11 @@ func TestEnvUnsetActionTelemetry(t *testing.T) {
 				&envUnsetFlags{force: tt.force}, tt.args).Run(ctx)
 			if tt.outcome == "failed" {
 				require.Error(t, err)
+				if tt.promptErr != nil {
+					require.ErrorIs(t, err, tt.promptErr)
+					require.Equal(t, "private-stored-value", env.Getenv("PRIVATE_KEY"))
+					manager.AssertNotCalled(t, "SaveWithOptions", mock.Anything, mock.Anything, mock.Anything)
+				}
 			} else {
 				require.NoError(t, err)
 			}

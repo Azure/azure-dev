@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ func newEnvUnsetCmd() *cobra.Command {
 			"Keys are case-sensitive. Missing keys are ignored with a warning.\n" +
 			environment.EnvNameEnvVarName + " identifies the environment and cannot be unset.\n" +
 			"You are prompted to confirm removal (defaults to Yes). Use --force to skip this confirmation.\n" +
+			"If input ends without an answer, no keys are removed.\n" +
 			"If saving fails after local values change, you can choose to restore the previous values.\n" +
 			"With --force, restoration is attempted automatically without prompting.\n" +
 			"Removing a Key Vault secret reference does not delete the secret.\n" +
@@ -179,8 +181,16 @@ func (a *envUnsetAction) Run(ctx context.Context) (*actions.ActionResult, error)
 				"%s %s will be removed from environment %q. Do you want to continue?",
 				valueLabel, formatEnvUnsetKeys(keys), env.Name()),
 			DefaultValue: true,
+			RequireInput: true,
 		})
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil, &internal.ErrorWithSuggestion{
+					Err: fmt.Errorf("input ended before removal was confirmed; no keys were removed: %w", err),
+					Suggestion: "Run the command again and answer the confirmation, " +
+						"or use --force to skip removal confirmation.",
+				}
+			}
 			return nil, fmt.Errorf("confirming environment value removal: %w", err)
 		}
 		if !confirmed {

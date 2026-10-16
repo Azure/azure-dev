@@ -37,6 +37,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 		validationError    bool
 		removedKeys        []string
 		withoutForce       bool
+		promptEnabled      bool
 		stdin              string
 		outputContains     []string
 	}{
@@ -98,6 +99,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			targetEnvironment:  "ricardo",
 			removedKeys:        []string{"foo"},
 			withoutForce:       true,
+			promptEnabled:      true,
 			stdin:              "y\n",
 			outputContains:     []string{`Environment value "foo"`, `environment "ricardo"`, "Do you want to continue?"},
 		},
@@ -108,6 +110,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			targetEnvironment:  "env2",
 			removedKeys:        []string{"KEY1", "KEY2"},
 			withoutForce:       true,
+			promptEnabled:      true,
 			stdin:              "y\n",
 			outputContains:     []string{`Environment values "KEY1", "KEY2"`, `environment "env2"`},
 		},
@@ -116,6 +119,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			args:               []string{"foo", "-e", "ricardo"},
 			defaultEnvironment: "env1",
 			withoutForce:       true,
+			promptEnabled:      true,
 			stdin:              "n\n",
 			outputContains:     []string{"No environment values were removed."},
 		},
@@ -126,8 +130,72 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			targetEnvironment:  "ricardo",
 			removedKeys:        []string{"foo"},
 			withoutForce:       true,
+			promptEnabled:      true,
 			stdin:              "\n",
 			outputContains:     []string{`Environment value "foo"`, `environment "ricardo"`, "Do you want to continue?"},
+		},
+		{
+			name:               "ClosedStdinRequiresConfirmation",
+			args:               []string{"KEY1", "KEY2", "-e", "env2"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
+			errorContains:      "input ended before removal was confirmed; no keys were removed: EOF",
+			outputContains:     []string{"Suggestion: Run the command again and answer the confirmation", "--force"},
+		},
+		{
+			name:               "WhitespaceEOFRequiresConfirmation",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
+			stdin:              " \t\r",
+			errorContains:      "input ended before removal was confirmed; no keys were removed: EOF",
+		},
+		{
+			name:               "InvalidEOFRequiresConfirmation",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
+			stdin:              "invalid",
+			errorContains:      "input ended before removal was confirmed; no keys were removed: EOF",
+		},
+		{
+			name:               "InvalidLineThenEOFRequiresConfirmation",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
+			stdin:              "invalid\n",
+			errorContains:      "input ended before removal was confirmed; no keys were removed: EOF",
+		},
+		{
+			name:               "ExplicitYesEOF",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+			withoutForce:       true,
+			promptEnabled:      true,
+			stdin:              "y",
+		},
+		{
+			name:               "ExplicitNoEOF",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
+			stdin:              "n",
+			outputContains:     []string{"No environment values were removed."},
+		},
+		{
+			name:               "ForceWithClosedStdin",
+			args:               []string{"foo", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			targetEnvironment:  "ricardo",
+			removedKeys:        []string{"foo"},
+			promptEnabled:      true,
 		},
 		{
 			name:               "NoPromptRequiresForce",
@@ -142,6 +210,14 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			args:               []string{"MISSING", "MISSING", "-e", "ricardo"},
 			defaultEnvironment: "env1",
 			withoutForce:       true,
+			outputContains:     []string{`Environment value "MISSING"`, `"ricardo"`, "was ignored"},
+		},
+		{
+			name:               "MissingOnlyWithClosedStdin",
+			args:               []string{"MISSING", "-e", "ricardo"},
+			defaultEnvironment: "env1",
+			withoutForce:       true,
+			promptEnabled:      true,
 			outputContains:     []string{`Environment value "MISSING"`, `"ricardo"`, "was ignored"},
 		},
 		{
@@ -191,6 +267,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			args:               []string{environment.EnvNameEnvVarName},
 			defaultEnvironment: "env1",
 			withoutForce:       true,
+			promptEnabled:      true,
 			stdin:              "y\n",
 			errorContains:      "cannot unset AZURE_ENV_NAME: this command removes .env keys, not the environment name",
 			validationError:    true,
@@ -268,7 +345,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 				"AZURE_ENV_NAME="+tt.processEnvironment,
 			)
 			args := []string{"env", "unset"}
-			if tt.stdin != "" {
+			if tt.promptEnabled {
 				args = append(args, "--no-prompt=false")
 			} else {
 				args = append(args, "--no-prompt")
@@ -281,6 +358,7 @@ func Test_CLI_Env_Unset(t *testing.T) {
 			require.NotNil(t, result)
 			if tt.errorContains != "" {
 				require.Error(t, err)
+				require.Equal(t, 1, result.ExitCode)
 				require.Contains(t, result.Stdout+result.Stderr, tt.errorContains)
 				require.Equal(t, 1, strings.Count(result.Stdout+result.Stderr, "ERROR:"))
 				require.NotContains(t, result.Stdout+result.Stderr, "Error:")

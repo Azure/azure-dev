@@ -28,7 +28,6 @@ func newInitCommandWithServices(
 	extCtx *azdext.ExtensionContext, resolver spring.ModelResolver, openPrompts func() (initPrompter, error),
 ) *cobra.Command {
 	var yes bool
-	var databaseAuth string
 	var profiles []string
 	command := &cobra.Command{
 		Use:   "init",
@@ -105,11 +104,6 @@ Existing deployment files are not overwritten.`,
 			if err != nil {
 				return err
 			}
-			if cmd.Flags().Changed("database-auth") {
-				if err := spring.SetAuthentication(application, databaseAuth); err != nil {
-					return err
-				}
-			}
 			plan, err := spring.Generate(cmd.Context(), application)
 			if err != nil {
 				return err
@@ -147,8 +141,6 @@ Existing deployment files are not overwritten.`,
 		},
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "Trust Maven inspection and accept generation without prompting")
-	command.Flags().StringVar(&databaseAuth, "database-auth", "",
-		"Database authentication: password or managedIdentity (PostgreSQL only); otherwise infer from Spring configuration")
 	command.Flags().StringSliceVar(&profiles, "profiles", nil,
 		"Spring deployment profiles (comma-separated); otherwise use application defaults")
 	return command

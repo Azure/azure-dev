@@ -319,17 +319,6 @@ func TestTemplateRejectsUnsupportedAuthentication(t *testing.T) {
 	}
 }
 
-func TestExplicitAuthenticationValidation(t *testing.T) {
-	a := &Application{}
-	require.ErrorContains(t, SetAuthentication(a, "managedIdentity"), "active external datasource")
-	a.Requirements = []Requirement{{Kind: PostgreSQL, Authentication: "managedIdentity"}}
-	require.ErrorContains(t, SetAuthentication(a, "password"), "conflicts")
-	require.ErrorContains(t, SetAuthentication(a, "automatic"), "--database-auth")
-	a.Requirements[0].Authentication = "password"
-	require.NoError(t, SetAuthentication(a, "managedIdentity"))
-	require.Equal(t, "managedIdentity", a.Requirements[0].Authentication)
-}
-
 type cancelDuringWrite struct {
 	context.Context
 	checks int

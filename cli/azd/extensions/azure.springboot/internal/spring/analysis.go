@@ -419,25 +419,6 @@ func managedIdentityOptions(options string) (string, error) {
 	return values.Encode(), nil
 }
 
-// SetAuthentication applies an explicit deployment choice without downgrading inferred token authentication.
-func SetAuthentication(application *Application, authentication string) error {
-	if authentication != "password" && authentication != "managedIdentity" {
-		return errors.New("--database-auth must be password or managedIdentity")
-	}
-	if len(application.Requirements) != 1 {
-		return errors.New("--database-auth requires an active external datasource")
-	}
-	requirement := &application.Requirements[0]
-	if requirement.Authentication == "managedIdentity" && authentication == "password" {
-		return errors.New("--database-auth=password conflicts with the application's passwordless configuration")
-	}
-	if requirement.Kind == MySQL && authentication == "managedIdentity" {
-		return errors.New("MySQL managed identity is deferred pending live configuration validation")
-	}
-	requirement.Authentication = authentication
-	return nil
-}
-
 func mysqlDriver(m *model) bool {
 	return m.hasDependency("com.mysql", "mysql-connector-j") || m.hasDependency("mysql", "mysql-connector-java")
 }

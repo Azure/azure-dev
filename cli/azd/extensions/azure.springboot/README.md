@@ -40,11 +40,9 @@ and their sources; there is no generic property-override option.
 Other unresolved configuration requires application changes. `--yes` accepts
 confirmations, not missing choices. Interactive prompts use the azd host channel.
 
-Use `--database-auth managedIdentity` to select PostgreSQL token authentication
-explicitly, or let initialization infer supported passwordless Spring properties
-or the Azure PostgreSQL JDBC authentication plugin. An explicit password choice
-cannot downgrade detected passwordless intent. The flag is rejected without an
-external datasource. MySQL managed identity is deferred.
+PostgreSQL managed identity is inferred from supported passwordless Spring
+properties or the Azure PostgreSQL JDBC authentication plugin. MySQL managed
+identity is deferred.
 
 ## Initial scope
 

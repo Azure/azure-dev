@@ -306,6 +306,7 @@ func TestInitRejectsGenericPropertyOption(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, initCommand.Flags().Lookup("profiles"))
 	require.Nil(t, initCommand.Flags().Lookup("property"))
+	require.Nil(t, initCommand.Flags().Lookup("database-auth"))
 	command.SetArgs([]string{"init", "--yes", "--no-prompt", "--property", "server.port=9090"})
 	require.ErrorContains(t, command.ExecuteContext(t.Context()), "unknown flag: --property")
 	require.Zero(t, resolver.calls)

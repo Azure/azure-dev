@@ -380,7 +380,7 @@ app:
 		{
 			name:    "direct Hikari binding is not silently ignored",
 			env:     map[string]string{"SPRING_DATASOURCE_HIKARI_JDBC_URL": "jdbc:mysql://localhost/warehouse"},
-			drivers: allDrivers(), errorText: "custom datasource",
+			drivers: allDrivers(), errorText: "spring.datasource.hikari.jdbc-url",
 		},
 		{
 			name:    "file based embedded storage is not assumed durable",

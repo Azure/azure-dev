@@ -55,7 +55,7 @@ func (a *InvokeAction) storedManagedConversationID(
 	if azdClient == nil || a.flags.forceNewConversation() {
 		return ""
 	}
-	value, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil)
+	value, err := getAgentSpecificContextValue(ctx, azdClient, "conversations", agentKey)
 	if err != nil || !strings.HasPrefix(value, "conv_") {
 		return ""
 	}

@@ -101,13 +101,13 @@ func (a *InvokeAction) runInvocationsProtocolOperation(
 
 // classifyInvocationStateReadError adds guidance to saved-state failures.
 func classifyInvocationStateReadError(cause error) error {
-	if _, ok := errors.AsType[*azdext.ConfigError](cause); !ok {
-		return exterrors.FromHost(cause, exterrors.OpReadInvocationState, "reading current Invocation state failed")
+	if exterrors.IsCancellation(cause) {
+		return exterrors.Cancelled("reading current Invocation state cancelled")
 	}
 	return exterrors.Validation(
 		exterrors.CodeInvalidInvocationState,
-		fmt.Sprintf("saved Invocation state at %q could not be read: %v", invocationsConfigPath, cause),
-		fmt.Sprintf("clear the invalid state with `azd config unset %s`, or repair that config value", invocationsConfigPath),
+		fmt.Sprintf("saved Invocation state could not be read: %v", cause),
+		"check access to AZD_CONFIG_DIR and retry",
 	)
 }
 
@@ -327,8 +327,6 @@ func isTerminalInvocationStatus(status string) bool {
 	}
 }
 
-const invocationsConfigPath = configPathPrefix + ".invocations"
-
 type savedInvocation struct {
 	InvocationID string `json:"invocationId"`
 }
@@ -344,63 +342,39 @@ func newInvocationStateStore(client *azdext.AzdClient) *invocationStateStore {
 
 // Get returns the agent's current Invocation, or nil if none is saved.
 func (s *invocationStateStore) Get(ctx context.Context, agentKey string) (*savedInvocation, error) {
-	config, err := azdext.NewConfigHelper(s.client)
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return nil, fmt.Errorf("create invocation config helper: %w", err)
+		return nil, fmt.Errorf("open invocation state store: %w", err)
 	}
-	var records map[string]savedInvocation
-	found, err := config.GetUserJSON(ctx, invocationsConfigPath, &records)
+	record, err := store.get(ctx, agentKey)
 	if err != nil {
 		return nil, fmt.Errorf("read invocations: %w", err)
 	}
-	if !found || records == nil {
+	if record == nil || record.Invocation == nil {
 		return nil, nil
 	}
-	record, ok := records[agentKey]
-	if !ok {
-		return nil, nil
-	}
-	return &record, nil
+	invocation := *record.Invocation
+	return &invocation, nil
 }
 
 // Save replaces the agent's current Invocation ID.
-func (s *invocationStateStore) Save(ctx context.Context, agentKey string, record savedInvocation) error {
-	config, err := azdext.NewConfigHelper(s.client)
+func (s *invocationStateStore) Save(ctx context.Context, agentKey string, invocation savedInvocation) error {
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return fmt.Errorf("create invocation config helper: %w", err)
+		return fmt.Errorf("open invocation state store: %w", err)
 	}
-	var records map[string]savedInvocation
-	found, err := config.GetUserJSON(ctx, invocationsConfigPath, &records)
-	if err != nil {
-		return fmt.Errorf("read invocations: %w", err)
-	}
-	if !found || records == nil {
-		records = make(map[string]savedInvocation)
-	}
-	records[agentKey] = record
-	if err := config.SetUserJSON(ctx, invocationsConfigPath, records); err != nil {
-		return fmt.Errorf("write invocations: %w", err)
-	}
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		record.Invocation = &invocation
+	})
 }
 
 // Delete removes the agent's current Invocation selection.
 func (s *invocationStateStore) Delete(ctx context.Context, agentKey string) error {
-	config, err := azdext.NewConfigHelper(s.client)
+	store, err := newAgentStateStoreForClient(s.client)
 	if err != nil {
-		return fmt.Errorf("create invocation config helper: %w", err)
+		return fmt.Errorf("open invocation state store: %w", err)
 	}
-	var records map[string]savedInvocation
-	found, err := config.GetUserJSON(ctx, invocationsConfigPath, &records)
-	if err != nil {
-		return fmt.Errorf("read invocations: %w", err)
-	}
-	if !found || records == nil {
-		return nil
-	}
-	delete(records, agentKey)
-	if err := config.SetUserJSON(ctx, invocationsConfigPath, records); err != nil {
-		return fmt.Errorf("write invocations: %w", err)
-	}
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		record.Invocation = nil
+	})
 }

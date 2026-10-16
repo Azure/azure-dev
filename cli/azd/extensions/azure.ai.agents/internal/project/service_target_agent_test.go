@@ -529,13 +529,35 @@ func TestDeployVoiceTelephonyBindings_PartialCompletionCount(t *testing.T) {
 	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
 		t.Context(), client, mustDesiredTelephonyBindings(t, first, second), voiceAgentObject())
 	require.ErrorContains(t, err, "after confirming 1 binding")
-	require.ErrorContains(t, errors.Unwrap(err), "second failed")
+	require.Contains(t, azdext.WrapError(err).GetSuggestion(), "rerun azd deploy")
 }
 
 func TestTelephonyPartialCompletionPreservesCancellation(t *testing.T) {
 	err := telephonyPartialCompletionError(1, context.Canceled)
 	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorContains(t, err, "after confirming 1 binding")
+}
+
+func TestTelephonyPartialCompletionPreservesStructuredGRPCMessage(t *testing.T) {
+	cause := exterrors.Service("create", "forbidden", "service denied the request", "agents", "old suggestion")
+	err := telephonyPartialCompletionError(1, cause)
+	wrapped := azdext.WrapError(err)
+	require.Contains(t, wrapped.GetMessage(), "after confirming 1 binding")
+	require.Contains(t, wrapped.GetMessage(), "service denied")
+	require.Contains(t, wrapped.GetSuggestion(), "rerun azd deploy")
+}
+
+func TestDeployVoiceTelephonyBindings_CancellationStopsBeforeNextCreate(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	first := twilioYAMLBinding()
+	second := agent_yaml.VoiceTelephonyBinding{
+		Provider: "twilio", Identifier: "+14255550124", Connection: "second",
+	}
+	client := &fakeTelephonyBindingClient{cancelAfterSuccess: cancel}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		ctx, client, mustDesiredTelephonyBindings(t, first, second), voiceAgentObject())
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, 1, client.createCalls)
 }
 
 func TestDeployVoiceTelephonyBindings_CanceledUnknownWriteUsesSafetyRelist(t *testing.T) {
@@ -599,17 +621,18 @@ func TestTelephonyErrorsDoNotExposeBindingIdentity(t *testing.T) {
 }
 
 type fakeTelephonyBindingClient struct {
-	listResults    [][]agent_api.GATelephonyBinding
-	listErr        error
-	createErr      error
-	createErrs     []error
-	listCalls      int
-	createCalls    int
-	listOptions    []agent_api.TelephonyBindingListOptions
-	createRequests []agent_api.TelephonyBindingCreateRequest
-	repeatability  []agent_api.TelephonyRepeatabilityOptions
-	cancelCreate   context.CancelFunc
-	lastList       []agent_api.GATelephonyBinding
+	listResults        [][]agent_api.GATelephonyBinding
+	listErr            error
+	createErr          error
+	createErrs         []error
+	listCalls          int
+	createCalls        int
+	listOptions        []agent_api.TelephonyBindingListOptions
+	createRequests     []agent_api.TelephonyBindingCreateRequest
+	repeatability      []agent_api.TelephonyRepeatabilityOptions
+	cancelCreate       context.CancelFunc
+	cancelAfterSuccess context.CancelFunc
+	lastList           []agent_api.GATelephonyBinding
 }
 
 func (c *fakeTelephonyBindingClient) ListAllTelephonyBindings(
@@ -663,6 +686,9 @@ func (c *fakeTelephonyBindingClient) CreateGATelephonyBinding(
 		created.ConnectionName = typed.ConnectionName
 	}
 	c.lastList = append(c.lastList, *created)
+	if c.cancelAfterSuccess != nil {
+		c.cancelAfterSuccess()
+	}
 	return created, nil
 }
 

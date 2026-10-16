@@ -2809,6 +2809,9 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 	}
 	createdCount := 0
 	for _, binding := range missing {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return telephonyPartialCompletionError(createdCount, ctxErr)
+		}
 		created, createErr := agentClient.CreateGATelephonyBinding(
 			ctx,
 			agentObject.Name,
@@ -3038,6 +3041,20 @@ func createdTelephonyBindingConverged(
 func telephonyPartialCompletionError(createdCount int, reason error) error {
 	if createdCount == 0 {
 		return reason
+	}
+	message := fmt.Sprintf("telephony reconciliation stopped after confirming %d binding(s)", createdCount)
+	suggestion := "rerun azd deploy to reconcile remaining bindings"
+	if serviceErr, ok := errors.AsType[*azdext.ServiceError](reason); ok {
+		copy := *serviceErr
+		copy.Message = message + ": " + serviceErr.Message
+		copy.Suggestion = suggestion
+		return &copy
+	}
+	if localErr, ok := errors.AsType[*azdext.LocalError](reason); ok {
+		copy := *localErr
+		copy.Message = message + ": " + localErr.Message
+		copy.Suggestion = suggestion
+		return &copy
 	}
 	return &telephonyPartialCompletionCause{confirmed: createdCount, cause: reason}
 }

@@ -399,7 +399,7 @@ func validateConnectionProjectCandidate(
 
 func connectionManifestMap(manifest map[string]any, path string) (map[string]any, error) {
 	value, found := manifest[path]
-	if !found {
+	if !found || (path == "resources" && value == nil) {
 		return map[string]any{}, nil
 	}
 	sectionMap, ok := value.(map[string]any)

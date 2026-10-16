@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"maps"
 	"os"
@@ -12,11 +13,225 @@ import (
 	"testing"
 
 	"azure.ai.connections/internal/exterrors"
+	"azure.ai.connections/internal/foundry"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
+
+func TestConnectionAddRawRootResources(t *testing.T) {
+	tests := []struct {
+		name      string
+		section   string
+		json      bool
+		present   bool
+		null      bool
+		wantError string
+	}{
+		{name: "YAML omitted"},
+		{name: "YAML empty map", section: "resources: {}\n", present: true},
+		{name: "YAML implicit null", section: "resources:\n", present: true, null: true},
+		{name: "YAML explicit null", section: "resources: null\n", present: true, null: true},
+		{name: "JSON omitted", json: true},
+		{name: "JSON empty map", section: `"resources":{},`, json: true, present: true},
+		{name: "JSON null", section: `"resources":null,`, json: true, present: true, null: true},
+		{
+			name: "YAML scalar", section: "resources: private-value\n",
+			wantError: "project resources must be a mapping",
+		},
+		{
+			name: "YAML list", section: "resources: []\n",
+			wantError: "project resources must be a mapping",
+		},
+		{
+			name: "JSON scalar", section: `"resources":false,`, json: true,
+			wantError: "project resources must be a mapping",
+		},
+		{
+			name: "JSON list", section: `"resources":[],`, json: true,
+			wantError: "project resources must be a mapping",
+		},
+		{
+			name: "YAML null resource", section: "resources:\n  cache:\n",
+			wantError: "invalid core configuration",
+		},
+		{
+			name: "YAML explicit null resource", section: "resources:\n  cache: null\n",
+			wantError: "invalid core configuration",
+		},
+		{
+			name: "JSON null resource", section: `"resources":{"cache":null},`, json: true,
+			wantError: "invalid core configuration",
+		},
+		{
+			name: "YAML scalar resource", section: "resources:\n  cache: private-value\n",
+			wantError: "invalid core configuration",
+		},
+		{
+			name: "JSON list resource", section: `"resources":{"cache":[]},`, json: true,
+			wantError: "invalid core configuration",
+		},
+		{
+			name: "YAML invalid resource type", section: "resources:\n  cache:\n    type: []\n",
+			wantError: "invalid core configuration",
+		},
+	}
+	for _, existing := range []bool{false, true} {
+		for _, test := range tests {
+			t.Run(map[bool]string{false: "add/", true: "update/"}[existing]+test.name, func(t *testing.T) {
+				root := t.TempDir()
+				file := writeConnectionAddDefinition(t, root, "connection.yaml",
+					"category: Search\ntarget: ${SEARCH_ENDPOINT}\n")
+				worker := map[string]any{
+					"host": "containerapp", "language": "js",
+					"config": map[string]any{"large": int(9007199254740993), "literal": "${KEEP}"},
+				}
+				services := map[string]any{
+					"foundry":    map[string]any{"host": aiProjectServiceHost},
+					"worker.api": worker,
+				}
+				if existing {
+					services["search.api"] = map[string]any{
+						"host": aiConnectionHost, "uses": []any{"foundry"}, "category": "Search", "target": "old",
+					}
+				}
+				manifest := map[string]any{"name": "test", "services": services}
+				wire, err := yaml.Marshal(manifest)
+				require.NoError(t, err)
+				content := test.section + string(wire)
+				if test.json {
+					wire, err = json.Marshal(manifest)
+					require.NoError(t, err)
+					content = "{" + test.section + strings.TrimPrefix(string(wire), "{")
+				}
+				manifestPath := writeConnectionAddDefinition(t, root, "azure.yaml", content)
+				raw, _, err := foundry.DecodeContainedDocument(root, manifestPath)
+				require.NoError(t, err)
+				client := newConnectionAddProjectClientStub()
+				client.rawManifest = raw
+				decodedServices, ok := raw["services"].(map[string]any)
+				require.True(t, ok)
+				client.services = decodedServices
+				rawBefore, err := yaml.Marshal(raw)
+				require.NoError(t, err)
+				diskClient := struct{ connectionAddProjectClient }{client}
+				plan, err := planConnectionAdd(t.Context(), diskClient, root, "search.api",
+					file, false, "", true, nil, nil)
+				if test.wantError != "" {
+					requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, test.wantError)
+					assert.NotContains(t, err.Error(), "private-value")
+					assert.Nil(t, plan)
+					assert.Empty(t, client.mutationCalls)
+					after, err := yaml.Marshal(raw)
+					require.NoError(t, err)
+					assert.Equal(t, rawBefore, after)
+					// #nosec G304 -- Reads a test fixture.
+					diskAfter, err := os.ReadFile(manifestPath)
+					require.NoError(t, err)
+					assert.Equal(t, []byte(content), diskAfter)
+					return
+				}
+				require.NoError(t, err)
+				require.Equal(t, map[bool]string{false: "added", true: "updated"}[existing], plan.mutation)
+				assert.Equal(t, "foundry", plan.projectKey)
+				snapshot, err := loadConnectionProjectSnapshot(t.Context(), diskClient, root)
+				require.NoError(t, err)
+				require.NotNil(t, snapshot.resources)
+				assert.Empty(t, snapshot.resources)
+				resourceValue, present := snapshot.manifest["resources"]
+				assert.Equal(t, test.present, present)
+				if test.null {
+					require.Nil(t, resourceValue)
+				} else if test.present {
+					assert.Equal(t, map[string]any{}, resourceValue)
+				}
+				require.NoError(t, plan.apply(t.Context(), client))
+				assert.Equal(t, plan.serviceSection, client.services["search.api"])
+				assert.Equal(t, worker, client.services["worker.api"])
+				for _, request := range client.serviceSetRequests {
+					assert.Equal(t, "search.api", request.GetServiceName())
+				}
+				after, err := client.readAuthoringManifest(t.Context())
+				require.NoError(t, err)
+				afterResources, present := after["resources"]
+				assert.Equal(t, test.present, present)
+				assert.Equal(t, resourceValue, afterResources)
+				assert.Equal(t, resourceValue, snapshot.manifest["resources"])
+				if test.null {
+					require.Nil(t, raw["resources"])
+				}
+				repeat, err := planConnectionAdd(t.Context(), client, root, "search.api",
+					file, false, "", true, nil, nil)
+				require.NoError(t, err)
+				require.Equal(t, "unchanged", repeat.mutation)
+				writes := len(client.mutationCalls)
+				repeatBefore, err := yaml.Marshal(raw)
+				require.NoError(t, err)
+				require.NoError(t, repeat.apply(t.Context(), client))
+				assert.Len(t, client.mutationCalls, writes)
+				repeatAfter, err := yaml.Marshal(raw)
+				require.NoError(t, err)
+				assert.Equal(t, repeatBefore, repeatAfter)
+			})
+		}
+	}
+}
+
+func TestConnectionAddRejectsDanglingDependencyWithRootNullResources(t *testing.T) {
+	for _, nullYAML := range []string{"resources:\n", "resources: null\n"} {
+		for _, afterPlanning := range []bool{false, true} {
+			name := strings.TrimSpace(nullYAML) +
+				map[bool]string{false: "/before planning", true: "/after planning"}[afterPlanning]
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				file := writeConnectionAddDefinition(t, root, "connection.yaml",
+					"category: Search\ntarget: https://search.example.test\n")
+				content := nullYAML + `name: test
+services:
+  foundry:
+    host: azure.ai.project
+  search.api:
+    host: azure.ai.connection
+    uses: [foundry, cache]
+    category: Search
+    target: old
+`
+				manifestPath := writeConnectionAddDefinition(t, root, "azure.yaml", content)
+				raw, _, err := foundry.DecodeContainedDocument(root, manifestPath)
+				require.NoError(t, err)
+				require.Nil(t, raw["resources"])
+				client := newConnectionAddProjectClientStub()
+				client.rawManifest = raw
+				services, ok := raw["services"].(map[string]any)
+				require.True(t, ok)
+				client.services = services
+				if afterPlanning {
+					raw["resources"] = map[string]any{"cache": map[string]any{"type": "local"}}
+				}
+				plan, err := planConnectionAdd(t.Context(), client, root, "search.api",
+					file, false, "", true, nil, nil)
+				if afterPlanning {
+					require.NoError(t, err)
+					raw["resources"] = nil
+				} else {
+					assert.Nil(t, plan)
+				}
+				before, marshalErr := yaml.Marshal(raw)
+				require.NoError(t, marshalErr)
+				if afterPlanning {
+					err = plan.apply(t.Context(), client)
+				}
+				requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter,
+					`dependency "cache" in uses does not exist`)
+				assert.Empty(t, client.mutationCalls)
+				after, err := yaml.Marshal(raw)
+				require.NoError(t, err)
+				assert.Equal(t, before, after)
+			})
+		}
+	}
+}
 
 func TestConnectionAddValidatesCompleteProjectBeforeWriting(t *testing.T) {
 	for _, existing := range []bool{false, true} {

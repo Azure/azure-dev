@@ -68,18 +68,26 @@ func writeTeamsAppPackage(
 	}
 	markerPath := filepath.Join(filepath.Dir(packagePath), teamsAppPackageMarkerFile)
 
-	request := agent_api.TeamsAppPackageRequest{
-		BotServiceArmID:          botservice.BotArmID(subscriptionID, resourceGroup, botName),
-		PublishScope:             "Personal",
-		AgentDisplayName:         agentName,
-		AppVersion:               "1.0.0",
-		ShortDescription:         fmt.Sprintf("%s agent", agentName),
-		FullDescription:          fmt.Sprintf("%s agent on Microsoft Teams (activity protocol)", agentName),
-		DeveloperName:            "Azure AI Foundry",
-		DeveloperWebsiteURL:      "https://learn.microsoft.com/azure/ai-foundry/",
-		PrivacyURL:               "https://learn.microsoft.com/azure/ai-foundry/",
-		TermsOfUseURL:            "https://learn.microsoft.com/azure/ai-foundry/",
-		CanRespondWithoutMention: new(true),
+	effectiveSvc, err := resolveAgentServiceConfigWithProjectOverrides(svc, proj.GetPath())
+	if err != nil {
+		log.Printf("postdeploy: skipping Teams app package: failed to resolve service configuration: %v", err)
+		return ""
+	}
+	config, err := project.LoadServiceTargetAgentConfig(effectiveSvc)
+	if err != nil {
+		log.Printf("postdeploy: skipping Teams app package: failed to parse service configuration: %v", err)
+		return ""
+	}
+	opts := teamsAppRequestOptions{
+		scope:     teamsPackScope{flag: "personal", api: "Personal"},
+		agentName: agentName,
+	}
+	if config.Activity != nil {
+		opts.publish = config.Activity.Publish
+	}
+	request := buildTeamsAppPackageRequest(botservice.BotArmID(subscriptionID, resourceGroup, botName), opts)
+	if request.CanRespondWithoutMention == nil {
+		request.CanRespondWithoutMention = new(true)
 	}
 
 	zipBytes, err := agentClient.DownloadTeamsAppPackage(

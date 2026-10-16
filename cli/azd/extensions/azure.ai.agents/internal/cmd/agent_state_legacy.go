@@ -141,7 +141,8 @@ func (s *agentStateStore) readLegacyProjectState(ctx context.Context, record *ag
 		Invocations   map[string]string `json:"invocations"`
 	}
 	if err := json.Unmarshal(data, &legacy); err != nil {
-		return fmt.Errorf("parse legacy project state: %w", err)
+		log.Printf("legacy agent state: ignoring invalid project state %q: %v", path, err)
+		return nil
 	}
 	legacyState := legacyAgentState{Sessions: legacy.Sessions, Conversations: legacy.Conversations}
 	legacyState.apply(record)

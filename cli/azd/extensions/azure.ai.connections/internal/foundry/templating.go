@@ -26,6 +26,8 @@ type EnvReferenceAnalysis struct {
 	// HasLiteralText reports non-blank text outside client templates, so
 	// expansion can never produce a blank value.
 	HasLiteralText bool
+	// MayBeEmpty conservatively reports possible exact-empty expansion.
+	MayBeEmpty bool
 }
 
 // AnalyzeEnvReferences finds names without resolving their values.
@@ -41,6 +43,7 @@ func AnalyzeEnvReferences(value string) (EnvReferenceAnalysis, error) {
 	analysis := EnvReferenceAnalysis{}
 	collectEnvReferences(tree.Root, required, referenced, &analysis.HasClientTemplate)
 	analysis.HasLiteralText = hasLiteralText(tree.Root)
+	analysis.MayBeEmpty = mayExpandToEmpty(tree.Root)
 	analysis.RequiredVariables = slices.Sorted(maps.Keys(required))
 	analysis.ReferencedVariables = slices.Sorted(maps.Keys(referenced))
 	return analysis, nil
@@ -87,6 +90,32 @@ func hasOptionalEnvFallback(node *parse.FuncNode) bool {
 	default:
 		return false
 	}
+}
+
+func mayExpandToEmpty(node parse.Node) bool {
+	switch typed := node.(type) {
+	case *parse.TextNode:
+		return typed.Value == ""
+	case *parse.ListNode:
+		for _, child := range typed.Nodes {
+			if !mayExpandToEmpty(child) {
+				return false
+			}
+		}
+	case *parse.FuncNode:
+		switch typed.Name {
+		case "=", ":=", ":-":
+			// Defaults apply when the variable is empty. Both branches
+			// are nonempty if the fallback cannot expand to empty.
+			for _, arg := range typed.Args {
+				if !mayExpandToEmpty(arg) {
+					return false
+				}
+			}
+		}
+		// Leave alternatives and transformations conservative.
+	}
+	return true
 }
 
 func maskFoundryExpressions(value string) string {

@@ -17,9 +17,10 @@ import (
 type connectionTemplateAnalysis struct {
 	required   map[string]struct{}
 	referenced map[string]struct{}
-	// mayBeEmpty marks fields whose client templates can expand to a blank
-	// value; literal text around a template makes the field non-blank.
+	// Required fields use trimmed blankness, unlike conflict checks.
 	mayBeEmpty map[string]bool
+	// Conflict checks use exact emptiness, not trimmed blankness.
+	mayBeExactlyEmpty map[string]bool
 }
 
 func validateConnectionDefinitionForAuthoring(
@@ -41,9 +42,10 @@ func validateConnectionDefinitionForAuthoring(
 	}
 
 	analysis := connectionTemplateAnalysis{
-		required:   map[string]struct{}{},
-		referenced: map[string]struct{}{},
-		mayBeEmpty: map[string]bool{},
+		required:          map[string]struct{}{},
+		referenced:        map[string]struct{}{},
+		mayBeEmpty:        map[string]bool{},
+		mayBeExactlyEmpty: map[string]bool{},
 	}
 	if err := analysis.add("target", input.Target); err != nil {
 		return nil, nil, err
@@ -130,6 +132,7 @@ func (a *connectionTemplateAnalysis) add(path, value string) error {
 		)
 	}
 	a.mayBeEmpty[path] = parsed.HasClientTemplate && !parsed.HasLiteralText
+	a.mayBeExactlyEmpty[path] = parsed.HasClientTemplate && parsed.MayBeEmpty
 	for _, variable := range parsed.RequiredVariables {
 		a.required[variable] = struct{}{}
 	}
@@ -213,7 +216,7 @@ func validateConnectionAudienceForAuthoring(
 	authType string,
 	analysis connectionTemplateAnalysis,
 ) error {
-	if input.Audience == "" || analysis.mayBeEmpty["audience"] {
+	if input.Audience == "" || analysis.mayBeExactlyEmpty["audience"] {
 		return nil
 	}
 	switch authType {
@@ -244,7 +247,7 @@ func validateConnectionAuthForAuthoring(
 	}
 	if authType != "OAuth2" {
 		for _, field := range oauthFields {
-			if field.value != "" && !analysis.mayBeEmpty[field.name] {
+			if field.value != "" && !analysis.mayBeExactlyEmpty[field.name] {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
 					"authorizationUrl, tokenUrl, refreshUrl, scopes, and connectorName are only valid with OAuth2 authType.",
@@ -371,6 +374,7 @@ func validateConnectionOAuthForAuthoring(
 ) error {
 	credentials := input.Credentials
 	connectorHasTemplate := analysis.mayBeEmpty["connectorName"]
+	connectorMayBeEmpty := analysis.mayBeExactlyEmpty["connectorName"]
 	connectorIsSet := input.ConnectorName != ""
 	if connectorIsSet && !connectorHasTemplate && strings.TrimSpace(input.ConnectorName) == "" {
 		return exterrors.Validation(
@@ -390,11 +394,11 @@ func validateConnectionOAuthForAuthoring(
 	}
 	hasLiteralURL := false
 	for _, field := range urlFields {
-		if field.value != "" && !analysis.mayBeEmpty[field.name] {
+		if field.value != "" && !analysis.mayBeExactlyEmpty[field.name] {
 			hasLiteralURL = true
 		}
 	}
-	if connectorIsSet && !connectorHasTemplate {
+	if connectorIsSet && !connectorMayBeEmpty {
 		if len(credentials) > 0 || len(input.Scopes) > 0 || hasLiteralURL {
 			return exterrors.Validation(
 				exterrors.CodeConflictingArguments,
@@ -406,7 +410,7 @@ func validateConnectionOAuthForAuthoring(
 	}
 
 	byoPossible := oauthBYOFieldsPossible(input, analysis)
-	if !connectorHasTemplate {
+	if !connectorMayBeEmpty {
 		if !byoPossible {
 			return missingOAuthBYOFields()
 		}

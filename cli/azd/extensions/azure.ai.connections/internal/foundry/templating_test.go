@@ -155,3 +155,41 @@ func TestAnalyzeEnvReferencesMatchesSDKExpansionParser(t *testing.T) {
 		})
 	}
 }
+
+func TestAnalyzeEnvReferencesExactEmptyExpansion(t *testing.T) {
+	for input, mayBeEmpty := range map[string]bool{
+		"":                        true,
+		" ":                       false,
+		"${A}":                    true,
+		" ${A} ":                  false,
+		"${A:-}":                  true,
+		"${A:- }":                 false,
+		"${A:-fallback}":          false,
+		"${A=fallback}":           false,
+		"${A:=fallback}":          false,
+		"${A:-${B}}":              true,
+		"${A:-${B:-}}":            true,
+		"${A:-${B:-fallback}}":    false,
+		"${A:-prefix-${B}}":       false,
+		"${A:+alternative}":       true,
+		"${A:-${B:+alternative}}": true,
+		"${A/old/new}":            true,
+		"$${ESCAPED}":             false,
+		"${{event.body}}":         false,
+		"${A:-${{event.body}}}":   false,
+	} {
+		t.Run(input, func(t *testing.T) {
+			got, err := AnalyzeEnvReferences(input)
+			require.NoError(t, err)
+			assert.Equal(t, mayBeEmpty, got.MayBeEmpty)
+			if mayBeEmpty {
+				return
+			}
+			for _, value := range []string{"", " ", "value"} {
+				expanded, err := corefoundry.ExpandEnv(input, func(string) string { return value })
+				require.NoError(t, err)
+				assert.NotEmpty(t, expanded)
+			}
+		})
+	}
+}

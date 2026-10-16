@@ -9,6 +9,7 @@ import (
 
 	"azure.ai.connections/internal/definition"
 
+	corefoundry "github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -437,10 +438,110 @@ func TestValidateConnectionDefinitionForAuthoringRejectsNonBlankTemplates(t *tes
 
 func TestValidateConnectionDefinitionForAuthoringDefersBlankableTemplates(t *testing.T) {
 	input := validConnectionAuthoringDefinition("None")
-	input.Audience = " ${AUDIENCE} "
+	input.Audience = "${AUDIENCE}"
 	input.TokenURL = "${TOKEN_URL:-}"
 
 	required, _, err := validateConnectionDefinitionForAuthoring(input)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"AUDIENCE"}, required)
+}
+
+func TestValidateConnectionDefinitionForAuthoringRejectsNonEmptyTemplates(t *testing.T) {
+	for _, value := range []string{
+		"${VALUE:-https://example.test}",
+		" ${VALUE} ",
+		"${VALUE:- }",
+		"${OUTER:-${INNER:-fallback}}",
+		"$${ESCAPED}",
+		"${{event.body}}",
+	} {
+		for _, field := range []string{"audience", "authorizationUrl", "tokenUrl", "refreshUrl", "connectorName"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				input := validConnectionAuthoringDefinition("None")
+				switch field {
+				case "audience":
+					input.Audience = value
+				case "authorizationUrl":
+					input.AuthorizationURL = value
+				case "tokenUrl":
+					input.TokenURL = value
+				case "refreshUrl":
+					input.RefreshURL = value
+				case "connectorName":
+					input.ConnectorName = value
+				}
+				_, _, err := validateConnectionDefinitionForAuthoring(input)
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), value)
+				for _, variable := range []string{"", " ", "value"} {
+					expanded, err := corefoundry.ExpandEnv(value, func(string) string { return variable })
+					require.NoError(t, err)
+					props := rawConnectionProperties{
+						Category: "CognitiveSearch",
+						Target:   "https://example.test",
+						AuthType: "None",
+					}
+					switch field {
+					case "audience":
+						props.Audience = expanded
+					case "authorizationUrl":
+						props.AuthorizationURL = expanded
+					case "tokenUrl":
+						props.TokenURL = expanded
+					case "refreshUrl":
+						props.RefreshURL = expanded
+					case "connectorName":
+						props.ConnectorName = expanded
+					}
+					require.Error(t, validateConnectionProperties(props))
+				}
+			})
+		}
+	}
+}
+
+func TestValidateConnectionDefinitionForAuthoringDefersExactEmptyBranches(t *testing.T) {
+	for _, value := range []string{
+		"${VALUE}", "${VALUE:-}", "${OUTER:-${INNER}}",
+		"${OUTER:-${INNER:-}}", "${VALUE:+alternative}",
+		"${OUTER:-${INNER:+alternative}}", "${VALUE/old/new}",
+	} {
+		t.Run(value, func(t *testing.T) {
+			input := validConnectionAuthoringDefinition("None")
+			input.Audience = value
+			input.TokenURL = value
+			_, _, err := validateConnectionDefinitionForAuthoring(input)
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidateConnectionDefinitionForAuthoringOAuthExactEmptyConflicts(t *testing.T) {
+	for _, value := range []string{" ${VALUE} ", "${VALUE:-fallback}"} {
+		t.Run(value, func(t *testing.T) {
+			managed := validConnectionAuthoringDefinition("OAuth2")
+			managed.ConnectorName = "connector"
+			managed.TokenURL = value
+			_, _, err := validateConnectionDefinitionForAuthoring(managed)
+			require.Error(t, err)
+
+			byo := validConnectionAuthoringDefinition("OAuth2")
+			byo.ConnectorName = value
+			byo.Scopes = []string{"read"}
+			_, _, err = validateConnectionDefinitionForAuthoring(byo)
+			require.Error(t, err)
+
+			identity := validConnectionAuthoringDefinition("ProjectManagedIdentity")
+			identity.Audience = value
+			_, _, err = validateConnectionDefinitionForAuthoring(identity)
+			require.NoError(t, err)
+		})
+	}
+	managed := validConnectionAuthoringDefinition("OAuth2")
+	managed.ConnectorName = "${CONNECTOR:-connector}"
+	_, _, err := validateConnectionDefinitionForAuthoring(managed)
+	require.NoError(t, err)
+	managed.TokenURL = "${TOKEN_URL:-}"
+	_, _, err = validateConnectionDefinitionForAuthoring(managed)
+	require.NoError(t, err)
 }

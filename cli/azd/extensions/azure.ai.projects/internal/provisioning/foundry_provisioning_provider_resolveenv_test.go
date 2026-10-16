@@ -526,18 +526,40 @@ func TestInitializeExistingRegistry(t *testing.T) {
 		explicit bool
 		virtual  bool
 		rejected bool
+		mode     string
+		noID     bool
+		noAcr    bool
+		invalid  string
+		wantMode string
+		wantErr  string
 	}{
 		{name: "reuse", group: "shared"},
 		{name: "virtual env selector wins", group: "shared", virtual: true},
-		{name: "default group rejected", group: "rg-test", rejected: true},
-		{name: "explicit group rejected before prompting", group: "custom", explicit: true, rejected: true},
+		{name: "default group rejected", group: "rg-test", mode: "reuse-connect", rejected: true},
+		{name: "explicit group rejected before prompting", group: "custom", explicit: true,
+			mode: "reuse-connect", rejected: true},
 		{name: "layer can reuse root registry", group: "root", layer: true},
-		{name: "layer default group rejected", group: "rg-test-foundry", layer: true, rejected: true},
+		{name: "layer default group rejected", group: "rg-test-foundry", layer: true,
+			mode: "reuse-connect", rejected: true},
+		{name: "legacy in-group ID without mode records create", group: "rg-test", wantMode: "create"},
+		{name: "empty ID records create", noID: true, wantMode: "create"},
+		{name: "recorded create ignores created ID", mode: "create", group: "rg-test", wantMode: "create"},
+		{name: "recorded reuse", mode: "reuse-connect", group: "shared"},
+		{name: "recorded reuse requires ID", mode: "reuse-connect", noID: true,
+			wantErr: "requires AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "unsupported recorded mode", mode: "already-connected", wantErr: "AZD_FOUNDRY_ACR_MODE"},
+		{name: "malformed ID", invalid: "registry", wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "wrong resource type", invalid: "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.Storage/accounts/a",
+			wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "no registry needed", noAcr: true, wantMode: "none"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
 			raw := "services:\n  project:\n    host: azure.ai.project\n" +
 				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			if tt.noAcr {
+				raw = "services:\n  project:\n    host: azure.ai.project\n"
+			}
 			options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
 			if tt.layer {
 				raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n      path: infra/foundry\n"
@@ -547,11 +569,18 @@ func TestInitializeExistingRegistry(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
 			id := "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
 				"/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+			if tt.noID {
+				id = ""
+			}
+			if tt.invalid != "" {
+				id = tt.invalid
+			}
 			values := map[string]string{
-				"AZURE_SUBSCRIPTION_ID": subscription,
-				"AZURE_LOCATION":        "eastus",
-				"AZURE_ENV_NAME":        "test",
-				"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				"AZURE_SUBSCRIPTION_ID":                subscription,
+				"AZURE_LOCATION":                       "eastus",
+				"AZURE_ENV_NAME":                       "test",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
 			}
 			if tt.layer {
 				values["AZURE_RESOURCE_GROUP"] = "root"
@@ -559,12 +588,12 @@ func TestInitializeExistingRegistry(t *testing.T) {
 			if tt.explicit {
 				values["AZURE_RESOURCE_GROUP"] = tt.group
 			}
-			if tt.rejected {
+			if tt.rejected || tt.wantErr != "" {
 				delete(values, "AZURE_LOCATION")
 			}
 			if tt.virtual {
-				options.VirtualEnv = map[string]string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID": id}
-				values["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"] = "invalid-overridden-selector"
+				options.VirtualEnv = map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id}
+				values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = "invalid-overridden-selector"
 			}
 			env := &resolveEnvStubEnvServer{envName: "test", get: values}
 			prompt := &resolveEnvStubPromptServer{}
@@ -572,13 +601,40 @@ func TestInitializeExistingRegistry(t *testing.T) {
 			err := provider.Initialize(t.Context(), root, options)
 			if tt.rejected {
 				require.ErrorContains(t, err, "azd down deletes")
+				assert.Empty(t, env.set)
+			} else if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, env.set)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"value": id}, provider.armParameters()["existingAcrResourceId"])
+				wantMode := tt.wantMode
+				if wantMode == "" {
+					wantMode = "reuse-connect"
+				}
+				assert.Equal(t, wantMode, env.set["AZD_FOUNDRY_ACR_MODE"])
+				assert.Equal(t, wantMode, provider.greenfieldAcrMode)
+				params, err := provider.Parameters(t.Context())
+				require.NoError(t, err)
+				if wantMode == "reuse-connect" {
+					assert.Equal(t, map[string]any{"value": id}, provider.armParameters()["existingAcrResourceId"])
+					found := false
+					for _, param := range params {
+						if param.Name == "existingAcrResourceId" {
+							found = true
+							assert.Equal(t, []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}, param.EnvVarMapping)
+							assert.Equal(t, id, param.Value)
+						}
+					}
+					assert.True(t, found)
+				} else {
+					assert.NotContains(t, provider.armParameters(), "existingAcrResourceId")
+					for _, param := range params {
+						assert.NotEqual(t, "existingAcrResourceId", param.Name)
+					}
+				}
 			}
 			assert.Zero(t, prompt.subscriptionN)
 			assert.Zero(t, prompt.locationN)
-			assert.Empty(t, env.set)
 		})
 	}
 }

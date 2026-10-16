@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1795,8 +1796,9 @@ func ejectProjectInfra(
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
-	if err := validateExistingRegistryTerraformEject(provider, environment); err != nil {
-		return err
+	environment = maps.Clone(environment)
+	if environment == nil {
+		environment = map[string]string{}
 	}
 	groupKey := "AZURE_RESOURCE_GROUP"
 	if target.layer {
@@ -1809,6 +1811,7 @@ func ejectProjectInfra(
 			group += "-foundry"
 		}
 	}
+	environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
 	result, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML:      raw,
 		ServiceName:       serviceName,
@@ -1823,6 +1826,13 @@ func ejectProjectInfra(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("cannot synthesize Foundry infrastructure: %s", err),
 			"fix the project service configuration and retry",
+		)
+	}
+	if provider == provisioning.TerraformProviderName && result.ACRMode == "reuse-connect" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead, or set AZD_FOUNDRY_ACR_MODE to create",
 		)
 	}
 	if err := applyProjectEjectDeployments(result, environment); err != nil {
@@ -1945,21 +1955,6 @@ func ejectProjectInfra(
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
 		}
-	}
-	return nil
-}
-
-func validateExistingRegistryTerraformEject(provider string, environment map[string]string) error {
-	id, found := environment["AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"]
-	if !found {
-		id = os.Getenv("AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID")
-	}
-	if provider == provisioning.TerraformProviderName && id != "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
-			"eject Bicep instead, or unset the existing registry selector",
-		)
 	}
 	return nil
 }

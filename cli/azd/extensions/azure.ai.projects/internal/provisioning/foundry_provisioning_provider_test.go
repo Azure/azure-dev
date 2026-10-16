@@ -1068,8 +1068,24 @@ func TestParameters_ExistingRegistry(t *testing.T) {
 	}
 	require.NotNil(t, registry)
 	assert.Equal(t, id, registry.Value)
-	assert.Equal(t, []string{"AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"}, registry.EnvVarMapping)
+	assert.Equal(t, []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}, registry.EnvVarMapping)
 	assert.True(t, registry.UsingEnvVarMapping)
+}
+
+func TestGreenfieldDestroyRegistryKeys(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect", "none", ""} {
+		t.Run(mode, func(t *testing.T) {
+			p := &FoundryProvisioningProvider{greenfieldAcrMode: mode}
+			keys := p.destroyResult().InvalidatedEnvKeys
+			assert.Contains(t, keys, "AZD_FOUNDRY_ACR_MODE")
+			assert.Contains(t, keys, "AZURE_CONTAINER_REGISTRY_ENDPOINT")
+			if mode == "reuse-connect" {
+				assert.NotContains(t, keys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			} else {
+				assert.Contains(t, keys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
+		})
+	}
 }
 
 func TestDestroy_RefusesWithoutForceWhenNonInteractive(t *testing.T) {

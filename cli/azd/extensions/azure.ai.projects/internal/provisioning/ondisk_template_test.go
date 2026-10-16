@@ -182,13 +182,13 @@ func TestLoadOnDiskTemplateAt_CustomPathAndModule(t *testing.T) {
 
 func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
 	t.Parallel()
-	const key = "AZURE_EXISTING_CONTAINER_REGISTRY_RESOURCE_ID"
+	const key = "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 	result, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
 			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
 		ServiceName:     "project",
-		Env:             map[string]string{key: id},
+		Env:             map[string]string{key: id, "AZD_FOUNDRY_ACR_MODE": "reuse-connect"},
 		PreserveVarRefs: true,
 	})
 	require.NoError(t, err)

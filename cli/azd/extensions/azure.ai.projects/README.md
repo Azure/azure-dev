@@ -70,7 +70,7 @@ JSON array overrides the portable `deployments` defaults in `azure.yaml`. A valu
 of `[]` intentionally disables managed model deployments. When unset or blank,
 interactive provisioning selects models for the current subscription and location
 and saves the complete list to that environment; `--no-prompt` (or
-`AZD_NO_PROMPT=true`) saves the YAML defaults unchanged. Invalid nonblank values
+`AZD_NO_PROMPT=true`) saves the YAML defaults unchanged. Invalid non-blank values
 produce an error rather than being overwritten. `azd ai project deployment add`
 also seeds or updates this environment list. Ejected infrastructure retains
 user-owned deployment parameters.

@@ -392,7 +392,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 			beforeYAML := mustProjectProperties(t, projectServer.services["project"]).AsMap()
 			aiServer.deployment = &azdext.AiModelDeployment{
 				ModelName: selected.Model.Name, Format: selected.Model.Format, Version: selected.Model.Version,
-				Sku: &azdext.AiModelSku{Name: selected.Sku.Name}, Capacity: int32(selected.Sku.Capacity),
+				Sku: &azdext.AiModelSku{Name: selected.Sku.Name}, Capacity: 10,
 			}
 			if test.initial != nil {
 				encoded, err := provisioning.EncodeProjectDeployments(test.initial)

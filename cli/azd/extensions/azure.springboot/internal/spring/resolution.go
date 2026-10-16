@@ -225,7 +225,8 @@ func AnalyzeProject(
 		}
 	}
 	requirements, embedded := application.Requirements, application.Embedded
-	application.Requirements, application.Embedded, application.InputEvidence, application.InputReferences = nil, nil, nil, nil
+	application.Requirements, application.Embedded = nil, nil
+	application.InputEvidence, application.InputReferences = nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
 		result.Resources = append(result.Resources, Resource{

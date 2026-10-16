@@ -180,6 +180,61 @@ spring:
 			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"release", "sql", "local"},
 		},
 		{
+			name: "profile group names are case sensitive",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=Prod\n" +
+					"spring.profiles.group.Prod=postgres\nspring.profiles.group.prod=mysql",
+				"src/main/resources/application-postgres.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-mysql.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"Prod", "postgres"},
+		},
+		{
+			name: "profile group punctuation remains distinct",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=prod_sql\n" +
+					"spring.profiles.group.prod-sql=postgres\nspring.profiles.group.prod_sql=mysql",
+				"src/main/resources/application-postgres.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-mysql.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: MySQL, database: "warehouse", profiles: []string{"prod_sql", "mysql"},
+		},
+		{
+			name: "exact nested group names expand depth first",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=Prod-Group\n" +
+					"spring.profiles.group.Prod-Group=SQL_Group\nspring.profiles.group.SQL_Group=postgres\n" +
+					"spring.profiles.group.sql-group=mysql",
+				"src/main/resources/application-postgres.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-mysql.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog",
+			profiles: []string{"Prod-Group", "SQL_Group", "postgres"},
+		},
+		{
+			name: "YAML profile group keys retain exact suffixes",
+			files: map[string]string{
+				"src/main/resources/application.yml": `spring:
+  profiles:
+    active: Prod.SQL
+    group:
+      Prod.SQL: postgres
+      prod_sql: mysql
+`,
+				"src/main/resources/application-postgres.properties": "spring.datasource.url=" +
+					"jdbc:postgresql://localhost/catalog",
+				"src/main/resources/application-mysql.properties": "spring.datasource.url=" +
+					"jdbc:mysql://localhost/warehouse",
+			},
+			drivers: allDrivers(), kind: PostgreSQL, database: "catalog", profiles: []string{"Prod.SQL", "postgres"},
+		},
+		{
 			name: "environment wins over profile and nested placeholders",
 			files: map[string]string{
 				"src/main/resources/application.properties": "spring.datasource.url=jdbc:postgresql://localhost/catalog",

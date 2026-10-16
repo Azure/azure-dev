@@ -44,10 +44,8 @@ func profileChoices(root *os.Root, locations []string, base []document) ([]strin
 				add(name)
 			}
 		}
-		for _, property := range doc.values {
-			if name, ok := strings.CutPrefix(property.key, "spring.profiles.group."); ok {
-				add(name)
-			}
+		for name := range doc.profileGroups {
+			add(name)
 		}
 	}
 	return slices.Sorted(maps.Keys(names)), nil

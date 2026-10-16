@@ -33,6 +33,7 @@ type property struct {
 
 type configuration struct {
 	values        map[string]property
+	profileGroups map[string]property
 	profiles      []string
 	lookup        LookupEnv
 	externalFiles []string
@@ -41,8 +42,9 @@ type configuration struct {
 }
 
 type document struct {
-	values map[string]property
-	file   string
+	values        map[string]property
+	profileGroups map[string]property
+	file          string
 }
 
 var placeholder = regexp.MustCompile(`\$\{([^{}]+)\}`)
@@ -57,8 +59,34 @@ func canonical(key string) string {
 	return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(key))
 }
 
+func profileGroupName(key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) < 4 || canonical(strings.Join(parts[:3], ".")) != canonical("spring.profiles.group") {
+		return "", false
+	}
+	return strings.Join(parts[3:], "."), true
+}
+
+func storageKey(key string) string {
+	if name, ok := profileGroupName(key); ok {
+		return "spring.profiles.group." + name
+	}
+	return canonical(key)
+}
+
+func newDocument(values map[string]property, file string) document {
+	groups := map[string]property{}
+	for key, value := range values {
+		if name, ok := profileGroupName(value.key); ok {
+			groups[name] = value
+			delete(values, key)
+		}
+	}
+	return document{values: values, profileGroups: groups, file: file}
+}
+
 func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*configuration, error) {
-	c := &configuration{values: map[string]property{}, lookup: lookup}
+	c := &configuration{values: map[string]property{}, profileGroups: map[string]property{}, lookup: lookup}
 	locations := [][]string{configurationLocations[0], slices.Clone(configurationLocations[1])}
 	entries, err := fs.ReadDir(root.FS(), "config")
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -83,6 +111,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		}
 		if _, activated := doc.values[canonical("spring.config.activate.on-profile")]; !activated {
 			maps.Copy(c.values, doc.values)
+			maps.Copy(c.profileGroups, doc.profileGroups)
 		}
 	}
 	var jsonProperties map[string]property
@@ -95,6 +124,9 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		if err := flatten(values, "", "SPRING_APPLICATION_JSON", flat); err != nil {
 			return nil, err
 		}
+		jsonDocument := newDocument(flat, "SPRING_APPLICATION_JSON")
+		flat = jsonDocument.values
+		maps.Copy(c.profileGroups, jsonDocument.profileGroups)
 		// JSON properties have higher precedence than ordinary environment variables.
 		previous := c.lookup
 		c.lookup = func(key string) (string, bool) {
@@ -177,7 +209,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 			return nil, invalidConfiguration("Spring profile activation is invalid or exceeds 64 profiles")
 		}
 		names = append(names, name)
-		group, err := c.resolve("spring.profiles.group." + name)
+		group, err := c.resolveProfileGroup(name)
 		if err != nil {
 			return nil, err
 		}
@@ -251,10 +283,8 @@ func (c *configuration) apply(doc document, selected map[string]bool, profileFil
 			if _, ok := doc.values[canonical(key)]; ok {
 				return invalidConfiguration("%s cannot be declared in profile-specific configuration", key)
 			}
-			for key := range doc.values {
-				if strings.HasPrefix(key, "spring.profiles.group.") {
-					return invalidConfiguration("spring.profiles.group cannot be declared in profile-specific configuration")
-				}
+			if len(doc.profileGroups) != 0 {
+				return invalidConfiguration("spring.profiles.group cannot be declared in profile-specific configuration")
 			}
 		}
 	}
@@ -296,9 +326,9 @@ func readDocuments(ctx context.Context, root *os.Root, profile string, locations
 					}
 					values := map[string]property{}
 					for key, value := range p.Map() {
-						values[canonical(key)] = property{text: value, source: file, key: key}
+						values[storageKey(key)] = property{text: value, source: file, key: key}
 					}
-					docs = append(docs, document{values: values, file: file})
+					docs = append(docs, newDocument(values, file))
 				}
 				continue
 			}
@@ -317,7 +347,7 @@ func readDocuments(ctx context.Context, root *os.Root, profile string, locations
 				if err := flatten(values, "", file, flat); err != nil {
 					return nil, err
 				}
-				docs = append(docs, document{values: flat, file: file})
+				docs = append(docs, newDocument(flat, file))
 			}
 		}
 	}
@@ -361,14 +391,14 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 					return unsupportedConfiguration("non-scalar configuration list in %s", source)
 				}
 			}
-			result[canonical(name)] = property{text: strings.Join(items, ","), source: source, key: name}
+			result[storageKey(name)] = property{text: strings.Join(items, ","), source: source, key: name}
 		case nil:
 			if source == "SPRING_APPLICATION_JSON" {
 				continue
 			}
-			result[canonical(name)] = property{source: source, key: name}
+			result[storageKey(name)] = property{source: source, key: name}
 		case string, bool, int, int64, float64:
-			result[canonical(name)] = property{text: fmt.Sprint(value), source: source, key: name}
+			result[storageKey(name)] = property{text: fmt.Sprint(value), source: source, key: name}
 		default:
 			return unsupportedConfiguration("unsupported configuration value in %s", source)
 		}
@@ -403,6 +433,20 @@ func (c *configuration) resolve(key string) (string, error) {
 	}
 	c.traces[key] = slices.Clone(c.trace)
 	return value, err
+}
+
+func (c *configuration) resolveProfileGroup(name string) (string, error) {
+	key := "spring.profiles.group." + name
+	if p, ok := c.profileGroups[name]; ok && p.source == "SPRING_APPLICATION_JSON" {
+		return c.expandProperty(key, p, map[string]bool{})
+	}
+	if p, ok := lookupEnvProperty(c.lookup, key); ok {
+		return c.expandProperty(key, p, map[string]bool{})
+	}
+	if p, ok := c.profileGroups[name]; ok {
+		return c.expandProperty(key, p, map[string]bool{})
+	}
+	return "", nil
 }
 
 func (c *configuration) expand(key string, visiting map[string]bool) (string, error) {

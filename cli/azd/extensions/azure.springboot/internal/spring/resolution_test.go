@@ -355,11 +355,17 @@ func TestResolutionMaterializesExplicitEmptyDatasource(t *testing.T) {
 func TestProfileChoicePreservesGroupNames(t *testing.T) {
 	directory, resolver := resolutionFixture(t, "profile-choice")
 	writeFixture(t, directory, "src/main/resources/application.properties",
-		"spring.profiles.active=${DEPLOYMENT_PROFILE}\nspring.profiles.group.production-sql=postgres")
+		"spring.profiles.active=${DEPLOYMENT_PROFILE}\n"+
+			"spring.profiles.group.Production-SQL=postgres\n"+
+			"spring.profiles.group.production_sql=mysql")
 	result, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{})
 	require.NoError(t, err)
-	require.Contains(t, result.Decisions[0].Choices, "production-sql")
-	result, err = AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{Profiles: []string{"production-sql"}})
+	require.Contains(t, result.Decisions[0].Choices, "Production-SQL")
+	require.Contains(t, result.Decisions[0].Choices, "production_sql")
+	result, err = AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{Profiles: []string{"Production-SQL"}})
 	require.NoError(t, err)
 	require.Equal(t, PostgreSQL, result.Resources[0].Kind)
+	result, err = AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{Profiles: []string{"production_sql"}})
+	require.NoError(t, err)
+	require.Equal(t, MySQL, result.Resources[0].Kind)
 }

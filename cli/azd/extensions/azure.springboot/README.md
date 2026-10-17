@@ -65,7 +65,7 @@ inherited settings, are supported. Relative repackage paths use the project root
 Active repackage executions must agree on one executable-JAR output directory.
 Missing/unresolved paths, directories outside the Docker context, and output
 directories overlapping application inputs or generated files are rejected.
-Hikari or Tomcat pool-specific connection bindings, including empty values, are
+Hikari, Tomcat, or DBCP2 pool-specific connection bindings, including empty values, are
 rejected; use the common `spring.datasource` connection settings instead.
 Ordinary pool tuning is supported.
 The normalized Maven artifact ID must start with a letter, contain no consecutive
@@ -78,6 +78,8 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 | PostgreSQL JDBC URL | Azure Database for PostgreSQL server and the inferred database |
 
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
+The current deployment supports HTTP web applications. Explicit non-web mode and
+HTTPS-only application servers require different hosting contracts and are rejected.
 Gradle, multi-module/custom packaging, custom datasource-producing beans, programmatic
 profile activation, custom configuration locations/imports, and other resource
 types require further analysis and are explicitly rejected when detected.

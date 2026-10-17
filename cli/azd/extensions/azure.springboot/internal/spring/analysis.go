@@ -70,6 +70,8 @@ var customDatasource = regexp.MustCompile(
 		`DriverManagerDataSource|BasicDataSource|PoolDataSource)\s+[\w$]+\s*\(` +
 		`|new\s+(?:[\w$]+\.)*(?:HikariDataSource|DriverManagerDataSource|BasicDataSource|PoolDataSource)\s*\(`)
 var runtimeActivation = regexp.MustCompile(`\.(?:setAdditionalProfiles|setActiveProfiles|setDefaultProfiles)\s*\(`)
+var builderProfileActivation = regexp.MustCompile(
+	`(?s)\bnew\s+(?:[\w$]+\.)*SpringApplicationBuilder\s*\([^;]*?\)[^;]*?\.profiles\s*\(`)
 var javaCommentsAndLiterals = regexp.MustCompile(`(?s)/\*.*?\*/|//[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`)
 
 // Analyze infers active requirements, not all resource capabilities on the classpath.
@@ -132,6 +134,22 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	c, err := readConfiguration(ctx, root, lookup)
 	if err != nil {
 		return nil, err
+	}
+	webApplicationType, err := c.resolve("spring.main.web-application-type")
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(strings.TrimSpace(webApplicationType), "none") {
+		return nil, unsupportedConfiguration(
+			"spring.main.web-application-type=none is not supported; current deployment requires an HTTP web application")
+	}
+	serverSSL, err := c.resolve("server.ssl.enabled")
+	if err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(strings.TrimSpace(serverSSL), "true") {
+		return nil, unsupportedConfiguration(
+			"server.ssl.enabled=true is not supported; Container Apps ingress forwards HTTP to the application")
 	}
 	port, err := c.integer("server.port", 8080)
 	if err != nil {
@@ -218,7 +236,7 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 		if customDatasource.Match(code) {
 			return unsupportedConfiguration("custom datasource construction in %s requires explicit binding analysis", file)
 		}
-		if runtimeActivation.Match(code) {
+		if runtimeActivation.Match(code) || builderProfileActivation.Match(code) {
 			return unsupportedConfiguration(
 				"programmatic profile activation in %s cannot be inferred from configuration", file)
 		}

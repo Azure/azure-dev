@@ -409,6 +409,13 @@ app:
 			drivers: allDrivers(), embedded: true, profiles: []string{"default"},
 		},
 		{
+			name: "unrelated profiles method is not activation",
+			files: map[string]string{
+				"src/main/java/example/Catalog.java": "class Catalog { void read() { catalog.profiles(); } }",
+			},
+			drivers: allDrivers(), embedded: true, profiles: []string{"default"},
+		},
+		{
 			name:    "direct Hikari binding is not silently ignored",
 			env:     map[string]string{"SPRING_DATASOURCE_HIKARI_JDBC_URL": "jdbc:mysql://localhost/warehouse"},
 			drivers: allDrivers(), errorText: "spring.datasource.hikari.jdbc-url",
@@ -455,6 +462,14 @@ app:
 		{
 			name:    "programmatic activation is not guessed",
 			files:   map[string]string{"src/main/java/example/App.java": `app.setAdditionalProfiles("cloud");`},
+			drivers: allDrivers(), errorText: "programmatic profile",
+		},
+		{
+			name: "builder profile activation is not guessed",
+			files: map[string]string{"src/main/java/example/App.java": `
+new SpringApplicationBuilder(App.class)
+    .profiles("postgres")
+    .run(args);`},
 			drivers: allDrivers(), errorText: "programmatic profile",
 		},
 		{
@@ -836,6 +851,36 @@ func TestEffectiveModelCompilerConfiguration(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, java)
+		})
+	}
+}
+
+func TestAnalyzeHostingConfiguration(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		properties string
+		errorText  string
+	}{
+		{"default HTTP application", "", ""},
+		{"explicit servlet application", "spring.main.web-application-type=servlet", ""},
+		{"explicit non-web application", "spring.main.web-application-type=none", "HTTP web application"},
+		{"HTTPS-only application", "server.ssl.enabled=true", "forwards HTTP"},
+		{"explicit HTTP application", "server.ssl.enabled=false", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties", tt.properties)
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				require.Nil(t, application)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, application)
 		})
 	}
 }

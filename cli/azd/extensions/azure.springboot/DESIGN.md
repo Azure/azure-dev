@@ -78,6 +78,9 @@ and parameterized Bicep template. Reuse template modules/parameters, not a templ
 per configuration combination or text patches to generated Bicep. Use standard
 `azd up` for provisioning/deployment. Database hooks exist only where required.
 Do not rewrite application source/configuration or overwrite existing deployment files.
+The current hosting plan requires an HTTP web application. Non-web workers/jobs
+and HTTPS-only application servers need distinct deployment contracts and remain
+unsupported.
 
 ## Tests
 

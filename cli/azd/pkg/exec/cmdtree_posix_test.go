@@ -109,8 +109,60 @@ func TestCmdTree_ContextCancellationKillsInteractiveDescendants(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
+func TestCmdTree_CleanupKillsReparentedInteractiveDescendants(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cmd := &CmdTree{
+		CmdTreeOptions: CmdTreeOptions{Interactive: true},
+		Cmd: exec.CommandContext(
+			ctx,
+			"/bin/sh",
+			"-c",
+			`trap 'exit 130' INT; /bin/sh -c 'trap "" INT; echo "$$"; while :; do :; done' & wait`,
+		),
+	}
+	stdout, err := cmd.StdoutPipe()
+	require.NoError(t, err)
+	require.NoError(t, cmd.Start())
+	childLine, err := bufio.NewReader(stdout).ReadString('\n')
+	require.NoError(t, err)
+	childPID, err := strconv.Atoi(strings.TrimSpace(childLine))
+	require.NoError(t, err)
+
+	waitDone := make(chan error, 1)
+	waitCompleted := false
+	go func() {
+		waitDone <- waitForProcess(ctx, cmd.Wait, cmd.Kill)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		_ = cmd.Process.Kill()
+		_ = syscall.Kill(childPID, syscall.SIGKILL)
+		if !waitCompleted {
+			select {
+			case <-waitDone:
+			case <-time.After(time.Second):
+			}
+		}
+	})
+
+	require.True(t, posixProcessRunning(childPID))
+	require.NoError(t, syscall.Kill(childPID, syscall.SIGINT))
+	require.NoError(t, cmd.Process.Signal(os.Interrupt))
+	select {
+	case err := <-waitDone:
+		waitCompleted = true
+		require.Error(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("interactive parent did not stop after interrupt")
+	}
+
+	require.Eventually(t, func() bool {
+		return !posixProcessRunning(childPID)
+	}, time.Second, 10*time.Millisecond)
+}
+
 func posixProcessRunning(pid int) bool {
-	output, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	output, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output() //nolint:gosec // pid is numeric
 	if err != nil {
 		return false
 	}

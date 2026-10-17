@@ -6,13 +6,21 @@
 package exec
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 )
+
+const processTreeEnv = "AZD_INTERNAL_PROCESS_TREE_ID"
+
+var processTreeSequence atomic.Uint64
 
 // CmdTree represents an exec.Cmd. Non-interactive commands run inside their
 // own process group, while interactive commands inherit the parent's group so
@@ -20,31 +28,46 @@ import (
 type CmdTree struct {
 	CmdTreeOptions
 	*exec.Cmd
+	processTreeMarker string
 }
 
 func (o *CmdTree) Start() error {
 	if o.Cmd != nil && o.Cmd.Cancel != nil {
-		// Snapshot interactive descendants before CommandContext kills the root
-		// process and its children lose the parent relationship.
+		// Replace CommandContext's root-only cancellation with process-tree cleanup.
 		o.Cmd.Cancel = o.kill
 	}
 
-	// Interactive commands like `gh auth login` should be created as
-	// a fork child process in posix OS so it can use the same stdin
-	// Non interactive commands like `gh auth status` can be spawn
-	// wit a new process group (not as a child process) as it won't
-	// require stdin to interact with the user
+	// Interactive commands remain in the azd process group so they can use the same
+	// terminal. Non-interactive commands use a dedicated process group.
 	if !o.Interactive {
 		o.Cmd.SysProcAttr = &syscall.SysProcAttr{
 			Setpgid: true,
 		}
 	}
 
-	return o.Cmd.Start()
+	if o.Interactive {
+		// Descendants inherit this marker, preserving ownership after the root
+		// exits and parent-child relationships disappear.
+		o.processTreeMarker = fmt.Sprintf(
+			"%s=%d-%d",
+			processTreeEnv,
+			os.Getpid(),
+			processTreeSequence.Add(1),
+		)
+		o.Cmd.Env = append(o.Cmd.Environ(), o.processTreeMarker)
+	}
+
+	if err := o.Cmd.Start(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (o *CmdTree) Kill() {
-	_ = o.kill()
+	if err := o.kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		log.Printf("failed to terminate process tree: %v\n", err)
+	}
 }
 
 func (o *CmdTree) kill() error {
@@ -52,12 +75,24 @@ func (o *CmdTree) kill() error {
 		return os.ErrProcessDone
 	}
 	if o.Interactive {
-		descendants := descendantProcessIDs(o.Cmd.Process.Pid)
-		err := o.Cmd.Process.Kill()
+		descendants := ownedProcessIDs(o.Cmd.Process.Pid, o.processTreeMarker)
+		rootErr := o.Cmd.Process.Kill()
+		var descendantErr error
 		for _, pid := range descendants {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
+			if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+				descendantErr = errors.Join(
+					descendantErr,
+					fmt.Errorf("failed to kill descendant process %d: %w", pid, err),
+				)
+			}
 		}
-		return err
+		if descendantErr != nil {
+			if rootErr != nil && !errors.Is(rootErr, os.ErrProcessDone) {
+				return errors.Join(rootErr, descendantErr)
+			}
+			return descendantErr
+		}
+		return rootErr
 	}
 
 	err := syscall.Kill(-o.Cmd.Process.Pid, syscall.SIGKILL)
@@ -67,6 +102,33 @@ func (o *CmdTree) kill() error {
 	return err
 }
 
+func ownedProcessIDs(rootPID int, marker string) []int {
+	candidates := append(descendantProcessIDs(rootPID), processIDsWithEnvironment(marker)...)
+	seen := map[int]struct{}{rootPID: {}}
+	owned := make([]int, 0, len(candidates))
+	for _, pid := range candidates {
+		if pid <= 0 {
+			continue
+		}
+		if _, ok := seen[pid]; ok {
+			continue
+		}
+		seen[pid] = struct{}{}
+		owned = append(owned, pid)
+	}
+	return owned
+}
+
+func containsEnvironmentEntry(environ []byte, marker string) bool {
+	target := []byte(marker)
+	for entry := range bytes.SplitSeq(environ, []byte{0}) {
+		if bytes.Equal(entry, target) {
+			return true
+		}
+	}
+	return false
+}
+
 func descendantProcessIDs(rootPID int) []int {
 	output, err := exec.Command("ps", "-A", "-o", "pid=", "-o", "ppid=").Output()
 	if err != nil {
@@ -74,7 +136,7 @@ func descendantProcessIDs(rootPID int) []int {
 	}
 
 	childrenByParent := map[int][]int{}
-	for _, line := range strings.Split(string(output), "\n") {
+	for line := range strings.SplitSeq(string(output), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
 			continue

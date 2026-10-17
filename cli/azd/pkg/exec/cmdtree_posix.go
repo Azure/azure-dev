@@ -24,8 +24,8 @@ type CmdTree struct {
 
 func (o *CmdTree) Start() error {
 	if o.Cmd != nil && o.Cmd.Cancel != nil {
-		// Snapshot interactive descendants before CommandContext kills and
-		// reparents the root process.
+		// Snapshot interactive descendants before CommandContext kills the root
+		// process and its children lose the parent relationship.
 		o.Cmd.Cancel = o.kill
 	}
 

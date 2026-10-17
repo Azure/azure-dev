@@ -590,6 +590,13 @@ The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
 
+## Initializing a Project
+
+When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
+with `cd <folder>` before the provisioning command, even if that folder already
+existed. Run the `cd` command first: init does not change your shell's working
+directory. Initializing in the current directory does not need a `cd` hint.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

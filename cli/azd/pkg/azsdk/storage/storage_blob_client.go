@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -30,14 +32,59 @@ type AccountConfig struct {
 
 var (
 	ErrContainerNotFound = errors.New("container not found")
+
+	// ErrConcurrencyConflict is returned when an upload is rejected because the
+	// blob was modified after it was loaded (HTTP 412 / ConditionNotMet).
+	ErrConcurrencyConflict = errors.New("blob was modified by another process")
 )
+
+// ConcurrencyConflictError is returned when a blob write fails an ETag
+// precondition (If-Match / If-None-Match).
+type ConcurrencyConflictError struct {
+	// BlobPath is the blob that could not be written.
+	BlobPath string
+	// Err is the underlying Azure response error, when available.
+	Err error
+}
+
+// Error describes the concurrency conflict for BlobPath.
+func (e *ConcurrencyConflictError) Error() string {
+	return fmt.Sprintf(
+		"remote blob '%s' was modified by another process",
+		e.BlobPath,
+	)
+}
+
+// Unwrap returns the underlying error, or ErrConcurrencyConflict.
+func (e *ConcurrencyConflictError) Unwrap() error {
+	if e.Err != nil {
+		return e.Err
+	}
+	return ErrConcurrencyConflict
+}
+
+// Is reports whether target is ErrConcurrencyConflict.
+func (e *ConcurrencyConflictError) Is(target error) bool {
+	return target == ErrConcurrencyConflict
+}
+
+// BlobDownload is the result of downloading a blob, including its ETag for
+// optimistic concurrency on a later upload.
+type BlobDownload struct {
+	// Body is the blob content. The caller must close it.
+	Body io.ReadCloser
+	// ETag is the blob ETag returned by Azure Blob Storage.
+	ETag azcore.ETag
+}
 
 type BlobClient interface {
 	// Download downloads a blob from the configured storage account container.
-	Download(ctx context.Context, blobPath string) (io.ReadCloser, error)
+	Download(ctx context.Context, blobPath string) (*BlobDownload, error)
 
 	// Upload uploads a blob to the configured storage account container.
-	Upload(ctx context.Context, blobPath string, reader io.Reader) error
+	// match is the ETag captured on Download and is sent as If-Match.
+	// An empty match sends If-None-Match: * (the blob must not already exist).
+	Upload(ctx context.Context, blobPath string, reader io.Reader, match azcore.ETag) (azcore.ETag, error)
 
 	// Delete deletes a blob from the configured storage account container.
 	Delete(ctx context.Context, blobPath string) error
@@ -116,7 +163,7 @@ func (bc *blobClient) listBlobs(ctx context.Context) ([]*Blob, error) {
 }
 
 // Download downloads a blob from the configured storage account container.
-func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadCloser, error) {
+func (bc *blobClient) Download(ctx context.Context, blobPath string) (*BlobDownload, error) {
 	if err := bc.ensureContainerReady(ctx); err != nil {
 		return nil, err
 	}
@@ -131,47 +178,56 @@ func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadClo
 			if err != nil {
 				return nil, fmt.Errorf("failed to download blob '%s', %w", blobPath, err)
 			}
-			return resp.Body, nil
+			return newBlobDownload(resp), nil
 		}
 		return nil, fmt.Errorf("failed to download blob '%s', %w", blobPath, err)
 	}
 
-	return resp.Body, nil
+	return newBlobDownload(resp), nil
 }
 
 // Upload uploads a blob to the configured storage account container.
-func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Reader) error {
+func (bc *blobClient) Upload(
+	ctx context.Context, blobPath string, reader io.Reader, match azcore.ETag,
+) (azcore.ETag, error) {
 	if err := bc.ensureContainerReady(ctx); err != nil {
-		return err
+		return "", err
 	}
 
-	_, err := bc.client.UploadStream(ctx, bc.config.ContainerName, blobPath, reader, nil)
+	opts := blobUploadOptions(match)
+	resp, err := bc.client.UploadStream(ctx, bc.config.ContainerName, blobPath, reader, opts)
 	if err != nil {
+		if bc.isConcurrencyConflict(err) {
+			return "", &ConcurrencyConflictError{BlobPath: blobPath, Err: err}
+		}
 		if bc.isContainerNotFound(err) {
 			if createErr := bc.resetAndEnsureContainer(ctx); createErr != nil {
-				return createErr
+				return "", createErr
 			}
 			// Only retry if the reader supports seeking back to the start.
 			// io.Reader is non-rewindable, so retrying with an exhausted
 			// reader would upload empty/partial content.
 			if seeker, ok := reader.(io.Seeker); ok {
 				if _, seekErr := seeker.Seek(0, io.SeekStart); seekErr == nil {
-					_, err = bc.client.UploadStream(
-						ctx, bc.config.ContainerName, blobPath, reader, nil)
+					resp, err = bc.client.UploadStream(
+						ctx, bc.config.ContainerName, blobPath, reader, opts)
 					if err != nil {
-						return fmt.Errorf(
+						if bc.isConcurrencyConflict(err) {
+							return "", &ConcurrencyConflictError{BlobPath: blobPath, Err: err}
+						}
+						return "", fmt.Errorf(
 							"failed to upload blob '%s', %w", blobPath, err)
 					}
-					return nil
+					return etagOrEmpty(resp.ETag), nil
 				}
 			}
 			// Container re-created but can't retry upload; caller must retry
-			return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
+			return "", fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
 		}
-		return fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
+		return "", fmt.Errorf("failed to upload blob '%s', %w", blobPath, err)
 	}
 
-	return nil
+	return etagOrEmpty(resp.ETag), nil
 }
 
 // Delete deletes a blob from the configured storage account container.
@@ -239,6 +295,44 @@ func (bc *blobClient) isContainerNotFound(err error) bool {
 		return respErr.ErrorCode == "ContainerNotFound"
 	}
 	return false
+}
+
+func (bc *blobClient) isConcurrencyConflict(err error) bool {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
+		return false
+	}
+	return respErr.StatusCode == http.StatusPreconditionFailed ||
+		respErr.ErrorCode == "ConditionNotMet"
+}
+
+func blobUploadOptions(match azcore.ETag) *azblob.UploadStreamOptions {
+	conditions := &blob.ModifiedAccessConditions{}
+	if match == "" {
+		conditions.IfNoneMatch = new(azcore.ETagAny)
+	} else {
+		conditions.IfMatch = new(match)
+	}
+
+	return &azblob.UploadStreamOptions{
+		AccessConditions: &blob.AccessConditions{
+			ModifiedAccessConditions: conditions,
+		},
+	}
+}
+
+func newBlobDownload(resp azblob.DownloadStreamResponse) *BlobDownload {
+	return &BlobDownload{
+		Body: resp.Body,
+		ETag: etagOrEmpty(resp.ETag),
+	}
+}
+
+func etagOrEmpty(etag *azcore.ETag) azcore.ETag {
+	if etag == nil {
+		return ""
+	}
+	return *etag
 }
 
 // ensureContainerExists checks if the container exists and creates it if not.

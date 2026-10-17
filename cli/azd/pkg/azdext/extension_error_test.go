@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -168,6 +169,16 @@ func TestExtensionError_RoundTrip(t *testing.T) {
 		{
 			name:     "ContextCanceledError",
 			inputErr: context.Canceled,
+			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
+				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
+				assert.Equal(t, "canceled", protoErr.GetLocalError().GetCode())
+				assert.Equal(t, string(LocalErrorCategoryUser), protoErr.GetLocalError().GetCategory())
+				require.ErrorIs(t, goErr, context.Canceled)
+			},
+		},
+		{
+			name:     "WrappedPromptInterrupt",
+			inputErr: fmt.Errorf("failed to prompt: %w", surveyterm.InterruptErr),
 			verify: func(t *testing.T, protoErr *ExtensionError, goErr error) {
 				assert.Equal(t, ErrorOrigin_ERROR_ORIGIN_LOCAL, protoErr.GetOrigin())
 				assert.Equal(t, "canceled", protoErr.GetLocalError().GetCode())

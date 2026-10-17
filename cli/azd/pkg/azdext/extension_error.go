@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	surveyterm "github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorchain"
@@ -152,7 +153,7 @@ func WrapError(err error) *ExtensionError {
 			},
 		}
 		return extErr
-	case errors.Is(err, context.Canceled):
+	case errors.Is(err, context.Canceled), errors.Is(err, surveyterm.InterruptErr):
 		if extLocalErr, ok := errors.AsType[*LocalError](err); ok &&
 			errors.Is(extLocalErr, context.Canceled) {
 			populateExtensionErrorFromLocal(extErr, extLocalErr)

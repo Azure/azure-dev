@@ -389,6 +389,8 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		}
 	}
 	if infra := a.flags.infra; infra != "" {
+		ejectValues := maps.Clone(effectiveValues)
+		ejectValues["AZURE_ENV_NAME"] = envName
 		if err := ejectProjectInfraWithTarget(
 			ctx,
 			client,
@@ -397,7 +399,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			infra,
 			target.Endpoint,
 			target.ResourceId,
-			effectiveValues,
+			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
 				err,
@@ -1954,6 +1956,15 @@ func ejectProjectInfra(
 			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
+		}
+	}
+	if envName := environment["AZURE_ENV_NAME"]; client != nil && envName != "" {
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZD_FOUNDRY_ACR_MODE",
+			Value:   result.ACRMode,
+		}); err != nil {
+			return rollback(fmt.Errorf("persist ACR mode after infrastructure ejection: %w", err))
 		}
 	}
 	return nil

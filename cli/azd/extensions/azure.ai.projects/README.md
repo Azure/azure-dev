@@ -247,6 +247,9 @@ during initialization: it creates a registry when none exists, connects an
 existing registry when needed, or references an existing project connection
 without managing it. Terraform registry output is always named
 `container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
+Greenfield ejection persists `AZD_FOUNDRY_ACR_MODE` in the azd environment.
+On-disk Foundry initialization also records the mode for previously ejected
+projects, preserving external registry reuse during provisioning and `azd down`.
 Before writing generated files, existing registry endpoints are normalized to
 remove URL credentials, query parameters, and fragments.
 

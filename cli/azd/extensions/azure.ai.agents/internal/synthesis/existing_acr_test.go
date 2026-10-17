@@ -184,14 +184,22 @@ func TestARMExistingRegistryShape(t *testing.T) {
 	var resources template
 	require.NoError(t, json.Unmarshal(main.Resources["resources"].Properties.Template, &resources))
 	found := map[string]bool{}
-	for _, resource := range resources.Resources {
-		switch resource.Name {
+	for name, resource := range resources.Resources {
+		switch name {
 		case "acr":
 			assert.Equal(t, "[and(parameters('includeAcr'), empty(parameters('existingAcrResourceId')))]", resource.Condition)
 			found["acr"] = true
-		case "existing-acr", "existing-acr-connection":
+		case "existingAcr", "existingAcrConnection":
 			assert.Equal(t, "[and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))]", resource.Condition)
-			found[resource.Name] = true
+			prefix := "existing-acr"
+			if name == "existingAcrConnection" {
+				prefix += "-connection"
+			}
+			assert.Equal(t, "[format('"+prefix+"-{0}', uniqueString("+
+				"resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), "+
+				"resourceId('Microsoft.CognitiveServices/accounts/projects', "+
+				"variables('foundryAccountName'), parameters('foundryProjectName'))))]", resource.Name)
+			found[name] = true
 		}
 	}
 	assert.Len(t, found, 3)

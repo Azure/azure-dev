@@ -247,7 +247,7 @@ module acr 'acr.bicep' = if (includeAcr && empty(existingAcrResourceId)) {
 }
 
 module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existingAcrResourceId)) {
-  name: 'existing-acr'
+  name: 'existing-acr-${uniqueString(foundryAccount.id, foundryAccount::project.id)}'
   scope: resourceGroup(split(existingAcrResourceId, '/')[2], split(existingAcrResourceId, '/')[4])
   params: {
     mode: 'reuse-connect'
@@ -258,7 +258,7 @@ module existingAcr 'container-registry.bicep' = if (includeAcr && !empty(existin
 }
 
 module existingAcrConnection 'foundry-project.bicep' = if (includeAcr && !empty(existingAcrResourceId)) {
-  name: 'existing-acr-connection'
+  name: 'existing-acr-connection-${uniqueString(foundryAccount.id, foundryAccount::project.id)}'
   params: {
     accountName: foundryAccount.name
     projectName: foundryAccount::project.name

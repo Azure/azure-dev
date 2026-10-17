@@ -2,6 +2,8 @@ import: ../../.vscode/cspell.yaml
 words:
   - azdadmin
   - azuredocs
+  - dbcp
+  - Dmaven
   - Hikari
   - hsqldb
   - jndi

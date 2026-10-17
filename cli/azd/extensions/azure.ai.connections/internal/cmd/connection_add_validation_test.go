@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"azure.ai.connections/internal/definition"
+	"azure.ai.connections/internal/exterrors"
 
 	corefoundry "github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/assert"
@@ -548,6 +549,75 @@ func TestValidateConnectionDefinitionForAuthoringOAuthExactEmptyConflicts(t *tes
 	managed.TokenURL = "${TOKEN_URL:-}"
 	_, _, err = validateConnectionDefinitionForAuthoring(managed)
 	require.NoError(t, err)
+}
+
+func TestValidateConnectionDefinitionForAuthoringRejectsInseparableOAuthBranches(t *testing.T) {
+	input := validConnectionAuthoringDefinition("OAuth2")
+	input.ConnectorName = "${OAUTH}"
+	input.AuthorizationURL = "${OAUTH}"
+	input.TokenURL = "${OAUTH}"
+	input.Credentials = map[string]any{
+		"clientId": "${OAUTH}", "clientSecret": "${OAUTH}",
+	}
+
+	_, _, err := validateConnectionDefinitionForAuthoring(input)
+	requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "connectorName")
+
+	for _, value := range []string{"", " ", "value"} {
+		t.Run("expansion/"+value, func(t *testing.T) {
+			expanded, err := corefoundry.ExpandEnv("${OAUTH}", func(string) string { return value })
+			require.NoError(t, err)
+			require.Error(t, validateConnectionProperties(rawConnectionProperties{
+				Category: input.Category, Target: input.Target, AuthType: input.AuthType,
+				ConnectorName: expanded, AuthorizationURL: expanded, TokenURL: expanded,
+				Credentials: &rawCredentials{"clientId": expanded, "clientSecret": expanded},
+			}))
+		})
+	}
+}
+
+func TestValidateConnectionDefinitionForAuthoringOAuthVariableCoupling(t *testing.T) {
+	for _, field := range []string{
+		"authorizationUrl", "tokenUrl", "refreshUrl", "scopes", "clientId", "clientSecret", "nested",
+	} {
+		for _, shared := range []bool{false, true} {
+			name := field + "/independent"
+			value := "${OTHER:-}"
+			if shared {
+				name = field + "/shared"
+				value = "${OUTER:-${OAUTH:-}}"
+			}
+			t.Run(name, func(t *testing.T) {
+				input := validConnectionAuthoringDefinition("OAuth2")
+				input.ConnectorName = "${OAUTH:-}"
+				input.AuthorizationURL = "https://example.test/authorize"
+				input.TokenURL = "https://example.test/token"
+				input.Credentials = map[string]any{
+					"clientId": "${CLIENT_ID}", "clientSecret": "${CLIENT_SECRET}",
+				}
+				switch field {
+				case "authorizationUrl":
+					input.AuthorizationURL = value
+				case "tokenUrl":
+					input.TokenURL = value
+				case "refreshUrl":
+					input.RefreshURL = value
+				case "scopes":
+					input.Scopes = []string{value}
+				case "nested":
+					input.Credentials["nested"] = []any{map[string]any{"secret": value}}
+				default:
+					input.Credentials[field] = value
+				}
+				_, _, err := validateConnectionDefinitionForAuthoring(input)
+				if shared {
+					requireConnectionValidationError(t, err, exterrors.CodeConflictingArguments, "connectorName")
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
 }
 
 func TestValidateConnectionDefinitionForAuthoringCustomKeyPaths(t *testing.T) {

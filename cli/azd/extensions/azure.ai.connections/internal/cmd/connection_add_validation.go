@@ -15,8 +15,9 @@ import (
 )
 
 type connectionTemplateAnalysis struct {
-	required   map[string]struct{}
-	referenced map[string]struct{}
+	required          map[string]struct{}
+	referenced        map[string]struct{}
+	referencedByField map[string][]string
 	// Required fields use trimmed blankness, unlike conflict checks.
 	mayBeEmpty map[string]bool
 	// Conflict checks use exact emptiness, not trimmed blankness.
@@ -44,6 +45,7 @@ func validateConnectionDefinitionForAuthoring(
 	analysis := connectionTemplateAnalysis{
 		required:          map[string]struct{}{},
 		referenced:        map[string]struct{}{},
+		referencedByField: map[string][]string{},
 		mayBeEmpty:        map[string]bool{},
 		mayBeExactlyEmpty: map[string]bool{},
 	}
@@ -133,6 +135,7 @@ func (a *connectionTemplateAnalysis) add(path, value string) error {
 	}
 	a.mayBeEmpty[path] = parsed.HasClientTemplate && !parsed.HasLiteralText
 	a.mayBeExactlyEmpty[path] = parsed.HasClientTemplate && parsed.MayBeEmpty
+	a.referencedByField[path] = parsed.ReferencedVariables
 	for _, variable := range parsed.RequiredVariables {
 		a.required[variable] = struct{}{}
 	}
@@ -380,6 +383,24 @@ func validateConnectionOAuthForAuthoring(
 	managedPossible := len(credentials) == 0 && len(input.Scopes) == 0 && !hasLiteralURL
 	if !managedPossible && !byoPossible {
 		return missingOAuthBYOFields()
+	}
+	// Independent field feasibility does not prove that shared variables can
+	// satisfy either mutually exclusive branch. Conservatively reject coupling.
+	for path, variables := range analysis.referencedByField {
+		switch topLevelConnectionField(path) {
+		case "authorizationUrl", "tokenUrl", "refreshUrl", "scopes", "credentials":
+			for _, variable := range variables {
+				if slices.Contains(analysis.referencedByField["connectorName"], variable) {
+					return exterrors.Validation(
+						exterrors.CodeConflictingArguments,
+						"connectorName cannot share environment variables with authorizationUrl, tokenUrl, "+
+							"refreshUrl, scopes, or credentials.",
+						"Use independent environment variables for connectorName and BYO OAuth2 fields, "+
+							"or select managed OAuth2 or BYO OAuth2 explicitly.",
+					)
+				}
+			}
+		}
 	}
 	return nil
 }

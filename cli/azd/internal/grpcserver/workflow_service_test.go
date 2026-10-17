@@ -115,6 +115,132 @@ func Test_WorkflowService_Run_Success(t *testing.T) {
 	})
 }
 
+func TestWorkflowService_Run_PreservesCancellationAndDeadline(t *testing.T) {
+	tests := []struct {
+		name         string
+		runnerErr    error
+		wantGrpcCode codes.Code
+		wantCategory azdext.LocalErrorCategory
+		wantCode     string
+		wantCause    error
+	}{
+		{
+			name:         "Canceled",
+			runnerErr:    context.Canceled,
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+			wantCause:    context.Canceled,
+		},
+		{
+			name:         "WrappedCanceled",
+			runnerErr:    fmt.Errorf("command canceled: %w", context.Canceled),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+			wantCause:    context.Canceled,
+		},
+		{
+			name:         "GrpcCanceled",
+			runnerErr:    status.Error(codes.Canceled, "operation canceled"),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+			wantCause:    context.Canceled,
+		},
+		{
+			name:         "DeadlineExceeded",
+			runnerErr:    context.DeadlineExceeded,
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+			wantCause:    context.DeadlineExceeded,
+		},
+		{
+			name:         "WrappedDeadlineExceeded",
+			runnerErr:    fmt.Errorf("command timed out: %w", context.DeadlineExceeded),
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+			wantCause:    context.DeadlineExceeded,
+		},
+		{
+			name:         "GrpcDeadlineExceeded",
+			runnerErr:    status.Error(codes.DeadlineExceeded, "operation timed out"),
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+			wantCause:    context.DeadlineExceeded,
+		},
+		{
+			name:         "CanceledWinsOverFailure",
+			runnerErr:    errors.Join(errors.New("execution failed"), context.Canceled),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+			wantCause:    context.Canceled,
+		},
+		{
+			name:         "CanceledWinsOverEnvironmentAlreadyExists",
+			runnerErr:    errors.Join(environment.ErrExists, context.Canceled),
+			wantGrpcCode: codes.Canceled,
+			wantCategory: azdext.LocalErrorCategoryUser,
+			wantCode:     "canceled",
+			wantCause:    context.Canceled,
+		},
+		{
+			name:         "DeadlineWinsOverFailure",
+			runnerErr:    errors.Join(errors.New("execution failed"), context.DeadlineExceeded),
+			wantGrpcCode: codes.DeadlineExceeded,
+			wantCategory: azdext.LocalErrorCategoryInternal,
+			wantCode:     "deadline_exceeded",
+			wantCause:    context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			contextType := mock.AnythingOfType("*context.cancelCtx")
+			testRunner := &TestWorkflowRunner{}
+			runner := workflow.NewRunner(testRunner, mockContext.Console)
+			testRunner.On("ExecuteContext", contextType, mock.Anything).Return(tt.runnerErr)
+
+			service := NewWorkflowService(runner)
+			req := &azdext.RunWorkflowRequest{
+				Workflow: &azdext.Workflow{
+					Name: "testWorkflow",
+					Steps: []*azdext.WorkflowStep{
+						{
+							Command: &azdext.WorkflowCommand{
+								Args: []string{"provision"},
+							},
+						},
+					},
+				},
+			}
+
+			resp, err := service.Run(*mockContext.Context, req)
+
+			require.Error(t, err)
+			require.Nil(t, resp)
+			st, ok := status.FromError(err)
+			require.True(t, ok)
+			require.Equal(t, tt.wantGrpcCode, st.Code())
+
+			relayed := azdext.ExtensionErrorFromStatus(st)
+			require.NotNil(t, relayed)
+			localErr, ok := errors.AsType[*azdext.LocalError](azdext.UnwrapError(relayed))
+			require.True(t, ok)
+			require.Equal(t, tt.wantCategory, localErr.Category)
+			require.Equal(t, tt.wantCode, localErr.Code)
+			require.ErrorIs(t, localErr, tt.wantCause)
+
+			testRunner.AssertCalled(t, "ExecuteContext", contextType, []string{"provision"})
+		})
+	}
+}
+
 // Updated TestWorkflowRunner using testify/mock.
 type TestWorkflowRunner struct {
 	mock.Mock

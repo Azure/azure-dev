@@ -76,3 +76,12 @@ func (e *ExitError) Error() string {
 
 	return fmt.Sprintf("%s, stdout: %s, stderr: %s", errorPrefix, e.stdOut, e.stdErr)
 }
+
+// Interrupted reports whether the process exit represents a Ctrl+C interrupt.
+func (e *ExitError) Interrupted() bool {
+	if e == nil {
+		return false
+	}
+
+	return isInterruptExit(e.err, e.ExitCode)
+}

@@ -103,8 +103,13 @@ Active conventional external configuration,
 including profile-specific files, is retained in the runtime image. Password
 bindings use template-owned Container Apps secret references; literal credentials
 are not copied from source URLs.
-Existing configuration files and packaged resources may still contain credentials;
-review them before building or publishing an image.
+Initialization rejects literal `spring.datasource.password` values and literal
+passwords in MySQL/PostgreSQL JDBC user-info or `password` query parameters across
+all conventional packaged application configuration, including inactive profiles,
+and external application files copied into the runtime image. Empty values and
+runtime placeholders without defaults are allowed.
+This targeted validation does not scan arbitrary properties, application code, or
+other packaged resources; review those before building or publishing an image.
 Existing `azure.yaml`, `azure.yml`, `infra/`, `.azd-spring/`, root Dockerfiles, or `.dockerignore`
 files are not adopted or overwritten. Dockerfile-specific ignore rules would replace
 root exclusions, so initialization rejects them before Maven inspection.

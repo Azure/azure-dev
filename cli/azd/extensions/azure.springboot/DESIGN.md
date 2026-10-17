@@ -66,6 +66,13 @@ flowchart TD
   selectors are not evaluated again.
 - Use azd host prompt APIs. Keep prompting outside analysis; retain operational
   failures as errors. Never print credentials in evidence, choices, or diagnostics.
+- Inspect every conventional packaged `application*.properties`/YAML document,
+  including inactive profiles, and every external application file copied into
+  the runtime image. Reject literal `spring.datasource.password` values and
+  MySQL/PostgreSQL JDBC user-info or `password` query values. Allow only empty
+  values or a single runtime placeholder without a non-empty default.
+- This is targeted validation, not general secret scanning. Do not claim to detect
+  credentials in arbitrary properties, application code, or other packaged resources.
 
 ## Generation
 

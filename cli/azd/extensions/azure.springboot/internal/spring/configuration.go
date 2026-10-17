@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"maps"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -100,6 +101,9 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	var allLocations []string
 	for _, group := range locations {
 		allLocations = append(allLocations, group...)
+	}
+	if err := validateKnownCredentials(ctx, root, configurationLocations[0]); err != nil {
+		return nil, err
 	}
 	base, err := readDocuments(ctx, root, "", allLocations)
 	if err != nil {
@@ -261,6 +265,9 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 			return nil, unsupportedConfiguration("%s requires configuration-location analysis not yet supported", key)
 		}
 	}
+	if err := validateCredentialFiles(ctx, root, c.externalFiles); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -307,51 +314,205 @@ func readDocuments(ctx context.Context, root *os.Root, profile string, locations
 				return nil, err
 			}
 			file := path.Join(location, name+extension)
-			data, err := root.ReadFile(file)
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
+			fileDocs, err := readDocumentFile(root, file, extension)
 			if err != nil {
-				return nil, fmt.Errorf("reading configuration %s: %w", file, err)
+				return nil, err
 			}
-			if len(data) > 1024*1024 {
-				return nil, invalidConfiguration("configuration %s exceeds 1 MiB", file)
-			}
-			if extension == ".properties" {
-				for _, part := range splitPropertiesDocuments(string(data)) {
-					p := properties.NewProperties()
-					p.DisableExpansion = true
-					if err := p.Load([]byte(part), properties.UTF8); err != nil {
-						return nil, invalidConfiguration("invalid Java properties in %s", file)
-					}
-					values := map[string]property{}
-					for key, value := range p.Map() {
-						values[storageKey(key)] = property{text: value, source: file, key: key}
-					}
-					docs = append(docs, newDocument(values, file))
-				}
-				continue
-			}
-
-			decoder := yaml.NewDecoder(strings.NewReader(string(data)))
-			for {
-				var values map[string]any
-				err := decoder.Decode(&values)
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				if err != nil {
-					return nil, invalidConfiguration("invalid YAML configuration in %s", file)
-				}
-				flat := map[string]property{}
-				if err := flatten(values, "", file, flat); err != nil {
-					return nil, err
-				}
-				docs = append(docs, newDocument(flat, file))
-			}
+			docs = append(docs, fileDocs...)
 		}
 	}
 	return docs, nil
+}
+
+func readDocumentFile(root *os.Root, file, extension string) ([]document, error) {
+	data, err := root.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading configuration %s: %w", file, err)
+	}
+	if len(data) > 1024*1024 {
+		return nil, invalidConfiguration("configuration %s exceeds 1 MiB", file)
+	}
+	if extension == ".properties" {
+		var docs []document
+		for _, part := range splitPropertiesDocuments(string(data)) {
+			p := properties.NewProperties()
+			p.DisableExpansion = true
+			if err := p.Load([]byte(part), properties.UTF8); err != nil {
+				return nil, invalidConfiguration("invalid Java properties in %s", file)
+			}
+			values := map[string]property{}
+			for key, value := range p.Map() {
+				values[storageKey(key)] = property{text: value, source: file, key: key}
+			}
+			docs = append(docs, newDocument(values, file))
+		}
+		return docs, nil
+	}
+
+	var docs []document
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	for {
+		var values map[string]any
+		err := decoder.Decode(&values)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, invalidConfiguration("invalid YAML configuration in %s", file)
+		}
+		flat := map[string]property{}
+		if err := flatten(values, "", file, flat); err != nil {
+			return nil, err
+		}
+		docs = append(docs, newDocument(flat, file))
+	}
+	return docs, nil
+}
+
+func validateKnownCredentials(ctx context.Context, root *os.Root, locations []string) error {
+	seen := map[string]bool{}
+	for _, location := range locations {
+		entries, err := fs.ReadDir(root.FS(), location)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("reading configuration location %s: %w", location, err)
+		}
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			extension, ok := applicationConfigurationExtension(entry.Name())
+			if entry.IsDir() || !ok {
+				continue
+			}
+			file := path.Join(location, entry.Name())
+			if seen[file] {
+				continue
+			}
+			seen[file] = true
+			docs, err := readDocumentFile(root, file, extension)
+			if err != nil {
+				return err
+			}
+			for _, doc := range docs {
+				if err := validateKnownCredentialDocument(doc); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func validateCredentialFiles(ctx context.Context, root *os.Root, files []string) error {
+	for _, file := range files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		extension := path.Ext(file)
+		docs, err := readDocumentFile(root, file, extension)
+		if err != nil {
+			return err
+		}
+		for _, doc := range docs {
+			if err := validateKnownCredentialDocument(doc); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func applicationConfigurationExtension(name string) (string, bool) {
+	for _, extension := range []string{".yaml", ".yml", ".properties"} {
+		base, ok := strings.CutSuffix(name, extension)
+		if ok && (base == "application" || strings.HasPrefix(base, "application-")) {
+			return extension, true
+		}
+	}
+	return "", false
+}
+
+func validateKnownCredentialDocument(doc document) error {
+	if password, ok := doc.values[canonical("spring.datasource.password")]; ok &&
+		hasLiteralCredential(password.text) {
+		return unsupportedConfiguration(
+			"literal datasource credentials in %s are not supported; "+
+				"replace %s with a runtime placeholder without a default",
+			password.source, password.key)
+	}
+	if jdbc, ok := doc.values[canonical("spring.datasource.url")]; ok &&
+		jdbcURLHasLiteralPassword(jdbc.text) {
+		return unsupportedConfiguration(
+			"literal JDBC credentials in %s are not supported; "+
+				"replace the password in %s with a runtime placeholder without a default",
+			jdbc.source, jdbc.key)
+	}
+	return nil
+}
+
+func hasLiteralCredential(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	_, fallback, placeholderOnly := runtimePlaceholder(value)
+	return !placeholderOnly || fallback != ""
+}
+
+func runtimePlaceholder(value string) (name, fallback string, ok bool) {
+	match := placeholder.FindStringSubmatch(strings.TrimSpace(value))
+	if len(match) != 2 || match[0] != strings.TrimSpace(value) {
+		return "", "", false
+	}
+	name, fallback, found := strings.Cut(match[1], ":")
+	if !propertyName.MatchString(name) {
+		return "", "", false
+	}
+	if !found {
+		fallback = ""
+	}
+	return name, fallback, true
+}
+
+func jdbcURLHasLiteralPassword(value string) bool {
+	value = strings.TrimSpace(value)
+	if _, fallback, ok := runtimePlaceholder(value); ok {
+		if fallback == "" {
+			return false
+		}
+		value = fallback
+	}
+	if !strings.HasPrefix(value, "jdbc:mysql://") && !strings.HasPrefix(value, "jdbc:postgresql://") {
+		return false
+	}
+	address, err := url.Parse(strings.TrimPrefix(value, "jdbc:"))
+	if err != nil {
+		return false
+	}
+	if address.User != nil {
+		if password, present := address.User.Password(); present && hasLiteralCredential(password) {
+			return true
+		}
+	}
+	query, err := url.ParseQuery(address.RawQuery)
+	if err != nil {
+		return false
+	}
+	for key, values := range query {
+		if !strings.EqualFold(key, "password") {
+			continue
+		}
+		if slices.ContainsFunc(values, hasLiteralCredential) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitPropertiesDocuments(data string) []string {

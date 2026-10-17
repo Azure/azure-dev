@@ -1226,6 +1226,10 @@ func TestAnalyzeHikariCredentialBindings(t *testing.T) {
 	const marker = "sensitive-pool-value"
 	for _, field := range []string{"username", "password"} {
 		key := "spring.datasource.hikari." + field
+		commonValue := marker
+		if field == "password" {
+			commonValue = "${DATABASE_PASSWORD}"
+		}
 		for _, tt := range []struct {
 			name   string
 			files  map[string]string
@@ -1253,7 +1257,7 @@ func TestAnalyzeHikariCredentialBindings(t *testing.T) {
 			}, map[string]string{"SPRING_PROFILES_ACTIVE": "cloud"}, false},
 			{"ordinary pool settings", map[string]string{
 				"src/main/resources/application.properties": "spring.datasource.hikari.maximum-pool-size=20\n" +
-					"spring.datasource." + field + "=" + marker,
+					"spring.datasource." + field + "=" + commonValue,
 			}, nil, false},
 		} {
 			t.Run(field+"/"+tt.name, func(t *testing.T) {

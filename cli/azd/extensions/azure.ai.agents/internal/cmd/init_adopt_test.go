@@ -1150,6 +1150,7 @@ func TestAdoptTargetDir(t *testing.T) {
 func TestFolderDisplayForSubdir(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.Mkdir("existing-dir", 0o700))
+	require.NoError(t, os.Mkdir("my agent", 0o700))
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 	absoluteSubdir := filepath.Join(cwd, "existing-dir")
@@ -1168,6 +1169,7 @@ func TestFolderDisplayForSubdir(t *testing.T) {
 		{name: "absolute subdirectory is displayed", dir: absoluteSubdir, want: filepath.ToSlash(absoluteSubdir)},
 		{name: "non-existent dir is displayed", dir: "new-dir", want: "new-dir"},
 		{name: "existing subdirectory is displayed", dir: "existing-dir", want: "existing-dir"},
+		{name: "existing subdirectory with spaces is displayed unquoted", dir: "my agent", want: "my agent"},
 		{name: "nested path uses slashes", dir: filepath.Join("parent", "child"), want: "parent/child"},
 	}
 	for _, tt := range tests {

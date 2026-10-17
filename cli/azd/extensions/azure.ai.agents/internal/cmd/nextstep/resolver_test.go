@@ -4,6 +4,8 @@
 package nextstep
 
 import (
+	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -296,10 +298,13 @@ func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
 		want   string
 	}{
 		{folder: "my-agent", want: "cd my-agent"},
-		{folder: "My Agent", want: `cd "My Agent"`},
-		{folder: "My\tAgent", want: `cd "My\tAgent"`},
-		{folder: `My"Agent`, want: `cd "My\"Agent"`},
-		{folder: "My&Agent", want: `cd "My&Agent"`},
+		{folder: "My Agent", want: "cd 'My Agent'"},
+		{folder: "My\tAgent", want: "cd 'My\tAgent'"},
+		{folder: `My"Agent`, want: `cd 'My"Agent'`},
+		{folder: "My&Agent", want: "cd 'My&Agent'"},
+		{folder: "my-$USER", want: "cd 'my-$USER'"},
+		{folder: "my-$(whoami)", want: "cd 'my-$(whoami)'"},
+		{folder: "Bob's Agent", want: `cd 'Bob'\''s Agent'`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.folder, func(t *testing.T) {
@@ -311,6 +316,41 @@ func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
 			out := ResolveAfterInit(state, nil)
 			require.NotEmpty(t, out)
 			assert.Equal(t, tt.want, out[0].Command)
+		})
+	}
+}
+
+func TestShellQuoteCdPathRoundTrip(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell quoting is not supported on Windows")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+
+	folders := []string{
+		"my-agent",
+		"My Agent",
+		"My\tAgent",
+		`My"Agent`,
+		"My&Agent",
+		"my-$USER",
+		"my-$(whoami)",
+		"Bob's Agent",
+	}
+	for _, folder := range folders {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{HasProjectEndpoint: true, CreatedFolderDisplay: folder}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			require.True(t, strings.HasPrefix(out[0].Command, "cd "))
+
+			arg := strings.TrimPrefix(out[0].Command, "cd ")
+			output, err := exec.Command("sh", "-c", "printf %s "+arg).Output()
+			require.NoError(t, err)
+			assert.Equal(t, folder, string(output))
 		})
 	}
 }

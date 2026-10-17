@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -50,11 +49,12 @@ const (
 	maxFixupLines = 3
 )
 
-// shellQuoteCdPath double-quotes a cd target that contains whitespace or shell
-// metacharacters so the suggested command can be copied as-is.
+// shellQuoteCdPath single-quotes a cd target that contains whitespace or shell
+// metacharacters for POSIX shells. PowerShell users must double embedded
+// apostrophes instead.
 func shellQuoteCdPath(path string) string {
-	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#") {
-		return strconv.Quote(path)
+	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#\\~") {
+		return shellEscapeSingleQuoted(path)
 	}
 	return path
 }

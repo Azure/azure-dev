@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
+  - [Command launch settings](#command-launch-settings)
   - [NewListenCommand](#newlistencommand)
   - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
@@ -205,6 +206,34 @@ rootCmd.AddCommand(newServeCommand(extCtx))
 
 azdext.Run(rootCmd)
 ```
+
+### Command launch settings
+
+An extension's command metadata can include a `launch` object to control only
+how azd launches that command. Set `launch.noAzdEnvironment` to `true` for a
+command that does not need the selected azd environment:
+
+```json
+{"name":["connection","add"],"launch":{"noAzdEnvironment":true}}
+```
+
+This is host-consumed JSON metadata, not an SDK helper. Extensions using a
+released SDK without support for generating the object can add it in their
+metadata command's JSON output. The settings apply to the marked command, not its
+descendants. The host honors them starting with azd 1.37.0; extensions
+that rely on skipping environment loading should require that host version.
+Aliases on parent or child commands select the same metadata as their
+canonical names.
+Recognized azd global flags and their values may appear between command
+segments without changing the selected launch settings. Resolution stops at
+`--` or an unknown extension flag rather than treating its value as a command.
+
+When `noAzdEnvironment` is `true`, azd skips loading the selected environment,
+resolving its Key Vault references, and injecting its variables before starting
+the extension. Inherited parent-process environment variables and azd
+launch/protocol variables are still passed. Explicit Environment gRPC calls
+are unaffected. Omitting `launch` or setting `noAzdEnvironment` to `false`
+preserves the default environment loading, resolution, and injection.
 
 ### ExtensionCommandOptions
 
@@ -704,6 +733,27 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Telemetry()` | `TelemetryServiceClient` (stable since azd 1.36.0) |
 
 Always call `defer client.Close()` after creation.
+
+#### Service configuration persistence
+
+Use existing `Project().AddService` to add or replace one complete service.
+Use `SetServiceConfigValue`, `SetServiceConfigSection`, and `UnsetServiceConfig`
+to update only managed fields of an existing service. Service names are literal
+keys, including dots; the path within a service uses dot notation.
+
+The host validates the resulting configuration, normalizes known path fields,
+and atomically saves YAML without converting unrelated raw fields through
+typed structs.
+Untouched empty mappings, large integers, and literal environment templates
+remain intact. Values explicitly sent through protobuf `Struct` still have
+protobuf numeric precision limits; avoid reading and resending entire services
+when updating a few fields. An empty section can be sent explicitly to persist
+`env: {}`. Each mutation is locked separately; several RPCs are not one
+transaction, and there is no snapshot precondition.
+
+AddService's environment values retain their existing expanded-literal
+semantics. Use a targeted service setter for raw `${VAR}` templates rather
+than passing them as AddService environment literals.
 
 `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
 are preview accessors. Import

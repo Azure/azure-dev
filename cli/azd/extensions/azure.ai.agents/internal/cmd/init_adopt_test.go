@@ -1135,21 +1135,48 @@ func TestAdoptTargetDir(t *testing.T) {
 		require.Equal(t, ".", dir)
 		require.Empty(t, display)
 	})
+
+	t.Run("existing target still requires navigation", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		require.NoError(t, os.Mkdir("foundry-simple", 0o700))
+		for _, flags := range []*initFlags{{}, {src: "foundry-simple"}} {
+			dir, display := adoptTargetDir(flags, "Foundry Simple")
+			require.Equal(t, "foundry-simple", dir)
+			require.Equal(t, "foundry-simple", display)
+		}
+	})
 }
 
-func TestFolderDisplayIfNew(t *testing.T) {
-	t.Run("current dir is never a created folder", func(t *testing.T) {
-		require.Empty(t, folderDisplayIfNew("."))
-	})
+func TestFolderDisplayForSubdir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir("existing-dir", 0o700))
+	require.NoError(t, os.Mkdir("my agent", 0o700))
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	absoluteSubdir := filepath.Join(cwd, "existing-dir")
 
-	t.Run("non-existent dir is displayed", func(t *testing.T) {
-		require.Equal(t, "brand-new-dir-does-not-exist-xyz", folderDisplayIfNew("brand-new-dir-does-not-exist-xyz"))
-	})
-
-	t.Run("existing dir is not displayed", func(t *testing.T) {
-		existing := t.TempDir()
-		require.Empty(t, folderDisplayIfNew(existing))
-	})
+	tests := []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{name: "current dir is not displayed", dir: "."},
+		{name: "empty dir is not displayed"},
+		{name: "current dir with trailing slash is not displayed", dir: "./"},
+		{name: "current dir with native separator is not displayed", dir: "." + string(filepath.Separator)},
+		{name: "subdirectory parent is not displayed", dir: "existing-dir/.."},
+		{name: "absolute current dir is not displayed", dir: cwd},
+		{name: "absolute subdirectory is displayed", dir: absoluteSubdir, want: filepath.ToSlash(absoluteSubdir)},
+		{name: "non-existent dir is displayed", dir: "new-dir", want: "new-dir"},
+		{name: "existing subdirectory is displayed", dir: "existing-dir", want: "existing-dir"},
+		{name: "existing subdirectory with spaces is displayed unquoted", dir: "my agent", want: "my agent"},
+		{name: "nested path uses slashes", dir: filepath.Join("parent", "child"), want: "parent/child"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, folderDisplayForSubdir(tt.dir))
+		})
+	}
 }
 
 func TestStagedAzureYamlExists(t *testing.T) {

@@ -263,6 +263,61 @@ func TestCancellationMiddleware_NestedInterruptDoesNotRetainGlobalHandler(t *tes
 	require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
 }
 
+func TestCancellationMiddleware_PreservesParentCancellationCause(t *testing.T) {
+	commandErr := errors.New("command failed")
+	tests := []struct {
+		name       string
+		nextErr    func(context.Context) error
+		wantCmdErr bool
+	}{
+		{
+			name: "deadline",
+			nextErr: func(context.Context) error {
+				return context.DeadlineExceeded
+			},
+		},
+		{
+			name: "nil",
+			nextErr: func(context.Context) error {
+				return nil
+			},
+		},
+		{
+			name: "generic context error",
+			nextErr: func(ctx context.Context) error {
+				return ctx.Err()
+			},
+		},
+		{
+			name: "command error",
+			nextErr: func(context.Context) error {
+				return commandErr
+			},
+			wantCmdErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			parentCtx, cancel := context.WithCancelCause(t.Context())
+			cancel(context.DeadlineExceeded)
+
+			_, err := NewCancellationMiddleware().Run(
+				parentCtx,
+				func(ctx context.Context) (*actions.ActionResult, error) {
+					return nil, test.nextErr(ctx)
+				},
+			)
+
+			require.ErrorIs(t, err, context.DeadlineExceeded)
+			require.NotErrorIs(t, err, context.Canceled)
+			if test.wantCmdErr {
+				require.ErrorIs(t, err, commandErr)
+			}
+		})
+	}
+}
+
 func TestCancellationMiddleware_SecondInterruptRequestsForceExit(t *testing.T) {
 	_, cancel := context.WithCancel(t.Context())
 	controller := &commandInterruptController{cancel: cancel}

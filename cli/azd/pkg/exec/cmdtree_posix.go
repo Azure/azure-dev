@@ -6,7 +6,11 @@
 package exec
 
 import (
+	"errors"
+	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -19,6 +23,12 @@ type CmdTree struct {
 }
 
 func (o *CmdTree) Start() error {
+	if o.Cmd != nil && o.Cmd.Cancel != nil {
+		// Snapshot interactive descendants before CommandContext kills and
+		// reparents the root process.
+		o.Cmd.Cancel = o.kill
+	}
+
 	// Interactive commands like `gh auth login` should be created as
 	// a fork child process in posix OS so it can use the same stdin
 	// Non interactive commands like `gh auth status` can be spawn
@@ -34,15 +44,65 @@ func (o *CmdTree) Start() error {
 }
 
 func (o *CmdTree) Kill() {
+	_ = o.kill()
+}
+
+func (o *CmdTree) kill() error {
 	if o.Cmd == nil || o.Cmd.Process == nil {
-		return
+		return os.ErrProcessDone
 	}
 	if o.Interactive {
-		_ = o.Cmd.Process.Kill()
-		return
+		descendants := descendantProcessIDs(o.Cmd.Process.Pid)
+		err := o.Cmd.Process.Kill()
+		for _, pid := range descendants {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+		return err
 	}
 
-	_ = syscall.Kill(-o.Cmd.Process.Pid, syscall.SIGKILL)
+	err := syscall.Kill(-o.Cmd.Process.Pid, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return os.ErrProcessDone
+	}
+	return err
+}
+
+func descendantProcessIDs(rootPID int) []int {
+	output, err := exec.Command("ps", "-A", "-o", "pid=", "-o", "ppid=").Output()
+	if err != nil {
+		return nil
+	}
+
+	childrenByParent := map[int][]int{}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, pidErr := strconv.Atoi(fields[0])
+		parentPID, parentErr := strconv.Atoi(fields[1])
+		if pidErr != nil || parentErr != nil || pid <= 0 {
+			continue
+		}
+		childrenByParent[parentPID] = append(childrenByParent[parentPID], pid)
+	}
+
+	descendants := []int{}
+	pending := []int{rootPID}
+	seen := map[int]struct{}{rootPID: {}}
+	for len(pending) > 0 {
+		parentPID := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		for _, childPID := range childrenByParent[parentPID] {
+			if _, ok := seen[childPID]; ok {
+				continue
+			}
+			seen[childPID] = struct{}{}
+			descendants = append(descendants, childPID)
+			pending = append(pending, childPID)
+		}
+	}
+	return descendants
 }
 
 func isInterruptExit(err exec.ExitError, exitCode int) bool {

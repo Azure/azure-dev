@@ -51,16 +51,20 @@ func (m *CancellationMiddleware) Run(
 		!errors.Is(err, context.Canceled) &&
 		!errors.Is(err, context.DeadlineExceeded)
 	controller.finish(awaitHostInterrupt)
-	ctxErr := commandCtx.Err()
-
-	if ctxErr == nil || errors.Is(err, ctxErr) {
-		return result, err
+	if ctxCause := context.Cause(commandCtx); ctxCause != nil {
+		switch {
+		case err == nil:
+			err = ctxCause
+		// Exact identity is intentional: replace the generic context state while
+		// preserving wrapped or joined errors alongside the authoritative cause.
+		case err == commandCtx.Err(): //nolint:errorlint
+			err = ctxCause
+		case !errors.Is(err, ctxCause):
+			err = errors.Join(err, ctxCause)
+		}
 	}
-	if err == nil {
-		return result, ctxErr
-	}
 
-	return result, errors.Join(err, ctxErr)
+	return result, err
 }
 
 type commandInterruptController struct {

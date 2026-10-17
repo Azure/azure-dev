@@ -288,6 +288,33 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 	})
 }
 
+func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		folder string
+		want   string
+	}{
+		{folder: "my-agent", want: "cd my-agent"},
+		{folder: "My Agent", want: `cd "My Agent"`},
+		{folder: "My\tAgent", want: `cd "My\tAgent"`},
+		{folder: `My"Agent`, want: `cd "My\"Agent"`},
+		{folder: "My&Agent", want: `cd "My&Agent"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				HasProjectEndpoint:   true,
+				CreatedFolderDisplay: tt.folder,
+			}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			assert.Equal(t, tt.want, out[0].Command)
+		})
+	}
+}
+
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the
 // single-missing-manual-var case end-to-end.
 // Three asserts: the env-set line has the enriched

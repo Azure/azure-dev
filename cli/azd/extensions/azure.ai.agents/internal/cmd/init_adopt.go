@@ -1710,10 +1710,18 @@ func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, fol
 }
 
 // folderDisplayForSubdir returns a slash-formatted display path whenever init
-// scaffolds outside the user's current directory, even if the target already exists.
+// scaffolds outside the user's current directory, excluding equivalent paths to it.
 func folderDisplayForSubdir(dir string) string {
-	if dir == "" || dir == "." {
+	if dir == "" {
 		return ""
+	}
+	if filepath.Clean(dir) == "." {
+		return ""
+	}
+	if dirInfo, err := os.Stat(dir); err == nil {
+		if cwdInfo, err := os.Stat("."); err == nil && os.SameFile(dirInfo, cwdInfo) {
+			return ""
+		}
 	}
 	return filepath.ToSlash(dir)
 }

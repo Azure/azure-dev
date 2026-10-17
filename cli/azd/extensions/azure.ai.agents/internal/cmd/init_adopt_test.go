@@ -1150,6 +1150,9 @@ func TestAdoptTargetDir(t *testing.T) {
 func TestFolderDisplayForSubdir(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.Mkdir("existing-dir", 0o700))
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	absoluteSubdir := filepath.Join(cwd, "existing-dir")
 
 	tests := []struct {
 		name string
@@ -1158,6 +1161,11 @@ func TestFolderDisplayForSubdir(t *testing.T) {
 	}{
 		{name: "current dir is not displayed", dir: "."},
 		{name: "empty dir is not displayed"},
+		{name: "current dir with trailing slash is not displayed", dir: "./"},
+		{name: "current dir with native separator is not displayed", dir: "." + string(filepath.Separator)},
+		{name: "subdirectory parent is not displayed", dir: "existing-dir/.."},
+		{name: "absolute current dir is not displayed", dir: cwd},
+		{name: "absolute subdirectory is displayed", dir: absoluteSubdir, want: filepath.ToSlash(absoluteSubdir)},
 		{name: "non-existent dir is displayed", dir: "new-dir", want: "new-dir"},
 		{name: "existing subdirectory is displayed", dir: "existing-dir", want: "existing-dir"},
 		{name: "nested path uses slashes", dir: filepath.Join("parent", "child"), want: "parent/child"},

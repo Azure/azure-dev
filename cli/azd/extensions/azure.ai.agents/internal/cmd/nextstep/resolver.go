@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"azureaiagent/internal/pkg/servicekey"
 )
@@ -47,6 +49,15 @@ const (
 	// variables or unresolved placeholders.
 	maxFixupLines = 3
 )
+
+// shellQuoteCdPath double-quotes a cd target that contains whitespace or shell
+// metacharacters so the suggested command can be copied as-is.
+func shellQuoteCdPath(path string) string {
+	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#") {
+		return strconv.Quote(path)
+	}
+	return path
+}
 
 // ResolveAfterInit produces the Next: block printed at the end of a
 // successful `azd ai agent init`. Pure function over *State.
@@ -148,7 +159,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	// navigate before running any subsequent commands.
 	if state.CreatedFolderDisplay != "" {
 		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("cd %s", state.CreatedFolderDisplay),
+			Command:     fmt.Sprintf("cd %s", shellQuoteCdPath(state.CreatedFolderDisplay)),
 			Description: "enter your new project folder",
 			Priority:    0,
 		})

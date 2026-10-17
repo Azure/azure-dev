@@ -1033,6 +1033,48 @@ func TestExistingEndpointModeRejectsManagedDeploymentsWhenEndpointChanges(t *tes
 	assert.Contains(t, err.Error(), "cannot retain managed model deployments")
 }
 
+func TestExistingEndpointModeEnvironmentDeployments(t *testing.T) {
+	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
+	const deployments = `[{"name":"chat","model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, test := range []struct {
+		name, value, oldEndpoint, projectID string
+		wantError                           bool
+	}{
+		{name: "no service", value: deployments, wantError: true},
+		{name: "changed endpoint", value: deployments, oldEndpoint: "https://other.services.ai.azure.com/api/projects/p",
+			wantError: true},
+		{name: "clearing identity", value: deployments, oldEndpoint: endpoint, projectID: "project-id", wantError: true},
+		{name: "unchanged endpoint", value: deployments, oldEndpoint: endpoint},
+		{name: "intentional empty", value: "[]", projectID: "project-id"},
+		{name: "blank", value: " ", projectID: "project-id"},
+		{name: "missing", projectID: "project-id"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var service *projectServiceInfo
+			if test.oldEndpoint != "" {
+				service = &projectServiceInfo{
+					Raw:      map[string]any{"endpoint": test.oldEndpoint},
+					Resolved: map[string]any{"endpoint": test.oldEndpoint},
+				}
+			}
+			err := validateExistingEndpointMode(service, endpoint, "", map[string]string{
+				projectDeploymentsEnvKey: test.value,
+				"AZURE_AI_PROJECT_ID":    test.projectID,
+			})
+			if test.wantError {
+				require.ErrorContains(t, err, "cannot retain managed model deployments")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				assert.Equal(t, "project_reconciliation_requires_project_id", localErr.Code)
+				assert.Contains(t, localErr.Suggestion, "--project-id")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestExistingEndpointModeRejectsInfrastructureWithoutProjectID(t *testing.T) {
 	const endpoint = "https://account.services.ai.azure.com/api/projects/p"
 

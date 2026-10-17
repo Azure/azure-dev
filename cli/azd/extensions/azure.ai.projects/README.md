@@ -65,6 +65,22 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+For embedded infrastructure, the active azd environment's `AI_PROJECT_DEPLOYMENTS`
+JSON array overrides the portable `deployments` defaults in `azure.yaml`. A value
+of `[]` intentionally disables managed model deployments. When unset or blank,
+interactive provisioning selects models for the current subscription and location
+and saves the complete list to that environment; `--no-prompt` (or
+`AZD_NO_PROMPT=true`) saves the YAML defaults unchanged. Invalid non-blank values
+produce an error rather than being overwritten. `azd ai project deployment add`
+also seeds or updates this environment list. Ejected infrastructure retains
+user-owned deployment parameters.
+
+Adopting an existing project reconciles the active environment's effective
+deployment list with reuse and skip choices, including an explicit `[]` when no
+managed deployments remain. Ejecting infrastructure seeds the generated Bicep
+or Terraform deployment parameters from that effective list. Subsequent edits
+to those parameter files remain authoritative.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just

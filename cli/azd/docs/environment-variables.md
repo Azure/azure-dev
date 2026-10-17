@@ -221,7 +221,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZURE_AI_PROJECT_NAME` | The Microsoft Foundry project name. |
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
-| `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
+| `AI_PROJECT_DEPLOYMENTS` | User-settable, extension-managed active-environment provisioning override for embedded Foundry model deployments. Blank values fall back to `azure.yaml`; `[]` intentionally disables deployments. Malformed values cause an error. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |

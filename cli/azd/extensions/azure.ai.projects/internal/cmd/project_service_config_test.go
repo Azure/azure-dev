@@ -5,12 +5,17 @@ package cmd
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -117,6 +122,46 @@ func TestLoadProjectServiceConfigRejectsDuplicates(t *testing.T) {
 	assert.Contains(t, err.Error(), "alpha, zeta")
 }
 
+func TestDefaultModelDeploymentName(t *testing.T) {
+	t.Parallel()
+
+	service := map[string]any{
+		"deployments": []any{map[string]any{"name": "yaml-chat"}},
+	}
+	encoded, err := provisioning.EncodeProjectDeployments([]synthesis.Deployment{{
+		Name:  "env-chat",
+		Model: synthesis.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 1},
+	}, {
+		Name:  "env-embedding",
+		Model: synthesis.DeploymentModel{Name: "text-embedding-3-small", Format: "OpenAI", Version: "1"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 1},
+	}})
+	require.NoError(t, err)
+
+	name, err := defaultModelDeploymentName(encoded, service)
+	require.NoError(t, err)
+	assert.Equal(t, "env-chat", name)
+
+	name, err = defaultModelDeploymentName(
+		`[{"name":"raw-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},`+
+			`"sku":{"name":"Standard","capacity":1}}]`, service,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "raw-chat", name)
+
+	name, err = defaultModelDeploymentName("[]", service)
+	require.NoError(t, err)
+	assert.Empty(t, name)
+
+	name, err = defaultModelDeploymentName("  ", service)
+	require.NoError(t, err)
+	assert.Equal(t, "yaml-chat", name)
+
+	_, err = defaultModelDeploymentName("{", service)
+	require.ErrorContains(t, err, projectDeploymentsEnvKey)
+}
+
 func TestFirstProjectDeploymentName(t *testing.T) {
 	t.Parallel()
 
@@ -137,7 +182,7 @@ func TestFirstProjectDeploymentName(t *testing.T) {
 }
 
 func TestProjectLifecycleHandlerWritesDeployments(t *testing.T) {
-	t.Parallel()
+	t.Setenv("AZD_NO_PROMPT", "true")
 
 	envServer := &recordingProjectEnvironmentServer{
 		envName: "dev",
@@ -218,6 +263,7 @@ func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 }
 
 func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "true")
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "deployment.yaml"),
@@ -268,11 +314,62 @@ func mustProjectProperties(
 type recordingProjectEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 
-	mu         sync.Mutex
-	envName    string
-	envNameSet string
-	key        string
-	value      string
+	mu          sync.Mutex
+	envName     string
+	envNameSet  string
+	key         string
+	value       string
+	values      map[string]string
+	models      []*azdext.PromptAiModelRequest
+	deployments []*azdext.PromptAiDeploymentRequest
+	failAt      int
+}
+
+func (s *recordingProjectEnvironmentServer) GetValues(
+	_ context.Context,
+	request *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if request.GetName() != s.envName {
+		return nil, fmt.Errorf("unexpected environment %q", request.GetName())
+	}
+	response := &azdext.KeyValueListResponse{}
+	for key, value := range s.values {
+		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return response, nil
+}
+
+type recordingProjectPromptServer struct {
+	azdext.UnimplementedPromptServiceServer
+	environment *recordingProjectEnvironmentServer
+}
+
+func (p *recordingProjectPromptServer) PromptAiModel(
+	_ context.Context, request *azdext.PromptAiModelRequest,
+) (*azdext.PromptAiModelResponse, error) {
+	s := p.environment
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.models = append(s.models, request)
+	if s.failAt == len(s.models) {
+		return nil, errors.New("model selection cancelled")
+	}
+	return &azdext.PromptAiModelResponse{Model: &azdext.AiModel{Name: "env-model"}}, nil
+}
+
+func (p *recordingProjectPromptServer) PromptAiDeployment(
+	_ context.Context, request *azdext.PromptAiDeploymentRequest,
+) (*azdext.PromptAiDeploymentResponse, error) {
+	s := p.environment
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deployments = append(s.deployments, request)
+	return &azdext.PromptAiDeploymentResponse{Deployment: &azdext.AiModelDeployment{
+		ModelName: "env-model", Format: "OpenAI", Version: "env-version",
+		Sku: &azdext.AiModelSku{Name: "Standard"}, Capacity: 3,
+	}}, nil
 }
 
 func (s *recordingProjectEnvironmentServer) GetCurrent(
@@ -294,6 +391,10 @@ func (s *recordingProjectEnvironmentServer) SetValue(
 	s.envNameSet = request.EnvName
 	s.key = request.Key
 	s.value = request.Value
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	s.values[request.Key] = request.Value
 	return &azdext.EmptyResponse{}, nil
 }
 
@@ -305,6 +406,9 @@ func newProjectEnvironmentClient(
 
 	server := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(server, envServer)
+	if recording, ok := envServer.(*recordingProjectEnvironmentServer); ok {
+		azdext.RegisterPromptServiceServer(server, &recordingProjectPromptServer{environment: recording})
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
@@ -324,4 +428,151 @@ func newProjectEnvironmentClient(
 		client.Close()
 	})
 	return client
+}
+
+func TestProjectLifecycleHandlerPromptFailureDoesNotWrite(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	server := &recordingProjectEnvironmentServer{
+		envName: "env-b", failAt: 2,
+		values: map[string]string{"AZURE_SUBSCRIPTION_ID": "sub-b", "AZURE_LOCATION": "westus"},
+	}
+	client := newProjectEnvironmentClient(t, server)
+	err := projectLifecycleHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{"project": {
+			Host: aiProjectHost,
+			AdditionalProperties: mustProjectProperties(t, map[string]any{"deployments": []any{
+				map[string]any{"name": "chat", "model": map[string]any{"name": "yaml-model"}},
+				map[string]any{"name": "embedding", "model": map[string]any{"name": "yaml-embedding"}},
+			}}),
+		}},
+	}})
+	require.ErrorContains(t, err, "model selection cancelled")
+	assert.Empty(t, server.key)
+	assert.NotContains(t, server.values, projectDeploymentsEnvKey)
+	assert.Len(t, server.models, 2)
+	assert.Len(t, server.deployments, 1)
+}
+
+func TestProjectLifecycleHandlerEjectedDoesNotPrompt(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
+	infra := filepath.Join(root, "infra")
+	require.NoError(t, os.Mkdir(infra, 0750))
+	for name, content := range map[string]string{
+		"main.bicep":           "// ejected",
+		"main.parameters.json": "{}",
+		foundryEjectionMarker:  foundryBicepMarkerVersion,
+	} {
+		require.NoError(t, os.WriteFile(filepath.Join(infra, name), []byte(content), 0600))
+	}
+	server := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, server)
+	require.NoError(t, projectLifecycleHandler(t.Context(), client, &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{"project": {
+			Host: aiProjectHost,
+			AdditionalProperties: mustProjectProperties(t, map[string]any{"deployments": []any{
+				map[string]any{"name": "chat"},
+			}}),
+		}}},
+	}))
+	assert.Empty(t, server.models)
+	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+}
+
+func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
+	const override = `[{"name":"env-only","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, test := range []struct {
+		name, value                     string
+		noPrompt, wantPrompt, wantError bool
+	}{
+		{name: "interactive missing", wantPrompt: true},
+		{name: "interactive whitespace", value: " \t", wantPrompt: true},
+		{name: "no-prompt defaults", noPrompt: true},
+		{name: "existing override", value: override},
+		{name: "existing escaped", value: strings.ReplaceAll(override, `"`, `\"`)},
+		{name: "intentional empty", value: "[]"},
+		{name: "no-prompt override", value: "[]", noPrompt: true},
+		{name: "malformed", value: "{", wantError: true},
+		{name: "malformed no-prompt", value: "null", noPrompt: true, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", strconv.FormatBool(test.noPrompt))
+			t.Setenv(projectDeploymentsEnvKey, `[{"name":"process-must-not-win"}]`)
+			server := &recordingProjectEnvironmentServer{
+				envName: "env-b",
+				values: map[string]string{
+					projectDeploymentsEnvKey: test.value,
+					"AZURE_SUBSCRIPTION_ID":  "sub-b",
+					"AZURE_LOCATION":         "westus",
+				},
+			}
+
+			client := newProjectEnvironmentClient(t, server)
+			args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{"project": {
+					Host: aiProjectHost,
+					AdditionalProperties: mustProjectProperties(t, map[string]any{
+						"deployments": []any{
+							map[string]any{
+								"name":  "chat",
+								"model": map[string]any{"name": "yaml-model", "version": "yaml-version"},
+								"sku":   map[string]any{"name": "YamlSku", "capacity": 100},
+							},
+							map[string]any{"name": "embedding", "model": map[string]any{"name": "yaml-embedding"}},
+						},
+					}),
+				}},
+			}}
+			err := projectLifecycleHandler(t.Context(), client, args)
+			if test.wantError {
+				require.ErrorContains(t, err, projectDeploymentsEnvKey)
+				assert.Empty(t, server.key)
+				assert.Empty(t, server.models)
+				assert.Equal(t, test.value, server.values[projectDeploymentsEnvKey])
+				return
+			}
+			require.NoError(t, err)
+			if test.wantPrompt {
+				require.Len(t, server.models, 2)
+				require.Len(t, server.deployments, 2)
+				assert.Equal(t, "yaml-model", server.models[0].DefaultValue)
+				assert.Equal(t, "yaml-embedding", server.models[1].DefaultValue)
+				for _, request := range server.models {
+					assert.Equal(t, "sub-b", request.AzureContext.Scope.SubscriptionId)
+					assert.Equal(t, "westus", request.AzureContext.Scope.Location)
+					assert.Equal(t, []string{"westus"}, request.Filter.Locations)
+					assert.Empty(t, request.Filter.Capabilities)
+					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
+				}
+				for _, request := range server.deployments {
+					assert.Equal(t, "env-model", request.ModelName)
+					assert.Equal(t, []string{"westus"}, request.Options.Locations)
+					assert.Empty(t, request.Options.Versions)
+					assert.Empty(t, request.Options.Skus)
+					assert.Nil(t, request.Options.Capacity)
+					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
+				}
+				resolved, _, err := provisioning.DecodeProjectDeployments(server.value)
+				require.NoError(t, err)
+				require.Len(t, resolved, 2)
+				assert.Equal(t, "chat", resolved[0].Name)
+				assert.Equal(t, "embedding", resolved[1].Name)
+				assert.Equal(t, "env-model", resolved[0].Model.Name)
+				assert.Equal(t, "env-version", resolved[0].Model.Version)
+				assert.Equal(t, 3, resolved[0].Sku.Capacity)
+				require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
+				assert.Len(t, server.models, 2, "persisted environment must not prompt again")
+			} else {
+				assert.Empty(t, server.models)
+				if test.value == "" {
+					assert.Contains(t, server.value, `\"name\":\"yaml-model\"`)
+					assert.Contains(t, server.value, `\"capacity\":100`)
+				} else {
+					assert.Empty(t, server.key, "existing override must not be overwritten")
+				}
+			}
+		})
+	}
 }

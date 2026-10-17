@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1560,6 +1561,24 @@ services:
 	assert.NotContains(t, projectServer.unsetPaths, "infra.path")
 }
 
+type ejectEnvironmentServer struct {
+	transactionEnvironmentServer
+}
+
+func (s *ejectEnvironmentServer) GetCurrent(
+	context.Context, *azdext.EmptyRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{
+		Environment: &azdext.Environment{Name: s.values["AZURE_ENV_NAME"]},
+	}, nil
+}
+
+func (s *ejectEnvironmentServer) GetValue(
+	_ context.Context, req *azdext.GetEnvRequest,
+) (*azdext.KeyValueResponse, error) {
+	return &azdext.KeyValueResponse{Value: s.values[req.Key]}, nil
+}
+
 func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	t.Setenv("ENABLE_AGENT", "false")
 	const existingRegistryID = "/subscriptions/sub/resourceGroups/shared/" +
@@ -1568,6 +1587,9 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "azure.yaml"),
 		[]byte("name: test\nservices:\n  project:\n    host: azure.ai.project\n"+
+			"    network:\n      peSubnet:\n"+
+			"        vnet: /subscriptions/sub/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/vnet\n"+
+			"        name: pe-subnet\n"+
 			"  active-agent:\n    host: azure.ai.agent\n    condition: ${ENABLE_AGENT}\n"),
 		0600,
 	))
@@ -1580,6 +1602,10 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 	}
 	server := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(server, projectServer)
+	envServer := &ejectEnvironmentServer{transactionEnvironmentServer: transactionEnvironmentServer{
+		values: map[string]string{},
+	}}
+	azdext.RegisterEnvironmentServiceServer(server, envServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() {
@@ -1601,6 +1627,8 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": existingRegistryID,
 		"AZURE_SUBSCRIPTION_ID":                "sub",
 		"AZURE_RESOURCE_GROUP":                 "foundry",
+		"AZURE_ENV_NAME":                       "test",
+		"AZURE_LOCATION":                       "eastus",
 	}
 	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
 		"project", "terraform", "", "", environment), "not supported with Terraform")
@@ -1611,7 +1639,14 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		"project", "bicep", "", "", environment), "azd down deletes")
 	delete(environment, "AZD_FOUNDRY_ACR_MODE")
 	assert.NoDirExists(t, filepath.Join(root, "infra"))
+	assert.Empty(t, envServer.values, "invalid eject must not persist the inferred mode")
 	environment["AZURE_RESOURCE_GROUP"] = "foundry"
+	envServer.failAt = 1
+	require.ErrorContains(t, ejectProjectInfraWithTarget(t.Context(), client, root,
+		"project", "bicep", "", "", environment), "persist ACR mode")
+	assert.NoDirExists(t, filepath.Join(root, "infra"), "failed persistence must roll back the ejected files")
+	assert.Empty(t, envServer.values)
+	envServer.failAt = 0
 	require.NoError(t, ejectProjectInfraWithTarget(
 		t.Context(),
 		client,
@@ -1640,6 +1675,22 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 		assert.FileExists(t, filepath.Join(root, "infra", "modules", module))
 	}
 	assertProjectEjectionOmitsConnections(t, filepath.Join(root, "infra"))
+	assert.Equal(t, "reuse-connect", envServer.values["AZD_FOUNDRY_ACR_MODE"])
+	assert.NotContains(t, environment, "AZD_FOUNDRY_ACR_MODE", "eject must not mutate its snapshot")
+
+	for _, recordedMode := range []bool{true, false} {
+		t.Run(fmt.Sprintf("initialize/recorded=%t", recordedMode), func(t *testing.T) {
+			envServer.values = maps.Clone(environment)
+			if recordedMode {
+				envServer.values["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
+			}
+			provider := provisioning.NewFoundryProvisioningProvider(client)
+			require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
+				Provider: provisioning.FoundryProviderName,
+			}))
+			assert.Equal(t, "reuse-connect", envServer.values["AZD_FOUNDRY_ACR_MODE"])
+		})
+	}
 }
 
 func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "14988708193922246991"
+      "templateHash": "10468995517805873777"
     }
   },
   "definitions": {
@@ -284,7 +284,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "1476149174768688175"
+              "templateHash": "1074341602014715502"
             }
           },
           "definitions": {
@@ -1053,7 +1053,7 @@
               "condition": "[and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "existing-acr",
+              "name": "[format('existing-acr-{0}', uniqueString(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), parameters('foundryProjectName'))))]",
               "subscriptionId": "[split(parameters('existingAcrResourceId'), '/')[2]]",
               "resourceGroup": "[split(parameters('existingAcrResourceId'), '/')[4]]",
               "properties": {
@@ -1171,6 +1171,7 @@
                 }
               },
               "dependsOn": [
+                "foundryAccount",
                 "foundryAccount::project"
               ]
             },
@@ -1178,7 +1179,7 @@
               "condition": "[and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "existing-acr-connection",
+              "name": "[format('existing-acr-connection-{0}', uniqueString(resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), resourceId('Microsoft.CognitiveServices/accounts/projects', variables('foundryAccountName'), parameters('foundryProjectName'))))]",
               "properties": {
                 "expressionEvaluationOptions": {
                   "scope": "inner"

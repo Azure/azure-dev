@@ -532,8 +532,14 @@ func TestInitializeExistingRegistry(t *testing.T) {
 		invalid  string
 		wantMode string
 		wantErr  string
+		onDisk   bool
 	}{
 		{name: "reuse", group: "shared"},
+		{name: "on-disk reuse without recorded mode", group: "shared", onDisk: true},
+		{name: "on-disk recorded create", mode: "create", group: "rg-test", wantMode: "create", onDisk: true},
+		{name: "on-disk layer reuse", group: "shared", layer: true, onDisk: true},
+		{name: "on-disk same group rejected before prompting", group: "custom", explicit: true,
+			mode: "reuse-connect", rejected: true, onDisk: true},
 		{name: "virtual env selector wins", group: "shared", virtual: true},
 		{name: "default group rejected", group: "rg-test", mode: "reuse-connect", rejected: true},
 		{name: "explicit group rejected before prompting", group: "custom", explicit: true,
@@ -567,6 +573,15 @@ func TestInitializeExistingRegistry(t *testing.T) {
 				options.Path = "infra/foundry"
 			}
 			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			if tt.onDisk {
+				infraPath := options.Path
+				if infraPath == "" {
+					infraPath = onDiskInfraDir
+				}
+				require.NoError(t, os.MkdirAll(filepath.Join(root, infraPath), 0o750))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, infraPath, onDiskBicepFile), []byte("// ejected Bicep"), 0o600))
+			}
 			id := "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
 				"/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
 			if tt.noID {
@@ -613,6 +628,10 @@ func TestInitializeExistingRegistry(t *testing.T) {
 				}
 				assert.Equal(t, wantMode, env.set["AZD_FOUNDRY_ACR_MODE"])
 				assert.Equal(t, wantMode, provider.greenfieldAcrMode)
+				if tt.onDisk {
+					assert.Nil(t, provider.armTemplate, "on-disk initialization must not load the embedded template")
+					return
+				}
 				params, err := provider.Parameters(t.Context())
 				require.NoError(t, err)
 				if wantMode == "reuse-connect" {

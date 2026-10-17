@@ -308,8 +308,8 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
-	if !onDisk && endpoint == "" {
-		// Validate embedded config before any interactive prompts.
+	if endpoint == "" {
+		// Validate greenfield config before any interactive prompts.
 		env := p.networkEnvMap(ctx)
 		groupKey := envKeyResourceGroup
 		if p.isLayer {
@@ -397,9 +397,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 		p.brownfieldEndpoint = endpoint
 		res, err = synthesis.SynthesizeExistingProject(input)
 	} else {
-		if !onDisk {
-			input.Env["AZD_FOUNDRY_ACR_MODE"] = p.greenfieldAcrMode
-		}
+		input.Env["AZD_FOUNDRY_ACR_MODE"] = p.greenfieldAcrMode
 		res, err = synthesis.Synthesize(input)
 	}
 	if err != nil {
@@ -408,10 +406,8 @@ func (p *FoundryProvisioningProvider) Initialize(
 	p.synthResult = res
 	if endpoint == "" {
 		p.greenfieldAcrMode = res.ACRMode
-		if !onDisk {
-			if err := p.setEnv(ctx, "AZD_FOUNDRY_ACR_MODE", p.greenfieldAcrMode); err != nil {
-				return err
-			}
+		if err := p.setEnv(ctx, "AZD_FOUNDRY_ACR_MODE", p.greenfieldAcrMode); err != nil {
+			return err
 		}
 	}
 	if endpoint != "" {

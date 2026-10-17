@@ -95,6 +95,11 @@ func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 	return &AgentClient{
 		endpoint: endpoint,
 		pipeline: pipeline,
+		telephonyPipeline: runtime.NewPipeline(
+			"test", "v0.0.0-test",
+			runtime.PipelineOptions{},
+			&policy.ClientOptions{Transport: &telephonyResponseLimitTransport{next: transport}},
+		),
 	}
 }
 
@@ -115,6 +120,27 @@ func TestNewAgentClientUsesRecordProxyTransport(t *testing.T) {
 		"https://test.example.com/api/projects/proj/agents/test-agent?api-version=v1",
 		transport.request.URL.String(),
 	)
+}
+
+func TestNewAgentClientTelephonyPipelineUsesRecordProxyAndSharedPolicies(t *testing.T) {
+	transport := &captureRoundTripper{}
+	originalTransport := recordproxy.Transport
+	recordproxy.Transport = transport
+	t.Cleanup(func() {
+		recordproxy.Transport = originalTransport
+	})
+
+	client := NewAgentClient("https://test.example.com/api/projects/proj", fakeCredential{})
+	_, err := client.ListTelephonyBindings(t.Context(), "test-agent", TelephonyBindingListOptions{})
+
+	require.Error(t, err)
+	require.NotNil(t, transport.request)
+	require.Equal(t,
+		"https://test.example.com/api/projects/proj/agents/test-agent/telephony/bindings?api-version=v1",
+		transport.request.URL.String(),
+	)
+	require.Contains(t, transport.request.Header.Get("Authorization"), "Bearer")
+	require.NotEmpty(t, transport.request.Header.Get("User-Agent"))
 }
 
 func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransport) {

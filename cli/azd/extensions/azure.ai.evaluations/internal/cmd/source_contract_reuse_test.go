@@ -124,6 +124,39 @@ func TestEnsureEvalOldDefaultsRequireDeliberateCriterionChange(t *testing.T) {
 	}
 }
 
+func TestEnsureEvalModelTargetReplacesStoredItemResponse(t *testing.T) {
+	for _, level := range []string{"", "turn"} {
+		for _, rename := range []bool{false, true} {
+			name := level + "/cached"
+			if rename {
+				name = level + "/renamed"
+			}
+			t.Run(name, func(t *testing.T) {
+				previous := sourceContractGroup(project.SourceTypeTraces)
+				previous.Source = nil
+				previous.Target = &project.Target{Type: project.TargetTypeModel, Name: "model"}
+				previous.Dataset = "d"
+				previous.EvaluationLevel = level
+				desired := previous
+				if rename {
+					desired.Name = "renamed"
+				}
+				r, _, posts, updates := sourceContractReconciler(t, previous, false, rename, &desired,
+					func(stored *eval_api.CreateOpenAIEvalRequest) {
+						stored.TestingCriteria[0].DataMapping["response"] = "{{item.response}}"
+					})
+				id, created, err := r.EnsureEval(t.Context(), desired, "")
+				require.NoError(t, err)
+				require.True(t, created)
+				require.Equal(t, "eval_new", id)
+				require.Len(t, *posts, 1)
+				require.Zero(t, *updates, "do not rename an incompatible model-target evaluation")
+				require.Equal(t, "{{sample.output_text}}", (*posts)[0].TestingCriteria[0].DataMapping["response"])
+			})
+		}
+	}
+}
+
 func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 	for _, caller := range []string{"create", "up", "ensure"} {
 		for _, tc := range []struct {
@@ -278,6 +311,76 @@ func TestExplicitSourceContractConflictBeforePublication(t *testing.T) {
 	}
 }
 
+func TestEnsureEvalModelTargetPreservesExplicitBindingsAndPins(t *testing.T) {
+	for _, pinned := range []bool{false, true} {
+		group := sourceContractGroup(project.SourceTypeTraces)
+		group.Source = nil
+		group.Target = &project.Target{Type: project.TargetTypeModel, Name: "model"}
+		group.Dataset = "d"
+		group.Evaluators[0].DataMapping = map[string]string{"response": "{{item.saved_answer}}"}
+		if pinned {
+			group.ID = "eval_old"
+		}
+		r, _, posts, _ := sourceContractReconciler(t, group, false, false, &group,
+			func(stored *eval_api.CreateOpenAIEvalRequest) {
+				if pinned {
+					stored.TestingCriteria[0].DataMapping["response"] = "{{sample.output_text}}"
+				}
+			})
+		id, created, err := r.EnsureEval(t.Context(), group, "")
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Equal(t, "eval_old", id)
+		require.Empty(t, *posts)
+	}
+}
+
+func TestEnsureEvalModelTargetDoesNotMigrateUnknownHistory(t *testing.T) {
+	for _, rename := range []bool{false, true} {
+		previous := sourceContractGroup(project.SourceTypeTraces)
+		previous.Source = nil
+		previous.Target = &project.Target{Type: project.TargetTypeModel, Name: "model"}
+		previous.Dataset = "d"
+		desired := previous
+		if rename {
+			desired.Name = "renamed"
+		}
+		r, _, posts, _ := sourceContractReconciler(t, previous, false, rename, &desired,
+			func(stored *eval_api.CreateOpenAIEvalRequest) {
+				stored.DataSourceConfig = nil
+				stored.TestingCriteria = nil
+			})
+		id, created, err := r.EnsureEval(t.Context(), desired, "")
+		require.NoError(t, err)
+		require.False(t, created)
+		require.Equal(t, "eval_old", id)
+		require.Empty(t, *posts)
+	}
+}
+
+func TestModelTargetSourceContractNeedsPositiveEvidence(t *testing.T) {
+	group := project.Eval{Target: &project.Target{Type: project.TargetTypeModel, Name: "model"}}
+	want := &eval_api.CreateOpenAIEvalRequest{
+		DataSourceConfig: &eval_api.DataSourceConfig{Type: "custom", IncludeSampleSchema: true},
+		TestingCriteria: []eval_api.TestingCriterion{{
+			Name: "coherence", EvaluatorName: "builtin.coherence",
+			DataMapping: map[string]string{"response": "{{sample.output_text}}"},
+		}},
+	}
+	for _, have := range []*eval_api.OpenAIEval{
+		nil,
+		{},
+		{DataSourceConfig: map[string]any{"type": "custom"}},
+		{DataSourceConfig: map[string]any{"type": "azure_ai_source", "include_sample_schema": false}},
+	} {
+		require.False(t, conflictingSourceContract(group, have, want),
+			"missing history or source-managed schema enrichment must not create an upgrade")
+	}
+	require.True(t, conflictingSourceContract(group, &eval_api.OpenAIEval{
+		DataSourceConfig: map[string]any{"type": "custom", "include_sample_schema": false},
+	}, want), "a known custom schema without runtime output conflicts with a model target")
+}
+
 func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *testing.T) {
 	for _, mode := range []string{project.SourceTypeTraces, project.SourceTypeResponses} {
 		for _, tc := range []struct {
@@ -311,6 +414,18 @@ func TestSourceContractPreservesInferredDefaultsAndMatchingAuthoredMappings(t *t
 			})
 		}
 	}
+}
+
+func TestSourceContractComparesAuthoredBuiltinMapping(t *testing.T) {
+	group := sourceContractGroup(project.SourceTypeResponses)
+	group.Evaluators[0].DataMapping = map[string]string{"query": "{{item.new}}"}
+	request, err := buildEvalRequest(&group, nil, nil)
+	require.NoError(t, err)
+	remote := &eval_api.OpenAIEval{TestingCriteria: []eval_api.TestingCriterion{{
+		Name: request.TestingCriteria[0].Name, EvaluatorName: request.TestingCriteria[0].EvaluatorName,
+		DataMapping: map[string]string{"query": "{{item.old}}"},
+	}}}
+	assert.True(t, conflictingSourceContract(group, remote, request))
 }
 
 func TestManagedSourceContractReplacesMissingAuthoredCriterion(t *testing.T) {

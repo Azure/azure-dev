@@ -60,6 +60,7 @@ func runInitVoice(
 		true,
 		false,
 		false,
+		nil,
 	)
 	if err != nil {
 		return err

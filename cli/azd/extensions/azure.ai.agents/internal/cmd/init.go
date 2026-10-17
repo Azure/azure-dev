@@ -693,6 +693,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new prompt, hosted, or voice agent project.
 
+Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
+service to the current project. Use --template / -t to adopt an azure.yaml
+project document as the project manifest.
+
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
 services with host: azure.ai.project / azure.ai.agent / ..., that azure.yaml
@@ -1342,7 +1346,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand).")
+		"Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand). "+
+			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
 	_ = cmd.Flags().MarkHidden("harness")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+

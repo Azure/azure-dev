@@ -67,6 +67,19 @@ services:
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
 
+### Deployment preview
+
+`azd deploy --preview` performs no work for an `azure.ai.project` service, just
+like its normal package/publish/deploy lifecycle. The provider returns no readable
+message and does not emit an unsupported-preview warning. It does not read Azure
+resources, initialize deployment state, or perform provisioning.
+
+The host still displays its own per-service progress line, for example
+`Done: Previewing service ai-project`. The provider message is empty and omitted
+from host JSON; `data` contains `status: "noOp"`, `scope: "deployment"`, and
+`infrastructurePreviewed: false`. This is not a comparison of project resources,
+model deployments, networking, or RBAC; those remain provisioning-owned.
+
 ### Developer access
 
 The built-in provisioning template does not assign a role to the developer. Before deploying a prompt, hosted, or voice agent, the agent extension checks project access and attempts to grant Foundry User when needed. If that grant is denied, it warns and deployment continues; an administrator may need to assign the role.

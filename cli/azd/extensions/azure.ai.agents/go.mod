@@ -12,7 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v1.3.0-beta.3
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
-	github.com/azure/azure-dev/cli/azd v1.34.2
+	github.com/azure/azure-dev/cli/azd v1.35.1
 	github.com/braydonk/yaml v0.9.0
 	github.com/distribution/reference v0.6.0
 	github.com/drone/envsubst v1.0.3 // indirect
@@ -38,6 +38,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/hinshun/vt10x v0.0.0-20220119200601-820417d04eec
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.45.0
 )
 
@@ -122,7 +123,6 @@ require (
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 )

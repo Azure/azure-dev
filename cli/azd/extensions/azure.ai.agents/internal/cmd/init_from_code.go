@@ -403,6 +403,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
+			nil,
 		)
 		if err != nil {
 			return nil, err
@@ -474,6 +475,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 				deployMode == "code" || strings.TrimSpace(a.flags.image) != "",
 				deployMode == "code", // filterHostedRegions: code deploy targets hosted agents
 				true,                 // bicepless
+				nil,
 			)
 			if err != nil {
 				return nil, err

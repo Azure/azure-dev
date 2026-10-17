@@ -135,7 +135,7 @@ func runInitManaged(
 	// `azd up` would fail to find a Foundry project.
 	var model string
 	deployment, provisionDeployment, foundryProject, credential, err := resolvePromptHarnessTarget(
-		ctx, azdClient, flags, env, &settings,
+		ctx, azdClient, flags, env, &settings, harness,
 	)
 	if err != nil {
 		return err

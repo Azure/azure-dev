@@ -78,11 +78,65 @@ func TestRunShowJSONRedactsKnownErrorDiagnosticsOnly(t *testing.T) {
 
 			var original eval_api.OpenAIEvalRun
 			require.NoError(t, json.Unmarshal([]byte(response), &original))
-			projected := runForJSON(&original)
+			projected, err := runForJSON(&original)
+			require.NoError(t, err)
 			assert.Equal(t, "Failed "+diagnosticURL, original.Error.Message)
 			assert.NotSame(t, original.Error, projected.Error)
 		})
 	}
+}
+
+// A payload may spell one modeled key several ways, and every spelling is read as
+// the same field, so none of them may reach the output with a value the typed
+// projection did not sanitize.
+func TestRunJSONDropsEveryCaseVariantOfARedactedKey(t *testing.T) {
+	const response = `{"id":"run_dup","status":"failed","error":{"code":"failed",` +
+		`"message":"Failed https://host/a?sig=SIGONE","Message":"Failed https://host/b?sig=SIGTWO",` +
+		`"MESSAGE":"Failed https://host/c?sig=SIGTHREE"}}`
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(response), &run))
+
+	projected, err := runForJSON(&run)
+	require.NoError(t, err)
+	raw, err := json.Marshal(projected)
+	require.NoError(t, err)
+	for _, secret := range []string{"SIGONE", "SIGTWO", "SIGTHREE"} {
+		assert.NotContains(t, string(raw), secret)
+	}
+	var document struct {
+		Error map[string]json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &document))
+	spellings := 0
+	for key := range document.Error {
+		if strings.EqualFold(key, "message") {
+			spellings++
+		}
+	}
+	assert.Equal(t, 1, spellings, "one spelling of the field is kept")
+	assert.Contains(t, string(raw), "Failed ")
+
+	const topLevel = `{"id":"run_dup","status":"failed","error":{"message":"Failed https://host/a?sig=SIGONE"},` +
+		`"Error":{"message":"Failed https://host/b?sig=SIGTWO"}}`
+	var spelled eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(topLevel), &spelled))
+	projected, err = runForJSON(&spelled)
+	require.NoError(t, err)
+	raw, err = json.Marshal(projected)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "SIGONE")
+	assert.NotContains(t, string(raw), "SIGTWO")
+
+	const reverseNull = `{"id":"run_dup","status":"failed",` +
+		`"Error":{"message":"Failed https://host/a?sig=REVERSEDSECRET"},"error":null}`
+	var reversed eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(reverseNull), &reversed))
+	require.Nil(t, reversed.Error)
+	projected, err = runForJSON(&reversed)
+	require.NoError(t, err)
+	raw, err = json.Marshal(projected)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "REVERSEDSECRET")
 }
 
 func TestReportingJSONCallersPreserveNestedResultPresence(t *testing.T) {
@@ -251,8 +305,99 @@ func TestExportRedactsOnlyKnownRunErrorFields(t *testing.T) {
 	}
 }
 
+// The run decodes `error` without regard to case, so an export spelled `Error`, or
+// carrying both spellings, is redacted under every one of them.
+func TestExportRedactsEverySpellingOfTheRunError(t *testing.T) {
+	const diagnostic = `"Failed https://host/file?sig=%s"`
+	for name, response := range map[string]string{
+		"capitalized": `{"id":"run","Error":{"Message":` + strings.Replace(diagnostic, "%s", "SIGONE", 1) + `}}`,
+		"both": `{"id":"run","error":{"message":` + strings.Replace(diagnostic, "%s", "SIGONE", 1) +
+			`},"ERROR":{"code":` + strings.Replace(diagnostic, "%s", "SIGTWO", 1) + `}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			redacted, err := redactExportRunError(json.RawMessage(response))
+			require.NoError(t, err)
+			assert.NotContains(t, string(redacted), "SIGONE")
+			assert.NotContains(t, string(redacted), "SIGTWO")
+			assert.Contains(t, string(redacted), "Failed ")
+		})
+	}
+}
+
+func TestJSONProjectionAndExportRedactNestedDiagnosticsOnly(t *testing.T) {
+	credentialURL := "https://" + "fixture-user:fixture-password" +
+		"@host/rows?sig=detail-secret#fragment-secret"
+	encodedURL, err := json.Marshal(credentialURL)
+	require.NoError(t, err)
+	response := `{"id":"run","error":{"message":"validation failed","details":[` +
+		`{"message":"download ` + string(encodedURL[1:len(encodedURL)-1]) + `",` +
+		`"target":"https://host/rows?sig=target-secret","unknown":9007199254740993,` +
+		`"details":[{"error":{"message":"nested https://host/rows?sig=deep-secret"}}]}],` +
+		`"innererror":{"inner_error":{"target":"https://host/rows?sig=inner-secret"}},` +
+		`"unknown":{"url":"https://host/rows?sig=unknown-secret",` +
+		`"items":["plain",{"note":"leave this diagnostic note unchanged",` +
+		`"url":"retry https://host/rows?sig=array-secret"}]}}}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/output_items"):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case strings.HasSuffix(r.URL.Path, "/runs/run"):
+			_, _ = w.Write([]byte(response))
+		case strings.HasSuffix(r.URL.Path, "/runs"):
+			_, _ = w.Write([]byte(`{"data":[` + response + `]}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	ec := evalContextFor(srv)
+
+	outputs := map[string]string{}
+	for _, caller := range []string{"show", "list", "export"} {
+		var out bytes.Buffer
+		command := jsonCmd(t, "json")
+		command.SetContext(t.Context())
+		command.SetOut(&out)
+		switch caller {
+		case "show":
+			action := &runShowAction{cmd: command, runID: "run", flags: &runShowFlags{}}
+			require.NoError(t, action.show(t.Context(), ec, "eval", gate{}))
+		case "list":
+			action := &runListAction{cmd: command, flags: &runListFlags{}}
+			require.NoError(t, action.list(t.Context(), ec, "eval"))
+		case "export":
+			action := &runOutputExportAction{cmd: command, runID: "run", flags: &runOutputExportFlags{}}
+			require.NoError(t, action.export(t.Context(), ec, "eval", exportToStdout))
+		}
+		outputs[caller] = out.String()
+	}
+
+	for name, raw := range outputs {
+		for _, secret := range []string{
+			"fixture-user", "fixture-password", "detail-secret", "fragment-secret",
+			"target-secret", "deep-secret", "inner-secret", "unknown-secret", "array-secret",
+		} {
+			assert.NotContains(t, raw, secret, name)
+		}
+		assert.Contains(t, raw, "leave this diagnostic note unchanged", name)
+		assert.Contains(t, raw, "9007199254740993", name)
+		assert.Contains(t, raw, `"plain"`, name)
+	}
+	assert.Contains(t, response, "detail-secret", "copy-on-output leaves the source unchanged")
+}
+
 func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testing.T) {
-	for _, raw := range []string{`null`, `{}`, `{"error":null}`, `{"error":{}}`, `{"error":{"message":null}}`} {
+	for _, raw := range []string{
+		`null`,
+		`{}`,
+		`{"error":null}`,
+		`{"error":{}}`,
+		`{"error":{"message":null}}`,
+		`{"error":{"code":429,"message":"numeric code","target":true}}`,
+	} {
 		projected, err := redactExportRunError(json.RawMessage(raw))
 		require.NoError(t, err)
 		assert.Equal(t, raw, string(projected))
@@ -261,7 +406,37 @@ func TestExportErrorProjectionPreservesAbsentAndNullAndRejectsMalformed(t *testi
 		_, err := redactExportRunError(json.RawMessage(raw))
 		require.Error(t, err)
 	}
-	assert.Nil(t, runForJSON(nil))
+	projected, err := runForJSON(nil)
+	require.NoError(t, err)
+	assert.Nil(t, projected)
+}
+
+func TestRunErrorProjectionPreservesUnknownValuesAndKeyOrder(t *testing.T) {
+	const input = `{"id":"run","error":{"unknown":{"z":"plain value",` +
+		`"credential":"https://fixture-user:fixture-password@host/rows?sig=fixture-secret","a":true}}}`
+
+	projected, err := redactExportRunError(json.RawMessage(input))
+	require.NoError(t, err)
+	output := string(projected)
+	assert.Contains(t, output, `"z":"plain value"`)
+	assert.Contains(t, output, `"a":true`)
+	assert.NotContains(t, output, "fixture-user")
+	assert.NotContains(t, output, "fixture-password")
+	assert.NotContains(t, output, "fixture-secret")
+	assert.Less(t, strings.Index(output, `"z"`), strings.Index(output, `"credential"`))
+	assert.Less(t, strings.Index(output, `"credential"`), strings.Index(output, `"a"`))
+}
+
+func TestRunJSONPreservesScalarDiagnosticFields(t *testing.T) {
+	const response = `{"id":"run_scalar","error":{"code":429,"message":"numeric code","target":true}}`
+	var run eval_api.OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(response), &run))
+
+	projected, err := runForJSON(&run)
+	require.NoError(t, err)
+	raw, err := json.Marshal(projected)
+	require.NoError(t, err)
+	assert.JSONEq(t, response, string(raw))
 }
 
 func TestRunJSONCallersPreserveInlineSourceNumbers(t *testing.T) {

@@ -61,6 +61,11 @@ def bootstrap_sql(env):
     return content
 
 
+def bootstrap_digest(host, database, database_oid, principal, script):
+    state = "\n".join((host, database, str(database_oid), principal, script))
+    return hashlib.sha256(state.encode()).hexdigest()
+
+
 def prepare(settings, env):
     if settings["engine"] != "postgresql" or settings["auth"] != "managedIdentity":
         raise RuntimeError("Unsupported database/authentication combination")
@@ -108,7 +113,7 @@ def bootstrap(settings, env):
         raise RuntimeError("ACA has no reported outbound IPs; database connectivity is not established")
     script = bootstrap_sql(env)
     host = required(env, "SPRING_DATABASE_HOST")
-    digest = hashlib.sha256((host + "\n" + principal + "\n" + script).encode()).hexdigest()
+    database = settings["database"]
     token = json.loads(command(
         "az", "account", "get-access-token", "--resource-type", "oss-rdbms",
         "--subscription", subscription, "-o", "json",
@@ -138,10 +143,16 @@ def bootstrap(settings, env):
         elif str(mapping[0]).lower() != principal or mapping[1] != 0:
             raise RuntimeError("Existing SQL role has a different identity or administrator mapping")
 
-    with connect(settings["database"]) as connection:
+    with connect(database) as connection:
+        database_row = connection.execute(
+            "SELECT oid FROM pg_database WHERE datname = current_database()",
+        ).fetchone()
+        if database_row is None:
+            raise RuntimeError("Connected PostgreSQL database is missing from the system catalog")
+        digest = bootstrap_digest(host, database, database_row[0], principal, script)
         if env.get("SPRING_DATABASE_BOOTSTRAP_DIGEST") != digest:
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(
-                sql.Identifier(settings["database"])))
+                sql.Identifier(database)))
             connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
             connection.execute(script, prepare=False)
         flags = connection.execute(
@@ -164,7 +175,7 @@ def bootstrap(settings, env):
             raise RuntimeError("Runtime SQL role must not have admin, DDL, TEMP, or object ownership")
         connection.execute(
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                sql.Identifier(settings["database"]), sql.Identifier(ROLE)))
+                sql.Identifier(database), sql.Identifier(ROLE)))
     set_value("SPRING_DATABASE_BOOTSTRAP_DIGEST", digest)
     print("Non-admin SQL identity verified; reviewed schema/grants applied or unchanged bootstrap skipped.")
 

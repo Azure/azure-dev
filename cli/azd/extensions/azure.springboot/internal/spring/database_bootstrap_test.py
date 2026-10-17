@@ -1,7 +1,6 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -169,25 +168,27 @@ class BootstrapTests(unittest.TestCase):
 
         safe = (False, False, False, False, False, False)
         cases = (
-            ("initial", False, safe),
-            ("repeat", True, safe),
-            ("direct unsafe privilege", False, (True, False, False, False, False, False)),
-            ("inherited object ownership", False, (False, False, False, False, False, True)),
+            ("initial", None, "16384", False, safe),
+            ("repeat", "16384", "16384", True, safe),
+            ("recreated database", "16384", "16402", True, safe),
+            ("direct unsafe privilege", None, "16384", False, (True, False, False, False, False, False)),
+            ("inherited object ownership", None, "16384", False, (False, False, False, False, False, True)),
         )
-        for name, repeat, unsafe in cases:
+        for name, stored_database_oid, database_oid, mapping_exists, unsafe in cases:
             postgres, database = MagicMock(), MagicMock()
             postgres.__enter__.return_value = postgres
             database.__enter__.return_value = database
-            postgres.execute.return_value.fetchone.return_value = (principal, 0) if repeat else None
+            postgres.execute.return_value.fetchone.return_value = (principal, 0) if mapping_exists else None
             database.execute.return_value.fetchone.side_effect = [
-                (False, False, False), unsafe,
+                (database_oid,), (False, False, False), unsafe,
             ]
             psycopg = MagicMock()
             psycopg.connect.side_effect = [postgres, database]
             current = env.copy()
-            if repeat:
-                current["SPRING_DATABASE_BOOTSTRAP_DIGEST"] = hashlib.sha256(
-                    (host + "\n" + principal + "\n" + script).encode()).hexdigest()
+            if stored_database_oid is not None:
+                current["SPRING_DATABASE_BOOTSTRAP_DIGEST"] = bootstrap.bootstrap_digest(
+                    host, settings["database"], stored_database_oid, principal, script,
+                )
             with self.subTest(name=name), \
                     patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
                     patch.object(bootstrap, "command", side_effect=command), \
@@ -203,12 +204,16 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(psycopg.connect.call_args.kwargs["password"], "runtime-token")
             self.assertEqual(psycopg.connect.call_args.kwargs["sslmode"], "verify-full")
             executed = [call.args[0] for call in database.execute.call_args_list]
-            self.assertEqual(script in executed, not repeat)
-            if not repeat:
+            self.assertEqual(script in executed, stored_database_oid != database_oid)
+            if not mapping_exists:
                 self.assertIn("pgaadauth_create_principal_with_oid", postgres.execute.call_args.args[0])
                 self.assertEqual(postgres.execute.call_args.args[1], ("azd_app", principal))
             if not any(unsafe):
                 self.assertEqual(setter.call_args.args[0], "SPRING_DATABASE_BOOTSTRAP_DIGEST")
+                self.assertEqual(
+                    setter.call_args.args[1],
+                    bootstrap.bootstrap_digest(host, settings["database"], database_oid, principal, script),
+                )
 
     def test_mapping_conflict_does_not_execute_schema(self):
         principal = "00000000-0000-0000-0000-000000000002"

@@ -95,6 +95,7 @@ type FoundryProvisioningProvider struct {
 	existingProjectReuseOnly  bool
 	existingProjectID         string
 	existingAcrMode           string
+	greenfieldAcrMode         string
 	existingAcrEndpoint       string
 	existingAcrResourceID     string
 	existingAcrConnectionName string
@@ -307,19 +308,36 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
-	if !onDisk && endpoint == "" {
-		// Validate embedded config before any interactive prompts.
-		_, validationErr := synthesis.Synthesize(synthesis.Input{
-			RawAzureYAML:    rawYAML,
-			ServiceName:     svcName,
-			AcceptedHosts:   FoundryProvisioningServiceHosts,
-			Env:             p.networkEnvMap(ctx),
-			PreserveVarRefs: true,
-			ProjectRoot:     projectRoot,
+	if endpoint == "" {
+		// Validate greenfield config before any interactive prompts.
+		env := p.networkEnvMap(ctx)
+		groupKey := envKeyResourceGroup
+		if p.isLayer {
+			groupKey = envKeyFoundryRG
+		}
+		group := env[groupKey]
+		if group == "" && env["AZURE_ENV_NAME"] != "" {
+			group = defaultResourceGroupName(env["AZURE_ENV_NAME"])
+			if p.isLayer {
+				group += "-foundry"
+			}
+		}
+		env["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(env, group)
+		validationResult, validationErr := synthesis.Synthesize(synthesis.Input{
+			RawAzureYAML:      rawYAML,
+			ServiceName:       svcName,
+			AcceptedHosts:     FoundryProvisioningServiceHosts,
+			Env:               env,
+			ResourceGroupName: group,
+			PreserveVarRefs:   true,
+			ProjectRoot:       projectRoot,
 		})
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
+		}
+		if validationErr == nil {
+			p.greenfieldAcrMode = validationResult.ACRMode
 		}
 	}
 
@@ -355,12 +373,14 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	input := synthesis.Input{
-		RawAzureYAML:  rawYAML,
-		ServiceName:   svcName,
-		AcceptedHosts: FoundryProvisioningServiceHosts,
-		Env:           p.networkEnvMap(ctx),
-		ProjectRoot:   projectRoot,
+		RawAzureYAML:      rawYAML,
+		ServiceName:       svcName,
+		AcceptedHosts:     FoundryProvisioningServiceHosts,
+		Env:               p.networkEnvMap(ctx),
+		ProjectRoot:       projectRoot,
+		ResourceGroupName: p.rgName,
 	}
+	input.Env[envKeySubscriptionID] = p.subID
 	var res *synthesis.Result
 	if endpoint != "" {
 		if err := warnNetworkIgnoredInBrownfield(
@@ -377,12 +397,19 @@ func (p *FoundryProvisioningProvider) Initialize(
 		p.brownfieldEndpoint = endpoint
 		res, err = synthesis.SynthesizeExistingProject(input)
 	} else {
+		input.Env["AZD_FOUNDRY_ACR_MODE"] = p.greenfieldAcrMode
 		res, err = synthesis.Synthesize(input)
 	}
 	if err != nil {
 		return foundrySynthesisError(svcName, err)
 	}
 	p.synthResult = res
+	if endpoint == "" {
+		p.greenfieldAcrMode = res.ACRMode
+		if err := p.setEnv(ctx, "AZD_FOUNDRY_ACR_MODE", p.greenfieldAcrMode); err != nil {
+			return err
+		}
+	}
 	if endpoint != "" {
 		if err := p.resolveExistingProjectInputs(ctx); err != nil {
 			return err
@@ -1730,7 +1757,13 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 			envKeyFoundryRGOwner,
 		}}
 	}
-	return invalidatedEnvKeysResult()
+	result := invalidatedEnvKeysResult()
+	if p.greenfieldAcrMode == "reuse-connect" {
+		result.InvalidatedEnvKeys = slices.DeleteFunc(result.InvalidatedEnvKeys, func(key string) bool {
+			return key == "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+		})
+	}
+	return result
 }
 
 // confirmDestroy asks the user to confirm resource-group deletion when the
@@ -2011,6 +2044,13 @@ func (p *FoundryProvisioningProvider) Parameters(
 			Name:  "includeAcr",
 			Value: fmt.Sprintf("%v", p.synthResult.Parameters["includeAcr"]),
 		})
+		if id, ok := p.synthResult.Parameters["existingAcrResourceId"].(string); ok {
+			out = append(out, &azdext.ProvisioningParameter{
+				Name: "existingAcrResourceId", Value: id,
+				EnvVarMapping:      []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+				UsingEnvVarMapping: true,
+			})
+		}
 	}
 	return out, nil
 }

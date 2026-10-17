@@ -517,6 +517,147 @@ func TestInitializeLeavesSplitConnectionEnvironmentToOwningExtension(t *testing.
 	}
 }
 
+func TestInitializeExistingRegistry(t *testing.T) {
+	const subscription = "11111111-1111-1111-1111-111111111111"
+	for _, tt := range []struct {
+		name     string
+		group    string
+		layer    bool
+		explicit bool
+		virtual  bool
+		rejected bool
+		mode     string
+		noID     bool
+		noAcr    bool
+		invalid  string
+		wantMode string
+		wantErr  string
+		onDisk   bool
+	}{
+		{name: "reuse", group: "shared"},
+		{name: "on-disk reuse without recorded mode", group: "shared", onDisk: true},
+		{name: "on-disk recorded create", mode: "create", group: "rg-test", wantMode: "create", onDisk: true},
+		{name: "on-disk layer reuse", group: "shared", layer: true, onDisk: true},
+		{name: "on-disk same group rejected before prompting", group: "custom", explicit: true,
+			mode: "reuse-connect", rejected: true, onDisk: true},
+		{name: "virtual env selector wins", group: "shared", virtual: true},
+		{name: "default group rejected", group: "rg-test", mode: "reuse-connect", rejected: true},
+		{name: "explicit group rejected before prompting", group: "custom", explicit: true,
+			mode: "reuse-connect", rejected: true},
+		{name: "layer can reuse root registry", group: "root", layer: true},
+		{name: "layer default group rejected", group: "rg-test-foundry", layer: true,
+			mode: "reuse-connect", rejected: true},
+		{name: "legacy in-group ID without mode records create", group: "rg-test", wantMode: "create"},
+		{name: "empty ID records create", noID: true, wantMode: "create"},
+		{name: "recorded create ignores created ID", mode: "create", group: "rg-test", wantMode: "create"},
+		{name: "recorded reuse", mode: "reuse-connect", group: "shared"},
+		{name: "recorded reuse requires ID", mode: "reuse-connect", noID: true,
+			wantErr: "requires AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "unsupported recorded mode", mode: "already-connected", wantErr: "AZD_FOUNDRY_ACR_MODE"},
+		{name: "malformed ID", invalid: "registry", wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "wrong resource type", invalid: "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.Storage/accounts/a",
+			wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
+		{name: "no registry needed", noAcr: true, wantMode: "none"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			raw := "services:\n  project:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			if tt.noAcr {
+				raw = "services:\n  project:\n    host: azure.ai.project\n"
+			}
+			options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
+			if tt.layer {
+				raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n      path: infra/foundry\n"
+				options.Name = "foundry"
+				options.Path = "infra/foundry"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+			if tt.onDisk {
+				infraPath := options.Path
+				if infraPath == "" {
+					infraPath = onDiskInfraDir
+				}
+				require.NoError(t, os.MkdirAll(filepath.Join(root, infraPath), 0o750))
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, infraPath, onDiskBicepFile), []byte("// ejected Bicep"), 0o600))
+			}
+			id := "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
+				"/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+			if tt.noID {
+				id = ""
+			}
+			if tt.invalid != "" {
+				id = tt.invalid
+			}
+			values := map[string]string{
+				"AZURE_SUBSCRIPTION_ID":                subscription,
+				"AZURE_LOCATION":                       "eastus",
+				"AZURE_ENV_NAME":                       "test",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+				"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
+			}
+			if tt.layer {
+				values["AZURE_RESOURCE_GROUP"] = "root"
+			}
+			if tt.explicit {
+				values["AZURE_RESOURCE_GROUP"] = tt.group
+			}
+			if tt.rejected || tt.wantErr != "" {
+				delete(values, "AZURE_LOCATION")
+			}
+			if tt.virtual {
+				options.VirtualEnv = map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id}
+				values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = "invalid-overridden-selector"
+			}
+			env := &resolveEnvStubEnvServer{envName: "test", get: values}
+			prompt := &resolveEnvStubPromptServer{}
+			provider := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+			err := provider.Initialize(t.Context(), root, options)
+			if tt.rejected {
+				require.ErrorContains(t, err, "azd down deletes")
+				assert.Empty(t, env.set)
+			} else if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, env.set)
+			} else {
+				require.NoError(t, err)
+				wantMode := tt.wantMode
+				if wantMode == "" {
+					wantMode = "reuse-connect"
+				}
+				assert.Equal(t, wantMode, env.set["AZD_FOUNDRY_ACR_MODE"])
+				assert.Equal(t, wantMode, provider.greenfieldAcrMode)
+				if tt.onDisk {
+					assert.Nil(t, provider.armTemplate, "on-disk initialization must not load the embedded template")
+					return
+				}
+				params, err := provider.Parameters(t.Context())
+				require.NoError(t, err)
+				if wantMode == "reuse-connect" {
+					assert.Equal(t, map[string]any{"value": id}, provider.armParameters()["existingAcrResourceId"])
+					found := false
+					for _, param := range params {
+						if param.Name == "existingAcrResourceId" {
+							found = true
+							assert.Equal(t, []string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}, param.EnvVarMapping)
+							assert.Equal(t, id, param.Value)
+						}
+					}
+					assert.True(t, found)
+				} else {
+					assert.NotContains(t, provider.armParameters(), "existingAcrResourceId")
+					for _, param := range params {
+						assert.NotEqual(t, "existingAcrResourceId", param.Name)
+					}
+				}
+			}
+			assert.Zero(t, prompt.subscriptionN)
+			assert.Zero(t, prompt.locationN)
+		})
+	}
+}
+
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {
 	tests := []struct {
 		name    string

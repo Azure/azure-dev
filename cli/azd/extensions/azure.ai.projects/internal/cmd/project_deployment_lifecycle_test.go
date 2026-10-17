@@ -31,12 +31,16 @@ func (s *adoptedDeploymentPromptServer) Select(
 }
 
 func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
-	yamlDeployment := synthesis.Deployment{Name: "yaml", Model: synthesis.DeploymentModel{Name: "model-a"}}
+	yamlDeployment := synthesis.Deployment{
+		Name: "yaml", Model: synthesis.DeploymentModel{Name: "model-a", Format: "OpenAI", Version: "v1"},
+		Sku: synthesis.DeploymentSku{Name: "Standard", Capacity: 1},
+	}
 	selected := synthesis.Deployment{
-		Name: "env", Model: synthesis.DeploymentModel{Name: "model-b", Version: "v2"},
+		Name: "env", Model: synthesis.DeploymentModel{Name: "model-b", Format: "OpenAI", Version: "v2"},
 		Sku: synthesis.DeploymentSku{Name: "Standard", Capacity: 7},
 	}
-	extra := synthesis.Deployment{Name: "extra", Model: synthesis.DeploymentModel{Name: "other"}}
+	extra := selected
+	extra.Name, extra.Model.Name = "extra", "other"
 	for _, test := range []struct {
 		name     string
 		choice   int32
@@ -49,7 +53,11 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 		{name: "skip all persists empty", override: true, choice: 2},
 		{name: "deploy preserves environment tuple", override: true, choice: 1},
 		{name: "no prompt reuses existing", override: true, noPrompt: true},
-		{name: "YAML fallback reconciles both stores"},
+		{name: "YAML fallback reuse preserves portable declarations"},
+		{name: "YAML fallback skip preserves portable declarations", choice: 2},
+		{name: "YAML fallback no prompt preserves portable declarations", noPrompt: true},
+		{name: "YAML fallback deployment write rollback", failKey: projectDeploymentsEnvKey},
+		{name: "YAML fallback default write rollback", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "deployment write rollback", override: true, failKey: projectDeploymentsEnvKey},
 		{name: "default write rollback", override: true, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 	} {
@@ -57,9 +65,9 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 			client, project, env, _, _ := newSelfInitializingDeploymentClient(
 				t, t.TempDir(), &adoptedDeploymentPromptServer{choice: test.choice},
 			)
-			declaration, err := deploymentValue([]synthesis.Deployment{yamlDeployment})
-			require.NoError(t, err)
-			service := map[string]any{"deployments": declaration.AsInterface()}
+			service := mustProjectProperties(t, map[string]any{
+				"deployments": []any{deploymentMap(yamlDeployment)},
+			}).AsMap()
 			project.services["project"] = maps.Clone(service)
 			effective := []synthesis.Deployment{yamlDeployment}
 			if test.override {
@@ -76,12 +84,16 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 			env.failKey = test.failKey
 			live := []liveProjectDeployment{{Name: "existing", Model: effective[0].Model}}
 			defaultName, changed, restore, err := reconcileAdoptedDeploymentChoices(
-				t.Context(), client, "test", "project", []synthesis.Deployment{yamlDeployment},
-				live, original, service, test.noPrompt,
+				t.Context(), client, "test", []synthesis.Deployment{yamlDeployment},
+				live, original, test.noPrompt,
 			)
+			assert.Equal(t, service, project.services["project"])
+			assert.False(t, project.deploymentSet, "adoption must never write portable deployments")
 			if test.failKey != "" {
 				require.ErrorContains(t, err, "environment write failed")
-				assert.Equal(t, original, env.values)
+				for key, value := range env.values {
+					assert.Equal(t, original[key], value, "restore %s", key)
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -102,13 +114,11 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 			} else if test.choice != 1 {
 				assert.Equal(t, "existing", defaultName)
 			}
-			if test.override {
-				assert.Equal(t, service, project.services["project"])
-			}
 			require.NoError(t, restore())
 			assert.Equal(t, original[projectDeploymentsEnvKey], env.values[projectDeploymentsEnvKey])
 			assert.Equal(t, "old-default", env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 			assert.Equal(t, service, project.services["project"])
+			assert.False(t, project.deploymentSet, "rollback must never write portable deployments")
 		})
 	}
 }
@@ -118,7 +128,7 @@ func TestEjectProjectInfraPreservesEffectiveDeployments(t *testing.T) {
 	const resourceID = "/subscriptions/subscription/resourceGroups/rg/providers/" +
 		"Microsoft.CognitiveServices/accounts/account/projects/project"
 	envDeployment := synthesis.Deployment{
-		Name: "env-b", Model: synthesis.DeploymentModel{Name: "model-b", Version: "v2"},
+		Name: "env-b", Model: synthesis.DeploymentModel{Name: "model-b", Format: "OpenAI", Version: "v2"},
 		Sku: synthesis.DeploymentSku{Name: "Standard", Capacity: 7},
 	}
 	encoded, err := provisioning.EncodeProjectDeployments([]synthesis.Deployment{envDeployment})

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -128,9 +129,13 @@ func TestDefaultModelDeploymentName(t *testing.T) {
 		"deployments": []any{map[string]any{"name": "yaml-chat"}},
 	}
 	encoded, err := provisioning.EncodeProjectDeployments([]synthesis.Deployment{{
-		Name: "env-chat",
+		Name:  "env-chat",
+		Model: synthesis.DeploymentModel{Name: "gpt-4.1", Format: "OpenAI", Version: "1"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 1},
 	}, {
-		Name: "env-embedding",
+		Name:  "env-embedding",
+		Model: synthesis.DeploymentModel{Name: "text-embedding-3-small", Format: "OpenAI", Version: "1"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 1},
 	}})
 	require.NoError(t, err)
 
@@ -138,7 +143,10 @@ func TestDefaultModelDeploymentName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "env-chat", name)
 
-	name, err = defaultModelDeploymentName(`[{"name":"raw-chat"}]`, service)
+	name, err = defaultModelDeploymentName(
+		`[{"name":"raw-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},`+
+			`"sku":{"name":"Standard","capacity":1}}]`, service,
+	)
 	require.NoError(t, err)
 	assert.Equal(t, "raw-chat", name)
 
@@ -473,6 +481,8 @@ func TestProjectLifecycleHandlerEjectedDoesNotPrompt(t *testing.T) {
 }
 
 func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
+	const override = `[{"name":"env-only","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
 	for _, test := range []struct {
 		name, value                     string
 		noPrompt, wantPrompt, wantError bool
@@ -480,8 +490,8 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 		{name: "interactive missing", wantPrompt: true},
 		{name: "interactive whitespace", value: " \t", wantPrompt: true},
 		{name: "no-prompt defaults", noPrompt: true},
-		{name: "existing override", value: `[{"name":"env-only"}]`},
-		{name: "existing escaped", value: `[{\"name\":\"env-only\"}]`},
+		{name: "existing override", value: override},
+		{name: "existing escaped", value: strings.ReplaceAll(override, `"`, `\"`)},
 		{name: "intentional empty", value: "[]"},
 		{name: "no-prompt override", value: "[]", noPrompt: true},
 		{name: "malformed", value: "{", wantError: true},

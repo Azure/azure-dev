@@ -1449,12 +1449,17 @@ func validateExistingEndpointMode(
 				"before retaining project resources",
 		)
 	}
-	if service == nil {
-		return nil
+	deployments, _, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
 	}
-	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
-	hasDeployments := hasManagedDeployments(service.Resolved) ||
-		hasManagedDeployments(service.Raw)
+	sameEndpoint := false
+	hasDeployments := len(deployments) > 0
+	if service != nil {
+		sameEndpoint = equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
+		hasDeployments = hasDeployments || hasManagedDeployments(service.Resolved) ||
+			hasManagedDeployments(service.Raw)
+	}
 	if hasDeployments &&
 		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {
 		return exterrors.Dependency(
@@ -1465,7 +1470,7 @@ func validateExistingEndpointMode(
 				"before managing deployments",
 		)
 	}
-	if !sameEndpoint &&
+	if service != nil && !sameEndpoint &&
 		hasManagedProjectFields(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",

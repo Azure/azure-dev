@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/synthesis"
@@ -30,7 +31,7 @@ func (s *scopedProjectDeploymentsEnvServer) GetValues(
 	return s.resolveEnvStubEnvServer.GetValues(ctx, request)
 }
 
-func TestProjectDeploymentsRoundTrip(t *testing.T) {
+func TestDecodeProjectDeploymentsRoundTrip(t *testing.T) {
 	t.Parallel()
 	deployments := []synthesis.Deployment{{
 		Name: `chat\"quoted`,
@@ -78,7 +79,8 @@ func TestDecodeProjectDeploymentsRejectsMalformed(t *testing.T) {
 	t.Parallel()
 	for _, value := range []string{
 		"null", "{}", `"[]"`, "true", "1", "[", `[{"name":}]`, `[{\"name\":}]`,
-		`["chat"]`, `[null]`, `[{"sku":{"capacity":"ten"}}]`, "[] trailing", `[{\"name\":\"\x40\"}]`,
+		`["chat"]`, `[null]`, `[{}]`, `[{"sku":{"capacity":"ten"}}]`,
+		"[] trailing", "[] []", `[{\"name\":\"\x40\"}]`,
 	} {
 		t.Run(value, func(t *testing.T) {
 			_, present, err := DecodeProjectDeployments(value)
@@ -86,6 +88,41 @@ func TestDecodeProjectDeploymentsRejectsMalformed(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), ProjectDeploymentsEnvKey)
 			assert.Contains(t, err.Error(), "azd env set")
+		})
+	}
+}
+
+func TestDecodeProjectDeploymentsRejectsInvalidFields(t *testing.T) {
+	t.Parallel()
+	const valid = `[{"name":"chat","model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, test := range []struct {
+		name, remove, replace, want string
+	}{
+		{"missing name", `"name":"chat",`, "", "requires name"},
+		{"missing model", `"model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},`, "", "requires model.format"},
+		{"missing format", `"format":"OpenAI",`, "", "requires model.format"},
+		{"missing model name", `"name":"gpt-4.1",`, "", "requires model.name"},
+		{"missing version", `,"version":"1"`, "", "requires model.version"},
+		{"missing sku", `,"sku":{"name":"Standard","capacity":1}`, "", "requires sku.name"},
+		{"missing sku name", `"name":"Standard",`, "", "requires sku.name"},
+		{"missing capacity", `,"capacity":1`, "", "requires sku.capacity"},
+		{"zero capacity", `"capacity":1`, `"capacity":0`, "requires sku.capacity"},
+		{"negative capacity", `"capacity":1`, `"capacity":-1`, "requires sku.capacity"},
+		{"fractional capacity", `"capacity":1`, `"capacity":1.5`, "cannot unmarshal"},
+		{"blank name", `"name":"chat"`, `"name":" "`, "requires name"},
+		{"null model", `"model":{"format":"OpenAI","name":"gpt-4.1","version":"1"}`, `"model":null`, "requires model.format"},
+		{"null sku", `"sku":{"name":"Standard","capacity":1}`, `"sku":null`, "requires sku.name"},
+		{"unknown deployment property", `"name":"chat"`, `"name":"chat","extra":true`, `unknown field "extra"`},
+		{"unknown model property", `"format":"OpenAI"`, `"format":"OpenAI","extra":true`, `unknown field "extra"`},
+		{"unknown sku property", `"capacity":1`, `"capacity":1,"extra":true`, `unknown field "extra"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := strings.Replace(valid, test.remove, test.replace, 1)
+			_, present, err := DecodeProjectDeployments(value)
+			assert.True(t, present)
+			require.ErrorContains(t, err, test.want)
+			assert.Contains(t, err.Error(), ProjectDeploymentsEnvKey)
 		})
 	}
 }

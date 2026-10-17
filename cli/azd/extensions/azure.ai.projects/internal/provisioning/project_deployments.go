@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"azure.ai.projects/internal/synthesis"
@@ -48,13 +49,36 @@ func DecodeProjectDeployments(value string) ([]synthesis.Deployment, bool, error
 		return nil, true, invalidProjectDeployments(fmt.Errorf("expected a JSON array"))
 	}
 	var deployments []*synthesis.Deployment
-	if err := json.Unmarshal([]byte(value), &deployments); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(value))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&deployments); err != nil {
 		return nil, true, invalidProjectDeployments(err)
 	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, true, invalidProjectDeployments(fmt.Errorf("expected a single JSON array"))
+	}
 	result := make([]synthesis.Deployment, 0, len(deployments))
-	for _, deployment := range deployments {
+	for i, deployment := range deployments {
 		if deployment == nil {
 			return nil, true, invalidProjectDeployments(fmt.Errorf("deployment entries must be objects, not null"))
+		}
+		for _, field := range []struct{ name, value string }{
+			{"name", deployment.Name},
+			{"model.format", deployment.Model.Format},
+			{"model.name", deployment.Model.Name},
+			{"model.version", deployment.Model.Version},
+			{"sku.name", deployment.Sku.Name},
+		} {
+			if strings.TrimSpace(field.value) == "" {
+				return nil, true, invalidProjectDeployments(
+					fmt.Errorf("deployment entry %d requires %s", i, field.name),
+				)
+			}
+		}
+		if deployment.Sku.Capacity <= 0 {
+			return nil, true, invalidProjectDeployments(
+				fmt.Errorf("deployment entry %d requires sku.capacity to be a positive integer", i),
+			)
 		}
 		result = append(result, *deployment)
 	}

@@ -188,13 +188,15 @@ func TestResolveTemplateEnvironmentDeploymentOverlay(t *testing.T) {
 	}
 	encoded, err := EncodeProjectDeployments([]synthesis.Deployment{envDeployment})
 	require.NoError(t, err)
+	raw, err := json.Marshal([]synthesis.Deployment{envDeployment})
+	require.NoError(t, err)
 	for _, test := range []struct {
 		name, value       string
 		onDisk, wantError bool
 		want              []synthesis.Deployment
 	}{
 		{name: "env B wins", value: encoded, want: []synthesis.Deployment{envDeployment}},
-		{name: "raw JSON", value: `[{"name":"env-b"}]`, want: []synthesis.Deployment{{Name: "env-b"}}},
+		{name: "raw JSON", value: string(raw), want: []synthesis.Deployment{envDeployment}},
 		{name: "missing keeps YAML", want: []synthesis.Deployment{yamlDeployment}},
 		{name: "blank keeps YAML", value: " \t", want: []synthesis.Deployment{yamlDeployment}},
 		{name: "empty overrides YAML", value: "[]", want: []synthesis.Deployment{}},
@@ -246,7 +248,9 @@ func TestInitializeExistingProjectEffectiveDeployments(t *testing.T) {
 		yamlDeployments, wantReuse, wantError bool
 	}{
 		{name: "missing without declarations reuses", wantReuse: true},
-		{name: "env deployments prevent reuse", value: `[{"name":"env-b"}]`},
+		{name: "env deployments prevent reuse",
+			value: `[{"name":"env-b","model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},` +
+				`"sku":{"name":"Standard","capacity":1}}]`},
 		{name: "empty env suppresses YAML mutations", value: "[]", yamlDeployments: true, wantReuse: true},
 		{name: "missing retains YAML mutations", yamlDeployments: true},
 		{name: "malformed fails before reuse", value: "{", wantError: true},

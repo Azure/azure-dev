@@ -207,7 +207,7 @@ probes: placeholder ? [] : [
 }
 
 func TestDestinationOwnership(t *testing.T) {
-	for _, name := range []string{"azure.yaml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
+	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
 		t.Run(name, func(t *testing.T) {
 			directory := t.TempDir()
 			writeFixture(t, directory, name, "user-owned")

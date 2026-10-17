@@ -329,7 +329,7 @@ func CheckDestination(directory string) error {
 		return err
 	}
 	defer root.Close()
-	for _, name := range []string{"azure.yaml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
+	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
 		if _, err := root.Lstat(name); err == nil {
 			return fmt.Errorf("%s already exists; "+
 				"initialization does not overwrite or adopt existing deployment files", name)

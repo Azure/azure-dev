@@ -4,6 +4,7 @@
 package spring
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -159,6 +160,58 @@ func TestApplyCredentialRepairsRejectsChangedSource(t *testing.T) {
 	data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
 	require.NoError(t, readErr)
 	require.Contains(t, string(data), "changed")
+}
+
+func TestApplyCredentialRepairsStagingFailureLeavesSourceUnchanged(t *testing.T) {
+	directory := t.TempDir()
+	file := "src/main/resources/application.properties"
+	const original = "spring.datasource.password=${DATABASE_PASSWORD:local}\n"
+	writeFixture(t, directory, file, original)
+	ops := defaultCredentialRepairFileOps()
+	ops.stage = func(*os.Root, string, []byte, os.FileMode) (string, error) {
+		return "", errors.New("injected write failure")
+	}
+	err := applyCredentialRepairs(t.Context(), directory, []CredentialRepair{{
+		File: file, Property: "spring.datasource.password",
+		Replacement: "${DATABASE_PASSWORD}", original: "${DATABASE_PASSWORD:local}",
+	}}, ops)
+	require.ErrorContains(t, err, "injected write failure")
+	data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+	require.NoError(t, readErr)
+	require.Equal(t, original, string(data))
+}
+
+func TestApplyCredentialRepairsRenameFailureRollsBack(t *testing.T) {
+	directory := t.TempDir()
+	files := []string{
+		"src/main/resources/application-mysql.properties",
+		"src/main/resources/application-postgres.properties",
+	}
+	var repairs []CredentialRepair
+	for _, file := range files {
+		writeFixture(t, directory, file, "spring.datasource.password=local\n")
+		repairs = append(repairs, CredentialRepair{
+			File: file, Property: "spring.datasource.password",
+			Replacement: "${SPRING_DATASOURCE_PASSWORD}", original: "local",
+		})
+	}
+	ops := defaultCredentialRepairFileOps()
+	rename := ops.rename
+	calls := 0
+	ops.rename = func(root *os.Root, oldName, newName string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("injected rename failure")
+		}
+		return rename(root, oldName, newName)
+	}
+	err := applyCredentialRepairs(t.Context(), directory, repairs, ops)
+	require.ErrorContains(t, err, "injected rename failure")
+	for _, file := range files {
+		data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+		require.NoError(t, readErr)
+		require.Equal(t, "spring.datasource.password=local\n", string(data))
+	}
 }
 
 func TestAnalyzeIgnoresUnknownCredentialLikeProperties(t *testing.T) {

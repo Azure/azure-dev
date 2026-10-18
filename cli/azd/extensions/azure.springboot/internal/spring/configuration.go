@@ -5,6 +5,8 @@ package spring
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -525,6 +527,33 @@ func credentialRepairDiagnostic(repairs []CredentialRepair) error {
 
 // ApplyCredentialRepairs removes confirmed literal datasource password values from properties files.
 func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []CredentialRepair) error {
+	return applyCredentialRepairs(ctx, directory, repairs, defaultCredentialRepairFileOps())
+}
+
+type credentialRepairFileOps struct {
+	stage  func(*os.Root, string, []byte, fs.FileMode) (string, error)
+	rename func(*os.Root, string, string) error
+	remove func(*os.Root, string) error
+}
+
+func defaultCredentialRepairFileOps() credentialRepairFileOps {
+	return credentialRepairFileOps{
+		stage:  stageCredentialRepairFile,
+		rename: func(root *os.Root, oldName, newName string) error { return root.Rename(oldName, newName) },
+		remove: func(root *os.Root, name string) error { return root.Remove(name) },
+	}
+}
+
+type stagedCredentialRepair struct {
+	target           string
+	updated          string
+	original         string
+	preserveOriginal bool
+}
+
+func applyCredentialRepairs(
+	ctx context.Context, directory string, repairs []CredentialRepair, ops credentialRepairFileOps,
+) error {
 	if len(repairs) == 0 {
 		return errors.New("no credential repairs were supplied")
 	}
@@ -541,7 +570,17 @@ func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []Cre
 		}
 		grouped[repair.File] = append(grouped[repair.File], repair)
 	}
-	originals, updated := map[string][]byte{}, map[string][]byte{}
+	var staged []stagedCredentialRepair
+	defer func() {
+		for _, file := range staged {
+			if file.updated != "" {
+				_ = ops.remove(root, file.updated)
+			}
+			if file.original != "" && !file.preserveOriginal {
+				_ = ops.remove(root, file.original)
+			}
+		}
+	}()
 	for _, file := range slices.Sorted(maps.Keys(grouped)) {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -561,18 +600,51 @@ func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []Cre
 		if err != nil {
 			return fmt.Errorf("preparing credential repair for %s: %w", file, err)
 		}
-		originals[file], updated[file] = data, []byte(repaired)
-	}
-	var written []string
-	for _, file := range slices.Sorted(maps.Keys(updated)) {
-		if err := writeRootFile(root, file, updated[file]); err != nil {
-			err = errors.Join(err, writeRootFile(root, file, originals[file]))
-			for _, previous := range slices.Backward(written) {
-				err = errors.Join(err, writeRootFile(root, previous, originals[previous]))
-			}
-			return fmt.Errorf("applying credential repairs: %w", err)
+		updatedName, err := ops.stage(root, file, []byte(repaired), info.Mode())
+		if err != nil {
+			return fmt.Errorf("staging credential repair for %s: %w", file, err)
 		}
-		written = append(written, file)
+		originalName, err := ops.stage(root, file, data, info.Mode())
+		if err != nil {
+			_ = ops.remove(root, updatedName)
+			return fmt.Errorf("staging credential backup for %s: %w", file, err)
+		}
+		staged = append(staged, stagedCredentialRepair{
+			target: file, updated: updatedName, original: originalName,
+		})
+	}
+	var applied []int
+	for i := range staged {
+		file := &staged[i]
+		if err := ops.rename(root, file.updated, file.target); err != nil {
+			var rollbackErr error
+			for _, previousIndex := range slices.Backward(applied) {
+				previous := &staged[previousIndex]
+				if restoreErr := ops.rename(root, previous.original, previous.target); restoreErr != nil {
+					previous.preserveOriginal = true
+					rollbackErr = errors.Join(rollbackErr,
+						fmt.Errorf("restoring %s: %w", previous.target, restoreErr))
+				} else {
+					previous.original = ""
+				}
+			}
+			return fmt.Errorf("applying credential repair to %s: %w",
+				file.target, errors.Join(err, rollbackErr))
+		}
+		file.updated = ""
+		applied = append(applied, i)
+	}
+	var cleanupErr error
+	for i := range staged {
+		if err := ops.remove(root, staged[i].original); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			cleanupErr = errors.Join(cleanupErr,
+				fmt.Errorf("removing credential repair backup for %s: %w", staged[i].target, err))
+		} else {
+			staged[i].original = ""
+		}
+	}
+	if cleanupErr != nil {
+		return cleanupErr
 	}
 	return nil
 }
@@ -619,13 +691,46 @@ func repairPropertiesCredentials(data string, repairs []CredentialRepair) (strin
 	return strings.Join(lines, ""), nil
 }
 
-func writeRootFile(root *os.Root, name string, data []byte) error {
-	file, err := root.OpenFile(name, os.O_WRONLY|os.O_TRUNC, 0)
-	if err != nil {
-		return err
+func stageCredentialRepairFile(
+	root *os.Root, target string, data []byte, mode fs.FileMode,
+) (result string, resultErr error) {
+	parent, base := path.Dir(target), path.Base(target)
+	for range 128 {
+		var random [8]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			return "", fmt.Errorf("creating random staging name: %w", err)
+		}
+		name := path.Join(parent, "."+base+".azd-repair-"+hex.EncodeToString(random[:]))
+		file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		defer func() {
+			if resultErr != nil {
+				_ = file.Close()
+				_ = root.Remove(name)
+			}
+		}()
+		written, err := file.Write(data)
+		if err == nil && written != len(data) {
+			err = io.ErrShortWrite
+		}
+		if err == nil {
+			err = file.Chmod(mode.Perm())
+		}
+		if err == nil {
+			err = file.Sync()
+		}
+		err = errors.Join(err, file.Close())
+		if err != nil {
+			return "", err
+		}
+		return name, nil
 	}
-	_, writeErr := file.Write(data)
-	return errors.Join(writeErr, file.Close())
+	return "", errors.New("cannot allocate a credential repair staging file")
 }
 
 func hasLiteralCredential(value string) bool {

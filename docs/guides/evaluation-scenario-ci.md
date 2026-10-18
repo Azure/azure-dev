@@ -12,6 +12,13 @@ Both CI surfaces use
 [`install_packages.ps1`](../../eng/scripts/eval-scenario-ci/install_packages.ps1).
 Resolved versions are recorded in job output; these checks intentionally track
 releases rather than fixing a historical package version.
+The installer selects only the production `azd` source and omits `--version`,
+so both packages use the CLI's default latest-release selection:
+
+```powershell
+azd extension install azure.ai.evaluations --source azd --no-prompt
+azd extension install azure.ai.dataset --source azd --no-prompt
+```
 
 ## Internal live pipeline
 

@@ -114,9 +114,10 @@ class PowerShellScriptTests(unittest.TestCase):
             installs = [command for command in commands if command[:2] == ["extension", "install"]]
             self.assertEqual(
                 installs,
-                [["extension", "install", extension, "--source", "azd", "--version", "latest", "--no-prompt"]
+                [["extension", "install", extension, "--source", "azd", "--no-prompt"]
                  for extension in ("azure.ai.evaluations", "azure.ai.dataset")],
             )
+            self.assertIn(["extension", "list", "--installed", "--source", "azd", "--output", "json"], commands)
             self.assertIn(["ai", "eval", "version", "--output", "json"], commands)
             self.assertIn(["ai", "dataset", "version", "--output", "json"], commands)
 

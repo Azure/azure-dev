@@ -526,9 +526,16 @@ class WorkflowContractTests(unittest.TestCase):
         for surface in (workflow, pipeline):
             self.assertIn("eng/scripts/eval-scenario-ci/install_packages.ps1", surface)
             self.assertNotIn("azd extension install", surface)
-        self.assertIn("--source azd --version latest --no-prompt", installer)
+        for surface in (workflow, pipeline, installer):
+            for forbidden in (
+                "AZD_VERSION", "AZD_REGISTRY_URL", "AZD_EVALUATIONS_VERSION", "AZD_DATASET_VERSION",
+                "azd-foundry-feed", "extension source add", "--version",
+            ):
+                self.assertNotIn(forbidden, surface)
+        self.assertIn("version: latest", workflow)
+        self.assertIn("Version: latest", pipeline)
+        self.assertIn("azd extension install $extensionId --source azd --no-prompt", installer)
         self.assertIn("$package.installedVersion -cne $package.version", installer)
-        self.assertNotIn("extension source add", installer)
 
     def test_ado_live_gate_is_manual_opt_in_internal_and_main_only(self) -> None:
         pipeline = (

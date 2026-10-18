@@ -12,7 +12,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $extensionIds = @("azure.ai.evaluations", "azure.ai.dataset")
 foreach ($extensionId in $extensionIds) {
-    azd extension install $extensionId --source azd --version latest --no-prompt
+    azd extension install $extensionId --source azd --no-prompt
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to install $extensionId from the canonical azd registry."
     }

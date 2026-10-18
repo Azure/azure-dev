@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -502,13 +503,25 @@ class WriteEvidenceTests(unittest.TestCase):
 
 
 class WorkflowContractTests(unittest.TestCase):
+    def _assert_production_registry(self, surface: str) -> None:
+        for pattern in (
+            r"\bextension\s+source\s+add\b",
+            r"--source(?:\s+|=)(?!azd(?:\s|$))\S+",
+            r"--version\b",
+            r"registry\.json\b",
+            r"githubusercontent\.com\b",
+        ):
+            self.assertNotRegex(surface, re.compile(pattern, re.IGNORECASE))
+        for url in re.findall(r"https?://[^\s\"'<>]+", surface, flags=re.IGNORECASE):
+            self.assertEqual(url, "https://aka.ms/azd/extensions/registry")
+
     def test_github_actions_has_no_live_authentication_surface(self) -> None:
         workflow = (
             REPOSITORY_ROOT / ".github" / "workflows" / "eval-scenario-ci.yml"
         ).read_text(encoding="utf-8")
 
         for forbidden in ("secrets.", "id-token:", "run_live", "auth login", "AZURE_SUBSCRIPTION_ID",
-                          "AZURE_AI_PROJECT_ENDPOINT", "live-scenario:", "m7md7sien/azd-foundry-feed"):
+                          "AZURE_AI_PROJECT_ENDPOINT", "live-scenario:"):
             self.assertNotIn(forbidden, workflow)
         self.assertIn("version: latest", workflow)
         self.assertIn("contents: read", workflow)
@@ -529,9 +542,9 @@ class WorkflowContractTests(unittest.TestCase):
         for surface in (workflow, pipeline, installer):
             for forbidden in (
                 "AZD_VERSION", "AZD_REGISTRY_URL", "AZD_EVALUATIONS_VERSION", "AZD_DATASET_VERSION",
-                "azd-foundry-feed", "extension source add", "--version",
             ):
                 self.assertNotIn(forbidden, surface)
+            self._assert_production_registry(surface)
         self.assertIn("version: latest", workflow)
         self.assertIn("Version: latest", pipeline)
         self.assertIn("azd extension install $extensionId --source azd --no-prompt", installer)

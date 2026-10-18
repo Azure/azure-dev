@@ -68,8 +68,8 @@ def bootstrap_sql(env):
     return content
 
 
-def bootstrap_digest(host, database, database_oid, principal, script):
-    state = "\n".join((host, database, str(database_oid), principal, script))
+def bootstrap_digest(host, database, database_oid, role_oid, principal, script):
+    state = "\n".join((host, database, str(database_oid), str(role_oid), principal, script))
     return hashlib.sha256(state.encode()).hexdigest()
 
 
@@ -216,7 +216,12 @@ def bootstrap(settings, env):
         ).fetchone()
         if database_row is None:
             raise RuntimeError("Connected PostgreSQL database is missing from the system catalog")
-        digest = bootstrap_digest(host, database, database_row[0], principal, script)
+        role_row = connection.execute("SELECT oid FROM pg_roles WHERE rolname = %s", (ROLE,)).fetchone()
+        if role_row is None:
+            raise RuntimeError("Runtime SQL role is missing after identity mapping")
+        # Role creation commits separately. Its OID must invalidate cached grants even if
+        # a failed schema transaction is retried after the replacement mapping already exists.
+        digest = bootstrap_digest(host, database, database_row[0], role_row[0], principal, script)
         # Cache only SQL execution; identity and effective privilege checks must run on every provision.
         if env.get("SPRING_DATABASE_BOOTSTRAP_DIGEST") != digest:
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(

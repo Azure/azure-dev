@@ -192,14 +192,14 @@ class BootstrapTests(unittest.TestCase):
             database.__enter__.return_value = database
             postgres.execute.return_value.fetchone.return_value = (principal, 0) if mapping_exists else None
             database.execute.return_value.fetchone.side_effect = [
-                (database_oid,), flags, unsafe,
+                (database_oid,), (24576,), flags, unsafe,
             ]
             psycopg = MagicMock()
             psycopg.connect.side_effect = [postgres, database]
             current = env.copy()
             if stored_database_oid is not None:
                 current["SPRING_DATABASE_BOOTSTRAP_DIGEST"] = bootstrap.bootstrap_digest(
-                    host, settings["database"], stored_database_oid, principal, script,
+                    host, settings["database"], stored_database_oid, 24576, principal, script,
                 )
             with self.subTest(name=name), \
                     patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
@@ -233,7 +233,7 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(setter.call_args.args[0], "SPRING_DATABASE_BOOTSTRAP_DIGEST")
                 self.assertEqual(
                     setter.call_args.args[1],
-                    bootstrap.bootstrap_digest(host, settings["database"], database_oid, principal, script),
+                    bootstrap.bootstrap_digest(host, settings["database"], database_oid, 24576, principal, script),
                 )
 
     def test_mapping_conflict_does_not_execute_schema(self):

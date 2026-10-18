@@ -211,8 +211,10 @@ GRANT USAGE ON SEQUENCE public.items_id_seq TO azd_app;
 The runtime receives no password; the JDBC plugin explicitly selects managed
 identity. Runtime schema initialization and Hibernate DDL are disabled. Application
 migration tools must be configured separately rather than run under this role.
-Unchanged bootstrap SQL is skipped using a local host/identity/script digest,
-but principal mapping and privilege checks still run. Changed SQL executes again:
+Unchanged bootstrap SQL is skipped using a local host/identity/script digest
+that also includes database and runtime-role object IDs. Recreating either
+invalidates cached grants, including after a failed recovery attempt.
+Principal mapping and privilege checks still run. Changed SQL executes again:
 make it an intentional, repeatable migration, not a destructive sample reset.
 
 The template declares exact bootstrap and ACA-reported IPv4 firewall rules for

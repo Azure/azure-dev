@@ -150,6 +150,117 @@ class DatabasePrivilegeTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "object ownership"):
                         bootstrap.validate_runtime_privileges(self.connection)
 
+    def test_recreated_role_recovers_grants_after_failed_attempt(self):
+        import psycopg
+
+        principal = "00000000-0000-0000-0000-000000000002"
+        env = {
+            "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "SPRING_APPLICATION_PRINCIPAL_ID": principal,
+            "SPRING_APPLICATION_ID": "/example/app",
+            "SPRING_DATABASE_HOST": "example.postgres.database.azure.com",
+            "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
+        }
+        database = self.connection.execute("SELECT current_database()").fetchone()[0]
+        settings = {"engine": "postgresql", "auth": "managedIdentity", "database": database}
+        script = (
+            "INSERT INTO privilege_test.bootstrap_runs DEFAULT VALUES; "
+            "GRANT USAGE ON SCHEMA privilege_test TO azd_app; "
+            "GRANT SELECT ON privilege_test.items TO azd_app; "
+            "DO $recovery$ BEGIN "
+            "IF (SELECT fail FROM privilege_test.recovery_control) THEN "
+            "GRANT CREATE ON SCHEMA privilege_test TO azd_app; "
+            "END IF; END $recovery$;"
+        )
+        creations = []
+
+        def mapping_query(statement, parameters):
+            cursor = MagicMock()
+            if "pgaadauth_list_principals" in statement:
+                role = self.connection.execute("SELECT oid FROM pg_roles WHERE rolname = 'azd_app'").fetchone()
+                cursor.fetchone.return_value = (principal, 0) if role else None
+            elif "pgaadauth_create_principal_with_oid" in statement:
+                self.assertEqual(parameters, ("azd_app", principal))
+                # The Azure function is unavailable locally. Execute its role creation through
+                # a real independent connection, committing before the application transaction.
+                self.connection.execute("CREATE ROLE azd_app NOLOGIN NOINHERIT")
+                creations.append(self.connection.execute(
+                    "SELECT oid FROM pg_roles WHERE rolname = 'azd_app'",
+                ).fetchone()[0])
+            else:
+                self.fail("Unexpected identity mapping query")
+            return cursor
+
+        def provision():
+            application = psycopg.connect(self.dsn, connect_timeout=10)
+            mapping = MagicMock()
+            mapping.__enter__.return_value = mapping
+            mapping.execute.side_effect = mapping_query
+            responses = [
+                json.dumps({"identity": {"type": "SystemAssigned", "principalId": principal},
+                            "properties": {"outboundIpAddresses": ["203.0.113.10"]}}),
+                json.dumps({"accessToken": "unused-test-token", "tenant": "test-tenant"}),
+                json.dumps({"tenantId": "test-tenant"}),
+            ]
+            with patch("psycopg.connect", side_effect=[mapping, application]), \
+                    patch.object(bootstrap, "command", side_effect=responses), \
+                    patch.object(bootstrap, "bootstrap_sql", return_value=script), \
+                    patch.object(bootstrap, "set_value", side_effect=env.__setitem__), patch("builtins.print"):
+                bootstrap.bootstrap(settings, env)
+
+        with self.connection.transaction():
+            self.initialize_roles(0)
+            self.connection.execute("CREATE TABLE privilege_test.items (value integer)")
+            self.connection.execute("INSERT INTO privilege_test.items VALUES (42)")
+            self.connection.execute("CREATE TABLE privilege_test.bootstrap_runs (id integer DEFAULT 1)")
+            self.connection.execute("CREATE TABLE privilege_test.recovery_control (fail boolean)")
+            self.connection.execute("INSERT INTO privilege_test.recovery_control VALUES (false)")
+        try:
+            provision()
+            original_digest = env["SPRING_DATABASE_BOOTSTRAP_DIGEST"]
+            original_oid = self.connection.execute(
+                "SELECT oid FROM pg_roles WHERE rolname = 'azd_app'",
+            ).fetchone()[0]
+            with self.connection.transaction():
+                self.connection.execute("DROP OWNED BY azd_app")
+                self.connection.execute("DROP ROLE azd_app")
+                self.connection.execute("UPDATE privilege_test.recovery_control SET fail = true")
+
+            # Same host, database, principal, SQL and stored digest; only the SQL role disappeared.
+            # Its replacement commits even though validation rejects the application transaction.
+            with self.assertRaisesRegex(RuntimeError, "must not have admin, DDL, TEMP"):
+                provision()
+            self.assertEqual(len(creations), 1)
+            self.assertNotEqual(creations[0], original_oid)
+            self.assertEqual(env["SPRING_DATABASE_BOOTSTRAP_DIGEST"], original_digest)
+            self.assertEqual(self.connection.execute(
+                "SELECT has_schema_privilege('azd_app', 'privilege_test', 'USAGE'), "
+                "has_table_privilege('azd_app', 'privilege_test.items', 'SELECT')",
+            ).fetchone(), (False, False))
+            self.assertEqual(self.connection.execute(
+                "SELECT count(*) FROM privilege_test.bootstrap_runs",
+            ).fetchone(), (1,))
+
+            self.connection.execute("UPDATE privilege_test.recovery_control SET fail = false")
+            provision()
+            self.assertEqual(len(creations), 1)  # Retry sees the already-committed replacement mapping.
+            self.assertNotEqual(env["SPRING_DATABASE_BOOTSTRAP_DIGEST"], original_digest)
+            with self.connection.transaction(force_rollback=True):
+                self.connection.execute("SET SESSION AUTHORIZATION azd_app")
+                self.assertEqual(self.connection.execute("SELECT value FROM privilege_test.items").fetchone(), (42,))
+            self.assertEqual(self.connection.execute(
+                "SELECT count(*) FROM privilege_test.bootstrap_runs",
+            ).fetchone(), (2,))
+            provision()
+            self.assertEqual(self.connection.execute(
+                "SELECT count(*) FROM privilege_test.bootstrap_runs",
+            ).fetchone(), (2,))
+        finally:
+            with self.connection.transaction():
+                self.connection.execute("DROP SCHEMA privilege_test CASCADE")
+                self.connection.execute("DROP OWNED BY azd_app, privilege_parent, azure_pg_admin")
+                self.connection.execute("DROP ROLE azd_app, privilege_parent, azure_pg_admin")
+
     def test_bootstrap_transaction_boundaries_and_rollback(self):
         import psycopg
         from psycopg import sql

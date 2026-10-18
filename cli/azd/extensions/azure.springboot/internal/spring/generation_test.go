@@ -246,6 +246,57 @@ func TestDestinationOwnership(t *testing.T) {
 	}
 }
 
+func TestDestinationDockerInputs(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		dockerfile bool
+		ignore     bool
+		reject     bool
+	}{
+		{name: "generated Dockerfile"},
+		{name: "root ignore only", ignore: true, reject: true},
+		{name: "application Dockerfile", dockerfile: true},
+		{name: "application Dockerfile with root ignore", dockerfile: true, ignore: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if tt.dockerfile {
+				writeFixture(t, directory, "Dockerfile", "FROM scratch\n")
+			}
+			if tt.ignore {
+				writeFixture(t, directory, ".dockerignore", "private/\n")
+			}
+			err := CheckDestination(directory)
+			if tt.reject {
+				require.ErrorContains(t, err, ".dockerignore requires an application-owned root Dockerfile")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestWriteRejectsRootDockerignoreAppearingAfterPreflight(t *testing.T) {
+	directory := t.TempDir()
+	require.NoError(t, CheckDestination(directory))
+	writeFixture(t, directory, ".dockerignore", "private/\n")
+	plan := &Plan{Files: map[string][]byte{
+		"azure.yaml":                          []byte("name: catalog\n"),
+		".azd-spring/Dockerfile":              []byte("FROM scratch\nCOPY . .\n"),
+		".azd-spring/Dockerfile.dockerignore": []byte(".azure\n"),
+		"infra/main.bicep":                    []byte("targetScope = 'subscription'\n"),
+	}}
+	require.ErrorContains(t, plan.Write(t.Context(), directory),
+		".dockerignore requires an application-owned root Dockerfile")
+	for _, name := range []string{"azure.yaml", ".azd-spring", "infra"} {
+		_, err := os.Stat(filepath.Join(directory, name))
+		require.ErrorIs(t, err, fs.ErrNotExist)
+	}
+	ignore, err := fs.ReadFile(os.DirFS(directory), ".dockerignore")
+	require.NoError(t, err)
+	require.Equal(t, "private/\n", string(ignore))
+}
+
 func TestGenerateUsesExistingDockerfile(t *testing.T) {
 	a := &Application{
 		Name: "catalog", JavaVersion: 17, Port: 8080, Dockerfile: "Dockerfile",

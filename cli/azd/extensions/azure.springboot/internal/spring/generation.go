@@ -344,7 +344,7 @@ ENTRYPOINT ["java", "-jar", "/app/application.jar"]
 `, a.JavaVersion, build, a.JavaVersion, jarPaths, external.String(), a.Port), nil
 }
 
-// CheckDestination refuses existing azd ownership before executing a trusted build.
+// CheckDestination rejects existing azd ownership and incompatible Docker inputs before a trusted build.
 func CheckDestination(directory string) error {
 	root, err := os.OpenRoot(directory)
 	if err != nil {
@@ -358,6 +358,16 @@ func CheckDestination(directory string) error {
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("checking initialization destination: %w", err)
 		}
+	}
+	if _, err := root.Lstat(".dockerignore"); err == nil {
+		if _, err := root.Lstat("Dockerfile"); errors.Is(err, fs.ErrNotExist) {
+			return errors.New("a root .dockerignore requires an application-owned root Dockerfile; " +
+				"the generated Dockerfile-specific ignore file would bypass its exclusions")
+		} else if err != nil {
+			return fmt.Errorf("checking root Dockerfile: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("checking root .dockerignore: %w", err)
 	}
 	return nil
 }

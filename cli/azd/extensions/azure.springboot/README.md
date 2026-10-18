@@ -103,6 +103,9 @@ HTTP image and including any application-owned external configuration it needs.
 Without a root Dockerfile, the container builds through Maven
 (using the wrapper when present), and loads the generated properties through
 `SPRING_CONFIG_ADDITIONAL_LOCATION` from an extension-owned container directory.
+A root `.dockerignore` without a root `Dockerfile` is rejected before Maven
+inspection because the generated Dockerfile-specific ignore file would bypass
+its exclusions.
 Deployment image builds skip test compilation and execution.
 The deployment binds Spring to all container interfaces.
 Active conventional external configuration,

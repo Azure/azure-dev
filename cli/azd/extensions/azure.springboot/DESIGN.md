@@ -93,6 +93,8 @@ Preserve an application-owned root Dockerfile and supply deployment-owned Spring
 bindings through Container Apps environment variables rather than patching the
 Dockerfile. The application remains responsible for its image contents and any
 external configuration files.
+Reject a root `.dockerignore` without a root Dockerfile before Maven inspection
+and again before writing; generated ignore rules must not bypass application exclusions.
 Do not rewrite application source/configuration except for an explicitly confirmed
 credential repair, and do not overwrite existing deployment files.
 The current hosting plan requires an HTTP web application. Non-web workers/jobs

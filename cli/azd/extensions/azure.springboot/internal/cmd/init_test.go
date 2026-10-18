@@ -251,6 +251,29 @@ func TestInitRejectsExistingDeploymentFilesBeforeMaven(t *testing.T) {
 	}
 }
 
+func TestInitRejectsRootDockerignoreWithoutDockerfileBeforeMaven(t *testing.T) {
+	for _, args := range [][]string{{"init"}, {"init", "--yes", "--no-prompt"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			command, resolver, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+				t.Fatal("incompatible Docker inputs must be rejected before prompts")
+				return nil, errors.New("unavailable")
+			})
+			require.NoError(t, os.WriteFile(".dockerignore", []byte("private/\n"), 0o600))
+			command.SetArgs(args)
+			require.ErrorContains(t, command.ExecuteContext(t.Context()),
+				".dockerignore requires an application-owned root Dockerfile")
+			require.Zero(t, resolver.calls)
+			for _, name := range []string{"azure.yaml", "infra", ".azd-spring"} {
+				_, err := os.Stat(name)
+				require.ErrorIs(t, err, fs.ErrNotExist)
+			}
+			data, err := os.ReadFile(".dockerignore")
+			require.NoError(t, err)
+			require.Equal(t, "private/\n", string(data))
+		})
+	}
+}
+
 func TestInitUsesExistingDockerfileWithoutModification(t *testing.T) {
 	command, _, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
 		t.Fatal("resolved no-prompt initialization must not open prompts")
@@ -266,6 +289,9 @@ func TestInitUsesExistingDockerfileWithoutModification(t *testing.T) {
 	data, err := os.ReadFile("Dockerfile")
 	require.NoError(t, err)
 	require.Equal(t, dockerfile, string(data))
+	data, err = os.ReadFile(".dockerignore")
+	require.NoError(t, err)
+	require.Equal(t, "private/\n", string(data))
 	_, err = os.Stat(filepath.Join(".azd-spring", "Dockerfile"))
 	require.ErrorIs(t, err, fs.ErrNotExist)
 	_, err = os.Stat(filepath.Join(".azd-spring", "Dockerfile.dockerignore"))

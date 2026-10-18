@@ -234,11 +234,30 @@ func TestResolveAfterInit_QualifiesExplicitEnvironment(t *testing.T) {
 	out := ResolveAfterInit(state, nil)
 	require.Len(t, out, 3)
 	assert.Equal(t,
-		`azd --environment "prod west" env set AZURE_SUBSCRIPTION_ID <value>`,
+		`azd --environment 'prod west' env set AZURE_SUBSCRIPTION_ID <value>`,
 		out[0].Command,
 	)
-	assert.Equal(t, `azd --environment "prod west" provision`, out[1].Command)
-	assert.Equal(t, `azd --environment "prod west" deploy`, out[2].Command)
+	assert.Equal(t, `azd --environment 'prod west' provision`, out[1].Command)
+	assert.Equal(t, `azd --environment 'prod west' deploy`, out[2].Command)
+}
+
+func TestQualifyCommandEnvironment(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		command string
+		env     string
+		want    string
+	}{
+		{"azd deploy", "it's-$USER", `azd --environment 'it'\''s-$USER' deploy`},
+		{"azd deploy", "prod", "azd --environment 'prod' deploy"},
+		{"azd deploy", "", "azd deploy"},
+		{"cd my-agent", "prod west", "cd my-agent"},
+	} {
+		t.Run(tt.command+"/"+tt.env, func(t *testing.T) {
+			assert.Equal(t, tt.want, qualifyCommandEnvironment(tt.command, tt.env))
+		})
+	}
 }
 
 func TestResolveAfterInit_NilState(t *testing.T) {

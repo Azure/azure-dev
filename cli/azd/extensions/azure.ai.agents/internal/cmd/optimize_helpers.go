@@ -23,6 +23,7 @@ import (
 	"azureaiagent/internal/pkg/agents/opt_eval"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/shellcmd"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -552,14 +553,16 @@ func warnBaselineAdvancementFailure(
 		"WARNING: candidate %q was promoted for service %q, but the local optimization baseline "+
 			"could not be updated: %v\n"+
 			"Before starting the next optimization round, set this candidate as its baseline by running:\n"+
-			"  azd ai agent optimize apply --agent %q --candidate %q\n"+
-			"  azd deploy %q\n",
+			"  %s\n"+
+			"  %s\n",
 		candidateID,
 		serviceName,
 		err,
-		serviceName,
-		candidateID,
-		serviceName,
+		shellcmd.Command("azd",
+			shellcmd.Lit("ai"), shellcmd.Lit("agent"), shellcmd.Lit("optimize"), shellcmd.Lit("apply"),
+			shellcmd.Lit("--agent"), shellcmd.Lit(serviceName),
+			shellcmd.Lit("--candidate"), shellcmd.Lit(candidateID)).String(),
+		shellcmd.Command("azd", shellcmd.Lit("deploy"), shellcmd.Lit(serviceName)).String(),
 	))
 }
 

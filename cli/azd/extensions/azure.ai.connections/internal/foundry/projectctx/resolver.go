@@ -62,9 +62,13 @@ func ResolveEnvironment(ctx context.Context, environmentName string) (*Resolved,
 	return nil, exterrors.Dependency(
 		exterrors.CodeMissingProjectEndpoint,
 		fmt.Sprintf("azd environment %q has no Foundry project endpoint", environmentName),
-		fmt.Sprintf("run 'azd provision --environment %q' or set FOUNDRY_PROJECT_ENDPOINT "+
-			"(or AZURE_AI_PROJECT_ENDPOINT) in that azd environment", environmentName),
+		fmt.Sprintf("run `azd provision --environment %s` or set FOUNDRY_PROJECT_ENDPOINT "+
+			"(or AZURE_AI_PROJECT_ENDPOINT) in that azd environment", shellEscapeSingleQuoted(environmentName)),
 	)
+}
+
+func shellEscapeSingleQuoted(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // readAzdHostedSources dials the azd daemon (if reachable) and reads both the

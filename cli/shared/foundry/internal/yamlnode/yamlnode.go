@@ -223,6 +223,8 @@ func find(current *yaml.Node, parts []pathElem, findOnly bool) (*yaml.Node, erro
 		// Only an index past the end reaches here; the traversal above took every
 		// index that exists, so there is no element to make optional.
 		return nil, fmt.Errorf("sequence index out of bounds: %d", part.idx)
+	default:
+		return nil, fmt.Errorf("%w: cannot optionally create under non-container parent", ErrNodeWrongKind)
 	}
 
 	if len(parts) == 0 {

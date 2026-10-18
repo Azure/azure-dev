@@ -4,6 +4,7 @@
 package yamlnode
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -340,4 +341,88 @@ func TestParsePath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOptionalCreateUnderNonContainerParent(t *testing.T) {
+	t.Run("scalar parent", func(t *testing.T) {
+		var root yaml.Node
+		if err := yaml.Unmarshal([]byte(doc), &root); err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		before, err := yaml.Marshal(&root)
+		if err != nil {
+			t.Fatalf("Failed to marshal before: %v", err)
+		}
+
+		valueNode, err := Encode("new")
+		if err != nil {
+			t.Fatalf("Failed to encode value: %v", err)
+		}
+
+		// root.nested.key is a scalar; optional create under it must fail.
+		err = Set(&root, "root.nested.key?.child", valueNode)
+		if !errors.Is(err, ErrNodeWrongKind) {
+			t.Fatalf("Set() error = %v, want ErrNodeWrongKind", err)
+		}
+
+		after, err := yaml.Marshal(&root)
+		if err != nil {
+			t.Fatalf("Failed to marshal after: %v", err)
+		}
+		if string(after) != string(before) {
+			t.Fatalf("tree changed on error:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
+
+	t.Run("null document root", func(t *testing.T) {
+		var root yaml.Node
+		if err := yaml.Unmarshal([]byte("null"), &root); err != nil {
+			t.Fatalf("Failed to unmarshal YAML: %v", err)
+		}
+
+		before, err := yaml.Marshal(&root)
+		if err != nil {
+			t.Fatalf("Failed to marshal before: %v", err)
+		}
+
+		valueNode, err := Encode("v")
+		if err != nil {
+			t.Fatalf("Failed to encode value: %v", err)
+		}
+
+		err = Set(&root, "services?.api", valueNode)
+		if !errors.Is(err, ErrNodeWrongKind) {
+			t.Fatalf("Set() error = %v, want ErrNodeWrongKind", err)
+		}
+
+		after, err := yaml.Marshal(&root)
+		if err != nil {
+			t.Fatalf("Failed to marshal after: %v", err)
+		}
+		if string(after) != string(before) {
+			t.Fatalf("tree changed on error:\nbefore:\n%s\nafter:\n%s", before, after)
+		}
+	})
+
+	t.Run("zero-kind empty document", func(t *testing.T) {
+		var root yaml.Node // Kind == 0, no content
+
+		beforeKind := root.Kind
+		beforeLen := len(root.Content)
+
+		valueNode, err := Encode("v")
+		if err != nil {
+			t.Fatalf("Failed to encode value: %v", err)
+		}
+
+		err = Set(&root, "services?.api", valueNode)
+		if !errors.Is(err, ErrNodeWrongKind) {
+			t.Fatalf("Set() error = %v, want ErrNodeWrongKind", err)
+		}
+
+		if root.Kind != beforeKind || len(root.Content) != beforeLen {
+			t.Fatalf("tree changed on error: Kind=%v ContentLen=%d", root.Kind, len(root.Content))
+		}
+	})
 }

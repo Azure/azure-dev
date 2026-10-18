@@ -75,6 +75,7 @@ type Decision struct {
 type Diagnostic struct {
 	Kind    string
 	Message string
+	Repairs []CredentialRepair
 }
 
 func (d *Diagnostic) Error() string { return d.Message }

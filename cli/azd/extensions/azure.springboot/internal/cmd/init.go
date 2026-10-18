@@ -36,6 +36,8 @@ func newInitCommandWithServices(
 azure.yaml, Container Apps Bicep, and deployment-only container/configuration files.
 Application configuration supplies defaults. Use --profiles to select deployment
 profiles. Missing datasource URL or server port inputs use targeted prompts.
+Interactive initialization can offer to replace packaged datasource password
+defaults in properties files with runtime-only placeholders.
 Ambient Spring environment variables are not deployment inputs. Questions are
 asked only for unresolved decisions; --yes does not supply missing choices.
 Embedded databases do not create a cloud database.

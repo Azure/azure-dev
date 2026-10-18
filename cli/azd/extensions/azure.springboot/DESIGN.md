@@ -71,6 +71,11 @@ flowchart TD
   the runtime image. Reject literal `spring.datasource.password` values and
   MySQL/PostgreSQL JDBC user-info or `password` query values. Allow only empty
   values or a single runtime placeholder without a non-empty default.
+- Interactive runs may explicitly repair `spring.datasource.password` in Java
+  properties files by removing a placeholder fallback or replacing a literal
+  with a runtime-only placeholder. Show only file/property names, require a
+  dedicated confirmation even with `--yes`, and never repair in `--no-prompt`.
+  Revalidate after the edit without rerunning Maven inspection.
 - This is targeted validation, not general secret scanning. Do not claim to detect
   credentials in arbitrary properties, application code, or other packaged resources.
 
@@ -84,7 +89,8 @@ Own the generated `azure.yaml`, Docker assets, deployment-only Spring properties
 and parameterized Bicep template. Reuse template modules/parameters, not a template
 per configuration combination or text patches to generated Bicep. Use standard
 `azd up` for provisioning/deployment. Database hooks exist only where required.
-Do not rewrite application source/configuration or overwrite existing deployment files.
+Do not rewrite application source/configuration except for an explicitly confirmed
+credential repair, and do not overwrite existing deployment files.
 The current hosting plan requires an HTTP web application. Non-web workers/jobs
 and HTTPS-only application servers need distinct deployment contracts and remain
 unsupported.

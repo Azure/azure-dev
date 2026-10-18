@@ -133,12 +133,31 @@ func resolveDeployment(
 ) (*spring.Application, error) {
 	cached := &cachedResolver{source: resolver}
 	answered := map[string]bool{}
+	repairedCredentials := false
 	for range 32 {
 		analysis, err := spring.AnalyzeProject(ctx, directory, cached, inputs)
 		if err != nil {
 			return nil, err
 		}
 		if len(analysis.Diagnostics) != 0 {
+			if len(analysis.Diagnostics) == 1 && len(analysis.Diagnostics[0].Repairs) != 0 &&
+				!noPrompt && !repairedCredentials {
+				diagnostic := analysis.Diagnostics[0]
+				var targets []string
+				for _, repair := range diagnostic.Repairs {
+					targets = append(targets, repair.Property+" in "+repair.File)
+				}
+				question := "Replace packaged datasource password defaults with runtime-only placeholders?\n  " +
+					strings.Join(targets, "\n  ")
+				if err := confirm(ctx, getPrompts, question); err != nil {
+					return nil, err
+				}
+				if err := spring.ApplyCredentialRepairs(ctx, directory, diagnostic.Repairs); err != nil {
+					return nil, err
+				}
+				repairedCredentials = true
+				continue
+			}
 			var diagnostics []error
 			for _, diagnostic := range analysis.Diagnostics {
 				diagnostics = append(diagnostics, fmt.Errorf("%s configuration: %s", diagnostic.Kind, diagnostic.Message))

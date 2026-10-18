@@ -108,6 +108,12 @@ passwords in MySQL/PostgreSQL JDBC user-info or `password` query parameters acro
 all conventional packaged application configuration, including inactive profiles,
 and external application files copied into the runtime image. Empty values and
 runtime placeholders without defaults are allowed.
+For Java properties files, interactive initialization can offer to remove a
+literal password or non-empty placeholder fallback while preserving the existing
+placeholder name. The sanitized file/property list is shown before confirmation;
+credential values are never displayed. This source repair is unavailable with
+`--no-prompt`, including when `--yes` is supplied. YAML and JDBC URL credentials
+remain explicit application fixes.
 This targeted validation does not scan arbitrary properties, application code, or
 other packaged resources; review those before building or publishing an image.
 Existing `azure.yaml`, `azure.yml`, `infra/`, `.azd-spring/`, root Dockerfiles, or `.dockerignore`

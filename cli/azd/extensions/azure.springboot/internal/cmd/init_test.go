@@ -332,6 +332,44 @@ func TestInitConfiguredPlaceholderNeedsNoPrompt(t *testing.T) {
 	require.NoError(t, command.ExecuteContext(t.Context()))
 }
 
+func TestInitRepairsDatasourcePasswordInteractively(t *testing.T) {
+	const secret = "local-default-must-not-be-disclosed"
+	prompts := &fakePrompter{}
+	command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		return prompts, nil
+	})
+	file := filepath.Join("src", "main", "resources", "application-mysql.properties")
+	require.NoError(t, os.WriteFile(file,
+		[]byte("spring.datasource.url=jdbc:mysql://localhost/catalog\n"+
+			"spring.datasource.password=${MYSQL_PASSWORD:"+secret+"}\n"), 0o600))
+	command.SetArgs([]string{"init", "--yes", "--profiles", "mysql"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Equal(t, 1, resolver.calls)
+	require.Len(t, prompts.confirmations, 1)
+	require.Contains(t, prompts.confirmations[0], "spring.datasource.password")
+	require.NotContains(t, prompts.confirmations[0], secret)
+	require.NotContains(t, output.String(), secret)
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "spring.datasource.password=${MYSQL_PASSWORD}\n")
+	require.NotContains(t, string(data), secret)
+}
+
+func TestInitNoPromptDoesNotRepairDatasourcePassword(t *testing.T) {
+	const original = "spring.datasource.password=${DATABASE_PASSWORD:local-default}\n"
+	command, _, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("no-prompt mode must not offer source repairs")
+		return nil, errors.New("unavailable")
+	})
+	file := filepath.Join("src", "main", "resources", "application.properties")
+	require.NoError(t, os.WriteFile(file, []byte(original), 0o600))
+	command.SetArgs([]string{"init", "--yes", "--no-prompt"})
+	require.ErrorContains(t, command.ExecuteContext(t.Context()), "runtime placeholder without a default")
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Equal(t, original, string(data))
+}
+
 func TestInitRejectsEmptyProfileSelection(t *testing.T) {
 	command, resolver, _ := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
 		t.Fatal("invalid profile flags must not open prompts")

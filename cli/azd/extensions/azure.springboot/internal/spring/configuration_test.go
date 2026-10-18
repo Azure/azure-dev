@@ -4,6 +4,8 @@
 package spring
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -116,6 +118,47 @@ func TestKnownDatasourceCredentialReferences(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyCredentialRepairs(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		original    string
+		replacement string
+	}{
+		{"placeholder fallback", "${POSTGRES_PASSWORD:local-default}", "${POSTGRES_PASSWORD}"},
+		{"literal", "local-default", "${SPRING_DATASOURCE_PASSWORD}"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			file := "src/main/resources/application-postgres.properties"
+			writeFixture(t, directory, file,
+				"# keep this comment\r\nspring.datasource.password = "+tt.original+"\r\n")
+			err := ApplyCredentialRepairs(t.Context(), directory, []CredentialRepair{{
+				File: file, Property: "spring.datasource.password",
+				Replacement: tt.replacement, original: tt.original,
+			}})
+			require.NoError(t, err)
+			data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+			require.NoError(t, err)
+			require.Equal(t,
+				"# keep this comment\r\nspring.datasource.password = "+tt.replacement+"\r\n", string(data))
+		})
+	}
+}
+
+func TestApplyCredentialRepairsRejectsChangedSource(t *testing.T) {
+	directory := t.TempDir()
+	file := "src/main/resources/application.properties"
+	writeFixture(t, directory, file, "spring.datasource.password=${DATABASE_PASSWORD:changed}\n")
+	err := ApplyCredentialRepairs(t.Context(), directory, []CredentialRepair{{
+		File: file, Property: "spring.datasource.password",
+		Replacement: "${DATABASE_PASSWORD}", original: "${DATABASE_PASSWORD:analyzed}",
+	}})
+	require.ErrorContains(t, err, "changed after analysis")
+	data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+	require.NoError(t, readErr)
+	require.Contains(t, string(data), "changed")
 }
 
 func TestAnalyzeIgnoresUnknownCredentialLikeProperties(t *testing.T) {

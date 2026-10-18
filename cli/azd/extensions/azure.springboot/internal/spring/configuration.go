@@ -48,6 +48,14 @@ type document struct {
 	file          string
 }
 
+// CredentialRepair describes a credential removal that can be applied without disclosing its value.
+type CredentialRepair struct {
+	File        string
+	Property    string
+	Replacement string
+	original    string
+}
+
 var placeholder = regexp.MustCompile(`\$\{([^{}]+)\}`)
 var profileName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 var propertyName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
@@ -374,6 +382,7 @@ func readDocumentFile(root *os.Root, file, extension string) ([]document, error)
 
 func validateKnownCredentials(ctx context.Context, root *os.Root, locations []string) error {
 	seen := map[string]bool{}
+	var repairs []CredentialRepair
 	for _, location := range locations {
 		entries, err := fs.ReadDir(root.FS(), location)
 		if errors.Is(err, fs.ErrNotExist) {
@@ -401,15 +410,23 @@ func validateKnownCredentials(ctx context.Context, root *os.Root, locations []st
 			}
 			for _, doc := range docs {
 				if err := validateKnownCredentialDocument(doc); err != nil {
-					return err
+					diagnostic, ok := errors.AsType[*Diagnostic](err)
+					if !ok || len(diagnostic.Repairs) == 0 {
+						return err
+					}
+					repairs = append(repairs, diagnostic.Repairs...)
 				}
 			}
 		}
+	}
+	if len(repairs) != 0 {
+		return credentialRepairDiagnostic(repairs)
 	}
 	return nil
 }
 
 func validateCredentialFiles(ctx context.Context, root *os.Root, files []string) error {
+	var repairs []CredentialRepair
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -421,9 +438,16 @@ func validateCredentialFiles(ctx context.Context, root *os.Root, files []string)
 		}
 		for _, doc := range docs {
 			if err := validateKnownCredentialDocument(doc); err != nil {
-				return err
+				diagnostic, ok := errors.AsType[*Diagnostic](err)
+				if !ok || len(diagnostic.Repairs) == 0 {
+					return err
+				}
+				repairs = append(repairs, diagnostic.Repairs...)
 			}
 		}
+	}
+	if len(repairs) != 0 {
+		return credentialRepairDiagnostic(repairs)
 	}
 	return nil
 }
@@ -441,10 +465,21 @@ func applicationConfigurationExtension(name string) (string, bool) {
 func validateKnownCredentialDocument(doc document) error {
 	if password, ok := doc.values[canonical("spring.datasource.password")]; ok &&
 		hasLiteralCredential(password.text) {
-		return unsupportedConfiguration(
-			"literal datasource credentials in %s are not supported; "+
-				"replace %s with a runtime placeholder without a default",
-			password.source, password.key)
+		repair, repairable := datasourcePasswordRepair(password)
+		if !repairable {
+			return unsupportedConfiguration(
+				"literal datasource credentials in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				password.source, password.key)
+		}
+		return &Diagnostic{
+			Kind: "unsupported",
+			Message: fmt.Sprintf(
+				"literal datasource credentials in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				password.source, password.key),
+			Repairs: []CredentialRepair{repair},
+		}
 	}
 	if jdbc, ok := doc.values[canonical("spring.datasource.url")]; ok &&
 		jdbcURLHasLiteralPassword(jdbc.text) {
@@ -454,6 +489,143 @@ func validateKnownCredentialDocument(doc document) error {
 			jdbc.source, jdbc.key)
 	}
 	return nil
+}
+
+func datasourcePasswordRepair(password property) (CredentialRepair, bool) {
+	if path.Ext(password.source) != ".properties" {
+		return CredentialRepair{}, false
+	}
+	replacement := "${SPRING_DATASOURCE_PASSWORD}"
+	if name, fallback, ok := runtimePlaceholder(password.text); ok {
+		if fallback == "" {
+			return CredentialRepair{}, false
+		}
+		replacement = "${" + name + "}"
+	}
+	return CredentialRepair{
+		File: password.source, Property: password.key, Replacement: replacement, original: password.text,
+	}, true
+}
+
+func credentialRepairDiagnostic(repairs []CredentialRepair) error {
+	targets := make([]string, 0, len(repairs))
+	for _, repair := range repairs {
+		targets = append(targets, repair.Property+" in "+repair.File)
+	}
+	slices.Sort(targets)
+	return &Diagnostic{
+		Kind: "unsupported",
+		Message: fmt.Sprintf(
+			"literal datasource credentials in %s are not supported; "+
+				"replace each with a runtime placeholder without a default",
+			strings.Join(targets, ", ")),
+		Repairs: repairs,
+	}
+}
+
+// ApplyCredentialRepairs removes confirmed literal datasource password values from properties files.
+func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []CredentialRepair) error {
+	if len(repairs) == 0 {
+		return errors.New("no credential repairs were supplied")
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	grouped := map[string][]CredentialRepair{}
+	for _, repair := range repairs {
+		if !fs.ValidPath(repair.File) || path.Ext(repair.File) != ".properties" ||
+			repair.Property == "" || repair.Replacement == "" || repair.original == "" {
+			return errors.New("credential repair is invalid")
+		}
+		grouped[repair.File] = append(grouped[repair.File], repair)
+	}
+	originals, updated := map[string][]byte{}, map[string][]byte{}
+	for _, file := range slices.Sorted(maps.Keys(grouped)) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, err := root.Lstat(file)
+		if err != nil {
+			return fmt.Errorf("checking credential repair file %s: %w", file, err)
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("credential repair file %s must be a regular file", file)
+		}
+		data, err := root.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("reading credential repair file %s: %w", file, err)
+		}
+		repaired, err := repairPropertiesCredentials(string(data), grouped[file])
+		if err != nil {
+			return fmt.Errorf("preparing credential repair for %s: %w", file, err)
+		}
+		originals[file], updated[file] = data, []byte(repaired)
+	}
+	var written []string
+	for _, file := range slices.Sorted(maps.Keys(updated)) {
+		if err := writeRootFile(root, file, updated[file]); err != nil {
+			err = errors.Join(err, writeRootFile(root, file, originals[file]))
+			for _, previous := range slices.Backward(written) {
+				err = errors.Join(err, writeRootFile(root, previous, originals[previous]))
+			}
+			return fmt.Errorf("applying credential repairs: %w", err)
+		}
+		written = append(written, file)
+	}
+	return nil
+}
+
+func repairPropertiesCredentials(data string, repairs []CredentialRepair) (string, error) {
+	matched := make([]bool, len(repairs))
+	lines := strings.SplitAfter(data, "\n")
+	for lineIndex, line := range lines {
+		content, ending := strings.TrimSuffix(line, "\n"), ""
+		if content != line {
+			ending = "\n"
+		}
+		carriage := strings.HasSuffix(content, "\r")
+		content = strings.TrimSuffix(content, "\r")
+		separator := strings.IndexAny(content, "=:")
+		if separator < 0 {
+			continue
+		}
+		key := strings.TrimSpace(content[:separator])
+		valueStart := separator + 1
+		for valueStart < len(content) && (content[valueStart] == ' ' || content[valueStart] == '\t') {
+			valueStart++
+		}
+		valueEnd := len(content)
+		for valueEnd > valueStart && (content[valueEnd-1] == ' ' || content[valueEnd-1] == '\t') {
+			valueEnd--
+		}
+		for i, repair := range repairs {
+			if matched[i] || key != repair.Property || content[valueStart:valueEnd] != repair.original {
+				continue
+			}
+			content = content[:valueStart] + repair.Replacement + content[valueEnd:]
+			matched[i] = true
+			break
+		}
+		if carriage {
+			content += "\r"
+		}
+		lines[lineIndex] = content + ending
+	}
+	if slices.Contains(matched, false) {
+		return "", errors.New("configuration changed after analysis or uses unsupported properties syntax")
+	}
+	return strings.Join(lines, ""), nil
+}
+
+func writeRootFile(root *os.Root, name string, data []byte) error {
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		return err
+	}
+	_, writeErr := file.Write(data)
+	return errors.Join(writeErr, file.Close())
 }
 
 func hasLiteralCredential(value string) bool {

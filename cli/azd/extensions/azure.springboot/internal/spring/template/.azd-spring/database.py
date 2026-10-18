@@ -1,7 +1,14 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
-"""Local prerequisites and SQL bootstrap for PostgreSQL managed identity."""
+"""Local prerequisites and SQL bootstrap for PostgreSQL managed identity.
+
+Azure documents token authentication and non-admin Entra role mapping here:
+https://learn.microsoft.com/azure/postgresql/security/security-entra-configure
+https://learn.microsoft.com/azure/postgresql/security/security-manage-entra-users
+The no-DDL/TEMP/ownership checks below are this extension's runtime policy,
+not additional requirements imposed by managed-identity authentication.
+"""
 
 import argparse
 import hashlib
@@ -66,6 +73,34 @@ def bootstrap_digest(host, database, database_oid, principal, script):
     return hashlib.sha256(state.encode()).hexdigest()
 
 
+def validate_runtime_privileges(connection):
+    # MEMBER includes direct/transitive SET ROLE targets, even through NOINHERIT.
+    # USAGE or checking only the login role would miss privileges acquired by switching roles.
+    # https://www.postgresql.org/docs/15/role-membership.html
+    # https://www.postgresql.org/docs/15/functions-info.html#FUNCTIONS-INFO-ACCESS-TABLE
+    flags = connection.execute(
+        "SELECT bool_or(rolsuper), bool_or(rolcreatedb), bool_or(rolcreaterole) FROM pg_roles "
+        "WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", (ROLE, ROLE),
+    ).fetchone()
+    if flags != (False, False, False):
+        raise RuntimeError("Runtime SQL role must not have administrative privileges")
+    unsafe = connection.execute(
+        "WITH runtime_roles AS ("
+        "SELECT oid FROM pg_roles WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')) "
+        "SELECT bool_or(pg_has_role(oid, 'azure_pg_admin', 'MEMBER')), "
+        "bool_or(has_database_privilege(oid, current_database(), 'CREATE')), "
+        "bool_or(has_database_privilege(oid, current_database(), 'TEMP')), "
+        "bool_or(EXISTS (SELECT 1 FROM pg_namespace "
+        "WHERE has_schema_privilege(runtime_roles.oid, pg_namespace.oid, 'CREATE') "
+        "AND nspname NOT LIKE 'pg_temp_%%' AND nspname NOT LIKE 'pg_toast_temp_%%')), "
+        "bool_or(EXISTS (SELECT 1 FROM pg_class WHERE relowner = runtime_roles.oid)) "
+        "FROM runtime_roles",
+        (ROLE, ROLE),
+    ).fetchone()
+    if any(unsafe):
+        raise RuntimeError("Runtime SQL role must not have admin, DDL, TEMP, or object ownership")
+
+
 def prepare(settings, env):
     if settings["engine"] != "postgresql" or settings["auth"] != "managedIdentity":
         raise RuntimeError("Unsupported database/authentication combination")
@@ -81,6 +116,7 @@ def prepare(settings, env):
     if env.get("SPRING_DATABASE_PASSWORD"):
         raise RuntimeError("Remove SPRING_DATABASE_PASSWORD before provisioning managed-identity authentication")
     subscription = required(env, "AZURE_SUBSCRIPTION_ID")
+    # Token acquisition checks CLI sign-in, not SQL permissions or database connectivity.
     try:
         command(
             "az", "account", "get-access-token", "--resource-type", "oss-rdbms",
@@ -130,6 +166,8 @@ def bootstrap(settings, env):
             **credentials,
         )
 
+    # Azure's principal functions run in postgres; the object ID pins the application identity.
+    # isAdmin=false creates a regular role, but does not constrain grants in the supplied SQL.
     with connect("postgres") as connection:
         mapping = connection.execute(
             "SELECT objectid, isadmin FROM pg_catalog.pgaadauth_list_principals(false) WHERE rolname = %s",
@@ -150,30 +188,14 @@ def bootstrap(settings, env):
         if database_row is None:
             raise RuntimeError("Connected PostgreSQL database is missing from the system catalog")
         digest = bootstrap_digest(host, database, database_row[0], principal, script)
+        # Cache only SQL execution; identity and effective privilege checks must run on every provision.
         if env.get("SPRING_DATABASE_BOOTSTRAP_DIGEST") != digest:
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(
                 sql.Identifier(database)))
             connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
             connection.execute(script, prepare=False)
-        flags = connection.execute(
-            "SELECT bool_or(rolsuper), bool_or(rolcreatedb), bool_or(rolcreaterole) FROM pg_roles "
-            "WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", (ROLE, ROLE),
-        ).fetchone()
-        if flags != (False, False, False):
-            raise RuntimeError("Runtime SQL role must not have administrative privileges")
-        unsafe = connection.execute(
-            "SELECT pg_has_role(%s, 'azure_pg_admin', 'MEMBER'), "
-            "has_database_privilege(%s, current_database(), 'CREATE'), "
-            "has_database_privilege(%s, current_database(), 'TEMP'), "
-            "EXISTS (SELECT 1 FROM pg_namespace WHERE has_schema_privilege(%s, oid, 'CREATE') "
-            "AND nspname NOT LIKE 'pg_temp_%%' AND nspname NOT LIKE 'pg_toast_temp_%%'), "
-            "EXISTS (SELECT 1 FROM pg_class WHERE relowner = (SELECT oid FROM pg_roles WHERE rolname = %s)), "
-            "EXISTS (SELECT 1 FROM pg_class WHERE relowner <> (SELECT oid FROM pg_roles WHERE rolname = %s) "
-            "AND pg_has_role((SELECT oid FROM pg_roles WHERE rolname = %s), relowner, 'MEMBER'))",
-            (ROLE, ROLE, ROLE, ROLE, ROLE, ROLE, ROLE),
-        ).fetchone()
-        if any(unsafe):
-            raise RuntimeError("Runtime SQL role must not have admin, DDL, TEMP, or object ownership")
+        # A validation failure rolls back this schema/grant transaction without recording success.
+        validate_runtime_privileges(connection)
         connection.execute(
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                 sql.Identifier(database), sql.Identifier(ROLE)))

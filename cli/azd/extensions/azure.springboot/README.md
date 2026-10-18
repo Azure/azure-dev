@@ -189,8 +189,10 @@ database. The script must initialize/migrate the schema as the administrator
 and grant only required table/schema/sequence permissions to `azd_app`.
 `CONNECT` is granted by the hook; public database privileges and public schema
 creation are revoked. Runtime admin, DDL, TEMP, or object ownership fail validation.
-Administrative flags are checked on `azd_app` and all direct/transitive role
-memberships, including roles reachable through `SET ROLE`.
+Administrative flags, database/schema creation, temporary-table privileges, and
+relation ownership are checked on `azd_app` and all direct/transitive role
+memberships, including roles reachable through `SET ROLE` when inheritance is disabled.
+This is the extension's runtime policy, not an Entra authentication requirement.
 
 Example grants after app-owned schema initialization (replace object names):
 
@@ -225,6 +227,11 @@ go vet ./...
 go build
 python internal/spring/database_bootstrap_test.py
 ```
+
+CI also runs `internal/spring/database_privileges_test.py` against disposable
+PostgreSQL 15. To run locally, install the bootstrap requirements and set
+`SPRING_TEST_POSTGRES_DSN` to a disposable PostgreSQL 15 superuser connection string.
+The tests create roles/grants inside transactions that are always rolled back.
 
 Documented decision fixtures are in
 [`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).

@@ -166,16 +166,18 @@ class BootstrapTests(unittest.TestCase):
                 return json.dumps({"tenantId": "test-tenant"})
             raise AssertionError("Unexpected CLI call")
 
-        safe = (False, False, False, False, False, False)
+        safe = (False, False, False, False, False)
         safe_flags = (False, False, False)
         cases = (
             ("initial", None, "16384", False, safe_flags, safe),
             ("repeat", "16384", "16384", True, safe_flags, safe),
             ("recreated database", "16384", "16402", True, safe_flags, safe),
             ("direct unsafe privilege", None, "16384", False, safe_flags,
-             (True, False, False, False, False, False)),
+             (True, False, False, False, False)),
             ("inherited object ownership", None, "16384", False, safe_flags,
-             (False, False, False, False, False, True)),
+             (False, False, False, False, True)),
+            ("repeat with schema creation membership", "16384", "16384", True, safe_flags,
+             (False, False, False, True, False)),
             ("runtime administrator", None, "16384", False, (True, False, False), safe),
             ("direct database creator membership", None, "16384", False, (False, True, False), safe),
             ("direct role creator membership", None, "16384", False, (False, False, True), safe),

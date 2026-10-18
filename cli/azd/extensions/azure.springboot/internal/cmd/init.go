@@ -113,6 +113,9 @@ Existing deployment files are not overwritten.`,
 			fmt.Fprintf(cmd.OutOrStdout(), "Application: %s; Java %d; profiles: %s\n",
 				application.Name, application.JavaVersion, strings.Join(application.Profiles, ", "))
 			fmt.Fprintln(cmd.OutOrStdout(), "Hosting: Azure Container Apps, container registry, and Log Analytics.")
+			if application.Dockerfile != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Container build: application-owned Dockerfile.")
+			}
 			if len(application.Requirements) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "Database: no cloud database.")
 			}

@@ -66,6 +66,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.Equal(t, parameters.Parameters["databaseEngine"], deploymentParameters.Parameters["engine"])
 			require.Equal(t, "${SPRING_CONTAINER_APP_ENVIRONMENT_ID}",
 				deploymentParameters.Parameters["environmentId"].Value)
+			require.Equal(t, false, deploymentParameters.Parameters["environmentBindings"].Value)
 			require.Contains(t, string(plan.Files["infra/main.bicep"]), "output SPRING_CONTAINER_APP_ENVIRONMENT_ID")
 			require.Contains(t, string(plan.Files["infra/application.bicep"]), "targetPort: placeholder ? 80 : port")
 			require.Contains(t, string(plan.Files["infra/application.bicep"]),
@@ -121,6 +122,26 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.ErrorContains(t, plan.Write(t.Context(), directory), "already exists")
 		})
 	}
+}
+
+func TestGeneratedDockerIgnoreAllowsCredentialNamedConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.profiles.active=credentials\n")
+	const configuration = "config/application-credentials.properties"
+	writeFixture(t, directory, configuration,
+		"spring.datasource.url=jdbc:postgresql://localhost/catalog\n"+
+			"app.credential-policy=external\n")
+	application, err := Analyze(t.Context(), directory,
+		staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+	require.NoError(t, err)
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	require.Contains(t, string(plan.Files[".azd-spring/Dockerfile"]),
+		`["/workspace/config/application-credentials.properties","/app/config/application-credentials.properties"]`)
+	ignore := string(plan.Files[".azd-spring/Dockerfile.dockerignore"])
+	require.NotContains(t, ignore, "credentials")
 }
 
 func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
@@ -207,7 +228,7 @@ probes: placeholder ? [] : [
 }
 
 func TestDestinationOwnership(t *testing.T) {
-	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
+	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring"} {
 		t.Run(name, func(t *testing.T) {
 			directory := t.TempDir()
 			writeFixture(t, directory, name, "user-owned")
@@ -221,6 +242,72 @@ func TestDestinationOwnership(t *testing.T) {
 			data, err := fs.ReadFile(os.DirFS(directory), name)
 			require.NoError(t, err)
 			require.Equal(t, "user-owned", string(data))
+		})
+	}
+}
+
+func TestGenerateUsesExistingDockerfile(t *testing.T) {
+	a := &Application{
+		Name: "catalog", JavaVersion: 17, Port: 8080, Dockerfile: "Dockerfile",
+		Requirements: []Requirement{{
+			Kind: PostgreSQL, Name: "catalog", Authentication: "password",
+			JDBCOptions: "sslmode=require", Driver: "org.postgresql.Driver",
+		}},
+	}
+	plan, err := Generate(t.Context(), a)
+	require.NoError(t, err)
+	config, err := project.Parse(t.Context(), string(plan.Files["azure.yaml"]))
+	require.NoError(t, err)
+	require.Equal(t, "Dockerfile", config.Services["catalog-app"].Docker.Path)
+	require.NotContains(t, plan.Files, ".azd-spring/Dockerfile")
+	require.NotContains(t, plan.Files, ".azd-spring/Dockerfile.dockerignore")
+	require.NotContains(t, plan.Files, ".azd-spring/application-azd.properties")
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/application.parameters.json"], &parameters))
+	require.Equal(t, true, parameters.Parameters["environmentBindings"].Value)
+	require.Equal(t, "sslmode=require", parameters.Parameters["jdbcOptions"].Value)
+	require.Equal(t, "org.postgresql.Driver", parameters.Parameters["driver"].Value)
+	template := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, template, "SPRING_DATASOURCE_URL")
+	require.Contains(t, template, "SPRING_DATASOURCE_PASSWORD")
+
+	directory := t.TempDir()
+	writeFixture(t, directory, "Dockerfile", "FROM eclipse-temurin:17-jre\n")
+	writeFixture(t, directory, ".dockerignore", "private/\n")
+	require.NoError(t, plan.Write(t.Context(), directory))
+	dockerfile, err := os.ReadFile(filepath.Join(directory, "Dockerfile"))
+	require.NoError(t, err)
+	require.Equal(t, "FROM eclipse-temurin:17-jre\n", string(dockerfile))
+	ignore, err := os.ReadFile(filepath.Join(directory, ".dockerignore"))
+	require.NoError(t, err)
+	require.Equal(t, "private/\n", string(ignore))
+}
+
+func TestWriteRejectsDockerfileStateChange(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		application *Application
+		create      bool
+	}{
+		{"appeared", &Application{}, true},
+		{"removed", &Application{Dockerfile: "Dockerfile"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			if tt.create {
+				writeFixture(t, directory, "Dockerfile", "FROM scratch\n")
+			}
+			plan := &Plan{
+				Application: tt.application,
+				Files:       map[string][]byte{"azure.yaml": []byte("name: catalog\n")},
+			}
+			require.ErrorContains(t, plan.Write(t.Context(), directory), "after analysis")
+			_, err := os.Stat(filepath.Join(directory, "azure.yaml"))
+			require.ErrorIs(t, err, fs.ErrNotExist)
 		})
 	}
 }

@@ -91,10 +91,16 @@ File-based embedded databases require a persistence policy and are not adopted.
 - `azure.yaml`, with one explicitly authored service and database hooks only when needed.
 - `infra/`, copied from one extension-owned, parameterized Bicep template for
   embedded, MySQL/password, PostgreSQL/password, and PostgreSQL/managed identity.
-- `.azd-spring/`, containing a Java-version-aware Dockerfile, Dockerfile-specific
-  ignore rules, and deployment-only Spring datasource overrides.
+- `.azd-spring/`, containing database hooks when needed and, without an
+  application-owned Dockerfile, generated container assets and Spring overrides.
 
-The application source remains unchanged. The container builds through Maven
+When the application has a root `Dockerfile`, initialization preserves and uses
+it instead of generating Docker assets. Deployment-owned Spring profiles, port,
+and datasource bindings are supplied through Container Apps environment variables,
+including a secret reference for password authentication. The extension does not
+validate or rewrite the Dockerfile; it remains responsible for producing a runnable
+HTTP image and including any application-owned external configuration it needs.
+Without a root Dockerfile, the container builds through Maven
 (using the wrapper when present), and loads the generated properties through
 `SPRING_CONFIG_ADDITIONAL_LOCATION` from an extension-owned container directory.
 Deployment image builds skip test compilation and execution.
@@ -116,9 +122,10 @@ credential values are never displayed. This source repair is unavailable with
 remain explicit application fixes.
 This targeted validation does not scan arbitrary properties, application code, or
 other packaged resources; review those before building or publishing an image.
-Existing `azure.yaml`, `azure.yml`, `infra/`, `.azd-spring/`, root Dockerfiles, or `.dockerignore`
-files are not adopted or overwritten. Dockerfile-specific ignore rules would replace
-root exclusions, so initialization rejects them before Maven inspection.
+Existing `azure.yaml`, `azure.yml`, `infra/`, or `.azd-spring/` files are not
+adopted or overwritten. Root Dockerfiles and `.dockerignore` files are preserved.
+Generated Dockerfile-specific ignore rules exclude exact development artifacts
+without broad credential-like filename patterns.
 Development Compose files are left alone.
 
 **Development defaults:** SQL authentication uses generated administrator

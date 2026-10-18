@@ -89,6 +89,10 @@ Own the generated `azure.yaml`, Docker assets, deployment-only Spring properties
 and parameterized Bicep template. Reuse template modules/parameters, not a template
 per configuration combination or text patches to generated Bicep. Use standard
 `azd up` for provisioning/deployment. Database hooks exist only where required.
+Preserve an application-owned root Dockerfile and supply deployment-owned Spring
+bindings through Container Apps environment variables rather than patching the
+Dockerfile. The application remains responsible for its image contents and any
+external configuration files.
 Do not rewrite application source/configuration except for an explicitly confirmed
 credential repair, and do not overwrite existing deployment files.
 The current hosting plan requires an HTTP web application. Non-web workers/jobs

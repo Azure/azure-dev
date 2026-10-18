@@ -16,6 +16,12 @@ param administratorObjectId string = ''
 param administratorName string = ''
 param bootstrapIp string = ''
 param appImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+param environmentBindings bool
+param jdbcOptions string = ''
+param driver string = ''
+param embeddedUrl string = ''
+param embeddedUrlConfigured bool
+param embeddedDriver string = ''
 
 resource group 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${environmentName}'
@@ -61,7 +67,8 @@ module access 'access.bicep' = {
     registryName: hosting.outputs.registryName
     principalId: bootstrap.outputs.principalId
     postgresServerName: databaseEngine == 'postgresql' && databaseAuth == 'managedIdentity'
-      ? database!.outputs.serverName : ''
+      ? database!.outputs.serverName
+      : ''
     outboundIps: bootstrap.outputs.outboundIps
   }
 }
@@ -83,6 +90,12 @@ module application 'application.bicep' = {
     username: databaseAuth == 'managedIdentity' ? 'azd_app' : 'azdadmin'
     password: databasePassword
     authentication: databaseAuth
+    environmentBindings: environmentBindings
+    jdbcOptions: jdbcOptions
+    driver: driver
+    embeddedUrl: embeddedUrl
+    embeddedUrlConfigured: embeddedUrlConfigured
+    embeddedDriver: embeddedDriver
   }
   dependsOn: [access]
 }

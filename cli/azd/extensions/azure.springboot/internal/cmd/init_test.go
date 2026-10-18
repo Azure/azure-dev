@@ -224,7 +224,7 @@ func TestInitRejectsExistingDeploymentFilesBeforeMaven(t *testing.T) {
 		name    string
 		content string
 	}{
-		{".dockerignore", "private-config/\n"},
+		{"infra", ""},
 		{"azure.yml", "name: existing\n"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -232,17 +232,50 @@ func TestInitRejectsExistingDeploymentFilesBeforeMaven(t *testing.T) {
 				t.Fatal("existing deployment files must be rejected before trust prompts")
 				return nil, errors.New("unavailable")
 			})
-			require.NoError(t, os.WriteFile(tt.name, []byte(tt.content), 0o600))
+			if tt.name == "infra" {
+				require.NoError(t, os.Mkdir(tt.name, 0o750))
+			} else {
+				require.NoError(t, os.WriteFile(tt.name, []byte(tt.content), 0o600))
+			}
 			command.SetArgs([]string{"init"})
 			require.ErrorContains(t, command.ExecuteContext(t.Context()), tt.name+" already exists")
 			require.Zero(t, resolver.calls)
-			data, err := os.ReadFile(tt.name)
-			require.NoError(t, err)
-			require.Equal(t, tt.content, string(data))
-			_, err = os.Stat("azure.yaml")
-			require.ErrorIs(t, err, fs.ErrNotExist)
+			if tt.name != "infra" {
+				data, err := os.ReadFile(tt.name)
+				require.NoError(t, err)
+				require.Equal(t, tt.content, string(data))
+			}
+			_, statErr := os.Stat("azure.yaml")
+			require.ErrorIs(t, statErr, fs.ErrNotExist)
 		})
 	}
+}
+
+func TestInitUsesExistingDockerfileWithoutModification(t *testing.T) {
+	command, _, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("resolved no-prompt initialization must not open prompts")
+		return nil, errors.New("unavailable")
+	})
+	const dockerfile = "FROM eclipse-temurin:17-jre\nENTRYPOINT [\"java\", \"-jar\", \"/app/app.jar\"]\n"
+	require.NoError(t, os.WriteFile("Dockerfile", []byte(dockerfile), 0o600))
+	require.NoError(t, os.WriteFile(".dockerignore", []byte("private/\n"), 0o600))
+	command.SetArgs([]string{"init", "--yes", "--no-prompt", "--profiles", "mysql"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Contains(t, output.String(), "application-owned Dockerfile")
+	require.Contains(t, output.String(), "Database: mysql server")
+	data, err := os.ReadFile("Dockerfile")
+	require.NoError(t, err)
+	require.Equal(t, dockerfile, string(data))
+	_, err = os.Stat(filepath.Join(".azd-spring", "Dockerfile"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = os.Stat(filepath.Join(".azd-spring", "Dockerfile.dockerignore"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = os.Stat(filepath.Join(".azd-spring", "application-azd.properties"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	parameters, err := os.ReadFile(filepath.Join("infra", "application.parameters.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(parameters), `"environmentBindings":`)
+	require.Contains(t, string(parameters), `"jdbcOptions":`)
 }
 
 func TestInitDecisionCancellation(t *testing.T) {

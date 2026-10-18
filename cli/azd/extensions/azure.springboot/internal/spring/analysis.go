@@ -59,6 +59,7 @@ type Application struct {
 	MavenWrapper           bool
 	ExternalConfigurations []string
 	IdentityExtensions     bool
+	Dockerfile             string
 	InputEvidence          []Evidence
 	InputReferences        map[string][]Evidence
 }
@@ -168,6 +169,14 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 		InputEvidence:          slices.Clone(c.traces["server.port"]),
 		InputReferences:        c.placeholderReferences(),
+	}
+	if info, err := root.Lstat("Dockerfile"); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, unsupportedConfiguration("the root Dockerfile must be a regular file")
+		}
+		a.Dockerfile = "Dockerfile"
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("inspecting root Dockerfile: %w", err)
 	}
 	if a.Name == "" {
 		return nil, invalidConfiguration("artifactId must contain at least one letter or digit")

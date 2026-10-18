@@ -62,13 +62,20 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			"choose a Maven artifactId whose normalized name fits these rules including the -app suffix")
 	}
 	hooks := map[string]any{}
+	dockerPath := ".azd-spring/Dockerfile"
+	if application.Dockerfile != "" {
+		if application.Dockerfile != "Dockerfile" {
+			return nil, errors.New("application Dockerfile must be the root Dockerfile")
+		}
+		dockerPath = application.Dockerfile
+	}
 	config := map[string]any{
 		"name":  application.Name,
 		"infra": map[string]string{"provider": "bicep", "path": "infra", "module": "main"},
 		"services": map[string]any{serviceName: map[string]any{
 			"project": ".", "host": "containerapp", "language": "docker", "module": "application",
 			"docker": map[string]string{
-				"path": ".azd-spring/Dockerfile", "context": ".", "platform": "linux/amd64",
+				"path": dockerPath, "context": ".", "platform": "linux/amd64",
 			},
 		}},
 	}
@@ -78,6 +85,9 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"environmentName": "${AZURE_ENV_NAME}", "location": "${AZURE_LOCATION}",
 		"serviceName": serviceName, "port": application.Port, "profiles": append([]string{}, application.Profiles...),
 		"databaseEngine": "none", "databaseName": "", "databaseAuth": "password",
+		"environmentBindings": application.Dockerfile != "",
+		"jdbcOptions":         "", "driver": "",
+		"embeddedUrl": "", "embeddedUrlConfigured": false, "embeddedDriver": "",
 		"databasePassword":      "${SPRING_DATABASE_PASSWORD=}",
 		"administratorObjectId": "${SPRING_DATABASE_ADMIN_OID=}",
 		"administratorName":     "${SPRING_DATABASE_ADMIN_NAME=}",
@@ -103,6 +113,9 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		if application.Embedded.Driver != "" {
 			fmt.Fprintf(&binding, "spring.datasource.driver-class-name=%s\n", application.Embedded.Driver)
 		}
+		parameters["embeddedUrl"] = map[string]any{"value": application.Embedded.URL}
+		parameters["embeddedUrlConfigured"] = map[string]any{"value": application.Embedded.URLConfigured}
+		parameters["embeddedDriver"] = map[string]any{"value": application.Embedded.Driver}
 	}
 	for _, requirement := range application.Requirements {
 		provider, ok := databaseProviders[requirement.Kind]
@@ -140,6 +153,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		parameters["databaseEngine"] = map[string]any{"value": string(requirement.Kind)}
 		parameters["databaseName"] = map[string]any{"value": requirement.Name}
 		parameters["databaseAuth"] = map[string]any{"value": requirement.Authentication}
+		parameters["driver"] = map[string]any{"value": requirement.Driver}
 		settings["engine"], settings["auth"], settings["database"] =
 			string(requirement.Kind), requirement.Authentication, requirement.Name
 		p := provider.prefix
@@ -151,6 +165,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 				return nil, err
 			}
 		}
+		parameters["jdbcOptions"] = map[string]any{"value": options}
 		fmt.Fprintf(&binding, "spring.datasource.url=jdbc:%s://${%s_HOST}:${%s_PORT}/${%s_DATABASE}?%s\n",
 			provider.scheme, p, p, p, options)
 		if requirement.Driver != "" {
@@ -179,7 +194,10 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		return nil, fmt.Errorf("serializing template parameters: %w", err)
 	}
 	applicationParameters := map[string]any{}
-	for _, key := range []string{"location", "serviceName", "port", "profiles", "appImage", "databaseName"} {
+	for _, key := range []string{
+		"location", "serviceName", "port", "profiles", "appImage", "databaseName",
+		"environmentBindings", "jdbcOptions", "driver", "embeddedUrl", "embeddedUrlConfigured", "embeddedDriver",
+	} {
 		applicationParameters[key] = parameters[key]
 	}
 	applicationParameters["engine"] = parameters["databaseEngine"]
@@ -203,22 +221,26 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	if err != nil {
 		return nil, fmt.Errorf("serializing application deployment parameters: %w", err)
 	}
-	docker, err := dockerfile(application)
-	if err != nil {
-		return nil, err
-	}
-	ignore := ".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n**/*credentials*\n/" +
-		application.BuildDirectory + "\n"
-	if application.JarDirectory != "" && application.JarDirectory != application.BuildDirectory {
-		ignore += "/" + application.JarDirectory + "\n"
-	}
 	files := map[string][]byte{
 		"azure.yaml":                             data,
 		"infra/main.parameters.json":             parameterData,
 		"infra/application.parameters.json":      applicationParameterData,
-		".azd-spring/Dockerfile":                 []byte(docker),
 		".azd-spring/application-azd.properties": []byte(binding.String()),
-		".azd-spring/Dockerfile.dockerignore":    []byte(ignore),
+	}
+	if application.Dockerfile == "" {
+		docker, err := dockerfile(application)
+		if err != nil {
+			return nil, err
+		}
+		ignore := ".git\n.azure\n**/target\n**/.env\n**/.env.*\n**/.idea\n/" +
+			application.BuildDirectory + "\n"
+		if application.JarDirectory != "" && application.JarDirectory != application.BuildDirectory {
+			ignore += "/" + application.JarDirectory + "\n"
+		}
+		files[".azd-spring/Dockerfile"] = []byte(docker)
+		files[".azd-spring/Dockerfile.dockerignore"] = []byte(ignore)
+	} else {
+		delete(files, ".azd-spring/application-azd.properties")
 	}
 	if settings["auth"] == "managedIdentity" {
 		settingsData, err := json.MarshalIndent(settings, "", "  ")
@@ -322,14 +344,14 @@ ENTRYPOINT ["java", "-jar", "/app/application.jar"]
 `, a.JavaVersion, build, a.JavaVersion, jarPaths, external.String(), a.Port), nil
 }
 
-// CheckDestination refuses existing azd/container ownership before executing a trusted build.
+// CheckDestination refuses existing azd ownership before executing a trusted build.
 func CheckDestination(directory string) error {
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring", "Dockerfile", ".dockerignore"} {
+	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring"} {
 		if _, err := root.Lstat(name); err == nil {
 			return fmt.Errorf("%s already exists; "+
 				"initialization does not overwrite or adopt existing deployment files", name)
@@ -350,6 +372,9 @@ func (p *Plan) Write(ctx context.Context, directory string) (resultErr error) {
 		return err
 	}
 	defer root.Close()
+	if err := p.validateDockerfileState(root); err != nil {
+		return err
+	}
 	names := slices.Sorted(maps.Keys(p.Files))
 	for _, name := range names {
 		if !fs.ValidPath(name) || name != "azure.yaml" &&
@@ -409,6 +434,27 @@ func (p *Plan) Write(ctx context.Context, directory string) (resultErr error) {
 		if err := errors.Join(writeErr, closeErr); err != nil {
 			return fmt.Errorf("writing generated file %s: %w", name, err)
 		}
+	}
+	return nil
+}
+
+func (p *Plan) validateDockerfileState(root *os.Root) error {
+	expected := p.Application != nil && p.Application.Dockerfile == "Dockerfile"
+	info, err := root.Lstat("Dockerfile")
+	if errors.Is(err, fs.ErrNotExist) {
+		if expected {
+			return errors.New("Dockerfile changed after analysis; rerun initialization")
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("checking Dockerfile before writing: %w", err)
+	}
+	if !expected {
+		return errors.New("Dockerfile appeared after analysis; rerun initialization")
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("the root Dockerfile must remain a regular file")
 	}
 	return nil
 }

@@ -92,7 +92,7 @@ type initFlags struct {
 	// harness, when set, names the execution harness written to the scaffolded
 	// prompt agent definition (only "github_copilot_preview" is supported today). A
 	// harness is what makes a prompt agent a "managed" agent; there is no
-	// separate --kind for it. Ignored for hosted agents.
+	// separate --kind for it. Rejected for hosted agents.
 	harness string
 	// noPrompt is resolved from the extension context (--no-prompt / AZD_NO_PROMPT)
 	// and is not registered as a CLI flag on the init command itself.
@@ -813,6 +813,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return voiceInputErr
 				}
 			}
+			mode := ResolveModeFromFlags(
+				userProvidedTemplate || cmd.Flags().Changed("template") || cmd.Flags().Changed("manifest"),
+				flags.kind, flags.image,
+			)
+			// With no explicit selection, interactive users can still choose voice or a template.
+			if flags.noPrompt || mode != ModeHostedFromCode || flags.kind != "" {
+				if err := ValidateModeFlags(cmd, mode); err != nil {
+					return err
+				}
+				if mode == ModePrompt && len(args) > 0 && flags.src != "" {
+					return exterrors.Validation(
+						exterrors.CodeConflictingArguments,
+						"prompt init cannot apply a positional source directory (--src)",
+						"remove the source directory or use the hosted init flow",
+					)
+				}
+			}
+
 			isPromptVoice := flags.templatePointer == "" &&
 				strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if flags.image != "" {
@@ -933,9 +951,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err != nil {
 						return err
 					}
-				}
-				if err := validateUnifiedInitFlags(cmd); err != nil {
-					return err
 				}
 				if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
 					if exterrors.IsCancellation(err) {
@@ -1218,6 +1233,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 				default:
 					// initModeFromCode - use existing code in current directory
+					if err := ValidateModeFlags(cmd, ModeHostedFromCode); err != nil {
+						return err
+					}
 					action := &InitFromCodeAction{
 						azdClient:       azdClient,
 						flags:           flags,
@@ -1242,107 +1260,37 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
-		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
-
-	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
-		"Foundry Azure Container Registry connection name to use for an existing project; "+
-			"incompatible with code deploy, --image, and prompt-voice agents")
-
-	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
-		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
-
-	cmd.Flags().StringVar(&flags.model, "model", "",
-		fmt.Sprintf(
-			"For hosted and prompt agents, name of the AI model to deploy. "+
-				"Defaults to '%s' during interactive model selection; "+
-				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
-				"service-hosted model (default: gpt-realtime); no model deployment is created.",
-			defaultAgentModel,
-		))
-
-	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "",
-		"Path or supported GitHub URI to an azure.yaml project document")
-	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "",
-		"Deprecated alias for --template")
+	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "", "")
+	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "", "")
+	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "", "")
+	cmd.Flags().StringVar(&flags.model, "model", "", "")
+	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "", "")
+	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "", "")
 	_ = cmd.Flags().MarkDeprecated("manifest", "use --template/-t instead")
 
-	cmd.Flags().StringVar(&flags.agentName, "agent-name", "",
-		"Foundry agent name to write to azure.yaml. Reusing a name creates a new version of the existing agent.")
-
-	cmd.Flags().StringVar(&flags.description, "description", "",
-		"Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.")
-	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
-
-	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
-		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
-
-	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
-
-	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
-		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")
-
-	cmd.Flags().StringVar(&flags.runtime, "runtime", "",
-		"Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.")
-
-	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "",
-		"Entry point file for code deploy (e.g., 'app.py', 'MyAgent.dll'). Required with --deploy-mode code --no-prompt.")
-
-	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "",
-		"Dependency resolution for code deploy: 'remote_build' or 'bundled'. Defaults to 'remote_build'.")
-
-	cmd.Flags().StringVar(&flags.image, "image", "",
-		"Pre-built container image URL (e.g., 'myacr.azurecr.io/agent:v1'). "+
-			"Skips template/language selection, code scaffolding, "+
-			"Dockerfile-based source setup and build configuration, and ACR setup, and requires --agent-name. "+
-			"Incompatible with --deploy-mode code.")
-
-	cmd.Flags().StringVar(&flags.registryConnection, "registry-connection", "",
-		"Name or ID of an existing Foundry project connection used to pull a private pre-built container image. "+
-			"Requires a pre-built image and is incompatible with code deploy.")
-
-	cmd.Flags().StringVar(&flags.voice, "voice", "",
-		"Output voice for new prompt voice agents (--kind prompt-voice or the interactive voice option). "+
-			"Rejected for other init flows. For existing voice services, edit azure.yaml. "+
-			"Example: en-US-Ava:DragonHDLatestNeural.")
-
-	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Allow existing agent service configurations to be overwritten. "+
-			"With --no-prompt, pre-consent when init requires overwrite confirmation.")
-
-	cmd.Flags().StringVar(&flags.kind, "kind", "",
-		"Agent runtime to initialize: 'hosted' (bring your own code/container), 'prompt' "+
-			"(model + instructions; Foundry runs the agent), or 'prompt-voice' (a declarative "+
-			"voice agent; use --model for the speech-to-speech model and --voice for the output "+
-			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
-			"'prompt' requires --agent-name and either --model or --model-deployment.")
-	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand). "+
-			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
+	cmd.Flags().StringVar(&flags.agentName, "agent-name", "", "")
+	cmd.Flags().StringVar(&flags.description, "description", "", "")
+	cmd.Flags().StringVar(&flags.instructions, "instructions", "", "")
+	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
+	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil, "")
+	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "", "")
+	cmd.Flags().StringVar(&flags.runtime, "runtime", "", "")
+	cmd.Flags().StringVar(&flags.entryPoint, "entry-point", "", "")
+	cmd.Flags().StringVar(&flags.depResolution, "dep-resolution", "", "")
+	cmd.Flags().StringVar(&flags.image, "image", "", "")
+	cmd.Flags().StringVar(&flags.registryConnection, "registry-connection", "", "")
+	cmd.Flags().StringVar(&flags.voice, "voice", "", "")
+	cmd.Flags().BoolVar(&flags.force, "force", false, "")
+	cmd.Flags().StringVar(&flags.kind, "kind", "", "")
+	cmd.Flags().StringVar(&flags.harness, "harness", "", "")
 	_ = cmd.Flags().MarkHidden("harness")
-	cmd.Flags().StringVar(&flags.infra, "infra", "",
-		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
-			"Foundry files are generated as a separate infra/foundry layer. "+
-			"A bare --infra ejects Bicep; --infra=terraform ejects Terraform and sets "+
-			"the Foundry layer provider to terraform; Bicep keeps the microsoft.foundry provider. "+
-			"--infra=bicep is explicit Bicep. "+
-			"When azure.yaml already declares a Foundry project service, runs as a standalone "+
-			"eject and skips the init prompts; otherwise init runs first and the eject follows it.")
+	cmd.Flags().StringVar(&flags.infra, "infra", "", "")
 	// NoOptDefVal makes a bare `--infra` resolve to "bicep" while still allowing
 	// `--infra=terraform` / `--infra=bicep`. Absent flag stays "" (no eject).
 	cmd.Flags().Lookup("infra").NoOptDefVal = project.BicepProviderName
 
-	cmd.Flags().StringVar(&flags.raiPolicy, "rai-policy", "",
-		"Responsible AI policy for a prompt or managed agent: 'none' to inherit the account's "+
-			"default content filters, a policy name on the selected Foundry account, or a policy's "+
-			"full ARM resource ID. The policy must already exist; azd attaches it, it does not "+
-			"create it. When omitted, you are prompted to pick from the policies on the account; "+
-			"with --no-prompt no policy is attached. "+
-			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an "+
-			"azure.yaml project document or a full repository template; declare policies in azure.yaml instead.")
+	cmd.Flags().StringVar(&flags.raiPolicy, "rai-policy", "", "")
+	ApplyFlagHelp(cmd)
 
 	return cmd
 }
@@ -1429,58 +1377,18 @@ func promptInitModeForVoice(
 // affect a synthesized voice agent. It does not constrain other init flows or
 // infer user intent from defaults populated later during scaffolding.
 func validateVoiceInitOptions(cmd *cobra.Command, positionalSource bool) error {
-	var conflicts []string
 	if positionalSource {
-		conflicts = append(conflicts, "positional source directory")
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"new prompt voice agents cannot use these init inputs: positional source directory",
+			"remove the source directory to create a prompt voice agent; use the hosted init flow for source/code settings",
+		)
 	}
-	for _, name := range []string{
-		"src", "protocol", "deploy-mode", "runtime", "entry-point", "dep-resolution",
-		"image", "acr-connection", "registry-connection", "harness", "instructions",
-		"description", "rai-policy", "model-deployment",
-	} {
-		if cmd.Flags().Changed(name) {
-			conflicts = append(conflicts, "--"+name)
-		}
-	}
-	if len(conflicts) == 0 {
-		return nil
-	}
-	return exterrors.Validation(
-		exterrors.CodeConflictingArguments,
-		"new prompt voice agents cannot use these init inputs: "+strings.Join(conflicts, ", "),
-		"remove these inputs to create a prompt voice agent; use the hosted init flow for source/code settings "+
-			"or the prompt init flow for prompt-only settings",
-	)
+	return ValidateModeFlags(cmd, ModePromptVoice)
 }
 
 func validateUnifiedInitFlags(cmd *cobra.Command) error {
-	var conflicts []string
-	for _, name := range []string{
-		"description",
-		"force",
-		"harness",
-		"instructions",
-		"kind",
-		"protocol",
-		"rai-policy",
-		"voice",
-	} {
-		if cmd.Flags().Changed(name) {
-			conflicts = append(conflicts, "--"+name)
-		}
-	}
-	if len(conflicts) == 0 {
-		return nil
-	}
-
-	return exterrors.Validation(
-		exterrors.CodeConflictingArguments,
-		fmt.Sprintf(
-			"azure.yaml project adoption cannot apply these explicitly set inputs: %s",
-			strings.Join(conflicts, ", "),
-		),
-		"Remove the conflicting flags or update the agent services in azure.yaml before running init.",
-	)
+	return ValidateModeFlags(cmd, ModeTemplateAdopt)
 }
 
 func validateCatalogInitFlags(cmd *cobra.Command, templateType string) error {

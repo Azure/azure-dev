@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.projects/internal/envkeys"
 	"azure.ai.projects/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -26,11 +27,11 @@ type environmentPlan struct {
 // registry-selection path rather than inheriting the old environment.
 var projectReplacementEnvironmentKeys = []string{
 	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
-	"AZD_FOUNDRY_ACR_MODE",
-	"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
+	envkeys.ContainerRegistryEndpoint.Name(),
+	envkeys.ContainerRegistryResourceID.Name(),
+	envkeys.ProjectAcrConnectionName.Name(),
+	envkeys.FoundryAcrMode.Name(),
+	envkeys.FoundryAcrPullAssigned.Name(),
 	"AZURE_AI_PROJECT_CONNECTION_NAMES",
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZD_FOUNDRY_RESOURCE_GROUP_ID",

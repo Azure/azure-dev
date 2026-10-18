@@ -16,6 +16,7 @@ import (
 	"strings"
 	"text/template"
 
+	"azure.ai.projects/internal/envkeys"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
@@ -27,10 +28,10 @@ import (
 type projectEjectAcrMode string
 
 const (
-	projectEjectAcrNone             projectEjectAcrMode = "none"
-	projectEjectAcrCreate           projectEjectAcrMode = "create"
-	projectEjectAcrReuseConnect     projectEjectAcrMode = "reuse-connect"
-	projectEjectAcrAlreadyConnected projectEjectAcrMode = "already-connected"
+	projectEjectAcrNone             projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrNone)
+	projectEjectAcrCreate           projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrCreate)
+	projectEjectAcrReuseConnect     projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrReuseConnect)
+	projectEjectAcrAlreadyConnected projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrAlreadyConnected)
 )
 
 type ejectedFoundryProjectInfrastructure struct {
@@ -695,12 +696,12 @@ func resolveProjectEjectAcrMode(
 ) (projectEjectAcrMode, error) {
 	includeAcr, _ := params["includeAcr"].(bool)
 	if !includeAcr ||
-		strings.EqualFold(strings.TrimSpace(values["AZD_AGENT_SKIP_ACR"]), "true") {
+		strings.EqualFold(strings.TrimSpace(values[envkeys.AgentSkipAcr.Name()]), "true") {
 		return projectEjectAcrNone, nil
 	}
 
 	mode := projectEjectAcrMode(strings.TrimSpace(
-		values["AZD_FOUNDRY_ACR_MODE"],
+		values[envkeys.FoundryAcrMode.Name()],
 	))
 	switch mode {
 	case "":
@@ -716,7 +717,7 @@ func resolveProjectEjectAcrMode(
 	}
 
 	endpoint := strings.TrimSpace(
-		values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+		values[envkeys.ContainerRegistryEndpoint.Name()],
 	)
 	if mode == "" || mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -726,14 +727,14 @@ func resolveProjectEjectAcrMode(
 			return "", err
 		}
 		if endpoint != "" && values != nil {
-			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = endpoint
+			values[envkeys.ContainerRegistryEndpoint.Name()] = endpoint
 		}
 	}
 	resourceID := strings.TrimSpace(
-		values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"],
+		values[envkeys.ContainerRegistryResourceID.Name()],
 	)
 	connection := strings.TrimSpace(
-		values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
+		values[envkeys.ProjectAcrConnectionName.Name()],
 	)
 	if mode == projectEjectAcrReuseConnect ||
 		mode == projectEjectAcrAlreadyConnected {
@@ -750,7 +751,7 @@ func resolveProjectEjectAcrMode(
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidAzureYaml,
 				"already-connected requires "+
-					"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+					envkeys.ProjectAcrConnectionName.Name(),
 				"set the existing project connection name and retry",
 			)
 		}
@@ -816,9 +817,9 @@ func invalidContainerRegistryEndpointError() error {
 
 func projectEjectHasAcrState(values map[string]string) bool {
 	for _, key := range []string{
-		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		envkeys.ContainerRegistryResourceID.Name(),
+		envkeys.ContainerRegistryEndpoint.Name(),
+		envkeys.ProjectAcrConnectionName.Name(),
 		"AZD_FOUNDRY_RESOURCE_GROUP_ID",
 	} {
 		if strings.TrimSpace(values[key]) != "" {
@@ -839,7 +840,7 @@ func writeExistingProjectBicep(
 		mode == projectEjectAcrAlreadyConnected {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
-			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+			values[envkeys.ContainerRegistryEndpoint.Name()],
 		)
 		if err != nil {
 			return err
@@ -865,7 +866,7 @@ func writeExistingProjectBicep(
 	}{
 		AcrMode: string(mode),
 		AcrPullAssigned: strings.EqualFold(
-			strings.TrimSpace(values["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]),
+			strings.TrimSpace(values[envkeys.FoundryAcrPullAssigned.Name()]),
 			"true",
 		),
 	}); err != nil {
@@ -904,7 +905,7 @@ func writeExistingProjectBicep(
 	if mode == projectEjectAcrCreate ||
 		(mode == projectEjectAcrReuseConnect &&
 			!strings.EqualFold(
-				strings.TrimSpace(values["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]),
+				strings.TrimSpace(values[envkeys.FoundryAcrPullAssigned.Name()]),
 				"true",
 			)) {
 		registrySource, err := fs.ReadFile(
@@ -961,10 +962,10 @@ func writeExistingProjectBicep(
 		outputParams["existingAcrEndpoint"] =
 			existingAcrEndpoint
 		outputParams["existingAcrResourceId"] =
-			values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+			values[envkeys.ContainerRegistryResourceID.Name()]
 		if mode == projectEjectAcrAlreadyConnected {
 			outputParams["existingAcrConnectionName"] =
-				values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"]
+				values[envkeys.ProjectAcrConnectionName.Name()]
 		}
 	}
 	if err := writeJSONFile(
@@ -1002,7 +1003,7 @@ func writeExistingProjectTerraform(
 		mode == projectEjectAcrAlreadyConnected {
 		var err error
 		existingAcrEndpoint, err = normalizeContainerRegistryEndpoint(
-			values["AZURE_CONTAINER_REGISTRY_ENDPOINT"],
+			values[envkeys.ContainerRegistryEndpoint.Name()],
 		)
 		if err != nil {
 			return err
@@ -1046,7 +1047,7 @@ func writeExistingProjectTerraform(
 	case projectEjectAcrReuseConnect:
 		registrySource = "container-registry-reuse.tf"
 		if strings.EqualFold(
-			strings.TrimSpace(values["AZD_FOUNDRY_ACR_PULL_ASSIGNED"]),
+			strings.TrimSpace(values[envkeys.FoundryAcrPullAssigned.Name()]),
 			"true",
 		) {
 			registrySource = "container-registry-connect.tf"
@@ -1110,8 +1111,8 @@ func writeExistingProjectTerraform(
 		"environment_name":             "${AZURE_ENV_NAME}",
 		"resource_token_salt":          "${AZD_RESOURCE_TOKEN_SALT}",
 		"existing_acr_endpoint":        existingAcrEndpoint,
-		"existing_acr_resource_id":     values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"],
-		"existing_acr_connection_name": values["AZURE_AI_PROJECT_ACR_CONNECTION_NAME"],
+		"existing_acr_resource_id":     values[envkeys.ContainerRegistryResourceID.Name()],
+		"existing_acr_connection_name": values[envkeys.ProjectAcrConnectionName.Name()],
 	}
 	if deployments, ok := params["deployments"]; ok {
 		tfvars["deployments"] = deployments

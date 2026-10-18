@@ -1,0 +1,15 @@
+# Quoted Foundry key occurrences, including test fixtures.
+# Regenerate candidate counts with: ./check_envkey_literals.sh --counts
+# Lower counts as keys migrate; increases should use internal/envkeys instead.
+azure.ai.agents:AZURE_AI_=158
+azure.ai.agents:AZD_FOUNDRY_=32
+azure.ai.agents:FOUNDRY_=206
+azure.ai.agents:AI_PROJECT_=9
+azure.ai.agents:AGENT_=324
+azure.ai.agents:AZURE_CONTAINER_REGISTRY_=65
+azure.ai.projects:AZURE_AI_=125
+azure.ai.projects:AZD_FOUNDRY_=15
+azure.ai.projects:FOUNDRY_=59
+azure.ai.projects:AI_PROJECT_=1
+azure.ai.projects:AGENT_=0
+azure.ai.projects:AZURE_CONTAINER_REGISTRY_=23

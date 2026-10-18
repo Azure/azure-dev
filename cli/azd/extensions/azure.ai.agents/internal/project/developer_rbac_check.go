@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"azureaiagent/internal/envkeys"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
@@ -237,7 +239,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	// Check 3: ACR role — must branch on registry mode (ABAC vs classic).
 	acrResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
-		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		Key:     envkeys.ContainerRegistryEndpoint.Name(),
 	})
 	if err != nil || acrResp.Value == "" {
 		fmt.Println("  ⚠ AZURE_CONTAINER_REGISTRY_ENDPOINT not set — skipping ACR role check")
@@ -252,7 +254,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	)
 	acrRidResp, _ := envClient.GetValue(ctx, &azdext.GetEnvRequest{
 		EnvName: envName,
-		Key:     "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		Key:     envkeys.ContainerRegistryResourceID.Name(),
 	})
 	if acrRidResp != nil && acrRidResp.Value != "" {
 		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)

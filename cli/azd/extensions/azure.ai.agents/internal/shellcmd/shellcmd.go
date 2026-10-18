@@ -18,6 +18,13 @@ const (
 	Cmd
 )
 
+// unsupportedCmdLiteral stands in for a value Cmd cannot make literal.
+//
+// %VAR% and !VAR! still expand inside Cmd "...", and no pasteable escaping is
+// reliable for both interactive cmd and .bat. Like evaluations ShellArg, the
+// printed command then fails on the name rather than expanding it.
+const unsupportedCmdLiteral = "VALUE_NEEDS_QUOTING"
+
 // Arg is one literal argument that the shell must not expand.
 type Arg struct{ v string }
 
@@ -51,12 +58,25 @@ func (l Line) Render(sh Shell) string {
 	return strings.Join(parts, " ")
 }
 
+// CanLiteral reports whether Quote can make s a true literal for sh.
+//
+// Cmd cannot: % and ! still expand inside double quotes.
+func CanLiteral(sh Shell, s string) bool {
+	return sh != Cmd || !strings.ContainsAny(s, "%!")
+}
+
 // Quote quotes s for the selected shell, even when it contains only plain characters.
+//
+// For Cmd, values containing % or ! cannot be made literal; Quote returns
+// VALUE_NEEDS_QUOTING so a pasted command fails on the name instead of expanding.
 func Quote(sh Shell, s string) string {
 	switch sh {
 	case PowerShell:
 		return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 	case Cmd:
+		if !CanLiteral(Cmd, s) {
+			return unsupportedCmdLiteral
+		}
 		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 	default:
 		return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
@@ -64,20 +84,34 @@ func Quote(sh Shell, s string) string {
 }
 
 func quote(sh Shell, s string) string {
-	if s != "" && isPlain(s) {
+	if s != "" && isPlain(sh, s) {
 		return s
 	}
 	return Quote(sh, s)
 }
 
-func isPlain(s string) bool {
+// isPlain reports whether s can stay unquoted for sh.
+//
+// The safe unquoted set is shell-dependent: PowerShell treats leading @ as
+// splat and , as array construction, so those must be quoted there even though
+// they are fine unquoted in POSIX and Cmd.
+func isPlain(sh Shell, s string) bool {
 	for _, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
-		case strings.ContainsRune("-_./:@+,=", r):
+		case isPlainPunct(sh, r):
 		default:
 			return false
 		}
 	}
 	return true
+}
+
+func isPlainPunct(sh Shell, r rune) bool {
+	switch sh {
+	case PowerShell:
+		return strings.ContainsRune("-_./:+=", r)
+	default:
+		return strings.ContainsRune("-_./:@+,=", r)
+	}
 }

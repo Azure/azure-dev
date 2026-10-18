@@ -5,12 +5,12 @@ datasets:
 evals:
   - name: ci-f1-quality
     dataset: ci-golden
-    evaluation_level: turn
+    evaluationLevel: turn
     evaluators:
       - evaluator: builtin.f1_score
-        initialization_parameters:
+        initializationParameters:
           $ref: ./f1-parameters.json
-        data_mapping:
+        dataMapping:
           query: "{{item.query}}"
           response: "{{item.response}}"
           ground_truth: "{{item.ground_truth}}"

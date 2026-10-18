@@ -187,6 +187,53 @@ class BuildEvidenceTests(unittest.TestCase):
                     build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
                 self.assertNotIn("service-secret", str(caught.exception))
 
+    def test_evaluator_error_and_skip_signals_override_pass_and_fail_verdicts(self) -> None:
+        for signal in (
+            {"status": "error"}, {"status": "errored"}, {"status": " ERROR "},
+            {"status": "skipped"}, {"status": " SkIpPeD "}, {"label": "skipped"},
+            {"label": " SKIPPED "}, {"sample": {"error": {"code": "FAILED_EXECUTION"}}},
+            {"sample": {"error": {"message": "service-secret"}}},
+        ):
+            for passed in (True, False):
+                with self.subTest(signal=signal, passed=passed):
+                    export = exported_items([1.0, 1.0 if passed else 0.0])
+                    export["items"][1]["results"][0].update(signal)
+                    with self.assertRaisesRegex(EvidenceError, "evaluator error or skip") as caught:
+                        build_evidence(
+                            completed_summary(passed=2 if passed else 1, failed=0 if passed else 1),
+                            export, EXPECTED_FIXTURE,
+                        )
+                    self.assertNotIn("service-secret", str(caught.exception))
+
+    def test_rejects_malformed_evaluator_outcome_metadata(self) -> None:
+        for signal in (
+            {"status": []}, {"label": {}}, {"sample": False}, {"sample": []},
+            {"sample": {"error": "service-secret"}}, {"sample": {"error": []}},
+            {"sample": {"error": {"code": False}}},
+            {"sample": {"error": {"message": ["service-secret"]}}},
+        ):
+            with self.subTest(signal=signal):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["results"][0].update(signal)
+                with self.assertRaisesRegex(EvidenceError, "invalid .*metadata") as caught:
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+                self.assertNotIn("service-secret", str(caught.exception))
+
+    def test_accepts_empty_error_metadata_and_completed_evaluator_status(self) -> None:
+        for signal in (
+            {"status": "completed", "label": "passed"}, {"status": None, "label": None},
+            {"sample": None}, {"sample": {}}, {"sample": {"error": None}},
+            {"sample": {"error": {}}}, {"sample": {"error": {"code": "", "message": ""}}},
+            {"sample": {"error": {"code": None, "message": None}}},
+        ):
+            with self.subTest(signal=signal):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["results"][0].update(signal)
+                evidence = build_evidence(
+                    completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE
+                )
+                self.assertEqual(evidence["outcome"], "passed")
+
     def test_rejects_a_verdict_that_disagrees_with_the_evaluator_threshold(self) -> None:
         export = exported_items([1.0, 1.0])
         export["items"][0]["results"][0]["passed"] = False
@@ -447,6 +494,26 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("--evaluator-threshold $evaluatorThreshold", runner)
         self.assertIn("--quality-gate-threshold $qualityGateThreshold", runner)
         self.assertEqual(runner.count('$qualityGateThreshold = "0.8"'), 1)
+
+    def test_live_fixture_uses_current_configuration_keys_and_dataset_columns(self) -> None:
+        config = (SCRIPT_ROOT / "fixture" / "live" / "azure.eval.yaml").read_text(encoding="utf-8")
+        self.assertEqual(config, """datasets:
+  - name: ci-golden
+    file: ./data/golden.jsonl
+
+evals:
+  - name: ci-f1-quality
+    dataset: ci-golden
+    evaluationLevel: turn
+    evaluators:
+      - evaluator: builtin.f1_score
+        initializationParameters:
+          $ref: ./f1-parameters.json
+        dataMapping:
+          query: "{{item.query}}"
+          response: "{{item.response}}"
+          ground_truth: "{{item.ground_truth}}"
+""")
 
     def test_fixture_contains_only_the_inert_reconciliation_marker(self) -> None:
         marker = (

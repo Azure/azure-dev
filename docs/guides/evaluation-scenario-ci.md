@@ -54,6 +54,9 @@ The evaluator threshold lives in
 The evaluation includes that file with `$ref`, and the live runner passes the
 same value to the sanitizer. The runner's single quality-gate value is passed
 both to `--fail-on` and to `--quality-gate-threshold`.
+The fixture uses the extension's camelCase configuration keys (`evaluationLevel`,
+`initializationParameters`, and `dataMapping`); dataset column names such as
+`ground_truth` remain unchanged.
 
 Only a completed run whose aggregate counts agree with all reviewed sample
 verdicts can produce publishable evidence. `total` must cover passed, failed,
@@ -66,6 +69,10 @@ or metric (`f1_score`); a singleton result for another evaluator is not F1 evide
 Scores may be JSON numbers or quoted numeric values, as in raw service exports.
 Both forms must be finite and between zero and one, and artifact scores are
 always numeric.
+Evaluator error statuses, nonempty sample error codes/messages, and skipped
+statuses or labels take precedence over scores and pass verdicts. They cannot
+produce publishable evidence, even when aggregate counts claim an ordinary
+pass or failure.
 
 The artifact contains only aggregate counts, thresholds, and the reviewed
 `query`, `response`, `ground_truth`, numeric `score`, and `passed` fields.

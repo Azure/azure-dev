@@ -116,6 +116,35 @@ def _result_for_sample(item: dict[str, Any], evaluator_threshold: float) -> dict
         raise EvidenceError("An exported item does not contain one F1 result.")
 
     result = candidates[0]
+    signals: dict[str, str] = {}
+    for field in ("status", "label"):
+        value = result.get(field)
+        if value is not None and not isinstance(value, str):
+            raise EvidenceError("An F1 result contains invalid outcome metadata.")
+        signals[field] = value.strip().lower() if value is not None else ""
+
+    sample = result.get("sample")
+    has_sample_error = False
+    if sample is not None:
+        if not isinstance(sample, dict):
+            raise EvidenceError("An F1 result contains invalid sample metadata.")
+        error = sample.get("error")
+        if error is not None:
+            if not isinstance(error, dict):
+                raise EvidenceError("An F1 result contains invalid sample error metadata.")
+            for field in ("code", "message"):
+                value = error.get(field)
+                if value is not None and not isinstance(value, str):
+                    raise EvidenceError("An F1 result contains invalid sample error metadata.")
+                has_sample_error = has_sample_error or bool(value)
+
+    if (
+        signals["status"] in {"error", "errored", "skipped"}
+        or signals["label"] == "skipped"
+        or has_sample_error
+    ):
+        raise EvidenceError("An F1 result reports an evaluator error or skip.")
+
     score = result.get("score")
     if isinstance(score, bool) or not isinstance(score, (int, float, str)):
         raise EvidenceError("An F1 result does not contain a numeric score.")

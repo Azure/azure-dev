@@ -50,7 +50,10 @@ function azd {
         }
         "ai eval run show *" {
             Get-Content -LiteralPath (Join-Path $env:TEST_DIRECTORY "summary.json") -Raw
-            if ($env:TEST_SCENARIO -in @("breach", "pass-breach-exit")) { $global:LASTEXITCODE = 2 }
+            if ($env:TEST_SCENARIO -in @(
+                "breach", "pass-breach-exit", "result-error", "result-skipped",
+                "result-sample-error", "result-label-skipped"
+            )) { $global:LASTEXITCODE = 2 }
             if ($env:TEST_SCENARIO -in @("exit-mismatch", "breach-operational-failure")) {
                 $global:LASTEXITCODE = 1
             }
@@ -127,18 +130,25 @@ class PowerShellScriptTests(unittest.TestCase):
         for scenario in (
             "passed", "breach", "exit-mismatch", "pass-breach-exit",
             "breach-operational-failure", "breach-zero-exit", "breach-unexpected-exit",
+            "result-error", "result-skipped", "result-sample-error", "result-label-skipped",
             "invalid-start", "up-failed",
         ):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                breached = scenario.startswith("breach")
+                breached = scenario.startswith(("breach", "result-"))
                 (root / "summary.json").write_text(
                     json.dumps(completed_summary(passed=1 if breached else 2, failed=1 if breached else 0)),
                     encoding="utf-8",
                 )
-                (root / "export.json").write_text(
-                    json.dumps(exported_items([1.0, 0.5 if breached else 1.0])), encoding="utf-8",
-                )
+                export = exported_items([1.0, 0.0 if breached else 1.0])
+                operational_signals = {
+                    "result-error": {"status": "errored"},
+                    "result-skipped": {"status": "skipped"},
+                    "result-sample-error": {"sample": {"error": {"code": "FAILED_EXECUTION"}}},
+                    "result-label-skipped": {"label": "skipped"},
+                }
+                export["items"][1]["results"][0].update(operational_signals.get(scenario, {}))
+                (root / "export.json").write_text(json.dumps(export), encoding="utf-8")
                 result = self.run_script(root, "run_live.ps1", scenario)
                 output = result.stdout + result.stderr
                 self.assertNotIn("service-secret", output)

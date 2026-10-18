@@ -181,12 +181,17 @@ func unsetDeploymentStacksReferences(node parse.Node, lookup func(string) string
 		children = node.Nodes
 	case *parse.FuncNode:
 		switch node.Name {
-		case "", "=", ":=", ":-", ":?", ":+", "-", "+":
+		case "=", ":=", ":-", ":?", ":+", "-", "+":
 			// Envsubst evaluates fallback arguments eagerly; only validate a fallback when it is selected.
 			if lookup(node.Param) != "" {
 				return nil
 			}
-			if node.Name == "" && len(node.Args) == 0 {
+		case "":
+			if len(node.Args) == 0 && lookup(node.Param) == "" {
+				return []string{node.Param}
+			}
+		default:
+			if lookup(node.Param) == "" {
 				return []string{node.Param}
 			}
 		}

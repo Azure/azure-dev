@@ -140,19 +140,28 @@ func TestResolveDeploymentStacksMap_UnsetVarInCompositeValueErrors(t *testing.T)
 		excludedActions    []osutil.ExpandableString
 		excludedPrincipals []osutil.ExpandableString
 		virtualEnv         map[string]string
+		unsetVariable      string
 	}{
 		{
 			name:            "excluded action",
 			excludedActions: expandableStrings("Microsoft.Authorization/${UNSET_SCOPE}/write"),
+			unsetVariable:   "UNSET_SCOPE",
+		},
+		{
+			name:            "transformed excluded action",
+			excludedActions: expandableStrings("Microsoft.Authorization/${UNSET_SCOPE,,}/write"),
+			unsetVariable:   "UNSET_SCOPE",
 		},
 		{
 			name:               "excluded principal",
 			excludedPrincipals: expandableStrings("principal-${UNSET_PRINCIPAL}-suffix"),
+			unsetVariable:      "UNSET_PRINCIPAL",
 		},
 		{
 			name:               "empty plan-time value",
 			excludedPrincipals: expandableStrings("principal-${EMPTY_PRINCIPAL}-suffix"),
 			virtualEnv:         map[string]string{"EMPTY_PRINCIPAL": ""},
+			unsetVariable:      "EMPTY_PRINCIPAL",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -170,6 +179,7 @@ func TestResolveDeploymentStacksMap_UnsetVarInCompositeValueErrors(t *testing.T)
 			_, err := provider.resolveDeploymentStacksMap(true)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "unset environment variable")
+			require.Contains(t, err.Error(), testCase.unsetVariable)
 		})
 	}
 }

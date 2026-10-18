@@ -192,7 +192,7 @@ func (a *myAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 - Commands can support multiple output formats via `--output` flag like `json` and`table`
 - Use structured output for machine consumption
-- **Shell-safe output**: When emitting shell commands in user-facing messages (e.g., `cd <path>`), quote paths that may contain spaces. Use `fmt.Sprintf("cd %q", path)` or conditionally wrap in quotes
+- **Shell-safe output**: When emitting shell commands in user-facing messages, use a shell-safe helper such as `shellcmd` in `azure.ai.agents`: `shellcmd.Cd(path).String()` or `shellcmd.Command(...).String()` defaults to POSIX quoting; `.Render(shell)` selects POSIX, PowerShell, or Cmd quoting. Go's `%q` is not shell quoting and must not be used for copyable commands. Diagnostic `%q` in non-command messages remains fine.
 - **Consistent JSON types**: When adding fields to JSON output (`--output json`), match the types used by similar fields across commands. Don't mix `*time.Time` and custom timestamp wrappers (e.g., `*RFC3339Time`) in the same API surface
 
 ### CLI UX & Style

@@ -14,6 +14,9 @@ parameters:
   - name: CleanSystemCaches
     type: boolean
     default: false
+  - name: DockerTimeoutInMinutes
+    type: number
+    default: 0
   - name: Condition
     type: string
     default: succeeded()
@@ -29,6 +32,7 @@ steps:
       displayName: Cleanup Docker
       condition: and(${{ parameters.Condition }}, eq(variables['Agent.OS'], 'Linux'))
       continueOnError: true
+      timeoutInMinutes: ${{ parameters.DockerTimeoutInMinutes }}
 
   - ${{ if eq(parameters.CleanGoCache, true) }}:
     - bash: |

@@ -1,0 +1,49 @@
+# Evals for the repository-local azd gRPC contract lifecycle skill.
+name: "Evals: vally (gRPC contract skill)"
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/skills/azd-grpc-contracts/**"
+      - "cli/azd/docs/extensions/contract-versioning.md"
+      - "cli/azd/grpc/README.md"
+      - "cli/azd/grpc/proto/azd/extensions/v1/**"
+      - "cli/azd/grpc/proto/azd/extensions/v1beta/**"
+      - "cli/azd/internal/grpcserver/versioned_services.go"
+      - "cli/azd/internal/grpcserver/versioned_services_generated.go"
+      - "cli/azd/Makefile"
+      - "cli/azd/pkg/azdext/contracts/versioning_test.go"
+      - "cli/azd/test/evals/eval-azd-grpc-contracts.yaml"
+      - "cli/azd/test/evals/package.json"
+      - "cli/azd/test/evals/package-lock.json"
+      - ".github/actions/vally-eval/**"
+      - ".github/workflows/vally-grpc-contracts-skill-ci.yml"
+
+permissions:
+  contents: read
+  copilot-requests: write
+
+concurrency:
+  group: vally-grpc-contracts-skill-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  grpc-contracts:
+    name: Run vally evals (gRPC contracts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run vally eval
+        id: vally
+        uses: ./.github/actions/vally-eval
+        with:
+          working-directory: cli/azd/test/evals
+          eval-file: eval-azd-grpc-contracts.yaml
+          artifact-name: ${{ github.job }}-vally-results
+          github-token: ${{ github.token }}

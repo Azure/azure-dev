@@ -5,10 +5,8 @@ package provisioning
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,37 +16,13 @@ import (
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type stubTokenCredential struct {
-	token   azcore.AccessToken
-	err     error
-	options []policy.TokenRequestOptions
-}
-
-func (c *stubTokenCredential) GetToken(
-	_ context.Context,
-	options policy.TokenRequestOptions,
-) (azcore.AccessToken, error) {
-	c.options = append(c.options, options)
-	return c.token, c.err
-}
-
-func accessTokenWithClaims(oid, idType, scopes string) string {
-	claims := base64.RawURLEncoding.EncodeToString(
-		fmt.Appendf(nil, `{"oid":%q,"idtyp":%q,"scp":%q}`, oid, idType, scopes),
-	)
-	return "header." + claims + ".signature"
-}
 
 func TestFindFoundryProjectService(t *testing.T) {
 	tests := []struct {
@@ -231,291 +205,6 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// guards against future signature drift in azdext.
 	p := NewFoundryProvisioningProvider(nil)
 	assert.NotNil(t, p)
-}
-
-func TestParametersResolvePrincipalFromTenantScopedCredential(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("guest-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		credential:  credential,
-		location:    "eastus",
-		foundryName: "project",
-	}
-
-	parameters, err := provider.Parameters(t.Context())
-
-	require.NoError(t, err)
-	assert.Equal(t, "guest-object-id", provider.principalID)
-	assert.Equal(t, "User", provider.principalType)
-	require.Len(t, credential.options, 1)
-	assert.Equal(
-		t,
-		[]string{"https://management.azure.com/.default"},
-		credential.options[0].Scopes,
-	)
-	require.Len(t, parameters, 4)
-	assert.Equal(t, "principalId", parameters[2].Name)
-	assert.Equal(t, "guest-object-id", parameters[2].Value)
-	assert.Equal(t, "principalType", parameters[3].Name)
-	assert.Equal(t, "User", parameters[3].Value)
-}
-
-func TestParametersResolveServicePrincipalType(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("service-principal-object-id", "app", ""),
-		},
-	}
-	provider := &FoundryProvisioningProvider{credential: credential}
-
-	parameters, err := provider.Parameters(t.Context())
-
-	require.NoError(t, err)
-	assert.Equal(t, "service-principal-object-id", provider.principalID)
-	assert.Equal(t, "ServicePrincipal", provider.principalType)
-	require.Len(t, parameters, 4)
-	assert.Equal(t, "ServicePrincipal", parameters[3].Value)
-}
-
-func TestEnsurePrincipalIDPreservesEnvironmentValue(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		principalID:           "configured-object-id",
-		principalIDConfigured: true,
-		credential:            credential,
-	}
-
-	require.NoError(t, provider.ensurePrincipalID(t.Context()))
-	assert.Equal(t, "configured-object-id", provider.principalID)
-	assert.Empty(t, credential.options)
-}
-
-func TestEnsurePrincipalIDPreservesExplicitEmptyValue(t *testing.T) {
-	t.Parallel()
-
-	credential := &stubTokenCredential{
-		token: azcore.AccessToken{
-			Token: accessTokenWithClaims("different-object-id", "user", "user_impersonation"),
-		},
-	}
-	provider := &FoundryProvisioningProvider{
-		principalIDConfigured: true,
-		credential:            credential,
-	}
-
-	require.NoError(t, provider.ensurePrincipalID(t.Context()))
-	assert.Empty(t, provider.principalID)
-	assert.Empty(t, provider.principalType)
-	assert.Empty(t, credential.options)
-}
-
-func TestEnsurePrincipalIDReportsCredentialFailures(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		credential azcore.TokenCredential
-	}{
-		{
-			name: "token acquisition",
-			credential: &stubTokenCredential{
-				err: errors.New("token unavailable"),
-			},
-		},
-		{
-			name: "missing oid claim",
-			credential: &stubTokenCredential{
-				token: azcore.AccessToken{
-					Token: accessTokenWithClaims("", "user", "user_impersonation"),
-				},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			provider := &FoundryProvisioningProvider{credential: test.credential}
-
-			err := provider.ensurePrincipalID(t.Context())
-
-			require.Error(t, err)
-			local, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
-		})
-	}
-}
-
-func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name              string
-		tokenType         string
-		tokenScopes       string
-		disableAssignment bool
-		literalOverride   bool
-		omitType          bool
-		templateDefault   bool
-		wantPrincipal     string
-		wantType          string
-	}{
-		{
-			name: "guest user", tokenType: "user", tokenScopes: "user_impersonation",
-			wantPrincipal: "guest-object-id", wantType: "User",
-		},
-		{
-			name: "service principal", tokenType: "app",
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "literal override", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
-			wantPrincipal: "configured-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "literal empty principal", tokenType: "user", tokenScopes: "user_impersonation", literalOverride: true,
-			wantType: "User",
-		},
-		{
-			name: "explicit empty environment", disableAssignment: true,
-		},
-		{
-			name: "ID-only user override by service principal", tokenType: "app",
-			literalOverride: true, omitType: true, templateDefault: true,
-			wantPrincipal: "configured-user-id", wantType: "User",
-		},
-		{
-			name: "ID-only override matching deployer", tokenType: "app",
-			literalOverride: true, omitType: true,
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "environment ID without type", tokenType: "app", omitType: true,
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-	}
-	for _, mode := range []templateMode{templateModeBicep, templateModeBicepParam} {
-		for _, tt := range tests {
-			t.Run(mode.String()+"/"+tt.name, func(t *testing.T) {
-				root := t.TempDir()
-				infraDir := filepath.Join(root, "infra", "foundry")
-				require.NoError(t, os.MkdirAll(infraDir, 0o750))
-				const template = `{"parameters":{
-					"principalId":{"type":"string"},
-					"principalType":{"type":"string","defaultValue":"User"},
-					"identityLabel":{"type":"object"}
-				},"resources":[]}`
-				inputParameters := map[string]any{
-					"principalId":   "${AZURE_PRINCIPAL_ID}",
-					"principalType": "${AZURE_PRINCIPAL_TYPE}",
-					"identityLabel": map[string]any{"value": "${AZURE_PRINCIPAL_ID}/${AZURE_PRINCIPAL_TYPE}"},
-				}
-				if tt.literalOverride {
-					inputParameters["principalId"] = tt.wantPrincipal
-					inputParameters["principalType"] = tt.wantType
-				}
-				if tt.omitType {
-					delete(inputParameters, "principalType")
-				}
-				require.NoError(t, os.WriteFile(
-					filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
-				))
-				compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: template}}
-				if mode == templateModeBicep {
-					require.NoError(t, os.WriteFile(
-						filepath.Join(infraDir, "project.parameters.json"),
-						[]byte(minimalARMParametersFile(t, inputParameters)), 0o600,
-					))
-				} else {
-					require.NoError(t, os.WriteFile(
-						filepath.Join(infraDir, "project.bicepparam"),
-						[]byte("using './project.bicep'\n"+
-							"param principalId = readEnvironmentVariable('AZURE_PRINCIPAL_ID')\n"+
-							"param principalType = readEnvironmentVariable('AZURE_PRINCIPAL_TYPE')\n"), 0o600,
-					))
-					compiler.buildParam = func(_ context.Context, _ string, env []string) (bicep.BuildResult, error) {
-						values := map[string]string{}
-						for _, entry := range env {
-							key, value, found := strings.Cut(entry, "=")
-							require.True(t, found)
-							values[key] = value
-						}
-						params := map[string]any{
-							"principalId":   values[envKeyPrincipalID],
-							"principalType": values[envKeyPrincipalType],
-							"identityLabel": map[string]any{
-								"value": values[envKeyPrincipalID] + "/" + values[envKeyPrincipalType],
-							},
-						}
-						if tt.literalOverride {
-							params["principalId"] = tt.wantPrincipal
-							params["principalType"] = tt.wantType
-						}
-						if tt.omitType {
-							delete(params, "principalType")
-						}
-						envelope, err := json.Marshal(map[string]string{
-							"templateJson": template, "parametersJson": minimalARMParametersFile(t, params),
-						})
-						require.NoError(t, err)
-						return bicep.BuildResult{Compiled: string(envelope)}, nil
-					}
-				}
-				credential := &stubTokenCredential{token: azcore.AccessToken{
-					Token: accessTokenWithClaims("guest-object-id", tt.tokenType, tt.tokenScopes),
-				}}
-				provider := &FoundryProvisioningProvider{
-					projectPath: root, infraPath: infraDir, infraModule: "project", isLayer: true,
-					credential: credential, bicepCliInstance: compiler, principalIDConfigured: tt.disableAssignment,
-				}
-
-				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"value": tt.wantPrincipal}, source.parameters["principalId"])
-				if tt.templateDefault {
-					assert.NotContains(t, source.parameters, "principalType")
-					definitions, ok := source.armTemplate["parameters"].(map[string]any)
-					require.True(t, ok)
-					typeDefinition, ok := definitions["principalType"].(map[string]any)
-					require.True(t, ok)
-					assert.Equal(t, tt.wantType, typeDefinition["defaultValue"])
-				} else {
-					assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
-				}
-				assert.Equal(t, map[string]any{"value": map[string]any{
-					"value": provider.principalID + "/" + provider.principalType,
-				}}, source.parameters["identityLabel"])
-				assert.Equal(t, mode, source.mode)
-
-				repeated, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, source.parameters, repeated.parameters)
-				if tt.disableAssignment {
-					assert.Empty(t, credential.options)
-				} else {
-					assert.Len(t, credential.options, 1)
-				}
-				wantLoads := 2
-				if tt.disableAssignment {
-					wantLoads = 1
-				}
-				assert.Equal(t, wantLoads, len(compiler.buildCalls)+len(compiler.buildParamCalls))
-			})
-		}
-	}
 }
 
 func TestArmOutputsToProto(t *testing.T) {
@@ -1024,30 +713,68 @@ func TestArmInputsToProto_JSONEncodesNonStrings(t *testing.T) {
 }
 
 func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
-	// On the on-disk Bicep path, Initialize deliberately skips the
-	// synthesizer so synthResult is nil. Parameters must still return
-	// the host-derived parameter list (location, foundryProjectName,
-	// principalId) so azd-core's env-wiring planner has something to
-	// work with. The synthesizer-derived `includeAcr` is omitted in
-	// that mode -- on-disk Bicep owns its own parameter contract.
+	// An on-disk template does not trigger principal lookup or wiring.
 	p := &FoundryProvisioningProvider{
+		projectPath: t.TempDir(),
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		// synthResult intentionally nil (on-disk path)
 	}
+	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), nil, 0o600))
 	got, err := p.Parameters(t.Context())
 	require.NoError(t, err, "Parameters must succeed on the on-disk path")
 
 	names := make([]string, 0, len(got))
+	var location *azdext.ProvisioningParameter
 	for _, p := range got {
 		names = append(names, p.Name)
+		if p.Name == "location" {
+			location = p
+		}
 	}
 	assert.Contains(t, names, "location")
 	assert.Contains(t, names, "foundryProjectName")
-	assert.Contains(t, names, "principalId")
+	assert.NotContains(t, names, "principalId")
+	assert.NotContains(t, names, "principalType")
+	require.NotNil(t, location)
+	assert.Equal(t, []string{envKeyLocation}, location.EnvVarMapping)
+	assert.True(t, location.UsingEnvVarMapping,
+		"pipeline config must persist AZURE_LOCATION because deploy requires it after provision")
 	assert.NotContains(t, names, "includeAcr",
 		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
+}
+
+func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		location: "eastus2",
+		existingProjectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/a/projects/p",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	expected := map[string]struct {
+		value  string
+		envVar string
+	}{
+		"location":          {value: p.location, envVar: envKeyLocation},
+		"projectResourceId": {value: p.existingProjectID, envVar: "AZURE_AI_PROJECT_ID"},
+		"projectEndpoint":   {value: p.brownfieldEndpoint, envVar: "FOUNDRY_PROJECT_ENDPOINT"},
+		"acrMode":           {value: p.existingAcrMode, envVar: "AZD_FOUNDRY_ACR_MODE"},
+	}
+	require.Len(t, got, len(expected))
+	for _, parameter := range got {
+		want, exists := expected[parameter.Name]
+		require.True(t, exists, "unexpected parameter %q", parameter.Name)
+		assert.Equal(t, want.value, parameter.Value)
+		assert.Equal(t, []string{want.envVar}, parameter.EnvVarMapping)
+		assert.True(t, parameter.UsingEnvVarMapping)
+	}
 }
 
 func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {
@@ -1056,7 +783,6 @@ func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) 
 	p := &FoundryProvisioningProvider{
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": true},
 		},
@@ -1085,12 +811,13 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		envName:     "dev",
 		rgName:      "rg-dev",
 		foundryName: "fp",
-		principalID: "pid",
 		// synthResult intentionally nil
 	}
 	out := p.armParameters() // must not panic
 	require.Contains(t, out, "location")
 	require.Contains(t, out, "foundryProjectName")
+	require.NotContains(t, out, "principalId")
+	require.NotContains(t, out, "principalType")
 	// resourceGroupName drives the resource group the subscription-scoped
 	// template creates; it must always be present.
 	require.Contains(t, out, "resourceGroupName")
@@ -1226,7 +953,6 @@ func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
 		envName:     "dev",
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded", "contentVersion": "1.0.0.0"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{
@@ -1267,6 +993,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "value": "user-supplied-location" },
+    "principalId": { "value": "user-supplied-id" },
     "userOnly": { "value": "from-user" }
   }
 }`
@@ -1281,6 +1008,8 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		"parameters": map[string]any{
 			"location":           map[string]any{"type": "string"},
 			"foundryProjectName": map[string]any{"type": "string"},
+			"principalId":        map[string]any{"type": "string"},
+			"principalType":      map[string]any{"type": "string", "defaultValue": "User"},
 		},
 	}
 	p := &FoundryProvisioningProvider{
@@ -1288,7 +1017,6 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		envName:     "dev",
 		location:    "host-location",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": false},
@@ -1297,8 +1025,9 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 			mode:        templateModeBicep,
 			armTemplate: armFromDisk,
 			parameters: map[string]any{
-				"location": map[string]any{"value": "user-supplied-location"},
-				"userOnly": map[string]any{"value": "from-user"},
+				"location":    map[string]any{"value": "user-supplied-location"},
+				"principalId": map[string]any{"value": "user-supplied-id"},
+				"userOnly":    map[string]any{"value": "from-user"},
 			},
 			sourcePath: filepath.Join(infraDir, onDiskModule+".bicep"),
 		},
@@ -1317,6 +1046,8 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	loc := got.parameters["location"].(map[string]any)
 	assert.Equal(t, "user-supplied-location", loc["value"],
 		"user-supplied parameter wins over host-derived")
+	assert.Equal(t, map[string]any{"value": "user-supplied-id"}, got.parameters["principalId"])
+	assert.NotContains(t, got.parameters, "principalType")
 	// User-only key is present.
 	require.Contains(t, got.parameters, "userOnly")
 	// Host-derived key (declared by the template, not in user params) still flows through.
@@ -1345,7 +1076,6 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 		envName:     "dev",
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": false},
@@ -1774,10 +1504,10 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		location:    "westus2",
 		rgName:      "my-rg",
 		foundryName: "fp",
-		principalID: "pid",
 		virtualEnv: map[string]string{
-			"PLATFORM_OUTPUT": "planned-value",
-			envKeyLocation:    "stale-planned-location",
+			"PLATFORM_OUTPUT":    "planned-value",
+			"AZURE_PRINCIPAL_ID": "user-supplied-id",
+			envKeyLocation:       "stale-planned-location",
 		},
 		// azdClient intentionally nil
 	}
@@ -1787,7 +1517,8 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
 	assert.Equal(t, "my-rg", got[envKeyFoundryRG])
 	assert.Equal(t, "fp", got[envKeyProjectName])
-	assert.Equal(t, "pid", got[envKeyPrincipalID])
+	assert.Equal(t, "user-supplied-id", got["AZURE_PRINCIPAL_ID"])
+	assert.NotContains(t, got, "AZURE_PRINCIPAL_TYPE")
 	assert.Equal(t, "planned-value", got["PLATFORM_OUTPUT"])
 	assert.Equal(t, "westus2", got[envKeyLocation], "canonical values take precedence over virtual env")
 }

@@ -88,11 +88,16 @@ configuration:
       - addReply:
           reply: Hi @${issueAuthor}.  Thank you for your interest in helping to improve the Azure Developer CLI experience and for your contribution.  We've noticed that there hasn't been recent engagement on this pull request.  If this is still an active work stream, please let us know by pushing some changes or leaving a comment.  Otherwise, we'll close this out in 7 days.
     eventResponderTasks:
+    # Policy-generated labels and reminders must not clear the inactivity label.
     - if:
       - payloadType: Issues
       - not:
           isAction:
             action: Closed
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       - hasLabel:
           label: no-recent-activity
       then:
@@ -101,24 +106,16 @@ configuration:
       description: 
     - if:
       - payloadType: Issue_Comment
-      - hasLabel:
-          label: no-recent-activity
-      then:
-      - removeLabel:
-          label: no-recent-activity
-      description: 
-    - if:
-      - payloadType: Issues
-      - isAction:
-          action: Labeled
-      - hasLabel:
-          label: needs-triage
+      - isOpen
       - not:
-          labelAdded:
-            label: needs-triage
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
+      - hasLabel:
+          label: no-recent-activity
       then:
       - removeLabel:
-          label: needs-triage
+          label: no-recent-activity
       description: 
     - if:
       - payloadType: Issues
@@ -137,11 +134,13 @@ configuration:
         - not:
             activitySenderHasPermission:
               permission: Admin
+        - not:
+            isActivitySender:
+              user: github-actions[bot]
+              issueAuthor: False
       then:
       - addLabel:
           label: customer-reported
-      - addLabel:
-          label: question
       description: 
     - if:
       - payloadType: Pull_Request
@@ -160,6 +159,18 @@ configuration:
         - not:
             activitySenderHasPermission:
               permission: Admin
+        - not:
+            isActivitySender:
+              user: dependabot[bot]
+              issueAuthor: False
+        - not:
+            isActivitySender:
+              user: azure-sdk-automation[bot]
+              issueAuthor: False
+        - not:
+            isActivitySender:
+              user: github-actions[bot]
+              issueAuthor: False
       then:
       - addLabel:
           label: customer-reported
@@ -168,43 +179,11 @@ configuration:
       description: 
     - if:
       - payloadType: Issues
-      - isAction:
-          action: Labeled
-      - not:
-          hasLabel:
-            label: needs-triage
-      - not:
-          hasLabel:
-            label: needs-team-triage
-      - not:
-          hasLabel:
-            label: needs-author-feedback
-      - hasLabel:
-          label: customer-reported
-      - not:
-          isInMilestone:
-            milestone: ''
-      - isOpen
-      - not:
-          hasLabel:
-            label: issue-addressed
-      then:
-      - addLabel:
-          label: needs-team-attention
-      description: 
-    - if:
-      - payloadType: Issues
       - labelAdded:
           label: issue-addressed
       then:
       - addReply:
           reply: Hi @${issueAuthor}. Thank you for opening this issue and giving us the opportunity to assist. We believe that this has been addressed. If you feel that further discussion is needed, please add a comment with the text “`/unresolve`” to remove the “issue-addressed” label and continue the conversation.
-      - removeLabel:
-          label: needs-triage
-      - removeLabel:
-          label: needs-team-triage
-      - removeLabel:
-          label: needs-team-attention
       - removeLabel:
           label: needs-author-feedback
       - removeLabel:
@@ -228,8 +207,6 @@ configuration:
       - reopenIssue
       - removeLabel:
           label: issue-addressed
-      - addLabel:
-          label: needs-team-attention
       description: 
     - if:
       - payloadType: Issue_Comment
@@ -257,15 +234,8 @@ configuration:
       - isOpen
       - hasLabel:
           label: issue-addressed
-      - or:
-        - labelAdded:
-            label: needs-team-attention
-        - labelAdded:
-            label: needs-author-feedback
-        - labelAdded:
-            label: needs-triage
-        - labelAdded:
-            label: needs-team-triage
+      - labelAdded:
+          label: needs-author-feedback
       then:
       - removeLabel:
           label: issue-addressed
@@ -275,6 +245,10 @@ configuration:
       - hasLabel:
           label: no-recent-activity
       - isOpen
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       - or:
         - isAction:
             action: Null
@@ -291,26 +265,10 @@ configuration:
       - hasLabel:
           label: no-recent-activity
       - isOpen
-      then:
-      - removeLabel:
-          label: no-recent-activity
-      description: 
-    - if:
-      - payloadType: Issue_Comment
-      - isAction:
-          action: Created
-      - hasLabel:
-          label: no-recent-activity
-      - isOpen
-      - and:
-        - not:
-            commentContains:
-              pattern: What is Check Enforcer?
-              isRegex: False
-        - not:
-            commentContains:
-              pattern: Since there hasn't been recent engagement, this is being closed out.
-              isRegex: False
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       then:
       - removeLabel:
           label: no-recent-activity

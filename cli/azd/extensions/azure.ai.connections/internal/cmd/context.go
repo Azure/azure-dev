@@ -19,6 +19,8 @@ func newContextCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "context",
 		Short: "Get the context of the azd project & environment.",
+		Example: `  # Inspect local context (output may include secrets)
+  azd ai connection context`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Create a new context that includes the azd access token
 			ctx := azdext.WithAccessToken(cmd.Context())

@@ -2,6 +2,93 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.20 (2026-10-15)
+
+### Features Added
+
+- [[#10408]](https://github.com/Azure/azure-dev/pull/10408) Add schema and agent-kind validation for file-backed agent definitions, rejecting entry files outside the project.
+- [[#10410]](https://github.com/Azure/azure-dev/pull/10410) Add dependency planning for file-backed agents across Projects, Connections, Toolboxes, Skills, and hosted Voice services while preserving unrelated dependencies.
+- [[#10411]](https://github.com/Azure/azure-dev/pull/10411) Add agent service declaration planning that preserves unrelated authored fields and stores project-relative definition references.
+- [[#10412]](https://github.com/Azure/azure-dev/pull/10412) Add `azd ai agent add <name> --file <path>` to add or update file-backed agent services in an existing project without rewriting unchanged configuration.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add read-only hosted-agent configuration comparison through `azd deploy --preview`, with grouped text and JSON changes and credential protection. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10397]](https://github.com/Azure/azure-dev/pull/10397) Fix prompt-agent services rejecting local JSON root `$ref` definitions.
+- [[#10409]](https://github.com/Azure/azure-dev/pull/10409) Fix prompt-agent Connection references to resolve by service key or effective resource name and use the matching service for deployment dependencies.
+- [[#10425]](https://github.com/Azure/azure-dev/pull/10425) Fix remote OpenAPI discovery creating extra Foundry sessions by binding metadata requests to the completed invocation's session.
+- [[#10445]](https://github.com/Azure/azure-dev/pull/10445) Fix initialization prompts advertising an unavailable `?` hint by displaying environment-variable storage guidance before input.
+- [[#10441]](https://github.com/Azure/azure-dev/pull/10441) Fix Voice Agent reads to use the stable API contract without the preview feature header.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix deployment for users without role-assignment permission by checking developer access during predeploy and treating denied grants as warnings.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix teardown failing when deployed prompt-agent instructions or skills are no longer valid locally.
+- [[#10450]](https://github.com/Azure/azure-dev/pull/10450) Fix generated GitHub Copilot harness initialization selecting unsupported Foundry regions.
+- [[#10470]](https://github.com/Azure/azure-dev/pull/10470) Fix adopted GitHub Copilot harness templates, including referenced definitions, selecting unsupported Foundry projects or regions.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Fix agent deployment silently dropping list-valued metadata tags. Thanks @Siglud for the contribution!
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Fix hosted code-agent deployment to read `AZURE_LOCATION` from the CI process environment when it is absent from the azd environment.
+
+### Other Changes
+
+- [[#10391]](https://github.com/Azure/azure-dev/pull/10391) Improve post-initialization guidance by highlighting the `cd` command consistently with azd commands.
+
+## 1.0.0-beta.19 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10314]](https://github.com/Azure/azure-dev/pull/10314) Rename prompt-memory and GitHub Copilot toolset authoring properties to camelCase, maintaining consistency across properties and extensions, and reject the former snake_case spellings.
+
+### Features Added
+
+- [[#10313]](https://github.com/Azure/azure-dev/pull/10313) Add `--template`/`-t` as the canonical option for agent initialization templates while retaining `--manifest`/`-m` as a deprecated alias.
+- [[#10276]](https://github.com/Azure/azure-dev/pull/10276) Increase the hosted-agent session idle timeout maximum to 240 minutes. Thanks @Deeksharma for the contribution!
+- [[#10284]](https://github.com/Azure/azure-dev/pull/10284) Add kind-aware endpoint display and reporting for hosted, prompt, and voice agents while limiting endpoint and card updates to hosted agents.
+
+### Bugs Fixed
+
+- [[#9791]](https://github.com/Azure/azure-dev/pull/9791) Fix invocation moderation to require a field name for `textField` so output screening is not silently skipped. Thanks @amitbhave10 for the contribution!
+- [[#10283]](https://github.com/Azure/azure-dev/pull/10283) Fix Doctor and lifecycle checks to validate agent definitions according to their agent kind.
+
+### Other Changes
+
+- [[#10072]](https://github.com/Azure/azure-dev/pull/10072) Add operation classifications to existing agent usage telemetry.
+- [[#10236]](https://github.com/Azure/azure-dev/pull/10236) Add usage telemetry for selected remote agent invocation protocols and modes.
+
+## 1.0.0-beta.18 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10137]](https://github.com/Azure/azure-dev/pull/10137) Require runtime agent definitions in `azure.yaml` or through an explicit root `$ref`, rejecting `AGENT_DEFINITION_PATH`, nested agent `config:` blocks, and implicit standalone-file discovery.
+- [[#10140]](https://github.com/Azure/azure-dev/pull/10140) Require unified `azure.yaml` project documents for agent initialization and remove standalone manifest adoption and the `sample list --type agent` filter.
+- [[#10164]](https://github.com/Azure/azure-dev/pull/10164) Remove legacy AgentManifest support from diagnostics and next-step guidance; move agent definitions to direct `azure.yaml` service properties or an explicit root `$ref`.
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2`.
+
+### Features Added
+
+- [[#10106]](https://github.com/Azure/azure-dev/pull/10106) Add `azd ai agent state-stores` commands to inspect existing stores and list, read, set, and delete their JSON items.
+- [[#10127]](https://github.com/Azure/azure-dev/pull/10127) Add project managed identity storage-permission diagnostics to `azd ai agent doctor` for Storage connections bound to the project capability host. Thanks @Yimin-Jin for the contribution!
+
+### Bugs Fixed
+
+- [[#10152]](https://github.com/Azure/azure-dev/pull/10152) Fix local Activity Playground routing to use `/activity/messages` for current protocols while preserving `/api/messages` for legacy v1 agents.
+
+## 1.0.0-beta.17 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Delegate Foundry project and model deployment authoring to the `azure.ai.projects` extension while preserving agent initialization and adoption flows.
+- [[#10155]](https://github.com/Azure/azure-dev/pull/10155) Add versioned skill references to prompt-agent manifests while preserving string shorthand for local skills.
+
+### Bugs Fixed
+
+- [[#10056]](https://github.com/Azure/azure-dev/pull/10056) Fix `--new-session` to also start a new conversation for local and remote Responses invocations.
+- [[#10134]](https://github.com/Azure/azure-dev/pull/10134) Fix prompt-agent invocation, including GitHub Copilot harness agents, to use Foundry conversations instead of previous response IDs.
+- [[#10159]](https://github.com/Azure/azure-dev/pull/10159) Fix `azd ai agent optimize deploy --candidate` for prompt agents, including GitHub Copilot harness agents. Thanks @YoYoJa for the contribution!
+
+### Other Changes
+
+- [[#10057]](https://github.com/Azure/azure-dev/pull/10057) Improve `azd ai agent` help formatting, examples, and environment guidance. Thanks @Siglud for the contribution!
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0
+
 ## 1.0.0-beta.16 (2026-09-17)
 
 ### Breaking Changes

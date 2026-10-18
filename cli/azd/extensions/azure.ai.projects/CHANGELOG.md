@@ -1,5 +1,51 @@
 # Release History
 
+## 1.0.0-beta.14 (2026-10-15)
+
+### Breaking Changes
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Require azd `>=1.36.0` for Foundry pipeline configuration support.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Remove generated developer-role assignments and `principalId`/`principalType` parameters from Foundry provisioning; custom templates requiring those parameters must supply their own values.
+
+### Features Added
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Add Foundry provisioning inputs for `azd pipeline config` so generated pipelines retain project, subscription, resource group, and location context.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add an explicit deployment no-op result for Project services in `azd deploy --preview` without an unsupported-provider warning. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix Foundry provisioning failing for contributors without permission to assign developer roles while preserving project-identity container registry access.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
+## 1.0.0-beta.13 (2026-09-30)
+
+### Breaking Changes
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Require azd `>=1.34.2` for host-based Foundry principal resolution.
+
+### Bugs Fixed
+
+- [[#10218]](https://github.com/Azure/azure-dev/pull/10218) Fix Foundry provisioning principal resolution for guest users and service principals by using the azd host account API.
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai project` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
+## 1.0.0-beta.12 (2026-09-24)
+
+### Features Added
+
+- [[#10030]](https://github.com/Azure/azure-dev/pull/10030) Add project and model deployment reconciliation so the Agents extension can delegate ownership of `azure.ai.project` authoring.
+
+### Bugs Fixed
+
+- [[#10008]](https://github.com/Azure/azure-dev/pull/10008) Fix cross-tenant Foundry provisioning to grant the deploying identity access to the target project.
+
+### Other Changes
+
+- [[#10114]](https://github.com/Azure/azure-dev/pull/10114) Update gRPC to v1.83.2 to address the GHSA-2v4p-qf9q-27wj security advisory.
+- [[#10128]](https://github.com/Azure/azure-dev/pull/10128) Update OpenTelemetry Go to v1.45.0 to address the GHSA-8wmf-6v46-5gfg security advisory.
+
 ## 1.0.0-beta.11 (2026-09-17)
 
 ### Breaking Changes

@@ -40,7 +40,12 @@ func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "list",
 		Short: "List Foundry skills in the project.",
 		Long:  `List all skills in the resolved Foundry project.`,
-		Args:  cobra.NoArgs,
+		Example: `  # List skills in the resolved project
+  azd ai skill list
+
+  # Return skill metadata as JSON
+  azd ai skill list --output json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")

@@ -284,7 +284,7 @@ func terminalHyperlink(url, text string) string {
 }
 
 // reportOptimizationDeployments reports optimization candidate deployments to the optimization service.
-// For each hosted agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
+// For each agent service, if AGENT_{KEY}_OPTIMIZATION_CANDIDATE_ID is set in
 // the azd environment, it calls the promote API, advances the local baseline config
 // to the promoted candidate, and then clears the env var.
 // This is best-effort — failures are logged but do not block the deploy.
@@ -295,13 +295,13 @@ func terminalHyperlink(url, text string) string {
 func reportOptimizationDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	hostedAgents []*azdext.ServiceConfig,
+	agentServices []*azdext.ServiceConfig,
 	envName, projectEndpoint string, projectPath string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
-	log.Printf("postdeploy: reporting optimization deployments for %d hosted agents", len(hostedAgents))
+	log.Printf("postdeploy: reporting optimization deployments for %d agent services", len(agentServices))
 
-	for _, svc := range hostedAgents {
+	for _, svc := range agentServices {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -309,7 +309,7 @@ func reportOptimizationDeployments(
 				}
 			}()
 			configsDir := baselineAdvancementDir(projectPath, svc)
-			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, configsDir, newClient)
+			reportSvcOptimizationDeployment(ctx, azdClient, svc, envName, projectEndpoint, configsDir, nil, newClient)
 		}()
 	}
 }
@@ -573,6 +573,7 @@ func reportSvcOptimizationDeployment(
 	azdClient *azdext.AzdClient,
 	svc *azdext.ServiceConfig,
 	envName, projectEndpoint string, configsDir string,
+	headers map[string]string,
 	newClient func(endpoint string) *optimize_api.OptimizeClient,
 ) {
 	serviceKey := toServiceKey(svc.Name)
@@ -622,11 +623,11 @@ func reportSvcOptimizationDeployment(
 	}
 
 	optClient := newClient(projectEndpoint)
-	if err := optClient.ReportDeployment(ctx, jobID, &optimize_api.DeploymentReport{
+	if err := optClient.ReportDeploymentWithHeaders(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  candidateResp.Value,
 		AgentName:    svc.Name,
 		AgentVersion: versionResp.Value,
-	}); err != nil {
+	}, headers); err != nil {
 		log.Printf("postdeploy: failed to report optimization deployment for %s: %v", svc.Name, err)
 		return
 	}

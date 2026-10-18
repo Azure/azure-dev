@@ -30,6 +30,7 @@ type ServiceTargetService struct {
 	extensionManager *extensions.Manager
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
+	previewMap       map[string]*serviceTargetPreviewRegistration
 	providerMapMu    sync.Mutex
 }
 
@@ -44,28 +45,16 @@ func NewServiceTargetService(
 		extensionManager: extensionManager,
 		lazyEnv:          lazyEnv,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]),
+		previewMap:       make(map[string]*serviceTargetPreviewRegistration),
 	}
 }
 
 // Stream handles the bi-directional streaming for service target operations.
 func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamServer) error {
 	ctx := stream.Context()
-	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
+	extension, err := s.serviceTargetExtension(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get extension claims: %w", err)
-	}
-
-	options := extensions.FilterOptions{
-		Id: extensionClaims.Subject,
-	}
-
-	extension, err := s.extensionManager.GetInstalled(options)
-	if err != nil {
-		return status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
-	}
-
-	if !extension.HasCapability(extensions.ServiceTargetProviderCapability) {
-		return status.Errorf(codes.PermissionDenied, "extension does not support service-target-provider capability")
+		return err
 	}
 
 	// Create message broker for this stream
@@ -101,6 +90,30 @@ func (s *ServiceTargetService) Stream(stream azdext.ServiceTargetService_StreamS
 	return nil
 }
 
+// serviceTargetExtension returns the calling extension when it may provide service targets.
+func (s *ServiceTargetService) serviceTargetExtension(ctx context.Context) (*extensions.Extension, error) {
+	extensionClaims, err := extensions.GetClaimsFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get extension claims: %w", err)
+	}
+
+	options := extensions.FilterOptions{
+		Id: extensionClaims.Subject,
+	}
+
+	extension, err := s.extensionManager.GetInstalled(options)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "failed to get extension: %s", err.Error())
+	}
+
+	if !extension.HasCapability(extensions.ServiceTargetProviderCapability) {
+		return nil, status.Errorf(
+			codes.PermissionDenied, "extension does not support service-target-provider capability")
+	}
+
+	return extension, nil
+}
+
 // onRegisterRequest handles the registration of a service target provider
 func (s *ServiceTargetService) onRegisterRequest(
 	ctx context.Context,
@@ -130,6 +143,7 @@ func (s *ServiceTargetService) onRegisterRequest(
 			console,
 			prompter,
 			s.lazyEnv,
+			s.previewFunc(hostType, extension.Id),
 		)
 	})
 

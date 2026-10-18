@@ -1,0 +1,20 @@
+Show connection details. Use --show-credentials to fetch secret values.
+
+Usage
+  azd ai connection show <name> [flags]
+
+Flags
+      --show-credentials : Fetch credential values from the data plane
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for show
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for connection operations only (not context or version)
+
+Examples
+  Inspect a connection without exposing credentials
+    azd ai connection show my-search

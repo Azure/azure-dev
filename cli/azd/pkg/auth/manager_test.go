@@ -6,13 +6,17 @@ package auth
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1256,6 +1260,93 @@ func TestLogout_NotLoggedIn(t *testing.T) {
 
 // --- CleanAllAuthCache ---
 
+func TestCleanAllAuthCache_ResetsActiveCaches(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		primeMemory bool
+	}{
+		{name: "disk"},
+		{name: "disk_and_memory", primeMemory: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", root)
+			m, err := NewManager(
+				newMemoryConfigManager(), newMemoryUserConfigManager(), cloud.AzurePublic(),
+				http.DefaultClient, nil, ExternalAuthConfiguration{}, az.AzCli{}, "test-agent",
+			)
+			require.NoError(t, err)
+
+			cacheRoot := filepath.Join(root, "auth", "msal")
+			seed := []byte(`{
+				"Account": {
+					"user.home-login.microsoftonline.com-home": {
+						"home_account_id": "user.home",
+						"environment": "login.microsoftonline.com",
+						"realm": "home",
+						"local_account_id": "user",
+						"username": "fixture@example.invalid",
+						"authority_type": "MSSTS"
+					}
+				},
+				"RefreshToken": {
+					"user.home-login.microsoftonline.com-refreshtoken-client--": {
+						"home_account_id": "user.home",
+						"environment": "login.microsoftonline.com",
+						"credential_type": "RefreshToken",
+						"client_id": "client",
+						"secret": "synthetic-stale-refresh-token"
+					}
+				}
+			}`)
+			if tt.primeMemory {
+				require.NoError(t, m.msalCacheTracer.cache.Set(currentUserCacheKey, seed))
+			} else {
+				require.NoError(t, newMsalCacheStore(cacheRoot).Set(currentUserCacheKey, seed))
+			}
+			require.NoError(t, m.credentialCache.Set("fixture", []byte("synthetic-secret")))
+
+			// LogInDetails loads the old contract into MSAL before re-login cleanup.
+			accounts, err := m.publicClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Len(t, accounts, 1)
+
+			require.NoError(t, m.CleanAllAuthCache())
+			accounts, err = m.publicClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+			_, err = m.credentialCache.Read("fixture")
+			require.ErrorIs(t, err, errCacheKeyNotFound)
+
+			// Tenant-specific clients reuse these options and must also start empty.
+			tenantClient, err := public.New(azdClientID, m.publicClientOptions...)
+			require.NoError(t, err)
+			accounts, err = tenantClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+
+			// Removing an unrelated account triggers a real MSAL cache export.
+			require.NoError(t, m.publicClient.RemoveAccount(t.Context(), public.Account{
+				HomeAccountID: "unrelated.home",
+				Environment:   "login.microsoftonline.com",
+			}))
+			raw, err := newMsalCacheStore(cacheRoot).Read(currentUserCacheKey)
+			require.NoError(t, err)
+			var persisted rawMsalCacheContract
+			require.NoError(t, json.Unmarshal(raw, &persisted))
+			require.Empty(t, persisted.Account)
+			require.Empty(t, persisted.RefreshToken)
+
+			// A separate invocation must not reload the pre-cleanup account.
+			freshClient, err := public.New(azdClientID, public.WithCache(newCache(cacheRoot)))
+			require.NoError(t, err)
+			accounts, err = freshClient.Accounts(t.Context())
+			require.NoError(t, err)
+			require.Empty(t, accounts)
+		})
+	}
+}
+
 func TestCleanAllAuthCache(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
@@ -1281,7 +1372,7 @@ func TestCleanAllAuthCache(t *testing.T) {
 	require.NoError(t, os.WriteFile(
 		filepath.Join(tempDir, "auth.claims"), []byte(`claims-data`), osutil.PermissionFileOwnerOnly))
 
-	m := &Manager{}
+	m := &Manager{cloud: cloud.AzurePublic(), httpClient: http.DefaultClient}
 	err := m.CleanAllAuthCache()
 	require.NoError(t, err)
 
@@ -1311,7 +1402,7 @@ func TestCleanAllAuthCache_NoExistingFiles(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("AZD_CONFIG_DIR", tempDir)
 
-	m := &Manager{}
+	m := &Manager{cloud: cloud.AzurePublic(), httpClient: http.DefaultClient}
 	err := m.CleanAllAuthCache()
 	require.NoError(t, err, "should succeed even when no auth files exist")
 
@@ -2138,42 +2229,124 @@ func TestLoginInteractive_Success(t *testing.T) {
 	require.IsType(t, new(azdCredential), cred)
 }
 
-func TestLoginInteractive_WithAllOptions(t *testing.T) {
+type msalInteractiveHTTPClient struct{}
+
+func (*msalInteractiveHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	var body string
+	switch {
+	case strings.HasSuffix(req.URL.Path, "/.well-known/openid-configuration"):
+		authority := strings.TrimSuffix(
+			"https://"+req.URL.Host+req.URL.Path,
+			"/v2.0/.well-known/openid-configuration",
+		)
+		body = fmt.Sprintf(`{
+			"authorization_endpoint": %q,
+			"token_endpoint": %q,
+			"issuer": %q,
+			"jwks_uri": %q,
+			"response_modes_supported": ["form_post"],
+			"response_types_supported": ["code"],
+			"scopes_supported": ["openid", "profile", "offline_access"],
+			"subject_types_supported": ["pairwise"],
+			"id_token_signing_alg_values_supported": ["RS256"]
+		}`,
+			authority+"/oauth2/v2.0/authorize",
+			authority+"/oauth2/v2.0/token",
+			authority+"/v2.0",
+			authority+"/discovery/v2.0/keys",
+		)
+	case strings.HasSuffix(req.URL.Path, "/oauth2/v2.0/token"):
+		body = `{
+			"access_token": "fake-access-token",
+			"expires_in": 3600,
+			"scope": "custom-scope openid profile offline_access",
+			"token_type": "Bearer"
+		}`
+	default:
+		return nil, fmt.Errorf("unexpected MSAL request: %s %s", req.Method, req.URL)
+	}
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+func (*msalInteractiveHTTPClient) CloseIdleConnections() {}
+
+func TestLoginInteractive_ForwardsOptionsToMsal(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 
-	homeID := "interactive-opts"
-	openURLCalled := false
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	redirectPort := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
 
+	publicClient, err := public.New(
+		azdClientID,
+		public.WithAuthority("https://login.microsoftonline.com/organizations"),
+		public.WithHTTPClient(&msalInteractiveHTTPClient{}),
+		public.WithInstanceDiscovery(false),
+	)
+	require.NoError(t, err)
+
+	claims := `{"access_token":{"essential":true}}`
 	m := &Manager{
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		cloud:             cloud.AzurePublic(),
-		publicClient: &mockPublicClientFull{
-			interactiveRes: public.AuthResult{
-				Account: public.Account{
-					HomeAccountID: homeID,
-				},
-			},
-		},
+		publicClient:      &msalPublicClientAdapter{client: &publicClient},
 	}
 
 	cred, err := m.LoginInteractive(
 		t.Context(),
 		[]string{"custom-scope"},
-		`{"access_token":{"essential":true}}`,
+		claims,
 		&LoginInteractiveOptions{
-			RedirectPort: 8080,
+			RedirectPort: redirectPort,
 			TenantID:     "tenant-xyz",
-			WithOpenUrl: func(url string) error {
-				openURLCalled = true
+			WithOpenUrl: func(authURL string) error {
+				u, err := url.Parse(authURL)
+				if err != nil {
+					return fmt.Errorf("parsing authorization URL: %w", err)
+				}
+
+				query := u.Query()
+				expectedRedirectURI := fmt.Sprintf("http://localhost:%d", redirectPort)
+				if u.Path != "/tenant-xyz/oauth2/v2.0/authorize" {
+					return fmt.Errorf("unexpected authorization path %q", u.Path)
+				}
+				if query.Get("claims") != claims {
+					return fmt.Errorf("unexpected claims %q", query.Get("claims"))
+				}
+				if query.Get("redirect_uri") != expectedRedirectURI {
+					return fmt.Errorf("unexpected redirect URI %q", query.Get("redirect_uri"))
+				}
+				if query.Get("response_mode") != "form_post" {
+					return fmt.Errorf("unexpected response mode %q", query.Get("response_mode"))
+				}
+				if !slices.Contains(strings.Fields(query.Get("scope")), "custom-scope") {
+					return fmt.Errorf("custom scope missing from %q", query.Get("scope"))
+				}
+
+				resp, err := http.PostForm(expectedRedirectURI, url.Values{ //nolint:gosec // Test-owned localhost callback.
+					"code":  []string{"fake-auth-code"},
+					"state": []string{query.Get("state")},
+				})
+				if err != nil {
+					return fmt.Errorf("posting authorization response: %w", err)
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("unexpected callback status %d", resp.StatusCode)
+				}
 				return nil
 			},
 		})
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
-	// WithOpenUrl is appended but not invoked by LoginInteractive
-	// itself — it's passed through to the MSAL library.
-	_ = openURLCalled
 }
 
 func TestLoginInteractive_Error(t *testing.T) {

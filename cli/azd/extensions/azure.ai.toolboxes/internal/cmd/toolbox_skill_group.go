@@ -21,6 +21,11 @@ latest version, so sequential operations accumulate. Use --from-version to
 branch from a specific version instead. The toolbox's default version is
 unchanged; use 'azd ai toolbox publish <toolbox> <version>' to promote a
 version.`,
+		Example: `  # List skills attached to a toolbox
+  azd ai toolbox skill list research
+
+  # Add a versioned skill reference in a new toolbox version
+  azd ai toolbox skill add research my-skill@2`,
 	}
 	cmd.AddCommand(newToolboxSkillAddCommand(extCtx))
 	cmd.AddCommand(newToolboxSkillRemoveCommand(extCtx))

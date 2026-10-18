@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -274,6 +275,9 @@ func (u *UpGraphAction) Run(
 	if err != nil {
 		return nil, err
 	}
+	serviceOrder := deploymentServiceOrder(stableServices)
+	messageCollector := commandresult.NewServiceEventMessageCollector()
+	ctx = commandresult.WithServiceEventMessageCollector(ctx, messageCollector)
 	opts := u.runOptions()
 
 	// 3. Resolve deploy timeout (honors --timeout flag and AZD_DEPLOY_TIMEOUT
@@ -406,11 +410,7 @@ func (u *UpGraphAction) Run(
 	// In JSON output mode or when no writer is available, skip the tracker.
 	var deployTracker *deployProgressTracker
 	if w := u.console.GetWriter(); u.formatter.Kind() != output.JsonFormat && w != nil {
-		serviceNames := make([]string, len(stableServices))
-		for i, svc := range stableServices {
-			serviceNames[i] = svc.Name
-		}
-		deployTracker = newDeployProgressTracker(w, u.console.IsSpinnerInteractive(), serviceNames)
+		deployTracker = newDeployProgressTracker(w, u.console.IsSpinnerInteractive(), serviceOrder)
 	}
 
 	updateDeployProgress := func(svcName string, phase deployPhase, detail string) {
@@ -554,6 +554,7 @@ func (u *UpGraphAction) Run(
 	var (
 		tickerOnce              sync.Once
 		stopTicker              func()
+		resumePreviewer         func()
 		deployProgressFinalized bool
 	)
 	if deployTracker != nil {
@@ -561,7 +562,16 @@ func (u *UpGraphAction) Run(
 	}
 
 	finalizeDeployProgress := func() {
-		finalizeUpDeployProgress(deployTracker, stopTicker, &deployProgressFinalized)
+		wasFinalized := deployProgressFinalized
+		finalizeUpDeployProgress(
+			deployTracker,
+			stopTicker,
+			resumePreviewer,
+			&deployProgressFinalized,
+		)
+		if !wasFinalized && u.formatter.Kind() != output.JsonFormat {
+			displayServiceEventMessages(ctx, safeCon, messageCollector.Snapshot(serviceOrder))
+		}
 	}
 
 	// startDeployTicker is called once when the first publish or deploy step
@@ -574,10 +584,8 @@ func (u *UpGraphAction) Run(
 		if ps, ok := u.console.(input.PreviewerPauser); ok {
 			ps.PausePreviewer()
 			stop := deployTracker.StartTicker(ctx)
-			stopTicker = func() {
-				stop()
-				ps.ResumePreviewer()
-			}
+			stopTicker = stop
+			resumePreviewer = ps.ResumePreviewer
 		} else {
 			stopTicker = deployTracker.StartTicker(ctx)
 		}
@@ -607,16 +615,7 @@ func (u *UpGraphAction) Run(
 		}
 		// Update deploy progress tracker on step completion.
 		if err != nil {
-			phase := phaseFailed
-			detail := err.Error()
-			switch {
-			case exegraph.IsStepSkipped(err):
-				phase = phaseSkipped
-				detail = ""
-			case errors.Is(err, context.Canceled):
-				phase = phaseSkipped
-				detail = "canceled"
-			}
+			phase, detail := serviceStepCompletionProgress(err)
 			for _, prefix := range []string{"deploy-", "publish-", "package-"} {
 				if svc, ok := strings.CutPrefix(stepName, prefix); ok {
 					updateDeployProgress(svc, phase, detail)
@@ -650,6 +649,20 @@ func (u *UpGraphAction) Run(
 	log.Printf("up-graph total: %s (%d steps)", result.TotalDuration.Round(time.Millisecond), len(result.Steps))
 
 	if result.Error != nil {
+		messages := messageCollector.Snapshot(serviceOrder)
+		if u.formatter.Kind() == output.JsonFormat && len(messages) > 0 {
+			if formatErr := formatDeploymentResult(
+				u.formatter,
+				u.writer,
+				state,
+				messages,
+			); formatErr != nil {
+				result.Error = errors.Join(
+					result.Error,
+					fmt.Errorf("up result could not be displayed: %w", formatErr),
+				)
+			}
+		}
 		// Only apply provision-specific error wrapping (state dump, OpenAI quota
 		// hints, Responsible-AI suggestions) when an actual provision-tagged
 		// step failed. For package/publish/deploy/hook failures, surface the
@@ -677,11 +690,8 @@ func (u *UpGraphAction) Run(
 			}
 		}
 	} else {
-		deployResult := DeploymentResult{
-			Timestamp: time.Now(),
-			Services:  state.ResultsSnapshot(),
-		}
-		if err := u.formatter.Format(deployResult, u.writer, nil); err != nil {
+		messages := messageCollector.Snapshot(serviceOrder)
+		if err := formatDeploymentResult(u.formatter, u.writer, state, messages); err != nil {
 			return nil, fmt.Errorf("up result could not be displayed: %w", err)
 		}
 	}
@@ -778,6 +788,7 @@ func phaseDurations(steps []exegraph.StepTiming) (provision, deploy time.Duratio
 func finalizeUpDeployProgress(
 	tracker *deployProgressTracker,
 	stopTicker func(),
+	resumePreviewer func(),
 	finalized *bool,
 ) {
 	if *finalized {
@@ -787,6 +798,9 @@ func finalizeUpDeployProgress(
 
 	if stopTicker != nil {
 		stopTicker()
+	}
+	if resumePreviewer != nil {
+		resumePreviewer()
 	}
 	if tracker != nil && tracker.HasActivity() {
 		tracker.RenderFinal()

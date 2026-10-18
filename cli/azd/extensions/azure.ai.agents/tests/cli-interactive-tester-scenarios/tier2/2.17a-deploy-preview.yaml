@@ -1,0 +1,55 @@
+# Tier 2: read-only deployment preview; requires the cost-gated shared hosted agent setup.
+name: "deploy-preview"
+command: "azd deploy --preview --no-prompt"
+cwd: "~/working/azd-agents-preview-{instance}"
+tags: ["tier:2", "cmd:deploy", "serial-only"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+env:
+  AZD_PREVIEW_SCENARIO_SECRET: "preview-credential-{instance}"
+
+pre:
+  - run: "test -f ~/working/azd-agents-shared/{shared_agent_name}/azure.yaml && echo 'OK: shared agent project found' || echo 'PRECONDITION FAILED: shared agent not found - run 2.00-setup-deploy-shared-agent.yaml first'"
+    cwd: "~/working"
+    name: "assert shared agent is deployed"
+    continue_on_error: true
+  - run: |
+      SOURCE="$HOME/working/azd-agents-shared/{shared_agent_name}"
+      TARGET="$HOME/working/azd-agents-preview-{instance}"
+      if [ ! -f "$SOURCE/azure.yaml" ]; then
+        exit 0
+      fi
+      rm -rf -- "$TARGET"
+      mkdir -p "$TARGET"
+      cp -R "$SOURCE/." "$TARGET/"
+      find "$SOURCE/azure.yaml" "$SOURCE/.azure" -type f -exec sha256sum {} + > "$TARGET/.preview-shared.sha256"
+      python3 "{fixtures_dir}/scripts/prepare_preview.py" "$TARGET/azure.yaml" "{instance}"
+    cwd: "~/working"
+    name: "copy shared environment and seed local-only preview differences"
+
+post:
+  - run: |
+      BASELINE="$HOME/working/azd-agents-preview-{instance}/.preview-shared.sha256"
+      if [ -f "$BASELINE" ]; then
+        sha256sum --check "$BASELINE"
+      fi
+    cwd: "~/working"
+    name: "verify original shared scaffold and environment were not modified"
+
+goals:
+  - "Wait for deployment preview to finish with exit code 0. No product prompt is expected."
+  - "Confirm the existing hosted agent '{shared_agent_name}' reports 'Would update the hosted agent.' The isolated copy keeps its deployed identity and selected environment; do not deploy the fixture. Changes must be limited to metadata, protocols, resources, environment variables, model deployment reference, and container image. Code/runtime, session, safety, endpoint, agent-card, and unavailable artifact contents must not be compared or reported."
+  - "Confirm preview does not show build, package, push, upload, provision, agent creation, or endpoint patch progress. A deployment-preview heading is expected."
+  - "Confirm each azure.ai.project service has no unsupported-preview warning or provider prose. Its host-owned 'Done: Previewing service' progress line is expected, not a project resource comparison."
+  - "Run 'azd deploy --preview --no-prompt --output json' in the same project. Confirm exit code 0 and valid JSON with timestamp and services. Each hosted agent service result must contain message and data; data must have service, agent, status, changes, unknown, and notes."
+  - "Confirm JSON status is update, not noChange, unknown, or create, for the existing shared agent. Each change must have group, path, operation, and applicable sanitized before/after values. Confirm codeArtifact and the generic build/upload uncertainty note are absent from readable output and JSON; excluded properties must not cause update/unknown status."
+  - "Confirm absent properties, empty groups, and normalization-only undeclared CPU/memory, protocols, and enableVnextExperience metadata are omitted from changes in readable output and JSON. Declared false, zero, and empty values must retain their presence in real changes, subject to normal value normalization and redaction. Real removals of remote-only optional properties must still be reported."
+  - "Confirm metadata.tags has an add or update change with the complete desired logical list ['preview-public', '{instance}'] visible in readable output and as the JSON after array. An update must also show the previous remote tags. Do not invent removals from a previous local file revision when remote tags are absent."
+  - "Confirm unchanged container/image configuration has no Container image section or containerImage operation data, even if ordinary deploy would rebuild. Code-only services must have no synthetic container intent. A real image/registry addition, update, or removal must show the sanitized actual diff; relevant known build/push intent must agree in readable output and JSON. Changed passthrough images do not build/push; relevant container builds (including remote builds) do. No resulting tag, digest, or artifact content may be invented."
+  - "Confirm each azure.ai.project JSON result has no non-empty message and has data with status 'noOp', scope 'deployment', and infrastructurePreviewed false."
+  - "Confirm description has an add or update change whose desired value is exactly 'Preview visible {instance}; credential [redacted]; docs https://example.com/help' in both readable output and JSON after. If update, the previous remote description must also appear. The ordinary text must not be blanket redacted."
+  - "Confirm add: definition.environment_variables.PREVIEW_PUBLIC shows 'visible-{instance}' in readable output and JSON after. Confirm add: definition.environment_variables.PREVIEW_SECRET shows '[redacted]' in both outputs, not the resolved fake environment credential."
+  - "Confirm neither output contains 'preview-credential-{instance}', 'preview-user', 'preview-password', 'preview-signature', or 'preview-fragment', including in description. Reject raw URL userinfo, query strings, fragments, or terminal controls."
+  - "Require the post-hook's checksum verification of the shared source project's azure.yaml and .azure files to pass. All fixture edits and host-local preview state must stay inside '~/working/azd-agents-preview-{instance}'; never run provision, deploy without --preview, down, or a remote mutation."
+  - "Take a screenshot of the readable preview output."
+  - "Report a finding if preview fails, prompts unexpectedly, runs a deployment step, omits the hosted agent result, leaks sensitive values, invents absent/default-only changes or unchanged container intent, loses declared false/zero/empty values or real removals, reports excluded properties/artifacts, or claims artifact-content equivalence."

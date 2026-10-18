@@ -290,20 +290,27 @@ public reference, and downstream Kusto/LENS consumers drift out of sync. Verify 
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
   `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
   `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
-  `PerformanceAndHealth`); the classifier also reads the optional `Endpoint` and `IsMeasurement`
-  members.
+  `PerformanceAndHealth`); telemetry metadata also includes the optional `Endpoint` and
+  `IsMeasurement` members.
+- **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
+  same-package compile-time constant and declare its final `ext.*` name as an exported
+  `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Declarations are shared by final key
+  across first-party extensions; reuse an existing key only when its meaning, allowed values,
+  classification, and purpose are identical. Run
+  `go test ./extensions/telemetry`; repository validation rejects undeclared or dynamically keyed
+  fields, missing classification/purpose/endpoint metadata, measurements, and `CustomerContent`.
+  If a value would require `CustomerContent`, do not report it.
 - **Event** — define a constant in `cli/azd/internal/tracing/events/events.go` following the
   `prefix.noun.verb` value convention. It must be an exported string `const` whose Go identifier
-  contains `Event` (end it with `Prefix` for a prefix-match group) so the classifier
+  contains `Event` (end it with `Prefix` for a prefix-match group) so repository metadata tooling
   discovers it.
 - **Emit** at the call site via `tracing.Start` (spans/events) plus `tracing.SetUsageAttributes`
   or `span.SetAttributes` (attributes). Always pass a `fields.AttributeKey` method
   (e.g. `fields.MyKey.String(v)` / `.Bool(v)` / `.Int(v)`) — never a raw
-  `attribute.String("my.key", v)`. The GDPR classifier discovers fields by statically scanning
-  the `fields` package for exported `AttributeKey` vars; a raw literal key is invisible to it, so the
-  property reaches App Insights but its data-catalog row stays Unclassified / `Complete=false`. Enforced by
-  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`); dynamic
-  `ext.*` keys are the only sanctioned exception.
+  `attribute.String("my.key", v)`. Telemetry metadata is derived from exported
+  `AttributeKey` declarations; raw literal keys bypass that contract and are rejected by
+  `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`). Dynamic `ext.*` keys are the
+  only sanctioned exception.
 - **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
   (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
   repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
@@ -475,10 +482,18 @@ Feature-specific docs are in `docs/` — refer to them as needed. Some key docs 
 When creating or modifying GitHub Actions workflows:
 
 - **Always declare `permissions:`** explicitly with least-privilege (e.g., `contents: read`). All workflows in the repo should have this block for consistency
+- **Keep workflows readable**: Prefer separate scripts for substantial logic so it can be edited and tested directly. For `pull_request_target`, execute only trusted repository code, never code from the PR.
 - **Don't overwrite `PATH`** using `${{ env.PATH }}` — it's not defined in GitHub Actions expressions and will wipe the real PATH. Use `echo "$DIR" >> $GITHUB_PATH` instead
 - **Cross-workflow artifacts**: `actions/download-artifact@v4` without `run-id` only downloads artifacts from the *current* workflow run. Cross-workflow artifact sharing requires `run-id` and `repository` parameters
 - **Prefer Azure DevOps pipelines** for jobs that need secrets or Azure credentials — the team uses internal ADO pipelines for authenticated workloads in this public repo
 - **No placeholder steps**: Don't add workflow steps that echo "TODO" or list directories without producing output. If downstream steps depend on generated files, implement the generation or remove the dependency
+
+### GitHub authentication in Azure DevOps
+
+When adding or changing GitHub API access in a pipeline:
+
+- Always use the shared [GitHub App login template](../../eng/common/pipelines/templates/steps/login-to-github.yml) instead of personal access tokens. Generate the token in the job that needs it and map `GH_TOKEN` explicitly to the consuming task. See [publish-cli-winget.yml](../../eng/pipelines/templates/steps/publish-cli-winget.yml) for an example.
+- Check the documentation or source for the exact tool version in use. Some tools recommend passing tokens through an environment variable or credential store instead of a command-line argument because arguments may be recorded in logs or diagnostic files.
 
 ## Copilot Code Review
 

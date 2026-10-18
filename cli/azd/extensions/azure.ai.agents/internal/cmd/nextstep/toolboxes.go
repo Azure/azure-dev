@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -40,9 +39,8 @@ func (t *bundledToolbox) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// populateToolboxes assembles split, bundled, and legacy toolboxes.
-// Split services have precedence over bundled definitions, which have
-// precedence over legacy manifests.
+// populateToolboxes assembles split and direct/root-$ref toolboxes.
+// Split services have precedence over agent-owned toolbox references.
 func populateToolboxes(
 	ctx context.Context,
 	src Source,
@@ -63,7 +61,7 @@ func populateToolboxes(
 		return splitState
 	}
 
-	fallbacks := collectBundledAndLegacyToolboxes(
+	fallbacks := collectBundledToolboxes(
 		ctx,
 		src,
 		envName,
@@ -85,7 +83,7 @@ func populateToolboxes(
 	return splitState
 }
 
-func collectBundledAndLegacyToolboxes(
+func collectBundledToolboxes(
 	ctx context.Context,
 	src Source,
 	envName string,
@@ -173,24 +171,8 @@ func collectBundledAndLegacyToolboxes(
 			bundled, decodeErr = decodeBundledToolboxes(resolved)
 		}
 
-		var legacy []string
-		if !explicit {
-			data := readManifestBytes(projectCfg.Path, svc.GetRelativePath())
-			if data != nil {
-				resources, err := agent_yaml.ExtractResourceDefinitions(data)
-				if err == nil {
-					for _, resource := range resources {
-						toolbox, ok := resource.(agent_yaml.ToolboxResource)
-						if ok && strings.TrimSpace(toolbox.Name) != "" {
-							legacy = append(legacy, toolbox.Name)
-						}
-					}
-				}
-			}
-		}
-
 		hasBundled := explicit && hasBundledToolboxEntries(resolved)
-		if !hasBundled && len(legacy) == 0 {
+		if !hasBundled {
 			continue
 		}
 
@@ -239,16 +221,6 @@ func collectBundledAndLegacyToolboxes(
 					Name:          toolbox.Name,
 					ServiceName:   agentName,
 					ToolboxSource: ToolboxSourceBundled,
-				},
-			)
-		}
-		for _, name := range legacy {
-			addCollectedToolbox(
-				collected,
-				ResourceRef{
-					Name:          name,
-					ServiceName:   agentName,
-					ToolboxSource: ToolboxSourceLegacyManifest,
 				},
 			)
 		}
@@ -311,20 +283,16 @@ func agentServiceMayContainToolboxes(svc *azdext.ServiceConfig) bool {
 	if svc == nil {
 		return false
 	}
-	for _, props := range []*structpb.Struct{
-		svc.GetAdditionalProperties(),
-		svc.GetConfig(),
-	} {
-		if props == nil {
-			continue
-		}
-		fields := props.GetFields()
-		if _, found := fields["toolboxes"]; found {
-			return true
-		}
-		if _, found := fields["$ref"]; found {
-			return true
-		}
+	props := svc.GetAdditionalProperties()
+	if props == nil {
+		return false
+	}
+	fields := props.GetFields()
+	if _, found := fields["toolboxes"]; found {
+		return true
+	}
+	if _, found := fields["$ref"]; found {
+		return true
 	}
 	return false
 }
@@ -355,30 +323,11 @@ func resolveAgentToolboxConfig(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
 ) (map[string]any, bool, error) {
-	inline, err := resolveAgentToolboxProperties(
-		svc.GetAdditionalProperties(),
-		projectRoot,
-		"service-level properties",
-	)
+	resolved, err := resolveServiceProperties(svc, projectRoot)
 	if err != nil {
 		return nil, false, err
 	}
-	if mapHasToolboxKind(inline) {
-		_, explicit := inline["toolboxes"]
-		return inline, explicit, nil
-	}
-
-	legacy, err := resolveAgentToolboxProperties(
-		svc.GetConfig(),
-		projectRoot,
-		"deprecated config",
-	)
-	if err != nil {
-		return nil, false, err
-	}
-
-	resolved := selectAgentToolboxProperties(inline, legacy)
-	if len(resolved) == 0 {
+	if !mapHasToolboxKind(resolved) {
 		return nil, false, nil
 	}
 	_, explicit := resolved["toolboxes"]
@@ -396,7 +345,11 @@ func resolveAgentToolboxProperties(
 
 	raw := props.AsMap()
 	if _, hasRootRef := raw["$ref"]; hasRootRef {
-		return resolveAgentConnectionProperties(props, projectRoot, source)
+		resolved, err := foundry.ResolveFileRefs(raw, projectRoot)
+		if err != nil {
+			return nil, fmt.Errorf("resolve %s: %w", source, err)
+		}
+		return resolved, nil
 	}
 
 	toolboxes, hasToolboxes := raw["toolboxes"]
@@ -437,19 +390,6 @@ func resolveToolboxServiceProperties(
 	return map[string]any{}, nil
 }
 
-func selectAgentToolboxProperties(
-	inline, legacy map[string]any,
-) map[string]any {
-	if len(inline) == 0 {
-		return legacy
-	}
-	if !mapHasToolboxKind(inline) &&
-		mapHasToolboxKind(legacy) {
-		return legacy
-	}
-	return inline
-}
-
 func mapHasToolboxKind(values map[string]any) bool {
 	kind, ok := values["kind"].(string)
 	return ok && strings.TrimSpace(kind) != ""
@@ -485,8 +425,6 @@ func toolboxSourcePriority(source ToolboxSource) int {
 	switch source {
 	case ToolboxSourceBundled:
 		return 2
-	case ToolboxSourceLegacyManifest:
-		return 1
 	case ToolboxSourceSplit:
 		return 3
 	default:

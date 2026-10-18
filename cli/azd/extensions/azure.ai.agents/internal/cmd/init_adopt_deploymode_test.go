@@ -343,6 +343,61 @@ func TestApplyDeployModeToAdoptedProject_NoAgentServices(t *testing.T) {
 	assert.False(t, usesContainer)
 }
 
+func TestApplyDeployModeToAdoptedProject_SkipsPromptAgents(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, projectDir string) *azdext.ServiceConfig
+	}{
+		{
+			name: "direct",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				return agentServiceConfig(t, "agent", map[string]any{
+					"kind": "prompt",
+					"name": "prompt-agent",
+				})
+			},
+		},
+		{
+			name: "root ref",
+			setup: func(t *testing.T, projectDir string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectDir, "prompt.yaml"),
+					[]byte("kind: prompt\nname: prompt-agent\n"),
+					0o600,
+				))
+				return agentServiceConfig(t, "agent", map[string]any{
+					"$ref": "./prompt.yaml",
+				})
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			server := &deployModeProjectServer{
+				path: projectDir,
+				services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, projectDir),
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+
+			usesContainer, err := applyDeployModeToAdoptedProject(
+				t.Context(),
+				&initFlags{deployMode: "container"},
+				client,
+			)
+			require.NoError(t, err)
+			assert.False(t, usesContainer)
+			assert.Empty(t, server.sets["agent"])
+			assert.Empty(t, server.unsets["agent"])
+		})
+	}
+}
+
 func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
 	projectDir := t.TempDir()
 	serviceDir := filepath.Join(projectDir, "src", "agent")
@@ -370,4 +425,81 @@ func TestApplyDeployModeToAdoptedProject_ResolvesServicePath(t *testing.T) {
 	assert.False(t, usesContainer)
 	assert.Equal(t, "python", server.sets["agent"]["language"])
 	assert.Contains(t, server.sets["agent"], "codeConfiguration")
+}
+
+func TestApplyDeployModeToAdoptedProject_LegacyDefinitions(t *testing.T) {
+	tests := []struct {
+		name          string
+		setup         func(t *testing.T, projectDir string) *azdext.ServiceConfig
+		wantErr       bool
+		wantContainer bool
+	}{
+		{
+			name:    "config nested",
+			wantErr: true,
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				config, err := structpb.NewStruct(map[string]any{
+					"kind": "hosted",
+					"name": "legacy-agent",
+					"codeConfiguration": map[string]any{
+						"runtime":    "python_3_13",
+						"entryPoint": "app.py",
+					},
+				})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{
+					Name:   "agent",
+					Host:   AiAgentHost,
+					Config: config,
+				}
+			},
+		},
+		{
+			name:          "implicit disk",
+			wantContainer: true,
+			setup: func(t *testing.T, projectDir string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectDir, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy-agent\n"+
+						"code_configuration:\n  runtime: python_3_13\n  entry_point: app.py\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{
+					Name:         "agent",
+					Host:         AiAgentHost,
+					RelativePath: ".",
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectDir := t.TempDir()
+			server := &deployModeProjectServer{
+				path: projectDir,
+				services: map[string]*azdext.ServiceConfig{
+					"agent": tt.setup(t, projectDir),
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+
+			usesContainer, err := applyDeployModeToAdoptedProject(
+				t.Context(),
+				&initFlags{},
+				client,
+			)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Empty(t, server.sets["agent"])
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantContainer, usesContainer)
+			assert.Equal(t, map[string]any{"remoteBuild": true}, server.sets["agent"]["docker"],
+				"the implicit disk definition must not influence deploy-mode selection")
+		})
+	}
 }

@@ -12,13 +12,30 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CopilotService`, and `TelemetryService` are currently beta-only. Removing or
-renumbering fields, changing field types, and reusing reserved names or
-numbers remain breaking changes in either channel.
+`CommandResultService` and `CopilotService` are currently
+beta-only. Removing or renumbering fields, changing field types, and reusing
+reserved names or numbers remain breaking changes in either channel.
+
+`TelemetryService.ReportUsage` and `AccountService.GetCurrentPrincipal`
+graduate to stable in azd 1.36.0 (October 2026). Their deprecated beta routes
+continue delegating to stable behavior; removing them requires a separately
+approved policy. See the [graduation and SDK migration policy](../docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.
+
+Structured deploy messages are beta-only. Service `predeploy` and
+`postdeploy` handlers can return non-blocking info or warning messages in
+`ServiceHandlerStatus.messages`. Go extensions register them with
+`ExtensionHost.WithBetaServiceEventHandler`; the default language scaffolds
+and stable event contracts remain unchanged.
+
+Messages use the correlated beta event stream. Its first subscription must
+include a `request_id`, and each service status carrying messages must echo
+the invocation's ID. Legacy beta streams retain their existing behavior but
+cannot send structured messages. See the extension contract versioning guide
+for host routing and compatibility behavior.
 
 ## Generate contracts
 
@@ -35,6 +52,10 @@ the Go contracts under `pkg/azdext/contracts/v1` and
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
+It also snapshots the canonical beta project descriptor set for the evaluations
+extension's released-SDK-compatible private dynamic client with
+`grpc/generateprojectclient`. Do not edit this generated snapshot or duplicate
+the protobuf schema in the extension.
 Before generating bindings, it compiles descriptor sets for the stable
 scaffold protos and canonical `v1` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the
@@ -69,6 +90,17 @@ The Go contract tests add a cross-channel rule that Buf does not express:
 stable must remain a wire-compatible subset of beta. Additive beta fields and
 methods and beta-only services are allowed, but shared field and method shapes
 must remain compatible with the generated adapters.
+
+Run this cross-channel check directly with:
+
+```console
+make proto-version-compatibility
+```
+
+The check names the first missing or incompatible message, field, enum,
+service, or method. CI runs it as a dedicated gate after regenerating the
+contracts, so a `v1beta` change cannot silently break the shape inherited from
+stable `v1`.
 
 The first versioned source-contract change is intentionally incompatible with
 the old unversioned package, while the temporary runtime bridge preserves its

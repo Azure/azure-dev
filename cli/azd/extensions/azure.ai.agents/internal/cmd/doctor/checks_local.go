@@ -92,6 +92,12 @@ type Dependencies struct {
 		projectResourceID string,
 	) (*project.DeveloperRBACResult, error)
 
+	probeProjectStorageRBAC func(
+		ctx context.Context,
+		azdClient *azdext.AzdClient,
+		projectResourceID string,
+	) (*project.ProjectStorageRBACResult, error)
+
 	// readProjectResourceIDFn is a test seam: when non-nil it
 	// replaces the production `readProjectResourceID` call inside
 	// the `remote.rbac` check, letting unit tests exercise the
@@ -267,7 +273,7 @@ func newCheckGRPCAndVersion(deps Dependencies) Check {
 // azd Project service for the resolved project config. The check Fails
 // when the call returns an error OR the response carries a nil Project
 // (azd's convention for "no azure.yaml in the working directory"). The
-// suggestion mirrors the wording used in helpers.go's resolveConfigPath
+// suggestion mirrors the wording used in helpers.go's resolveProjectCacheDir
 // so users see consistent guidance across commands.
 //
 // Skips cleanly when the gRPC client is unavailable — Check

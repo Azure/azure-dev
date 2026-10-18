@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"errors"
 	"testing"
 
+	"azureaieval/internal/exterrors"
 	"azureaieval/internal/project"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,6 +37,11 @@ func TestResolveEvaluationLevel_UnknownIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "turn")
 	assert.Contains(t, err.Error(), "conversation",
 		"a refusal has to name what it would have accepted")
+	// ADO 5572140: this refusal used to reach -o json with a message and no
+	// code at all.
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok, "an unknown --evaluation-level must carry a structured code")
+	assert.Equal(t, exterrors.CodeInvalidParameter, local.Code)
 }
 
 // With nobody to ask, the documented default applies rather than a refusal:
@@ -64,12 +72,12 @@ func TestResolveTraceWindow_OffPresetIsRefused(t *testing.T) {
 	for _, days := range []int{0, -1, 3, 14, 365} {
 		_, err := resolveTraceWindow(noPromptCmd(t, true), days, true)
 		require.Error(t, err, days)
-		assert.Contains(t, err.Error(), "lookback_hours",
+		assert.Contains(t, err.Error(), "lookbackHours",
 			"the refusal has to name where any other window is set")
 	}
 }
 
-// Untouched, the week the spec writes as lookback_hours: 168.
+// Untouched, the week the spec writes as lookbackHours: 168.
 func TestResolveTraceWindow_DefaultsToAWeek(t *testing.T) {
 	got, err := resolveTraceWindow(noPromptCmd(t, true), defaultTraceWindowDays, false)
 	require.NoError(t, err)

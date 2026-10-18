@@ -1,15 +1,21 @@
 name: cli-ci
-# cspell:ignore bufbuild
+# cspell:ignore bufbuild tmpl
 
 on:
   pull_request:
     paths:
       - "cli/**"
       - "!cli/azd/extensions/**"
+      - "cli/azd/extensions/*/ci-build.ps1"
+      - "cli/azd/extensions/scripts/ci-build.ps1"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/resources/internal/go/extension/ci-build.ps1.tmpl"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/resources/internal/go/pipelines/release-ext.yml.tmpl"
+      - "cli/azd/extensions/microsoft.azd.extensions/internal/cmd/init_test.go"
       - ".github/workflows/cli-ci.yml"
       - "eng/scripts/Get-CoverageDiff*.ps1"
       - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
       - "eng/scripts/Test-CliReleaseReadiness*.ps1"
+      - "eng/scripts/Test-ExtensionBuildScripts*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -66,10 +72,30 @@ jobs:
             './eng/scripts/Get-CoverageDiff.Tests.ps1'
             './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
             './eng/scripts/Test-CliReleaseReadiness.Tests.ps1'
+            './eng/scripts/Test-ExtensionBuildScripts.Tests.ps1'
           )
           $config.Run.Exit = $true
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
+
+  extension-build-script-tests:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Validate native extension build arguments
+        shell: pwsh
+        run: |
+          Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 5.7.1
+          Invoke-Pester -Path ./eng/scripts/Test-ExtensionBuildScripts.Tests.ps1 -CI
 
   magefile-tests:
     runs-on: ubuntu-latest
@@ -84,6 +110,32 @@ jobs:
         working-directory: cli/azd
         run: go test -tags mage -v .
 
+  command-snapshots:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/azd/go.mod
+      - name: Build azd
+        working-directory: cli/azd
+        run: go build
+      - name: Verify command snapshots
+        id: snapshots
+        working-directory: cli/azd
+        run: go test ./cmd -run '^(TestFigSpec|TestUsage)$' -count=1
+      - name: Explain snapshot failure
+        if: failure() && steps.snapshots.outcome == 'failure'
+        working-directory: cli/azd
+        run: |
+          echo "::error::Command snapshots are out of date."
+          echo "Regenerate them with:"
+          echo "  go build"
+          echo "  UPDATE_SNAPSHOTS=true go test ./cmd -run '^(TestFigSpec|TestUsage)$'"
+          echo "Extension snapshots follow versions in extensions/registry.json, not branch source."
+
   proto-contract-compatibility:
     runs-on: ubuntu-latest
     permissions:
@@ -97,12 +149,27 @@ jobs:
           go-version-file: cli/azd/go.mod
       - name: Install Buf
         run: go install github.com/bufbuild/buf/cmd/buf@v1.72.0
-      - name: Check protobuf contracts
+      - name: Regenerate protobuf artifacts
+        working-directory: cli/azd
+        run: go tool mage generateProtos
+      - name: Verify generated protobuf artifacts are current
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [[ -n "$changes" ]]; then
+            echo "::error::Protobuf generation produced uncommitted artifacts."
+            echo "$changes"
+            git diff
+            exit 1
+          fi
+      - name: Lint protobuf contracts
+        working-directory: cli/azd
+        run: make proto-lint
+      - name: Verify v1 is compatible with v1beta
+        working-directory: cli/azd
+        run: make proto-version-compatibility
+      - name: Check protobuf history for breaking changes
         working-directory: cli/azd
         run: |
-          go tool mage generateProtos
-          git diff --exit-code
-          make proto-lint
           if git cat-file -e origin/main:cli/azd/grpc/proto/azd/extensions/v1 2>/dev/null; then
             git branch --force buf-contract-baseline origin/main
             make proto-breaking BUF_BREAKING_AGAINST='../../.git#branch=buf-contract-baseline,subdir=cli/azd/grpc'

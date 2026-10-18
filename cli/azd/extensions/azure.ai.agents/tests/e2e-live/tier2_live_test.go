@@ -8,6 +8,7 @@ package e2elive
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -49,6 +51,7 @@ const (
 	monitorTimeout   = 60 * time.Second
 	teardownTimeout  = 10 * time.Minute
 	tagTimeout       = 2 * time.Minute
+	cleanupTimeout   = time.Minute
 
 	// deleteAfterRetention is how far ahead the DeleteAfter cleanup tag is set
 	// on the provisioned resource group. It must exceed a full run so a healthy
@@ -103,6 +106,8 @@ type runner struct {
 	agentName  string
 	env        []string
 	projectDir string
+	subID      string
+	envName    string
 	c          *console
 }
 
@@ -417,9 +422,7 @@ func (r *runner) finishInit(ctx context.Context) error {
 	)
 }
 
-// isInitComplete reports whether the success marker is on screen. Source:
-// runInitFromManifest (init.go) prints "AI agent definition added to your azd
-// project successfully!" in green at the end.
+// isInitComplete reports whether an init success marker is on screen.
 func isInitComplete(screen string) bool {
 	return screenContains(screen, "added to your azd project") ||
 		screenContains(screen, "agent definition added")
@@ -440,10 +443,9 @@ func promptKey(prompt string) string {
 // is already lowercased (see activePrompt).
 //
 // Only a subset of these fire on the --agent-name template critical path
-// (language, template, Foundry project, subscription, location, the manifest
+// (language, template, Foundry project, subscription, location, the selected
 // model, deployment name, capacity/sku/version). The rest are kept as defensive
-// handlers because init auto-resolves them under userProvidedManifest=true (so
-// they normally do NOT prompt) or only surfaces them for specific runtime state.
+// handlers because they only surface for specific runtime state.
 func (r *runner) dispatchPrompt(screen, prompt string) error {
 	has := func(sub string) bool { return strings.Contains(prompt, sub) }
 
@@ -477,7 +479,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		r.selectByText(screen, "Basic agent (Invocations")
 
 	// Foundry project hosting — "Select a Foundry project to host your agent..."
-	// (runInitFromManifest); choices "Use an existing..." / "Create a new...".
+	// choices "Use an existing..." / "Create a new...".
 	case has("foundry project to host"):
 		if r.createProject() {
 			r.selectByText(screen, "Create a new Foundry project")
@@ -495,7 +497,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		}
 
 	// Subscription — the extension prints a descriptive preamble via fmt.Println
-	// (runInitFromManifest), but that line isn't the survey "?" line activePrompt
+	// but that line isn't the survey "?" line activePrompt
 	// reads. ensureSubscription passes an empty request, so the picker shows
 	// azd-core's default message "Select subscription" (promptSubscriptionMessage)
 	// — match that, not the preamble.
@@ -538,7 +540,7 @@ func (r *runner) dispatchPrompt(screen, prompt string) error {
 		r.enter()
 
 	// Code-deploy prompts (promptCodeConfig). Auto-resolved under
-	// userProvidedManifest=true, so kept as defensive handlers only.
+	// userProvidedTemplate=true, so kept as defensive handlers only.
 	case has("select the runtime for your agent"):
 		r.enter() // default Python 3.13
 	case has("entry point"):
@@ -592,6 +594,7 @@ func (r *runner) phaseProvision(ctx context.Context) error {
 	r.projectDir = dir
 	r.t.Logf("project dir: %s", dir)
 
+	defer r.captureDeploymentCleanupTarget()
 	_, code := r.runAzd(ctx, dir, provisionTimeout, "provision", "--no-prompt")
 	if code != 0 {
 		return fmt.Errorf("azd provision failed (exit %d)", code)
@@ -849,6 +852,88 @@ func (r *runner) teardown() {
 		"down", "--force", "--purge", "--no-prompt")
 	if code != 0 {
 		r.t.Errorf("azd down failed (exit %d) — Azure resources may be leaked", code)
+	}
+	r.cleanupSubscriptionDeployments()
+}
+
+func (r *runner) captureDeploymentCleanupTarget() {
+	ctx, cancel := context.WithTimeout(context.Background(), tagTimeout)
+	defer cancel()
+
+	values := r.azdEnvValues(ctx)
+	r.subID = values["AZURE_SUBSCRIPTION_ID"]
+	r.envName = values["AZURE_ENV_NAME"]
+	if r.subID == "" {
+		r.subID = os.Getenv("E2E_SUBSCRIPTION")
+	}
+}
+
+func (r *runner) cleanupSubscriptionDeployments() {
+	if r.subID == "" || r.envName == "" {
+		r.t.Log("warning: skipping subscription deployment cleanup because subscription or environment is unknown")
+		return
+	}
+
+	commandDir, err := subscriptionDeploymentCleanupCommandDir()
+	if err != nil {
+		r.t.Logf("warning: resolve subscription deployment cleanup command: %v", err)
+		return
+	}
+
+	r.t.Logf("teardown: requesting deletion of subscription deployments for azd environment %q", r.envName)
+	// The extension is a separate Go module, so execute the core test helper without
+	// adding an unpublished azd module dependency to the extension.
+	out, code := r.runQuiet(
+		context.Background(),
+		commandDir,
+		cleanupTimeout,
+		"go",
+		"run",
+		".",
+		"--subscription",
+		r.subID,
+		"--environment",
+		r.envName,
+	)
+	if code != 0 {
+		r.t.Logf(
+			"warning: subscription deployment cleanup failed (exit %d): %s",
+			code,
+			truncate(strings.TrimSpace(out), 500),
+		)
+	}
+}
+
+func subscriptionDeploymentCleanupCommandDir() (string, error) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", errors.New("resolve current test file")
+	}
+
+	return filepath.Clean(filepath.Join(
+		filepath.Dir(currentFile),
+		"..",
+		"..",
+		"..",
+		"..",
+		"test",
+		"cmd",
+		"cleanup-subscription-deployments",
+	)), nil
+}
+
+func TestSubscriptionDeploymentCleanupCommandDir(t *testing.T) {
+	commandDir, err := subscriptionDeploymentCleanupCommandDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(commandDir)
+	if err != nil {
+		t.Fatalf("stat cleanup command directory: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("cleanup command path is not a directory: %s", commandDir)
 	}
 }
 
@@ -1224,11 +1309,15 @@ func withoutGitHubTokenEnv(env []string) []string {
 	return out
 }
 
-// shortHash returns a short, non-cryptographic uniqueness suffix for the agent
-// name (sha256 only to avoid noise from security scanners).
+// shortHash returns a random suffix so concurrent CI jobs cannot share an azd environment name.
 func shortHash(mode string) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s-%d", mode, os.Getpid()))
-	return hex.EncodeToString(sum[:])[:6]
+	random := make([]byte, 5)
+	if _, err := rand.Read(random); err == nil {
+		return hex.EncodeToString(random)
+	}
+
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s-%d-%d", mode, os.Getpid(), time.Now().UnixNano()))
+	return hex.EncodeToString(sum[:])[:10]
 }
 
 // assertSafeTestDir refuses a path that is not clearly a disposable test dir, so

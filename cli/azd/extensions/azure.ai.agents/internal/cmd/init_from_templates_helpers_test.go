@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -101,34 +102,34 @@ func TestEffectiveType(t *testing.T) {
 		expected     string
 	}{
 		{
-			name:     "agent.yaml suffix",
+			name:     "legacy agent.yaml suffix is unsupported",
 			source:   "https://github.com/org/repo/blob/main/samples/echo-agent/agent.yaml",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
-			name:     "agent.manifest.yaml suffix",
+			name:     "legacy agent.manifest.yaml suffix is unsupported",
 			source:   "https://github.com/org/repo/blob/main/samples/echo-agent/agent.manifest.yaml",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
-			name:     "bare agent.yaml",
+			name:     "bare agent.yaml is unsupported",
 			source:   "agent.yaml",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
-			name:     "bare agent.manifest.yaml",
+			name:     "bare agent.manifest.yaml is unsupported",
 			source:   "agent.manifest.yaml",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
-			name:     "case insensitive agent.yaml",
+			name:     "case insensitive agent.yaml is unsupported",
 			source:   "https://github.com/org/repo/blob/main/Agent.YAML",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
-			name:     "case insensitive agent.manifest.yaml",
+			name:     "case insensitive agent.manifest.yaml is unsupported",
 			source:   "https://github.com/org/repo/blob/main/Agent.Manifest.YAML",
-			expected: TemplateTypeAgent,
+			expected: "",
 		},
 		{
 			name:     "github repo slug",
@@ -141,18 +142,25 @@ func TestEffectiveType(t *testing.T) {
 			expected: TemplateTypeAzd,
 		},
 		{
-			name:     "empty source",
+			name:     "empty source is unsupported",
 			source:   "",
-			expected: TemplateTypeAzd,
+			expected: "",
 		},
 		{
-			name:     "yaml file that is not agent.yaml",
+			name:     "unrecognized yaml file is unsupported",
 			source:   "https://github.com/org/repo/blob/main/config.yaml",
-			expected: TemplateTypeAzd,
+			expected: "",
 		},
 		{
 			name:         "azure.yaml with extension.ai.agent templateType",
 			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
+			templateType: "extension.ai.agent",
+			expected:     TemplateTypeAzureYaml,
+		},
+		{
+			name: "known catalog unified azure.yaml",
+			source: "https://github.com/microsoft-foundry/foundry-samples/blob/main/" +
+				"samples/python/hosted-agents/agent-framework/hello-world/azure.yaml",
 			templateType: "extension.ai.agent",
 			expected:     TemplateTypeAzureYaml,
 		},
@@ -169,16 +177,27 @@ func TestEffectiveType(t *testing.T) {
 			expected:     TemplateTypeAzureYaml,
 		},
 		{
-			name:         "azure.yaml without extension.ai.agent templateType falls back to azd",
-			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
-			templateType: "",
-			expected:     TemplateTypeAzd,
+			name:         "azure.yaml URL with query and fragment",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml?plain=1#L1",
+			templateType: "extension.ai.agent",
+			expected:     TemplateTypeAzureYaml,
 		},
 		{
-			name:         "azure.yaml with different templateType falls back to azd",
+			name:         "azure.yaml without extension.ai.agent templateType is unsupported",
+			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
+			templateType: "",
+			expected:     "",
+		},
+		{
+			name:         "azure.yaml with different templateType is unsupported",
 			source:       "https://github.com/org/repo/blob/main/samples/basic/azure.yaml",
 			templateType: "extension.something.else",
-			expected:     TemplateTypeAzd,
+			expected:     "",
+		},
+		{
+			name:     "github repo URL with git suffix",
+			source:   "https://github.com/Azure-Samples/my-agent-template.git",
+			expected: TemplateTypeAzd,
 		},
 	}
 
@@ -435,14 +454,14 @@ func TestFetchAgentTemplates(t *testing.T) {
 	t.Run("success filters by templateType", func(t *testing.T) {
 		t.Parallel()
 
-		// Manifest mixes gallery entries (no templateType / wrong templateType)
-		// with agent-init entries. Only the latter should survive.
+		// Manifest mixes gallery entries, supported agent-init entries, and a
+		// legacy agent manifest. Only supported agent-init sources survive.
 		manifest := []map[string]any{
 			{
 				"title":              "Echo Agent",
 				"languages":          []string{"python"},
 				"extensionFramework": "Agent Framework",
-				"source":             "https://github.com/org/repo/blob/main/echo-agent/agent.yaml",
+				"source":             "https://github.com/org/repo/blob/main/echo-agent/azure.yaml",
 				"templateType":       "extension.ai.agent",
 			},
 			{
@@ -463,6 +482,12 @@ func TestFetchAgentTemplates(t *testing.T) {
 				"languages":    []string{"python"},
 				"source":       "Azure-Samples/some-other-extension",
 				"templateType": "extension.something.else",
+			},
+			{
+				"title":        "Legacy agent manifest",
+				"languages":    []string{"python"},
+				"source":       "https://github.com/org/repo/blob/main/legacy/agent.yaml",
+				"templateType": "extension.ai.agent",
 			},
 		}
 
@@ -553,67 +578,60 @@ func TestFetchAgentTemplates(t *testing.T) {
 		require.Contains(t, err.Error(), "extension.ai.agent")
 		require.Contains(t, err.Error(), "1 entries")
 	})
-}
 
-func TestFindAgentManifest(t *testing.T) {
-	t.Parallel()
-
-	t.Run("finds agent.yaml at root", func(t *testing.T) {
+	t.Run("manifest with only legacy agent sources returns error", func(t *testing.T) {
 		t.Parallel()
-		dir := t.TempDir()
-		manifestPath := filepath.Join(dir, "agent.yaml")
-		require.NoError(t, os.WriteFile(manifestPath, []byte("name: test"), 0600))
 
-		found, err := findAgentManifest(dir)
+		manifest := []map[string]any{
+			{
+				"title":        "Legacy agent manifest",
+				"languages":    []string{"python"},
+				"source":       "https://github.com/org/repo/blob/main/legacy/agent.manifest.yaml",
+				"templateType": "extension.ai.agent",
+			},
+		}
+		data, err := json.Marshal(manifest)
 		require.NoError(t, err)
-		require.Equal(t, manifestPath, found)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
+
+		result, err := fetchAgentTemplatesFromURL(t.Context(), server.Client(), server.URL)
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "none used a supported azure.yaml or full repository source")
 	})
 
-	t.Run("finds agent.manifest.yaml at root", func(t *testing.T) {
+	t.Run("catalog validation error redacts URL credentials", func(t *testing.T) {
 		t.Parallel()
-		dir := t.TempDir()
-		manifestPath := filepath.Join(dir, "agent.manifest.yaml")
-		require.NoError(t, os.WriteFile(manifestPath, []byte("name: test"), 0600))
 
-		found, err := findAgentManifest(dir)
+		manifest := []map[string]any{
+			{
+				"title":        "Legacy agent manifest",
+				"source":       "agent.yaml",
+				"templateType": "extension.ai.agent",
+			},
+		}
+		data, err := json.Marshal(manifest)
 		require.NoError(t, err)
-		require.Equal(t, manifestPath, found)
-	})
 
-	t.Run("finds agent.yaml in subdirectory", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		subDir := filepath.Join(dir, "src", "my-agent")
-		require.NoError(t, os.MkdirAll(subDir, 0700))
-		manifestPath := filepath.Join(subDir, "agent.yaml")
-		require.NoError(t, os.WriteFile(manifestPath, []byte("name: test"), 0600))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
+		}))
+		defer server.Close()
 
-		found, err := findAgentManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, manifestPath, found)
-	})
-
-	t.Run("returns empty when no manifest exists", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		// Create some other files
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte("name: test"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("key: val"), 0600))
-
-		found, err := findAgentManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, found)
-	})
-
-	t.Run("ignores non-agent yaml files", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "azure.yaml"), []byte("name: test"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("key: val"), 0600))
-
-		found, err := findAgentManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, found)
+		catalogURL := "http://catalog-user:catalog-password@" +
+			strings.TrimPrefix(server.URL, "http://") + "/templates?sig=secret#fragment"
+		_, err = fetchAgentTemplatesFromURL(t.Context(), server.Client(), catalogURL)
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "catalog-user")
+		require.NotContains(t, err.Error(), "catalog-password")
+		require.NotContains(t, err.Error(), "sig=secret")
+		require.NotContains(t, err.Error(), "fragment")
 	})
 }
 
@@ -647,143 +665,5 @@ func TestDirIsEmpty(t *testing.T) {
 		empty, err := dirIsEmpty(dir)
 		require.NoError(t, err)
 		require.False(t, empty)
-	})
-}
-
-func TestDetectLocalManifest(t *testing.T) {
-	t.Parallel()
-
-	// Valid agent manifest content (has template with kind + name)
-	validManifest := `name: test-agent
-template:
-  kind: hosted
-  name: test-agent
-  protocols:
-    - protocol: responses
-      version: v1
-`
-
-	t.Run("no manifest files", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print()"), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, result)
-	})
-
-	t.Run("valid agent.yaml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
-	})
-
-	t.Run("valid agent.manifest.yaml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
-	})
-
-	t.Run("both files prefers agent.manifest.yaml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.manifest.yaml"), result)
-	})
-
-	t.Run("does not search subdirectories", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		subDir := filepath.Join(dir, "src")
-		require.NoError(t, os.MkdirAll(subDir, 0700))
-		require.NoError(t, os.WriteFile(filepath.Join(subDir, "agent.yaml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, result)
-	})
-
-	t.Run("empty directory", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, result)
-	})
-
-	t.Run("invalid YAML content is skipped", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("not: valid: yaml: ["), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, result)
-	})
-
-	t.Run("YAML without template is skipped", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte("foo: bar\n"), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Empty(t, result)
-	})
-
-	t.Run("falls back to agent.yaml when manifest.yaml is invalid", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yaml"), []byte("foo: bar\n"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
-	})
-
-	t.Run("detects agent.yml variant", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.yml"), result)
-	})
-
-	t.Run("detects agent.manifest.yml variant", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.manifest.yml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.manifest.yml"), result)
-	})
-
-	t.Run("prefers yaml over yml", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(validManifest), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "agent.yml"), []byte(validManifest), 0600))
-
-		result, err := detectLocalManifest(dir)
-		require.NoError(t, err)
-		require.Equal(t, filepath.Join(dir, "agent.yaml"), result)
 	})
 }

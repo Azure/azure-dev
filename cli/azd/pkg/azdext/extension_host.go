@@ -43,6 +43,17 @@ type extensionEventManager interface {
 	Close() error
 }
 
+type betaServiceEventRegistrar interface {
+	serviceReceiver
+	AddBetaServiceEventHandler(
+		ctx context.Context,
+		eventName string,
+		handler BetaServiceEventHandler,
+		options *ServiceEventOptions,
+	) error
+	Close() error
+}
+
 type provisioningRegistrar interface {
 	Register(ctx context.Context, factory ProvisioningProviderFactory, providerName string) error
 	Receive(ctx context.Context) error
@@ -95,17 +106,21 @@ type ExtensionHost struct {
 	client *AzdClient
 
 	serviceTargets        []ServiceTargetRegistration
+	previewHosts          map[string]bool
 	frameworkServices     []FrameworkServiceRegistration
 	projectHandlers       []ProjectEventRegistration
 	serviceHandlers       []ServiceEventRegistration
+	betaServiceHandlers   []betaServiceEventRegistration
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
-	serviceTargetManager    serviceTargetRegistrar
-	frameworkServiceManager frameworkServiceRegistrar
-	eventManager            extensionEventManager
-	provisioningManager     provisioningRegistrar
-	validationManager       *ValidationManager
+	serviceTargetManager        serviceTargetRegistrar
+	serviceTargetPreviewManager serviceTargetRegistrar
+	frameworkServiceManager     frameworkServiceRegistrar
+	eventManager                extensionEventManager
+	betaServiceEventManager     betaServiceEventRegistrar
+	provisioningManager         provisioningRegistrar
+	validationManager           *ValidationManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -144,11 +159,21 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.serviceTargetManager == nil {
 		er.serviceTargetManager = NewServiceTargetManager(extensionId, er.client, brokerLogger)
 	}
+	if er.serviceTargetPreviewManager == nil {
+		er.serviceTargetPreviewManager = newServiceTargetPreviewManager(extensionId, er.client, brokerLogger)
+	}
 	if er.frameworkServiceManager == nil {
 		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
 	if er.eventManager == nil {
 		er.eventManager = NewEventManager(extensionId, er.client, brokerLogger)
+	}
+	if er.betaServiceEventManager == nil {
+		er.betaServiceEventManager = newBetaServiceEventManager(
+			extensionId,
+			er.client,
+			brokerLogger,
+		)
 	}
 	if er.provisioningManager == nil {
 		er.provisioningManager = NewProvisioningManager(extensionId, er.client, brokerLogger)
@@ -161,6 +186,20 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 // WithServiceTarget registers a service target provider to be wired when Run is invoked.
 func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFactory) *ExtensionHost {
 	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	return er
+}
+
+// WithBetaServiceTargetPreview registers a service target like [ExtensionHost.WithServiceTarget] and also
+// opts it into the experimental v1beta deployment preview used by `azd deploy --preview`.
+// Providers created by the factory must implement preview.ServiceTargetPreviewProvider from pkg/azdext/preview.
+// Preview runs on a fresh provider without Initialize; the factory is not called during registration.
+// Preview registration is best effort: when azd does not support it, the service target still works normally.
+func (er *ExtensionHost) WithBetaServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
+	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	if er.previewHosts == nil {
+		er.previewHosts = map[string]bool{}
+	}
+	er.previewHosts[host] = true
 	return er
 }
 
@@ -183,6 +222,21 @@ func (er *ExtensionHost) WithServiceEventHandler(
 	options *ServiceEventOptions,
 ) *ExtensionHost {
 	er.serviceHandlers = append(er.serviceHandlers, ServiceEventRegistration{
+		EventName: eventName,
+		Handler:   handler,
+		Options:   options,
+	})
+	return er
+}
+
+// WithBetaServiceEventHandler registers a structured deploy handler.
+// It supports service-level predeploy and postdeploy events only.
+func (er *ExtensionHost) WithBetaServiceEventHandler(
+	eventName string,
+	handler BetaServiceEventHandler,
+	options *ServiceEventOptions,
+) *ExtensionHost {
+	er.betaServiceHandlers = append(er.betaServiceHandlers, betaServiceEventRegistration{
 		EventName: eventName,
 		Handler:   handler,
 		Options:   options,
@@ -214,6 +268,10 @@ func (er *ExtensionHost) WithValidationCheck(
 
 // Run wires the configured service targets and event handlers, signals readiness, and blocks until shutdown.
 func (er *ExtensionHost) Run(ctx context.Context) error {
+	if err := er.validateBetaServiceEventRegistrations(); err != nil {
+		return err
+	}
+
 	extensionId := getExtensionId(ctx)
 
 	// Wait for debugger if AZD_EXT_DEBUG is set
@@ -238,8 +296,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
+	hasPreviewServiceTargets := len(er.previewHosts) > 0
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
+	hasBetaServiceEventHandlers := len(er.betaServiceHandlers) > 0
 	hasProvisioningProviders := len(er.provisioningProviders) > 0
 	hasValidationChecks := len(er.validationChecks) > 0
 
@@ -248,11 +308,17 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		if hasServiceTargets {
 			_ = er.serviceTargetManager.Close()
 		}
+		if hasPreviewServiceTargets {
+			_ = er.serviceTargetPreviewManager.Close()
+		}
 		if hasFrameworkServices {
 			_ = er.frameworkServiceManager.Close()
 		}
 		if hasEventHandlers {
 			_ = er.eventManager.Close()
+		}
+		if hasBetaServiceEventHandlers {
+			_ = er.betaServiceEventManager.Close()
 		}
 		if hasProvisioningProviders {
 			_ = er.provisioningManager.Close()
@@ -268,11 +334,17 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	if hasServiceTargets {
 		receivers = append(receivers, er.serviceTargetManager)
 	}
+	if hasPreviewServiceTargets {
+		receivers = append(receivers, er.serviceTargetPreviewManager)
+	}
 	if hasFrameworkServices {
 		receivers = append(receivers, er.frameworkServiceManager)
 	}
 	if hasEventHandlers {
 		receivers = append(receivers, er.eventManager)
+	}
+	if hasBetaServiceEventHandlers {
+		receivers = append(receivers, er.betaServiceEventManager)
 	}
 	if hasProvisioningProviders {
 		receivers = append(receivers, er.provisioningManager)
@@ -314,7 +386,7 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	// Register all registrations in parallel - service targets, framework services, event handlers, and provisioning
 	var registrationsWaitGroup sync.WaitGroup
 	totalCount := len(er.serviceTargets) + len(er.frameworkServices) +
-		len(er.projectHandlers) + len(er.serviceHandlers) +
+		len(er.projectHandlers) + len(er.serviceHandlers) + len(er.betaServiceHandlers) +
 		len(er.provisioningProviders) + len(er.validationChecks)
 	registrationErrChan := make(chan error, totalCount)
 
@@ -328,6 +400,16 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.serviceTargetManager.Register(ctx, r.Factory, r.Host); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to register service target '%s': %w", r.Host, err)
+				return
+			}
+
+			// Preview is optional and registered only after the stable host is owned by this extension.
+			// azd versions without the preview override reject it as a duplicate registration,
+			// and normal deployment must keep working there.
+			if er.previewHosts[r.Host] {
+				if err := er.serviceTargetPreviewManager.Register(ctx, r.Factory, r.Host); err != nil {
+					log.Printf("deployment preview is unavailable for service target '%s': %v", r.Host, err)
+				}
 			}
 		})
 	}
@@ -370,6 +452,24 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		registrationsWaitGroup.Go(func() {
 			if err := er.eventManager.AddServiceEventHandler(ctx, r.EventName, r.Handler, r.Options); err != nil {
 				registrationErrChan <- fmt.Errorf("failed to add service event handler '%s': %w", r.EventName, err)
+			}
+		})
+	}
+
+	for _, reg := range er.betaServiceHandlers {
+		r := reg
+		registrationsWaitGroup.Go(func() {
+			if err := er.betaServiceEventManager.AddBetaServiceEventHandler(
+				ctx,
+				r.EventName,
+				r.Handler,
+				r.Options,
+			); err != nil {
+				registrationErrChan <- fmt.Errorf(
+					"failed to add beta service event handler '%s': %w",
+					r.EventName,
+					err,
+				)
 			}
 		})
 	}
@@ -455,6 +555,10 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		return nil // Context cancellation is expected, not an error
 	case err := <-receiverErrors:
 		if err != nil {
+			if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+				log.Println("Extension host context cancelled, shutting down")
+				return nil
+			}
 			return err
 		}
 		// Continue waiting for more errors or completion
@@ -463,6 +567,40 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		// All receivers completed normally
 		return nil
 	}
+}
+
+func (er *ExtensionHost) validateBetaServiceEventRegistrations() error {
+	stableEvents := make(map[string]struct{}, len(er.serviceHandlers))
+	for _, registration := range er.serviceHandlers {
+		stableEvents[registration.EventName] = struct{}{}
+	}
+
+	seen := make(map[string]struct{}, len(er.betaServiceHandlers))
+	for _, registration := range er.betaServiceHandlers {
+		if err := validateBetaServiceEventName(registration.EventName); err != nil {
+			return err
+		}
+		if registration.Handler == nil {
+			return fmt.Errorf(
+				"beta service event handler for %q is nil",
+				registration.EventName,
+			)
+		}
+		if _, exists := seen[registration.EventName]; exists {
+			return fmt.Errorf(
+				"beta service event %q is registered more than once",
+				registration.EventName,
+			)
+		}
+		if _, exists := stableEvents[registration.EventName]; exists {
+			return fmt.Errorf(
+				"service event %q cannot have both stable and beta handlers",
+				registration.EventName,
+			)
+		}
+		seen[registration.EventName] = struct{}{}
+	}
+	return nil
 }
 
 func callReady(ctx context.Context, client *AzdClient) error {

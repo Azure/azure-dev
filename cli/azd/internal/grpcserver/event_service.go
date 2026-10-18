@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -32,7 +33,8 @@ var noEnvResolver = func(name string) string {
 // eventService implements azdext.EventServiceServer.
 type eventService struct {
 	azdext.UnimplementedEventServiceServer
-	extensionManager *extensions.Manager
+	extensionManager ExtensionLookup
+	followUps        *followUpManager
 	console          input.Console
 
 	lazyEnvManager *lazy.Lazy[environment.Manager]
@@ -40,15 +42,22 @@ type eventService struct {
 	lazyEnv        *lazy.Lazy[*environment.Environment]
 }
 
+// ExtensionLookup resolves an installed extension.
+type ExtensionLookup interface {
+	GetInstalled(extensions.FilterOptions) (*extensions.Extension, error)
+}
+
 func NewEventService(
-	extensionManager *extensions.Manager,
+	extensionManager ExtensionLookup,
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyProject *lazy.Lazy[*project.ProjectConfig],
 	lazyEnv *lazy.Lazy[*environment.Environment],
+	followUps *followUpManager,
 	console input.Console,
 ) azdext.EventServiceServer {
 	return &eventService{
 		extensionManager: extensionManager,
+		followUps:        followUps,
 		lazyEnvManager:   lazyEnvManager,
 		lazyProject:      lazyProject,
 		lazyEnv:          lazyEnv,
@@ -143,7 +152,8 @@ func (s *eventService) createProjectEventHandler(
 	return func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s)", extension.DisplayName, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview := s.syncExtensionOutput(ctx, extension, previewTitle)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -260,7 +270,8 @@ func (s *eventService) createServiceEventHandler(
 	return func(ctx context.Context, args project.ServiceLifecycleEventArgs) error {
 		err := func() error {
 			previewTitle := fmt.Sprintf("%s (%s.%s)", extension.DisplayName, args.Service.Name, eventName)
-			defer s.syncExtensionOutput(ctx, extension, previewTitle)()
+			cleanupPreview := s.syncExtensionOutput(ctx, extension, previewTitle)
+			defer cleanupPreview()
 
 			resolver := noEnvResolver
 			env, err := s.lazyEnv.GetValue()
@@ -338,8 +349,7 @@ func (s *eventService) createServiceEventHandler(
 	}
 }
 
-// syncExtensionOutput displays the extension output in the preview experience.
-// defer the returned function to stop the previewer when the function exits.
+// syncExtensionOutput displays extension output in the preview experience.
 func (s *eventService) syncExtensionOutput(
 	ctx context.Context,
 	extension *extensions.Extension,
@@ -359,7 +369,9 @@ func (s *eventService) syncExtensionOutput(
 
 	// Stop the previewer when the function exits.
 	return func() {
-		s.console.StopPreviewer(ctx, false)
+		if previewWriter != io.Discard {
+			s.console.StopPreviewer(ctx, false)
+		}
 		extOut.RemoveWriter(previewWriter)
 	}
 }

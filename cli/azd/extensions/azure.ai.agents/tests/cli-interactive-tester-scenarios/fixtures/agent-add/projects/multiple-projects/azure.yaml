@@ -1,0 +1,6 @@
+name: agent-add-multiple-projects
+services:
+  ai-project:
+    host: azure.ai.project
+  other-project:
+    host: azure.ai.project

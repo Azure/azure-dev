@@ -8,7 +8,7 @@ defaults:
   timeout: 5m
   executor: copilot-sdk
   model: gpt-5.6-terra
-  # model: mai-code-1-flash-picker
+  # Keep this out of eval-azd.experiments.yaml's subject-model axis so it never judges itself.
   judge_model: gpt-5.6-luna
 
 # Allow some grader misses as we tune this more.

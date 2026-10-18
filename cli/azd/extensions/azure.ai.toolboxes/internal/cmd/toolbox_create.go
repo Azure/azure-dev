@@ -39,16 +39,14 @@ tool entry, so 'create' takes its inputs from a JSON or YAML file via
 
 ` + fileShapeBlurb(true) + `
 
-At least one of 'connections' or 'tools' must be non-empty.
-
 On success the toolbox's runtime MCP endpoint is written to the active azd
 environment under the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT variable (the same
 key agents consume), where <NORMALIZED_NAME> is the toolbox name uppercased with
-non-alphanumeric character runs replaced by underscores.
-
-Examples:
-
+non-alphanumeric character runs replaced by underscores.`,
+		Example: `  # Create a toolbox from a JSON definition
   azd ai toolbox create research --from-file ./tools.json
+
+  # Use a YAML definition and return JSON
   azd ai toolbox create research --from-file ./tools.yaml --output json
 `,
 		Args: cobra.ExactArgs(1),
@@ -288,8 +286,8 @@ func buildToolboxPolicies(spec *toolboxPoliciesSpec) (*azure.ToolboxPolicies, er
 	if name == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			"policies.rai_config requires a policy name",
-			"set policies.rai_config.rai_policy_name (or 'name') to the RAI policy to apply",
+			"policies.raiConfig requires a policy name",
+			"set policies.raiConfig.raiPolicyName (or 'name') to the RAI policy to apply",
 		)
 	}
 	return &azure.ToolboxPolicies{

@@ -15,6 +15,10 @@ paths:
     ignore:
       - 'unknown permission scope "copilot-requests"'
 
+  .github/workflows/vally-grpc-contracts-skill-ci.yml:
+    ignore:
+      - 'unknown permission scope "copilot-requests"'
+
   .github/workflows/vally-foundry-ci.yml:
     ignore:
       - 'unknown permission scope "copilot-requests"'

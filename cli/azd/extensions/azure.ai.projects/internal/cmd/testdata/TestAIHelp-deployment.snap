@@ -1,0 +1,21 @@
+Manage managed model deployments for a Foundry project.
+
+Usage
+  azd ai project deployment [command]
+
+Available Commands
+  add : Add an azd-managed model deployment before ejection.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for deployment
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Add an inline model deployment before ejecting infrastructure
+    azd ai project deployment add --model OpenAI/gpt-4.1 --name chat
+
+Use azd ai project deployment [command] --help to view examples and more information about a specific command.

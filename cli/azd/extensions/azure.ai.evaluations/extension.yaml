@@ -5,7 +5,7 @@ displayName: Foundry evaluations (Beta)
 description: Define and run Foundry evaluations from your terminal. (Beta)
 usage: azd ai eval <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.1
+version: 1.0.0-beta.2
 requiredAzdVersion: ">=1.33.0"
 language: go
 capabilities:
@@ -18,7 +18,7 @@ providers:
     description: Deploys evaluation datasets, evaluators, and eval groups to Foundry
 examples:
   - name: init
-    description: Scaffold evaluation config for an agent.
+    description: Scaffold evaluation config for an agent or completed conversations.
     usage: azd ai eval init
   - name: run
     description: Start, list, and read the results of evaluation runs.

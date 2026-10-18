@@ -328,7 +328,14 @@ func runRun(ctx context.Context, flags *runFlags, noPrompt bool) error {
 	// speaks the Activity protocol); everything else uses Agent Inspector. Both
 	// are suppressed by --no-inspector or its neutral alias --no-client.
 	if activityProfile.IsActivity {
-		handlePlaygroundAutoLaunch(ctx, flags.port, flags.channel, suppressClient, os.Stderr)
+		handlePlaygroundAutoLaunch(
+			ctx,
+			flags.port,
+			flags.channel,
+			activityProfile.MessagesPath,
+			suppressClient,
+			os.Stderr,
+		)
 	} else {
 		handleInspectorAutoLaunch(
 			ctx,
@@ -813,22 +820,6 @@ func localProjectEndpoint(
 		return value
 	}
 	return fallback
-}
-
-// findAgentYaml locates the agent definition file in the given directory.
-// After `azd ai agent init`, agent.yaml (and azure.yaml) are the sources of
-// truth for the agent configuration. We intentionally do not look at
-// agent.manifest.yaml here — that file is an import artifact used only during
-// init and is not referenced at runtime.
-func findAgentYaml(dir string) string {
-	candidates := []string{"agent.yaml", "agent.yml"}
-	for _, name := range candidates {
-		path := filepath.Join(dir, name)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
 }
 
 // appendPortEnvVars appends PORT and, for .NET projects, ASPNETCORE_URLS to the

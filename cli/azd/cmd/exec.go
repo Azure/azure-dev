@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -43,7 +44,9 @@ func newExecCmd() *cobra.Command {
 
 Commands are run with the azd environment loaded into the child process.
 Multiple arguments use direct process execution (no shell wrapping).
-A single quoted argument uses shell inline execution.
+A single quoted argument uses shell inline execution unless it is ambiguous
+with a missing script path. Use --shell to make inline intent explicit when
+the command contains script-like path arguments.
 
 Examples:
   azd exec python script.py                     # Direct exec (exact argv)
@@ -84,7 +87,8 @@ func (f *execFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 
 	local.StringVarP(&f.shell, "shell", "s", "",
 		"Shell to use (bash, sh, zsh, pwsh, powershell, cmd). "+
-			"Auto-detected if not specified.")
+			"Auto-detected if not specified. Also disambiguates inline commands "+
+			"that contain script-like path arguments.")
 	local.BoolVarP(&f.interactive, "interactive", "i", false,
 		"Run in interactive mode (connect stdin)")
 }
@@ -156,29 +160,28 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	// Try file execution first; fall back based on argument shape.
-	if err := exec.Execute(ctx, scriptInput); err != nil {
-		if _, ok := errors.AsType[*scripting.ScriptNotFoundError](err); ok {
-			// Guard: if the input looks like a file path (has path separators
-			// or a known script extension), don't fall through to inline/direct
-			// execution — the user intended to run a file that doesn't exist.
-			if looksLikeFilePath(scriptInput) {
-				return nil, err
-			}
-			if len(scriptArgs) > 0 && a.flags.shell == "" {
-				err = exec.ExecuteDirect(ctx, scriptInput, scriptArgs)
-			} else {
-				err = exec.ExecuteInline(ctx, scriptInput)
-			}
-		}
-		if err != nil {
-			if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
-				return nil, &internal.ExitCodeError{
-					ExitCode: execErr.ExitCode,
-					Err:      err,
-				}
-			}
+	err = exec.Execute(ctx, scriptInput)
+	if _, notFound := errors.AsType[*scripting.ScriptNotFoundError](err); notFound ||
+		isValidationFileProbeFallbackError(err) {
+		// Guard ambiguous path-like input unless --shell explicitly
+		// indicates inline execution.
+		if shouldFailOnMissingScript(scriptInput, a.flags.shell) {
 			return nil, err
 		}
+		if len(scriptArgs) > 0 && a.flags.shell == "" {
+			err = exec.ExecuteDirect(ctx, scriptInput, scriptArgs)
+		} else {
+			err = exec.ExecuteInline(ctx, scriptInput)
+		}
+	}
+	if err != nil {
+		if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
+			return nil, &internal.ExitCodeError{
+				ExitCode: execErr.ExitCode,
+				Err:      err,
+			}
+		}
+		return nil, err
 	}
 
 	return nil, nil
@@ -192,13 +195,70 @@ var scriptExtensions = map[string]bool{
 	".py": true, ".rb": true, ".pl": true,
 }
 
+const shellSyntaxCharacters = "'\"`$<>()|&;"
+const explicitShellSyntaxCharacters = shellSyntaxCharacters + "*?[]{}~^%!="
+
+func shouldFailOnMissingScript(input, shell string) bool {
+	if shell != "" {
+		return looksLikeClearScriptPath(input)
+	}
+	return looksLikeFilePath(input)
+}
+
+func looksLikeClearScriptPath(input string) bool {
+	input = strings.TrimSpace(input)
+	if input == "" ||
+		strings.IndexFunc(input, unicode.IsSpace) >= 0 ||
+		strings.ContainsAny(input, explicitShellSyntaxCharacters) {
+		return false
+	}
+
+	if strings.ContainsAny(input, "/\\") {
+		return true
+	}
+
+	ext := strings.ToLower(filepath.Ext(input))
+	return scriptExtensions[ext]
+}
+
+func isValidationFileProbeFallbackError(err error) bool {
+	validationErr, ok := errors.AsType[*scripting.ValidationError](err)
+	return ok && isFileProbeFallbackError(validationErr.Err)
+}
+
+func hasShellSyntaxBeforePathBoundary(input string) bool {
+	firstShellSyntax := strings.IndexAny(input, shellSyntaxCharacters)
+	if firstShellSyntax < 0 {
+		return false
+	}
+	firstSeparator := strings.IndexAny(input, "/\\")
+	return firstSeparator < 0 || firstShellSyntax < firstSeparator
+}
+
 // looksLikeFilePath reports whether input appears to be a file path rather
 // than a bare command or inline script. Used to prevent falling through to
 // inline execution when a user typos a script name (F15 security fix).
 func looksLikeFilePath(input string) bool {
-	if strings.ContainsAny(input, "/\\") {
+	input = strings.TrimSpace(input)
+	ext := strings.ToLower(filepath.Ext(input))
+	hasScriptExtension := ext != "" && scriptExtensions[ext]
+	firstWhitespace := strings.IndexFunc(input, unicode.IsSpace)
+	firstSeparator := strings.IndexAny(input, "/\\")
+	if firstSeparator >= 0 {
+		// Shell syntax before a separator indicates that the separator belongs
+		// to an inline expression rather than a script path.
+		if hasShellSyntaxBeforePathBoundary(input) && !hasScriptExtension {
+			return false
+		}
+		if firstWhitespace >= 0 && firstWhitespace < firstSeparator {
+			// A single argument containing whitespace is ambiguous. Preserve
+			// fail-closed handling when the full input names a known script type.
+			return hasScriptExtension
+		}
 		return true
 	}
-	ext := strings.ToLower(filepath.Ext(input))
-	return ext != "" && scriptExtensions[ext]
+	if firstWhitespace >= 0 {
+		return false
+	}
+	return hasScriptExtension
 }

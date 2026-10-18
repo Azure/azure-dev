@@ -18,6 +18,8 @@ func newToolboxVersionCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 Use this group to list published versions for a toolbox and inspect their
 metadata (for example, when deciding which version to retarget as default).`,
+		Example: `  # Find available versions before promoting a default
+  azd ai toolbox versions list research`,
 	}
 
 	cmd.AddCommand(newToolboxVersionListCommand(extCtx))

@@ -1,0 +1,23 @@
+List connections in the Foundry project.
+
+Usage
+  azd ai connection list [flags]
+
+Flags
+      --kind string : Filter by connection kind (e.g., remote-tool)
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for list
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (supported: json, table) (default "table")
+  -p, --project-endpoint string : Foundry project endpoint URL for connection operations only (not context or version)
+
+Examples
+  List all project connections
+    azd ai connection list
+
+  List remote tool connections as JSON
+    azd ai connection list --kind remote-tool --output json

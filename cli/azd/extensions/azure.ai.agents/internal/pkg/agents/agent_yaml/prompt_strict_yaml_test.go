@@ -53,8 +53,15 @@ func TestPromptAgent_RejectsUnknownKeysInAuthoredBlocks(t *testing.T) {
 		{
 			name: "memory typo",
 			yaml: "kind: prompt\nname: a\nmodel: m\n" +
-				"memory:\n  store: s\n  chat_modell: gpt-4.1-mini\n",
-			wantKey:  "chat_modell",
+				"memory:\n  store: s\n  chatModell: gpt-4.1-mini\n",
+			wantKey:  "chatModell",
+			wantHint: "memory:",
+		},
+		{
+			name: "snake case memory property",
+			yaml: "kind: prompt\nname: a\nmodel: m\n" +
+				"memory:\n  store: s\n  chat_model: gpt-4.1-mini\n",
+			wantKey:  "chat_model",
 			wantHint: "memory:",
 		},
 	}

@@ -8,8 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -41,13 +41,19 @@ func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.Bl
 }
 
 // EnvPath returns the path to the .env file for the given environment
-func (fs *StorageBlobDataStore) EnvPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
+func (fs *StorageBlobDataStore) EnvPath(env *Environment) (string, error) {
+	if !IsValidEnvironmentName(env.Name()) {
+		return "", InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName), nil
 }
 
 // ConfigPath returns the path to the config.json file for the given environment
-func (fs *StorageBlobDataStore) ConfigPath(env *Environment) string {
-	return fmt.Sprintf("%s/%s", env.name, ConfigFileName)
+func (fs *StorageBlobDataStore) ConfigPath(env *Environment) (string, error) {
+	if !IsValidEnvironmentName(env.Name()) {
+		return "", InvalidEnvironmentNameError(env.Name())
+	}
+	return fmt.Sprintf("%s/%s", env.name, ConfigFileName), nil
 }
 
 func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
@@ -65,7 +71,14 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 	envMap := map[string]*contracts.EnvListEnvironment{}
 
 	for _, blob := range blobs {
-		envName := filepath.Base(filepath.Dir(blob.Path))
+		// Blob keys use forward slashes on every platform. Only direct state files
+		// match the keys used by Save and Reload.
+		envName, fileName, found := strings.Cut(blob.Path, "/")
+		if !found || !IsValidEnvironmentName(envName) ||
+			(fileName != DotEnvFileName && fileName != ConfigFileName) {
+			log.Printf("skipping environment blob %q: invalid state layout", blob.Path)
+			continue
+		}
 		env, has := envMap[envName]
 		if !has {
 			env = &contracts.EnvListEnvironment{
@@ -74,7 +87,7 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 			envMap[envName] = env
 		}
 
-		switch blob.Name {
+		switch fileName {
 		case ConfigFileName:
 			env.ConfigPath = blob.Path
 		case DotEnvFileName:
@@ -121,6 +134,15 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 }
 
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, options *SaveOptions) error {
+	configPath, err := sbd.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+	envPath, err := sbd.EnvPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
 
@@ -128,7 +150,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	if err := sbd.blobClient.Upload(ctx, sbd.ConfigPath(env), cfgWriter); err != nil {
+	if err := sbd.blobClient.Upload(ctx, configPath, cfgWriter); err != nil {
 		return fmt.Errorf("uploading config: %w", describeError(err))
 	}
 
@@ -139,7 +161,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
-	if err := sbd.blobClient.Upload(ctx, sbd.EnvPath(env), buffer); err != nil {
+	if err := sbd.blobClient.Upload(ctx, envPath, buffer); err != nil {
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
@@ -148,8 +170,17 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 }
 
 func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) error {
+	envPath, err := sbd.EnvPath(env)
+	if err != nil {
+		return err
+	}
+	configPath, err := sbd.ConfigPath(env)
+	if err != nil {
+		return err
+	}
+
 	// Reload .env file
-	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.EnvPath(env))
+	dotEnvBuffer, err := sbd.blobClient.Download(ctx, envPath)
 	if err != nil {
 		return describeError(err)
 	}
@@ -158,26 +189,25 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 
 	envMap, err := godotenv.Parse(dotEnvBuffer)
 	if err != nil {
-		env.replaceState(make(map[string]string), make(map[string]struct{}))
-	} else {
-		env.replaceState(envMap, make(map[string]struct{}))
+		return fmt.Errorf("loading .env: %w", err)
 	}
 
 	// Reload config file
-	configBuffer, err := sbd.blobClient.Download(ctx, sbd.ConfigPath(env))
+	configBuffer, err := sbd.blobClient.Download(ctx, configPath)
 	if err != nil {
 		return describeError(err)
 	}
 
 	defer configBuffer.Close()
 
-	if cfg, err := sbd.configManager.Load(configBuffer); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewEmptyConfig()
+	cfg, err := sbd.configManager.Load(configBuffer)
+	if errors.Is(err, os.ErrNotExist) {
+		cfg = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
 	}
+	env.replaceState(envMap, make(map[string]struct{}))
+	env.Config = cfg
 
 	if env.Name() != "" {
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))

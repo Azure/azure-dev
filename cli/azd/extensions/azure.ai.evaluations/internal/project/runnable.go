@@ -3,7 +3,11 @@
 
 package project
 
-import "azureaieval/internal/messages"
+import (
+	"strings"
+
+	"azureaieval/internal/messages"
+)
 
 // ValidateRunnable refuses a declaration no run could carry out.
 //
@@ -56,6 +60,9 @@ func ValidateRunnable(eval *Eval) error {
 	}
 
 	if eval.Source != nil {
+		if eval.MaxSamples > 0 && !eval.IsLocalSource() {
+			return messages.SourceSampleConflict(eval.Name)
+		}
 		switch eval.Source.Type {
 		case SourceTypeTraces:
 			if TraceAgentName(eval.Source, eval.Target) == "" {
@@ -72,11 +79,20 @@ func ValidateRunnable(eval *Eval) error {
 			if len(eval.Source.ResponseIDs) == 0 {
 				return messages.ResponsesSourceNeedsResponseIDs()
 			}
+			for i, id := range eval.Source.ResponseIDs {
+				if strings.TrimSpace(id) == "" {
+					return messages.ResponsesSourceBlankResponseID(i)
+				}
+			}
+		case SourceTypeLocal:
+			if strings.TrimSpace(eval.Source.File) == "" || strings.Contains(eval.Source.File, "://") {
+				return messages.LocalSourceNeedsFile()
+			}
 		case "":
 			return messages.SourceTypeMissing()
 		default:
 			return messages.SourceTypeNotSupported(
-				eval.Source.Type, SourceTypeTraces, SourceTypeResponses)
+				eval.Source.Type, SourceTypeTraces, SourceTypeResponses, SourceTypeLocal)
 		}
 		if _, _, err := ValidateSource(eval.Source); err != nil {
 			return err

@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	AccountService_GetCurrentPrincipal_FullMethodName                      = v1.AccountService_GetCurrentPrincipal_FullMethodName
 	AccountService_ListSubscriptions_FullMethodName                        = v1.AccountService_ListSubscriptions_FullMethodName
 	AccountService_LookupTenant_FullMethodName                             = v1.AccountService_LookupTenant_FullMethodName
 	AiModelService_ListLocationsWithQuota_FullMethodName                   = v1.AiModelService_ListLocationsWithQuota_FullMethodName
@@ -54,6 +55,9 @@ const (
 	LocationKind_LOCATION_KIND_LOCAL                                       = v1.LocationKind_LOCATION_KIND_LOCAL
 	LocationKind_LOCATION_KIND_REMOTE                                      = v1.LocationKind_LOCATION_KIND_REMOTE
 	LocationKind_LOCATION_KIND_UNSPECIFIED                                 = v1.LocationKind_LOCATION_KIND_UNSPECIFIED
+	PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL                         = v1.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL
+	PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED                               = v1.PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED
+	PrincipalType_PRINCIPAL_TYPE_USER                                      = v1.PrincipalType_PRINCIPAL_TYPE_USER
 	ProjectService_AddService_FullMethodName                               = v1.ProjectService_AddService_FullMethodName
 	ProjectService_GetConfigSection_FullMethodName                         = v1.ProjectService_GetConfigSection_FullMethodName
 	ProjectService_GetConfigValue_FullMethodName                           = v1.ProjectService_GetConfigValue_FullMethodName
@@ -86,6 +90,7 @@ const (
 	ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_DEPLOYMENT_STATE = v1.ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_DEPLOYMENT_STATE
 	ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_UNSPECIFIED      = v1.ProvisioningSkippedReason_PROVISIONING_SKIPPED_REASON_UNSPECIFIED
 	ServiceTargetService_Stream_FullMethodName                             = v1.ServiceTargetService_Stream_FullMethodName
+	TelemetryService_ReportUsage_FullMethodName                            = v1.TelemetryService_ReportUsage_FullMethodName
 	UserConfigService_GetSection_FullMethodName                            = v1.UserConfigService_GetSection_FullMethodName
 	UserConfigService_GetString_FullMethodName                             = v1.UserConfigService_GetString_FullMethodName
 	UserConfigService_Get_FullMethodName                                   = v1.UserConfigService_Get_FullMethodName
@@ -199,6 +204,8 @@ type (
 	GetConfigSectionResponse                                 = v1.GetConfigSectionResponse
 	GetConfigStringRequest                                   = v1.GetConfigStringRequest
 	GetConfigStringResponse                                  = v1.GetConfigStringResponse
+	GetCurrentPrincipalRequest                               = v1.GetCurrentPrincipalRequest
+	GetCurrentPrincipalResponse                              = v1.GetCurrentPrincipalResponse
 	GetDeploymentContextResponse                             = v1.GetDeploymentContextResponse
 	GetDeploymentResponse                                    = v1.GetDeploymentResponse
 	GetEnvRequest                                            = v1.GetEnvRequest
@@ -253,6 +260,7 @@ type (
 	ParseGitHubUrlResponse                                   = v1.ParseGitHubUrlResponse
 	PrepareValidationContextChunk                            = v1.PrepareValidationContextChunk
 	PrepareValidationContextResponse                         = v1.PrepareValidationContextResponse
+	PrincipalType                                            = v1.PrincipalType
 	ProjectConfig                                            = v1.ProjectConfig
 	ProjectHandlerStatus                                     = v1.ProjectHandlerStatus
 	ProjectMetadata                                          = v1.ProjectMetadata
@@ -357,6 +365,8 @@ type (
 	RegisterValidationCheckResponse                          = v1.RegisterValidationCheckResponse
 	ReportErrorRequest                                       = v1.ReportErrorRequest
 	ReportErrorResponse                                      = v1.ReportErrorResponse
+	ReportUsageRequest                                       = v1.ReportUsageRequest
+	ReportUsageResponse                                      = v1.ReportUsageResponse
 	RequiredVersions                                         = v1.RequiredVersions
 	ResolveModelDeploymentsRequest                           = v1.ResolveModelDeploymentsRequest
 	ResolveModelDeploymentsResponse                          = v1.ResolveModelDeploymentsResponse
@@ -424,6 +434,8 @@ type (
 	SubscribeServiceEvent                                    = v1.SubscribeServiceEvent
 	Subscription                                             = v1.Subscription
 	TargetResource                                           = v1.TargetResource
+	TelemetryServiceClient                                   = v1.TelemetryServiceClient
+	TelemetryServiceServer                                   = v1.TelemetryServiceServer
 	UnimplementedAccountServiceServer                        = v1.UnimplementedAccountServiceServer
 	UnimplementedAiModelServiceServer                        = v1.UnimplementedAiModelServiceServer
 	UnimplementedContainerServiceServer                      = v1.UnimplementedContainerServiceServer
@@ -436,6 +448,7 @@ type (
 	UnimplementedPromptServiceServer                         = v1.UnimplementedPromptServiceServer
 	UnimplementedProvisioningServiceServer                   = v1.UnimplementedProvisioningServiceServer
 	UnimplementedServiceTargetServiceServer                  = v1.UnimplementedServiceTargetServiceServer
+	UnimplementedTelemetryServiceServer                      = v1.UnimplementedTelemetryServiceServer
 	UnimplementedUserConfigServiceServer                     = v1.UnimplementedUserConfigServiceServer
 	UnimplementedValidationServiceServer                     = v1.UnimplementedValidationServiceServer
 	UnimplementedWorkflowServiceServer                       = v1.UnimplementedWorkflowServiceServer
@@ -451,6 +464,7 @@ type (
 	UnsafePromptServiceServer                                = v1.UnsafePromptServiceServer
 	UnsafeProvisioningServiceServer                          = v1.UnsafeProvisioningServiceServer
 	UnsafeServiceTargetServiceServer                         = v1.UnsafeServiceTargetServiceServer
+	UnsafeTelemetryServiceServer                             = v1.UnsafeTelemetryServiceServer
 	UnsafeUserConfigServiceServer                            = v1.UnsafeUserConfigServiceServer
 	UnsafeValidationServiceServer                            = v1.UnsafeValidationServiceServer
 	UnsafeWorkflowServiceServer                              = v1.UnsafeWorkflowServiceServer
@@ -509,18 +523,22 @@ var (
 	File_prompt_proto                = v1.File_azd_extensions_v1_prompt_proto
 	File_provisioning_proto          = v1.File_azd_extensions_v1_provisioning_proto
 	File_service_target_proto        = v1.File_azd_extensions_v1_service_target_proto
+	File_telemetry_proto             = v1.File_azd_extensions_v1_telemetry_proto
 	File_user_config_proto           = v1.File_azd_extensions_v1_user_config_proto
 	File_validation_proto            = v1.File_azd_extensions_v1_validation_proto
 	File_workflow_proto              = v1.File_azd_extensions_v1_workflow_proto
 	FrameworkService_ServiceDesc     = v1.FrameworkService_ServiceDesc
 	LocationKind_name                = v1.LocationKind_name
 	LocationKind_value               = v1.LocationKind_value
+	PrincipalType_name               = v1.PrincipalType_name
+	PrincipalType_value              = v1.PrincipalType_value
 	ProjectService_ServiceDesc       = v1.ProjectService_ServiceDesc
 	PromptService_ServiceDesc        = v1.PromptService_ServiceDesc
 	ProvisioningService_ServiceDesc  = v1.ProvisioningService_ServiceDesc
 	ProvisioningSkippedReason_name   = v1.ProvisioningSkippedReason_name
 	ProvisioningSkippedReason_value  = v1.ProvisioningSkippedReason_value
 	ServiceTargetService_ServiceDesc = v1.ServiceTargetService_ServiceDesc
+	TelemetryService_ServiceDesc     = v1.TelemetryService_ServiceDesc
 	UserConfigService_ServiceDesc    = v1.UserConfigService_ServiceDesc
 	ValidationCheckSeverity_name     = v1.ValidationCheckSeverity_name
 	ValidationCheckSeverity_value    = v1.ValidationCheckSeverity_value
@@ -574,6 +592,10 @@ func NewProvisioningServiceClient(cc grpc.ClientConnInterface) ProvisioningServi
 
 func NewServiceTargetServiceClient(cc grpc.ClientConnInterface) ServiceTargetServiceClient {
 	return v1.NewServiceTargetServiceClient(cc)
+}
+
+func NewTelemetryServiceClient(cc grpc.ClientConnInterface) TelemetryServiceClient {
+	return v1.NewTelemetryServiceClient(cc)
 }
 
 func NewUserConfigServiceClient(cc grpc.ClientConnInterface) UserConfigServiceClient {
@@ -634,6 +656,10 @@ func RegisterProvisioningServiceServer(s grpc.ServiceRegistrar, srv Provisioning
 
 func RegisterServiceTargetServiceServer(s grpc.ServiceRegistrar, srv ServiceTargetServiceServer) {
 	v1.RegisterServiceTargetServiceServer(s, srv)
+}
+
+func RegisterTelemetryServiceServer(s grpc.ServiceRegistrar, srv TelemetryServiceServer) {
+	v1.RegisterTelemetryServiceServer(s, srv)
 }
 
 func RegisterUserConfigServiceServer(s grpc.ServiceRegistrar, srv UserConfigServiceServer) {

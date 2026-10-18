@@ -34,12 +34,12 @@ import (
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/agentkind"
 	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/botservice"
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
+	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -49,6 +49,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -187,19 +188,24 @@ type AgentServiceTargetProvider struct {
 	// deployContextReady is set by every successful ensureDeployContext path;
 	// agentDefinitionPath is only set for the file-based and env-override paths
 	// (not the inline unified shape), so both are checked as the idempotency guard.
-	deployContextReady bool
-	credential         azcore.TokenCredential
-	tenantId           string
-	env                *azdext.Environment
-	foundryProject     *arm.ResourceID
-	projectServices    map[string]*azdext.ServiceConfig
-	dependencyEnabled  dependencyEnabled
-	dependencyEnv      map[string]string
+	deployContextReady         bool
+	credential                 azcore.TokenCredential
+	tenantId                   string
+	env                        *azdext.Environment
+	foundryProject             *arm.ResourceID
+	projectServices            map[string]*azdext.ServiceConfig
+	dependencyEnabled          dependencyEnabled
+	dependencyEnv              map[string]string
+	promptAgentVersionResolver PromptAgentVersionResolver
+	previewReader              func(endpoint, tenantID string) (agentPreviewReader, error)
 }
 
 const (
 	preBuiltImageArtifactSourceKey = "azure.ai.agents.imageSource"
-	preBuiltImageArtifactSource    = "agent.yaml"
+	// Keep the legacy metadata value for consumers that identify this artifact
+	// source; definitions now come from direct/root-$ref azure.yaml services.
+	preBuiltImageArtifactSource = "agent.yaml"
+	evaluationServiceHost       = "azure.ai.eval"
 )
 
 // NewAgentServiceTargetProvider creates a new AgentServiceTargetProvider instance
@@ -210,36 +216,12 @@ func NewAgentServiceTargetProvider(azdClient *azdext.AzdClient) azdext.ServiceTa
 }
 
 // Initialize stores and validates the service config. Heavy work such as
-// resolving agent.yaml, tenant lookup, and credential creation remains deferred
-// to deploy-time entrypoints; an explicit $ref is resolved here for validation.
+// resolving the agent definition, tenant lookup, and credential creation
+// remains deferred to deploy-time entrypoints; an explicit $ref is resolved
+// here for validation.
 func (p *AgentServiceTargetProvider) Initialize(ctx context.Context, serviceConfig *azdext.ServiceConfig) error {
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return err
-	}
-	props := ServiceConfigProps(serviceConfig)
-	needsLegacyLifecycleCheck := props == nil && strings.TrimSpace(serviceConfig.GetImage()) != "" &&
-		!serviceConfig.GetDocker().GetImagePassthrough()
-	if needsLegacyLifecycleCheck {
-		proj, err := p.azdClient.Project().Get(ctx, nil)
-		if err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeProjectNotFound,
-				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
-				"run 'azd init' to initialize your project",
-			)
-		}
-		p.projectPath = proj.GetProject().GetPath()
-		agentDef, _, source, err := LoadAgentDefinition(serviceConfig, p.projectPath)
-		if err != nil {
-			return err
-		}
-		if source.IsLegacy() && strings.TrimSpace(agentDef.RegistryConnectionID) != "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidServiceConfig,
-				"registryConnectionId requires docker.imagePassthrough: true",
-				"enable docker.imagePassthrough for the private pre-built image",
-			)
-		}
 	}
 	return validateRegistryConnectionServiceConfig(p.serviceConfig)
 }
@@ -296,15 +278,8 @@ func serviceConfigHasRef(serviceConfig *azdext.ServiceConfig) bool {
 	if serviceConfig == nil {
 		return false
 	}
-	for _, props := range []*structpb.Struct{
-		serviceConfig.GetAdditionalProperties(),
-		serviceConfig.GetConfig(),
-	} {
-		if props != nil && props.GetFields()[AgentDefinitionRefKey] != nil {
-			return true
-		}
-	}
-	return false
+	props := serviceConfig.GetAdditionalProperties()
+	return props != nil && props.GetFields()[AgentDefinitionRefKey] != nil
 }
 
 // adoptAndResolveServiceConfig expands a freshly supplied service config before
@@ -314,21 +289,48 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 	serviceConfig *azdext.ServiceConfig,
 ) error {
 	p.adoptServiceConfig(serviceConfig)
+	if err := validateRuntimeAgentSources(p.serviceConfig); err != nil {
+		return err
+	}
 	if !serviceConfigHasRef(p.serviceConfig) {
 		return nil
 	}
-	if p.projectPath == "" {
-		proj, err := p.azdClient.Project().Get(ctx, nil)
-		if err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeProjectNotFound,
-				fmt.Sprintf("failed to get project while resolving agent service: %s", err),
-				"run 'azd init' to initialize your project",
-			)
-		}
-		p.projectPath = proj.GetProject().GetPath()
+	if err := p.loadProjectPath(ctx); err != nil {
+		return err
 	}
 	return p.resolveServiceConfig()
+}
+
+func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
+	if p.projectPath != "" {
+		return nil
+	}
+	proj, err := p.azdClient.Project().Get(ctx, nil)
+	if err != nil {
+		return exterrors.Dependency(
+			exterrors.CodeProjectNotFound,
+			fmt.Sprintf("failed to get project while resolving agent service: %s", err),
+			"run 'azd init' to initialize your project",
+		)
+	}
+	p.projectPath = proj.GetProject().GetPath()
+	return nil
+}
+
+func (p *AgentServiceTargetProvider) agentDefinitionValidationServiceConfig() *azdext.ServiceConfig {
+	if p.serviceConfig == nil ||
+		p.agentDefinitionRef == "" ||
+		serviceConfigHasRef(p.serviceConfig) {
+		return p.serviceConfig
+	}
+
+	validationConfig := proto.Clone(p.serviceConfig).(*azdext.ServiceConfig)
+	fields := maps.Clone(p.serviceConfig.GetAdditionalProperties().GetFields())
+	fields[AgentDefinitionRefKey] = structpb.NewStringValue(p.agentDefinitionRef)
+	validationConfig.AdditionalProperties = &structpb.Struct{
+		Fields: fields,
+	}
+	return validationConfig
 }
 
 // resolveServiceConfig expands local $ref includes on the current service
@@ -338,6 +340,9 @@ func (p *AgentServiceTargetProvider) resolveServiceConfig() error {
 		return nil
 	}
 	if err := ResolveServiceConfigInPlace(p.serviceConfig, p.projectPath); err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return localErr
+		}
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			fmt.Sprintf(
@@ -397,7 +402,7 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	}
 
 	// Recorded before the prompt-agent branch below returns: with the definition
-	// carried inline there is no agent.yaml to anchor the skills/ and
+	// carried inline there is no referenced definition file to anchor the skills/ and
 	// vector-assets/ convention folders, so the service directory is what locates
 	// them.
 	p.servicePath = fullPath
@@ -460,9 +465,8 @@ func (p *AgentServiceTargetProvider) ensureDeployContext(ctx context.Context) er
 	return p.resolveAgentDefinitionPath(proj.Project.Path, servicePath, fullPath, declaredRef)
 }
 
-// resolveAgentDefinitionPath locates the agent definition (agent.yaml/agent.yml
-// or the AGENT_DEFINITION_PATH override) for the service and stores it on the
-// provider. It is shared by the hosted and prompt-agent Initialize paths.
+// resolveAgentDefinitionPath validates the service definition and records the
+// raw target path for prompt-agent root $refs.
 //
 // declaredRef is the root `$ref` the service entry carried in azure.yaml before
 // the include machinery expanded it, or "" when the service declares none.
@@ -470,39 +474,13 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	projectPath, servicePath, fullPath string,
 	declaredRef string,
 ) error {
-	// Check if user has specified agent definition path via environment variable
-	if envPath := os.Getenv("AGENT_DEFINITION_PATH"); envPath != "" {
-		// Verify the file exists and has correct extension
-		//nolint:gosec // env path is an explicit user override; existence check is intentional
-		if _, err := os.Stat(envPath); os.IsNotExist(err) {
-			return exterrors.Validation(
-				exterrors.CodeAgentDefinitionNotFound,
-				fmt.Sprintf("agent definition file specified in AGENT_DEFINITION_PATH does not exist: %s", envPath),
-				"verify the path set in AGENT_DEFINITION_PATH points to a valid agent.yaml file",
-			)
-		}
-
-		ext := strings.ToLower(filepath.Ext(envPath))
-		if ext != ".yaml" && ext != ".yml" {
-			return exterrors.Validation(
-				exterrors.CodeAgentDefinitionNotFound,
-				fmt.Sprintf("agent definition file must be a YAML file (.yaml or .yml), got: %s", envPath),
-				"provide a file with .yaml or .yml extension",
-			)
-		}
-
-		p.agentDefinitionPath = envPath
-		fmt.Printf("Using agent definition from environment variable: %s\n", color.New(color.FgHiGreen).Sprint(envPath))
-		p.deployContextReady = true
-		return nil
+	if err := validateRuntimeAgentSources(p.serviceConfig); err != nil {
+		return err
 	}
 
-	// Explicit reference: a root `$ref:` on the service entry names the file that
-	// supplies the agent definition. The shared include machinery has already
-	// merged that file's contents onto the service entry, so a hosted agent needs
-	// nothing more. A prompt agent does: it reads the raw YAML and anchors the
-	// skills/ and vector-assets/ convention folders next to the file, so record
-	// where the file actually lives.
+	// A root $ref supplies the definition through the shared resolver.
+	// Prompt agents also anchor skills/ and vector-assets/ next to the
+	// referenced YAML or JSON file, so record where it lives.
 	if declaredRef != "" && ServiceIsPromptAgent(p.serviceConfig) {
 		resolved, err := resolveDeclaredRefPath(projectPath, declaredRef, p.serviceConfig.Name)
 		if err != nil {
@@ -516,7 +494,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 				exterrors.CodeAgentDefinitionNotFound,
 				fmt.Sprintf("agent definition %q referenced by service %q does not exist",
 					declaredRef, p.serviceConfig.Name),
-				"correct the $ref: path in azure.yaml, or remove it to use the default agent.yaml",
+				"correct the $ref: path in azure.yaml",
 			)
 		}
 		p.agentDefinitionPath = resolved
@@ -526,7 +504,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 	}
 
 	// Unified shape: the agent definition is carried inline on the service entry,
-	// so no on-disk agent.yaml is required.
+	// so no referenced definition file is required.
 	if _, _, found, _, defErr := AgentDefinitionFromResolvedService(
 		p.serviceConfig,
 		projectPath,
@@ -550,44 +528,8 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 		return nil
 	}
 
-	// Legacy shape: look for agent.yaml or agent.yml in the service directory root
-	agentYamlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yaml")
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
-			"update azure.yaml so the agent definition stays within the project directory",
-		)
-	}
-	agentYmlPath, err := paths.JoinAllowRoot(projectPath, servicePath, "agent.yml")
-	if err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("invalid agent definition path for %s: %s", p.serviceConfig.Name, err),
-			"update azure.yaml so the agent definition stays within the project directory",
-		)
-	}
-
-	if _, err := os.Stat(agentYamlPath); err == nil {
-		p.agentDefinitionPath = agentYamlPath
-		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYamlPath))
-		p.deployContextReady = true
-		return nil
-	}
-
-	if _, err := os.Stat(agentYmlPath); err == nil {
-		p.agentDefinitionPath = agentYmlPath
-		fmt.Printf("Using agent definition: %s\n", color.New(color.FgHiGreen).Sprint(agentYmlPath))
-		p.deployContextReady = true
-		return nil
-	}
-
-	return exterrors.Dependency(
-		exterrors.CodeAgentDefinitionNotFound,
-		fmt.Sprintf("agent definition file not found: no agent.yaml or agent.yml found in %s", fullPath),
-		"add an agent.yaml/agent.yml file to the service directory, "+
-			"declare $ref: <file> on the service in azure.yaml, or set AGENT_DEFINITION_PATH",
-	)
+	_, _, _, err := agentDefinitionFromDisk(p.serviceConfig, projectPath)
+	return err
 }
 
 // AgentDefinitionRefKey is the azure.yaml service key that points at the file
@@ -600,8 +542,7 @@ func (p *AgentServiceTargetProvider) resolveAgentDefinitionPath(
 const AgentDefinitionRefKey = "$ref"
 
 // declaredAgentDefinitionRef returns the root `$ref` declared on the service
-// entry in azure.yaml, or "" when the service relies on the agent.yaml
-// convention or carries its definition inline.
+// entry in azure.yaml, or "" when the service carries its definition inline.
 //
 // It must be called before [ResolveServiceConfigInPlace], which expands the
 // directive and removes the key.
@@ -612,17 +553,13 @@ func declaredAgentDefinitionRef(svc *azdext.ServiceConfig) string {
 	if svc == nil {
 		return ""
 	}
-	for _, props := range []*structpb.Struct{svc.GetAdditionalProperties(), svc.GetConfig()} {
-		if props == nil {
-			continue
-		}
-		value, ok := props.GetFields()[AgentDefinitionRefKey]
-		if !ok {
-			continue
-		}
-		if declared := strings.TrimSpace(value.GetStringValue()); declared != "" {
-			return declared
-		}
+	props := svc.GetAdditionalProperties()
+	if props == nil {
+		return ""
+	}
+	value, ok := props.GetFields()[AgentDefinitionRefKey]
+	if ok {
+		return strings.TrimSpace(value.GetStringValue())
 	}
 	return ""
 }
@@ -653,11 +590,11 @@ func resolveDeclaredRefPath(projectPath, declared, serviceName string) (string, 
 		)
 	}
 
-	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" {
+	if ext := strings.ToLower(filepath.Ext(resolved)); ext != ".yaml" && ext != ".yml" && ext != ".json" {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("$ref %q on service %q must be a YAML file (.yaml or .yml)", declared, serviceName),
-			"point $ref: at a .yaml or .yml file",
+			fmt.Sprintf("$ref %q on service %q must be a YAML or JSON file (.yaml, .yml, or .json)", declared, serviceName),
+			"point $ref: at a .yaml, .yml, or .json file",
 		)
 	}
 
@@ -741,8 +678,9 @@ func (p *AgentServiceTargetProvider) dependencyEnvValue(name string) string {
 	return os.Getenv(name)
 }
 
-// getServiceKey converts a service name into a standardized environment variable key format
-func (p *AgentServiceTargetProvider) getServiceKey(serviceName string) string {
+// agentServiceKey converts a service name into the environment key segment
+// shared by agent deployment state.
+func agentServiceKey(serviceName string) string {
 	serviceKey := strings.ReplaceAll(serviceName, " ", "_")
 	serviceKey = strings.ReplaceAll(serviceKey, "-", "_")
 	return strings.ToUpper(serviceKey)
@@ -757,94 +695,56 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
-	// Prompt agents expose a single workspace-rooted Responses endpoint on the
-	// harness. Build it from the service config, resolved against the azd
-	// environment so `azd show` reports the same target deploy published.
-	if p.isPromptAgentService() {
-		settings, err := p.resolvedPromptAgentSettings(ctx)
-		if err != nil {
-			return nil, err
-		}
-		managed, err := p.loadPromptAgentDefinition()
-		if err != nil {
-			return nil, err
-		}
-		if managed.HarnessType() != "" {
-			name := strings.TrimSpace(managed.Name)
-			if name == "" {
-				name = serviceConfig.GetName()
-			}
-			return []string{buildResponsesProtocolURL(settings.ProjectEndpoint, name)}, nil
-		}
-		return []string{promptAgentResponsesEndpoint(settings)}, nil
-	}
-	if err := p.ensureEnv(ctx); err != nil {
+	if err := p.loadProjectPath(ctx); err != nil {
 		return nil, err
 	}
 
-	// Get all environment values
-	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
-		Name: p.env.Name,
-	})
+	validation, err := ValidateAgentEndpointOperation(
+		p.agentDefinitionValidationServiceConfig(),
+		p.projectPath,
+		AgentEndpointOperationReport,
+	)
 	if err != nil {
-		return nil, exterrors.Dependency(
-			exterrors.CodeEnvironmentValuesFailed,
-			fmt.Sprintf("failed to get environment values: %s", err),
-			"run 'azd env get-values' to verify environment state",
-		)
+		return nil, err
 	}
 
-	azdEnv := make(map[string]string, len(resp.KeyValues))
-	for _, kval := range resp.KeyValues {
-		azdEnv[kval.Key] = kval.Value
+	azdEnv, err := p.endpointEnvironmentValues(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// Check if required environment variables are set
+
+	if validation.Kind == agent_yaml.AgentKindPrompt {
+		endpoint, err := ResolvePromptAgentDeploymentEndpoint(
+			ctx,
+			p.azdClient,
+			azdEnv,
+			serviceConfig.Name,
+			p.promptAgentVersionResolver,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return []string{endpoint}, nil
+	}
+
+	serviceKey := agentServiceKey(serviceConfig.Name)
+	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
+	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
+
+	if agent_yaml.IsVoiceAgentKind(validation.Kind) {
+		endpoint, err := ResolveVoiceAgentDeploymentEndpoint(azdEnv, serviceConfig.Name)
+		if err != nil {
+			return nil, err
+		}
+		return []string{endpoint}, nil
+	}
+
 	if azdEnv["FOUNDRY_PROJECT_ENDPOINT"] == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeMissingAiProjectEndpoint,
 			"FOUNDRY_PROJECT_ENDPOINT is required: environment variable was not found in the current azd environment",
 			"run 'azd provision' or connect to an existing project via 'azd ai agent init --project-id <resource-id>'",
 		)
-	}
-
-	serviceKey := p.getServiceKey(serviceConfig.Name)
-	agentNameKey := fmt.Sprintf("AGENT_%s_NAME", serviceKey)
-	agentVersionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-	agentEndpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
-
-	// Voice agents (kind: prompt-voice) use the base ENDPOINT as their callable
-	// endpoint and deploy completion marker, and unified deploys also record
-	// VERSION. Gate the base-endpoint path on the service's actual declared
-	// kind (resolved via the shared agentkind lookup, so this agrees with the
-	// deploy path and next-step reader) rather than on the env-var shape: a hosted
-	// agent whose deploy partially failed (or whose vars were cleaned up) can also
-	// present an empty VERSION with a lingering ENDPOINT, and for that case we
-	// must still surface the actionable CodeMissingAgentEnvVars error below.
-	// Kind resolution is best-effort here:
-	// an error (or non-voice result) simply falls through to the hosted guard, so
-	// hosted services keep their prior behavior on a path that never resolved
-	// config before.
-	// Endpoints may run in a fresh CLI process (e.g. `azd show`) where
-	// ensureDeployContext has not populated p.projectPath or p.agentDefinitionPath.
-	// A voice manifest supplied via a root `$ref` or an on-disk agent.yaml can only
-	// be classified with the project root, and an explicit AGENT_DEFINITION_PATH
-	// override drives deploy, so honor both here to match the deploy classification.
-	// Both are resolved best-effort: any failure falls through to the hosted guard
-	// below, so hosted behavior is unchanged.
-	projectRoot := p.projectPath
-	if projectRoot == "" {
-		if proj, perr := p.azdClient.Project().Get(ctx, nil); perr == nil {
-			projectRoot = proj.Project.Path
-		}
-	}
-	agentDefinitionPath := p.agentDefinitionPath
-	if agentDefinitionPath == "" {
-		agentDefinitionPath = os.Getenv("AGENT_DEFINITION_PATH")
-	}
-	if isVoice, err := agentkind.IsPromptVoice(
-		serviceConfig, projectRoot, agentDefinitionPath,
-	); err == nil && isVoice && azdEnv[agentEndpointKey] != "" {
-		return []string{azdEnv[agentEndpointKey]}, nil
 	}
 
 	if azdEnv[agentNameKey] == "" || azdEnv[agentVersionKey] == "" {
@@ -873,6 +773,70 @@ func (p *AgentServiceTargetProvider) Endpoints(
 	}
 
 	return endpoints, nil
+}
+
+// ResolveVoiceAgentDeploymentEndpoint returns a persisted voice WebSocket endpoint
+// only when the deployment state has the shape written by a voice deployment.
+func ResolveVoiceAgentDeploymentEndpoint(envValues map[string]string, serviceName string) (string, error) {
+	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", agentServiceKey(serviceName))
+	endpoint := strings.TrimSpace(envValues[endpointKey])
+	if endpoint == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAgentEnvVars,
+			fmt.Sprintf("%s environment variable is required", endpointKey),
+			"run `azd deploy` to deploy the voice agent and set its callable endpoint",
+		)
+	}
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil ||
+		!strings.EqualFold(parsed.Scheme, "wss") ||
+		parsed.Hostname() == "" ||
+		!strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/endpoint/protocols/voice") {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"voice",
+			"run `azd deploy` to deploy the voice agent and refresh its callable endpoint",
+		)
+	}
+	return endpoint, nil
+}
+
+func invalidAgentEndpointState(serviceName, kind, suggestion string) error {
+	return exterrors.Dependency(
+		exterrors.CodeMissingAgentEnvVars,
+		fmt.Sprintf(
+			"persisted deployment state for service %q does not contain a %s agent endpoint",
+			serviceName,
+			kind,
+		),
+		suggestion,
+	)
+}
+
+func (p *AgentServiceTargetProvider) endpointEnvironmentValues(ctx context.Context) (map[string]string, error) {
+	if err := p.ensureEnv(ctx); err != nil {
+		return nil, err
+	}
+	resp, err := p.azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{
+		Name: p.env.Name,
+	})
+	if err != nil {
+		return nil, exterrors.Dependency(
+			exterrors.CodeEnvironmentValuesFailed,
+			fmt.Sprintf("failed to get environment values: %s", err),
+			"run 'azd env get-values' to verify environment state",
+		)
+	}
+
+	azdEnv := make(map[string]string, len(resp.KeyValues))
+	for _, value := range resp.KeyValues {
+		if value == nil {
+			continue
+		}
+		azdEnv[value.Key] = value.Value
+	}
+	return azdEnv, nil
 }
 
 // GetTargetResource returns a custom target resource for the agent service
@@ -1269,11 +1233,12 @@ func acrPermissionSuggestionFor(err error) string {
 		"  Supported runtimes: python_3_13, python_3_14, dotnet_10\n\n" +
 		"  Learn more: https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-code\n\n" +
 		"  To switch (no need to re-run `azd ai agent init`):\n" +
-		"  1. Open the service's agent.yaml and add a `code_configuration:` block under\n" +
+		"  1. Open the service's agent definition in azure.yaml (or its root $ref target)\n" +
+		"     and add a `codeConfiguration:` block under\n" +
 		"     the hosted agent, for example:\n" +
-		"        code_configuration:\n" +
+		"        codeConfiguration:\n" +
 		"          runtime: python_3_13          # or dotnet_10\n" +
-		"          entry_point: app.py            # or MyAgent.dll\n" +
+		"          entryPoint: app.py             # or MyAgent.dll\n" +
 		"  2. Run: azd env set AZD_AGENT_SKIP_ACR true\n" +
 		"     (subsequent provisioning will skip creating ACR; an already-provisioned\n" +
 		"     ACR is not deleted automatically)\n" +
@@ -1459,32 +1424,12 @@ func hasContainerArtifact(artifacts []*azdext.Artifact) bool {
 }
 
 func (p *AgentServiceTargetProvider) loadContainerAgentDefinition() (agent_yaml.ContainerAgent, bool, error) {
-	// An explicit AGENT_DEFINITION_PATH override is represented by
-	// agentDefinitionPath and must win over the service entry.
-	if p.agentDefinitionPath != "" {
-		data, err := os.ReadFile(p.agentDefinitionPath)
-		if err != nil {
-			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				fmt.Sprintf("failed to read agent manifest file: %s", err),
-				"verify the agent.yaml file exists and is readable",
-			)
-		}
-
-		WarnLegacyAgentShape(AgentDefinitionSourceDisk)
-		return parseContainerAgentYAML(data)
-	}
-
-	// Prefer the agent definition carried inline on the service entry (the
-	// unified service-level shape, or the deprecated config-nested shape).
-	if ca, isHosted, found, source, err :=
+	// Load the direct or explicit root-$ref definition carried by the service.
+	if ca, isHosted, found, _, err :=
 		AgentDefinitionFromResolvedService(
 			p.serviceConfig,
 			p.projectPath,
 		); found || err != nil {
-		if found && source.IsLegacy() {
-			WarnLegacyAgentShape(source)
-		}
 		return ca, isHosted, err
 	}
 
@@ -1512,14 +1457,14 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			if _, ok := errors.AsType[*botservice.MultipleBotsForMsaAppIDError](err); ok {
 				return "", "", classifyActivityBotLookupError(err)
 			}
-			fmt.Fprintf(
+			_, _ = fmt.Fprintf(
 				os.Stderr,
 				"Unable to search for an Azure Bot already bound to the deployed agent identity: %v\n",
 				err,
 			)
 		}
 		if boundBot != nil && strings.TrimSpace(boundBot.Name) != "" {
-			fmt.Fprintf(
+			_, _ = fmt.Fprintf(
 				os.Stderr,
 				"Using Azure Bot already bound to the deployed agent identity: %q (resource group: %q)\n",
 				boundBot.Name,
@@ -1537,7 +1482,7 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			resourceGroup = strings.TrimSpace(defaultResourceGroup)
 		}
 		name = botservice.BotName(agentName, botservice.BotScopeSalt(azdEnv["AZURE_SUBSCRIPTION_ID"], resourceGroup))
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			os.Stderr,
 			"Azure Bot name was not set in %s; using scope-qualified default %q. Set %s explicitly to use a custom bot name.\n",
 			key,
@@ -1545,7 +1490,7 @@ func (p *AgentServiceTargetProvider) resolveActivityBotName(
 			key,
 		)
 	} else {
-		fmt.Fprintf(
+		_, _ = fmt.Fprintf(
 			os.Stderr,
 			"Using Azure Bot name from environment key %s: %q\n",
 			key,
@@ -1621,7 +1566,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	// Prompt agents are created on the managed harness, not the Foundry
 	// service. Dispatch to the dedicated harness deploy path before any
 	// ARM/Foundry resolution the hosted path requires. The deploy context still
-	// has to be resolved first: deployPromptAgent loads agent.yaml through
+	// has to be resolved first: deployPromptAgent loads the direct/root-$ref definition through
 	// p.agentDefinitionPath, which is empty until ensureDeployContext runs.
 	if p.isPromptAgentService() {
 		if err := p.ensureDeployContext(ctx); err != nil {
@@ -1636,7 +1581,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	serviceConfig = p.serviceConfig
 
 	voiceAgent, isVoice, err := resolveVoiceAgentForDeploy(
-		p.agentDefinitionPath, serviceConfig, p.projectPath,
+		serviceConfig, p.projectPath,
 	)
 	if err != nil {
 		return nil, err
@@ -1651,7 +1596,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		if !isContainerAgent {
 			return nil, exterrors.Validation(
 				exterrors.CodeUnsupportedAgentKind,
-				"unsupported agent kind in agent.yaml",
+				"unsupported agent kind in the agent service definition",
 				"use a supported kind: 'hosted'",
 			)
 		}
@@ -1744,10 +1689,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 	}
 
 	// Voice agents (kind: prompt-voice) use a different data-plane contract than
-	// hosted/workflow agents. Resolve the definition first — honoring the
-	// AGENT_DEFINITION_PATH override precedence so an override drives this dispatch
-	// just as it does the container path — and route voice to an isolated method so
-	// the container deploy path below stays byte-for-byte unchanged.
+	// hosted/workflow agents. Route voice to an isolated method so the container
+	// deploy path below stays unchanged.
 	if isVoice {
 		return p.deployVoiceAgent(ctx, serviceConfig, voiceAgent, azdEnv, progress)
 	}
@@ -1785,7 +1728,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 		}
 		result.agentVersion = polledVersion
 	} else {
-		fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
+		_, _ = fmt.Fprintf(os.Stderr, "Agent version %s is already active.\n", result.agentVersion.Version)
 	}
 
 	// Read the deployed version so post-deploy behavior uses the service-side
@@ -1889,7 +1832,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 						botResourceGroup = strings.TrimSpace(boundBot.ResourceGroup)
 						activityBotResourceGroup = botResourceGroup
 					}
-					fmt.Fprintf(
+					_, _ = fmt.Fprintf(
 						os.Stderr,
 						"Azure Bot name %q conflicts for MsaAppID; reusing already-bound bot %q (resource group: %q).\n",
 						ensureCfg.BotName,
@@ -1945,7 +1888,7 @@ func addAgentToolboxDependency(
 	if config == nil || reference == nil {
 		return
 	}
-	toolboxName := strings.TrimSpace(reference.Name)
+	toolboxName := servicekey.SanitizeServiceName(reference.Name)
 	if toolboxName == "" {
 		return
 	}
@@ -2120,7 +2063,7 @@ func memoryStoreDefinitionDrift(declared, live azure.MemoryStoreDefinition) []st
 
 // writeMemoryStoreDriftWarning warns that azure.yaml changes were not applied to an existing store.
 func writeMemoryStoreDriftWarning(name string, drift []string) {
-	fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
+	_, _ = fmt.Fprintf(os.Stderr, "%s", output.WithWarningFormat(
 		"Memory store %q already exists; azd does not update existing memory stores, so the "+
 			"following azure.yaml change(s) were NOT applied: %s. To apply them, delete the store "+
 			"in the Foundry portal (or give it a new name) and redeploy.\n",
@@ -2188,8 +2131,7 @@ func validateRegistryConnectionDefinition(agentDef agent_yaml.ContainerAgent) er
 // Behavior:
 //   - A registry connection requires an image and always selects that pre-built image.
 //   - If no image is configured in the loaded agent definition, always build from Dockerfile.
-//     The image usually comes from the azure.yaml service image field, but can come from
-//     a legacy agent.yaml fallback.
+//     The image comes from the direct/root-$ref service definition.
 //   - In non-interactive mode (--no-prompt), the prompt returns the default
 //     selection (index 0 = build from Dockerfile) automatically.
 //   - In interactive mode, prompt the user. The default is to build, so users
@@ -2267,7 +2209,7 @@ type deployPrepResult struct {
 }
 
 func writeExistingAgentVersionWarning(agentName string) {
-	fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
+	_, _ = fmt.Fprintf(os.Stderr, "%s", agents.ExistingAgentWarning(agentName))
 }
 
 func writeExistingAgentVersionWarningIfPresent(
@@ -2307,10 +2249,10 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 	}
 
 	if p.agentDefinitionPath != "" {
-		fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
+		_, _ = fmt.Fprintf(os.Stderr, "Loaded configuration from: %s\n", p.agentDefinitionPath)
 	}
-	fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
-	fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Using endpoint: %s\n", azdEnv["FOUNDRY_PROJECT_ENDPOINT"])
+	_, _ = fmt.Fprintf(os.Stderr, "Agent Name: %s\n", agentDef.Name)
 
 	// Seed core-expanded values before resolving legacy variables.
 	resolvedEnvVars := maps.Clone(serviceConfig.GetEnvironment())
@@ -2331,6 +2273,18 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		}
 	}
 
+	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
+	WarnOrphanedConfigEnv(serviceConfig)
+	return prepareDeployRequest(serviceConfig, agentDef, resolvedEnvVars, extraOptions)
+}
+
+// prepareDeployRequest normalizes the request without output, I/O, or state changes.
+func prepareDeployRequest(
+	serviceConfig *azdext.ServiceConfig,
+	agentDef agent_yaml.ContainerAgent,
+	resolvedEnvVars map[string]string,
+	extraOptions []agent_yaml.AgentBuildOption,
+) (*deployPrepResult, error) {
 	// Parse service config for container resource overrides
 	foundryAgentConfig, err := LoadServiceTargetAgentConfig(serviceConfig)
 	if err != nil {
@@ -2340,9 +2294,6 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 			"check the service configuration in azure.yaml",
 		)
 	}
-	warnDeprecatedScaleSettings(ServiceConfigProps(serviceConfig))
-	WarnOrphanedConfigEnv(serviceConfig)
-
 	var cpu, memory string
 	if foundryAgentConfig != nil && foundryAgentConfig.Container != nil && foundryAgentConfig.Container.Resources != nil {
 		cpu = foundryAgentConfig.Container.Resources.Cpu
@@ -2375,7 +2326,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidAgentRequest,
 			fmt.Sprintf("failed to create agent request from definition: %s", err),
-			"verify the agent.yaml definition is correct",
+			"verify the agent service definition in azure.yaml or its root $ref target",
 		)
 	}
 
@@ -2394,7 +2345,7 @@ func (p *AgentServiceTargetProvider) prepareDeploy(
 		)
 	}
 
-	// Default to "responses" protocol when none specified in agent.yaml.
+	// Default to "responses" when the direct/root-$ref definition omits protocols.
 	protocols := agentDef.Protocols
 	if len(protocols) == 0 {
 		protocols = []agent_yaml.ProtocolVersionRecord{
@@ -2459,7 +2410,7 @@ func (p *AgentServiceTargetProvider) patchAgentEndpointFields(
 		return exterrors.ServiceFromAzure(err, exterrors.OpUpdateAgent)
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
+	_, _ = fmt.Fprintf(os.Stderr, "Agent endpoint/card updated.\n")
 	return nil
 }
 
@@ -2701,7 +2652,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Voice agent '%s' deployed successfully!\n", agentObject.Name)
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
@@ -2739,11 +2690,16 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 	agentObject *agent_api.AgentObject,
 	hostedTarget *hostedVoiceTarget,
 ) error {
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	protocolVersionKey := envkey.AgentProtocolEndpointsVersion(serviceConfig.Name)
 	endpointKey := fmt.Sprintf("AGENT_%s_ENDPOINT", serviceKey)
+	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 
-	keysToClear := []string{protocolVersionKey}
+	keysToClear := []string{
+		protocolVersionKey,
+		envkey.AgentPromptEndpointVersion(serviceConfig.Name),
+		versionKey,
+	}
 	for _, dp := range displayableProtocols {
 		keysToClear = append(
 			keysToClear,
@@ -2761,7 +2717,6 @@ func (p *AgentServiceTargetProvider) registerVoiceAgentEnvironmentVariables(
 		}
 	}
 
-	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	for _, envVar := range []struct{ key, value string }{
 		{fmt.Sprintf("AGENT_%s_NAME", serviceKey), agentObject.Name},
 		{versionKey, agentObject.Versions.Latest.Version},
@@ -2840,7 +2795,7 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 					"delete the remote binding, then run azd deploy again",
 				)
 			}
-			fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
+			_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' already exists.\n", bindingID)
 			continue
 		}
 		if respErr, ok := errors.AsType[*azcore.ResponseError](getErr); !ok || respErr.StatusCode != http.StatusNotFound {
@@ -2861,13 +2816,21 @@ func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
 		if id == "" {
 			id = bindingID
 		}
-		fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
+		_, _ = fmt.Fprintf(os.Stderr, "Telephony binding '%s' created.\n", id)
 	}
 	return nil
 }
 
 func validateHostedVoiceWrapperName(wrapperName string, target *hostedVoiceTarget) error {
-	if target == nil || !strings.EqualFold(wrapperName, target.AgentName) {
+	if target == nil {
+		return nil
+	}
+	return ValidateHostedVoiceWrapperName(wrapperName, target.AgentName)
+}
+
+// ValidateHostedVoiceWrapperName rejects identical resource names.
+func ValidateHostedVoiceWrapperName(wrapperName, targetName string) error {
+	if !strings.EqualFold(wrapperName, targetName) {
 		return nil
 	}
 	return exterrors.Validation(
@@ -3106,14 +3069,9 @@ func shouldUpdateVoiceAgent(remoteAgent *agent_api.AgentObject, getErr error) (b
 // packageCodeDeploy creates a ZIP archive of the agent source code, writes it to a temp file,
 // and computes its SHA-256. Returns the temp file path and SHA-256 hex string.
 func (p *AgentServiceTargetProvider) packageCodeDeploy(ctx context.Context, serviceConfig *azdext.ServiceConfig) (string, string, error) {
-	// Source directory is the service's directory. When AGENT_DEFINITION_PATH
-	// overrides the definition, its file may live outside the service path, so
-	// zip the override's directory to capture the right source tree. Fall back to
-	// the definition directory when the service path was not resolved.
+	// Source directory is the service's directory.
 	srcDir := p.servicePath
-	if os.Getenv("AGENT_DEFINITION_PATH") != "" && p.agentDefinitionPath != "" {
-		srcDir = filepath.Dir(p.agentDefinitionPath)
-	} else if srcDir == "" {
+	if srcDir == "" {
 		srcDir = filepath.Dir(p.agentDefinitionPath)
 	}
 
@@ -3293,7 +3251,7 @@ func (p *AgentServiceTargetProvider) packageDotnetBundled(srcDir string) (string
 	defer os.RemoveAll(publishDir)
 
 	// Run dotnet publish targeting linux (hosted agents run on linux)
-	fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
+	_, _ = fmt.Fprintf(os.Stderr, "Running 'dotnet publish' for bundled packaging...\n")
 	cmd := exec.Command("dotnet", "publish", csprojPath, //nolint:gosec // csprojPath is derived from user's project directory
 		"-c", "Release",
 		"-r", "linux-x64",
@@ -3483,7 +3441,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 
 	// Validate that AZURE_LOCATION is set (region validation is handled server-side;
 	// code deploy is supported in all hosted-agent regions).
-	if strings.TrimSpace(azdEnv["AZURE_LOCATION"]) == "" {
+	if strings.TrimSpace(p.dependencyEnvValue("AZURE_LOCATION")) == "" {
 		return nil, exterrors.Dependency(
 			exterrors.CodeAgentCreateFailed,
 			"AZURE_LOCATION is not set; the Foundry project region is required for code deploy",
@@ -3523,14 +3481,14 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 	}
 
 	if agentDef.CodeConfiguration != nil {
-		fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
+		_, _ = fmt.Fprintf(os.Stderr, "Runtime: %s\n", agentDef.CodeConfiguration.Runtime)
 		cmdPrefix := agent_yaml.RuntimeCmdPrefix(agentDef.CodeConfiguration.Runtime)
-		fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
+		_, _ = fmt.Fprintf(os.Stderr, "Entry Point: [\"%s\", \"%s\"]\n", cmdPrefix, agentDef.CodeConfiguration.EntryPoint)
 		depRes := "remote_build"
 		if agentDef.CodeConfiguration.DependencyResolution != nil {
 			depRes = *agentDef.CodeConfiguration.DependencyResolution
 		}
-		fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
+		_, _ = fmt.Fprintf(os.Stderr, "Packaging: %s\n", depRes)
 	}
 
 	// Display agent information
@@ -3571,7 +3529,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 		}
 		// Agent doesn't exist — create
 		progress("Creating new agent from code package")
-		fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
+		_, _ = fmt.Fprintf(os.Stderr, "Creating new agent: %s\n", agentDef.Name)
 		agentResp, err = agentClient.CreateAgentFromZip(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
@@ -3626,7 +3584,7 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 	if !activityProfile.IsActivity && projectResourceID != "" {
 		playgroundUrl, err := AgentPlaygroundURL(projectResourceID, agentName, agentVersion)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
+			_, _ = fmt.Fprintf(os.Stderr, "failed to generate agent playground link")
 		} else if playgroundUrl != "" {
 			artifacts = append(artifacts, &azdext.Artifact{
 				Kind:         azdext.ArtifactKind_ARTIFACT_KIND_ENDPOINT,
@@ -3659,13 +3617,28 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 		// Attach the informational note to the last endpoint only, to avoid repetition.
 		if len(endpoints) > 0 {
 			last := artifacts[len(artifacts)-1]
-			last.Metadata["note"] = "For information on invoking the agent, see " + output.WithLinkFormat(
-				"https://aka.ms/azd-agents-invoke") +
-				"\n\nSet up an evaluation suite to measure quality and impact in one step with " + output.WithHighLightFormat("azd ai agent eval generate")
+			note := "For information on invoking the agent, see " + output.WithLinkFormat(
+				"https://aka.ms/azd-agents-invoke")
+			if !p.projectDeclaresEvaluationService() {
+				note += "\n\nInstall the evaluations extension with " +
+					output.WithHighLightFormat("azd extension install azure.ai.evaluations") +
+					".\nSet up an evaluation suite to measure quality and impact with " +
+					output.WithHighLightFormat("azd ai eval init")
+			}
+			last.Metadata["note"] = note
 		}
 	}
 
 	return artifacts
+}
+
+func (p *AgentServiceTargetProvider) projectDeclaresEvaluationService() bool {
+	for service := range maps.Values(p.projectServices) {
+		if service.GetHost() == evaluationServiceHost {
+			return true
+		}
+	}
+	return false
 }
 
 // augmentDeployNote enriches the last endpoint artifact's note with a
@@ -3675,9 +3648,8 @@ func (p *AgentServiceTargetProvider) deployArtifacts(
 //
 //   - When the resolved block contains a "see <relPath>/README.md"
 //     suggestion (i.e. a local README exists at the service path), the
-//     aka.ms line is replaced entirely — the block already points the
-//     user at the more-detailed local doc, so the canned link is
-//     redundant.
+//     aka.ms paragraph is replaced — the block points at the more-detailed
+//     local doc. Independent guidance in subsequent paragraphs is retained.
 //   - Otherwise the aka.ms line is preserved and the "Next:" block is
 //     appended below, separated by a single blank line — aka.ms remains
 //     the fallback doc pointer when no local README is present. The block
@@ -3737,7 +3709,11 @@ func augmentDeployNote(state *nextstep.State, artifacts []*azdext.Artifact, proj
 	}
 
 	if suggestionsIncludeReadme(suggestions) {
+		_, additional, _ := strings.Cut(target.Metadata["note"], "\n\n")
 		target.Metadata["note"] = block
+		if additional != "" {
+			target.Metadata["note"] += "\n\n" + additional
+		}
 		return
 	}
 	existing := target.Metadata["note"]
@@ -3936,7 +3912,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		versionResp, err := agentClient.GetAgentVersion(ctx, agentName, version, agent_api.AgentEndpointAPIVersion, false)
 		if err != nil {
 			lastPollErr = err
-			fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "  Warning: poll failed: %s\n", err)
 			// Reset counters on error — don't count transient failures
 			consecutiveActive = 0
 			consecutiveFailed = 0
@@ -3950,21 +3926,21 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 			consecutiveActive++
 			consecutiveFailed = 0
 			if consecutiveActive >= confirmCount {
-				fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
+				_, _ = fmt.Fprintf(os.Stderr, "Agent version %s is active!\n", version)
 				return versionResp, nil
 			}
-			fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: active (confirming...)\n")
 		case "failed":
 			consecutiveFailed++
 			consecutiveActive = 0
 			if consecutiveFailed >= confirmCount {
 				return nil, agentDeploymentFailedError(versionResp, serviceName)
 			}
-			fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: failed (confirming...)\n")
 		default:
 			consecutiveActive = 0
 			consecutiveFailed = 0
-			fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
+			_, _ = fmt.Fprintf(os.Stderr, "  Status: %s...\n", versionResp.Status)
 		}
 	}
 
@@ -4044,7 +4020,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
 	}
 
-	fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
+	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)
 
 	return agentVersionResponse, nil
 }
@@ -4102,16 +4078,16 @@ func (p *AgentServiceTargetProvider) displayAgentInfo(request *agent_api.CreateA
 			description = desc
 		}
 	}
-	fmt.Fprintf(os.Stderr, "Description: %s\n", description)
+	_, _ = fmt.Fprintf(os.Stderr, "Description: %s\n", description)
 
 	// Display agent-specific information
 	if hostedDef, ok := request.Definition.(agent_api.HostedAgentDefinition); ok {
 		if hostedDef.ContainerConfiguration != nil && hostedDef.ContainerConfiguration.Image != "" {
-			fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
+			_, _ = fmt.Fprintf(os.Stderr, "Image: %s\n", hostedDef.ContainerConfiguration.Image)
 		}
-		fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
-		fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
-		fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
+		_, _ = fmt.Fprintf(os.Stderr, "CPU: %s\n", hostedDef.CPU)
+		_, _ = fmt.Fprintf(os.Stderr, "Memory: %s\n", hostedDef.Memory)
+		_, _ = fmt.Fprintf(os.Stderr, "Protocol Versions: %+v\n", hostedDef.ProtocolVersions)
 	}
 	fmt.Fprintln(os.Stderr)
 }
@@ -4139,7 +4115,7 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 		return fmt.Errorf("agent version is empty; cannot register environment variables")
 	}
 
-	serviceKey := p.getServiceKey(serviceConfig.Name)
+	serviceKey := agentServiceKey(serviceConfig.Name)
 	versionKey := fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
 	identityClientID := ""
 	identityPrincipalID := ""
@@ -4151,6 +4127,9 @@ func (p *AgentServiceTargetProvider) registerAgentEnvironmentVariables(
 	envVars := []azdext.SetEnvRequest{
 		{EnvName: p.env.Name, Key: versionKey, Value: ""},
 		{EnvName: p.env.Name, Key: protocolVersionKey, Value: ""},
+		{EnvName: p.env.Name, Key: envkey.AgentPromptEndpointVersion(serviceConfig.Name), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_NAME", serviceKey), Value: ""},
+		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_VOICE_TARGET_VERSION", serviceKey), Value: ""},
 		{EnvName: p.env.Name, Key: fmt.Sprintf("AGENT_%s_NAME", serviceKey), Value: agentVersionResponse.Name},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityClientID(serviceConfig.Name), Value: identityClientID},
 		{EnvName: p.env.Name, Key: envkey.AgentInstanceIdentityPrincipalID(serviceConfig.Name), Value: identityPrincipalID},

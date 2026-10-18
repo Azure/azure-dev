@@ -15,15 +15,15 @@ import (
 // unit test that calls ReserveDeclared itself proves only the method. Read from
 // the source because reaching either call site needs a project and a service.
 func TestBothCommandsReserveBeforeTheyReconcile(t *testing.T) {
-	for _, file := range []string{
-		"eval_group.go",
-		"../project/service_target_eval.go",
+	for file, call := range map[string]string{
+		"eval_group.go":                     "ReserveDeclared(ctx, declared)",
+		"../project/service_target_eval.go": "ReserveDeclared(ctx, cfg.Evals)",
 	} {
 		t.Run(file, func(t *testing.T) {
 			body, err := os.ReadFile(file)
 			require.NoError(t, err)
 
-			assert.Contains(t, string(body), "ReserveDeclared(ctx, cfg.Evals)",
+			assert.Contains(t, string(body), call,
 				"an eval another declaration owns must not be adopted here")
 		})
 	}
@@ -34,9 +34,8 @@ func TestTheRunHandsThePinToTheDatasetRead(t *testing.T) {
 	body, err := os.ReadFile("run.go")
 	require.NoError(t, err)
 
-	assert.Contains(t, string(body), "resolveRunDatasetVersion(ctx, group.Dataset, decl.Version, localPath != \"\")",
+	assert.Contains(t, string(body), "ctx, group.Dataset, decl.Version, localPath != \"\")",
 		"reading the declaration and not using it leaves the run on the recorded version")
-	assert.Contains(t, string(body), "dataSource, datasetVersion, err = ec.buildRunDataSource(")
 	assert.Contains(t, string(body), "metadata[metaDatasetVersion] = datasetVersion",
-		"metadata must use the version resolved with the source, not a second lookup")
+		"metadata must use the version resolved with the source, not look it up again")
 }

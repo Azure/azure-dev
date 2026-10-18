@@ -1,12 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-// cspell:ignore idtyp
 
 package provisioning
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -54,8 +51,6 @@ const (
 	envKeyFoundryRGOwner = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
 	envKeyTenantID       = "AZURE_TENANT_ID"
 	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
-	envKeyPrincipalID    = "AZURE_PRINCIPAL_ID"
-	envKeyPrincipalType  = "AZURE_PRINCIPAL_TYPE"
 )
 
 const (
@@ -75,26 +70,23 @@ type FoundryProvisioningProvider struct {
 	azdClient *azdext.AzdClient
 
 	// Populated by Initialize.
-	projectPath           string
-	infraPath             string
-	infraModule           string
-	isLayer               bool
-	virtualEnv            map[string]string
-	synthResult           *synthesis.Result
-	envName               string
-	subID                 string
-	location              string
-	rgName                string
-	rgExplicit            bool // active resource-group env key came from env, not the default
-	foundryRGOwnerID      string
-	foundryName           string
-	principalID           string
-	principalType         string
-	principalIDConfigured bool
-	credential            azcore.TokenCredential
-	tenantID              string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
-	armTemplate           map[string]any  // embedded ARM JSON; nil when on-disk Bicep is configured
-	onDiskSource          *templateSource // non-nil after on-disk Bicep has been compiled and validated
+	projectPath      string
+	infraPath        string
+	infraModule      string
+	isLayer          bool
+	virtualEnv       map[string]string
+	synthResult      *synthesis.Result
+	envName          string
+	subID            string
+	location         string
+	rgName           string
+	rgExplicit       bool // active resource-group env key came from env, not the default
+	foundryRGOwnerID string
+	foundryName      string
+	credential       azcore.TokenCredential
+	tenantID         string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
+	armTemplate      map[string]any  // embedded ARM JSON; nil when on-disk Bicep is configured
+	onDiskSource     *templateSource // non-nil after on-disk Bicep has been compiled and validated
 
 	// brownfieldEndpoint is the existing project endpoint when the foundry
 	// service sets endpoint: (bring-your-own). The existing project is reused;
@@ -831,7 +823,7 @@ func sameExistingProjectEndpoint(a, b string) bool {
 }
 
 // resolveEnv pulls the env values the provider needs from azd-core. It does
-// no Azure work; that is deferred to ensureCredential.
+// no Azure work; credentials are deferred until needed.
 func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	envClient := p.azdClient.Environment()
 
@@ -939,123 +931,6 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		log.Printf("[debug] %s not set; defaulting to %q", envKeyProjectName, p.foundryName)
 	}
 
-	if value, configured := p.virtualEnv[envKeyPrincipalID]; configured {
-		p.principalID = strings.TrimSpace(value)
-		p.principalIDConfigured = true
-	} else {
-		values, valuesErr := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: p.envName})
-		if valuesErr != nil {
-			return exterrors.Dependency(
-				exterrors.CodeEnvironmentValuesFailed,
-				fmt.Sprintf("read %s from azd environment %q: %s", envKeyPrincipalID, p.envName, valuesErr),
-				"verify the azd environment is accessible, then retry",
-			)
-		}
-		for _, keyValue := range values.GetKeyValues() {
-			if keyValue.GetKey() == envKeyPrincipalID {
-				p.principalID = strings.TrimSpace(keyValue.GetValue())
-				p.principalIDConfigured = true
-				break
-			}
-		}
-	}
-	if !p.principalIDConfigured {
-		// GetValues reports persisted keys only. GetValue also includes the
-		// host process environment, without overriding a persisted empty value.
-		if p.principalID, err = get(envKeyPrincipalID); err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeEnvironmentValuesFailed,
-				fmt.Sprintf("read %s from azd environment %q: %s", envKeyPrincipalID, p.envName, err),
-				"verify the azd environment is accessible, then retry",
-			)
-		}
-		p.principalIDConfigured = p.principalID != ""
-	}
-	if p.principalIDConfigured && p.principalID != "" {
-		if p.principalType, err = get(envKeyPrincipalType); err != nil {
-			return exterrors.Dependency(
-				exterrors.CodeEnvironmentValuesFailed,
-				fmt.Sprintf("read %s from azd environment %q: %s", envKeyPrincipalType, p.envName, err),
-				"verify the azd environment is accessible, then retry",
-			)
-		}
-		if p.principalType == "" {
-			p.principalType = "User"
-		}
-	}
-	// An explicitly empty principal ID disables the developer role assignment.
-	if p.principalIDConfigured && p.principalID == "" {
-		log.Printf("[debug] %s is empty; skipping developer role assignment", envKeyPrincipalID)
-	} else if p.principalID == "" {
-		log.Printf("[debug] %s not set; resolving the current principal during provisioning", envKeyPrincipalID)
-	}
-
-	return nil
-}
-
-type principalTokenClaims struct {
-	ObjectID string `json:"oid"`
-	IDType   string `json:"idtyp"`
-	Scopes   string `json:"scp"`
-}
-
-func principalFromAccessToken(token string) (string, string, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return "", "", errors.New("malformed access token")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "", "", fmt.Errorf("decode access token claims: %w", err)
-	}
-	var claims principalTokenClaims
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return "", "", fmt.Errorf("parse access token claims: %w", err)
-	}
-	if claims.ObjectID == "" {
-		return "", "", errors.New("access token has no oid claim")
-	}
-
-	principalType := "User"
-	if strings.EqualFold(claims.IDType, "app") ||
-		(claims.IDType == "" && claims.Scopes == "") {
-		principalType = "ServicePrincipal"
-	}
-	return claims.ObjectID, principalType, nil
-}
-
-func (p *FoundryProvisioningProvider) ensurePrincipalID(ctx context.Context) error {
-	if p.principalIDConfigured || p.principalID != "" {
-		if p.principalID != "" && p.principalType == "" {
-			p.principalType = "User"
-		}
-		return nil
-	}
-	if err := p.ensureCredential(ctx); err != nil {
-		return err
-	}
-
-	token, err := p.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodePrincipalLookupFailed,
-			fmt.Sprintf("get access token to resolve current principal: %s", err),
-			"run 'azd auth login' with an identity that can access the subscription",
-		)
-	}
-
-	principalID, principalType, err := principalFromAccessToken(token.Token)
-	if err != nil {
-		return exterrors.Auth(
-			exterrors.CodePrincipalLookupFailed,
-			fmt.Sprintf("resolve current principal from access token: %s", err),
-			"run 'azd auth login' with an identity that can access the subscription",
-		)
-	}
-	p.principalID = principalID
-	p.principalType = principalType
 	return nil
 }
 
@@ -1279,7 +1154,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	trace.SpanFromContext(ctx).SetAttributes(
 		attribute.String("provision.network_mode", networkMode))
 
-	src, err := p.resolveProvisioningTemplate(ctx, progress)
+	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -1400,7 +1275,7 @@ func (p *FoundryProvisioningProvider) envValue(ctx context.Context, key string) 
 // the result on the provider so re-runs skip the bicep CLI.
 //
 // On the on-disk path the user's parameters are layered OVER host-derived
-// parameters (location, principalId, etc.), so azd-provided values still
+// parameters (location, project name, etc.), so azd-provided values still
 // flow through for keys the user's file doesn't declare. The user wins on
 // keys present in both.
 func (p *FoundryProvisioningProvider) resolveTemplate(
@@ -1431,13 +1306,6 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	if p.onDiskSource != nil {
 		log.Printf("[debug] foundry provider: using on-disk template at %s", p.onDiskSource.sourcePath)
 		hostParameters := parametersDeclaredByTemplate(p.armParameters(), p.onDiskSource.armTemplate)
-		if principal, ok := p.onDiskSource.parameters["principalId"].(map[string]any); ok {
-			if id, ok := principal["value"].(string); ok && !strings.EqualFold(id, p.principalID) {
-				// The resolved type belongs to the provider's identity, not the override.
-				// Let the user's type parameter or the template default apply instead.
-				delete(hostParameters, "principalType")
-			}
-		}
 		merged := mergeParameters(p.onDiskSource.parameters, hostParameters)
 		return &templateSource{
 			mode:        p.onDiskSource.mode,
@@ -1464,30 +1332,6 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		armTemplate: p.armTemplate,
 		parameters:  p.armParameters(),
 	}, nil
-}
-
-func (p *FoundryProvisioningProvider) resolveProvisioningTemplate(
-	ctx context.Context,
-	progress grpcbroker.ProgressFunc,
-) (*templateSource, error) {
-	// Compile and validate the template before acquiring credentials. Invalid
-	// local configuration should fail without making an Azure request.
-	source, err := p.resolveTemplate(ctx, progress)
-	if err != nil {
-		return nil, err
-	}
-	principalID, principalType := p.principalID, p.principalType
-	if err := p.ensurePrincipalID(ctx); err != nil {
-		return nil, err
-	}
-	if p.principalID == principalID && p.principalType == principalType {
-		return source, nil
-	}
-
-	// Cached on-disk parameters were evaluated with the previous identity.
-	// Reload through the normal loader to preserve user parameter precedence.
-	p.onDiskSource = nil
-	return p.resolveTemplate(ctx, progress)
 }
 
 // bicepCli lazily constructs a *bicep.Cli using azd-core's download-on-demand
@@ -1525,8 +1369,6 @@ func (p *FoundryProvisioningProvider) envValues(ctx context.Context) map[string]
 		envKeyResourceGroup:  p.rgName,
 		envKeyFoundryRG:      p.rgName,
 		envKeyProjectName:    p.foundryName,
-		envKeyPrincipalID:    p.principalID,
-		envKeyPrincipalType:  p.principalType,
 	}
 	for key, value := range p.virtualEnv {
 		if _, canonical := out[key]; !canonical {
@@ -1585,7 +1427,7 @@ func (p *FoundryProvisioningProvider) Preview(
 	}
 	progress("Computing deployment plan...")
 
-	src, err := p.resolveProvisioningTemplate(ctx, progress)
+	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -2129,19 +1971,40 @@ func (p *FoundryProvisioningProvider) Parameters(
 ) ([]*azdext.ProvisioningParameter, error) {
 	if p.brownfieldEndpoint != "" {
 		return []*azdext.ProvisioningParameter{
-			{Name: "projectResourceId", Value: p.existingProjectID, EnvVarMapping: []string{"AZURE_AI_PROJECT_ID"}},
-			{Name: "projectEndpoint", Value: p.brownfieldEndpoint, EnvVarMapping: []string{"FOUNDRY_PROJECT_ENDPOINT"}},
-			{Name: "acrMode", Value: p.existingAcrMode, EnvVarMapping: []string{"AZD_FOUNDRY_ACR_MODE"}},
+			{
+				Name:               "location",
+				Value:              p.location,
+				EnvVarMapping:      []string{envKeyLocation},
+				UsingEnvVarMapping: true,
+			},
+			{
+				Name:               "projectResourceId",
+				Value:              p.existingProjectID,
+				EnvVarMapping:      []string{"AZURE_AI_PROJECT_ID"},
+				UsingEnvVarMapping: true,
+			},
+			{
+				Name:               "projectEndpoint",
+				Value:              p.brownfieldEndpoint,
+				EnvVarMapping:      []string{"FOUNDRY_PROJECT_ENDPOINT"},
+				UsingEnvVarMapping: true,
+			},
+			{
+				Name:               "acrMode",
+				Value:              p.existingAcrMode,
+				EnvVarMapping:      []string{"AZD_FOUNDRY_ACR_MODE"},
+				UsingEnvVarMapping: true,
+			},
 		}, nil
 	}
-	if err := p.ensurePrincipalID(ctx); err != nil {
-		return nil, err
-	}
 	out := []*azdext.ProvisioningParameter{
-		{Name: "location", Value: p.location, EnvVarMapping: []string{envKeyLocation}},
+		{
+			Name:               "location",
+			Value:              p.location,
+			EnvVarMapping:      []string{envKeyLocation},
+			UsingEnvVarMapping: true,
+		},
 		{Name: "foundryProjectName", Value: p.foundryName, EnvVarMapping: []string{envKeyProjectName}},
-		{Name: "principalId", Value: p.principalID, EnvVarMapping: []string{envKeyPrincipalID}},
-		{Name: "principalType", Value: p.principalType, EnvVarMapping: []string{envKeyPrincipalType}},
 	}
 	if p.synthResult != nil {
 		out = append(out, &azdext.ProvisioningParameter{
@@ -2263,8 +2126,8 @@ func (p *FoundryProvisioningProvider) deploymentName() string {
 }
 
 // armParameters wraps the synthesizer-derived values in ARM's {"value": ...}
-// envelope and merges in provider-supplied params (location, principal,
-// project name). Nil-safe on p.synthResult: returns only host-derived
+// envelope and merges in provider-supplied params (location, project name).
+// Nil-safe on p.synthResult: returns only host-derived
 // parameters when Initialize hasn't run (reachable only via tests).
 func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 	if p.brownfieldEndpoint != "" {
@@ -2275,8 +2138,6 @@ func (p *FoundryProvisioningProvider) armParameters() map[string]any {
 		"resourceGroupName":  map[string]any{"value": p.rgName},
 		"foundryProjectName": map[string]any{"value": p.foundryName},
 		"resourceTokenSalt":  map[string]any{"value": p.envName},
-		"principalId":        map[string]any{"value": p.principalID},
-		"principalType":      map[string]any{"value": p.principalType},
 		"tags":               map[string]any{"value": map[string]string{"azd-env-name": p.envName}},
 	}
 	if p.synthResult == nil {

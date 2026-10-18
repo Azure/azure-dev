@@ -1,0 +1,25 @@
+Inspect toolbox versions.
+
+Use this group to list published versions for a toolbox and inspect their
+metadata (for example, when deciding which version to retarget as default).
+
+Usage
+  azd ai toolbox versions [command]
+
+Available Commands
+  list : List published versions for a toolbox.
+
+Global Flags
+  -C, --cwd string              : Sets the current working directory
+      --debug                   : Enables debug and diagnostics logging
+  -e, --environment string      : The name of the environment to use
+  -h, --help                    : help for versions
+      --no-prompt               : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string           : The output format (default "default")
+      --project-endpoint string : Foundry project endpoint URL for remote operations only (not local add or extension version).
+
+Examples
+  Find available versions before promoting a default
+    azd ai toolbox versions list research
+
+Use azd ai toolbox versions [command] --help to view examples and more information about a specific command.

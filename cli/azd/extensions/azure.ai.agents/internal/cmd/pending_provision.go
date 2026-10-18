@@ -200,9 +200,8 @@ func mutatePendingProvisionReasons(
 
 // updatePendingModelDeploymentSignal centralizes the decision rule
 // for the "model_deployment" tag in AI_AGENT_PENDING_PROVISION.
-// It is called from both ProcessModels (manifest-driven init path)
-// and init_from_code (code-discovery init path) so the signal
-// semantics stay in one place.
+// The generated-definition init path uses it to keep signal semantics in one
+// place.
 //
 // Rules:
 //   - anyModelProcessed=false → no-op. A flow that did not configure

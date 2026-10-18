@@ -23,7 +23,7 @@
         "properties": {
           "name": { "type": "string" },
           "index": { "type": "string" },
-          "instance_name": { "type": "string" }
+          "instanceName": { "type": "string" }
         },
         "required": ["name"]
       }
@@ -65,11 +65,11 @@
       "description": "Per-version toolbox governance settings.",
       "additionalProperties": false,
       "properties": {
-        "rai_config": {
+        "raiConfig": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "rai_policy_name": { "type": "string" },
+            "raiPolicyName": { "type": "string" },
             "name": { "type": "string" }
           }
         }

@@ -1,11 +1,11 @@
-Manage agent endpoint and card configuration.
+Inspect agent endpoints and manage hosted endpoint/card configuration.
 
 Usage
   azd ai agent endpoint [command]
 
 Available Commands
-  show   : Show the current endpoint and card configuration of an agent.
-  update : Update an agent's endpoint and card configuration without deploying a new version.
+  show   : Show callable endpoints or hosted endpoint/card configuration.
+  update : Update a hosted agent's endpoint and card without deploying a new version.
 
 Global Flags
   -C, --cwd string         : Sets the current working directory

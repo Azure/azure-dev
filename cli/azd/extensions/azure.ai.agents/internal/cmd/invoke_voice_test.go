@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -100,100 +102,16 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 	}
 }
 
-func TestVoiceInvocationDetectionErrorsStopRemoteInvoke(t *testing.T) {
-	for _, malformed := range []bool{false, true} {
-		t.Run(map[bool]string{false: "missing", true: "malformed"}[malformed], func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, "override.yaml")
-			if malformed {
-				require.NoError(t, os.WriteFile(path, []byte("kind: [\n"), 0600))
-			}
-			t.Setenv("AGENT_DEFINITION_PATH", path)
-			props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
-			require.NoError(t, err)
-			project := &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: root, Services: map[string]*azdext.ServiceConfig{
-					"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: props},
-				},
-			}}
-			server := grpc.NewServer()
-			azdext.RegisterProjectServiceServer(server, project)
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			require.NoError(t, err)
-			go func() { _ = server.Serve(listener) }()
-			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-			t.Setenv("AZD_SERVER", listener.Addr().String())
-			for _, args := range [][]string{
-				{"agent", "hello"}, {"--protocol", "responses", "agent", "hello"},
-				{"--protocol", "invocations", "agent", "hello"}, {"--protocol", "a2a", "agent", "hello"},
-			} {
-				command := newInvokeCommand(nil)
-				var buf bytes.Buffer
-				command.SetOut(&buf)
-				command.SetErr(&buf)
-				command.SetArgs(args)
-				err := command.Execute()
-				require.ErrorContains(t, err, "determining agent kind for invocation")
-				require.NotErrorIs(t, err, errVoiceInvocationUnsupported)
-				if !malformed {
-					require.ErrorIs(t, err, os.ErrNotExist)
-				}
-				// No environment/auth services registered: the request must stop before either is used.
-			}
-		})
-	}
-}
-
-func TestPromptInvokeHonorsVoiceAndInvalidOverrides(t *testing.T) {
-	for _, tt := range []struct {
-		name, override string
-		voice          bool
-	}{
-		{"voice", "kind: voice\n", true},
-		{"voice-alias", "kind: prompt-voice\n", true},
-		{"malformed", "kind: [\n", false},
-		{"missing", "", false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, "override.yaml")
-			if tt.override != "" {
-				require.NoError(t, os.WriteFile(path, []byte(tt.override), 0600))
-			}
-			t.Setenv("AGENT_DEFINITION_PATH", path)
-			props, err := structpb.NewStruct(map[string]any{
-				"kind": "prompt", "name": "prompt-agent", "model": "deployment", "instructions": "Be helpful.",
-			})
-			require.NoError(t, err)
-			server := grpc.NewServer()
-			azdext.RegisterProjectServiceServer(server, &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: root, Services: map[string]*azdext.ServiceConfig{
-					"prompt-agent": {Name: "prompt-agent", Host: AiAgentHost, AdditionalProperties: props},
-				},
-			}})
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			require.NoError(t, err)
-			go func() { _ = server.Serve(listener) }()
-			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-			t.Setenv("AZD_SERVER", listener.Addr().String())
-			for _, args := range [][]string{
-				{"hello"}, {"prompt-agent", "hello"},
-				{"--protocol", "responses", "prompt-agent", "hello"},
-			} {
-				command := newInvokeCommand(nil)
-				var buf bytes.Buffer
-				command.SetOut(&buf)
-				command.SetErr(&buf)
-				command.SetArgs(args)
-				err := command.Execute()
-				if tt.voice {
-					require.ErrorIs(t, err, errVoiceInvocationUnsupported)
-				} else {
-					require.ErrorContains(t, err, "determining agent kind for invocation")
-				}
-			}
-		})
-	}
+func TestVoiceInvocationRejectsDefinitionPath(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "missing.yaml")
+	props, err := structpb.NewStruct(map[string]any{"kind": "hosted"})
+	require.NoError(t, err)
+	err = voiceInvocationError(&azdext.ServiceConfig{
+		Name: "agent", Host: AiAgentHost, AdditionalProperties: props,
+	}, t.TempDir())
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeUnsupportedAgentDefinitionPath, localErr.Code)
 }
 
 func TestVoiceInvocationGuidance(t *testing.T) {
@@ -235,32 +153,6 @@ func TestVoiceInvocationGuidance(t *testing.T) {
 	}
 }
 
-func TestVoiceInvocationOverridePrecedence(t *testing.T) {
-	for _, tt := range []struct {
-		name, inline, override string
-		wantVoice              bool
-	}{
-		{"hosted override wins", "voice", "kind: hosted\n", false},
-		{"voice override wins", "hosted", "kind: voice\n", true},
-		{"alias override wins", "hosted", "kind: prompt-voice\n", true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, "override.yaml")
-			require.NoError(t, os.WriteFile(path, []byte(tt.override), 0600))
-			t.Setenv("AGENT_DEFINITION_PATH", path)
-			props, err := structpb.NewStruct(map[string]any{"kind": tt.inline})
-			require.NoError(t, err)
-			err = voiceInvocationError(&azdext.ServiceConfig{AdditionalProperties: props}, root)
-			if tt.wantVoice {
-				require.ErrorIs(t, err, errVoiceInvocationUnsupported)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestVoiceInvocationGuidanceDoesNotClassifyManagedPrompt(t *testing.T) {
 	t.Parallel()
 	for _, withHarness := range []bool{false, true} {
@@ -296,7 +188,10 @@ func TestVoiceInvocationDetectionCompatibility(t *testing.T) {
 		errVoiceInvocationUnsupported)
 	legacy, err := structpb.NewStruct(map[string]any{"kind": "prompt-voice"})
 	require.NoError(t, err)
-	require.ErrorIs(t, voiceInvocationError(&azdext.ServiceConfig{Config: legacy}, root), errVoiceInvocationUnsupported)
+	err = voiceInvocationError(&azdext.ServiceConfig{Host: AiAgentHost, Config: legacy}, root)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedAgentServiceConfig, localErr.Code)
 	missing, err := structpb.NewStruct(map[string]any{"$ref": "missing.yaml"})
 	require.NoError(t, err)
 	require.Error(t, voiceInvocationError(&azdext.ServiceConfig{AdditionalProperties: missing}, root))

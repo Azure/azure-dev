@@ -27,6 +27,9 @@ func NewRootCommand() *cobra.Command {
   azd ai agent init
   azd up
 
+  # Add a file-backed Agent service to the current project
+  azd ai agent add support-agent --file ./agents/support.yaml
+
   # Send a message to a deployed prompt or hosted agent
   azd ai agent invoke "Hello"`
 	rootCmd.SilenceErrors = true
@@ -58,6 +61,7 @@ func NewRootCommand() *cobra.Command {
 		operation := telemetryOperation(cmd.CommandPath())
 		if operation == "init" {
 			telemetryReporter.reportProject(cmd.Context(), operation)
+			reportInitOperation(cmd.Context())
 		}
 	}
 
@@ -77,6 +81,7 @@ func NewRootCommand() *cobra.Command {
 	}))
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newInitCommand(extCtx))
+	rootCmd.AddCommand(newAgentServiceAddCommand(extCtx))
 	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "toolbox", AiToolboxHost))
 	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "connection", AiConnectionHost))
 	rootCmd.AddCommand(newRunCommand(extCtx))
@@ -93,6 +98,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newMonitorCommand(extCtx))
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
+	rootCmd.AddCommand(newStateStoresCommand(extCtx))
 	rootCmd.AddCommand(newInvocationsCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())

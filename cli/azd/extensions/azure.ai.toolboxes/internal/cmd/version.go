@@ -16,5 +16,8 @@ var (
 )
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
-	return azdext.NewVersionCommand("azure.ai.toolboxes", Version, outputFormat)
+	cmd := azdext.NewVersionCommand("azure.ai.toolboxes", Version, outputFormat)
+	cmd.Example = `  # Display the installed toolbox extension version
+  azd ai toolbox version`
+	return cmd
 }

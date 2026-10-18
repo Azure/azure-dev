@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -116,4 +117,33 @@ func TestPlanScaffoldDoesNotValidateARegisteredDatasetName(t *testing.T) {
 
 	require.NoError(t, err, "a registered name is not a file init has to be able to read")
 	assert.Equal(t, "support-golden", out.datasetName)
+}
+
+func TestPlanScaffoldReusesOnlyValidatedSimulationRows(t *testing.T) {
+	for _, simulation := range []bool{false, true} {
+		for _, validated := range []bool{false, true} {
+			t.Run(fmt.Sprintf("simulation=%t/validated=%t", simulation, validated), func(t *testing.T) {
+				in := localDatasetScaffold(t, writeInitDataset(t, `{"test_case_description":"help"}`))
+				if simulation {
+					in.simulation = &project.Simulation{Model: "connection/simulator"}
+					in.evaluationLevel = project.EvaluationLevelConversation
+				}
+				require.NoError(t, validateInitDataset(t.Context(), in.evalDir, initAnswers{
+					datasetRef: in.dataset, simulation: in.simulation,
+				}, in.cfg))
+				in.simulationRowsValidated = validated
+				// A sentinel detects any additional read by the planner.
+				require.NoError(t, os.WriteFile(in.dataset, []byte("not JSON"), 0o600))
+				_, err := planScaffold(in)
+				if simulation && validated {
+					require.NoError(t, err)
+					assert.Len(t, in.cfg.Evals, 1)
+				} else {
+					require.Error(t, err)
+					assert.Empty(t, in.cfg.Evals)
+					assert.Empty(t, in.cfg.Datasets)
+				}
+			})
+		}
+	}
 }

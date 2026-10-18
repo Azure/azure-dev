@@ -50,12 +50,17 @@ jobs:
       - name: Check for go fix suggestions
         working-directory: ${{ inputs.working-directory }}
         run: |
-          DIFF=$(go fix -diff ./... 2>/dev/null)
+          STATUS=0
+          DIFF=$(go fix -diff ./...) || STATUS=$?
           if [ -n "$DIFF" ]; then
             echo "::error::go fix found code that should be modernized."
             echo "Run 'go fix ./...' locally and commit the changes."
             echo ""
             echo "$DIFF"
             exit 1
+          fi
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::error::go fix failed; see the diagnostics above."
+            exit "$STATUS"
           fi
           echo "No go fix suggestions — code is up to date."

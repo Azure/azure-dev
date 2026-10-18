@@ -38,6 +38,11 @@ version. The output includes the toolbox's runtime MCP endpoint, which agents
 consume via the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT environment variable
 convention, where <NORMALIZED_NAME> is the toolbox name uppercased with
 non-alphanumeric character runs replaced by underscores.`,
+		Example: `  # Inspect the default version and its runtime endpoint
+  azd ai toolbox show research
+
+  # Inspect a specific immutable version
+  azd ai toolbox show research --version 2`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runToolboxShow(cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx))

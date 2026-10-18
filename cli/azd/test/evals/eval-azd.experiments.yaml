@@ -9,7 +9,7 @@ evals:
   - eval-azd-qna.yaml
   - eval-azd-deploy.yaml
 
-# Two axes:
+# Axes:
 # - skills: azd skill off vs on
 # - model: claude-sonnet-5 vs gpt-5.6-terra
 #
@@ -21,6 +21,8 @@ matrix:
     values:
       - without-skills: []
       - with-skills: ["./skills/azd"]
+  # Keep subject models distinct from judge_model in every eval above so a model
+  # never grades its own responses.
   model:
     path: /defaults/model
     values:

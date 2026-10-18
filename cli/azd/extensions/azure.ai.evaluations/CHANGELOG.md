@@ -1,5 +1,36 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-10-12)
+
+### Breaking Changes
+
+- [[#10341]](https://github.com/Azure/azure-dev/pull/10341) Use camelCase keys in `azure.eval.yaml`, for example `evaluationLevel`, `maxSamples` and `dataMapping`, to stay consistent with the other extensions, and reject the former snake_case spellings.
+
+### Features Added
+
+- [[#10116]](https://github.com/Azure/azure-dev/pull/10116) Run conversation simulations: turn scenario seeds into generated conversations and score them.
+- [[#10334]](https://github.com/Azure/azure-dev/pull/10334) Add static and simulation conversation authoring to `azd ai eval init`, with separate simulation and judge models, seed validation, and interactive correction of invalid input.
+- [[#10334]](https://github.com/Azure/azure-dev/pull/10334) Name new evaluations after their source and mode before falling back to a numeric suffix, and propose a Unicode-safe alternative when a name collides.
+- [[#10148]](https://github.com/Azure/azure-dev/pull/10148) Validate datasets, evaluators, version pins and bindings before anything is published, and report what was recovered when a deploy stops partway.
+- [[#10311]](https://github.com/Azure/azure-dev/pull/10311) Add `source.type: local` to evaluate an explicit local dataset file without publishing a dataset, validating every row before a `--max-samples` cap applies.
+
+### Bugs Fixed
+
+- [[#10158]](https://github.com/Azure/azure-dev/pull/10158) Fix stored-response evaluations sending incorrect payloads, and migrate previously stored evaluation definitions forward instead of recreating them.
+- [[#10113]](https://github.com/Azure/azure-dev/pull/10113) Fix `init` accepting local data it cannot turn into evaluation rows, a published evaluator version losing its display name, categories and supported levels, and closing the eval picker printing "Cancelled" followed by an unrelated ambiguity error and a non-zero exit.
+- [[#10116]](https://github.com/Azure/azure-dev/pull/10116) Fix registered datasets being copied inline and the agent being invoked with an empty question during runs.
+- [[#10147]](https://github.com/Azure/azure-dev/pull/10147) Fix simulation results presenting requested seed, repetition and turn settings as observed counts; counts the service did not report now read `not reported`.
+- [[#10151]](https://github.com/Azure/azure-dev/pull/10151) Fix `azd ai eval dataset download --output-file` rejecting a single uploaded file when its credential is scoped to the parent container.
+- [[#10311]](https://github.com/Azure/azure-dev/pull/10311) Fix quality gates and displayed pass rates accepting inconsistent result counts; they now use passed over total test cases and refuse a verdict when the counts contradict each other.
+- [[#10146]](https://github.com/Azure/azure-dev/pull/10146) Fix same-named evaluations in different configuration files overwriting each other's IDs and run histories, and keep registered dataset identity and version pins instead of falling back to inline rows.
+- [[#10338]](https://github.com/Azure/azure-dev/pull/10338) Fix failed runs and refused requests printing only "failed": show the underlying reason, including nested details and the model they name.
+
+### Other Changes
+
+- [[#10343]](https://github.com/Azure/azure-dev/pull/10343) Clarify what `--max-samples` and `--dataset` accept, and reject an explicitly empty `--dataset=` override.
+- [[#10277]](https://github.com/Azure/azure-dev/pull/10277) Explain in the dataset help how `azd ai eval dataset` relates to `azd ai dataset`, and include the `azd` command prefix in help paths.
+- [[#10102]](https://github.com/Azure/azure-dev/pull/10102) Report an `init.completed` usage event when installed from the official registry; it carries no names, paths or endpoints.
+
 ## 1.0.0-beta.1 (2026-09-17)
 
 First release of the Foundry evaluations extension.

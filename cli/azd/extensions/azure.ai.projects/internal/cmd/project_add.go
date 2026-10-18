@@ -84,7 +84,15 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add or update a Microsoft Foundry project.",
-		Args:  cobra.NoArgs,
+		Example: `  # Configure a Foundry project interactively
+  azd ai project add
+
+  # Connect an existing project by its ARM resource ID
+  azd ai project add --project-id "<project-resource-id>"
+
+  # Eject the configured infrastructure as Bicep
+  azd ai project add --infra=bicep`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
@@ -2016,7 +2024,6 @@ func terraformEjectionVariables(
 		"resource_group_name":  resourceGroupName,
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
-		"principal_id":         "${AZURE_PRINCIPAL_ID}",
 		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 		"deployments":          deployments,
 	}, includeAcr, nil

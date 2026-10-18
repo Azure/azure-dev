@@ -1,0 +1,22 @@
+Delete an item from an existing store. User-isolated items require a hosted call ID and cannot be accessed by azd.
+
+Usage
+  azd ai agent state-stores items delete <key> [flags]
+
+Flags
+      --agent-endpoint string : HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)
+  -n, --agent-name string     : Agent service name in azure.yaml
+      --if-match string       : Only write if the current ETag matches (preserve its quotes)
+      --store string          : Store name (defaults to the active store; does not change selection)
+  -y, --yes                   : Skip delete confirmation (required with --no-prompt)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for delete
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+    azd ai agent state-stores items delete task-123 --yes

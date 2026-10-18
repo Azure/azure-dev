@@ -24,6 +24,14 @@ func NewRootCommand() *cobra.Command {
 			color.YellowString("(Beta)"),
 		),
 	})
+	rootCmd.Annotations[cobra.CommandDisplayNameAnnotation] = "azd ai " + rootCmd.Name()
+	rootCmd.Long = rootCmd.Short + "\n\n" +
+		"Use `azd ai dataset` (azure.ai.dataset) for standalone dataset management.\n" +
+		"`azd ai eval dataset` (azure.ai.evaluations) offers dataset management within\n" +
+		"an evaluation workflow. Both operate on the same Foundry project dataset catalog\n" +
+		"when configured for the same project; a dataset does not need to be copied\n" +
+		"between them. Command flags and output formats can differ.\n\n" +
+		"To generate synthetic evaluation data, use `azd ai eval generate`."
 	rootCmd.SilenceUsage = true
 	rootCmd.SilenceErrors = true
 	rootCmd.CompletionOptions.DisableDefaultCmd = true

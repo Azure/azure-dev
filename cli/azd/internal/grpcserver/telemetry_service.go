@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/codes"
@@ -50,9 +50,9 @@ type installedExtensionLookup interface {
 	IsOfficialRegistrySource(ctx context.Context, name string) (bool, error)
 }
 
-// telemetryService implements the preview v1beta TelemetryServiceServer.
+// telemetryService implements the stable v1 TelemetryServiceServer.
 type telemetryService struct {
-	v1beta.UnimplementedTelemetryServiceServer
+	azdext.UnimplementedTelemetryServiceServer
 	extensions installedExtensionLookup
 	// recorded counts the events kept for this azd process. Service
 	// target providers deploy concurrently, so it has to be atomic.
@@ -61,10 +61,8 @@ type telemetryService struct {
 
 // NewTelemetryService creates the telemetry gRPC service. The extension
 // manager resolves the calling extension's installed record so the host can
-// stamp identity the caller never supplies. Returning the interface type lets
-// the IoC container satisfy the v1beta.TelemetryServiceServer parameter on
-// NewServer without an adapter.
-func NewTelemetryService(manager *extensions.Manager) v1beta.TelemetryServiceServer {
+// stamp identity the caller never supplies.
+func NewTelemetryService(manager *extensions.Manager) azdext.TelemetryServiceServer {
 	return newTelemetryService(manager)
 }
 
@@ -88,8 +86,8 @@ func newTelemetryService(lookup installedExtensionLookup) *telemetryService {
 // not. Rejected caller text is never echoed back.
 func (s *telemetryService) ReportUsage(
 	ctx context.Context,
-	req *v1beta.ReportUsageRequest,
-) (*v1beta.ReportUsageResponse, error) {
+	req *azdext.ReportUsageRequest,
+) (*azdext.ReportUsageResponse, error) {
 	claims, err := extensions.GetClaimsFromContext(ctx)
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "validated extension claims are required")
@@ -113,7 +111,7 @@ func (s *telemetryService) ReportUsage(
 		log.Printf(
 			"telemetry: failed to verify source %q for %s: %v",
 			extension.Source, extension.Id, err)
-		return &v1beta.ReportUsageResponse{Accepted: false}, nil
+		return &azdext.ReportUsageResponse{Accepted: false}, nil
 	}
 
 	if !official {
@@ -121,7 +119,7 @@ func (s *telemetryService) ReportUsage(
 			"telemetry: dropping usage event from %s installed from source %q",
 			extension.Id, extension.Source)
 
-		return &v1beta.ReportUsageResponse{Accepted: false}, nil
+		return &azdext.ReportUsageResponse{Accepted: false}, nil
 	}
 
 	attributes := []attribute.KeyValue{
@@ -145,7 +143,7 @@ func (s *telemetryService) ReportUsage(
 			"telemetry: dropping usage event %q from %s, limit of %d reached",
 			req.EventName, extension.Id, maxUsageEventsPerInvocation)
 
-		return &v1beta.ReportUsageResponse{Accepted: false}, nil
+		return &azdext.ReportUsageResponse{Accepted: false}, nil
 	}
 
 	// Record a dedicated span rather than augmenting the command span. The
@@ -155,10 +153,10 @@ func (s *telemetryService) ReportUsage(
 	span.SetAttributes(attributes...)
 	span.End()
 
-	return &v1beta.ReportUsageResponse{Accepted: true}, nil
+	return &azdext.ReportUsageResponse{Accepted: true}, nil
 }
 
-func validateUsageRequest(req *v1beta.ReportUsageRequest) error {
+func validateUsageRequest(req *azdext.ReportUsageRequest) error {
 	if req == nil || req.EventName == "" || len(req.EventName) > maxUsageEventNameBytes {
 		return status.Errorf(codes.InvalidArgument,
 			"event name is required and must be at most %d UTF-8 bytes",

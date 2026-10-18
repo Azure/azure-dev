@@ -51,7 +51,7 @@ function azd {
         "ai eval run show *" {
             Get-Content -LiteralPath (Join-Path $env:TEST_DIRECTORY "summary.json") -Raw
             if ($env:TEST_SCENARIO -in @(
-                "breach", "pass-breach-exit", "result-error", "result-skipped",
+                "breach", "breach-item-passed", "pass-breach-exit", "result-error", "result-skipped",
                 "result-sample-error", "result-label-skipped"
             )) { $global:LASTEXITCODE = 2 }
             if ($env:TEST_SCENARIO -in @("exit-mismatch", "breach-operational-failure")) {
@@ -131,6 +131,8 @@ class PowerShellScriptTests(unittest.TestCase):
             "passed", "breach", "exit-mismatch", "pass-breach-exit",
             "breach-operational-failure", "breach-zero-exit", "breach-unexpected-exit",
             "result-error", "result-skipped", "result-sample-error", "result-label-skipped",
+            "item-error", "item-skipped", "item-failed", "breach-item-passed",
+            "pass-label-fail", "pass-label-failed",
             "invalid-start", "up-failed",
         ):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
@@ -141,13 +143,21 @@ class PowerShellScriptTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 export = exported_items([1.0, 0.0 if breached else 1.0])
-                operational_signals = {
+                result_metadata = {
                     "result-error": {"status": "errored"},
                     "result-skipped": {"status": "skipped"},
                     "result-sample-error": {"sample": {"error": {"code": "FAILED_EXECUTION"}}},
                     "result-label-skipped": {"label": "skipped"},
+                    "pass-label-fail": {"label": "fail"},
+                    "pass-label-failed": {"label": "failed"},
                 }
-                export["items"][1]["results"][0].update(operational_signals.get(scenario, {}))
+                export["items"][1]["results"][0].update(result_metadata.get(scenario, {}))
+                item_statuses = {
+                    "item-error": "errored", "item-skipped": "skipped",
+                    "item-failed": "failed", "breach-item-passed": "passed",
+                }
+                if scenario in item_statuses:
+                    export["items"][1]["status"] = item_statuses[scenario]
                 (root / "export.json").write_text(json.dumps(export), encoding="utf-8")
                 result = self.run_script(root, "run_live.ps1", scenario)
                 output = result.stdout + result.stderr

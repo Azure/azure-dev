@@ -73,6 +73,10 @@ Evaluator error statuses, nonempty sample error codes/messages, and skipped
 statuses or labels take precedence over scores and pass verdicts. They cannot
 produce publishable evidence, even when aggregate counts claim an ordinary
 pass or failure.
+Top-level item statuses `errored` and `skipped` are also rejected. Canonical
+`passed`/`failed` item statuses must agree with the F1 verdict, and a `fail` or
+`failed` evaluator label cannot be overridden by `passed: true`. Lifecycle-only
+item statuses such as `completed` continue to use the evaluator verdict.
 
 The artifact contains only aggregate counts, thresholds, and the reviewed
 `query`, `response`, `ground_truth`, numeric `score`, and `passed` fields.

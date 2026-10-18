@@ -102,6 +102,13 @@ def _run_counts(summary: Any) -> dict[str, int]:
 
 
 def _result_for_sample(item: dict[str, Any], evaluator_threshold: float) -> dict[str, Any]:
+    item_status = item.get("status")
+    if item_status is not None and not isinstance(item_status, str):
+        raise EvidenceError("An exported item contains invalid status metadata.")
+    item_status = item_status.strip().lower() if item_status is not None else ""
+    if item_status in {"errored", "skipped"}:
+        raise EvidenceError("An exported item reports an error or skip.")
+
     results = item.get("results")
     if not isinstance(results, list):
         raise EvidenceError("An exported item does not contain evaluator results.")
@@ -158,8 +165,12 @@ def _result_for_sample(item: dict[str, Any], evaluator_threshold: float) -> dict
     passed = result.get("passed")
     if not isinstance(passed, bool):
         raise EvidenceError("An F1 result does not contain a pass verdict.")
+    if passed and signals["label"] in {"fail", "failed"}:
+        raise EvidenceError("An F1 result has a failure label that contradicts its pass verdict.")
     if passed != (score >= evaluator_threshold):
         raise EvidenceError("An F1 result is inconsistent with the configured threshold.")
+    if item_status in {"passed", "failed"} and (item_status == "passed") != passed:
+        raise EvidenceError("An exported item status contradicts its F1 verdict.")
 
     return {"score": score, "passed": passed}
 

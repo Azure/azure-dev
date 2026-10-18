@@ -234,6 +234,69 @@ class BuildEvidenceTests(unittest.TestCase):
                 )
                 self.assertEqual(evidence["outcome"], "passed")
 
+    def test_item_error_and_skip_statuses_override_pass_and_fail_verdicts(self) -> None:
+        for status in ("errored", " ERRORED ", "skipped", " SkIpPeD "):
+            for passed in (True, False):
+                with self.subTest(status=status, passed=passed):
+                    export = exported_items([1.0, 1.0 if passed else 0.0])
+                    export["items"][1]["status"] = status
+                    with self.assertRaisesRegex(EvidenceError, "item reports an error or skip"):
+                        build_evidence(
+                            completed_summary(passed=2 if passed else 1, failed=0 if passed else 1),
+                            export, EXPECTED_FIXTURE,
+                        )
+
+    def test_rejects_invalid_item_status_metadata(self) -> None:
+        for status in (True, False, [], {}, 1):
+            with self.subTest(status=status):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["status"] = status
+                with self.assertRaisesRegex(EvidenceError, "invalid status metadata"):
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+
+    def test_item_canonical_statuses_must_agree_with_sample_verdicts(self) -> None:
+        for status, passed in (("failed", True), ("passed", False)):
+            with self.subTest(status=status):
+                export = exported_items([1.0, 1.0 if passed else 0.0])
+                export["items"][1]["status"] = status
+                with self.assertRaisesRegex(EvidenceError, "item status contradicts"):
+                    build_evidence(
+                        completed_summary(passed=2 if passed else 1, failed=0 if passed else 1),
+                        export, EXPECTED_FIXTURE,
+                    )
+
+    def test_accepts_lifecycle_and_matching_canonical_item_statuses(self) -> None:
+        for passed in (True, False):
+            for status in (None, "", "completed", " PASSED " if passed else " FAILED "):
+                with self.subTest(status=status, passed=passed):
+                    export = exported_items([1.0, 1.0 if passed else 0.0])
+                    export["items"][1]["status"] = status
+                    evidence = build_evidence(
+                        completed_summary(passed=2 if passed else 1, failed=0 if passed else 1),
+                        export, EXPECTED_FIXTURE,
+                    )
+                    self.assertEqual(
+                        evidence["outcome"], "passed" if passed else "quality_gate_breached"
+                    )
+
+    def test_failure_labels_override_true_verdicts(self) -> None:
+        for label in ("fail", "failed", " FAIL ", " FaIlEd "):
+            with self.subTest(label=label):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["results"][0]["label"] = label
+                with self.assertRaisesRegex(EvidenceError, "failure label"):
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+
+    def test_failure_labels_preserve_consistent_failed_verdicts(self) -> None:
+        for label in ("fail", "failed"):
+            with self.subTest(label=label):
+                export = exported_items([1.0, 0.0])
+                export["items"][1]["results"][0]["label"] = label
+                evidence = build_evidence(
+                    completed_summary(passed=1, failed=1), export, EXPECTED_FIXTURE
+                )
+                self.assertEqual(evidence["outcome"], "quality_gate_breached")
+
     def test_rejects_a_verdict_that_disagrees_with_the_evaluator_threshold(self) -> None:
         export = exported_items([1.0, 1.0])
         export["items"][0]["results"][0]["passed"] = False

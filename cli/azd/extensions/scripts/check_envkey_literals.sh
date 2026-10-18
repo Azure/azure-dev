@@ -4,7 +4,13 @@
 
 # Ratchet quoted Foundry keys lexically, including test fixtures and quoted comments.
 # Run from any directory. --counts prints KEY=COUNT lines for baseline maintenance.
+# Requires Bash 4 or newer and ripgrep (rg).
 set -euo pipefail
+if (( BASH_VERSINFO[0] < 4 )); then
+    echo "ERROR: Bash 4 or newer is required (found $BASH_VERSION)" >&2
+    exit 2
+fi
+
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 extensions_dir="$(cd -- "$script_dir/.." && pwd)"
 baseline="$script_dir/check_envkey_literals.baseline"
@@ -22,7 +28,7 @@ declare -A counts
 keys=()
 cd -- "$extensions_dir"
 for extension in azure.ai.agents azure.ai.projects; do
-    for prefix in AZURE_AI_ AZD_FOUNDRY_ FOUNDRY_ AI_PROJECT_ AGENT_ AZURE_CONTAINER_REGISTRY_; do
+    for prefix in AZURE_AI_ AZD_FOUNDRY_ FOUNDRY_ AI_PROJECT_ AGENT_ AZD_AGENT_ AZURE_CONTAINER_REGISTRY_; do
         key="${extension}:${prefix}"
         keys+=("$key")
         if matches="$(rg --no-config --no-ignore --hidden --no-heading --only-matching \
@@ -53,6 +59,7 @@ fi
 
 declare -A limits
 while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
     [[ -z "$line" || "$line" == \#* ]] && continue
     if [[ ! "$line" =~ ^([^=]+)=([0-9]+)$ ]]; then
         echo "ERROR: invalid baseline line: $line" >&2

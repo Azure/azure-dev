@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +22,15 @@ func requireRatchetTools(t *testing.T) {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("literal ratchet requires %s: %v", tool, err)
 		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, "bash", "-c", "echo ${BASH_VERSINFO[0]}").CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	major, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	require.NoError(t, err, "parse Bash major version: %q", output)
+	if major < 4 {
+		t.Skipf("literal ratchet requires Bash 4 or newer; found major version %d", major)
 	}
 }
 
@@ -58,11 +69,13 @@ func TestLiteralRatchetBehavior(t *testing.T) {
 	}
 	// Count occurrences, including two literals on the same line and test fixtures.
 	write(fixture, "package fixture\nvar keys = []string{\"AZURE_AI_A\", \"AZURE_AI_B\"}\n")
-	write(filepath.Join(agents, "fixture_test.go"), "package fixture\nvar key = `AGENT_TEST`\n")
+	write(filepath.Join(agents, "fixture_test.go"),
+		"package fixture\nvar key = `AGENT_TEST`\nvar skip = \"AZD_AGENT_SKIP_ACR\"\n")
 	output, err := runRatchet(t, script, "--counts")
 	require.NoError(t, err, "%s", output)
 	require.Contains(t, output, "azure.ai.agents:AZURE_AI_=2\n")
 	require.Contains(t, output, "azure.ai.agents:AGENT_=1\n")
+	require.Contains(t, output, "azure.ai.agents:AZD_AGENT_=1\n")
 	baseline := filepath.Join(scripts, "check_envkey_literals.baseline")
 	write(baseline, output)
 
@@ -75,6 +88,13 @@ func TestLiteralRatchetBehavior(t *testing.T) {
 	write(filepath.Join(agents, "ignored.txt"), `"AZURE_AI_IGNORED"`)
 	output, err = runRatchet(t, script)
 	require.NoError(t, err, "%s", output)
+
+	content, err := os.ReadFile(baseline)
+	require.NoError(t, err)
+	write(baseline, strings.ReplaceAll(string(content), "\n", "\r\n"))
+	output, err = runRatchet(t, script)
+	require.NoError(t, err, "%s", output)
+	require.Contains(t, output, "OK:")
 
 	write(fixture, "package fixture\nvar key = \"AZURE_AI_A\"\n")
 	output, err = runRatchet(t, script)

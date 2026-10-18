@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -118,84 +117,80 @@ func TestPersistPromptAgentCandidateConfigFunctionTools(t *testing.T) {
 			]`,
 		},
 	}
-	for _, legacy := range []bool{false, true} {
-		for _, tt := range tests {
-			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, tt.name), func(t *testing.T) {
-				t.Parallel()
-				svc := newPromptCandidateTestService(t, legacy)
-				server, path := newPromptCandidateTestServer(t, svc, legacy)
-				before := server.rawSections[svc.Name][path].AsMap()
-				var existingTools []any
-				require.NoError(t, json.Unmarshal([]byte(existing), &existingTools))
-				before["tools"] = existingTools
-				var err error
-				server.rawSections[svc.Name][path], err = structpb.NewStruct(before)
-				require.NoError(t, err)
-				root := t.TempDir()
-				writePromptCandidateTestProject(t, root, svc.Name, path, before)
-				expected := server.rawSections[svc.Name][path].AsMap()
-				var expectedTools []any
-				require.NoError(t, json.Unmarshal([]byte(tt.expected), &expectedTools))
-				expected["tools"] = expectedTools
-				expected["model"] = "gpt-5"
-				expected["instructions"] = "Optimized instructions."
-				client := newProjectRecorderClient(t, server)
-				candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.","tools":` +
-					tt.candidate + `}`)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			svc := newPromptCandidateTestService(t, false)
+			server, path := newPromptCandidateTestServer(t, svc, false)
+			before := server.rawSections[svc.Name][path].AsMap()
+			var existingTools []any
+			require.NoError(t, json.Unmarshal([]byte(existing), &existingTools))
+			before["tools"] = existingTools
+			var err error
+			server.rawSections[svc.Name][path], err = structpb.NewStruct(before)
+			require.NoError(t, err)
+			root := t.TempDir()
+			writePromptCandidateTestProject(t, root, svc.Name, path, before)
+			expected := server.rawSections[svc.Name][path].AsMap()
+			var expectedTools []any
+			require.NoError(t, json.Unmarshal([]byte(tt.expected), &expectedTools))
+			expected["tools"] = expectedTools
+			expected["model"] = "gpt-5"
+			expected["instructions"] = "Optimized instructions."
+			client := newProjectRecorderClient(t, server)
+			candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.","tools":` +
+				tt.candidate + `}`)
 
-				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
+			require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
 
-				server.mu.Lock()
-				defer server.mu.Unlock()
-				require.Empty(t, server.configSectionReads)
-				require.Len(t, server.configSections, 1)
-				require.Equal(t, path, server.configSections[0].Path)
-				require.Equal(t, expected, server.configSections[0].Section.AsMap())
-				require.Empty(t, server.configValues)
-				require.Empty(t, server.unsetPaths)
-			})
-		}
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.configSectionReads)
+			require.Len(t, server.configSections, 1)
+			require.Equal(t, path, server.configSections[0].Path)
+			require.Equal(t, expected, server.configSections[0].Section.AsMap())
+			require.Empty(t, server.configValues)
+			require.Empty(t, server.unsetPaths)
+		})
 	}
 }
 
 func TestPersistPromptAgentCandidateConfigPreservesAbsentTools(t *testing.T) {
 	t.Parallel()
 
-	for _, legacy := range []bool{false, true} {
-		for _, state := range []string{"missing", "null", "empty"} {
-			t.Run(fmt.Sprintf("legacy=%t/%s", legacy, state), func(t *testing.T) {
-				t.Parallel()
-				svc := newPromptCandidateTestService(t, legacy)
-				server, path := newPromptCandidateTestServer(t, svc, legacy)
-				expected := server.rawSections[svc.Name][path].AsMap()
-				switch state {
-				case "missing":
-					delete(expected, "tools")
-				case "null":
-					expected["tools"] = nil
-				case "empty":
-					expected["tools"] = []any{}
-				}
-				var err error
-				server.rawSections[svc.Name][path], err = structpb.NewStruct(expected)
-				require.NoError(t, err)
-				root := t.TempDir()
-				writePromptCandidateTestProject(t, root, svc.Name, path, expected)
-				client := newProjectRecorderClient(t, server)
-				candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.",
+	for _, state := range []string{"missing", "null", "empty"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			svc := newPromptCandidateTestService(t, false)
+			server, path := newPromptCandidateTestServer(t, svc, false)
+			expected := server.rawSections[svc.Name][path].AsMap()
+			switch state {
+			case "missing":
+				delete(expected, "tools")
+			case "null":
+				expected["tools"] = nil
+			case "empty":
+				expected["tools"] = []any{}
+			}
+			var err error
+			server.rawSections[svc.Name][path], err = structpb.NewStruct(expected)
+			require.NoError(t, err)
+			root := t.TempDir()
+			writePromptCandidateTestProject(t, root, svc.Name, path, expected)
+			client := newProjectRecorderClient(t, server)
+			candidate := json.RawMessage(`{"model":"gpt-5","instructions":"Optimized instructions.",
 					"tools":[{"type":"function","name":"lookup_travel_policy","description":"Do not add."}]}`)
 
-				require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
+			require.NoError(t, persistPromptAgentCandidateConfig(t.Context(), client, svc, root, candidate))
 
-				expected["model"] = "gpt-5"
-				expected["instructions"] = "Optimized instructions."
-				server.mu.Lock()
-				defer server.mu.Unlock()
-				require.Empty(t, server.configSectionReads)
-				require.Len(t, server.configSections, 1)
-				require.Equal(t, expected, server.configSections[0].Section.AsMap())
-			})
-		}
+			expected["model"] = "gpt-5"
+			expected["instructions"] = "Optimized instructions."
+			server.mu.Lock()
+			defer server.mu.Unlock()
+			require.Empty(t, server.configSectionReads)
+			require.Len(t, server.configSections, 1)
+			require.Equal(t, expected, server.configSections[0].Section.AsMap())
+		})
 	}
 }
 

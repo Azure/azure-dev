@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/pkg/eval_api"
 	"azureaieval/internal/project"
+	"azureaieval/internal/urlsafe"
 
 	"github.com/spf13/cobra"
 )
@@ -249,10 +251,15 @@ func (a *jobListAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.list(ctx, ec, kind)
+}
+
+func (a *jobListAction) list(ctx context.Context, ec *evalContext, kind jobKind) error {
 	// These listings answer with has_more and last_id, so a page can say where
 	// the next one starts. --all walks instead, because a cursor handed back
 	// after a full walk would point past rows the caller already has.
 	var jobs []eval_api.GenerationJob
+	var err error
 	cursor := ""
 	total := 0
 	if a.flags.showAll {
@@ -275,7 +282,7 @@ func (a *jobListAction) Run() error {
 	}
 
 	if isJSON(a.cmd) {
-		return emitJSONPage(a.cmd.OutOrStdout(), jobs, &total, cursor)
+		return emitJSONPage(a.cmd.OutOrStdout(), jobsForJSON(jobs), &total, cursor)
 	}
 	if len(jobs) == 0 {
 		fmt.Fprint(a.cmd.OutOrStdout(), messages.NoJobs(kind.name))
@@ -317,7 +324,8 @@ func newJobShowCommand() *cobra.Command {
 			"still running is reported and nothing is written; a job that has " +
 			"succeeded is completed here, and running it again is harmless -- an " +
 			"artifact already collected is left as it is, edits and all, unless " +
-			"--force says to replace it.",
+			"--force says to replace it. When keeping an existing evaluator artifact, " +
+			"authored catalog metadata is preserved and missing metadata is recovered from the job.",
 		Args: requiredArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&jobShowAction{cmd: cmd, flags: flags, jobID: args[0]}).Run()
@@ -331,7 +339,7 @@ func newJobShowCommand() *cobra.Command {
 	cmd.Flags().StringVar(&flags.outputDir, "output-dir", "",
 		"Directory the collected artifact is written to.")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
-		"Replace an artifact a previous collection already wrote.")
+		"Replace a collected artifact and, for evaluators, refresh its catalog metadata.")
 	return cmd
 }
 
@@ -348,6 +356,10 @@ func (a *jobShowAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.show(ctx, ec, kind)
+}
+
+func (a *jobShowAction) show(ctx context.Context, ec *evalContext, kind jobKind) error {
 	job, err := kind.get(ctx, ec, a.jobID)
 	if err != nil {
 		return jobLookupError("reading", kind, a.jobID, err)
@@ -355,10 +367,7 @@ func (a *jobShowAction) Run() error {
 
 	out := a.cmd.OutOrStdout()
 	if !isJSON(a.cmd) {
-		fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
-		if job.Error != nil && job.Error.Message != "" {
-			fmt.Fprint(out, messages.JobErrorLine(job.Error.Message))
-		}
+		writeJobStatus(out, job)
 	}
 
 	// The half `generate --no-wait` could not do. Only a job that has finished
@@ -373,7 +382,7 @@ func (a *jobShowAction) Run() error {
 	if isJSON(a.cmd) {
 		// The job is still the document, with the artifact added when there was
 		// one: a caller polling this has to be able to read both from one read.
-		doc := map[string]any{"job": job}
+		doc := map[string]any{"job": jobForJSON(job)}
 		if ref != nil {
 			doc[kind.name] = ref
 		}
@@ -382,6 +391,35 @@ func (a *jobShowAction) Run() error {
 		}
 	}
 	return collectErr
+}
+
+// jobForJSON redacts serialized error text on a copy, leaving the service record
+// and artifact data untouched for collection and reattachment.
+func jobForJSON(job *eval_api.GenerationJob) *eval_api.GenerationJob {
+	if job == nil {
+		return nil
+	}
+	display := *job
+	if job.Error != nil {
+		diagnostic := *job.Error
+		diagnostic.Code = urlsafe.Text(diagnostic.Code)
+		diagnostic.Message = urlsafe.Text(diagnostic.Message)
+		display.Error = &diagnostic
+	}
+	return &display
+}
+
+func jobsForJSON(jobs []eval_api.GenerationJob) []eval_api.GenerationJob {
+	display := slices.Clone(jobs)
+	for i := range display {
+		display[i] = *jobForJSON(&display[i])
+	}
+	return display
+}
+
+func writeJobStatus(out io.Writer, job *eval_api.GenerationJob) {
+	fmt.Fprint(out, messages.JobLine(job.ID, job.Status))
+	writeJobFailure(out, job)
 }
 
 // collect finishes a job that has succeeded, and reports nothing for one that
@@ -460,13 +498,17 @@ func (a *jobCancelAction) Run() error {
 	}
 	defer ec.Close()
 
+	return a.cancel(ctx, ec, kind)
+}
+
+func (a *jobCancelAction) cancel(ctx context.Context, ec *evalContext, kind jobKind) error {
 	canceled, err := kind.cancel(ctx, ec, a.jobID)
 	if err != nil {
 		return jobLookupError("cancelling", kind, a.jobID, err)
 	}
 
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), canceled)
+		return emitJSON(a.cmd.OutOrStdout(), jobForJSON(canceled))
 	}
 	fmt.Fprint(a.cmd.OutOrStdout(), messages.JobCancelled(kind.name, a.jobID, canceled.Status))
 	return nil

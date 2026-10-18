@@ -26,7 +26,7 @@ func TestSuggestedCommandsNameTheEvalEvenWhenTheRunDoesNot(t *testing.T) {
 	items := []eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "the-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "the-eval", run, items, resultListView{}))
 
 	text := out.String()
 	assert.NotContains(t, text, "--eval  ",
@@ -39,9 +39,7 @@ func TestSuggestedCommandsNameTheEvalEvenWhenTheRunDoesNot(t *testing.T) {
 	}
 }
 
-// What the run itself declares still wins: it is the name the reader
-// recognizes, and the caller's identifier may be a service id.
-func TestTheRunsOwnNameIsPreferredOverTheResolvedOne(t *testing.T) {
+func TestSuggestedCommandsPreferResolvedIDOverMutableName(t *testing.T) {
 	run := &eval_api.OpenAIEvalRun{
 		ID:       "evalrun_1",
 		Status:   "completed",
@@ -50,10 +48,10 @@ func TestTheRunsOwnNameIsPreferredOverTheResolvedOne(t *testing.T) {
 
 	var out bytes.Buffer
 	require.NoError(t, renderResults(&out, "eval_abc123", run,
-		[]eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}, false))
+		[]eval_api.OutputItem{{ID: "oi_1", Status: "completed"}}, resultListView{}))
 
-	assert.Contains(t, out.String(), "--eval declared-name")
-	assert.NotContains(t, out.String(), "eval_abc123")
+	assert.Contains(t, out.String(), "--eval eval_abc123")
+	assert.NotContains(t, out.String(), "--eval declared-name")
 }
 
 // The export is the whole run, so it is the answer to "nothing here matched,
@@ -68,7 +66,7 @@ func TestExportIsOfferedEvenWhenTheFilterKeptNothing(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "the-eval", run, nil, true))
+	require.NoError(t, renderResults(&out, "the-eval", run, nil, resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "Export complete results:")

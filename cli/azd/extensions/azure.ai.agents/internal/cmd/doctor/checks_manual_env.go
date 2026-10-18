@@ -111,7 +111,7 @@ func newCheckManualEnvVars(deps Dependencies) Check {
 						"agent environment configuration could not be loaded: %s",
 						strings.Join(loadErrors, "; "),
 					),
-					Suggestion: "Fix azure.yaml, its referenced file, or the legacy agent file, " +
+					Suggestion: "Fix azure.yaml or its explicitly referenced file, " +
 						"then re-run `azd ai agent doctor`.",
 					Details: map[string]any{
 						"environmentLoadErrors": loadErrors,

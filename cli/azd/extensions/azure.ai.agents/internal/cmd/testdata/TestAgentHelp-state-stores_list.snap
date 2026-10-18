@@ -1,0 +1,32 @@
+List one page of existing State Stores.
+
+Returns at most --limit results in the selected --order. If has_more is true,
+pass last_id from the JSON response to --after for the next page. Keep the same
+--order and --limit. Omit --after to start from the beginning.
+
+Pass the returned cursor unchanged; do not use an entry's id or base64url-encode it.
+
+Usage
+  azd ai agent state-stores list [flags]
+
+Flags
+      --after string          : Continue after last_id from the previous JSON response
+      --agent-endpoint string : HTTPS protocol endpoint URL of a deployed agent (not wss; cannot combine with --environment)
+  -n, --agent-name string     : Agent service name in azure.yaml
+      --limit int             : Maximum results per page (1-100) (default 20)
+      --order string          : Service-defined order: asc or desc (default "desc")
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+  First page
+    azd ai agent state-stores list --limit 2 --order asc
+
+  Next page: copy last_id from the response when has_more is true
+    azd ai agent state-stores list --limit 2 --order asc --after "<last_id>"

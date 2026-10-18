@@ -182,8 +182,14 @@ func TestCollectingAgainLeavesAnEditedRubricAlone(t *testing.T) {
 	assert.Equal(t, edited, string(body), "the edits are the reason the file is local")
 	assert.Contains(t, out.String(), "--force", "and the caller is told how to get the copy back")
 
-	assert.Equal(t, first, second,
-		"the catalog entry still has to be returned, or the entry would be dropped")
+	firstJSON, err := json.Marshal(first)
+	require.NoError(t, err)
+	secondJSON, err := json.Marshal(second)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(firstJSON), string(secondJSON), "public artifact metadata must remain identical")
+	assert.NotContains(t, string(secondJSON), "PreserveCatalogMetadata", "the collection marker is internal")
+	assert.False(t, first.PreserveCatalogMetadata)
+	assert.True(t, second.PreserveCatalogMetadata)
 }
 
 // The other half of the same promise: --force is what a caller reaches for when

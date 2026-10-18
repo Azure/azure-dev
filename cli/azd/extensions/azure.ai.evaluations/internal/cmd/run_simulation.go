@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"azureaieval/internal/exterrors"
@@ -54,19 +55,20 @@ func (ec *evalContext) simulationDataSource(
 
 	// Read whole: the run is bound to the registered version, so a cap here
 	// would validate a prefix of what the service is about to simulate from.
-	version, err := ec.resolveRunDatasetVersion(ctx, group.Dataset, pinnedVersion, false)
-	if err != nil {
-		return nil, "", err
-	}
-	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
-	if err != nil {
-		return nil, "", err
-	}
-	items, err := ec.readDatasetVersion(ctx, group.Dataset, version)
+	items, version, err := ec.readRegisteredDataset(
+		ctx, group.Dataset, pinnedVersion)
 	if err != nil {
 		return nil, "", err
 	}
 	if err := refuseUnusableSeedRows(group, items); err != nil {
+		return nil, "", err
+	}
+
+	// A seed dataset is referenced, never copied. The spec is explicit that
+	// inline rows are not equivalent for a registered dataset, and a version the
+	// service will not describe is not one a run can be pinned to.
+	id, err := ec.datasetResourceID(ctx, group.Dataset, version)
+	if err != nil {
 		return nil, "", err
 	}
 
@@ -77,6 +79,7 @@ func (ec *evalContext) simulationDataSource(
 		group.Simulation.MaxTurns,
 	)
 	ds.SetFileID(id)
+	ds.SimulationSeedCount = new(len(items))
 	return ds, version, nil
 }
 
@@ -87,47 +90,59 @@ func (ec *evalContext) simulationDataSource(
 // run had been billed for the ones before it.
 func refuseUnusableSeedRows(group *project.Eval, items []map[string]any) error {
 	for i, item := range items {
-		if _, isCompleted := item[completedRowsField]; isCompleted {
-			return simulationError(group,
-				fmt.Sprintf("row %d carries %q, which is a completed conversation rather than a scenario to simulate",
-					i+1, completedRowsField),
-				"A dataset holds either conversations to score or scenarios to simulate, not both. "+
-					"Remove the simulation block to score these conversations as they stand.")
-		}
-
-		description, present := item[seedDescriptionField]
-		if !present {
-			return simulationError(group,
-				fmt.Sprintf("row %d has no %q, so there is no scenario to simulate", i+1, seedDescriptionField),
-				fmt.Sprintf("Every seed row needs a %q. Generate seeds with "+
-					"`azd ai eval generate --evaluation-level conversation`.", seedDescriptionField))
-		}
-		text, isString := description.(string)
-		if !isString || text == "" {
-			return simulationError(group,
-				fmt.Sprintf("row %d has an empty or non-text %q", i+1, seedDescriptionField),
-				fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
-					seedDescriptionField))
-		}
-		if length := utf8.RuneCountInString(text); length > maxSeedDescriptionLength {
-			return simulationError(group,
-				fmt.Sprintf("row %d has %s with %d characters; the maximum is %d",
-					i+1, seedDescriptionField, length, maxSeedDescriptionLength),
-				fmt.Sprintf("Shorten %s to at most %d characters and publish a new dataset version.",
-					seedDescriptionField, maxSeedDescriptionLength))
-		}
-
-		if err := checkDesiredTurns(group, item, i); err != nil {
+		if err := refuseUnusableSeedRow(group, item, i, false); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+func refuseUnusableSeedRow(group *project.Eval, item map[string]any, index int, forInit bool) error {
+	if _, isCompleted := item[completedRowsField]; isCompleted {
+		return simulationError(group,
+			fmt.Sprintf("row %d carries %q, which is a completed conversation rather than a scenario to simulate",
+				index+1, completedRowsField),
+			"A dataset holds either conversations to score or scenarios to simulate, not both. "+
+				"Remove the simulation block to score these conversations as they stand.")
+	}
+	for _, field := range []string{"query", "response"} {
+		if _, present := item[field]; present {
+			return simulationError(group,
+				fmt.Sprintf("row %d carries %q, which is a turn-level field rather than a scenario to simulate",
+					index+1, field),
+				"Simulation seeds cannot mix with query/response rows. Remove the query and response fields "+
+					"to simulate scenarios, or use a separate non-simulation eval for turn-level rows.")
+		}
+	}
+
+	description, present := item[seedDescriptionField]
+	if !present {
+		return simulationError(group,
+			fmt.Sprintf("row %d has no %q, so there is no scenario to simulate", index+1, seedDescriptionField),
+			fmt.Sprintf("Every seed row needs a %q. Generate seeds with "+
+				"`azd ai eval generate --evaluation-level conversation`.", seedDescriptionField))
+	}
+	text, isString := description.(string)
+	if !isString || strings.TrimSpace(text) == "" {
+		return simulationError(group,
+			fmt.Sprintf("row %d has an empty or non-text %q", index+1, seedDescriptionField),
+			fmt.Sprintf("%q describes the conversation to create, so it has to be a non-empty string.",
+				seedDescriptionField))
+	}
+	if length := utf8.RuneCountInString(text); length > maxSeedDescriptionLength {
+		return simulationError(group,
+			fmt.Sprintf("row %d has %s with %d characters; the maximum is %d",
+				index+1, seedDescriptionField, length, maxSeedDescriptionLength),
+			fmt.Sprintf("Shorten %s to at most %d characters and publish a new dataset version.",
+				seedDescriptionField, maxSeedDescriptionLength))
+	}
+	return checkDesiredTurns(group, item, index, forInit)
+}
+
 // checkDesiredTurns refuses a per-row turn count that is not a positive whole
 // number. JSON numbers decode as float64, so a fractional value is a real
 // possibility rather than a theoretical one.
-func checkDesiredTurns(group *project.Eval, item map[string]any, index int) error {
+func checkDesiredTurns(group *project.Eval, item map[string]any, index int, forInit bool) error {
 	if _, flat := item[seedTurnsField]; flat {
 		return simulationError(group,
 			fmt.Sprintf("row %d has %s outside %s; the service does not read this flat field",
@@ -150,7 +165,7 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int) erro
 	if maxTurns == 0 {
 		maxTurns = defaultSimulationTurns
 	}
-	maxField := "simulation.max_turns"
+	maxField := "simulation.maxTurns"
 	turns := 0
 	for _, field := range []string{"max_num_turns", seedTurnsField} {
 		value, present := config[field]
@@ -173,11 +188,25 @@ func checkDesiredTurns(group *project.Eval, item map[string]any, index int) erro
 		}
 	}
 	if turns > maxTurns {
+		suggestion := fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
+			maxField, turns, seedConfigField, seedTurnsField)
+		if maxField == "simulation.maxTurns" && turns > project.MaxSimulationTurns {
+			suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. simulation.maxTurns accepts %d to %d.",
+				seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
+		}
+		if maxField == "simulation.maxTurns" && forInit {
+			if turns <= project.MaxSimulationTurns {
+				suggestion = fmt.Sprintf("Rerun init with --max-turns %d (%d-%d), or lower %s.%s on that row.",
+					turns, project.MinSimulationTurns, project.MaxSimulationTurns, seedConfigField, seedTurnsField)
+			} else {
+				suggestion = fmt.Sprintf("Lower %s.%s to at most %d on that row. --max-turns accepts %d to %d.",
+					seedConfigField, seedTurnsField, maxTurns, project.MinSimulationTurns, project.MaxSimulationTurns)
+			}
+		}
 		return simulationError(group,
 			fmt.Sprintf("row %d asks for %d turns, but effective %s is %d",
 				index+1, turns, maxField, maxTurns),
-			fmt.Sprintf("Raise %s to at least %d, or lower %s.%s on that row.",
-				maxField, turns, seedConfigField, seedTurnsField))
+			suggestion)
 	}
 
 	return nil

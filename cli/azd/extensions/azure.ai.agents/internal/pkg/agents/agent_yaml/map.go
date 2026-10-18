@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -118,10 +119,11 @@ func mapInvocationsModeration(moderation *InvocationsModeration) *agent_api.Invo
 	}
 
 	for _, selector := range moderation.StreamSelectors {
-		mapped.StreamSelectors = append(mapped.StreamSelectors, agent_api.SseTextSelector{
-			EventType: selector.EventType,
-			TextField: selector.TextField,
-		})
+		mappedSelector := agent_api.SseTextSelector{EventType: selector.EventType}
+		if selector.TextField != nil {
+			mappedSelector.TextField = *selector.TextField
+		}
+		mapped.StreamSelectors = append(mapped.StreamSelectors, mappedSelector)
 	}
 
 	return mapped
@@ -410,8 +412,7 @@ func mapSessionConfiguration(sc *SessionConfiguration) (*agent_api.SessionConfig
 	if idle < MinSessionIdleTimeoutSeconds || idle > MaxSessionIdleTimeoutSeconds {
 		return nil, fmt.Errorf(
 			"session idle timeout must be between %d and %d seconds, got %d "+
-				"('sessionConfiguration.idleTimeoutSeconds' in azure.yaml, "+
-				"'session_configuration.idle_timeout_seconds' in agent.yaml)",
+				"('sessionConfiguration.idleTimeoutSeconds' in the agent definition)",
 			MinSessionIdleTimeoutSeconds, MaxSessionIdleTimeoutSeconds, idle)
 	}
 
@@ -612,20 +613,8 @@ func CreatePromptAgentAPIRequest(
 	if err := promptAgent.ValidatePolicies(); err != nil {
 		return nil, err
 	}
-	authoredVersions := map[string]string{}
-	for _, skill := range promptAgent.Skills {
-		name := strings.ToLower(strings.TrimSpace(skill.Name))
-		version := strings.TrimSpace(skill.Version)
-		if version == "" {
-			continue
-		}
-		if previous, ok := authoredVersions[name]; ok && previous != version {
-			return nil, fmt.Errorf(
-				"prompt skill %q has conflicting authored versions %q and %q; specify only one version per skill",
-				name, previous, version,
-			)
-		}
-		authoredVersions[name] = version
+	if err := promptAgent.ValidateAuthoredSkills(); err != nil {
+		return nil, err
 	}
 	for _, skill := range PromptAgentSkillReferences(promptAgent) {
 		if strings.TrimSpace(skill.Version) == "" {
@@ -650,9 +639,9 @@ func CreatePromptAgentAPIRequest(
 	}
 
 	// Tools and the camelCase authored fields toolChoice and structuredInputs are
-	// passed through to their snake_case Foundry API fields.
+	// translated to their snake_case Foundry API fields.
 	if len(promptAgent.Tools) > 0 {
-		promptDef.Tools = promptAgent.Tools
+		promptDef.Tools = promptToolsForAPI(promptAgent.Tools)
 	}
 	if promptAgent.ToolChoice != nil {
 		promptDef.ToolChoice = promptAgent.ToolChoice
@@ -1093,9 +1082,16 @@ func createAgentAPIRequest(
 				metadata["authors"] = strings.Join(authorsStr, ",")
 			}
 		}
+		if tags, exists := (*agentDefinition.Metadata)["tags"]; exists {
+			value, err := agentMetadataTags(tags)
+			if err != nil {
+				return nil, err
+			}
+			metadata["tags"] = value
+		}
 		// Copy other metadata as strings
 		for key, value := range *agentDefinition.Metadata {
-			if key != "authors" {
+			if key != "authors" && key != "tags" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue
 				}
@@ -1233,4 +1229,35 @@ func createAgentAPIRequest(
 	}
 
 	return request, nil
+}
+
+func agentMetadataTags(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	var tags []string
+	switch values := value.(type) {
+	case []string:
+		tags = values
+	case []any:
+		tags = make([]string, len(values))
+		for i, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+			}
+			tags[i] = text
+		}
+	default:
+		return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	// Foundry metadata values are strings; JSON preserves commas and empty list items.
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "", fmt.Errorf("encode metadata.tags: %w", err)
+	}
+	return string(encoded), nil
 }

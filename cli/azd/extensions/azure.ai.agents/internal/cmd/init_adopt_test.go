@@ -4,9 +4,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +22,311 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+func TestLoadExplicitAzureYaml(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		content     string
+		wantErr     string
+		wantSuggest string
+	}{
+		{
+			name: "unified project",
+			content: `name: project
+services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: assistant
+`,
+		},
+		{
+			name:        "bare hosted definition",
+			content:     "kind: hosted\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"hosted\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "bare voice definition",
+			content:     "kind: prompt-voice\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"prompt-voice\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "bare prompt definition",
+			content:     "kind: prompt\nname: assistant\n",
+			wantErr:     "standalone agent definition with kind \"prompt\"",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:        "agent manifest wrapper",
+			content:     "template:\n  kind: hosted\n  name: assistant\n",
+			wantErr:     "top-level 'template:'",
+			wantSuggest: "azure.ai.agent service",
+		},
+		{
+			name:    "project without agent service",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "input.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(tt.content), 0o600))
+
+			content, err := loadExplicitAzureYaml(
+				t.Context(), nil, &initFlags{templatePointer: path}, http.DefaultClient,
+			)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				require.Equal(t, tt.content, string(content))
+				return
+			}
+			require.ErrorContains(t, err, tt.wantErr)
+			if tt.wantSuggest != "" {
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Contains(t, localErr.Suggestion, tt.wantSuggest)
+			}
+		})
+	}
+}
+
+func TestValidateLocalExplicitAzureYaml(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name       string
+		content    string
+		pointer    string
+		wantCached bool
+		wantErr    string
+	}{
+		{
+			name:       "valid unified project is cached",
+			content:    "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: agent\n",
+			wantCached: true,
+		},
+		{
+			name:    "standalone definition returns migration guidance",
+			content: "kind: prompt\nname: agent\n",
+			wantErr: "standalone agent definition",
+		},
+		{
+			name:    "manifest wrapper returns migration guidance",
+			content: "template:\n  kind: prompt\n  name: agent\n",
+			wantErr: "top-level 'template:'",
+		},
+		{
+			name:    "remote input remains deferred",
+			pointer: "HTTPS://github.com/example/private/blob/main/azure.yaml",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pointer := tt.pointer
+			if pointer == "" {
+				pointer = filepath.Join(t.TempDir(), "azure.yaml")
+				require.NoError(t, os.WriteFile(pointer, []byte(tt.content), 0o600))
+			}
+
+			content, cached, err := validateLocalExplicitAzureYaml(pointer)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.False(t, cached)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.wantCached, cached)
+			if cached {
+				require.Equal(t, tt.content, string(content))
+			}
+		})
+	}
+}
+
+func TestLoadExplicitAzureYamlRemote(t *testing.T) {
+	t.Parallel()
+
+	content := `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+`
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		require.Equal(t, "https://api.github.com/repos/example/repo/contents/azure.yaml?ref=main", req.URL.String())
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(content)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	got, err := loadExplicitAzureYaml(
+		t.Context(),
+		nil,
+		&initFlags{templatePointer: "https://github.com/example/repo/blob/main/azure.yaml"},
+		client,
+	)
+	require.NoError(t, err)
+	require.Equal(t, content, string(got))
+}
+
+func TestExplicitManifestErrorsRedactCredentials(t *testing.T) {
+	t.Parallel()
+
+	const source = "https://user:password@github.com/example/repo/blob/main/azure.yaml?sig=secret#fragment" //nolint:gosec // Test credential redaction.
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(bytes.NewBufferString("not found")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		source,
+		client,
+		func(context.Context, string) ([]byte, error) {
+			return nil, errors.New("private repository access denied")
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeGitHubDownloadFailed, localErr.Code)
+	require.Contains(t, localErr.Message, "private repository access denied")
+	for _, sensitive := range []string{"user", "password", "sig", "secret", "fragment"} {
+		require.NotContains(t, localErr.Message, sensitive)
+		require.NotContains(t, localErr.Suggestion, sensitive)
+		require.NotContains(t, err.Error(), sensitive)
+	}
+	require.Contains(t, localErr.Message, "https://github.com/example/repo/blob/main/azure.yaml")
+}
+
+func TestSafeInitSourceErrorRedactsNestedTransportURLs(t *testing.T) {
+	t.Parallel()
+
+	const (
+		source = "https://example.com/azure.yaml"
+		nested = "https://nested-user:nested-password@example.com/azure.yaml?sig=nested-secret#nested-fragment" //nolint:gosec // Test credential redaction.
+	)
+	for _, tt := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "DNS", err: &net.DNSError{Err: "no such host", Name: "example.com"}, want: "no such host"},
+		{name: "TLS", err: errors.New("TLS handshake timeout"), want: "TLS handshake timeout"},
+		{name: "deadline", err: context.DeadlineExceeded, want: "context deadline exceeded"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := fmt.Errorf(
+				"download failed: %w",
+				&url.Error{Op: "Get", URL: nested, Err: tt.err},
+			)
+			got := safeInitSourceError(err, source)
+			require.Contains(t, got, tt.want)
+			require.Contains(t, got, "https://example.com/azure.yaml")
+			for _, sensitive := range []string{
+				"nested-user", "nested-password", "sig", "nested-secret", "nested-fragment",
+			} {
+				require.NotContains(t, got, sensitive)
+			}
+		})
+	}
+}
+
+func TestExplicitManifestCancellationIsPreserved(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       io.NopCloser(bytes.NewBufferString("not found")),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		"https://github.com/example/private/blob/main/azure.yaml",
+		client,
+		func(context.Context, string) ([]byte, error) {
+			return nil, context.Canceled
+		},
+	)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeCancelled, localErr.Code)
+}
+
+func TestExplicitManifestUnrecognizedGitHubFormsUseAuthenticatedFallback(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range []string{
+		"https://api.github.com/repos/example/private/contents/azure.yaml?ref=main",
+		"https://github.contoso.com/example/private/blob/main/azure.yaml",
+	} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			const content = "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"
+			var gotSource string
+			got, err := readExplicitManifestContent(
+				t.Context(),
+				source,
+				&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					t.Fatal("unrecognized URL must not use the public GitHub downloader")
+					return nil, nil
+				})},
+				func(_ context.Context, pointer string) ([]byte, error) {
+					gotSource = pointer
+					return []byte(content), nil
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, source, gotSource)
+			require.Equal(t, content, string(got))
+		})
+	}
+}
+
+func TestExplicitManifestAuthenticatedFallbackErrorsAreAuthoritative(t *testing.T) {
+	t.Parallel()
+
+	// #nosec G101 -- intentional credential-bearing URL verifies non-disclosure
+
+	const source = "https://user:password@github.contoso.com/example/private/blob/main/azure.yaml?sig=secret#fragment"
+	wantErr := exterrors.Validation(
+		exterrors.CodeInvalidManifestPointer,
+		"unsupported GitHub host",
+		"use a supported GitHub Enterprise URL",
+	)
+	_, err := readExplicitManifestContent(
+		t.Context(),
+		source,
+		http.DefaultClient,
+		func(context.Context, string) ([]byte, error) {
+			return nil, wantErr
+		},
+	)
+	require.ErrorIs(t, err, wantErr)
+	for _, sensitive := range []string{"user", "password", "sig", "secret", "fragment"} {
+		require.NotContains(t, err.Error(), sensitive)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
+}
 
 func TestInspectAzureYaml(t *testing.T) {
 	tests := []struct {
@@ -171,11 +481,11 @@ func TestInspectAzureYamlPromptOnly(t *testing.T) {
 
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), []byte(`
-host: azure.ai.agent
 kind: prompt
 `), 0o600))
 	resolved, err := inspectAzureYaml([]byte(`services:
   prompt:
+    host: azure.ai.agent
     $ref: ./agent.yaml
 `), root)
 	require.NoError(t, err)
@@ -199,13 +509,14 @@ func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {
 	root := t.TempDir()
 	refPath := filepath.Join(root, "services", "agent.yaml")
 	require.NoError(t, os.MkdirAll(filepath.Dir(refPath), 0700))
-	require.NoError(t, os.WriteFile(refPath, []byte("host: azure.ai.agent\nkind: hosted\n"), 0600))
+	require.NoError(t, os.WriteFile(refPath, []byte("kind: hosted\n"), 0600))
 
 	content := []byte(`name: foundry-ref
 services:
   ai-project:
     host: azure.ai.project
   assistant:
+    host: azure.ai.agent
     $ref: ./services/agent.yaml
 `)
 
@@ -295,6 +606,82 @@ func TestValidateStagedAzureYamlRequiresAgentService(t *testing.T) {
 	require.Contains(t, localErr.Message, "does not declare an agent service")
 }
 
+func TestValidateStagedAzureYamlRequiresResolvedAgentService(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		azureYaml string
+		files     map[string]string
+		wantErr   bool
+	}{
+		{
+			name: "all refs resolve to generic services",
+			azureYaml: `services:
+  web:
+    $ref: ./web.yaml
+`,
+			files:   map[string]string{"web.yaml": "host: containerapp\n"},
+			wantErr: true,
+		},
+		{
+			name: "mixed generic and agent refs",
+			azureYaml: `services:
+  web:
+    $ref: ./web.yaml
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`,
+			files: map[string]string{
+				"web.yaml":   "host: containerapp\n",
+				"agent.yaml": "kind: prompt\nname: agent\n",
+			},
+		},
+		{
+			name: "nested ref resolves agent",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./service.yaml
+`,
+			files: map[string]string{
+				"service.yaml":    "$ref: ./definition.yaml\n",
+				"definition.yaml": "kind: hosted\nname: agent\n",
+			},
+		},
+		{
+			name: "ref supplied host does not qualify",
+			azureYaml: `services:
+  agent:
+    $ref: ./agent.yaml
+`,
+			files: map[string]string{
+				"agent.yaml": "host: azure.ai.agent\nkind: prompt\nname: agent\n",
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			for name, body := range tt.files {
+				require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(body), 0o600))
+			}
+
+			err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+			if tt.wantErr {
+				require.ErrorContains(t, err, "does not declare an agent service")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
@@ -309,6 +696,391 @@ func TestValidateStagedAzureYamlReturnsRefErrors(t *testing.T) {
 	err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
 	require.ErrorContains(t, err, "cannot read")
 	require.ErrorContains(t, err, "missing.yaml")
+}
+
+func TestValidateStagedAzureYamlAllowsConfigOnNonAgentServices(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azureYaml string
+		fileName  string
+		fileBody  string
+	}{
+		{
+			name: "direct non-agent service",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: prompt-agent
+  web:
+    host: containerapp
+    config:
+      exposed: true
+`,
+		},
+		{
+			name: "root-ref non-agent service",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: prompt-agent
+  web:
+    $ref: ./web.yaml
+`,
+			fileName: "web.yaml",
+			fileBody: `host: containerapp
+config:
+  exposed: true
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			manifestPath := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(manifestPath, []byte(tt.azureYaml), 0o600))
+			if tt.fileName != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.fileName), []byte(tt.fileBody), 0o600,
+				))
+			}
+
+			require.NoError(t, validateStagedAzureYaml(root, manifestPath))
+			manifestAfter, err := os.ReadFile(manifestPath)
+			require.NoError(t, err)
+			require.Equal(t, tt.azureYaml, string(manifestAfter))
+		})
+	}
+}
+
+func TestValidateStagedAzureYamlRejectsLegacyDefinitionShapes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		azureYaml string
+		fileName  string
+		fileBody  string
+		want      string
+	}{
+		{
+			name: "nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    config:
+      kind: hosted
+      name: legacy-agent
+`,
+			want: "unsupported nested config block",
+		},
+		{
+			name: "root-ref nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`,
+			fileName: "agent.yaml",
+			fileBody: `config:
+  kind: prompt
+  name: legacy-agent
+`,
+			want: "unsupported nested config block",
+		},
+		{
+			name: "scalar nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: invalid
+`,
+			want: "malformed nested config value",
+		},
+		{
+			name: "list nested config",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: []
+`,
+			want: "malformed nested config value",
+		},
+		{
+			name: "implicit disk definition",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    project: .
+`,
+			fileName: "agent.yaml",
+			fileBody: "kind: hosted\nname: legacy-agent\n",
+			want:     "does not contain a direct or root-$ref definition",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			if tt.fileName != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, tt.fileName), []byte(tt.fileBody), 0o600,
+				))
+			}
+
+			err := validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml"))
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestValidateStagedAzureYamlAllowsEmptyAgentConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		azureYaml string
+		refBody   string
+	}{
+		{
+			name: "direct",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+    config: {}
+`,
+		},
+		{
+			name: "root ref",
+			azureYaml: `services:
+  agent:
+    host: azure.ai.agent
+    $ref: ./agent.yaml
+`,
+			refBody: `kind: hosted
+name: agent
+config: {}
+`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(root, "azure.yaml"), []byte(tt.azureYaml), 0o600,
+			))
+			if tt.refBody != "" {
+				require.NoError(t, os.WriteFile(
+					filepath.Join(root, "agent.yaml"), []byte(tt.refBody), 0o600,
+				))
+			}
+			require.NoError(t, validateStagedAzureYaml(root, filepath.Join(root, "azure.yaml")))
+		})
+	}
+}
+
+func TestPreflightAzdTemplateIsReadOnly(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name: "valid",
+			content: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+`,
+		},
+		{
+			name:    "missing agent",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			callerDir := t.TempDir()
+			t.Chdir(callerDir)
+			sentinel := filepath.Join(callerDir, "sentinel.txt")
+			require.NoError(t, os.WriteFile(sentinel, []byte("unchanged"), 0o600))
+
+			templateDir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
+			))
+			workflow := &testWorkflowServiceServer{}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			before, cwdErr := os.Getwd()
+			require.NoError(t, cwdErr)
+			err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir)
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+			require.Zero(t, workflow.runCalls)
+			after, cwdErr := os.Getwd()
+			require.NoError(t, cwdErr)
+			require.Equal(t, before, after)
+			content, readErr := os.ReadFile(sentinel)
+			require.NoError(t, readErr)
+			require.Equal(t, "unchanged", string(content))
+			entries, readErr := os.ReadDir(callerDir)
+			require.NoError(t, readErr)
+			require.Len(t, entries, 1)
+		})
+	}
+}
+
+func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		content  string
+		wantErr  string
+		wantRuns int
+	}{
+		{
+			name: "valid repository",
+			content: `services:
+  agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: agent
+`,
+			wantRuns: 1,
+		},
+		{
+			name:    "invalid repository",
+			content: "services:\n  web:\n    host: containerapp\n",
+			wantErr: "does not declare an agent service",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			templateDir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
+			))
+			workflow := &testWorkflowServiceServer{runHook: func() {
+				require.NoError(t, os.Mkdir("project", 0o700))
+				require.NoError(t, os.WriteFile(
+					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
+				))
+			}}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+
+			err := scaffoldAzdTemplateProject(
+				t.Context(), client, http.DefaultClient,
+				"project", templateDir, "dev",
+			)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.NoDirExists(t, filepath.Join(root, "project"))
+			} else {
+				require.NoError(t, err)
+				require.DirExists(t, filepath.Join(root, "project"))
+			}
+			require.Equal(t, tt.wantRuns, workflow.runCalls)
+		})
+	}
+}
+
+func TestStageAzdTemplateRepositorySupportsAuthenticatedSources(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range []string{
+		"Azure-Samples/private-agent-template",
+		"https://github.contoso.com/agents/private-template/tree/main/sample",
+	} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			var parsedSource string
+			var downloaded *GitHubUrlInfo
+			staging, cleanup, err := stageAzdTemplateRepository(
+				t.Context(),
+				source,
+				func(_ context.Context, input string) (*GitHubUrlInfo, error) {
+					parsedSource = input
+					return &GitHubUrlInfo{
+						RepoSlug: "agents/private-template",
+						Branch:   "main",
+						FilePath: "sample",
+						Hostname: "github.contoso.com",
+					}, nil
+				},
+				func(_ context.Context, input *GitHubUrlInfo, dir string) error {
+					downloaded = input
+					return os.WriteFile(
+						filepath.Join(dir, "azure.yaml"),
+						[]byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"),
+						0o600,
+					)
+				},
+			)
+			require.NoError(t, err)
+			require.Equal(t, source, parsedSource)
+			require.Equal(t, "github.contoso.com", downloaded.Hostname)
+			require.FileExists(t, filepath.Join(staging, "azure.yaml"))
+			cleanup()
+			require.NoDirExists(t, staging)
+		})
+	}
+}
+
+func TestDownloadAzdTemplateRepositoryPublicGitHub(t *testing.T) {
+	t.Parallel()
+
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := `[{"name":"azure.yaml","type":"file"}]`
+		if req.Header.Get("Accept") == "application/vnd.github.v3.raw" {
+			body = "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n"
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBufferString(body)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+	staging := t.TempDir()
+	require.NoError(t, downloadAzdTemplateRepository(
+		t.Context(),
+		client,
+		&GitHubUrlInfo{RepoSlug: "example/template", Hostname: "github.com"},
+		staging,
+	))
+	require.NoError(t, validateStagedAzureYaml(staging, "example/template"))
+}
+
+func TestFullRepositoryPreservesInfrastructureProvider(t *testing.T) {
+	t.Parallel()
+
+	for _, provider := range []string{"bicep", "terraform", "microsoft.foundry", ""} {
+		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
+			require.False(t, shouldEnsureFoundryProvider(TemplateTypeAzd),
+				"full repository provider %q must remain owned by the template", provider)
+		})
+	}
+	require.True(t, shouldEnsureFoundryProvider(TemplateTypeAzureYaml),
+		"file-level unified adoption may stamp microsoft.foundry")
 }
 
 func TestFoundryProjectName(t *testing.T) {
@@ -443,7 +1215,7 @@ func TestStageAzureYamlTemplate_LocalAzureYaml(t *testing.T) {
 	azureYaml := filepath.Join(sampleDir, "azure.yaml")
 	require.NoError(t, os.WriteFile(azureYaml, []byte("name: foundry-simple\nservices: {}\n"), 0600))
 
-	flags := &initFlags{manifestPointer: azureYaml}
+	flags := &initFlags{templatePointer: azureYaml}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -460,7 +1232,7 @@ func TestStageAzureYamlTemplate_LocalAzureYmlRenamed(t *testing.T) {
 	azureYml := filepath.Join(sampleDir, "azure.yml")
 	require.NoError(t, os.WriteFile(azureYml, []byte("name: foundry-simple\nservices: {}\n"), 0600))
 
-	flags := &initFlags{manifestPointer: azureYml}
+	flags := &initFlags{templatePointer: azureYml}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -480,7 +1252,7 @@ func TestStageAzureYamlTemplate_LocalRenamesToAzureYaml(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(sampleDir, "agents"), 0750))
 	require.NoError(t, os.WriteFile(filepath.Join(sampleDir, "agents", "main.py"), []byte("print('x')\n"), 0600))
 
-	flags := &initFlags{manifestPointer: pointer}
+	flags := &initFlags{templatePointer: pointer}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -508,7 +1280,7 @@ services:
 `
 	require.NoError(t, os.WriteFile(pointer, []byte(content), 0600))
 
-	flags := &initFlags{manifestPointer: pointer}
+	flags := &initFlags{templatePointer: pointer}
 	staging, cleanup, err := stageAzureYamlTemplate(t.Context(), flags, nil, nil)
 	require.NoError(t, err)
 	defer cleanup()
@@ -738,20 +1510,6 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 			wantPath: "name",
 		},
 		{
-			name: "deprecated config-nested agent",
-			svc: &azdext.ServiceConfig{
-				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"docker": structpb.NewStructValue(&structpb.Struct{}),
-				}},
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("legacy-agent"),
-				}},
-			},
-			wantName: "legacy-agent",
-			wantPath: "config.name",
-		},
-		{
 			name: "inline definition remains authoritative during partial migration",
 			svc: &azdext.ServiceConfig{
 				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
@@ -779,9 +1537,61 @@ func TestAdoptedAgentNameConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotName, gotPath := adoptedAgentNameConfig(tt.svc)
+			gotName, gotPath, err := adoptedAgentNameConfig(tt.svc, "")
+			require.NoError(t, err)
 			require.Equal(t, tt.wantName, gotName)
 			require.Equal(t, tt.wantPath, gotPath)
+		})
+	}
+}
+
+func TestAdoptedExternalRegistryConnections_LegacyDefinitions(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(t *testing.T, projectRoot string) *azdext.ServiceConfig
+	}{
+		{
+			name: "config nested",
+			setup: func(t *testing.T, _ string) *azdext.ServiceConfig {
+				t.Helper()
+				config, err := structpb.NewStruct(map[string]any{
+					"kind":                 "hosted",
+					"name":                 "legacy-agent",
+					"registryConnectionId": "external-registry",
+				})
+				require.NoError(t, err)
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, Config: config}
+			},
+		},
+		{
+			name: "implicit disk",
+			setup: func(t *testing.T, projectRoot string) *azdext.ServiceConfig {
+				t.Helper()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectRoot, "agent.yaml"),
+					[]byte("kind: hosted\nname: legacy-agent\n"+
+						"registryConnectionId: external-registry\n"),
+					0o600,
+				))
+				return &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			connections, err := adoptedExternalRegistryConnections(
+				&azdext.ProjectConfig{
+					Path: projectRoot,
+					Services: map[string]*azdext.ServiceConfig{
+						"agent": tt.setup(t, projectRoot),
+					},
+				},
+				"",
+			)
+			require.Error(t, err)
+			require.Empty(t, connections)
 		})
 	}
 }
@@ -877,36 +1687,125 @@ func TestUpdateAdoptedAgentNames_PersistsReplacement(t *testing.T) {
 	require.Equal(t, "replacement-agent", server.configValues["name"].value)
 }
 
-func TestUpdateAdoptedAgentNames_UsesLegacyConfigPath(t *testing.T) {
+func TestUpdateAdoptedAgentNames_PersistsReplacementForRootRef(t *testing.T) {
 	t.Parallel()
 
+	projectRoot := t.TempDir()
+	mustWriteFile(
+		t,
+		filepath.Join(projectRoot, "agent.yaml"),
+		"kind: hosted\nname: existing-agent\n",
+	)
 	server := &recordingProjectServer{
+		projectPath: projectRoot,
 		existing: map[string]*azdext.ServiceConfig{
 			"agent-service": {
 				Name: "agent-service",
 				Host: AiAgentHost,
-				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"kind": structpb.NewStringValue("hosted"),
-					"name": structpb.NewStringValue("existing-agent"),
+				AdditionalProperties: &structpb.Struct{Fields: map[string]*structpb.Value{
+					"$ref": structpb.NewStringValue("./agent.yaml"),
 				}},
 			},
 		},
 	}
 	client := newProjectRecorderClient(t, server)
 
+	var checkedNames []string
 	err := updateAdoptedAgentNames(
 		t.Context(),
 		client,
-		func(_ context.Context, _ string) (string, error) {
+		func(_ context.Context, agentName string) (string, error) {
+			checkedNames = append(checkedNames, agentName)
 			return "replacement-agent", nil
 		},
 	)
 	require.NoError(t, err)
+	require.Equal(t, []string{"existing-agent"}, checkedNames)
 
 	server.mu.Lock()
 	defer server.mu.Unlock()
-	require.Equal(t, "agent-service", server.configValues["config.name"].serviceName)
-	require.Equal(t, "replacement-agent", server.configValues["config.name"].value)
+	require.Equal(t, "agent-service", server.configValues["name"].serviceName)
+	require.Equal(t, "replacement-agent", server.configValues["name"].value)
+}
+
+func TestUpdateAdoptedAgentNames_PreservesStructuredRefErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		ref   any
+		setup func(t *testing.T, projectRoot string)
+	}{
+		{
+			name: "missing ref",
+			ref:  "./missing.yaml",
+		},
+		{
+			name: "malformed ref document",
+			ref:  "./malformed.yaml",
+			setup: func(t *testing.T, projectRoot string) {
+				t.Helper()
+				mustWriteFile(t, filepath.Join(projectRoot, "malformed.yaml"), "kind: [hosted\n")
+			},
+		},
+		{
+			name: "out-of-tree missing ref",
+			ref:  "../outside/missing.yaml",
+		},
+		{
+			name: "non-string ref",
+			ref:  42,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectRoot := filepath.Join(t.TempDir(), "project")
+			require.NoError(t, os.MkdirAll(projectRoot, 0o750))
+			if tt.setup != nil {
+				tt.setup(t, projectRoot)
+			}
+			properties, err := structpb.NewStruct(map[string]any{"$ref": tt.ref})
+			require.NoError(t, err)
+			service := &azdext.ServiceConfig{
+				Name:                 "agent-service",
+				Host:                 AiAgentHost,
+				AdditionalProperties: properties,
+			}
+
+			_, _, expectedErr := adoptedAgentNameConfig(service, projectRoot)
+			expected, ok := errors.AsType[*azdext.LocalError](expectedErr)
+			require.True(t, ok)
+
+			server := &recordingProjectServer{
+				projectPath: projectRoot,
+				existing: map[string]*azdext.ServiceConfig{
+					"agent-service": service,
+				},
+			}
+			client := newProjectRecorderClient(t, server)
+			actualErr := updateAdoptedAgentNames(
+				t.Context(),
+				client,
+				func(_ context.Context, agentName string) (string, error) {
+					t.Fatalf("name resolver must not run for invalid ref %q", agentName)
+					return "", nil
+				},
+			)
+
+			actual, ok := errors.AsType[*azdext.LocalError](actualErr)
+			require.True(t, ok)
+			require.Same(t, actual, actualErr)
+			require.Equal(t, expected.Code, actual.Code)
+			require.Equal(t, expected.Category, actual.Category)
+			require.Equal(t, expected.Message, actual.Message)
+			require.Equal(t, expected.Suggestion, actual.Suggestion)
+			require.Equal(t, expected.Links, actual.Links)
+			require.NotContains(t, actual.Error(), "resolving adopted agent name")
+		})
+	}
 }
 
 func TestUpdateAdoptedAgentNames_UnchangedNamesAreNotWritten(t *testing.T) {

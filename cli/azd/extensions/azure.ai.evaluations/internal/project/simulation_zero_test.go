@@ -24,14 +24,14 @@ func TestAnExplicitZeroIsRefusedRatherThanDefaulted(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name:    "num_conversations: 0",
-			body:    "model: gpt-4o\nnum_conversations: 0\n",
-			wantErr: "simulation.num_conversations is 0",
+			name:    "numConversations: 0",
+			body:    "model: gpt-4o\nnumConversations: 0\n",
+			wantErr: "simulation.numConversations is 0",
 		},
 		{
-			name:    "max_turns: 0",
-			body:    "model: gpt-4o\nmax_turns: 0\n",
-			wantErr: "simulation.max_turns is 0",
+			name:    "maxTurns: 0",
+			body:    "model: gpt-4o\nmaxTurns: 0\n",
+			wantErr: "simulation.maxTurns is 0",
 		},
 	}
 
@@ -71,7 +71,7 @@ func TestStatedCountsInRangeStillDecode(t *testing.T) {
 
 	var sim Simulation
 	require.NoError(t, yaml.Unmarshal(
-		[]byte("model: connection/gpt-4o\nnum_conversations: 3\nmax_turns: 8\n"), &sim))
+		[]byte("model: connection/gpt-4o\nnumConversations: 3\nmaxTurns: 8\n"), &sim))
 
 	assert.Equal(t, "connection/gpt-4o", sim.Model)
 	assert.Equal(t, 3, sim.NumConversations)
@@ -82,7 +82,7 @@ func TestStatedCountsInRangeStillDecode(t *testing.T) {
 	// decoder's -- the two checks answer different questions.
 	var wide Simulation
 	require.NoError(t, yaml.Unmarshal(
-		[]byte("model: connection/gpt-4o\nnum_conversations: 9\n"), &wide))
+		[]byte("model: connection/gpt-4o\nnumConversations: 9\n"), &wide))
 	assert.Error(t, wide.Validate())
 }
 
@@ -92,7 +92,7 @@ func TestTheZeroRefusalQuotesTheSchemaMinimums(t *testing.T) {
 	t.Parallel()
 
 	var sim Simulation
-	err := yaml.Unmarshal([]byte("model: gpt-4o\nnum_conversations: 0\n"), &sim)
+	err := yaml.Unmarshal([]byte("model: gpt-4o\nnumConversations: 0\n"), &sim)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "at least 1")
 	assert.Equal(t, 1, MinNumConversations)

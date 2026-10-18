@@ -1,0 +1,1085 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
+)
+
+const agentServiceAddDefinition = `kind: prompt
+name: support-agent
+model: gpt-4.1-mini
+instructions: Help the user.
+`
+
+func TestAgentServiceAddEnvironmentNormalizesScalars(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]any{
+		"PORT":    8080,
+		"ENABLED": true,
+		"EMPTY":   nil,
+	}
+	got, err := agentServiceAddEnvironment(values)
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"PORT":    "8080",
+		"ENABLED": "true",
+		"EMPTY":   "",
+	}, got)
+	require.Equal(t, map[string]any{
+		"PORT":    8080,
+		"ENABLED": true,
+		"EMPTY":   nil,
+	}, values)
+}
+
+func TestAgentServiceAddEnvironmentRejectsCollections(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]any{
+		"mapping":  map[string]any{"nested": "value"},
+		"sequence": []any{"value"},
+	}
+	for name, value := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := agentServiceAddEnvironment(map[string]any{"VALUE": value})
+			require.ErrorContains(t, err, `env "VALUE": must be a scalar`)
+		})
+	}
+}
+
+type recordingAgentServiceAddClient struct {
+	azdext.ProjectServiceClient
+
+	projectPath string
+	getErr      error
+	addErr      error
+	setErr      error
+	getCalls    int
+	addRequests []*azdext.AddServiceRequest
+	setRequests []*azdext.SetServiceConfigSectionRequest
+}
+
+func (c *recordingAgentServiceAddClient) Get(
+	ctx context.Context,
+	_ *azdext.EmptyRequest,
+	_ ...grpc.CallOption,
+) (*azdext.GetProjectResponse, error) {
+	c.getCalls++
+	if c.getErr != nil {
+		return nil, c.getErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return &azdext.GetProjectResponse{
+		Project: &azdext.ProjectConfig{Path: c.projectPath},
+	}, nil
+}
+
+func (c *recordingAgentServiceAddClient) AddService(
+	_ context.Context,
+	request *azdext.AddServiceRequest,
+	_ ...grpc.CallOption,
+) (*azdext.EmptyResponse, error) {
+	c.addRequests = append(c.addRequests, proto.Clone(request).(*azdext.AddServiceRequest))
+	if c.addErr != nil {
+		return nil, c.addErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (c *recordingAgentServiceAddClient) SetServiceConfigSection(
+	_ context.Context,
+	request *azdext.SetServiceConfigSectionRequest,
+	_ ...grpc.CallOption,
+) (*azdext.EmptyResponse, error) {
+	c.setRequests = append(
+		c.setRequests,
+		proto.Clone(request).(*azdext.SetServiceConfigSectionRequest),
+	)
+	if c.setErr != nil {
+		return nil, c.setErr
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func executeAgentServiceAddCommand(
+	t *testing.T,
+	newProjectClient agentServiceAddClientFactory,
+	ctx context.Context,
+	args ...string,
+) (string, string, error) {
+	t.Helper()
+
+	root, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{Name: "agent"})
+	root.SilenceErrors = true
+	root.SilenceUsage = true
+	root.AddCommand(newAgentServiceAddCommandWithClientFactory(extCtx, newProjectClient))
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	if ctx != nil {
+		root.SetContext(ctx)
+	}
+	root.SetArgs(append([]string{"add"}, args...))
+	err := root.Execute()
+	return out.String(), errOut.String(), err
+}
+
+func executeAgentServiceAddWithRecordingClient(
+	t *testing.T,
+	client *recordingAgentServiceAddClient,
+	args ...string,
+) (string, string, error) {
+	t.Helper()
+	return executeAgentServiceAddCommand(
+		t,
+		func() (azdext.ProjectServiceClient, func(), error) {
+			return client, nil, nil
+		},
+		nil,
+		args...,
+	)
+}
+
+func writeAgentServiceAddProject(
+	t *testing.T,
+	projectRoot string,
+	services string,
+) {
+	t.Helper()
+	content := "name: agent-add-test\nservices:\n" + services
+	require.NoError(
+		t,
+		os.WriteFile(filepath.Join(projectRoot, "azure.yaml"), []byte(content), 0o600),
+	)
+}
+
+func writeAgentServiceAddDefinition(
+	t *testing.T,
+	projectRoot string,
+	relativePath string,
+) {
+	t.Helper()
+	definitionPath := filepath.Join(projectRoot, filepath.FromSlash(relativePath))
+	require.NoError(t, os.MkdirAll(filepath.Dir(definitionPath), 0o750))
+	require.NoError(
+		t,
+		os.WriteFile(definitionPath, []byte(agentServiceAddDefinition), 0o600),
+	)
+}
+
+func agentServiceAddFactory(
+	client azdext.ProjectServiceClient,
+) agentServiceAddClientFactory {
+	return func() (azdext.ProjectServiceClient, func(), error) {
+		return client, nil, nil
+	}
+}
+
+func TestAgentServiceAddCommand_AddsServiceWithOneSDKRequest(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    project: .
+  app:
+    host: containerapp
+    project: src/app
+    env:
+      API_KEY: ${APP_API_KEY}
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "src"), 0o750))
+
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+		t,
+		client,
+		"support-agent",
+		"--file", "./definitions/support.yaml",
+		"--project", "ai-project",
+		"--source", "./src",
+		"--output", "json",
+	)
+	require.NoError(t, err)
+	require.Empty(t, stderr)
+	require.Len(t, client.addRequests, 1)
+	require.Empty(t, client.setRequests)
+
+	added := client.addRequests[0].GetService()
+	require.Equal(t, "support-agent", added.GetName())
+	require.Equal(t, AiAgentHost, added.GetHost())
+	require.Equal(t, "src", added.GetRelativePath())
+	require.Equal(t, []string{"ai-project"}, added.GetUses())
+	require.Equal(
+		t,
+		"./definitions/support.yaml",
+		added.GetAdditionalProperties().GetFields()["$ref"].GetStringValue(),
+	)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.Equal(t, map[string]any{
+		"name":         "support-agent",
+		"host":         AiAgentHost,
+		"mutation":     "added",
+		"ref":          "./definitions/support.yaml",
+		"project":      "src",
+		"dependencies": []any{"ai-project"},
+	}, result)
+}
+
+func TestAgentServiceAddStructNumbers(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		number string
+		safe   bool
+	}{
+		{"9007199254740991", true},
+		{"9007199254740992", true},
+		{"9007199254740993", false},
+		{"9007199254740994", true},
+		{"-9007199254740991", true},
+		{"-9007199254740992", true},
+		{"-9007199254740993", false},
+		{"-9007199254740994", true},
+		{"1152921504606846976", true},
+		{"-1152921504606846976", true},
+		{"18446744073709551615", false},
+		{"0.1", true},
+	} {
+		t.Run(test.number, func(t *testing.T) {
+			var values map[string]any
+			require.NoError(t, yaml.Unmarshal(
+				[]byte("custom:\n  items:\n    - token: "+test.number+"\n"), &values,
+			))
+			result, err := agentServiceAddStruct(values)
+			if !test.safe {
+				require.ErrorContains(t, err, `field "custom.items[0].token"`)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				require.NotContains(t, err.Error(), test.number)
+				require.Nil(t, result)
+				return
+			}
+			require.NoError(t, err)
+			number := result.GetFields()["custom"].GetStructValue().
+				GetFields()["items"].GetListValue().GetValues()[0].GetStructValue().
+				GetFields()["token"].GetNumberValue()
+			expected, ok := new(big.Rat).SetString(test.number)
+			require.True(t, ok)
+			if expected.IsInt() {
+				require.Zero(t, expected.Cmp(new(big.Rat).SetFloat64(number)))
+			} else {
+				require.Equal(t, 0.1, number)
+			}
+		})
+	}
+	t.Run("existing double", func(t *testing.T) {
+		value := float64(1 << 60)
+		result, err := agentServiceAddStruct(map[string]any{"value": value})
+		require.NoError(t, err)
+		require.Equal(t, value, result.GetFields()["value"].GetNumberValue())
+	})
+}
+
+func TestAgentServiceAddCommand_RejectsUnsafeNumbersWithoutWriting(t *testing.T) {
+	t.Parallel()
+	for _, number := range []string{
+		"9007199254740993", "-9007199254740993",
+		"18446744073709551617", "-18446744073709551617",
+	} {
+		for _, field := range []string{"hooks", "config", "custom"} {
+			t.Run(number+"/"+field, func(t *testing.T) {
+				projectRoot := t.TempDir()
+				writeAgentServiceAddProject(t, projectRoot, fmt.Sprintf(`  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    uses: [ai-project]
+    $ref: ./definitions/old.yaml
+    %s:
+      items:
+        - token: %s
+`, field, number))
+				writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+				projectFile := filepath.Join(projectRoot, "azure.yaml")
+				before, err := os.ReadFile(projectFile)
+				require.NoError(t, err)
+				client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+				stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+					t, client, "support-agent", "--file", "./definitions/support.yaml",
+				)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				require.ErrorContains(t, err, "items[0].token")
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, "invalid_service_config", localError.Code)
+				require.NotContains(t, err.Error()+stdout+stderr, number)
+				require.Empty(t, client.addRequests)
+				require.Empty(t, client.setRequests)
+				after, readErr := os.ReadFile(projectFile)
+				require.NoError(t, readErr)
+				require.Equal(t, before, after)
+			})
+		}
+	}
+}
+
+func TestAgentServiceAddCommand_RejectsUnsafeDependencyProperties(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    custom:
+      items:
+        - token: 9007199254740993
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+	projectFile := filepath.Join(projectRoot, "azure.yaml")
+	before, err := os.ReadFile(projectFile)
+	require.NoError(t, err)
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+		t, client, "support-agent", "--file", "./definitions/support.yaml",
+	)
+	require.ErrorContains(t, err, `reading service "ai-project" properties`)
+	require.ErrorContains(t, err, `field "custom.items[0].token"`)
+	require.NotContains(t, err.Error()+stdout+stderr, "9007199254740993")
+	require.Empty(t, client.addRequests)
+	require.Empty(t, client.setRequests)
+	after, readErr := os.ReadFile(projectFile)
+	require.NoError(t, readErr)
+	require.Equal(t, before, after)
+}
+
+func TestAgentServiceAddCommand_RejectsLossyScalarTokens(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		fields string
+		path   string
+		value  string
+	}{
+		{"date", "apiVersion: 2025-01-01", "apiVersion", "2025-01-01"},
+		{"timestamp", "custom: 2025-01-01T12:00:00Z", "custom", "2025-01-01T12:00:00Z"},
+		{"decimal", "custom: 0.123456789012345678901", "custom", "0.123456789012345678901"},
+		{"exponent", "custom: 1.23456789012345678901e-1", "custom", "1.23456789012345678901e-1"},
+		{"nested decimal", "custom: {items: [{token: 9007199254740993.0}]}",
+			"custom.items[0].token", "9007199254740993.0"},
+		{"alias", "custom: {original: &value 0.123456789012345678901, copied: *value}",
+			"custom.original", "0.123456789012345678901"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    $ref: ./definitions/old.yaml
+    `+test.fields+"\n")
+			writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+			before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+			client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+			stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+				t, client, "support-agent", "--file", "./definitions/support.yaml",
+			)
+			require.ErrorContains(t, err, test.path)
+			require.ErrorContains(t, err, "cannot be preserved losslessly")
+			localError, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, "invalid_service_config", localError.Code)
+			require.NotContains(t, err.Error()+stdout+stderr, test.value)
+			require.Empty(t, client.addRequests)
+			require.Empty(t, client.setRequests)
+			require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+		})
+	}
+}
+
+func TestAgentServiceAddCommand_RejectsLossyProjectScalars(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name   string
+		fields string
+		path   string
+		value  string
+	}{
+		{"date", "customDate: 2025-01-01", "customDate", "2025-01-01"},
+		{"decimal", "customDecimal: 0.123456789012345678901",
+			"customDecimal", "0.123456789012345678901"},
+		{"nested", "custom: {items: [{token: 9007199254740993.0}]}",
+			"custom.items[0].token", "9007199254740993.0"},
+		{"overflow", "customNumber: 18446744073709551617",
+			"customNumber", "18446744073709551617"},
+		{"alias", "custom: {original: &value 0.123456789012345678901, copied: *value}",
+			"custom.original", "0.123456789012345678901"},
+	} {
+		for _, mutation := range []string{"add", "update"} {
+			t.Run(test.name+"/"+mutation, func(t *testing.T) {
+				projectRoot := t.TempDir()
+				services := "  ai-project:\n    host: azure.ai.project\n"
+				if mutation == "update" {
+					services += "  support-agent:\n    host: azure.ai.agent\n    $ref: ./definitions/old.yaml\n"
+				}
+				require.NoError(t, os.WriteFile(
+					filepath.Join(projectRoot, "azure.yaml"),
+					[]byte("name: fixture\n"+test.fields+"\nservices:\n"+services),
+					0o600,
+				))
+				writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+				before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+				client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+				stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+					t, client, "support-agent", "--file", "./definitions/support.yaml",
+				)
+				require.ErrorContains(t, err, `field "`+test.path+`"`)
+				require.ErrorContains(t, err, "cannot be preserved losslessly")
+				localError, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, "invalid_service_config", localError.Code)
+				require.NotContains(t, err.Error()+stdout+stderr, test.value)
+				require.Empty(t, client.addRequests)
+				require.Empty(t, client.setRequests)
+				require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+			})
+		}
+	}
+}
+
+func TestReadAgentServiceAddProject_PreservesSafeScalarTokens(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    apiVersion: "2025-01-01"
+    custom:
+      date: "2025-01-01"
+      decimal: 0.1
+      exponent: 1e-3
+      underscored: 1_000.5
+      hexadecimal: 0x10
+      leadingPoint: .5
+      trailingPoint: 1.
+      integerFloat: 9007199254740994.0
+      original: &number 0.25
+      copied: *number
+`)
+	project, err := readAgentServiceAddProject(projectRoot)
+	require.NoError(t, err)
+	service, err := agentServiceAddStruct(project.rawServices["support-agent"])
+	require.NoError(t, err)
+	require.Equal(t, "2025-01-01", service.GetFields()["apiVersion"].GetStringValue())
+	custom := service.GetFields()["custom"].GetStructValue()
+	require.Equal(t, "2025-01-01", custom.GetFields()["date"].GetStringValue())
+	for key, expected := range map[string]float64{
+		"decimal": 0.1, "exponent": 0.001, "underscored": 1000.5,
+		"hexadecimal": 16, "leadingPoint": 0.5, "trailingPoint": 1,
+		"integerFloat": 9007199254740994, "original": 0.25, "copied": 0.25,
+	} {
+		require.Equal(t, expected, custom.GetFields()[key].GetNumberValue(), key)
+	}
+}
+
+func snapshotAgentServiceAddProjectTree(t *testing.T, projectRoot string) map[string]string {
+	t.Helper()
+	root, err := os.OpenRoot(projectRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
+	snapshot := map[string]string{}
+	require.NoError(t, fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			snapshot[path] = "directory"
+			return nil
+		}
+		content, err := root.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		snapshot[path] = "file:" + string(content)
+		return nil
+	}))
+	return snapshot
+}
+
+func TestAgentServiceAddCommand_RejectsOutputBeforeClient(t *testing.T) {
+	t.Parallel()
+	for _, format := range []string{"table", "none", "invalid"} {
+		t.Run(format, func(t *testing.T) {
+			called := false
+			_, _, err := executeAgentServiceAddCommand(t,
+				func() (azdext.ProjectServiceClient, func(), error) {
+					called = true
+					return nil, nil, fmt.Errorf("client must not be created")
+				},
+				nil, "support-agent", "--file", "support.yaml", "--output", format,
+			)
+			require.ErrorContains(t, err, "output")
+			require.ErrorContains(t, err, format)
+			require.False(t, called)
+		})
+	}
+}
+
+func TestAgentServiceAddCommand_OutputHelpAndMetadata(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	root := NewRootCommand()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetArgs([]string{"add", "--help"})
+	require.NoError(t, root.Execute())
+	require.Contains(t, out.String(), "supported: default, json")
+	require.NotContains(t, out.String(), `default "table"`)
+
+	metadata := azdext.GenerateExtensionMetadata("1.0", "azure.ai.agents", root)
+	for _, command := range metadata.Commands {
+		if len(command.Name) == 0 || command.Name[len(command.Name)-1] != "add" {
+			continue
+		}
+		for _, flag := range command.Flags {
+			if flag.Name == "output" {
+				require.Equal(t, []string{"default", "json"}, flag.ValidValues)
+				require.Equal(t, "default", flag.Default)
+				return
+			}
+		}
+	}
+	t.Fatal("add output flag metadata not found")
+}
+
+func TestAgentServiceAddCommand_AddsJSONDefinitionAsProjectRootRef(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+`)
+	definitionPath := filepath.Join(projectRoot, "definitions", "support.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(definitionPath), 0o750))
+	require.NoError(t, os.WriteFile(
+		definitionPath,
+		[]byte(`{"kind":"prompt","name":"support-agent","model":"gpt-4.1-mini","instructions":"Help the user."}`),
+		0o600,
+	))
+
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	_, _, err := executeAgentServiceAddWithRecordingClient(
+		t,
+		client,
+		"support-agent",
+		"--file", "./definitions/support.json",
+		"--output", "json",
+	)
+	require.NoError(t, err)
+	require.Len(t, client.addRequests, 1)
+	require.Empty(t, client.setRequests)
+	require.Equal(
+		t,
+		"./definitions/support.json",
+		client.addRequests[0].GetService().GetAdditionalProperties().
+			GetFields()["$ref"].GetStringValue(),
+	)
+}
+
+func TestAgentServiceAddCommand_UpdatesCompleteServiceAndPreservesTemplates(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    project: .
+  support-agent:
+    host: azure.ai.agent
+    project: ${AGENT_PROJECT}
+    uses:
+      - ai-project
+      - manual-tool
+    env:
+      API_KEY: ${AGENT_API_KEY}
+    customField: ${CUSTOM_VALUE}
+    $ref: ./definitions/old.yaml
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+		t,
+		client,
+		"support-agent",
+		"--file", "./definitions/support.yaml",
+		"--output", "json",
+	)
+	require.NoError(t, err)
+	require.Len(t, client.setRequests, 1)
+	require.Empty(t, client.addRequests)
+
+	update := client.setRequests[0]
+	require.Equal(t, "support-agent", update.GetServiceName())
+	require.Empty(t, update.GetPath())
+	fields := update.GetSection().GetFields()
+	require.Equal(t, "${AGENT_PROJECT}", fields["project"].GetStringValue())
+	require.Equal(t, "${CUSTOM_VALUE}", fields["customField"].GetStringValue())
+	require.Equal(
+		t,
+		"${AGENT_API_KEY}",
+		fields["env"].GetStructValue().GetFields()["API_KEY"].GetStringValue(),
+	)
+	require.Equal(
+		t,
+		"./definitions/support.yaml",
+		fields["$ref"].GetStringValue(),
+	)
+	require.Equal(
+		t,
+		[]any{"ai-project", "manual-tool"},
+		fields["uses"].GetListValue().AsSlice(),
+	)
+	require.Contains(t, stderr, "could not safely parse the existing agent definition")
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.Equal(t, map[string]any{
+		"name":         "support-agent",
+		"host":         AiAgentHost,
+		"mutation":     "updated",
+		"ref":          "./definitions/support.yaml",
+		"project":      "${AGENT_PROJECT}",
+		"dependencies": []any{"ai-project", "manual-tool"},
+	}, result)
+	assert.NotContains(t, stdout, "Warning:")
+}
+
+func TestAgentServiceAddCommand_UnchangedDoesNotWrite(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    project: .
+  support-agent:
+    host: azure.ai.agent
+    project: definitions
+    uses:
+      - ai-project
+    $ref: ./definitions/support.yaml
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+	before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+
+	client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+	stdout, stderr, err := executeAgentServiceAddWithRecordingClient(
+		t,
+		client,
+		"support-agent",
+		"--file", "./definitions/support.yaml",
+		"--output", "json",
+	)
+	require.NoError(t, err)
+	require.Empty(t, stderr)
+	require.Empty(t, client.addRequests)
+	require.Empty(t, client.setRequests)
+
+	var result map[string]any
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.Equal(t, "unchanged", result["mutation"])
+	require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+}
+
+func TestAgentServiceAddCommand_ValidationErrorsDoNotWrite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		services string
+		flags    []string
+		want     string
+	}{
+		{
+			name: "missing Project",
+			services: `  app:
+    host: containerapp
+`,
+			want: "no azure.ai.project service",
+		},
+		{
+			name: "multiple Projects despite explicit selector",
+			services: `  ai-project:
+    host: azure.ai.project
+  other-project:
+    host: azure.ai.project
+`,
+			flags: []string{"--project", "ai-project"},
+			want:  "multiple azure.ai.project services",
+		},
+		{
+			name: "project selector mismatch",
+			services: `  ai-project:
+    host: azure.ai.project
+`,
+			flags: []string{"--project", "other-project"},
+			want:  "does not match the sole azure.ai.project service",
+		},
+		{
+			name: "non-Agent service collision",
+			services: `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: containerapp
+`,
+			want: `has host "containerapp"`,
+		},
+		{
+			name: "empty explicit source",
+			services: `  ai-project:
+    host: azure.ai.project
+`,
+			flags: []string{"--source", ""},
+			want:  "--source must name a project directory",
+		},
+		{
+			name: "source outside project",
+			services: `  ai-project:
+    host: azure.ai.project
+`,
+			flags: []string{"--source", "../outside"},
+			want:  "invalid project source",
+		},
+		{
+			name: "missing definition file",
+			services: `  ai-project:
+    host: azure.ai.project
+`,
+			flags: []string{"--file", "./missing.yaml"},
+			want:  "was not found",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			projectRoot := t.TempDir()
+			writeAgentServiceAddProject(t, projectRoot, test.services)
+			writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+			before := snapshotAgentServiceAddProjectTree(t, projectRoot)
+			client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+			flags := append(
+				[]string{"--file", "./definitions/support.yaml"},
+				test.flags...,
+			)
+
+			_, _, err := executeAgentServiceAddWithRecordingClient(
+				t,
+				client,
+				append([]string{"support-agent"}, flags...)...,
+			)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.want)
+			assert.Empty(t, client.addRequests)
+			assert.Empty(t, client.setRequests)
+			require.Equal(t, before, snapshotAgentServiceAddProjectTree(t, projectRoot))
+		})
+	}
+}
+
+func TestAgentServiceAddCommand_RequiresFileBeforeCreatingClient(t *testing.T) {
+	t.Parallel()
+
+	clientFactoryCalls := 0
+	_, _, err := executeAgentServiceAddCommand(
+		t,
+		func() (azdext.ProjectServiceClient, func(), error) {
+			clientFactoryCalls++
+			return &recordingAgentServiceAddClient{}, nil, nil
+		},
+		nil,
+		"support-agent",
+	)
+	require.ErrorContains(t, err, `required flag(s) "file" not set`)
+	assert.Zero(t, clientFactoryCalls)
+}
+
+func TestAgentServiceAddCommand_PreservesCancellationAndRPCFailures(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+
+	t.Run("canceled context", func(t *testing.T) {
+		t.Parallel()
+		client := &recordingAgentServiceAddClient{projectPath: projectRoot}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		_, _, err := executeAgentServiceAddCommand(
+			t,
+			agentServiceAddFactory(client),
+			ctx,
+			"support-agent",
+			"--file", "./definitions/support.yaml",
+		)
+		require.ErrorIs(t, err, context.Canceled)
+		assert.Empty(t, client.addRequests)
+		assert.Empty(t, client.setRequests)
+	})
+
+	t.Run("Get error", func(t *testing.T) {
+		t.Parallel()
+		expected := errors.New("get failed")
+		client := &recordingAgentServiceAddClient{
+			projectPath: projectRoot,
+			getErr:      expected,
+		}
+
+		_, _, err := executeAgentServiceAddWithRecordingClient(
+			t,
+			client,
+			"support-agent",
+			"--file", "./definitions/support.yaml",
+		)
+		require.ErrorIs(t, err, expected)
+		assert.Empty(t, client.addRequests)
+		assert.Empty(t, client.setRequests)
+	})
+
+	t.Run("AddService error", func(t *testing.T) {
+		t.Parallel()
+		expected := errors.New("add failed")
+		client := &recordingAgentServiceAddClient{
+			projectPath: projectRoot,
+			addErr:      expected,
+		}
+
+		_, _, err := executeAgentServiceAddWithRecordingClient(
+			t,
+			client,
+			"support-agent",
+			"--file", "./definitions/support.yaml",
+		)
+		require.ErrorIs(t, err, expected)
+		require.Len(t, client.addRequests, 1)
+		assert.Empty(t, client.setRequests)
+	})
+
+	t.Run("SetServiceConfigSection error", func(t *testing.T) {
+		t.Parallel()
+		updateRoot := t.TempDir()
+		writeAgentServiceAddProject(t, updateRoot, `  ai-project:
+    host: azure.ai.project
+  support-agent:
+    host: azure.ai.agent
+    project: old-source
+    $ref: ./definitions/old.yaml
+`)
+		writeAgentServiceAddDefinition(t, updateRoot, "definitions/support.yaml")
+		expected := errors.New("update failed")
+		client := &recordingAgentServiceAddClient{
+			projectPath: updateRoot,
+			setErr:      expected,
+		}
+
+		_, _, err := executeAgentServiceAddWithRecordingClient(
+			t,
+			client,
+			"support-agent",
+			"--file", "./definitions/support.yaml",
+		)
+		require.ErrorIs(t, err, expected)
+		require.Len(t, client.setRequests, 1)
+		assert.Empty(t, client.addRequests)
+	})
+}
+
+func TestAgentServiceAddHumanOutputDistinguishesMutations(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		mutation agentServiceMutation
+		want     string
+	}{
+		{mutation: agentServiceMutationAdded, want: "Added Agent service"},
+		{mutation: agentServiceMutationUpdated, want: "Updated Agent service"},
+		{mutation: agentServiceMutationUnchanged, want: "is unchanged"},
+	} {
+		t.Run(string(test.mutation), func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			err := writeAgentServiceAddHumanResult(&out, agentServiceAddResult{
+				Name:     "support-agent",
+				Mutation: string(test.mutation),
+			})
+			require.NoError(t, err)
+			assert.Contains(t, out.String(), test.want)
+			assert.Contains(t, out.String(), "azd deploy support-agent")
+			assert.Contains(t, out.String(), "azd up")
+		})
+	}
+}
+
+type agentServiceAddFileServer struct {
+	azdext.UnimplementedProjectServiceServer
+
+	projectRoot string
+	setRequests []*azdext.SetServiceConfigSectionRequest
+}
+
+func (s *agentServiceAddFileServer) Get(
+	_ context.Context,
+	_ *azdext.EmptyRequest,
+) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{
+		Project: &azdext.ProjectConfig{Path: s.projectRoot},
+	}, nil
+}
+
+func (s *agentServiceAddFileServer) SetServiceConfigSection(
+	_ context.Context,
+	request *azdext.SetServiceConfigSectionRequest,
+) (*azdext.EmptyResponse, error) {
+	s.setRequests = append(s.setRequests, proto.Clone(request).(*azdext.SetServiceConfigSectionRequest))
+	if request.GetPath() != "" {
+		return nil, fmt.Errorf("expected a complete service section update")
+	}
+
+	projectFile := filepath.Join(s.projectRoot, "azure.yaml")
+	data, err := os.ReadFile(projectFile)
+	if err != nil {
+		return nil, err
+	}
+	var document map[string]any
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil, err
+	}
+	services, ok := document["services"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("project file has no services mapping")
+	}
+	services[request.GetServiceName()] = request.GetSection().AsMap()
+	updated, err := yaml.Marshal(document)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(projectFile, updated, 0o600); err != nil {
+		return nil, err
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func TestAgentServiceAddCommand_PersistsThroughProjectServiceClient(t *testing.T) {
+	t.Parallel()
+
+	projectRoot := t.TempDir()
+	writeAgentServiceAddProject(t, projectRoot, `  ai-project:
+    host: azure.ai.project
+    project: .
+  support-agent:
+    host: azure.ai.agent
+    project: ${AGENT_PROJECT}
+    uses:
+      - ai-project
+      - manual-tool
+    env:
+      API_KEY: ${AGENT_API_KEY}
+    customField: ${CUSTOM_VALUE}
+    safeLargeInteger: 9007199254740994
+    safePowerOfTwo: 1152921504606846976
+    $ref: ./definitions/old.yaml
+customDate: "2025-01-01"
+customDecimal: 0.1
+customTemplate: ${CUSTOM_VALUE}
+`)
+	writeAgentServiceAddDefinition(t, projectRoot, "definitions/support.yaml")
+
+	server := &agentServiceAddFileServer{projectRoot: projectRoot}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	grpcServer := grpc.NewServer()
+	azdext.RegisterProjectServiceServer(grpcServer, server)
+	go func() {
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(grpcServer.Stop)
+
+	connection, err := grpc.NewClient(
+		listener.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, connection.Close())
+	})
+	client := azdext.NewProjectServiceClient(connection)
+
+	stdout, _, err := executeAgentServiceAddCommand(
+		t,
+		func() (azdext.ProjectServiceClient, func(), error) {
+			return client, nil, nil
+		},
+		nil,
+		"support-agent",
+		"--file", "./definitions/support.yaml",
+		"--output", "json",
+	)
+	require.NoError(t, err)
+	require.Len(t, server.setRequests, 1)
+	require.Empty(t, server.setRequests[0].GetPath())
+	require.Equal(t, float64(9007199254740994),
+		server.setRequests[0].GetSection().GetFields()["safeLargeInteger"].GetNumberValue())
+	require.Equal(t, float64(1152921504606846976),
+		server.setRequests[0].GetSection().GetFields()["safePowerOfTwo"].GetNumberValue())
+
+	data, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	require.NoError(t, err)
+	var document map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &document))
+	require.Equal(t, "2025-01-01", document["customDate"])
+	require.Equal(t, 0.1, document["customDecimal"])
+	require.Equal(t, "${CUSTOM_VALUE}", document["customTemplate"])
+	services, ok := document["services"].(map[string]any)
+	require.True(t, ok)
+	agent, ok := services["support-agent"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "${AGENT_PROJECT}", agent["project"])
+	require.Equal(t, "${CUSTOM_VALUE}", agent["customField"])
+	require.Equal(t, "./definitions/support.yaml", agent["$ref"])
+	require.Equal(t, []any{"ai-project", "manual-tool"}, agent["uses"])
+	environment, ok := agent["env"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "${AGENT_API_KEY}", environment["API_KEY"])
+	assert.True(t, strings.Contains(stdout, `"mutation": "updated"`))
+}

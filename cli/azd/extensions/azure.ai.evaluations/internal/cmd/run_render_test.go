@@ -40,7 +40,7 @@ func scoredRows() []eval_api.OutputItem {
 func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), false))
+	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), resultListView{}))
 
 	text := out.String()
 	assert.Equal(t, 1, strings.Count(text, "oi_2"),
@@ -76,7 +76,7 @@ func TestRenderResultsIsOneRowPerSample(t *testing.T) {
 func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), true))
+	require.NoError(t, renderResults(&out, "an-eval", run, scoredRows(), resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "2 failed",
@@ -84,8 +84,9 @@ func TestRenderResultsNamesEveryFailedEvaluator(t *testing.T) {
 	assert.NotContains(t, text, "Answered a different question.",
 		"the reason is one evaluator's account of the row, and lives in `output show`")
 	assert.NotContains(t, text, "oi_1", "--failed-only must drop the passing sample")
-	assert.Contains(t, text, "1 of 2 test cases failed",
-		"the status reads as the verb, which is what a reader says out loud")
+	assert.Contains(t, text, "Showing 1 failed test case on this page.",
+		"the number shown is not the full run's failure count")
+	assert.NotContains(t, text, "Full run:", "no service counts were reported")
 }
 
 // --failed-only means failed.
@@ -104,7 +105,8 @@ func TestFailedOnlyExcludesRowsNothingScored(t *testing.T) {
 
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, filterItems(items, map[string]bool{itemFailed: true}), true))
+	require.NoError(t, renderResults(&out, "an-eval", run,
+		filterItems(items, map[string]bool{itemFailed: true}), resultListView{failedOnly: true}))
 
 	text := out.String()
 	assert.Contains(t, text, "oi_fail")
@@ -123,7 +125,7 @@ func TestErroredRowIsReportedAsErrored(t *testing.T) {
 
 	var out bytes.Buffer
 	run := &eval_api.OpenAIEvalRun{ID: "evalrun_1", Status: "completed"}
-	require.NoError(t, renderResults(&out, "an-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, items, resultListView{}))
 
 	text := out.String()
 	assert.Contains(t, text, itemErrored, "the status column states the outcome directly")
@@ -150,13 +152,13 @@ func TestListingPrintsItsFollowUpCommandsResolved(t *testing.T) {
 	}}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "an-eval", run, items, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, items, resultListView{}))
 	text := out.String()
 
 	assert.Contains(t, text,
-		"azd ai eval run output show oi_first --eval support-agent-dataset-eval --run evalrun_1",
+		"azd ai eval run output show oi_first --eval an-eval --run evalrun_1",
 		"the detail command names a row from the table above it:\n%s", text)
-	assert.Contains(t, text, "azd ai eval run output export --eval support-agent-dataset-eval --run evalrun_1")
+	assert.Contains(t, text, "azd ai eval run output export --eval an-eval --run evalrun_1")
 	assert.NotContains(t, text, "<item>",
 		"a line with a placeholder in it reads like a command and is not one")
 }
@@ -213,7 +215,7 @@ func TestRenderRunHeaderNamesTheEval(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderRun(&out, run, map[string]float64{"relevance": 4.1}))
+	require.NoError(t, renderRun(&out, run, &runOutputSummary{means: map[string]float64{"relevance": 4.1}}))
 	text := out.String()
 
 	assert.Contains(t, text, "Run        evalrun_9")
@@ -247,7 +249,7 @@ func TestRenderRunOmitsTheScoreColumnWithoutMeans(t *testing.T) {
 	assert.NotContains(t, without.String(), "MEAN SCORE")
 
 	var with bytes.Buffer
-	require.NoError(t, renderRun(&with, run, map[string]float64{"relevance": 4.15}))
+	require.NoError(t, renderRun(&with, run, &runOutputSummary{means: map[string]float64{"relevance": 4.15}}))
 	assert.Contains(t, with.String(), "MEAN SCORE")
 	assert.Contains(t, with.String(), "4.2", "the mean is shown to one decimal")
 }
@@ -354,7 +356,7 @@ func TestCriterionTableAccountsForEverySample(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	require.NoError(t, renderResults(&out, "an-eval", run, nil, false))
+	require.NoError(t, renderResults(&out, "an-eval", run, nil, resultListView{}))
 	text := out.String()
 
 	for _, header := range []string{"EVALUATOR", "PASS", "FAIL", "SKIP", "ERROR", "SCORED", "PASS RATE"} {

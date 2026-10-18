@@ -7,6 +7,9 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext/preview"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // aiProjectHost is the azure.yaml host owned by this extension.
@@ -15,6 +18,7 @@ import (
 const aiProjectHost = "azure.ai.project"
 
 var _ azdext.ServiceTargetProvider = (*projectServiceTarget)(nil)
+var _ preview.ServiceTargetPreviewProvider = (*projectServiceTarget)(nil)
 
 // projectServiceTarget owns the azure.ai.project host.
 // The microsoft.foundry provider provisions projects, deployments,
@@ -98,4 +102,18 @@ func (p *projectServiceTarget) Deploy(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
 	return &azdext.ServiceDeployResult{}, nil
+}
+
+// Preview is silent because deployment is a no-op; it does not preview provisioning.
+func (p *projectServiceTarget) Preview(
+	ctx context.Context,
+	serviceConfig *v1beta.ServiceConfig,
+) (*v1beta.ServiceDeployPreviewResult, error) {
+	return &v1beta.ServiceDeployPreviewResult{
+		Data: &structpb.Struct{Fields: map[string]*structpb.Value{
+			"status":                  structpb.NewStringValue("noOp"),
+			"scope":                   structpb.NewStringValue("deployment"),
+			"infrastructurePreviewed": structpb.NewBoolValue(false),
+		}},
+	}, nil
 }

@@ -27,7 +27,7 @@ JSON File Shape
     "connections": [
       { "name": "my-mcp" },
       { "name": "my-search", "index": "products" },
-      { "name": "my-bing",   "instance_name": "docs-config" },
+      { "name": "my-bing",   "instanceName": "docs-config" },
       { "name": "my-a2a" }
     ]
   }
@@ -39,14 +39,14 @@ YAML File Shape
     - name: my-search
       index: products
     - name: my-bing
-      instance_name: docs-config
+      instanceName: docs-config
     - name: my-a2a
 
 Fields
   connections     Required. List of existing project connections to attach.
                   Each entry needs 'name' (the project connection short name).
                   'index' is required only for CognitiveSearch connections.
-                  'instance_name' is required only for
+                  'instanceName' is required only for
                   GroundingWithCustomSearch connections.
                   Supported connection categories: RemoteTool (MCP),
                   CognitiveSearch (Azure AI Search), RemoteA2A,

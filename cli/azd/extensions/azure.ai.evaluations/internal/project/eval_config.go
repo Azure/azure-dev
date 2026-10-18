@@ -6,6 +6,7 @@
 package project
 
 import (
+	"slices"
 	"strings"
 
 	"azureaieval/internal/messages"
@@ -24,6 +25,21 @@ type EvalConfig struct {
 	Datasets   []DatasetDecl   `yaml:"datasets,omitempty"   json:"datasets,omitempty"`
 	Evaluators []EvaluatorDecl `yaml:"evaluators,omitempty" json:"evaluators,omitempty"`
 	Evals      []Eval          `yaml:"evals,omitempty"      json:"evals,omitempty"`
+}
+
+// WithCatalogEvaluatorPins copies an eval and resolves only authored catalog pins.
+// Explicit reference pins win; service-resolved latest versions are not edits.
+func (c *EvalConfig) WithCatalogEvaluatorPins(group Eval) Eval {
+	group.Evaluators = slices.Clone(group.Evaluators)
+	for i := range group.Evaluators {
+		ref := &group.Evaluators[i]
+		if ref.Version == "" {
+			if decl, ok := c.EvaluatorDeclaration(ref.Evaluator); ok {
+				ref.Version = decl.Version
+			}
+		}
+	}
+	return group
 }
 
 // DatasetDecl is a catalog entry. A local File is uploaded on deploy; without
@@ -61,7 +77,7 @@ type EvaluatorDecl struct {
 	// DisplayName is what the catalog shows. Kept in the declaration rather than
 	// in the rubric file, which stays focused on what a human edits: type,
 	// dimensions and pass_threshold.
-	DisplayName string `yaml:"display_name,omitempty" json:"display_name,omitempty"`
+	DisplayName string `yaml:"displayName,omitempty" json:"display_name,omitempty"`
 	// Categories and SupportedEvaluationLevels are catalog and lifecycle
 	// metadata the service returned when the evaluator was generated. They are
 	// recorded so that publishing a later version keeps them: without them a new
@@ -71,9 +87,9 @@ type EvaluatorDecl struct {
 	// The complete returned list, not the level of the first eval that happens
 	// to reference it -- narrowing to that makes an evaluator usable at one
 	// level and silently unusable at the other.
-	Categories []string `yaml:"categories,omitempty" json:"categories,omitempty"`
+	Categories []string `yaml:"categories,omitempty" json:"categories,omitzero"`
 	//nolint:lll // the key is the service's, and wrapping the tag hides it
-	SupportedEvaluationLevels []string       `yaml:"supported_evaluation_levels,omitempty" json:"supported_evaluation_levels,omitempty"`
+	SupportedEvaluationLevels []string       `yaml:"supportedEvaluationLevels,omitempty" json:"supported_evaluation_levels,omitzero"`
 	Version                   string         `yaml:"version,omitempty"    json:"version,omitempty"`
 	Definition                map[string]any `yaml:"definition,omitempty" json:"definition,omitempty"`
 }
@@ -89,8 +105,8 @@ type Eval struct {
 	Description     string                 `yaml:"description,omitempty"       json:"description,omitempty"`
 	Dataset         string                 `yaml:"dataset,omitempty"           json:"dataset,omitempty"`
 	Source          *SourceDecl            `yaml:"source,omitempty"            json:"source,omitempty"`
-	EvaluationLevel string                 `yaml:"evaluation_level,omitempty"  json:"evaluation_level,omitempty"`
-	MaxSamples      int                    `yaml:"max_samples,omitempty"       json:"max_samples,omitempty"`
+	EvaluationLevel string                 `yaml:"evaluationLevel,omitempty"  json:"evaluation_level,omitempty"`
+	MaxSamples      int                    `yaml:"maxSamples,omitempty"       json:"max_samples,omitempty"`
 	Evaluators      evalcore.EvaluatorList `yaml:"evaluators,omitempty"        json:"evaluators,omitempty"`
 	Target          *Target                `yaml:"target,omitempty"            json:"target,omitempty"`
 	// Simulation, when present, says the eval creates its conversations from
@@ -98,34 +114,95 @@ type Eval struct {
 	Simulation *Simulation `yaml:"simulation,omitempty" json:"simulation,omitempty"`
 }
 
+// UnmarshalYAML preserves source/dataset exclusivity even for an explicitly empty dataset key.
+func (e *Eval) UnmarshalYAML(unmarshal func(any) error) error {
+	type evalYAML Eval
+	var decoded evalYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	if decoded.Source != nil {
+		var declared map[string]any
+		if err := unmarshal(&declared); err != nil {
+			return err
+		}
+		if _, present := declared["dataset"]; present && decoded.Dataset == "" {
+			return messages.DatasetAndSourceDeclareTheSameThing()
+		}
+	}
+	*e = Eval(decoded)
+	return nil
+}
+
 // SourceDecl says where an eval's rows come from when they are not a dataset.
 type SourceDecl struct {
 	Type          string   `yaml:"type,omitempty"            json:"type,omitempty"`
-	LookbackHours int      `yaml:"lookback_hours,omitempty"  json:"lookback_hours,omitempty"`
-	MaxTraces     int      `yaml:"max_traces,omitempty"      json:"max_traces,omitempty"`
-	AgentName     string   `yaml:"agent_name,omitempty"      json:"agent_name,omitempty"`
-	ResponseIDs   []string `yaml:"response_ids,omitempty"    json:"response_ids,omitempty"`
-	MaxTurns      int      `yaml:"max_turns,omitempty"       json:"max_turns,omitempty"`
+	File          string   `yaml:"file,omitempty"            json:"file,omitempty"`
+	LookbackHours int      `yaml:"lookbackHours,omitempty"  json:"lookback_hours,omitempty"`
+	MaxTraces     int      `yaml:"maxTraces,omitempty"      json:"max_traces,omitempty"`
+	AgentName     string   `yaml:"agentName,omitempty"      json:"agent_name,omitempty"`
+	ResponseIDs   []string `yaml:"responseIds,omitempty"    json:"response_ids,omitempty"`
+	MaxTurns      int      `yaml:"maxTurns,omitempty"       json:"max_turns,omitempty"`
 	// AgentVersion pins which deployment's spans are read. Without it the
 	// service chooses, and a redeployed agent is evaluated against whichever
 	// version it picked.
-	AgentVersion string `yaml:"agent_version,omitempty"   json:"agent_version,omitempty"`
+	AgentVersion string `yaml:"agentVersion,omitempty"   json:"agent_version,omitempty"`
 	// StartTime and EndTime bound the window explicitly. LookbackHours stays
 	// supported, read as a start bound measured back from EndTime, or from now
 	// when nothing closes the window.
-	StartTime string `yaml:"start_time,omitempty"      json:"start_time,omitempty"`
-	EndTime   string `yaml:"end_time,omitempty"        json:"end_time,omitempty"`
+	StartTime string `yaml:"startTime,omitempty"      json:"start_time,omitempty"`
+	EndTime   string `yaml:"endTime,omitempty"        json:"end_time,omitempty"`
 }
 
 // Source types an eval can read rows from.
 const (
 	SourceTypeTraces    = "traces"
 	SourceTypeResponses = "responses"
+	SourceTypeLocal     = "local"
 )
+
+// IsLocalSource reports an explicit local-byte source, never inferred registry absence.
+func (e *Eval) IsLocalSource() bool {
+	return e != nil && e.Source != nil && e.Source.Type == SourceTypeLocal
+}
+
+// LocalSourcePath resolves an explicit local source against its configuration base.
+func (e *Eval) LocalSourcePath(baseDir string) string {
+	if !e.IsLocalSource() {
+		return ""
+	}
+	return ResolveSource(baseDir, e.Source.File)
+}
+
+// UnmarshalYAML rejects fields that a local source cannot honor, including explicit zero values.
+func (s *SourceDecl) UnmarshalYAML(unmarshal func(any) error) error {
+	type sourceYAML SourceDecl
+	var decoded sourceYAML
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	var declared map[string]any
+	if err := unmarshal(&declared); err != nil {
+		return err
+	}
+	var inert []string
+	for key := range declared {
+		if (decoded.Type == SourceTypeLocal && key != "type" && key != "file") ||
+			(decoded.Type != SourceTypeLocal && key == "file") {
+			inert = append(inert, key)
+		}
+	}
+	if len(inert) > 0 {
+		slices.Sort(inert)
+		return messages.SourceFieldsNotRead(decoded.Type, inert)
+	}
+	*s = SourceDecl(decoded)
+	return nil
+}
 
 // DefaultScaffoldMaxTraces is the cap init writes on a trace-backed eval, so a
 // first run is bounded rather than taking the service's own default of 1000.
-// Deleting max_traces from the file restores that default.
+// Deleting maxTraces from the file restores that default.
 const DefaultScaffoldMaxTraces = 20
 
 // Target names what the run invokes.

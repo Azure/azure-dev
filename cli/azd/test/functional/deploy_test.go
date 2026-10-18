@@ -131,6 +131,8 @@ func Test_CLI_Deploy_SlotDeployment(t *testing.T) {
 	// Deploy to main app on initial `azd up` — explicit targeting required when slots exist
 	cli.Env = append(cli.Env, "AZD_DEPLOY_API_SLOT_NAME=production")
 
+	defer cleanupDeployments(ctx, t, cli, session, envName)
+
 	// Defer cleanup to delete resource group regardless of test outcome
 	// The resource group name follows the pattern: rg-{envName}
 	t.Cleanup(func() {
@@ -306,6 +308,8 @@ func Test_CLI_Deploy_StoppedWebApp(t *testing.T) {
 	// App Service "No available instances to satisfy this request" capacity failures that East US 2
 	// has been hitting on live nightly runs. This test is live-only, so there is no cassette to update.
 	cli.Env = append(cli.Env, "AZURE_LOCATION=westus3")
+
+	defer cleanupDeployments(ctx, t, cli, session, envName)
 
 	t.Cleanup(func() {
 		cleanupRg(context.Background(), t, cli, session, "rg-"+envName)

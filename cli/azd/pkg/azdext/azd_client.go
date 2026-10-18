@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -37,6 +38,9 @@ type AzdClient struct {
 	promptClient        PromptServiceClient
 	deploymentClient    DeploymentServiceClient
 	eventsClient        EventServiceClient
+	betaEventsClient    v1beta.EventServiceClient
+	commandResultClient v1beta.CommandResultServiceClient
+	commandResultOnce   sync.Once
 	composeClient       v1beta.ComposeServiceClient
 	workflowClient      WorkflowServiceClient
 	extensionClient     ExtensionServiceClient
@@ -174,6 +178,12 @@ func (c *AzdClient) Project() ProjectServiceClient {
 	return c.projectClient
 }
 
+// ProjectBeta returns the preview project client, including read-only AddService
+// capability discovery and typed completed-failure acknowledgments.
+func (c *AzdClient) ProjectBeta() v1beta.ProjectServiceClient {
+	return v1beta.NewProjectServiceClient(c.connection)
+}
+
 // Environment returns the environment service client.
 func (c *AzdClient) Environment() EnvironmentServiceClient {
 	if c.environmentClient == nil {
@@ -217,6 +227,25 @@ func (c *AzdClient) Events() EventServiceClient {
 	}
 
 	return c.eventsClient
+}
+
+// EventsBeta returns the preview event service client.
+func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
+	if c.betaEventsClient == nil {
+		c.betaEventsClient = v1beta.NewEventServiceClient(c.connection)
+	}
+	return c.betaEventsClient
+}
+
+// CommandResult returns the preview command result service client.
+func (c *AzdClient) CommandResult() v1beta.CommandResultServiceClient {
+	c.commandResultOnce.Do(func() {
+		if c.commandResultClient == nil {
+			c.commandResultClient = v1beta.NewCommandResultServiceClient(c.connection)
+		}
+	})
+
+	return c.commandResultClient
 }
 
 // Compose returns the preview compose service client.
@@ -277,7 +306,9 @@ func (c *AzdClient) Account() AccountServiceClient {
 	return c.accountClient
 }
 
-// AccountBeta returns the preview account service client, including current principal lookup.
+// AccountBeta returns the beta account service client.
+//
+// Deprecated: use Account, including GetCurrentPrincipal in azd 1.36.0 or later.
 func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
 	return v1beta.NewAccountServiceClient(c.connection)
 }
@@ -319,13 +350,13 @@ func (c *AzdClient) Validation() ValidationServiceClient {
 }
 
 // Telemetry returns the telemetry service client used to report extension
-// usage events. See extensions/microsoft.azd.demo/internal/cmd/telemetry.go
-// for a worked example.
+// usage events using the stable v1 contract in azd 1.36.0 or later.
+// Earlier SDKs returned a beta client; callers must migrate beta request types to v1.
 //
 // A fresh client is returned on each call rather than caching it on the
 // AzdClient struct. Service target providers can deploy services concurrently,
 // so an unsynchronized lazily-written cache field could race on first use. The
 // generated client wrapper is cheap and shares the existing connection.
-func (c *AzdClient) Telemetry() v1beta.TelemetryServiceClient {
-	return v1beta.NewTelemetryServiceClient(c.connection)
+func (c *AzdClient) Telemetry() TelemetryServiceClient {
+	return NewTelemetryServiceClient(c.connection)
 }

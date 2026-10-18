@@ -6,7 +6,6 @@ package cmd
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -39,26 +38,12 @@ import (
 )
 
 const (
-	// ConfigFile is the legacy project-level state file for local agent context.
-	// Kept only for migration purposes.
-	ConfigFile = ".foundry-agent.json"
-
 	// DefaultPort is the default port for local agent servers.
 	DefaultPort = 8088
 )
 
-// AgentLocalContext holds local state persisted in UserConfig.
-// This struct is kept as an in-memory representation for migration compatibility.
-type AgentLocalContext struct {
-	AgentName     string            `json:"agent_name,omitempty"`
-	Sessions      map[string]string `json:"sessions,omitempty"`
-	Conversations map[string]string `json:"conversations,omitempty"`
-	Invocations   map[string]string `json:"invocations,omitempty"`
-}
-
-// resolveConfigPath returns the full path to the legacy .foundry-agent.json file.
-// Kept for fetchOpenAPISpec (disk caching) and migration.
-func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
+// resolveProjectCacheDir returns the current environment's project-local cache directory.
+func resolveProjectCacheDir(ctx context.Context, azdClient *azdext.AzdClient) (string, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return "", fmt.Errorf("failed to get project config: %w", err)
@@ -76,7 +61,7 @@ func resolveConfigPath(ctx context.Context, azdClient *azdext.AzdClient) (string
 		return "", fmt.Errorf("no current environment set; run 'azd env select' or 'azd init' first")
 	}
 
-	return filepath.Join(projectResponse.Project.Path, ".azure", envResponse.Environment.Name, ConfigFile), nil
+	return filepath.Join(projectResponse.Project.Path, ".azure", envResponse.Environment.Name), nil
 }
 
 // resolveProjectPath returns the project path from the azd client.
@@ -118,60 +103,7 @@ func readmeExistsForProject(ctx context.Context, azdClient *azdext.AzdClient) fu
 	}
 }
 
-// loadLocalContext reads the legacy .foundry-agent.json state file.
-// Used only for migration. New code should use getContextValue/setContextValue.
-func loadLocalContext(configPath string) *AgentLocalContext {
-	data, err := os.ReadFile(configPath) //nolint:gosec // G304: configPath is resolved from azd project root, not user input
-	if err != nil {
-		return &AgentLocalContext{}
-	}
-	var agentCtx AgentLocalContext
-	if err := json.Unmarshal(data, &agentCtx); err != nil {
-		return &AgentLocalContext{}
-	}
-	return &agentCtx
-}
-
-// migrateFromLegacyFile checks for the legacy .foundry-agent.json and migrates
-// its contents to UserConfig. The old file is deleted after successful migration.
-// This is a best-effort operation; errors are logged and do not block the caller.
-func migrateFromLegacyFile(ctx context.Context, azdClient *azdext.AzdClient) {
-	configFilePath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return
-	}
-
-	if _, err := os.Stat(configFilePath); os.IsNotExist(err) {
-		return
-	}
-
-	agentCtx := loadLocalContext(configFilePath)
-
-	allSucceeded := true
-	anyData := len(agentCtx.Sessions) > 0 || len(agentCtx.Conversations) > 0
-	for key, val := range agentCtx.Sessions {
-		if err := setAgentSpecificContextValue(ctx, azdClient, "sessions", key, val); err != nil {
-			log.Printf("migrateFromLegacyFile: failed to migrate session %q: %v", key, err)
-			allSucceeded = false
-		}
-	}
-	for key, val := range agentCtx.Conversations {
-		if err := setAgentSpecificContextValue(ctx, azdClient, "conversations", key, val); err != nil {
-			log.Printf("migrateFromLegacyFile: failed to migrate conversation %q: %v", key, err)
-			allSucceeded = false
-		}
-	}
-
-	if anyData && allSucceeded {
-		if err := os.Remove(configFilePath); err != nil {
-			log.Printf("migrateFromLegacyFile: failed to delete legacy file %s: %v", configFilePath, err)
-		} else {
-			log.Printf("migrateFromLegacyFile: migrated and deleted %s", configFilePath)
-		}
-	}
-}
-
-// saveContextValue persists a value into the named field of the config store.
+// saveContextValue persists a value into the named field of the extension state store.
 // storeField selects the map: "sessions" or "conversations".
 func saveContextValue(
 	ctx context.Context,
@@ -228,35 +160,11 @@ func resolveLocalAgentKeyWithPort(
 	return buildLocalAgentKey(port, agentName, "", projectPath)
 }
 
-// legacyKeysForLocal returns the legacy keys that the old code would have used
-// for this agent in local mode.
-func legacyKeysForLocal(serviceName, agentName string) []string {
-	keys := []string{}
-	if serviceName != "" {
-		keys = append(keys, serviceName+"-local")
-	}
-	if agentName != "" && agentName != serviceName {
-		keys = append(keys, agentName+"-local")
-	}
-	keys = append(keys, "local")
-	return keys
-}
-
-// legacyKeysForRemote returns the legacy keys that the old code would have used
-// for this agent in remote mode.
-func legacyKeysForRemote(agentName string) []string {
-	if agentName == "" {
-		return nil
-	}
-	return []string{agentName}
-}
-
-// resolveStoredID resolves a persisted ID (session, conversation, etc.) from the config store.
-// It checks (in order): explicit flag value, persisted value in the config store, then either
+// resolveStoredID resolves a persisted ID (session, conversation, etc.) from extension state.
+// It checks (in order): explicit flag value, persisted value in extension state, then either
 // returns "" (generateIfMissing=false, for remote mode where the server assigns the ID) or
 // generates and persists a new UUID (generateIfMissing=true, for local mode).
 // storeField selects which map to use: "sessions" or "conversations".
-// legacyKeys are old-format keys to check as fallback during migration.
 func resolveStoredID(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -265,7 +173,6 @@ func resolveStoredID(
 	forceNew bool,
 	storeField string,
 	generateIfMissing bool,
-	legacyKeys ...string,
 ) (string, error) {
 	if explicit != "" {
 		// Persist the explicit ID so that subsequent commands can find it.
@@ -277,8 +184,7 @@ func resolveStoredID(
 	}
 
 	if !forceNew {
-		// Try config store with fallback to legacy keys.
-		val, err := getContextValueWithFallback(ctx, azdClient, storeField, agentKey, legacyKeys)
+		val, err := getAgentSpecificContextValue(ctx, azdClient, storeField, agentKey)
 		if err != nil {
 			if generateIfMissing {
 				return uuid.NewString(), nil
@@ -300,34 +206,6 @@ func resolveStoredID(
 	return newID, nil
 }
 
-// resolveStoredIDFromPath is a testable variant of resolveStoredID that operates on the
-// config store directly. The configPath parameter is ignored (kept for API compat in tests)
-// and operations go through UserConfig.
-func resolveStoredIDFromPath(
-	configPath string,
-	agentKey string,
-	explicit string,
-	forceNew bool,
-	storeField string,
-	generateIfMissing bool,
-) (string, error) {
-	// This function is only used in tests. For the new implementation, tests should
-	// use the config store directly. This wrapper creates a temporary client.
-	// In practice, tests should be updated to use getContextValue/setContextValue.
-	_ = configPath // no longer used
-
-	if explicit != "" {
-		return explicit, nil
-	}
-	if forceNew && !generateIfMissing {
-		return "", nil
-	}
-	if !generateIfMissing {
-		return "", nil
-	}
-	return uuid.NewString(), nil
-}
-
 // printSessionStatus prints the session line for the invoke banner.
 // label is the formatted prefix (e.g. "Session:  " or "Session:      ").
 func printSessionStatus(label, sid string) {
@@ -338,11 +216,8 @@ func printSessionStatus(label, sid string) {
 	}
 }
 
-// captureResponseSession reads the x-agent-session-id header from a response
-// and saves it when the caller had no pre-existing session (sid == "").
-// label is the formatted prefix for printing (e.g. "Session:  "). When label
-// is empty the session is persisted silently (used by --output raw mode so
-// stdout stays pristine).
+// captureResponseSession persists a server-assigned session and returns the
+// effective session ID. An empty label suppresses session output.
 func captureResponseSession(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -350,47 +225,77 @@ func captureResponseSession(
 	sid string,
 	resp *http.Response,
 	label string,
-) {
-	if sid != "" || azdClient == nil {
-		return
+) string {
+	if sid != "" {
+		return sid
 	}
 	if newSid := resp.Header.Get("x-agent-session-id"); newSid != "" {
-		saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
-		if label != "" {
+		if azdClient != nil {
+			saveContextValue(ctx, azdClient, agentKey, newSid, "sessions")
+		}
+		if label != "" && azdClient != nil {
 			fmt.Printf("%s%s (assigned by server)\n", label, newSid)
 		}
+		return newSid
 	}
+	return ""
 }
 
-// fetchOpenAPISpec fetches the OpenAPI spec from a running agent and caches it on disk.
-// baseURL is the root URL (e.g., "http://localhost:8088" or "{endpoint}/agents/{name}/endpoint/protocols").
-// suffix is "local" or "remote", used in the cached filename.
-// apiVersion, when non-empty, is appended as the "?api-version=<v>" query parameter.
-// Local agents do not require this; remote Foundry endpoints reject requests without it.
-// If forceRefresh is false and the file already exists, the fetch is skipped.
-//
-// Returns the on-disk path to the cached spec on success (whether freshly
-// written or already cached), plus a fresh flag that is true only when this
-// call actually wrote the file. Callers that want to surface the "OpenAPI
-// spec saved to ..." line gate on the fresh flag; callers that just need the
-// path (or want silence) ignore it. Returns ("", false) on any failure;
-// errors are silently swallowed because the spec is best-effort.
+const openAPIProbeTimeout = 10 * time.Second
+
+// openAPIProbeError omits URLs and bodies from diagnostics.
+type openAPIProbeError struct {
+	stage string
+	cause error
+}
+
+func (e *openAPIProbeError) Error() string {
+	return "OpenAPI metadata discovery: " + e.stage
+}
+
+func (e *openAPIProbeError) Unwrap() error {
+	return e.cause
+}
+
+// fetchOpenAPISpec caches metadata using the existing remote session.
+// Remote discovery requires sessionID and bounds configuration RPCs
+// separately from HTTP. Local discovery does not use a session ID.
+// The fresh result indicates that this call wrote the cache.
 func fetchOpenAPISpec(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
+	transport http.RoundTripper,
 	baseURL string,
 	agentName string,
 	suffix string,
 	bearerToken string,
 	apiVersion string,
+	sessionID string,
+	requestHeaders http.Header,
 	forceRefresh bool,
-) (string, bool) {
-	configPath, err := resolveConfigPath(ctx, azdClient)
-	if err != nil {
-		return "", false
+) (string, bool, error) {
+	remote := suffix == "remote"
+	if remote && sessionID == "" {
+		return "", false, nil
 	}
-	configDir := filepath.Dir(configPath)
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
+	}
 
+	configCtx := ctx
+	cancel := func() {}
+	if remote {
+		configCtx, cancel = context.WithTimeout(ctx, openAPIProbeTimeout)
+		defer cancel()
+	}
+	configDir, err := resolveProjectCacheDir(configCtx, azdClient)
+	cancel()
+	if err != nil {
+		return "", false, &openAPIProbeError{stage: "configuration lookup failed", cause: err}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, &openAPIProbeError{stage: "canceled", cause: err}
+	}
 	// Sanitize agentName to prevent path traversal in the cached filename.
 	safeName := strings.ReplaceAll(agentName, "..", "_")
 	safeName = strings.ReplaceAll(safeName, "/", "_")
@@ -400,43 +305,64 @@ func fetchOpenAPISpec(
 
 	if !forceRefresh {
 		if _, err := os.Stat(specFile); err == nil {
-			return specFile, false // already cached; surface the path without re-fetching
+			return specFile, false, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", false, &openAPIProbeError{stage: "cache lookup failed", cause: err}
 		}
 	}
 
 	specURL := baseURL + "/invocations/docs/openapi.json"
+	query := url.Values{}
 	if apiVersion != "" {
-		specURL += "?api-version=" + url.QueryEscape(apiVersion)
+		query.Set("api-version", apiVersion)
 	}
+	if sessionID != "" {
+		query.Set("agent_session_id", sessionID)
+	}
+	if len(query) > 0 {
+		specURL += "?" + query.Encode()
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, specURL, nil)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "request construction failed", cause: err}
+	}
+	if requestHeaders != nil {
+		req.Header = requestHeaders.Clone()
+	}
+	if req.Header == nil {
+		req.Header = make(http.Header)
 	}
 	if bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+bearerToken)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Transport: transport, Timeout: openAPIProbeTimeout}
+	if remote {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
 	resp, err := client.Do(req) //nolint:gosec // G704: URL constructed from azd environment or localhost
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "HTTP request failed", cause: err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", false
+		return "", false, &openAPIProbeError{stage: fmt.Sprintf("HTTP status %d", resp.StatusCode)}
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "response read failed", cause: err}
 	}
 
 	if err := os.WriteFile(specFile, body, 0600); err != nil {
-		return "", false
+		return "", false, &openAPIProbeError{stage: "cache write failed", cause: err}
 	}
 
-	return specFile, true
+	return specFile, true, nil
 }
 
 // resolveConversationID resolves a Foundry conversation ID.
@@ -454,7 +380,6 @@ func resolveConversationID(
 	agentName string,
 	apiVersion string,
 	options *agent_api.SessionRequestOptions,
-	legacyKeys ...string,
 ) (string, error) {
 	if explicit != "" {
 		// Persist the explicit conversation ID so subsequent commands can find it.
@@ -463,7 +388,7 @@ func resolveConversationID(
 	}
 
 	if !forceNew {
-		val, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, legacyKeys)
+		val, err := getAgentSpecificContextValue(ctx, azdClient, "conversations", agentKey)
 		if err == nil && val != "" {
 			return val, nil
 		}
@@ -623,8 +548,9 @@ func fileExists(path string) bool {
 
 // AgentServiceInfo holds the resolved deployment information for an agent service.
 type AgentServiceInfo struct {
-	IsVoice                     bool                               // populated only when voice classification is requested
+	IsHosted                    bool                               // populated only when hosted classification is requested
 	ServiceName                 string                             // azure.yaml service key
+	EnvironmentName             string                             // environment used for deployed metadata, when available
 	AgentName                   string                             // deployed name; may use brownfield fallback
 	Version                     string                             // deployed agent version from env
 	AgentEndpoint               string                             // full AGENT_{SVC}_ENDPOINT URL (includes name + version)
@@ -634,9 +560,8 @@ type AgentServiceInfo struct {
 	ProtocolEndpointsStale      bool
 	ProjectEndpoint             string // adopted project endpoint for brownfield fallback
 	// ServiceDir is the absolute path to the service's source directory
-	// (project.Path joined with svc.RelativePath). It points at the folder
-	// that contains the service's agent.yaml, when one was scaffolded by
-	// `azd ai agent init`. May be empty if the resolver could not compute it.
+	// (project.Path joined with svc.RelativePath). May be empty if the resolver
+	// could not compute it.
 	ServiceDir string
 }
 
@@ -753,6 +678,16 @@ func resolveAgentProtocolEndpointsFromValues(
 	return endpoints, true, false, false
 }
 
+// ambiguousAgentServicesError lets callers provide command-specific selection guidance.
+type ambiguousAgentServicesError struct {
+	names []string
+}
+
+func (e *ambiguousAgentServicesError) Error() string {
+	return fmt.Sprintf("multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
+		"Provide the service name as a positional argument to specify which one to use", strings.Join(e.names, ", "))
+}
+
 // promptForAgentService prompts the user to select one of multiple azure.ai.agent services.
 // In no-prompt mode it returns an error listing the available services.
 func promptForAgentService(
@@ -770,11 +705,7 @@ func promptForAgentService(
 		for i, s := range services {
 			names[i] = s.Name
 		}
-		return nil, fmt.Errorf(
-			"multiple azure.ai.agent services found in azure.yaml: %s\n\n"+
-				"Provide the service name as a positional argument to specify which one to use",
-			strings.Join(names, ", "),
-		)
+		return nil, &ambiguousAgentServicesError{names: names}
 	}
 
 	choices := make([]*azdext.SelectChoice, len(services))
@@ -1100,20 +1031,36 @@ func expandBrownfieldServiceValues(
 type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
 
 type agentServiceResolutionOptions struct {
+	environmentName                string
 	allowBrownfieldInlineName      bool
 	brownfieldAgentExists          brownfieldAgentExistenceResolver
 	includeProtocolEndpoints       bool
 	matchDeployedAgentName         bool
 	rejectVoiceInvocation          bool
+	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
-	includeVoiceKind               bool
+	includeHostedKind              bool
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
 
-func withVoiceKind() agentServiceResolutionOption {
+func withHostedKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
-		options.includeVoiceKind = true
+		options.includeHostedKind = true
+	}
+}
+
+// withAgentEnvironment resolves deployment metadata from an explicitly selected environment.
+// Environment.GetCurrent returns the project default, not the SDK's --environment override.
+func withAgentEnvironment(name string) agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.environmentName = name
+	}
+}
+
+func withHostedAgentKind() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.requireHostedKind = true
 	}
 }
 
@@ -1128,9 +1075,14 @@ var errVoiceInvocationUnsupported = exterrors.Validation(
 func voiceInvocationError(svc *azdext.ServiceConfig, projectRoot string) error {
 	// An unreadable definition is not evidence of a non-voice agent. Preserve the
 	// detection error so invocation cannot fall back to stale deployment metadata.
-	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot, os.Getenv("AGENT_DEFINITION_PATH"))
+	isVoice, err := agentkind.IsPromptVoice(svc, projectRoot)
 	if err != nil {
-		return fmt.Errorf("determining agent kind for invocation: %w", err)
+		return exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			"determining agent kind for invocation",
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	if isVoice {
 		return errVoiceInvocationUnsupported
@@ -1213,22 +1165,45 @@ func resolveAgentServiceFromProject(
 			return nil, err
 		}
 	}
-
-	info := &AgentServiceInfo{ServiceName: svc.Name}
-	if resolutionOptions.includeVoiceKind {
-		isVoice, err := agentkind.IsPromptVoice(svc, projectConfig.Path, os.Getenv("AGENT_DEFINITION_PATH"))
+	if resolutionOptions.requireHostedKind {
+		kind, err := agentkind.Kind(svc, projectConfig.Path)
 		if err != nil {
-			return nil, fmt.Errorf("determining agent kind: %w", err)
+			return nil, exterrors.ValidationFromError(err, exterrors.CodeInvalidServiceConfig,
+				"determining agent kind for State Stores", "fix the agent service configuration in azure.yaml")
 		}
-		info.IsVoice = isVoice
+		// Let the service determine support when the definition does not declare a kind.
+		if kind != "" && kind != string(agent_yaml.AgentKindHosted) {
+			return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
+				fmt.Sprintf("State Stores require a hosted agent; service %q has kind %q", svc.Name, kind),
+				"select the hosted agent service (not a prompt or voice wrapper)")
+		}
 	}
 
+	info := &AgentServiceInfo{ServiceName: svc.Name}
+	if resolutionOptions.includeHostedKind && os.Getenv("AGENT_DEFINITION_PATH") == "" {
+		// Telemetry classification must never change whether invocation proceeds.
+		// Use the deploy path's definition loader so an invalid or non-hosted
+		// project service cannot be counted as a hosted invoke.
+		if _, hosted, _, err := projectpkg.LoadHostedAgentDefinition(svc, projectConfig.Path); err == nil {
+			info.IsHosted = hosted
+		}
+	}
 	if envValues == nil {
 		// Resolve deployed metadata from azd environment.
 		// Deployed name reflects the created resource.
-		envResponse, err := azdClient.Environment().GetCurrent(
-			ctx, &azdext.EmptyRequest{},
-		)
+		var envResponse *azdext.EnvironmentResponse
+		var err error
+		if resolutionOptions.environmentName != "" {
+			envResponse, err = azdClient.Environment().Get(ctx, &azdext.GetEnvironmentRequest{
+				Name: resolutionOptions.environmentName,
+			})
+			if err != nil {
+				return info, fmt.Errorf("getting environment %q for agent service %q: %w",
+					resolutionOptions.environmentName, svc.Name, err)
+			}
+		} else {
+			envResponse, err = azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+		}
 		if err != nil {
 			if resolutionOptions.allowBrownfieldInlineName {
 				return info, fmt.Errorf(
@@ -1241,7 +1216,7 @@ func resolveAgentServiceFromProject(
 		}
 		if envResponse == nil || envResponse.Environment == nil ||
 			envResponse.Environment.Name == "" {
-			if resolutionOptions.allowBrownfieldInlineName {
+			if resolutionOptions.allowBrownfieldInlineName || resolutionOptions.environmentName != "" {
 				return info, fmt.Errorf(
 					"current environment is not available for agent service %q",
 					svc.Name,
@@ -1250,10 +1225,11 @@ func resolveAgentServiceFromProject(
 			return info, nil
 		}
 
+		info.EnvironmentName = envResponse.Environment.Name
 		values, err := getAgentEnvironmentValues(
 			ctx,
 			azdClient,
-			envResponse.Environment.Name,
+			info.EnvironmentName,
 		)
 		if err != nil {
 			if resolutionOptions.includeProtocolEndpoints {
@@ -1265,7 +1241,7 @@ func resolveAgentServiceFromProject(
 					),
 				}
 			}
-			if resolutionOptions.allowBrownfieldInlineName {
+			if resolutionOptions.allowBrownfieldInlineName || resolutionOptions.environmentName != "" {
 				return info, fmt.Errorf(
 					"reading environment %q for agent service %q: %w",
 					envResponse.Environment.Name,
@@ -1355,8 +1331,8 @@ type ServiceRunContext struct {
 	StartupCommand        string            // startupCommand from AdditionalProperties (may be empty)
 	ServiceEnvironment    map[string]string // values already expanded by azd core
 	HasServiceEnvironment bool              // service declares env: even when empty
-	// Definition is the resolved agent definition (from the inline azure.yaml
-	// entry or a legacy agent.yaml). It is nil when no definition can be resolved.
+	// Definition is the resolved hosted-agent definition from the azure.yaml
+	// service entry or its explicit root $ref. It is nil for supported non-hosted kinds.
 	Definition *agent_yaml.ContainerAgent
 }
 
@@ -1371,13 +1347,10 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		svc,
 		project.Path,
 	); err != nil {
-		return nil, exterrors.Validation(
+		return nil, exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf(
-				"failed to resolve agent service %s: %s",
-				svc.Name,
-				err,
-			),
+			fmt.Sprintf("failed to resolve agent service %s", svc.Name),
 			"fix the agent service configuration in azure.yaml",
 		)
 	}
@@ -1400,11 +1373,20 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	projectpkg.WarnOrphanedConfigEnv(svc)
 
 	var definition *agent_yaml.ContainerAgent
-	if def, _, source, defErr := projectpkg.LoadAgentDefinition(svc, project.Path); defErr == nil {
+	def, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, project.Path)
+	if err != nil {
+		return nil, exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
+			"fix the agent service configuration in azure.yaml",
+		)
+	}
+	if isHosted {
 		definition = &def
-		if source.IsLegacy() {
-			projectpkg.WarnLegacyAgentShape(source)
-		}
+	}
+	if source.IsLegacy() {
+		projectpkg.WarnLegacyAgentShape(source)
 	}
 
 	// A read failure must not be read as "no env: declared":
@@ -1508,7 +1490,7 @@ func resolveStartupCommandForInit(
 	return strings.TrimSpace(resp.Value), nil
 }
 
-// resolveAgentProtocol loads the agent.yaml manifest for the service and returns the
+// resolveAgentProtocol loads the service's agent definition and returns the
 // protocol that the agent implements (e.g. "responses", "invocations") along with
 // the resolved service name. The service name is useful for callers that need to
 // avoid a redundant resolveAgentService call (and its interactive prompt) later.
@@ -1535,11 +1517,12 @@ func resolveAgentProtocol(
 	if err := voiceInvocationError(svc, proj.Path); err != nil {
 		return "", "", err
 	}
-	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
+	hosted, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return "", "", exterrors.Validation(
+		return "", "", exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("could not resolve the agent definition for %s: %s", svc.Name, err),
+			fmt.Sprintf("could not resolve the agent definition for %s", svc.Name),
 			"ensure the agent definition is present in azure.yaml or run `azd ai agent init`",
 		)
 	}
@@ -1580,15 +1563,12 @@ func resolveAgentInvocableProtocols(
 		)
 	}
 
-	hosted, isHosted, source, err := projectpkg.LoadAgentDefinition(svc, proj.Path)
+	hosted, isHosted, source, err := projectpkg.LoadHostedAgentDefinition(svc, proj.Path)
 	if err != nil {
-		return nil, exterrors.Validation(
+		return nil, exterrors.ValidationFromError(
+			err,
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf(
-				"could not resolve the agent definition for %s: %s",
-				svc.Name,
-				err,
-			),
+			fmt.Sprintf("could not resolve the agent definition for %s", svc.Name),
 			"ensure the agent definition is present in azure.yaml or "+
 				"run `azd ai agent init`",
 		)
@@ -1651,9 +1631,9 @@ func protocolFromContainerAgent(
 		if p == "" {
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidParameter,
-				"agent.yaml declares a protocol entry, "+
+				"the agent definition declares a protocol entry, "+
 					"but its protocol field is empty",
-				"set a non-empty protocol value in agent.yaml",
+				"set a non-empty protocol value in the azure.yaml agent service",
 			)
 		}
 		if p.IsInvocable() {
@@ -1670,7 +1650,7 @@ func protocolFromContainerAgent(
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			fmt.Sprintf(
-				"agent.yaml declares only non-invocable protocols: %s",
+				"the agent definition declares only non-invocable protocols: %s",
 				strings.Join(names, ", "),
 			),
 			"azd can only invoke agents using the responses, invocations, or a2a protocols",
@@ -1703,7 +1683,7 @@ func multiProtocolError(
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		fmt.Sprintf(
-			"agent.yaml declares multiple protocols (%s)",
+			"the agent definition declares multiple protocols (%s)",
 			strings.Join(names, ", "),
 		),
 		fmt.Sprintf(

@@ -1827,7 +1827,7 @@ func writeEmbeddedTemplates(
 // writeParametersFile emits infra/main.parameters.json in the standard ARM
 // parameter file shape. Only synthesizer-known values (`deployments`,
 // `includeAcr`) are written; deploy-time parameters (foundryProjectName,
-// location, resourceGroupName, principalId, resourceTokenSalt, tags) are
+// location, resourceGroupName, resourceTokenSalt, tags) are
 // supplied by the provider at `azd provision`. The result is a partial
 // parameters file -- enough for `bicep build` to validate, not for a
 // standalone `az deployment sub create`.
@@ -1852,8 +1852,6 @@ func writeParametersFile(
 		wrapped["location"] = paramValue{Value: "${AZURE_LOCATION}"}
 		wrapped["foundryProjectName"] = paramValue{Value: "${AZURE_AI_PROJECT_NAME=${AZURE_ENV_NAME}}"}
 		wrapped["resourceTokenSalt"] = paramValue{Value: "${AZD_RESOURCE_TOKEN_SALT}"}
-		wrapped["principalId"] = paramValue{Value: "${AZURE_PRINCIPAL_ID}"}
-		wrapped["principalType"] = paramValue{Value: "${AZURE_PRINCIPAL_TYPE}"}
 	}
 
 	doc := map[string]any{
@@ -2300,7 +2298,7 @@ func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (
 // reads this file and substitutes the ${...} placeholders from the azd
 // environment at provision time. The synthesized `deployments` are written
 // literally; deploy-time inputs (location,
-// resource_group_name, foundry_project_name, principal_id, subscription_id,
+// resource_group_name, foundry_project_name, subscription_id,
 // environment_name, resource_token_salt) are left as azd environment placeholders.
 //
 // include_acr is NOT written: whether ACR is provisioned is decided at eject
@@ -2321,7 +2319,6 @@ func writeTfvarsFile(
 		"resource_group_name":  "${AZURE_RESOURCE_GROUP}",
 		"environment_name":     "${AZURE_ENV_NAME}",
 		"foundry_project_name": "${AZURE_AI_PROJECT_NAME}",
-		"principal_id":         "${AZURE_PRINCIPAL_ID}",
 		"resource_token_salt":  "${AZD_RESOURCE_TOKEN_SALT}",
 	}
 	if layer {

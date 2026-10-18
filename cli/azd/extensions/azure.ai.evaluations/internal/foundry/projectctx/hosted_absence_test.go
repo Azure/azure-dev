@@ -82,3 +82,27 @@ func TestAFailureToAnswerIsReportedRatherThanSkipped(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectAbsentRequiresTheProjectSentinel(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		absent bool
+	}{
+		{"confirmed project absence", status.Error(codes.Unknown, azdNoProject), true},
+		{"wrapped confirmed absence", fmt.Errorf("lookup: %w", status.Error(codes.Unknown, azdNoProject)), true},
+		{"unsupported", status.Error(codes.Unimplemented, "Project.Get unavailable"), false},
+		{"transport", status.Error(codes.Unavailable, "connection refused"), false},
+		{"unqualified not found", status.Error(codes.NotFound, "not found"), false},
+		{"environment", status.Error(codes.Unknown, azdNoDefaultEnvironment), false},
+		{"named environment", status.Error(codes.Unknown, "'dev': "+azdNoSuchEnvironment), false},
+		{"permission", status.Error(codes.PermissionDenied, azdNoProject), false},
+		{"local non-status error", errors.New(azdNoProject), false},
+		{"prose containing sentinel", status.Error(codes.Unknown, "unexpected: "+azdNoProject), false},
+		{"success", nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.absent, ProjectAbsent(tc.err))
+		})
+	}
+}

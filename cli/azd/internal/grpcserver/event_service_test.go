@@ -9,6 +9,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/commandresult"
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -135,12 +136,12 @@ func (m *noOpEnvironmentManager) Delete(ctx context.Context, name string) error 
 	return nil
 }
 
-func (m *noOpEnvironmentManager) EnvPath(env *environment.Environment) string {
-	return ""
+func (m *noOpEnvironmentManager) EnvPath(env *environment.Environment) (string, error) {
+	return "", nil
 }
 
-func (m *noOpEnvironmentManager) ConfigPath(env *environment.Environment) string {
-	return ""
+func (m *noOpEnvironmentManager) ConfigPath(env *environment.Environment) (string, error) {
+	return "", nil
 }
 
 func (m *noOpEnvironmentManager) InvalidateEnvCache(ctx context.Context, envName string) error {
@@ -202,7 +203,14 @@ func createTestEventService() (*eventService, *MockEventStreamingServer) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 	return service.(*eventService), mockStream
 }
 
@@ -238,6 +246,7 @@ func createBrokerForEventHandler(
 	t *testing.T,
 	extensionID string,
 	responseFn func(*azdext.EventMessage) *azdext.EventMessage,
+	progressFns ...func(*azdext.EventMessage) *azdext.EventMessage,
 ) (*grpcbroker.MessageBroker[azdext.EventMessage], context.Context, func()) {
 	t.Helper()
 
@@ -252,6 +261,11 @@ func createBrokerForEventHandler(
 		recvCh: make(chan *azdext.EventMessage, 1),
 	}
 	stream.sendFn = func(msg *azdext.EventMessage) error {
+		if len(progressFns) > 0 && progressFns[0] != nil {
+			if progress := progressFns[0](msg); progress != nil {
+				stream.recvCh <- progress
+			}
+		}
 		if response := responseFn(msg); response != nil {
 			stream.recvCh <- response
 		}
@@ -429,6 +443,107 @@ func TestEventService_createProjectEventHandler(t *testing.T) {
 	assert.NotNil(t, handler)
 }
 
+func TestEventService_createProjectEventHandler_DoesNotCollectFollowUp(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		status    string
+		message   string
+		initial   string
+		want      string
+		wantError bool
+	}{
+		{
+			name:      "completed post event",
+			eventName: "postdeploy",
+			status:    "completed",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "completed pre event",
+			eventName: "predeploy",
+			status:    "completed",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "completed post event ignores message",
+			eventName: "postdeploy",
+			status:    "completed",
+			message:   "not follow-up",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+		{
+			name:      "failed post event",
+			eventName: "postdeploy",
+			status:    "failed",
+			message:   "hook failed",
+			initial:   "old guidance",
+			want:      "old guidance",
+			wantError: true,
+		},
+		{
+			name:      "incomplete post event",
+			eventName: "postdeploy",
+			status:    "running",
+			initial:   "old guidance",
+			want:      "old guidance",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, _ := createTestEventService()
+			extension := createTestExtension()
+			projectConfig, err := service.lazyProject.GetValue()
+			require.NoError(t, err)
+
+			broker, streamCtx, cleanup := createBrokerForEventHandler(
+				t,
+				extension.Id,
+				func(msg *azdext.EventMessage) *azdext.EventMessage {
+					invoke := msg.GetInvokeProjectHandler()
+					require.NotNil(t, invoke)
+					return &azdext.EventMessage{
+						MessageType: &azdext.EventMessage_ProjectHandlerStatus{
+							ProjectHandlerStatus: &azdext.ProjectHandlerStatus{
+								EventName: tt.eventName,
+								Status:    tt.status,
+								Message:   tt.message,
+							},
+						},
+					}
+				},
+			)
+			defer cleanup()
+
+			handler := service.createProjectEventHandler(
+				streamCtx,
+				extension,
+				tt.eventName,
+				broker,
+			)
+			collector := commandresult.NewFollowUpCollector()
+			collector.Add(commandresult.FollowUp{
+				ExtensionID: extension.Id,
+				EventName:   "postprovision",
+				Text:        tt.initial,
+			})
+			ctx := commandresult.WithFollowUpCollector(t.Context(), collector)
+
+			err = handler(ctx, project.ProjectLifecycleEventArgs{Project: projectConfig})
+			if tt.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.want, collector.Text())
+		})
+	}
+}
+
 func TestEventService_createServiceEventHandler(t *testing.T) {
 	service, _ := createTestEventService()
 	extension := createTestExtension()
@@ -456,6 +571,20 @@ func TestEventService_createServiceEventHandler(t *testing.T) {
 
 	// Test that the handler function is created correctly
 	assert.NotNil(t, handler)
+}
+
+func TestEventService_syncExtensionOutputCleansUpPreview(t *testing.T) {
+	service, _ := createTestEventService()
+	extension := createTestExtension()
+
+	cleanup := service.syncExtensionOutput(
+		t.Context(), extension, "Test Extension (predeploy)")
+	_, err := extension.StdOut().Write([]byte("preview output\n"))
+	require.NoError(t, err)
+	cleanup()
+
+	console := service.console.(*mockinput.MockConsole)
+	require.Empty(t, console.Output())
 }
 
 func TestEventService_createProjectEventHandler_RoundTripsStructuredError(t *testing.T) {
@@ -679,7 +808,14 @@ func TestEventService_New(t *testing.T) {
 
 	console := mockinput.NewMockConsole()
 
-	service := NewEventService(extensionManager, lazyEnvManager, lazyProject, lazyEnv, console)
+	service := NewEventService(
+		extensionManager,
+		lazyEnvManager,
+		lazyProject,
+		lazyEnv,
+		NewFollowUpManager(),
+		console,
+	)
 
 	assert.NotNil(t, service)
 

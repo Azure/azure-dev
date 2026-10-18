@@ -4,10 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,7 +20,6 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -26,6 +28,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -42,6 +45,70 @@ func TestInitCommand_AgentNameFlag(t *testing.T) {
 	}
 }
 
+func TestInitCommand_TemplateFlags(t *testing.T) {
+	cmd := newInitCommand(nil)
+
+	templateFlag := cmd.Flags().Lookup("template")
+	require.NotNil(t, templateFlag)
+	require.Equal(t, "t", templateFlag.Shorthand)
+	require.False(t, templateFlag.Hidden)
+	require.Empty(t, templateFlag.Deprecated)
+
+	manifestFlag := cmd.Flags().Lookup("manifest")
+	require.NotNil(t, manifestFlag)
+	require.Equal(t, "m", manifestFlag.Shorthand)
+	require.True(t, manifestFlag.Hidden)
+	require.Equal(t, "use --template/-t instead", manifestFlag.Deprecated)
+}
+
+func TestInitCommand_TemplateFlagAliases(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		args        []string
+		wantWarning bool
+	}{
+		{name: "template long", args: []string{"--template", "azure.yaml"}},
+		{name: "template short", args: []string{"-t", "azure.yaml"}},
+		{name: "manifest long", args: []string{"--manifest", "azure.yaml"}, wantWarning: true},
+		{name: "manifest short", args: []string{"-m", "azure.yaml"}, wantWarning: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newInitCommand(nil)
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			cmd.SetArgs(tt.args)
+			cmd.RunE = func(*cobra.Command, []string) error {
+				return nil
+			}
+
+			require.NoError(t, cmd.Execute())
+			require.Equal(t, "azure.yaml", cmd.Flags().Lookup("template").Value.String())
+			if tt.wantWarning {
+				require.Contains(t, output.String(),
+					"Flag --manifest has been deprecated, use --template/-t instead")
+			} else {
+				require.NotContains(t, output.String(), "deprecated")
+			}
+		})
+	}
+}
+
+func TestValidateTemplateFlagAliases(t *testing.T) {
+	cmd := newInitCommand(nil)
+	cmd.SetErr(io.Discard)
+	require.NoError(t, cmd.Flags().Set("template", "canonical.yaml"))
+	require.NoError(t, cmd.Flags().Set("manifest", "legacy.yaml"))
+
+	err := validateTemplateFlagAliases(cmd)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Equal(t, "cannot pass both --template and deprecated --manifest", localErr.Message)
+	require.Equal(t, "use --template/-t only", localErr.Suggestion)
+}
+
 func TestInitCommand_ForceFlag(t *testing.T) {
 	cmd := newInitCommand(nil)
 
@@ -54,6 +121,11 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
+	}
+	expectedUsage := "Allow existing agent service configurations to be overwritten. " +
+		"With --no-prompt, pre-consent when init requires overwrite confirmation."
+	if flag.Usage != expectedUsage {
+		t.Fatalf("expected --force usage %q, got %q", expectedUsage, flag.Usage)
 	}
 }
 
@@ -315,64 +387,6 @@ func TestValidateRegistryConnectionFlag(t *testing.T) {
 	}
 }
 
-func TestApplyAndValidateRegistryConnection(t *testing.T) {
-	t.Parallel()
-
-	manifest := func(image, connection string) *agent_yaml.AgentManifest {
-		return &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
-			Image: image, RegistryConnectionID: connection,
-		}}
-	}
-
-	t.Run("flag overrides manifest and preserves arbitrary registry", func(t *testing.T) {
-		t.Parallel()
-		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
-		action := &InitAction{flags: &initFlags{registryConnection: "flag-connection"}}
-		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
-		require.Equal(t, "flag-connection", action.flags.registryConnection)
-		require.Equal(t, "flag-connection",
-			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
-	})
-
-	t.Run("manifest connection is preserved", func(t *testing.T) {
-		t.Parallel()
-		agentManifest := manifest("registry.example.com/org/agent:v1", "manifest-connection")
-		action := &InitAction{flags: &initFlags{}}
-		require.NoError(t, action.applyAndValidateRegistryConnection(agentManifest))
-		require.Empty(t, action.flags.registryConnection,
-			"a manifest-authored connection must not be recorded as an explicit CLI flag")
-		require.Equal(t, "manifest-connection",
-			agentManifest.Template.(agent_yaml.ContainerAgent).RegistryConnectionID)
-	})
-
-	t.Run("missing image is rejected", func(t *testing.T) {
-		t.Parallel()
-		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
-		require.ErrorContains(t,
-			action.applyAndValidateRegistryConnection(manifest("", "")),
-			"requires a pre-built image")
-	})
-
-	t.Run("unqualified manifest image is rejected", func(t *testing.T) {
-		t.Parallel()
-		action := &InitAction{flags: &initFlags{registryConnection: "private-registry"}}
-		require.ErrorContains(t,
-			action.applyAndValidateRegistryConnection(manifest("agent:v1", "")),
-			"must be in format registry/image[:tag]")
-	})
-
-	t.Run("code deploy is rejected", func(t *testing.T) {
-		t.Parallel()
-		action := &InitAction{
-			flags:        &initFlags{registryConnection: "private-registry"},
-			isCodeDeploy: true,
-		}
-		require.ErrorContains(t,
-			action.applyAndValidateRegistryConnection(manifest("registry.example.com/agent:v1", "")),
-			"code deploy")
-	})
-}
-
 func TestInitCommandRegistersRegistryConnectionFlag(t *testing.T) {
 	t.Parallel()
 
@@ -382,500 +396,9 @@ func TestInitCommandRegistersRegistryConnectionFlag(t *testing.T) {
 	require.Equal(t, "", flag.DefValue)
 }
 
-func TestRequestedDeployModeForManifest(t *testing.T) {
-	t.Parallel()
-
-	codeAgent := agent_yaml.ContainerAgent{
-		CodeConfiguration: &agent_yaml.CodeConfiguration{},
-	}
-	containerAgent := agent_yaml.ContainerAgent{}
-
-	tests := []struct {
-		name           string
-		flagMode       string
-		flagConnection string
-		agent          agent_yaml.ContainerAgent
-		wantMode       string
-		wantErr        string
-	}{
-		{name: "unspecified container manifest", agent: containerAgent},
-		{name: "code manifest", agent: codeAgent, wantMode: "code"},
-		{
-			name: "manifest image selects container", agent: agent_yaml.ContainerAgent{
-				Image: "registry.example.com/team/agent:v1",
-			}, wantMode: "container",
-		},
-		{
-			name: "authored code config precedes manifest image", agent: agent_yaml.ContainerAgent{
-				CodeConfiguration: &agent_yaml.CodeConfiguration{},
-				Image:             "registry.example.com/team/agent:v1",
-			}, wantMode: "code",
-		},
-		{
-			name: "manifest registry selects container", agent: agent_yaml.ContainerAgent{
-				RegistryConnectionID: "private-registry",
-			}, wantMode: "container",
-		},
-		{
-			name: "flag registry selects container", agent: containerAgent,
-			flagConnection: "private-registry", wantMode: "container",
-		},
-		{
-			name: "code manifest rejects manifest registry", agent: agent_yaml.ContainerAgent{
-				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
-				RegistryConnectionID: "private-registry",
-			}, wantErr: "cannot be used with code deploy",
-		},
-		{
-			name: "code manifest rejects flag registry", agent: codeAgent,
-			flagConnection: "private-registry", wantErr: "cannot be used with code deploy",
-		},
-		{
-			name: "explicit container overrides code manifest with registry", agent: agent_yaml.ContainerAgent{
-				CodeConfiguration:    &agent_yaml.CodeConfiguration{},
-				RegistryConnectionID: "private-registry",
-			}, flagMode: "container", wantMode: "container",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			mode, err := requestedDeployModeForManifest(
-				test.flagMode, test.flagConnection, test.agent,
-			)
-			if test.wantErr != "" {
-				require.ErrorContains(t, err, test.wantErr)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, test.wantMode, mode)
-		})
-	}
-}
-
-func TestManifestDeclaresRegistryConnection(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "Private Registry"},
-		Resources: []any{agent_yaml.ConnectionResource{
-			Resource: agent_yaml.Resource{Name: "Private Registry"},
-		}},
-	}
-
-	require.Equal(t, "Private Registry", registryConnectionForManifest("", manifest))
-	require.Equal(t, "flag-registry", registryConnectionForManifest("flag-registry", manifest))
-	require.True(t, manifestDeclaresConnection(manifest, "Private Registry"))
-	require.False(t, manifestDeclaresConnection(manifest, "private-registry"),
-		"matching must use the Foundry connection name, not the sanitized service key")
-	require.False(t, manifestDeclaresConnection(manifest, "external-registry"))
-}
-
-func TestVerifyRegistryConnectionSkipsManifestSibling(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{RegistryConnectionID: "private-registry"},
-		Resources: []any{agent_yaml.ConnectionResource{
-			Resource: agent_yaml.Resource{Name: "private-registry"},
-		}},
-	}
-	action := &InitAction{
-		flags:                  &initFlags{},
-		selectedFoundryProject: &FoundryProjectInfo{},
-	}
-	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
-
-	action.flags.registryConnection = "private-registry"
-	require.NoError(t, action.verifyRegistryConnection(t.Context(), manifest))
-}
-
-func TestPreBuiltImageForInit(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		manifest *agent_yaml.AgentManifest
-		flag     string
-		want     string
-	}{
-		{name: "empty", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}}, want: ""},
-		{name: "nil manifest", manifest: nil, want: ""},
-		{name: "non-container agent", manifest: &agent_yaml.AgentManifest{Template: agent_yaml.Workflow{}}, want: ""},
-		{
-			name:     "manifest image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
-			want:     "myacr.azurecr.io/agent:v1",
-		},
-		{
-			name:     "flag image wins",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "myacr.azurecr.io/agent:v1"}},
-			flag:     "override.azurecr.io/agent:v2",
-			want:     "override.azurecr.io/agent:v2",
-		},
-		{
-			name:     "trims flag image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{}},
-			flag:     "  myacr.azurecr.io/agent:v1  ",
-			want:     "myacr.azurecr.io/agent:v1",
-		},
-		{
-			name:     "trims manifest image",
-			manifest: &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{Image: "  myacr.azurecr.io/agent:v1  "}},
-			want:     "myacr.azurecr.io/agent:v1",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			require.Equal(t, tt.want, preBuiltImageForInit(tt.manifest, tt.flag))
-		})
-	}
-}
-
-func TestSkipACR(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name               string
-		isCodeDeploy       bool
-		image              string
-		registryConnection string
-		usesPreBuiltImage  bool
-		isVoiceAgent       bool
-		want               bool
-	}{
-		{
-			name:         "code deploy skips ACR",
-			isCodeDeploy: true,
-			image:        "",
-			want:         true,
-		},
-		{
-			name:         "image flag skips ACR",
-			isCodeDeploy: false,
-			image:        "myacr.azurecr.io/agent:v1",
-			want:         true,
-		},
-		{
-			name:         "both set skips ACR",
-			isCodeDeploy: true,
-			image:        "myacr.azurecr.io/agent:v1",
-			want:         true,
-		},
-		{
-			name:               "registry connection skips ACR",
-			registryConnection: "private-registry",
-			want:               true,
-		},
-		{
-			name:              "manifest image skips ACR",
-			usesPreBuiltImage: true,
-			want:              true,
-		},
-		{
-			name:         "voice agent skips ACR",
-			isCodeDeploy: false,
-			image:        "",
-			isVoiceAgent: true,
-			want:         true,
-		},
-		{
-			name:         "neither set does not skip ACR",
-			isCodeDeploy: false,
-			image:        "",
-			want:         false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			action := &InitAction{
-				isCodeDeploy:      tt.isCodeDeploy,
-				usesPreBuiltImage: tt.usesPreBuiltImage,
-				isVoiceAgent:      tt.isVoiceAgent,
-				flags: &initFlags{
-					image:              tt.image,
-					registryConnection: tt.registryConnection,
-				},
-			}
-
-			require.Equal(t, tt.want, action.skipACR())
-		})
-	}
-}
-
 // TestIsHostedAgent verifies that isHostedAgent is decoupled from skipACR: a
 // voice agent skips ACR but is not a hosted agent, so it must not be treated as
 // hosted for region filtering.
-func TestIsHostedAgent(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name               string
-		isCodeDeploy       bool
-		image              string
-		registryConnection string
-		usesPreBuiltImage  bool
-		isVoiceAgent       bool
-		want               bool
-	}{
-		{name: "code deploy is hosted", isCodeDeploy: true, want: true},
-		{name: "image is hosted", image: "myacr.azurecr.io/agent:v1", want: true},
-		{name: "registry connection is hosted", registryConnection: "private-registry", want: true},
-		{name: "manifest image is hosted", usesPreBuiltImage: true, want: true},
-		{name: "voice is not hosted", isVoiceAgent: true, want: false},
-		{name: "plain container is not hosted", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			action := &InitAction{
-				isCodeDeploy:      tt.isCodeDeploy,
-				usesPreBuiltImage: tt.usesPreBuiltImage,
-				isVoiceAgent:      tt.isVoiceAgent,
-				flags: &initFlags{
-					image:              tt.image,
-					registryConnection: tt.registryConnection,
-				},
-			}
-
-			require.Equal(t, tt.want, action.isHostedAgent())
-		})
-	}
-}
-
-func TestSynthesizeImageManifestFile(t *testing.T) {
-	t.Parallel()
-
-	const agentName = "my-agent"
-	const image = "myacr.azurecr.io/agents/my-agent@sha256:" +
-		"76a9463463acf11d4068e8468fb232a3de0709177b6b35de95de6a34b33fa686"
-
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, nil)
-	require.NoError(t, err)
-	require.NotNil(t, cleanup)
-	require.FileExists(t, manifestPath)
-	require.Equal(t, "agent.yaml", filepath.Base(manifestPath))
-
-	content, err := os.ReadFile(manifestPath)
-	require.NoError(t, err)
-
-	// The synthesized file must parse through the same path the manifest flow uses.
-	template, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-
-	containerAgent, ok := template.(agent_yaml.ContainerAgent)
-	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
-	require.Equal(t, agent_yaml.AgentKindHosted, containerAgent.Kind)
-	require.Equal(t, agentName, containerAgent.Name)
-	require.Empty(t, containerAgent.Image)
-	require.Len(t, containerAgent.Protocols, 1)
-	require.Equal(t, "responses", containerAgent.Protocols[0].Protocol)
-	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
-
-	// cleanup removes the temp directory.
-	cleanup()
-	require.NoFileExists(t, manifestPath)
-}
-
-func TestSynthesizeImageManifestFile_UsesFlagProtocols(t *testing.T) {
-	t.Parallel()
-
-	const agentName = "my-agent"
-	const image = "myacr.azurecr.io/agents/my-agent:v1"
-
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations_ws"})
-	require.NoError(t, err)
-	defer cleanup()
-
-	content, err := os.ReadFile(manifestPath)
-	require.NoError(t, err)
-	template, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-
-	containerAgent, ok := template.(agent_yaml.ContainerAgent)
-	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
-	require.Len(t, containerAgent.Protocols, 1)
-	require.Equal(t, "invocations_ws", containerAgent.Protocols[0].Protocol)
-	require.Equal(t, "2.0.0", containerAgent.Protocols[0].Version)
-}
-
-func TestSynthesizeImageManifestFile_UsesInvocationsProtocol(t *testing.T) {
-	t.Parallel()
-
-	const agentName = "my-agent"
-	const image = "myacr.azurecr.io/agents/my-agent:v1"
-
-	manifestPath, cleanup, err := synthesizeImageManifestFile(agentName, image, []string{"invocations"})
-	require.NoError(t, err)
-	defer cleanup()
-
-	content, err := os.ReadFile(manifestPath)
-	require.NoError(t, err)
-	template, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-
-	containerAgent, ok := template.(agent_yaml.ContainerAgent)
-	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
-	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
-		{Protocol: "invocations", Version: "2.0.0"},
-	}, containerAgent.Protocols)
-}
-
-func TestSynthesizeImageManifestFile_RejectsUnknownProtocol(t *testing.T) {
-	t.Parallel()
-
-	manifestPath, cleanup, err := synthesizeImageManifestFile(
-		"my-agent",
-		"myacr.azurecr.io/agents/my-agent:v1",
-		[]string{"unknown"},
-	)
-	require.Error(t, err)
-	require.Empty(t, manifestPath)
-	cleanup()
-	require.Contains(t, err.Error(), "unknown protocol")
-}
-
-func TestSynthesizeImageManifestFile_AcceptsActivityProtocol(t *testing.T) {
-	t.Parallel()
-
-	manifestPath, cleanup, err := synthesizeImageManifestFile(
-		"my-agent",
-		"myacr.azurecr.io/agents/my-agent:v1",
-		[]string{"activity"},
-	)
-	require.NoError(t, err)
-	defer cleanup()
-
-	content, err := os.ReadFile(manifestPath)
-	require.NoError(t, err)
-	template, err := agent_yaml.ExtractAgentDefinition(content)
-	require.NoError(t, err)
-
-	containerAgent, ok := template.(agent_yaml.ContainerAgent)
-	require.True(t, ok, "synthesized template should be a ContainerAgent, got %T", template)
-	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
-		{Protocol: "activity", Version: "2.0.0"},
-	}, containerAgent.Protocols)
-}
-
-func TestAddToProjectPreBuiltImageEnablesPassthrough(t *testing.T) {
-	const image = "registry.example.com/agents/my-agent:v1"
-	tests := []struct {
-		name               string
-		flagImage          string
-		manifestImage      string
-		registryConnection string
-	}{
-		{name: "BYO image flag", flagImage: image},
-		{name: "manifest BYO image", manifestImage: image},
-		{name: "private registry image", flagImage: image, registryConnection: "production-registry"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			server := &recordingProjectServer{}
-			client := newProjectRecorderClient(t, server)
-			action := &InitAction{
-				azdClient:   client,
-				environment: &azdext.Environment{Name: "test-env"},
-				flags: &initFlags{
-					image:              test.flagImage,
-					registryConnection: test.registryConnection,
-					noPrompt:           true,
-				},
-				serviceNameOverride: "my-agent",
-			}
-			description := "Hosted container agent using a pre-built image"
-			manifest := &agent_yaml.AgentManifest{
-				Template: agent_yaml.ContainerAgent{
-					AgentDefinition: agent_yaml.AgentDefinition{
-						Kind:        agent_yaml.AgentKindHosted,
-						Name:        "my-agent",
-						Description: &description,
-					},
-					Image: test.manifestImage,
-					Protocols: []agent_yaml.ProtocolVersionRecord{
-						{Protocol: "responses", Version: "2.0.0"},
-					},
-					EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-						{Name: "LOG_LEVEL", Value: "info"},
-					},
-				},
-			}
-
-			output, err := captureStdout(t, func() error {
-				return action.addToProject(t.Context(), "src/my-agent", manifest)
-			})
-			require.NoError(t, err)
-			require.Contains(t, output, "\nAdded agent 'my-agent' to azure.yaml.\n")
-
-			server.mu.Lock()
-			defer server.mu.Unlock()
-
-			var agentService *azdext.ServiceConfig
-			for _, service := range server.added {
-				if service.GetName() == "my-agent" {
-					agentService = service
-					break
-				}
-			}
-			require.NotNil(t, agentService)
-			require.Equal(t, image, agentService.GetImage())
-			require.Equal(t, "docker", agentService.GetLanguage())
-			require.True(t, agentService.GetDocker().GetImagePassthrough())
-			require.False(t, agentService.GetDocker().GetRemoteBuild())
-			require.NotNil(t, agentService.GetAdditionalProperties())
-			require.Empty(t, agentService.GetEnvironment())
-			require.Equal(t, map[string]any{"LOG_LEVEL": "info"}, server.env["my-agent"])
-
-			properties := agentService.GetAdditionalProperties().GetFields()
-			_, hasInlineImage := properties["image"]
-			require.False(t, hasInlineImage, "pre-built image must ride on the top-level service image field")
-			if test.registryConnection == "" {
-				require.NotContains(t, properties, "registryConnectionId")
-			} else {
-				require.Equal(t, test.registryConnection, properties["registryConnectionId"].GetStringValue())
-				require.NotContains(t, agentService.GetUses(), test.registryConnection,
-					"an external connection must not be added to uses")
-			}
-			_, hasInlineEnvironment := properties["environmentVariables"]
-			require.False(t, hasInlineEnvironment)
-		})
-	}
-}
-
-func TestAddToProjectRejectsUnqualifiedManifestImage(t *testing.T) {
-	server := &recordingProjectServer{}
-	client := newProjectRecorderClient(t, server)
-	action := &InitAction{
-		azdClient:           client,
-		environment:         &azdext.Environment{Name: "test-env"},
-		flags:               &initFlags{noPrompt: true},
-		serviceNameOverride: "my-agent",
-	}
-	manifest := &agent_yaml.AgentManifest{Template: agent_yaml.ContainerAgent{
-		AgentDefinition: agent_yaml.AgentDefinition{
-			Kind: agent_yaml.AgentKindHosted,
-			Name: "my-agent",
-		},
-		Image: "agent:v1",
-	}}
-
-	err := action.addToProject(t.Context(), "src/my-agent", manifest)
-	require.ErrorContains(t, err, "must be in format registry/image[:tag]")
-
-	server.mu.Lock()
-	defer server.mu.Unlock()
-	require.Empty(t, server.added)
-}
 
 func TestValidateInitAgentName(t *testing.T) {
 	t.Parallel()
@@ -965,56 +488,6 @@ func TestResolveInitAgentName_InvalidNameRepromptsUntilValid(t *testing.T) {
 	if len(prompts.promptRequests) != 2 {
 		t.Fatalf("text prompts = %d, want 2 (first invalid, second valid)", len(prompts.promptRequests))
 	}
-}
-
-func TestAgentNameTemplateHelpers(t *testing.T) {
-	t.Parallel()
-
-	t.Run("container agent", func(t *testing.T) {
-		manifest := &agent_yaml.AgentManifest{
-			Template: agent_yaml.ContainerAgent{
-				AgentDefinition: agent_yaml.AgentDefinition{
-					Kind: agent_yaml.AgentKindHosted,
-					Name: "original-agent",
-				},
-			},
-		}
-
-		name, err := agentNameFromTemplate(manifest.Template)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if name != "original-agent" {
-			t.Fatalf("name = %q, want original-agent", name)
-		}
-
-		if err := setAgentNameOnTemplate(manifest, "renamed-agent"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		renamed := manifest.Template.(agent_yaml.ContainerAgent)
-		if renamed.Name != "renamed-agent" {
-			t.Fatalf("name = %q, want renamed-agent", renamed.Name)
-		}
-	})
-
-	t.Run("workflow", func(t *testing.T) {
-		manifest := &agent_yaml.AgentManifest{
-			Template: agent_yaml.Workflow{
-				AgentDefinition: agent_yaml.AgentDefinition{
-					Kind: agent_yaml.AgentKindWorkflow,
-					Name: "workflow-agent",
-				},
-			},
-		}
-
-		if err := setAgentNameOnTemplate(manifest, "renamed-workflow"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		renamed := manifest.Template.(agent_yaml.Workflow)
-		if renamed.Name != "renamed-workflow" {
-			t.Fatalf("name = %q, want renamed-workflow", renamed.Name)
-		}
-	})
 }
 
 func TestNextAgentNameSuggestion(t *testing.T) {
@@ -1407,24 +880,6 @@ func TestWriteDownloadedFileRefusesToOverwrite(t *testing.T) {
 	}
 }
 
-func TestValidateLocalContainerAgentCopy_AllowsReinitInPlace(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	manifestPointer := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(manifestPointer, []byte("name: test"), 0644); err != nil {
-		t.Fatalf("write agent.yaml: %v", err)
-	}
-
-	// InitAction with nil azdClient is safe here because isSamePath returns early
-	// before any prompting code is reached.
-	a := &InitAction{}
-	if err := a.validateLocalContainerAgentCopy(t.Context(), manifestPointer, dir); err != nil {
-		t.Fatalf("expected no error for re-init in place: %v", err)
-	}
-}
-
 func TestIsSubpath(t *testing.T) {
 	t.Parallel()
 
@@ -1476,84 +931,6 @@ func TestIsSamePath(t *testing.T) {
 			result := isSamePath(tt.a, tt.b)
 			if result != tt.expected {
 				t.Errorf("isSamePath(%q, %q) = %v, want %v", tt.a, tt.b, result, tt.expected)
-			}
-		})
-	}
-}
-
-type mockDirEntry struct {
-	name  string
-	isDir bool
-}
-
-func (m mockDirEntry) Name() string               { return m.name }
-func (m mockDirEntry) IsDir() bool                { return m.isDir }
-func (m mockDirEntry) Type() os.FileMode          { return 0 }
-func (m mockDirEntry) Info() (os.FileInfo, error) { return nil, nil }
-
-func TestFormatDirectoryPreview(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name       string
-		entries    []os.DirEntry
-		maxEntries int
-		expected   string
-	}{
-		{
-			name:       "empty entries",
-			entries:    []os.DirEntry{},
-			maxEntries: 5,
-			expected:   "",
-		},
-		{
-			name: "fewer than max",
-			entries: []os.DirEntry{
-				mockDirEntry{name: "file.txt", isDir: false},
-				mockDirEntry{name: "dir", isDir: true},
-			},
-			maxEntries: 5,
-			expected:   "dir/, file.txt",
-		},
-		{
-			name: "exactly max",
-			entries: []os.DirEntry{
-				mockDirEntry{name: "a.txt", isDir: false},
-				mockDirEntry{name: "b.txt", isDir: false},
-			},
-			maxEntries: 2,
-			expected:   "a.txt, b.txt",
-		},
-		{
-			name: "more than max",
-			entries: []os.DirEntry{
-				mockDirEntry{name: "c.txt", isDir: false},
-				mockDirEntry{name: "a.txt", isDir: false},
-				mockDirEntry{name: "b.txt", isDir: false},
-				mockDirEntry{name: "d.txt", isDir: false},
-			},
-			maxEntries: 2,
-			expected:   "a.txt, b.txt, ... (+2 more)",
-		},
-		{
-			name: "directories get trailing slash",
-			entries: []os.DirEntry{
-				mockDirEntry{name: "mydir", isDir: true},
-				mockDirEntry{name: "myfile", isDir: false},
-			},
-			maxEntries: 5,
-			expected:   "mydir/, myfile",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := formatDirectoryPreview(tt.entries, tt.maxEntries)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result != tt.expected {
-				t.Errorf("formatDirectoryPreview() = %q, want %q", result, tt.expected)
 			}
 		})
 	}
@@ -1683,587 +1060,6 @@ func TestParseGitHubUrlNaive(t *testing.T) {
 	}
 }
 
-func TestExtractToolboxAndConnectionConfigs_TypedTools(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "platform-tools",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Description: "Platform tools",
-				Tools: []any{
-					map[string]any{
-						// Built-in tool -- no connection
-						"type": "bing_grounding",
-					},
-					map[string]any{
-						// External tool with name -- connection name from Name field
-						"type":     "mcp",
-						"name":     "github-copilot",
-						"target":   "https://api.githubcopilot.com/mcp",
-						"authType": "OAuth2",
-						"credentials": map[string]any{
-							"clientId":     "my-client-id",
-							"clientSecret": "my-secret",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(manifest)
-	if err != nil {
-		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
-	}
-
-	// Only the external tool creates a connection (not bing_grounding)
-	if len(connections) != 1 {
-		t.Fatalf("Expected 1 connection, got %d", len(connections))
-	}
-	conn := connections[0]
-	if conn.Name != "github-copilot" {
-		t.Errorf("Expected connection name 'github-copilot', got '%s'", conn.Name)
-	}
-	if conn.Category != "RemoteTool" {
-		t.Errorf("Expected category 'RemoteTool', got '%s'", conn.Category)
-	}
-	if conn.Target != "https://api.githubcopilot.com/mcp" {
-		t.Errorf("Expected target, got '%s'", conn.Target)
-	}
-	if conn.AuthType != "OAuth2" {
-		t.Errorf("Expected authType 'OAuth2', got '%s'", conn.AuthType)
-	}
-
-	// Credentials should be ${VAR} references, not raw values
-	if conn.Credentials["clientId"] != "${PARAM_GITHUB_COPILOT_CLIENTID}" {
-		t.Errorf("Expected env var ref for clientId, got '%v'", conn.Credentials["clientId"])
-	}
-	if conn.Credentials["clientSecret"] != "${PARAM_GITHUB_COPILOT_CLIENTSECRET}" {
-		t.Errorf("Expected env var ref for clientSecret, got '%v'", conn.Credentials["clientSecret"])
-	}
-
-	// Raw values should be in the credEnvVars map
-	if credEnvVars["PARAM_GITHUB_COPILOT_CLIENTID"] != "my-client-id" {
-		t.Errorf("Expected env var value 'my-client-id', got '%s'",
-			credEnvVars["PARAM_GITHUB_COPILOT_CLIENTID"])
-	}
-	if credEnvVars["PARAM_GITHUB_COPILOT_CLIENTSECRET"] != "my-secret" {
-		t.Errorf("Expected env var value 'my-secret', got '%s'",
-			credEnvVars["PARAM_GITHUB_COPILOT_CLIENTSECRET"])
-	}
-
-	// Verify toolbox has both tools
-	if len(toolboxes) != 1 {
-		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
-	}
-	tb := toolboxes[0]
-	if tb.Name != "platform-tools" {
-		t.Errorf("Expected toolbox name 'platform-tools', got '%s'", tb.Name)
-	}
-	if tb.Description != "Platform tools" {
-		t.Errorf("Expected description 'Platform tools', got '%s'", tb.Description)
-	}
-	if len(tb.Tools) != 2 {
-		t.Fatalf("Expected 2 tools, got %d", len(tb.Tools))
-	}
-
-	// First tool: built-in (no project_connection_id)
-	if tb.Tools[0]["type"] != "bing_grounding" {
-		t.Errorf("Expected tool[0] type 'bing_grounding', got '%v'", tb.Tools[0]["type"])
-	}
-	if _, hasConn := tb.Tools[0]["project_connection_id"]; hasConn {
-		t.Errorf("Built-in tool should not have project_connection_id")
-	}
-
-	// Second tool: minimal (type + project_connection_id only)
-	if tb.Tools[1]["project_connection_id"] != "github-copilot" {
-		t.Errorf("Expected project_connection_id 'github-copilot', got '%v'",
-			tb.Tools[1]["project_connection_id"])
-	}
-	if tb.Tools[1]["type"] != "mcp" {
-		t.Errorf("Expected tool type 'mcp', got '%v'", tb.Tools[1]["type"])
-	}
-	// No server_url or server_label in init output -- deploy enriches from connections
-	if _, has := tb.Tools[1]["server_url"]; has {
-		t.Errorf("Toolbox tool should not have server_url (deploy enriches it)")
-	}
-	if _, has := tb.Tools[1]["server_label"]; has {
-		t.Errorf("Toolbox tool should not have server_label (deploy enriches it)")
-	}
-}
-
-func TestExtractToolboxAndConnectionConfigs_RawToolsFallback(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "raw-toolbox",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Description: "Raw tools",
-				Tools: []any{
-					map[string]any{
-						"type":                  "mcp",
-						"name":                  "existing",
-						"project_connection_id": "existing-conn",
-					},
-				},
-			},
-		},
-	}
-
-	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(manifest)
-	if err != nil {
-		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
-	}
-
-	// No connections or env vars extracted from raw tools
-	if len(connections) != 0 {
-		t.Errorf("Expected 0 connections, got %d", len(connections))
-	}
-	if len(credEnvVars) != 0 {
-		t.Errorf("Expected 0 env vars, got %d", len(credEnvVars))
-	}
-
-	if len(toolboxes) != 1 {
-		t.Fatalf("Expected 1 toolbox, got %d", len(toolboxes))
-	}
-	if toolboxes[0].Tools[0]["project_connection_id"] != "existing-conn" {
-		t.Errorf("Expected 'existing-conn', got '%v'", toolboxes[0].Tools[0]["project_connection_id"])
-	}
-}
-
-func TestExtractToolboxAndConnectionConfigs_NormalizesAgenticIdentityAuthType(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "platform-tools",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Tools: []any{
-					map[string]any{
-						"type":     "mcp",
-						"name":     "agentic-tool",
-						"target":   "https://example.com/mcp",
-						"authType": "AgenticIdentity",
-					},
-				},
-			},
-		},
-	}
-
-	_, connections, _, err := extractToolboxAndConnectionConfigs(manifest)
-	if err != nil {
-		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
-	}
-
-	if len(connections) != 1 {
-		t.Fatalf("Expected 1 connection, got %d", len(connections))
-	}
-
-	if connections[0].AuthType != string(agent_yaml.AuthTypeAgenticIdentityToken) {
-		t.Errorf(
-			"Expected authType %q, got %q",
-			agent_yaml.AuthTypeAgenticIdentityToken,
-			connections[0].AuthType,
-		)
-	}
-}
-
-func TestExtractToolboxAndConnectionConfigs_NilManifest(t *testing.T) {
-	t.Parallel()
-
-	toolboxes, connections, credEnvVars, err := extractToolboxAndConnectionConfigs(nil)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-	if toolboxes != nil {
-		t.Errorf("Expected nil toolboxes, got %v", toolboxes)
-	}
-	if connections != nil {
-		t.Errorf("Expected nil connections, got %v", connections)
-	}
-	if credEnvVars != nil {
-		t.Errorf("Expected nil env vars, got %v", credEnvVars)
-	}
-}
-
-func TestExtractToolboxAndConnectionConfigs_CustomKeysCredentials(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-tools",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Tools: []any{
-					map[string]any{
-						"type":        "mcp",
-						"name":        "custom-api",
-						"target":      "https://example.com/mcp",
-						"authType":    "CustomKeys",
-						"credentials": map[string]any{"key": "my-api-key"},
-					},
-					map[string]any{
-						"type":        "mcp",
-						"name":        "oauth-tool",
-						"target":      "https://example.com/oauth",
-						"authType":    "OAuth2",
-						"credentials": map[string]any{"clientId": "id", "clientSecret": "secret"},
-					},
-				},
-			},
-		},
-	}
-
-	_, connections, _, err := extractToolboxAndConnectionConfigs(manifest)
-	if err != nil {
-		t.Fatalf("extractToolboxAndConnectionConfigs failed: %v", err)
-	}
-
-	if len(connections) != 2 {
-		t.Fatalf("Expected 2 connections, got %d", len(connections))
-	}
-
-	// CustomKeys: credentials stored as-is (no "keys" wrapper)
-	customConn := connections[0]
-	if customConn.Credentials["key"] != "${PARAM_CUSTOM_API_KEY}" {
-		t.Errorf("Expected env var ref for key, got '%v'", customConn.Credentials["key"])
-	}
-	if _, hasKeys := customConn.Credentials["keys"]; hasKeys {
-		t.Error("CustomKeys connection should not have 'keys' wrapper")
-	}
-
-	// OAuth2: credentials should be flat (no "keys" wrapper)
-	oauthConn := connections[1]
-	if _, hasKeys := oauthConn.Credentials["keys"]; hasKeys {
-		t.Error("OAuth2 connection should not have 'keys' wrapper")
-	}
-	if oauthConn.Credentials["clientId"] != "${PARAM_OAUTH_TOOL_CLIENTID}" {
-		t.Errorf("Expected flat clientId ref, got '%v'", oauthConn.Credentials["clientId"])
-	}
-}
-
-func TestInjectToolboxEnvVarsIntoDefinition_AddsEnvVars(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindHosted,
-				Name: "my-agent",
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
-			},
-		},
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "agent-tools",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Tools: []any{
-					map[string]any{"type": "bing_grounding"},
-				},
-			},
-		},
-	}
-
-	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
-	envVars := *containerAgent.EnvironmentVariables
-
-	if len(envVars) != 2 {
-		t.Fatalf("Expected 2 env vars, got %d", len(envVars))
-	}
-
-	// Original env var is preserved
-	if envVars[0].Name != "AZURE_OPENAI_ENDPOINT" {
-		t.Errorf("Expected first env var to be AZURE_OPENAI_ENDPOINT, got %s", envVars[0].Name)
-	}
-
-	// Toolbox env var is injected
-	if envVars[1].Name != "TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT" {
-		t.Errorf("Expected injected env var name, got %s", envVars[1].Name)
-	}
-	if envVars[1].Value != "${TOOLBOX_AGENT_TOOLS_MCP_ENDPOINT}" {
-		t.Errorf("Expected env var reference value, got %s", envVars[1].Value)
-	}
-}
-
-func TestInjectToolboxEnvVarsIntoDefinition_SkipsExisting(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindHosted,
-				Name: "my-agent",
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "TOOLBOX_MY_TOOLS_MCP_ENDPOINT", Value: "custom-value"},
-			},
-		},
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-tools",
-					Kind: agent_yaml.ResourceKindToolbox,
-				},
-				Tools: []any{
-					map[string]any{"type": "bing_grounding"},
-				},
-			},
-		},
-	}
-
-	err := injectToolboxEnvVarsIntoDefinition(manifest)
-
-	if err == nil {
-		t.Fatal("expected error for duplicate env var, got nil")
-	}
-}
-
-func TestInjectToolboxEnvVarsIntoDefinition_MultipleToolboxes(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindHosted,
-				Name: "my-agent",
-			},
-			Protocols: []agent_yaml.ProtocolVersionRecord{
-				{Protocol: "responses", Version: "1.0.0"},
-			},
-		},
-		Resources: []any{
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{Name: "search-tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"type": "bing_grounding"}},
-			},
-			agent_yaml.ToolboxResource{
-				Resource: agent_yaml.Resource{Name: "github-tools", Kind: agent_yaml.ResourceKindToolbox},
-				Tools:    []any{map[string]any{"type": "mcp", "target": "https://example.com"}},
-			},
-		},
-	}
-
-	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
-	envVars := *containerAgent.EnvironmentVariables
-
-	if len(envVars) != 2 {
-		t.Fatalf("Expected 2 env vars, got %d", len(envVars))
-	}
-	if envVars[0].Name != "TOOLBOX_SEARCH_TOOLS_MCP_ENDPOINT" {
-		t.Errorf("Expected first toolbox env var, got %s", envVars[0].Name)
-	}
-	if envVars[1].Name != "TOOLBOX_GITHUB_TOOLS_MCP_ENDPOINT" {
-		t.Errorf("Expected second toolbox env var, got %s", envVars[1].Name)
-	}
-}
-
-func TestInjectToolboxEnvVarsIntoDefinition_NoopForNilManifest(t *testing.T) {
-	t.Parallel()
-
-	// Should not panic or error
-	if err := injectToolboxEnvVarsIntoDefinition(nil); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestInjectToolboxEnvVarsIntoDefinition_NoopWithoutToolboxes(t *testing.T) {
-	t.Parallel()
-
-	manifest := &agent_yaml.AgentManifest{
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Kind: agent_yaml.AgentKindHosted,
-				Name: "my-agent",
-			},
-			EnvironmentVariables: &[]agent_yaml.EnvironmentVariable{
-				{Name: "AZURE_OPENAI_ENDPOINT", Value: "${AZURE_OPENAI_ENDPOINT}"},
-			},
-		},
-		Resources: []any{},
-	}
-
-	if err := injectToolboxEnvVarsIntoDefinition(manifest); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	containerAgent := manifest.Template.(agent_yaml.ContainerAgent)
-	if len(*containerAgent.EnvironmentVariables) != 1 {
-		t.Errorf("Expected env vars unchanged, got %d", len(*containerAgent.EnvironmentVariables))
-	}
-}
-
-func TestExtractConnectionConfigs_SurfacesCredentialsType(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name             string
-		connResource     agent_yaml.ConnectionResource
-		wantAuthType     string
-		wantCredHasType  bool
-		wantCredKeyCount int
-		wantEnvVarCount  int
-	}{
-		{
-			name: "surfaces credentials.type to authType when authType is empty",
-			connResource: agent_yaml.ConnectionResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-conn",
-					Kind: agent_yaml.ResourceKindConnection,
-				},
-				Target: "https://example.com",
-				Credentials: map[string]any{
-					"type": "CustomKeys",
-					"key":  "secret-value",
-				},
-			},
-			wantAuthType:     "CustomKeys",
-			wantCredHasType:  false,
-			wantCredKeyCount: 1,
-			wantEnvVarCount:  1, // only "key" externalized; "type" was lifted out
-		},
-		{
-			name: "preserves explicit authType even if credentials.type differs",
-			connResource: agent_yaml.ConnectionResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-conn",
-					Kind: agent_yaml.ResourceKindConnection,
-				},
-				Target:   "https://example.com",
-				AuthType: agent_yaml.AuthTypeAAD,
-				Credentials: map[string]any{
-					"type": "CustomKeys",
-					"key":  "val",
-				},
-			},
-			wantAuthType:     string(agent_yaml.AuthTypeAAD),
-			wantCredHasType:  true,
-			wantCredKeyCount: 2,
-			wantEnvVarCount:  2, // both "type" and "key" externalized
-		},
-		{
-			name: "normalizes explicit AgenticIdentity authType",
-			connResource: agent_yaml.ConnectionResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-conn",
-					Kind: agent_yaml.ResourceKindConnection,
-				},
-				Target:   "https://example.com",
-				AuthType: agent_yaml.AuthTypeAgenticIdentity,
-				Credentials: map[string]any{
-					"key": "val",
-				},
-			},
-			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
-			wantCredHasType:  false,
-			wantCredKeyCount: 1,
-			wantEnvVarCount:  1,
-		},
-		{
-			name: "normalizes credentials.type AgenticIdentity when authType is empty",
-			connResource: agent_yaml.ConnectionResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-conn",
-					Kind: agent_yaml.ResourceKindConnection,
-				},
-				Target: "https://example.com",
-				Credentials: map[string]any{
-					"type": "AgenticIdentity",
-					"key":  "secret-value",
-				},
-			},
-			wantAuthType:     string(agent_yaml.AuthTypeAgenticIdentityToken),
-			wantCredHasType:  false,
-			wantCredKeyCount: 1,
-			wantEnvVarCount:  1,
-		},
-		{
-			name: "no credentials.type and no authType stays empty",
-			connResource: agent_yaml.ConnectionResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-conn",
-					Kind: agent_yaml.ResourceKindConnection,
-				},
-				Target:      "https://example.com",
-				Credentials: map[string]any{"key": "val"},
-			},
-			wantAuthType:     "",
-			wantCredHasType:  false,
-			wantCredKeyCount: 1,
-			wantEnvVarCount:  1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			manifest := &agent_yaml.AgentManifest{
-				Resources: []any{tt.connResource},
-			}
-			conns, envVars, err := extractConnectionConfigs(manifest)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if len(conns) != 1 {
-				t.Fatalf("expected 1 connection, got %d", len(conns))
-			}
-			conn := conns[0]
-			if conn.AuthType != tt.wantAuthType {
-				t.Errorf("AuthType = %q, want %q", conn.AuthType, tt.wantAuthType)
-			}
-			_, hasType := conn.Credentials["type"]
-			if hasType != tt.wantCredHasType {
-				t.Errorf("credentials has 'type' = %v, want %v",
-					hasType, tt.wantCredHasType)
-			}
-			if len(conn.Credentials) != tt.wantCredKeyCount {
-				t.Errorf("credentials key count = %d, want %d",
-					len(conn.Credentials), tt.wantCredKeyCount)
-			}
-			if len(envVars) != tt.wantEnvVarCount {
-				t.Errorf("env var count = %d, want %d",
-					len(envVars), tt.wantEnvVarCount)
-			}
-			// Verify credentials are externalized (contain ${...} references)
-			for k, v := range conn.Credentials {
-				vStr, ok := v.(string)
-				if !ok || !strings.HasPrefix(vStr, "${") {
-					t.Errorf("credential %q should be externalized, got %v", k, v)
-				}
-			}
-		})
-	}
-}
-
 func TestCheckNotDirectory_ReturnsNilForFile(t *testing.T) {
 	t.Parallel()
 
@@ -2286,12 +1082,99 @@ func TestCheckNotDirectory_ReturnsNilForNonexistentPath(t *testing.T) {
 	}
 }
 
-func TestCheckNotDirectory_ErrorForDirectoryWithManifest(t *testing.T) {
+func TestValidateUnifiedInitFlags(t *testing.T) {
+	for _, flag := range []string{
+		"description", "force", "harness", "instructions",
+		"kind", "protocol", "rai-policy", "voice",
+	} {
+		t.Run(flag, func(t *testing.T) {
+			t.Parallel()
+			cmd := newInitCommand(&azdext.ExtensionContext{})
+			value := "value"
+			if flag == "force" {
+				value = "true"
+			}
+			require.NoError(t, cmd.Flags().Set(flag, value))
+
+			err := validateUnifiedInitFlags(cmd)
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+			require.Contains(t, localErr.Message, "--"+flag)
+		})
+	}
+}
+
+func TestUnifiedInitFlagValidationParity(t *testing.T) {
+	for _, route := range []struct {
+		name     string
+		validate func(*cobra.Command) error
+	}{
+		{name: "explicit input", validate: validateUnifiedInitFlags},
+		{
+			name: "unified catalog",
+			validate: func(cmd *cobra.Command) error {
+				return validateCatalogInitFlags(cmd, TemplateTypeAzureYaml)
+			},
+		},
+		{
+			name: "full repository catalog",
+			validate: func(cmd *cobra.Command) error {
+				return validateCatalogInitFlags(cmd, TemplateTypeAzd)
+			},
+		},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			for _, flag := range []string{
+				"description", "force", "harness", "instructions",
+				"kind", "protocol", "rai-policy", "voice",
+			} {
+				t.Run(flag, func(t *testing.T) {
+					cmd := newInitCommand(&azdext.ExtensionContext{})
+					value := "value"
+					if flag == "force" {
+						value = "true"
+					}
+					require.NoError(t, cmd.Flags().Set(flag, value))
+					require.ErrorContains(t, route.validate(cmd), "--"+flag)
+				})
+			}
+		})
+	}
+}
+
+func TestScaffoldProjectPassesRepositorySourceToCore(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	const (
+		source  = "https://github.com/example/agent-template"
+		target  = "sample-project"
+		envName = "sample-dev"
+	)
+	workflowServer := &testWorkflowServiceServer{
+		runHook: func() {
+			require.NoError(t, os.Mkdir(target, 0o750))
+		},
+	}
+	envServer := &testEnvironmentServiceServer{
+		values: map[string]map[string]string{envName: {}},
+	}
+	client := newTestAzdClient(t, envServer, workflowServer)
+
+	require.NoError(t, scaffoldProject(t.Context(), client, target, source, envName))
+	require.NotNil(t, workflowServer.request)
+	require.Equal(t,
+		[]string{"init", "-t", source, target, "--environment", envName},
+		workflowServer.request.Workflow.Steps[0].Command.Args,
+	)
+}
+
+func TestCheckNotDirectory_DoesNotInspectDirectoryContents(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	manifest := filepath.Join(dir, "agent.manifest.yaml")
-	// Must include a "template" key so looksLikeManifest recognises it as a manifest.
 	content := "name: test\ntemplate:\n  kind: hosted\n"
 	//nolint:gosec // test fixture file permissions are intentional
 	if err := os.WriteFile(manifest, []byte(content), 0644); err != nil {
@@ -2316,12 +1199,8 @@ func TestCheckNotDirectory_ErrorForDirectoryWithManifest(t *testing.T) {
 		t.Errorf("message should mention 'directory', got: %s", localErr.Message)
 	}
 
-	if !strings.Contains(localErr.Suggestion, "-m") {
-		t.Errorf("suggestion should include '-m' flag, got: %s", localErr.Suggestion)
-	}
-
-	if !strings.Contains(localErr.Suggestion, "agent.manifest.yaml") {
-		t.Errorf("suggestion should include candidate path, got: %s", localErr.Suggestion)
+	if strings.Contains(localErr.Suggestion, "agent.manifest.yaml") {
+		t.Errorf("suggestion must not recommend a legacy file, got: %s", localErr.Suggestion)
 	}
 }
 
@@ -2329,8 +1208,6 @@ func TestCheckNotDirectory_NoSuggestionForAgentDefinition(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	// An AgentDefinition has "kind" at root but no "template" — should NOT
-	// be suggested as a manifest file.
 	defContent := "kind: hosted\nname: my-agent\n"
 	//nolint:gosec // test fixture file permissions are intentional
 	if err := os.WriteFile(filepath.Join(dir, "agent.yaml"), []byte(defContent), 0644); err != nil {
@@ -2342,7 +1219,6 @@ func TestCheckNotDirectory_NoSuggestionForAgentDefinition(t *testing.T) {
 		t.Fatal("expected error for directory")
 	}
 
-	// The error should NOT suggest the agent.yaml since it's a definition, not a manifest.
 	errMsg := err.Error()
 	if strings.Contains(errMsg, "agent.yaml") {
 		t.Errorf("should not suggest AgentDefinition file, got: %s", errMsg)
@@ -2364,202 +1240,6 @@ func TestCheckNotDirectory_ErrorForDirectoryWithoutManifest(t *testing.T) {
 	}
 }
 
-func TestManifestHasModelResources(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		manifest *agent_yaml.AgentManifest
-		expected bool
-	}{
-		{
-			name: "hosted agent with model resource",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-hosted",
-				Template: agent_yaml.ContainerAgent{},
-				Resources: []any{
-					agent_yaml.ModelResource{
-						Resource: agent_yaml.Resource{
-							Name: "my-model",
-							Kind: agent_yaml.ResourceKindModel,
-						},
-						Id: "gpt-4o",
-					},
-				},
-			},
-			expected: true,
-		},
-		{
-			name: "hosted agent with only tool resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-hosted-tools",
-				Template: agent_yaml.ContainerAgent{},
-				Resources: []any{
-					agent_yaml.ToolResource{
-						Resource: agent_yaml.Resource{
-							Name: "my-tool",
-							Kind: agent_yaml.ResourceKindTool,
-						},
-					},
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "hosted agent with no resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-hosted-empty",
-				Template: agent_yaml.ContainerAgent{},
-			},
-			expected: false,
-		},
-		{
-			name: "hosted agent with nil resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:      "test-hosted-nil",
-				Template:  agent_yaml.ContainerAgent{},
-				Resources: nil,
-			},
-			expected: false,
-		},
-		{
-			name: "hosted agent with empty resources slice",
-			manifest: &agent_yaml.AgentManifest{
-				Name:      "test-hosted-empty-slice",
-				Template:  agent_yaml.ContainerAgent{},
-				Resources: []any{},
-			},
-			expected: false,
-		},
-		{
-			name: "hosted agent with mixed model and tool resources",
-			manifest: &agent_yaml.AgentManifest{
-				Name:     "test-hosted-mixed",
-				Template: agent_yaml.ContainerAgent{},
-				Resources: []any{
-					agent_yaml.ToolResource{
-						Resource: agent_yaml.Resource{
-							Name: "my-tool",
-							Kind: agent_yaml.ResourceKindTool,
-						},
-					},
-					agent_yaml.ModelResource{
-						Resource: agent_yaml.Resource{
-							Name: "my-model",
-							Kind: agent_yaml.ResourceKindModel,
-						},
-						Id: "gpt-4o",
-					},
-				},
-			},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := manifestHasModelResources(tt.manifest)
-			if result != tt.expected {
-				t.Errorf("manifestHasModelResources() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestConfigureModelChoice_NoPromptMissingAzureContextDefersModelResources(t *testing.T) {
-	const envName = "test-env"
-
-	envServer := &testEnvironmentServiceServer{
-		values: map[string]map[string]string{envName: {}},
-	}
-	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
-	manifest := &agent_yaml.AgentManifest{
-		Name: "test-hosted",
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: "test-hosted",
-				Kind: agent_yaml.AgentKindHosted,
-			},
-		},
-		Resources: []any{
-			agent_yaml.ModelResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-model",
-					Kind: agent_yaml.ResourceKindModel,
-				},
-				Id: "gpt-4o",
-			},
-		},
-	}
-	action := &InitAction{
-		azdClient:    azdClient,
-		environment:  &azdext.Environment{Name: envName},
-		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
-		flags:        &initFlags{noPrompt: true},
-	}
-
-	var got *agent_yaml.AgentManifest
-	output, err := captureStdout(t, func() error {
-		var runErr error
-		got, runErr = action.configureModelChoice(t.Context(), manifest)
-		return runErr
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != manifest {
-		t.Fatalf("configureModelChoice returned a different manifest")
-	}
-	if envServer.values[envName]["USE_EXISTING_AI_PROJECT"] != "false" {
-		t.Fatalf("USE_EXISTING_AI_PROJECT = %q, want false", envServer.values[envName]["USE_EXISTING_AI_PROJECT"])
-	}
-	if got := envServer.values[envName][pendingProvisionEnvVar]; got != pendingReasonProject {
-		t.Fatalf("%s = %q, want %q", pendingProvisionEnvVar, got, pendingReasonProject)
-	}
-	if !strings.Contains(output, "Model resource configuration was deferred") {
-		t.Fatalf("output missing deferred model warning:\n%s", output)
-	}
-}
-
-func TestConfigureModelChoiceRejectsAcrConnectionForInteractiveNewProject(t *testing.T) {
-	const envName = "test-env"
-
-	envServer := &testEnvironmentServiceServer{
-		values: map[string]map[string]string{envName: {}},
-	}
-	promptServer := &helpersPromptServer{selectIndex: 1}
-	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, promptServer, envServer)
-	manifest := &agent_yaml.AgentManifest{
-		Name: "test-hosted",
-		Template: agent_yaml.ContainerAgent{
-			AgentDefinition: agent_yaml.AgentDefinition{
-				Name: "test-hosted",
-				Kind: agent_yaml.AgentKindHosted,
-			},
-		},
-		Resources: []any{
-			agent_yaml.ModelResource{
-				Resource: agent_yaml.Resource{
-					Name: "my-model",
-					Kind: agent_yaml.ResourceKindModel,
-				},
-				Id: "gpt-4o",
-			},
-		},
-	}
-	action := &InitAction{
-		azdClient:    azdClient,
-		environment:  &azdext.Environment{Name: envName},
-		azureContext: &azdext.AzureContext{Scope: &azdext.AzureScope{}},
-		flags:        &initFlags{acrConnection: "registry-connection"},
-	}
-
-	_, err := action.configureModelChoice(t.Context(), manifest)
-
-	require.ErrorContains(t, err, "requires an existing Foundry project")
-	require.Equal(t, int32(1), promptServer.selectCalls.Load())
-}
-
 func TestResolvePositionalArg(t *testing.T) {
 	t.Parallel()
 
@@ -2575,6 +1255,7 @@ func TestResolvePositionalArg(t *testing.T) {
 		arg        string
 		isManifest bool
 		isSrc      bool
+		wantErr    string
 	}{
 		{
 			name:       "https URL is manifest",
@@ -2587,9 +1268,19 @@ func TestResolvePositionalArg(t *testing.T) {
 			isManifest: true,
 		},
 		{
-			name:       "custom scheme URL is manifest",
-			arg:        "custom://some/resource",
+			name:    "custom scheme URL is rejected",
+			arg:     "custom://some/resource",
+			wantErr: "unsupported manifest URI scheme",
+		},
+		{
+			name:       "uppercase HTTPS URL is manifest",
+			arg:        "HTTPS://github.com/org/repo/blob/main/azure.yaml",
 			isManifest: true,
+		},
+		{
+			name:  "Windows drive path remains local",
+			arg:   `C:\code\agent`,
+			isSrc: true,
 		},
 		{
 			name:       "existing file is manifest",
@@ -2622,9 +1313,11 @@ func TestResolvePositionalArg(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			isManifest, isSrc, err := resolvePositionalArg(tt.arg)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				return
 			}
+			require.NoError(t, err)
 			if isManifest != tt.isManifest {
 				t.Errorf("isManifest = %v, want %v", isManifest, tt.isManifest)
 			}
@@ -2635,25 +1328,205 @@ func TestResolvePositionalArg(t *testing.T) {
 	}
 }
 
-func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
+func TestInitCommandPreAuthLocalValidation(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+
+	for _, tt := range []struct {
+		name    string
+		setup   func(*testing.T) string
+		wantErr string
+	}{
+		{
+			name: "standalone definition",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "agent.yaml")
+				require.NoError(t, os.WriteFile(path, []byte("kind: hosted\nname: agent\n"), 0o600))
+				return path
+			},
+			wantErr: "standalone agent definition",
+		},
+		{
+			name: "manifest wrapper",
+			setup: func(t *testing.T) string {
+				path := filepath.Join(t.TempDir(), "agent.manifest.yaml")
+				require.NoError(t, os.WriteFile(
+					path,
+					[]byte("template:\n  kind: hosted\n  name: agent\n"),
+					0o600,
+				))
+				return path
+			},
+			wantErr: "top-level 'template:'",
+		},
+		{
+			name: "legacy source directory",
+			setup: func(t *testing.T) string {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(
+					filepath.Join(dir, "agent.yaml"),
+					[]byte("kind: hosted\nname: agent\n"),
+					0o600,
+				))
+				return dir
+			},
+			wantErr: "legacy agent configuration",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			source := tt.setup(t)
+			command := newInitCommand(&azdext.ExtensionContext{})
+			command.SetOut(io.Discard)
+			command.SetErr(io.Discard)
+			if filepath.Ext(source) == "" {
+				command.SetArgs([]string{"--src", source})
+			} else {
+				command.SetArgs([]string{"--template", source})
+			}
+
+			require.ErrorContains(t, command.Execute(), tt.wantErr)
+		})
+	}
+}
+
+func TestInitCommandRejectsInvalidDeployModeBeforeSideEffects(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"--deploy-mode", "invalid"})
+
+	err := command.Execute()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+	require.Equal(t, "invalid --deploy-mode value \"invalid\"; must be 'container' or 'code'", localErr.Message)
+	require.Equal(t, "Use --deploy-mode container or --deploy-mode code", localErr.Suggestion)
+	require.Empty(t, output.String(), "validation must run before command output or prompts")
+
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries, "validation must run before project or Git initialization")
+}
+
+func TestInitCommandRejectsTemplateAliasConflictBeforeSideEffects(t *testing.T) {
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
+	t.Setenv("AZD_EXT_DEBUG", "")
+	root := t.TempDir()
+	t.Chdir(root)
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+	command.SilenceErrors = true
+	command.SilenceUsage = true
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{
+		"--template", "canonical.yaml",
+		"--manifest", "legacy.yaml",
+	})
+
+	err := command.Execute()
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Equal(t, "cannot pass both --template and deprecated --manifest", localErr.Message)
+	require.Contains(t, output.String(),
+		"Flag --manifest has been deprecated, use --template/-t instead")
+	require.NotContains(t, output.String(), bannerArt)
+
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries, "validation must run before project or Git initialization")
+}
+
+type initAuthOrderingAiServer struct {
+	azdext.UnimplementedAiModelServiceServer
+}
+
+func (*initAuthOrderingAiServer) ListModels(
+	context.Context,
+	*azdext.ListModelsRequest,
+) (*azdext.ListModelsResponse, error) {
+	return &azdext.ListModelsResponse{}, nil
+}
+
+func TestInitCommandValidLocalAzureYamlReachesAuthentication(t *testing.T) {
+	grpcServer := grpc.NewServer()
+	azdext.RegisterAiModelServiceServer(grpcServer, &initAuthOrderingAiServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_EXT_DEBUG", "")
+
+	binDir := t.TempDir()
+	var executable, executableContent string
+	if runtime.GOOS == "windows" {
+		executable = filepath.Join(binDir, "azd.cmd")
+		executableContent = "@echo {\"status\":\"unauthenticated\"}\r\n"
+	} else {
+		executable = filepath.Join(binDir, "azd")
+		executableContent = "#!/bin/sh\nprintf '{\"status\":\"unauthenticated\"}\\n'\n"
+	}
+	require.NoError(t, os.WriteFile(executable, []byte(executableContent), 0o600))
+	//nolint:gosec // the test fixture must be executable on Unix
+	require.NoError(t, os.Chmod(executable, 0o700))
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	manifest := filepath.Join(t.TempDir(), "azure.yaml")
+	require.NoError(t, os.WriteFile(
+		manifest,
+		[]byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: agent\n"),
+		0o600,
+	))
+	command := newInitCommand(&azdext.ExtensionContext{})
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	command.SetArgs([]string{"--template", manifest})
+
+	err = command.Execute()
+	require.ErrorContains(t, err, "not logged in")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeNotLoggedIn, localErr.Code)
+}
+
+func registerInitTemplateFlagsForTest(cmd *cobra.Command, flags *initFlags) {
+	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "", "")
+	cmd.Flags().StringVarP(&flags.templatePointer, "manifest", "m", "", "")
+}
+
+func TestApplyPositionalArg_ConflictWithTemplateFlag(t *testing.T) {
 	t.Parallel()
 
 	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
 	if err := os.WriteFile(manifestPath, []byte("name: test\n"), 0600); err != nil {
 		t.Fatalf("failed to create test manifest: %v", err)
 	}
-
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
-	// Simulate the user having set --manifest explicitly
-	if err := cmd.Flags().Set("manifest", "other.yaml"); err != nil {
+	registerInitTemplateFlagsForTest(cmd, flags)
+	if err := cmd.Flags().Set("template", "other.yaml"); err != nil {
 		t.Fatalf("failed to set flag: %v", err)
 	}
 
 	err := applyPositionalArg(manifestPath, flags, cmd)
 	if err == nil {
-		t.Fatal("expected error for conflicting positional arg and --manifest flag")
+		t.Fatal("expected error for conflicting positional arg and --template flag")
 	}
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -2668,6 +1541,26 @@ func TestApplyPositionalArg_ConflictWithManifestFlag(t *testing.T) {
 	}
 }
 
+func TestApplyPositionalArg_ConflictWithDeprecatedManifestFlag(t *testing.T) {
+	t.Parallel()
+
+	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
+	require.NoError(t, os.WriteFile(manifestPath, []byte("name: test\n"), 0o600))
+
+	flags := &initFlags{}
+	cmd := &cobra.Command{}
+	registerInitTemplateFlagsForTest(cmd, flags)
+	require.NoError(t, cmd.Flags().Set("manifest", "other.yaml"))
+
+	err := applyPositionalArg(manifestPath, flags, cmd)
+	require.Error(t, err)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Contains(t, localErr.Message, "--template")
+	require.NotContains(t, localErr.Suggestion, "--manifest")
+}
+
 func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	t.Parallel()
 
@@ -2676,7 +1569,7 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	// Simulate the user having set --src explicitly
 	if err := cmd.Flags().Set("src", "other-dir"); err != nil {
 		t.Fatalf("failed to set flag: %v", err)
@@ -2699,7 +1592,7 @@ func TestApplyPositionalArg_ConflictWithSrcFlag(t *testing.T) {
 	}
 }
 
-func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
+func TestApplyPositionalArg_SetsTemplatePointer(t *testing.T) {
 	t.Parallel()
 
 	manifestPath := filepath.Join(t.TempDir(), "agent.yaml")
@@ -2709,14 +1602,14 @@ func TestApplyPositionalArg_SetsManifestPointer(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(manifestPath, flags, cmd); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if flags.manifestPointer != manifestPath {
-		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, manifestPath)
+	if flags.templatePointer != manifestPath {
+		t.Errorf("templatePointer = %q, want %q", flags.templatePointer, manifestPath)
 	}
 }
 
@@ -2727,7 +1620,7 @@ func TestApplyPositionalArg_SetsSrcDir(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(tmpDir, flags, cmd); err != nil {
@@ -2745,7 +1638,7 @@ func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(newDir, flags, cmd); err != nil {
@@ -2756,21 +1649,21 @@ func TestApplyPositionalArg_NonExistentDirSetsSrc(t *testing.T) {
 	}
 }
 
-func TestApplyPositionalArg_NonExistentYamlSetsManifest(t *testing.T) {
+func TestApplyPositionalArg_NonExistentYamlSetsTemplate(t *testing.T) {
 	t.Parallel()
 
 	yamlPath := filepath.Join(t.TempDir(), "agent.yaml")
 
 	flags := &initFlags{}
 	cmd := &cobra.Command{}
-	cmd.Flags().StringVarP(&flags.manifestPointer, "manifest", "m", "", "")
+	registerInitTemplateFlagsForTest(cmd, flags)
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "", "")
 
 	if err := applyPositionalArg(yamlPath, flags, cmd); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if flags.manifestPointer != yamlPath {
-		t.Errorf("manifestPointer = %q, want %q", flags.manifestPointer, yamlPath)
+	if flags.templatePointer != yamlPath {
+		t.Errorf("templatePointer = %q, want %q", flags.templatePointer, yamlPath)
 	}
 }
 
@@ -3147,6 +2040,76 @@ func TestResolveCollisions_NoPrompt(t *testing.T) {
 	}
 }
 
+func TestResolveImageServiceNameCollision(t *testing.T) {
+	t.Run("no prompt suffix ignores source directory", func(t *testing.T) {
+		root := t.TempDir()
+		t.Chdir(root)
+		require.NoError(t, os.MkdirAll(filepath.Join("src", "image-agent-2"), 0o700))
+		action := &InitAction{
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{noPrompt: true},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "image-agent-2", serviceName)
+	})
+
+	t.Run("interactive overwrite preserves key", func(t *testing.T) {
+		prompts := &helpersPromptServer{selectIndex: 0}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		action := &InitAction{
+			azdClient: client,
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "image-agent", serviceName)
+		require.EqualValues(t, 1, prompts.selectCalls.Load())
+	})
+
+	t.Run("interactive rename changes only local key", func(t *testing.T) {
+		prompts := &helpersPromptServer{selectIndex: 1, promptValue: "other-service"}
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		action := &InitAction{
+			azdClient: client,
+			projectConfig: &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+				"image-agent": {Name: "image-agent"},
+			}},
+			flags: &initFlags{},
+		}
+		serviceName, err := action.resolveServiceNameCollision(
+			t.Context(), "image-agent", "image-agent",
+		)
+		require.NoError(t, err)
+		require.Equal(t, "other-service", serviceName)
+		require.EqualValues(t, 1, prompts.selectCalls.Load())
+		require.EqualValues(t, 1, prompts.promptCalls.Load())
+	})
+}
+
+func TestFastPathProjectTargetUsesHostDiscovery(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	target, folder := fastPathProjectTarget(
+		&azdext.ProjectConfig{Path: projectRoot}, nil, "agent",
+	)
+	require.Equal(t, ".", target)
+	require.Empty(t, folder)
+
+	target, folder = fastPathProjectTarget(nil, errors.New("project not found"), "New Agent")
+	require.Equal(t, "new-agent", target)
+	require.Equal(t, "new-agent", folder)
+}
+
 func TestEnsureLoggedIn(t *testing.T) {
 	t.Parallel()
 
@@ -3309,163 +2272,6 @@ func TestParseAuthStatusJSON(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce verifies that a
-// headless caller pointing --manifest at a file inside `<cwd>/src/<name>` is
-// refused with a structured error whose suggestion explicitly mentions
-// `--force` as the pre-consent escape hatch.
-//
-// The InitAction is constructed with a nil azdClient because the validation
-// branch returns before any prompt is invoked. The manifest is parsed (so it
-// must contain a name field) but no downstream container / GitHub paths are
-// reached.
-func TestDownloadAgentYaml_NoPromptManifestInSrcWithoutForce(t *testing.T) {
-	// Not Parallel: changes process working directory.
-	tmp := t.TempDir()
-	t.Chdir(tmp)
-
-	name := "echo-agent"
-	srcDir := filepath.Join(tmp, "src", name)
-	//nolint:gosec // test fixture directory permissions are intentional
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		t.Fatalf("mkdir src: %v", err)
-	}
-	manifestPath := filepath.Join(srcDir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(manifestPath, []byte("name: "+name+"\n"), 0644); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
-
-	a := &InitAction{flags: &initFlags{noPrompt: true, force: false}}
-
-	_, _, err := a.downloadAgentYaml(t.Context(), manifestPath, "")
-	if err == nil {
-		t.Fatal("expected error for no-prompt without --force")
-	}
-
-	localErr, ok := errors.AsType[*azdext.LocalError](err)
-	if !ok {
-		t.Fatalf("expected *azdext.LocalError, got %T: %v", err, err)
-	}
-	if localErr.Code != exterrors.CodeInvalidManifestPointer {
-		t.Errorf("expected code %q, got %q", exterrors.CodeInvalidManifestPointer, localErr.Code)
-	}
-	if !strings.Contains(localErr.Suggestion, "--force") {
-		t.Errorf("suggestion should mention --force, got: %s", localErr.Suggestion)
-	}
-}
-
-func TestCodeDeployFlagValidation(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name           string
-		flags          initFlags
-		wantErr        bool
-		wantErrContain string
-	}{
-		{
-			name:    "code deploy with all required flags passes validation",
-			flags:   initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py"},
-			wantErr: false,
-		},
-		{
-			name: "code deploy with ACR connection fails",
-			flags: initFlags{
-				noPrompt:      true,
-				deployMode:    "code",
-				runtime:       "python_3_13",
-				entryPoint:    "app.py",
-				acrConnection: "registry-connection",
-			},
-			wantErr:        true,
-			wantErrContain: "--acr-connection cannot be used",
-		},
-		{
-			name:           "code deploy without runtime fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", entryPoint: "app.py"},
-			wantErr:        true,
-			wantErrContain: "--runtime is required",
-		},
-		{
-			name:           "code deploy without entry-point fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13"},
-			wantErr:        true,
-			wantErrContain: "--entry-point is required",
-		},
-		{
-			name:    "container deploy without runtime/entry-point passes",
-			flags:   initFlags{noPrompt: true, deployMode: "container"},
-			wantErr: false,
-		},
-		{
-			name: "registry connection with pre-built image passes",
-			flags: initFlags{
-				noPrompt: true, deployMode: "container",
-				image: "registry.example.com/agent:v1", registryConnection: "private-registry",
-			},
-		},
-		{
-			name: "registry connection with code deploy fails",
-			flags: initFlags{
-				noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py",
-				registryConnection: "private-registry", manifestPointer: "agent.yaml",
-			},
-			wantErr:        true,
-			wantErrContain: "registry-connection",
-		},
-		{
-			name:    "code deploy without noPrompt skips validation",
-			flags:   initFlags{noPrompt: false, deployMode: "code"},
-			wantErr: false,
-		},
-		{
-			name: "no-prompt manifest can provide code configuration",
-			flags: initFlags{
-				noPrompt: true, deployMode: "code", manifestPointer: "agent.manifest.yaml",
-			},
-			wantErr: false,
-		},
-		{
-			name:           "invalid deploy-mode value fails",
-			flags:          initFlags{noPrompt: true, deployMode: "invalid"},
-			wantErr:        true,
-			wantErrContain: "--deploy-mode must be",
-		},
-		{
-			name:           "invalid runtime value fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "node_20", entryPoint: "app.js"},
-			wantErr:        true,
-			wantErrContain: "--runtime must be one of",
-		},
-		{
-			name:           "invalid dep-resolution value fails",
-			flags:          initFlags{noPrompt: true, deployMode: "code", runtime: "python_3_13", entryPoint: "app.py", depResolution: "invalid"},
-			wantErr:        true,
-			wantErrContain: "--dep-resolution must be",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			a := &InitAction{flags: &tt.flags}
-			err := a.validateCodeDeployFlags()
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				if !strings.Contains(err.Error(), tt.wantErrContain) {
-					t.Errorf("error = %q, want containing %q", err.Error(), tt.wantErrContain)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
@@ -3665,307 +2471,24 @@ func TestFolderNameFromTitle(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// peekManifestName: best-effort manifest name extraction for -m folder
-// creation (covers PR review — parity with template-flow folder creation)
-// ---------------------------------------------------------------------------
-
-func TestPeekManifestName_LocalFile_WithName(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("name: my-cool-agent\ndescription: hi\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "my-cool-agent" {
-		t.Errorf("peekManifestName = %q, want %q", got, "my-cool-agent")
-	}
-}
-
-func TestPeekManifestName_LocalFile_WithoutName(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("description: missing top-level name\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty", got)
-	}
-}
-
-func TestPeekManifestName_LocalFile_EmptyName(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("name: \"   \"\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty (whitespace-only name)", got)
-	}
-}
-
-func TestPeekManifestName_LocalFile_NonExistent(t *testing.T) {
-	t.Parallel()
-	got := peekManifestName(t.Context(), filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty for missing file", got)
-	}
-}
-
-func TestPeekManifestName_LocalFile_Directory(t *testing.T) {
-	t.Parallel()
-	// Pointing at a directory should not be treated as a manifest — full
-	// validation runs in checkNotDirectory; peek must not panic or return
-	// noise.
-	got := peekManifestName(t.Context(), t.TempDir(), &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty for directory", got)
-	}
-}
-
-func TestPeekManifestName_LocalFile_MalformedYAML(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("name: [unterminated\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty for malformed yaml", got)
-	}
-}
-
-func TestPeekManifestName_LocalFile_NestedFieldsIgnored(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	manifest := "" +
-		"name: nested-agent\n" +
-		"description: hi\n" +
-		"tools:\n" +
-		"  - name: not-the-agent-name\n" +
-		"  - name: also-not-it\n" +
-		"environment:\n" +
-		"  - name: SOME_ENV\n" +
-		"    value: x\n"
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "nested-agent" {
-		t.Errorf("peekManifestName = %q, want nested-agent (top-level only)", got)
-	}
-}
-
-// Regression for #8945: a manifest carries the agent identity under
-// template.name, so the -m flow must peek that (not the top-level manifest
-// name) to prompt with — and default the folder to — the agent's own name,
-// matching the interactive flow.
-func TestPeekManifestName_LocalFile_PrefersTemplateName(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.manifest.yaml")
-	manifest := "" +
-		"name: my-manifest\n" +
-		"displayName: My Agent\n" +
-		"template:\n" +
-		"  name: my-agent\n" +
-		"  kind: hosted\n"
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "my-agent" {
-		t.Errorf("peekManifestName = %q, want %q (template.name)", got, "my-agent")
-	}
-}
-
-// When a manifest declares template: but the template omits name, the peek
-// falls back to the top-level manifest name, mirroring ExtractAgentDefinition.
-func TestPeekManifestName_LocalFile_TemplateWithoutNameFallsBack(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.manifest.yaml")
-	manifest := "" +
-		"name: fallback-agent\n" +
-		"template:\n" +
-		"  kind: hosted\n"
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte(manifest), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	got := peekManifestName(t.Context(), path, &http.Client{})
-	if got != "fallback-agent" {
-		t.Errorf("peekManifestName = %q, want %q (top-level fallback)", got, "fallback-agent")
-	}
-}
-
-func TestPeekManifestName_EmptyPointer(t *testing.T) {
-	t.Parallel()
-	got := peekManifestName(t.Context(), "", &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName(\"\") = %q, want empty", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// resolveAgentNameFromManifestPointer: validates that the agent name is
-// resolved (via --agent-name flag or peek+default in noPrompt) BEFORE any
-// project folder is created, so the folder / agent identity / service entry /
-// src subfolder / cd hint all use the same name.
-// ---------------------------------------------------------------------------
-
-func TestResolveAgentNameFromManifestPointer_FlagWinsWithoutPeek(t *testing.T) {
-	t.Parallel()
-
-	flags := &initFlags{agentName: "flag-agent", noPrompt: true}
-	// Manifest pointer is intentionally unreachable to prove the flag short-circuits
-	// the peek entirely.
-	got, err := resolveAgentNameFromManifestPointer(
-		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "flag-agent" {
-		t.Errorf("got name = %q, want %q", got, "flag-agent")
-	}
-	if flags.agentName != "flag-agent" {
-		t.Errorf("flags.agentName = %q, want pinned to flag value", flags.agentName)
-	}
-}
-
-func TestResolveAgentNameFromManifestPointer_NoPromptUsesPeekedDefault(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("name: from-manifest\ndescription: hi\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	flags := &initFlags{noPrompt: true}
-	got, err := resolveAgentNameFromManifestPointer(
-		t.Context(), nil, flags, path, &http.Client{},
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "from-manifest" {
-		t.Errorf("got name = %q, want %q", got, "from-manifest")
-	}
-	if flags.agentName != "from-manifest" {
-		t.Errorf("flags.agentName = %q, want pinned to peeked default", flags.agentName)
-	}
-}
-
-func TestResolveAgentNameFromManifestPointer_PeekFailsReturnsEmpty(t *testing.T) {
-	t.Parallel()
-
-	// Peek will fail (nonexistent local path, no flag). Helper must return ""
-	// and leave flags.agentName empty so the caller falls back to the deferred
-	// inner resolution.
-	flags := &initFlags{noPrompt: true}
-	got, err := resolveAgentNameFromManifestPointer(
-		t.Context(), nil, flags, filepath.Join(t.TempDir(), "does-not-exist.yaml"), &http.Client{},
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "" {
-		t.Errorf("got name = %q, want empty when peek fails and no flag", got)
-	}
-	if flags.agentName != "" {
-		t.Errorf("flags.agentName = %q, want unchanged when peek fails", flags.agentName)
-	}
-}
-
-func TestResolveAgentNameFromManifestPointer_InvalidFlagReturnsError(t *testing.T) {
-	t.Parallel()
-
-	// Invalid flag value must surface a validation error rather than silently
-	// falling back to peek — the user explicitly asked for this name.
-	flags := &initFlags{agentName: "INVALID NAME with spaces", noPrompt: true}
-	_, err := resolveAgentNameFromManifestPointer(
-		t.Context(), nil, flags, filepath.Join(t.TempDir(), "ignored.yaml"), &http.Client{},
-	)
-	if err == nil {
-		t.Fatalf("expected validation error for invalid --agent-name, got nil")
-	}
-}
-
-func TestResolveAgentNameFromManifestPointer_FlagPeekConsistency(t *testing.T) {
-	t.Parallel()
-
-	// When --agent-name matches what peek would return, the resolved name and
-	// the flag value should agree and the manifest never needs to be read.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "agent.yaml")
-	//nolint:gosec // test fixture file permissions are intentional
-	if err := os.WriteFile(path, []byte("name: shared-name\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	flags := &initFlags{agentName: "shared-name", noPrompt: true}
-	got, err := resolveAgentNameFromManifestPointer(
-		t.Context(), nil, flags, path, &http.Client{},
-	)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got != "shared-name" {
-		t.Errorf("got name = %q, want %q", got, "shared-name")
-	}
-}
-
-func TestPeekManifestName_NonGitHubURL(t *testing.T) {
-	t.Parallel()
-	// Non-GitHub URLs are unsupported by the naive peek path and must return
-	// "" (the caller then falls back to targetDir=".").
-	got := peekManifestName(t.Context(), "https://example.com/some/manifest.yaml", &http.Client{})
-	if got != "" {
-		t.Errorf("peekManifestName = %q, want empty for non-GitHub URL", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// absolutizeRelativeManifestPaths: ensures the -m manifest path survives
+// absolutizeRelativeTemplatePaths: ensures the template path survives
 // ensureProject chdir into the newly created project directory. flags.src
 // is intentionally NOT absolutized (see godoc on the helper for why).
 // ---------------------------------------------------------------------------
 
-func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_RelativeLocalManifest(t *testing.T) {
 	tmp := t.TempDir()
 	t.Chdir(tmp)
 
 	flags := &initFlags{
-		manifestPointer: "agent.yaml",
+		templatePointer: "agent.yaml",
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if !filepath.IsAbs(flags.manifestPointer) {
-		t.Errorf("manifestPointer should be absolute, got %q", flags.manifestPointer)
+	if !filepath.IsAbs(flags.templatePointer) {
+		t.Errorf("templatePointer should be absolute, got %q", flags.templatePointer)
 	}
 	// Regression guard: --src is an output target (where the agent
 	// definition is downloaded to, relative to the project root).
@@ -3977,68 +2500,68 @@ func TestAbsolutizeRelativeManifestPaths_RelativeLocalManifest(t *testing.T) {
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_AbsoluteLocalUnchanged(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_AbsoluteLocalUnchanged(t *testing.T) {
 	t.Parallel()
 	absManifest := filepath.Join(t.TempDir(), "agent.yaml")
 
 	flags := &initFlags{
-		manifestPointer: absManifest,
+		templatePointer: absManifest,
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != absManifest {
-		t.Errorf("absolute manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	if flags.templatePointer != absManifest {
+		t.Errorf("absolute templatePointer should be unchanged, got %q", flags.templatePointer)
 	}
 	if flags.src != "src" {
 		t.Errorf("src should be unchanged, got %q", flags.src)
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_URLPointerUnchanged(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_URLPointerUnchanged(t *testing.T) {
 	t.Parallel()
 	const ghURL = "https://github.com/owner/repo/blob/main/agent.yaml"
 	flags := &initFlags{
-		manifestPointer: ghURL,
+		templatePointer: ghURL,
 		src:             "",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != ghURL {
-		t.Errorf("URL manifestPointer should be unchanged, got %q", flags.manifestPointer)
+	if flags.templatePointer != ghURL {
+		t.Errorf("URL templatePointer should be unchanged, got %q", flags.templatePointer)
 	}
 }
 
-func TestAbsolutizeRelativeManifestPaths_EmptyFields(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_EmptyFields(t *testing.T) {
 	t.Parallel()
 	flags := &initFlags{}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
-	if flags.manifestPointer != "" {
-		t.Errorf("empty manifestPointer should remain empty, got %q", flags.manifestPointer)
+	if flags.templatePointer != "" {
+		t.Errorf("empty templatePointer should remain empty, got %q", flags.templatePointer)
 	}
 	if flags.src != "" {
 		t.Errorf("empty src should remain empty, got %q", flags.src)
 	}
 }
 
-// TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression specifically guards
+// TestAbsolutizeRelativeTemplatePaths_SrcEscapeRegression specifically guards
 // against the bug where absolutizing --src before chdir + relativization in
 // InitAction.Run would produce "..\src" and write agent files outside the
 // newly created project directory.
-func TestAbsolutizeRelativeManifestPaths_SrcEscapeRegression(t *testing.T) {
+func TestAbsolutizeRelativeTemplatePaths_SrcEscapeRegression(t *testing.T) {
 	originalCwd := t.TempDir()
 	t.Chdir(originalCwd)
 
 	flags := &initFlags{
-		manifestPointer: "agent.yaml",
+		templatePointer: "agent.yaml",
 		src:             "src",
 	}
-	if err := absolutizeRelativeManifestPaths(flags); err != nil {
-		t.Fatalf("absolutizeRelativeManifestPaths: %v", err)
+	if err := absolutizeRelativeTemplatePaths(flags); err != nil {
+		t.Fatalf("absolutizeRelativeTemplatePaths: %v", err)
 	}
 
 	// Simulate ensureProject creating + chdir'ing into the project folder.
@@ -4219,99 +2742,4 @@ func TestEnsureResourceGroupNameSkipsWhenSaltEmpty(t *testing.T) {
 
 	_, ok := envServer.values["myapp-dev"][resourceGroupEnvKey]
 	require.False(t, ok, "no AZURE_RESOURCE_GROUP should be written when salt is empty")
-}
-
-func TestRemoveContainerFiles(t *testing.T) {
-	t.Parallel()
-
-	t.Run("removes Dockerfile and .dockerignore when present", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM python:3.13"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte("__pycache__"), 0600))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte("print('hi')"), 0600))
-
-		removeContainerFiles(dir)
-
-		_, err := os.Stat(filepath.Join(dir, "Dockerfile"))
-		require.True(t, os.IsNotExist(err), "Dockerfile should be removed")
-		_, err = os.Stat(filepath.Join(dir, ".dockerignore"))
-		require.True(t, os.IsNotExist(err), ".dockerignore should be removed")
-		// Other files are untouched
-		_, err = os.Stat(filepath.Join(dir, "app.py"))
-		require.NoError(t, err, "app.py should still exist")
-	})
-
-	t.Run("no error when files do not exist", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		// Should not panic or error when directory has no Dockerfile
-		removeContainerFiles(dir)
-	})
-
-	t.Run("leaves other files untouched", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		files := []string{"requirements.txt", "app.py", "README.md"}
-		for _, f := range files {
-			require.NoError(t, os.WriteFile(filepath.Join(dir, f), []byte("content"), 0600))
-		}
-
-		removeContainerFiles(dir)
-
-		for _, f := range files {
-			_, err := os.Stat(filepath.Join(dir, f))
-			require.NoError(t, err, "%s should still exist", f)
-		}
-	})
-}
-
-// TestSynthesizeVoiceManifestFile verifies the --kind prompt-voice scaffold path
-// writes a valid managed voice manifest that round-trips through the real parser,
-// covering the default model, the explicit model/voice overrides, and that no
-// voice key is emitted when none is supplied.
-func TestSynthesizeVoiceManifestFile(t *testing.T) {
-	t.Parallel()
-
-	parse := func(t *testing.T, path string) agent_yaml.VoiceAgent {
-		t.Helper()
-		data, err := os.ReadFile(path) //nolint:gosec // path is produced by the function under test
-		require.NoError(t, err)
-		def, err := agent_yaml.ExtractAgentDefinition(data)
-		require.NoError(t, err)
-		va, ok := def.(agent_yaml.VoiceAgent)
-		require.True(t, ok, "expected VoiceAgent, got %T", def)
-		return va
-	}
-
-	t.Run("defaults model when empty and omits voice", func(t *testing.T) {
-		t.Parallel()
-		path, cleanup, err := synthesizeVoiceManifestFile("my-voice", "", "")
-		require.NoError(t, err)
-		defer cleanup()
-
-		va := parse(t, path)
-		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
-		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
-		require.NotNil(t, va.Model)
-		require.Equal(t, defaultVoiceModel, va.Model.Id)
-		require.Nil(t, va.Voice, "no voice key should be emitted when none is supplied")
-	})
-
-	t.Run("honors explicit model and voice", func(t *testing.T) {
-		t.Parallel()
-		path, cleanup, err := synthesizeVoiceManifestFile(
-			"my-voice", "gpt-realtime-preview", "en-US-Ava:DragonHDLatestNeural",
-		)
-		require.NoError(t, err)
-		defer cleanup()
-
-		va := parse(t, path)
-		require.Equal(t, agent_yaml.AgentKindPromptVoice, va.Kind)
-		require.Equal(t, agent_yaml.VoiceModelTypeManaged, va.ModelType)
-		require.NotNil(t, va.Model)
-		require.Equal(t, "gpt-realtime-preview", va.Model.Id)
-		require.NotNil(t, va.Voice)
-		require.Equal(t, "en-US-Ava:DragonHDLatestNeural", *va.Voice)
-	})
 }

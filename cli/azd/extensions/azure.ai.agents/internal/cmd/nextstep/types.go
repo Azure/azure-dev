@@ -99,7 +99,7 @@ type State struct {
 	// MissingToolboxEndpoints lists collected toolboxes whose
 	// TOOLBOX_<NAME>_MCP_ENDPOINT variable is unset in the active
 	// azd environment. `azd deploy` produces split services, while
-	// legacy manifest toolboxes keep their existing remediation.
+	// bundled direct/root-$ref toolboxes require migration to split services.
 	//
 	// Each entry includes the resource Name and owning ServiceName so
 	// resolvers and Doctor checks can show the right guidance. The
@@ -124,14 +124,11 @@ type State struct {
 	ToolboxEndpointsChecked bool
 
 	// UnresolvedPlaceholders names {{NAME}} Mustache-style placeholders
-	// still present inside an agent configuration environment
-	// value. These are left over from init's manifest processing when
-	// agent.manifest.yaml declares a placeholder without a matching
-	// parameter (or the user skipped the prompt). Unlike Missing*Vars,
-	// these cannot be supplied via `azd env set` — the literal `{{X}}`
-	// would still be in the agent configuration at deploy time. The
-	// resolver surfaces a distinct configuration-edit suggestion for
-	// each.
+	// still present inside a direct/root-$ref agent definition environment
+	// value. Unlike Missing*Vars, these cannot be supplied via
+	// `azd env set` — the literal `{{X}}` would still be in the definition
+	// at deploy time. The resolver surfaces a distinct definition-edit
+	// suggestion for each.
 	UnresolvedPlaceholders []string
 
 	// Services is the per-service snapshot derived from azure.yaml plus
@@ -163,29 +160,16 @@ type State struct {
 	// prepend a `cd <folder>` suggestion to the Next: block.
 	CreatedFolderDisplay string
 
-	// HasModels, HasToolboxes, and HasConnections are aggregate flags.
-	// They describe resources. Models still come from agent manifests.
-	// Toolboxes include split services, bundled definitions, and
-	// legacy manifest resources.
-	// Connections prefer enabled azure.ai.connection services.
-	// Bundled agent config and legacy manifest resources are fallback
-	// sources. Doctor checks skip when no matching resource exists,
-	// while resolvers can tailor remediation.
-	//
-	// Model and toolbox flags stay false when the manifest file is
-	// missing, malformed, or declares no resources — the walker is
-	// silent on those failure modes so a missing/in-flight manifest
-	// never blocks the rest of state assembly.
-	HasModels      bool
+	// HasToolboxes and HasConnections are aggregate resource flags.
+	// Toolboxes include split services and direct/root-$ref agent
+	// references. Connections come from enabled azure.ai.connection
+	// services.
 	HasToolboxes   bool
 	HasConnections bool
 
-	// ModelRefs, Toolboxes, and Connections list collected resources.
-	// ModelRefs still come from manifests. Connections come from
-	// unified services or fallback sources.
+	// Toolboxes and Connections list collected resources.
 	// Entries are sorted by Name, then ServiceName, so callers can
 	// render them deterministically.
-	ModelRefs   []ResourceRef
 	Toolboxes   []ResourceRef
 	Connections []ResourceRef
 
@@ -195,14 +179,8 @@ type State struct {
 	ConnectionLoadErrors []string
 }
 
-// ResourceRef is a slim summary of a manifest resource that the
-// nextstep package surfaces to doctor checks and resolvers. The
-// shape intentionally elides agent_yaml.ModelResource /
-// ToolboxResource / ConnectionResource details that doctor checks
-// don't consume today — keeping the surface small so future
-// manifest schema changes don't ripple through the resolver / doctor
-// boundary. Add fields here only when a doctor check or resolver
-// branch needs them.
+// ResourceRef is a slim summary of a configured resource that the
+// nextstep package surfaces to doctor checks and resolvers.
 type ResourceRef struct {
 	// Name is the configured resource name. Doctor checks use it to find
 	// deployments, connections, and toolboxes.
@@ -214,7 +192,6 @@ type ResourceRef struct {
 	ServiceName string
 
 	// Detail carries a kind-specific identifier:
-	//   - models:      ModelResource.Id (e.g., "azureml://...gpt-4o...")
 	//   - connections: <Category> | <Target>
 	//   - toolboxes:   empty (no identifier beyond Name today)
 	// Doctor remediation messages render Detail verbatim, so changes
@@ -235,9 +212,6 @@ const (
 	ToolboxSourceBundled
 	// ToolboxSourceSplit is a standalone azure.ai.toolbox service.
 	ToolboxSourceSplit
-	// ToolboxSourceLegacyManifest is a toolbox declared in an agent
-	// manifest.
-	ToolboxSourceLegacyManifest
 )
 
 // ServiceState mirrors one entry from the project's services map, plus a

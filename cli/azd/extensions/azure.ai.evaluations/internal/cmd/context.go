@@ -286,24 +286,22 @@ func (ec *evalContext) forgetDeletedVersion(ctx context.Context, kind, name, ver
 // sibling service's write would otherwise drop whatever that one had just
 // recorded.
 func (ec *evalContext) deletePrivate(ctx context.Context, keys ...string) error {
+	return ec.deletePrivateSelected(ctx, strings.Join(keys, ", "), func(map[string]string) []string {
+		return keys
+	})
+}
+
+// deletePrivateSelected chooses keys from the locked, current store so a
+// concurrently replaced reference cannot be removed using a stale cached id.
+func (ec *evalContext) deletePrivateSelected(
+	ctx context.Context, subject string, selectKeys func(map[string]string) []string,
+) error {
 	if ec.azdClient == nil {
-		return messages.NoAzdEnvironmentToWrite(strings.Join(keys, ", "))
+		return messages.NoAzdEnvironmentToWrite(subject)
 	}
-	state := ec.loadPrivateState(ctx)
+	ec.loadPrivateState(ctx)
 	if ec.stateErr != nil {
-		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), ec.stateErr)
-	}
-	// Nothing recorded is nothing to drop, and taking the lock to rewrite an
-	// identical section is a round trip for no change.
-	present := false
-	for _, key := range keys {
-		if _, ok := state[key]; ok {
-			present = true
-			break
-		}
-	}
-	if !present {
-		return nil
+		return messages.PrivateStateUnreadable(subject, ec.stateErr)
 	}
 
 	unlock, err := ec.lockPrivateState(ctx)
@@ -314,13 +312,20 @@ func (ec *evalContext) deletePrivate(ctx context.Context, keys ...string) error 
 
 	merged, err := ec.readPrivateState(ctx)
 	if err != nil {
-		return messages.PrivateStateUnreadable(strings.Join(keys, ", "), err)
+		return messages.PrivateStateUnreadable(subject, err)
 	}
-	for _, key := range keys {
-		delete(merged, key)
+	changed := false
+	for _, key := range selectKeys(merged) {
+		if _, present := merged[key]; present {
+			delete(merged, key)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
 	}
 	if err := ec.setEnvConfig(ctx, privateStatePath, merged); err != nil {
-		return messages.WritingEnvValue(strings.Join(keys, ", "), err)
+		return messages.WritingEnvValue(subject, err)
 	}
 	ec.state = merged
 	return nil
@@ -482,7 +487,7 @@ func (ec *evalContext) setPrivate(ctx context.Context, key, value string) error 
 // read "unowned", both choose the unqualified key, and the second overwrite the
 // first's id while the ownership marker still named the first. One service then
 // had no mapping, and its next deploy made a second eval.
-func (ec *evalContext) setPrivateScoped(ctx context.Context, base, scope, value string) error {
+func (ec *evalContext) setPrivateScoped(ctx context.Context, base, ownerBase, scope, value string) error {
 	if ec.azdClient == nil {
 		return messages.NoAzdEnvironmentToWrite(base)
 	}
@@ -504,7 +509,11 @@ func (ec *evalContext) setPrivateScoped(ctx context.Context, base, scope, value 
 
 	owner := base + project.EvalScopeSuffix
 	key := base
-	if scope != "" && merged[owner] != "" && merged[owner] != scope {
+	current := merged[owner]
+	if current == "" && ownerBase != "" {
+		current = merged[ownerBase+project.EvalScopeSuffix]
+	}
+	if scope != "" && current != "" && current != scope {
 		key = base + "_" + project.EvalScopeTag(scope)
 	}
 

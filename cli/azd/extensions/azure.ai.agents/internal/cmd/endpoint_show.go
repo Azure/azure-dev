@@ -7,11 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -29,11 +33,13 @@ func newEndpointShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the current endpoint and card configuration of an agent.",
-		Long: `Show the current endpoint and card configuration of an agent.
+		Short: "Show callable endpoints or hosted endpoint/card configuration.",
+		Long: `Show endpoint information for a hosted, prompt, or voice agent.
 
-Displays protocols, version selector (traffic split), authorization schemes,
-and agent card (A2A discovery) as configured on the live agent.`,
+Hosted agents display live protocols, version selector (traffic split),
+authorization schemes, and agent card (A2A discovery). Prompt agents display
+their deployed Responses endpoint. Voice agents display their deployed WebSocket
+endpoint.`,
 		Example: `  # Show endpoint config (auto-resolves from azure.yaml)
   azd ai agent endpoint show
 
@@ -81,44 +87,222 @@ func runEndpointShow(
 		return err
 	}
 
-	// Resolve the agent definition (inline on the service entry, or a legacy
-	// agent.yaml on disk) to get the agent name.
-	agentDef, _, source, err := project.LoadAgentDefinition(svc, proj.Path)
-	if err != nil {
-		return fmt.Errorf("failed to resolve agent definition: %w", err)
-	}
-	if source.IsLegacy() {
-		project.WarnLegacyAgentShape(source)
-	}
-
-	// Resolve endpoint and create client.
-	agentContext, err := newAgentContext(ctx, "", "", agentDef.Name, "")
+	validation, err := project.ValidateAgentEndpointOperation(
+		svc,
+		proj.Path,
+		project.AgentEndpointOperationShow,
+	)
 	if err != nil {
 		return err
 	}
 
-	agentClient, err := agentContext.NewClient()
+	switch validation.Kind {
+	case agent_yaml.AgentKindHosted:
+		return runHostedEndpointShow(
+			ctx,
+			azdClient,
+			validation.Name,
+			extCtx.Environment,
+			flags.output,
+			nil,
+		)
+	case agent_yaml.AgentKindPrompt:
+		return runPromptEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output, nil)
+	case agent_yaml.AgentKindPromptVoice, agent_yaml.AgentKindVoice:
+		return runVoiceEndpointShow(ctx, azdClient, svc, validation, extCtx.Environment, flags.output)
+	default:
+		return exterrors.Internal(
+			exterrors.CodeUnsupportedAgentKind,
+			fmt.Sprintf("agent endpoint show has no handler for kind %q", validation.Kind),
+		)
+	}
+}
+
+type hostedEndpointAgentResolver func(
+	context.Context,
+	string,
+	string,
+) (*agent_api.AgentObject, error)
+
+func runHostedEndpointShow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	agentName string,
+	environmentName string,
+	outputFormat string,
+	resolveAgent hostedEndpointAgentResolver,
+) error {
+	projectEndpoint, err := hostedEndpointProjectEndpoint(ctx, azdClient, environmentName)
 	if err != nil {
 		return err
 	}
 
-	agent, err := agentClient.GetAgent(ctx, agentDef.Name, DefaultAgentAPIVersion, false)
+	if resolveAgent == nil {
+		resolveAgent = func(
+			ctx context.Context,
+			projectEndpoint string,
+			agentName string,
+		) (*agent_api.AgentObject, error) {
+			credential, err := newAgentCredential()
+			if err != nil {
+				return nil, err
+			}
+			return agent_api.NewAgentClient(projectEndpoint, credential).GetAgent(
+				ctx,
+				agentName,
+				DefaultAgentAPIVersion,
+				false,
+			)
+		}
+	}
+
+	agent, err := resolveAgent(ctx, projectEndpoint, agentName)
 	if err != nil {
-		return fmt.Errorf("failed to get agent %q: %w", agentDef.Name, err)
+		return fmt.Errorf("failed to get agent %q: %w", agentName, err)
 	}
 
-	if flags.output == "json" {
-		return printEndpointJSON(agent)
+	result := endpointShowResult{
+		Name:          agent.Name,
+		Kind:          agent_yaml.AgentKindHosted,
+		AgentEndpoint: agent.AgentEndpoint,
+		AgentCard:     agent.AgentCard,
+	}
+	return printEndpointShowResult(result, outputFormat)
+}
+
+func hostedEndpointProjectEndpoint(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	environmentName string,
+) (string, error) {
+	if environmentName == "" {
+		return resolveAgentEndpoint(ctx, "", "")
 	}
 
-	return printEndpointTable(agent)
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
+	if err != nil {
+		return "", fmt.Errorf("reading the azd environment: %w", err)
+	}
+	projectEndpoint := strings.TrimSpace(envValues["FOUNDRY_PROJECT_ENDPOINT"])
+	if projectEndpoint == "" {
+		return "", exterrors.Dependency(
+			exterrors.CodeMissingAiProjectEndpoint,
+			fmt.Sprintf(
+				"FOUNDRY_PROJECT_ENDPOINT is required in azd environment %q",
+				environmentName,
+			),
+			"run `azd provision` for the selected environment or select an environment with a Foundry project",
+		)
+	}
+	normalized, _, err := validateProjectEndpoint(projectEndpoint)
+	if err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+func runPromptEndpointShow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	validation project.AgentDefinitionValidation,
+	environmentName string,
+	outputFormat string,
+	resolveVersion project.PromptAgentVersionResolver,
+) error {
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
+	if err != nil {
+		return fmt.Errorf("reading the azd environment: %w", err)
+	}
+	endpoint, err := project.ResolvePromptAgentDeploymentEndpoint(
+		ctx,
+		azdClient,
+		envValues,
+		svc.GetName(),
+		resolveVersion,
+	)
+	if err != nil {
+		return err
+	}
+
+	agentName := deployedAgentName(envValues, svc.GetName(), validation.Name)
+	result := endpointShowResult{
+		Name:      agentName,
+		Kind:      validation.Kind,
+		Endpoints: map[string]string{"responses": endpoint},
+	}
+	return printEndpointShowResult(result, outputFormat)
+}
+
+func runVoiceEndpointShow(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	svc *azdext.ServiceConfig,
+	validation project.AgentDefinitionValidation,
+	environmentName string,
+	outputFormat string,
+) error {
+	envValues, err := promptEnvValues(ctx, azdClient, environmentName)
+	if err != nil {
+		return fmt.Errorf("reading the azd environment: %w", err)
+	}
+
+	endpoint, err := project.ResolveVoiceAgentDeploymentEndpoint(envValues, svc.GetName())
+	if err != nil {
+		return err
+	}
+
+	result := endpointShowResult{
+		Name:      deployedAgentName(envValues, svc.GetName(), validation.Name),
+		Kind:      validation.Kind,
+		Endpoints: map[string]string{"voice": endpoint},
+	}
+	return printEndpointShowResult(result, outputFormat)
+}
+
+func deployedAgentName(envValues map[string]string, serviceName, fallback string) string {
+	key := fmt.Sprintf("AGENT_%s_NAME", toServiceKey(serviceName))
+	if name := strings.TrimSpace(envValues[key]); name != "" {
+		return name
+	}
+	return fallback
+}
+
+type endpointShowResult struct {
+	Name          string
+	Kind          agent_yaml.AgentKind
+	Endpoints     map[string]string
+	AgentEndpoint *agent_api.AgentEndpoint
+	AgentCard     *agent_api.AgentCard
+}
+
+func printEndpointShowResult(result endpointShowResult, outputFormat string) error {
+	if outputFormat == "json" {
+		return printEndpointResultJSON(result)
+	}
+	return printEndpointResultTable(result)
 }
 
 func printEndpointJSON(agent *agent_api.AgentObject) error {
+	return printEndpointResultJSON(endpointShowResult{
+		Name:          agent.Name,
+		Kind:          agent_yaml.AgentKindHosted,
+		AgentEndpoint: agent.AgentEndpoint,
+		AgentCard:     agent.AgentCard,
+	})
+}
+
+func printEndpointResultJSON(result endpointShowResult) error {
 	out := map[string]any{
-		"name":           agent.Name,
-		"agent_endpoint": agent.AgentEndpoint,
-		"agent_card":     agent.AgentCard,
+		"name": result.Name,
+		"kind": result.Kind,
+	}
+	if len(result.Endpoints) > 0 {
+		out["endpoints"] = result.Endpoints
+	}
+	if result.Kind == agent_yaml.AgentKindHosted {
+		out["agent_endpoint"] = result.AgentEndpoint
+		out["agent_card"] = result.AgentCard
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -172,14 +356,33 @@ func resolveEndpointProtocols(endpoint *agent_api.AgentEndpoint) []string {
 }
 
 func printEndpointTable(agent *agent_api.AgentObject) error {
+	return printEndpointResultTable(endpointShowResult{
+		Name:          agent.Name,
+		Kind:          agent_yaml.AgentKindHosted,
+		AgentEndpoint: agent.AgentEndpoint,
+		AgentCard:     agent.AgentCard,
+	})
+}
+
+func printEndpointResultTable(result endpointShowResult) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 
-	fmt.Fprintf(w, "Agent:\t%s\n", agent.Name)
+	fmt.Fprintf(w, "Agent:\t%s\n", result.Name)
+	fmt.Fprintf(w, "Kind:\t%s\n", result.Kind)
+	if len(result.Endpoints) > 0 {
+		fmt.Fprintln(w, "\nCallable Endpoints:")
+		for _, protocol := range slices.Sorted(maps.Keys(result.Endpoints)) {
+			fmt.Fprintf(w, "  %s:\t%s\n", protocol, result.Endpoints[protocol])
+		}
+	}
+	if result.Kind != agent_yaml.AgentKindHosted {
+		return w.Flush()
+	}
 	fmt.Fprintln(w)
 
 	// Protocols
 	fmt.Fprintf(w, "Protocols:\t")
-	if protocols := resolveEndpointProtocols(agent.AgentEndpoint); len(protocols) > 0 {
+	if protocols := resolveEndpointProtocols(result.AgentEndpoint); len(protocols) > 0 {
 		fmt.Fprintf(w, "%s\n", strings.Join(protocols, ", "))
 	} else {
 		fmt.Fprintf(w, "(not configured)\n")
@@ -187,9 +390,9 @@ func printEndpointTable(agent *agent_api.AgentObject) error {
 
 	// Version Selector
 	fmt.Fprintf(w, "\nVersion Selector:\n")
-	if agent.AgentEndpoint != nil && agent.AgentEndpoint.VersionSelector != nil &&
-		len(agent.AgentEndpoint.VersionSelector.VersionSelectionRules) > 0 {
-		for _, rule := range agent.AgentEndpoint.VersionSelector.VersionSelectionRules {
+	if result.AgentEndpoint != nil && result.AgentEndpoint.VersionSelector != nil &&
+		len(result.AgentEndpoint.VersionSelector.VersionSelectionRules) > 0 {
+		for _, rule := range result.AgentEndpoint.VersionSelector.VersionSelectionRules {
 			pct := ""
 			if rule.TrafficPercentage != nil {
 				pct = fmt.Sprintf("%d%%", *rule.TrafficPercentage)
@@ -202,8 +405,8 @@ func printEndpointTable(agent *agent_api.AgentObject) error {
 
 	// Authorization
 	fmt.Fprintf(w, "\nAuthorization:\n")
-	if agent.AgentEndpoint != nil && len(agent.AgentEndpoint.AuthorizationSchemes) > 0 {
-		for _, scheme := range agent.AgentEndpoint.AuthorizationSchemes {
+	if result.AgentEndpoint != nil && len(result.AgentEndpoint.AuthorizationSchemes) > 0 {
+		for _, scheme := range result.AgentEndpoint.AuthorizationSchemes {
 			isolation := "(not specified)"
 			if scheme.IsolationKeySource != nil {
 				isolation = string(scheme.IsolationKeySource.Kind)
@@ -217,14 +420,14 @@ func printEndpointTable(agent *agent_api.AgentObject) error {
 
 	// Agent Card
 	fmt.Fprintf(w, "\nAgent Card:\n")
-	if agent.AgentCard != nil {
-		if agent.AgentCard.Version != nil {
-			fmt.Fprintf(w, "  Version:\t%s\n", *agent.AgentCard.Version)
+	if result.AgentCard != nil {
+		if result.AgentCard.Version != nil {
+			fmt.Fprintf(w, "  Version:\t%s\n", *result.AgentCard.Version)
 		}
-		fmt.Fprintf(w, "  Description:\t%s\n", agent.AgentCard.Description)
-		if len(agent.AgentCard.Skills) > 0 {
+		fmt.Fprintf(w, "  Description:\t%s\n", result.AgentCard.Description)
+		if len(result.AgentCard.Skills) > 0 {
 			fmt.Fprintf(w, "  Skills:\n")
-			for _, skill := range agent.AgentCard.Skills {
+			for _, skill := range result.AgentCard.Skills {
 				fmt.Fprintf(w, "    - %s:\t%s\n", skill.Name, skill.Description)
 			}
 		}

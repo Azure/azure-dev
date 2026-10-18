@@ -125,10 +125,10 @@ func TestWithCatalogMetadata_FillsEachFieldIndependently(t *testing.T) {
 			absent:  []string{"display_name", "categories"},
 		},
 		{
-			name:    "an empty category list is not a value",
+			name:    "an explicit empty category list clears the value",
 			decl:    project.EvaluatorDecl{Categories: []string{}},
-			present: nil,
-			absent:  []string{"categories"},
+			present: []string{"categories"},
+			absent:  nil,
 		},
 	}
 

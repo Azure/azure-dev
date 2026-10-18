@@ -482,10 +482,15 @@ type testWorkflowServiceServer struct {
 	runCalls int
 	runErr   error
 	runHook  func()
+	request  *azdext.RunWorkflowRequest
 }
 
-func (s *testWorkflowServiceServer) Run(context.Context, *azdext.RunWorkflowRequest) (*azdext.EmptyResponse, error) {
+func (s *testWorkflowServiceServer) Run(
+	_ context.Context,
+	request *azdext.RunWorkflowRequest,
+) (*azdext.EmptyResponse, error) {
 	s.runCalls++
+	s.request = request
 	if s.runHook != nil {
 		s.runHook()
 	}

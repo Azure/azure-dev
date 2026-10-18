@@ -26,7 +26,7 @@ const (
 	// Lifecycle and response APIs live behind the same data-plane routes
 	// as the other Foundry kinds, with a "kind": "prompt" discriminator.
 	AgentKindPrompt AgentKind = "prompt"
-	// AgentKindPromptVoice is the authoring (agent.yaml) kind for a declarative
+	// AgentKindPromptVoice is the authoring kind for a declarative
 	// voice (speech-to-speech) agent. It is intentionally distinct from the
 	// data-plane service kind "voice": the map layer translates prompt-voice ->
 	// voice when building the create request. Reserving "prompt-voice" keeps a
@@ -84,15 +84,6 @@ func IsVoiceAgentKind(kind AgentKind) bool {
 	return kind == AgentKindPromptVoice || kind == AgentKindVoice
 }
 
-type ResourceKind string
-
-const (
-	ResourceKindModel      ResourceKind = "model"
-	ResourceKindTool       ResourceKind = "tool"
-	ResourceKindToolbox    ResourceKind = "toolbox"
-	ResourceKindConnection ResourceKind = "connection"
-)
-
 type ToolKind string
 
 const (
@@ -106,101 +97,6 @@ const (
 	ToolKindCodeInterpreter ToolKind = "code_interpreter"
 	ToolKindAzureAiSearch   ToolKind = "azure_ai_search"
 	ToolKindA2APreview      ToolKind = "a2a_preview"
-)
-
-// legacyToolKindAliases maps deprecated camelCase tool kind names to their
-// current snake_case equivalents so that older agent.yaml files continue to parse.
-var legacyToolKindAliases = map[ToolKind]ToolKind{
-	"webSearch":       ToolKindWebSearch,
-	"bingGrounding":   ToolKindBingGrounding,
-	"fileSearch":      ToolKindFileSearch,
-	"codeInterpreter": ToolKindCodeInterpreter,
-	"azureAiSearch":   ToolKindAzureAiSearch,
-	"a2aPreview":      ToolKindA2APreview,
-	"openApi":         ToolKindOpenApi,
-}
-
-// NormalizeToolKind maps legacy camelCase tool kind values to the current
-// snake_case form. If the kind is already canonical it is returned unchanged.
-func NormalizeToolKind(kind ToolKind) ToolKind {
-	if canonical, ok := legacyToolKindAliases[kind]; ok {
-		return canonical
-	}
-	return kind
-}
-
-// AuthType represents the authentication type for a connection.
-type AuthType string
-
-const (
-	AuthTypeAAD                  AuthType = "AAD"
-	AuthTypeApiKey               AuthType = "ApiKey"
-	AuthTypeCustomKeys           AuthType = "CustomKeys"
-	AuthTypeNone                 AuthType = "None"
-	AuthTypeOAuth2               AuthType = "OAuth2"
-	AuthTypePAT                  AuthType = "PAT"
-	AuthTypeUserEntraToken       AuthType = "UserEntraToken"
-	AuthTypeAgenticIdentity      AuthType = "AgenticIdentity"
-	AuthTypeAgenticIdentityToken AuthType = "AgenticIdentityToken"
-	AuthTypeManagedIdentity      AuthType = "ProjectManagedIdentity"
-	AuthTypeServicePrincipal     AuthType = "ServicePrincipal"
-	AuthTypeUsernamePassword     AuthType = "UsernamePassword"
-	AuthTypeAccessKey            AuthType = "AccessKey"
-	AuthTypeAccountKey           AuthType = "AccountKey"
-	AuthTypeSAS                  AuthType = "SAS"
-)
-
-// AuthTypeEntra is the name authors reach for when they mean "no secret, use
-// the caller's Entra identity", and is what azd's own documentation and
-// scaffolding have used. The service has never accepted it: its discriminator
-// for that mode is AAD. Sent verbatim it fails provisioning with a bad-request
-// listing twenty-one auth types, none of which explains that Entra and AAD are
-// the same thing. It is normalized rather than rejected because it names the
-// right concept.
-const AuthTypeEntra AuthType = "Entra"
-
-// NormalizeConnectionAuthType maps auth types accepted in agent.yaml to
-// the management-plane value required for project connection provisioning.
-// Legacy AgenticIdentity values are normalized to AgenticIdentityToken
-// for API compatibility, and Entra to AAD.
-func NormalizeConnectionAuthType(authType AuthType) AuthType {
-	switch authType {
-	case AuthTypeAgenticIdentity:
-		return AuthTypeAgenticIdentityToken
-	case AuthTypeEntra:
-		return AuthTypeAAD
-	}
-
-	return authType
-}
-
-// CategoryKind represents the category of a connection resource.
-type CategoryKind string
-
-const (
-	CategoryAzureOpenAI           CategoryKind = "AzureOpenAI"
-	CategoryCognitiveSearch       CategoryKind = "CognitiveSearch"
-	CategoryCognitiveService      CategoryKind = "CognitiveService"
-	CategoryCustomKeys            CategoryKind = "CustomKeys"
-	CategoryServerlessEndpoint    CategoryKind = "Serverless"
-	CategoryContainerRegistry     CategoryKind = "ContainerRegistry"
-	CategoryApiKey                CategoryKind = "ApiKey"
-	CategoryAzureBlob             CategoryKind = "AzureBlob"
-	CategoryGit                   CategoryKind = "Git"
-	CategoryRedis                 CategoryKind = "Redis"
-	CategoryS3                    CategoryKind = "S3"
-	CategorySnowflake             CategoryKind = "Snowflake"
-	CategoryAzureSqlDb            CategoryKind = "AzureSqlDb"
-	CategoryAzureSynapseAnalytics CategoryKind = "AzureSynapseAnalytics"
-	CategoryAzureMySqlDb          CategoryKind = "AzureMySqlDb"
-	CategoryAzurePostgresDb       CategoryKind = "AzurePostgresDb"
-	CategoryADLSGen2              CategoryKind = "ADLSGen2"
-	CategoryAzureDataExplorer     CategoryKind = "AzureDataExplorer"
-	CategoryBingLLMSearch         CategoryKind = "BingLLMSearch"
-	CategoryMicrosoftOneLake      CategoryKind = "MicrosoftOneLake"
-	CategoryElasticSearch         CategoryKind = "Elasticsearch"
-	CategoryPinecone              CategoryKind = "Pinecone"
-	CategoryQdrant                CategoryKind = "Qdrant"
 )
 
 type ConnectionKind string
@@ -241,8 +137,8 @@ type Workflow struct {
 	Trigger         *map[string]any `json:"trigger,omitempty" yaml:"trigger,omitempty"`
 }
 
-// VoiceAgent is a declarative (managed) voice speech-to-speech agent authored in
-// agent.yaml with kind "prompt-voice". Unlike a ContainerAgent it has no image,
+// VoiceAgent is a declarative (managed) voice speech-to-speech agent authored
+// with kind "prompt-voice". Unlike a ContainerAgent it has no image,
 // Dockerfile, or code — Foundry's Voice Live service hosts the model and audio
 // pipeline. The map layer translates this into a data-plane VoiceAgentDefinition
 // whose service kind is "voice".
@@ -404,13 +300,13 @@ const (
 	// MinSessionIdleTimeoutSeconds is the smallest accepted idle timeout.
 	MinSessionIdleTimeoutSeconds = 120
 	// MaxSessionIdleTimeoutSeconds is the largest accepted idle timeout.
-	MaxSessionIdleTimeoutSeconds = 3600
+	MaxSessionIdleTimeoutSeconds = 14400
 )
 
 // SessionConfiguration configures the runtime session behavior of a hosted agent.
 type SessionConfiguration struct {
 	// IdleTimeoutSeconds is the idle duration, in seconds, before a session's
-	// sandbox is suspended. Valid range is 120–3600 (inclusive). When nil,
+	// sandbox is suspended. Valid range is 120–14400 (inclusive). When nil,
 	// session_configuration is omitted from the request and the service default
 	// (900 seconds) applies.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty" yaml:"idle_timeout_seconds,omitempty"`
@@ -428,9 +324,9 @@ const (
 // determines how the content-safety proxy extracts the text it moderates. Both default to
 // InvocationContentTypeJSON when omitted.
 //
-// Keys in these structures follow the extension's dual-casing convention: camelCase in
-// azure.yaml, snake_case in the deprecated on-disk agent.yaml. The values below are wire
-// values and stay snake_case in both.
+// Public direct/root-$ref authoring follows the schema-canonical camelCase fields for
+// this block. Enum values such as non_streaming remain snake_case; internal YAML and
+// API tags are implementation details, not public aliases.
 const (
 	InvocationContentTypeJSON = "json"
 	InvocationContentTypeText = "text"
@@ -450,10 +346,13 @@ const InvocationsProtocol = "invocations"
 
 // SseTextSelector locates the text to moderate inside a single server-sent event frame.
 type SseTextSelector struct {
-	// EventType is the SSE event name this selector applies to. Required.
+	// EventType is matched exactly against the value of the "type" field inside the frame's
+	// `data:` payload, not against the SSE `event:` line. Required.
 	EventType string `json:"eventType" yaml:"event_type"`
-	// TextField is the JSONPath expression, relative to the frame payload, holding the text.
-	TextField string `json:"textField,omitempty" yaml:"text_field,omitempty"`
+	// TextField is the name of a field on the frame payload that holds the text, for example
+	// "delta". When provided, it must be non-empty, have no surrounding whitespace, and not be
+	// a selector expression. Defaults to "delta" when omitted.
+	TextField *string `json:"textField,omitempty" yaml:"text_field,omitempty"`
 }
 
 // InvocationsModeration configures how the content-safety proxy extracts the text it submits
@@ -470,10 +369,10 @@ type InvocationsModeration struct {
 	OutputContentType string `json:"outputContentType,omitempty" yaml:"output_content_type,omitempty"`
 	// ResponseMode is "non_streaming", "streaming" or "both". Required.
 	ResponseMode string `json:"responseMode,omitempty" yaml:"response_mode,omitempty"`
-	// InputPaths are JSONPath expressions selecting request text. Required when the input
-	// content type resolves to "json".
+	// InputPaths are selector expressions locating the request text: "$" root, dotted members,
+	// array indexes, and "[*]" wildcards. Required when the input content type resolves to "json".
 	InputPaths []string `json:"inputPaths,omitempty" yaml:"input_paths,omitempty"`
-	// OutputPaths are JSONPath expressions selecting buffered response text. Required when
+	// OutputPaths are selector expressions locating the buffered response text. Required when
 	// ResponseMode includes non-streaming and the output content type resolves to "json".
 	OutputPaths []string `json:"outputPaths,omitempty" yaml:"output_paths,omitempty"`
 	// StreamSelectors locate text within SSE frames. Required when ResponseMode includes
@@ -766,8 +665,8 @@ type PromptMemory struct {
 	// ChatModel and EmbeddingModel are the model deployment names the store
 	// uses to summarize conversations and to embed memories. Both are required
 	// to create a store; they are ignored when the store already exists.
-	ChatModel      string `json:"chat_model,omitempty" yaml:"chat_model,omitempty"`
-	EmbeddingModel string `json:"embedding_model,omitempty" yaml:"embedding_model,omitempty"`
+	ChatModel      string `json:"chatModel,omitempty" yaml:"chatModel,omitempty"`
+	EmbeddingModel string `json:"embeddingModel,omitempty" yaml:"embeddingModel,omitempty"`
 
 	// Scope namespaces memories so they are isolated per user (or per tenant,
 	// session, etc.). Defaults to DefaultMemoryScope, which resolves the caller's
@@ -777,11 +676,11 @@ type PromptMemory struct {
 	// UpdateDelay is how many seconds of conversation inactivity to wait before
 	// extracting memories. Nil leaves the service default (300s) in place. Set
 	// it low only for demos — a short delay extracts on nearly every turn.
-	UpdateDelay *int `json:"update_delay,omitempty" yaml:"update_delay,omitempty"`
+	UpdateDelay *int `json:"updateDelay,omitempty" yaml:"updateDelay,omitempty"`
 
 	// MaxMemories caps how many memories a single search returns. Nil leaves
 	// the service default in place.
-	MaxMemories *int `json:"max_memories,omitempty" yaml:"max_memories,omitempty"`
+	MaxMemories *int `json:"maxMemories,omitempty" yaml:"maxMemories,omitempty"`
 
 	// Options toggles which memory kinds the store extracts.
 	Options *PromptMemoryOptions `json:"options,omitempty" yaml:"options,omitempty"`
@@ -814,11 +713,11 @@ func (m *PromptMemory) UnmarshalYAML(value *yaml.Node) error {
 // fields are pointers so an unset toggle leaves the service default rather than
 // forcing false.
 type PromptMemoryOptions struct {
-	ChatSummaryEnabled      *bool  `json:"chat_summary_enabled,omitempty" yaml:"chat_summary_enabled,omitempty"`
-	UserProfileEnabled      *bool  `json:"user_profile_enabled,omitempty" yaml:"user_profile_enabled,omitempty"`
-	ProceduralMemoryEnabled *bool  `json:"procedural_memory_enabled,omitempty" yaml:"procedural_memory_enabled,omitempty"`
-	DefaultTTLSeconds       *int   `json:"default_ttl_seconds,omitempty" yaml:"default_ttl_seconds,omitempty"`
-	UserProfileDetails      string `json:"user_profile_details,omitempty" yaml:"user_profile_details,omitempty"`
+	ChatSummaryEnabled      *bool  `json:"chatSummaryEnabled,omitempty" yaml:"chatSummaryEnabled,omitempty"`
+	UserProfileEnabled      *bool  `json:"userProfileEnabled,omitempty" yaml:"userProfileEnabled,omitempty"`
+	ProceduralMemoryEnabled *bool  `json:"proceduralMemoryEnabled,omitempty" yaml:"proceduralMemoryEnabled,omitempty"`
+	DefaultTTLSeconds       *int   `json:"defaultTtlSeconds,omitempty" yaml:"defaultTtlSeconds,omitempty"`
+	UserProfileDetails      string `json:"userProfileDetails,omitempty" yaml:"userProfileDetails,omitempty"`
 }
 
 // DefaultMemoryScope isolates memories per calling user. Foundry substitutes
@@ -839,25 +738,6 @@ type ToolboxReference struct {
 	// ProjectConnectionID is the optional Foundry project connection name or ID
 	// passed as the toolbox MCP tool's project_connection_id.
 	ProjectConnectionID string `json:"projectConnectionId,omitempty" yaml:"projectConnectionId,omitempty"`
-}
-
-// AgentManifest The following represents a manifest that can be used to create agents dynamically.
-// It includes parameters that can be used to configure the agent's behavior.
-// These parameters include values that can be used as publisher parameters that can
-// be used to describe additional variables that have been tested and are known to work.
-// Variables described here are used to configure the agent dynamically at init time.
-// Once parameters are provided, these can be referenced in the manifest using the following notation:
-// `{{myParameter}}`
-// This allows for dynamic configuration of the agent based on the provided parameters.
-// (This notation is used elsewhere, but only the `param` scope is supported here)
-type AgentManifest struct {
-	Name        string          `json:"name" yaml:"name"`
-	DisplayName string          `json:"displayName" yaml:"displayName"`
-	Description *string         `json:"description,omitempty" yaml:"description,omitempty"`
-	Metadata    *map[string]any `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Template    any             `json:"template" yaml:"template"`
-	Parameters  PropertySchema  `json:"parameters" yaml:"parameters"`
-	Resources   []any           `json:"resources" yaml:"resources"` // Will be a type of Resource
 }
 
 // Binding Represents a binding between an input property and a tool parameter.
@@ -1185,9 +1065,7 @@ func decodeRecordProperty(name string, node *yaml.Node) (Property, error) {
 	return prop, nil
 }
 
-// MarshalYAML writes PropertySchema back as the record/map format so that
-// {{param}} placeholders elsewhere in the document survive a marshal→unmarshal
-// round-trip through InjectParameterValuesIntoManifest.
+// MarshalYAML writes PropertySchema back as the record/map format.
 func (ps PropertySchema) MarshalYAML() (any, error) {
 	out := make(map[string]any)
 
@@ -1259,7 +1137,7 @@ type ProtocolVersionRecord struct {
 	Version  string `json:"version" yaml:"version"`
 }
 
-// VersionSelectionRule describes how traffic is routed to an agent version in agent.yaml.
+// VersionSelectionRule describes how traffic is routed to an agent version.
 type VersionSelectionRule struct {
 	Type              string `json:"type" yaml:"type"`
 	AgentVersion      string `json:"agentVersion" yaml:"agent_version"`
@@ -1276,13 +1154,13 @@ type IsolationKeySource struct {
 	Kind string `json:"kind" yaml:"kind"`
 }
 
-// AuthorizationScheme describes an authorization scheme for the agent endpoint in agent.yaml.
+// AuthorizationScheme describes an authorization scheme for the agent endpoint.
 type AuthorizationScheme struct {
 	Type               string              `json:"type" yaml:"type"`
 	IsolationKeySource *IsolationKeySource `json:"isolationKeySource,omitempty" yaml:"isolation_key_source,omitempty"`
 }
 
-// AgentEndpoint describes the endpoint configuration for an agent in agent.yaml.
+// AgentEndpoint describes the endpoint configuration for an agent.
 type AgentEndpoint struct {
 	VersionSelector      *VersionSelector      `json:"versionSelector,omitempty" yaml:"version_selector,omitempty"`
 	Protocols            []string              `json:"protocols,omitempty" yaml:"protocols,omitempty"`
@@ -1303,73 +1181,6 @@ type AgentCard struct {
 	Description string           `json:"description" yaml:"description"`
 	Version     *string          `json:"version,omitempty" yaml:"version,omitempty"`
 	Skills      []AgentCardSkill `json:"skills" yaml:"skills"`
-}
-
-// Resource Represents a resource required by the agent.
-// Resources can include databases, APIs, or other external systems
-// that the agent needs to interact with to perform its tasks
-type Resource struct {
-	Name string       `json:"name" yaml:"name"`
-	Kind ResourceKind `json:"kind" yaml:"kind"`
-}
-
-// ModelResource Represents a model resource required by the agent
-type ModelResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Id       string `json:"id" yaml:"id"`
-}
-
-// ToolResource Represents a tool resource required by the agent
-type ToolResource struct {
-	Resource `json:",inline" yaml:",inline"`
-	Id       string         `json:"id" yaml:"id"`
-	Options  map[string]any `json:"options" yaml:"options"`
-}
-
-// ToolboxResource Represents a toolbox resource required by the agent.
-// A toolbox is a reusable collection of tools that can be deployed as a Foundry Toolset.
-type ToolboxResource struct {
-	Resource    `json:",inline" yaml:",inline"`
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-	Tools       []any  `json:"tools" yaml:"tools"`
-}
-
-// ConnectionResource Represents a connection resource required by the agent.
-// Maps to the Bicep ConnectionPropertiesV2 spec for creating project connections.
-type ConnectionResource struct {
-	Resource       `json:",inline" yaml:",inline"`
-	Category       CategoryKind      `json:"category" yaml:"category"`
-	Target         string            `json:"target" yaml:"target"`
-	AuthType       AuthType          `json:"authType" yaml:"authType"`
-	Credentials    map[string]any    `json:"credentials,omitempty" yaml:"credentials,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	ExpiryTime     string            `json:"expiryTime,omitempty" yaml:"expiryTime,omitempty"`
-	IsSharedToAll  *bool             `json:"isSharedToAll,omitempty" yaml:"isSharedToAll,omitempty"`
-	SharedUserList []string          `json:"sharedUserList,omitempty" yaml:"sharedUserList,omitempty"`
-	PeRequirement  string            `json:"peRequirement,omitempty" yaml:"peRequirement,omitempty"`
-	PeStatus       string            `json:"peStatus,omitempty" yaml:"peStatus,omitempty"`
-	Error          string            `json:"error,omitempty" yaml:"error,omitempty"`
-
-	// UseWorkspaceManagedIdentity indicates whether to use workspace managed identity.
-	UseWorkspaceManagedIdentity *bool `json:"useWorkspaceManagedIdentity,omitempty" yaml:"useWorkspaceManagedIdentity,omitempty"` //nolint:lll
-
-	// AuthorizationUrl is the OAuth2 authorization endpoint URL (OAuth2 authType).
-	AuthorizationUrl string `json:"authorizationUrl,omitempty" yaml:"authorizationUrl,omitempty"` //nolint:lll
-
-	// TokenUrl is the OAuth2 token endpoint URL (OAuth2 authType).
-	TokenUrl string `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
-
-	// RefreshUrl is the OAuth2 token refresh endpoint URL (OAuth2 authType).
-	RefreshUrl string `json:"refreshUrl,omitempty" yaml:"refreshUrl,omitempty"`
-
-	// Scopes is the list of OAuth2 scopes to request (OAuth2 authType).
-	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
-
-	// Audience is the token audience for ManagedIdentity / AgenticIdentity / UserEntraToken auth types.
-	Audience string `json:"audience,omitempty" yaml:"audience,omitempty"`
-
-	// ConnectorName is the connector name for OAuth2 auth type, where Microsoft provides a managed OAuth2 app
-	ConnectorName string `json:"connectorName,omitempty" yaml:"connectorName,omitempty"`
 }
 
 // Template Template model for defining prompt templates.
@@ -1488,9 +1299,7 @@ type A2APreviewTool struct {
 	ProjectConnectionId string  `json:"projectConnectionId" yaml:"projectConnectionId"`
 }
 
-// Credential type structs for typed access to connection credentials.
-// The ConnectionResource.Credentials field is map[string]any for flexibility,
-// but these structs can be used when code needs structured access.
+// Credential type structs provide structured access to connection credentials.
 
 // ApiKeyCredentials holds credentials for ApiKey auth type.
 type ApiKeyCredentials struct {

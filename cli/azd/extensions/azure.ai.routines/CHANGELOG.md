@@ -2,6 +2,34 @@
 
 <!-- cspell:ignore Yimin -->
 
+## 1.0.0-beta.10 (2026-10-15)
+
+### Features Added
+
+- [[#10242]](https://github.com/Azure/azure-dev/pull/10242) Add creator dispatch identity through `--dispatch-identity creator` and `authorization.identity` while preserving the identity of existing routines.
+- [[#10242]](https://github.com/Azure/azure-dev/pull/10242) Add `--tenant-id` to select the authentication tenant for remote routine commands.
+
+### Bugs Fixed
+
+- [[#10426]](https://github.com/Azure/azure-dev/pull/10426) Fix routine deployment to resolve `FOUNDRY_PROJECT_ENDPOINT` from the active azd environment before falling back to `AZURE_AI_PROJECT_ENDPOINT`.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
+## 1.0.0-beta.9 (2026-10-08)
+
+### Breaking Changes
+
+- [[#10350]](https://github.com/Azure/azure-dev/pull/10350) Standardize authored Routine properties on camelCase to maintain consistency across properties and extensions, and reject the former snake_case spellings with replacement guidance.
+
+## 1.0.0-beta.8 (2026-09-30)
+
+### Bugs Fixed
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Reject explicitly supplied `--project-endpoint` and `--timeout` flags on commands that do not make routine HTTP requests instead of silently ignoring them. Thanks @Siglud for the contribution!
+
+### Other Changes
+
+- [[#10104]](https://github.com/Azure/azure-dev/pull/10104) Improve `azd ai routine` help formatting, examples, and configuration and environment guidance. Thanks @Siglud for the contribution!
+
 ## 1.0.0-beta.7 (2026-09-24)
 
 ### Other Changes

@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -520,46 +521,6 @@ func TestConvertYamlToolToApiTool_MCP(t *testing.T) {
 	}
 }
 
-func TestConvertYamlToolToApiTool_MCPTopLevelUrlAndConnection(t *testing.T) {
-	t.Parallel()
-	template := map[string]any{
-		"tools": []any{
-			map[string]any{
-				"kind": "mcp",
-				"name": "github-mcp-remote",
-				"connection": map[string]any{
-					"kind":     "remote",
-					"endpoint": "https://api.githubcopilot.com/mcp/",
-					"name":     "github-mcp-oauth",
-				},
-				"url": "https://api.githubcopilot.com/mcp/",
-			},
-		},
-	}
-
-	tools, err := ExtractToolsDefinitions(template)
-	if err != nil {
-		t.Fatalf("ExtractToolsDefinitions failed: %v", err)
-	}
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool, got %d", len(tools))
-	}
-
-	result, err := convertYamlToolToApiTool(tools[0])
-	if err != nil {
-		t.Fatalf("convertYamlToolToApiTool failed: %v", err)
-	}
-	mcp, ok := result.(agent_api.MCPTool)
-	if !ok {
-		t.Fatalf("expected agent_api.MCPTool, got %T", result)
-	}
-	if mcp.ServerURL != "https://api.githubcopilot.com/mcp/" {
-		t.Errorf("ServerURL = %q", mcp.ServerURL)
-	}
-	if mcp.ProjectConnectionID == nil || *mcp.ProjectConnectionID != "github-mcp-oauth" {
-		t.Errorf("ProjectConnectionID mismatch")
-	}
-}
 func TestConvertYamlToolToApiTool_MCPNoOptions(t *testing.T) {
 	t.Parallel()
 	yamlTool := McpTool{
@@ -1807,7 +1768,8 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 			InputPaths:        []string{"$.input"},
 			OutputPaths:       []string{"$.output"},
 			StreamSelectors: []SseTextSelector{
-				{EventType: "response.output_text.delta", TextField: "$.delta"},
+				{EventType: "response.output_text.delta", TextField: new("delta")},
+				{EventType: "response.completed"},
 			},
 		},
 	}})
@@ -1836,16 +1798,31 @@ func TestMapRaiConfig_WithInvocationsModeration(t *testing.T) {
 	if !slices.Equal(moderation.OutputPaths, []string{"$.output"}) {
 		t.Errorf("OutputPaths = %v, want [$.output]", moderation.OutputPaths)
 	}
-	if len(moderation.StreamSelectors) != 1 {
-		t.Fatalf("len(StreamSelectors) = %d, want 1", len(moderation.StreamSelectors))
+	if len(moderation.StreamSelectors) != 2 {
+		t.Fatalf("len(StreamSelectors) = %d, want 2", len(moderation.StreamSelectors))
 	}
 	if moderation.StreamSelectors[0].EventType != "response.output_text.delta" {
 		t.Errorf("StreamSelectors[0].EventType = %q, want response.output_text.delta",
 			moderation.StreamSelectors[0].EventType)
 	}
-	if moderation.StreamSelectors[0].TextField != "$.delta" {
-		t.Errorf("StreamSelectors[0].TextField = %q, want $.delta",
+	if moderation.StreamSelectors[0].TextField != "delta" {
+		t.Errorf("StreamSelectors[0].TextField = %q, want delta",
 			moderation.StreamSelectors[0].TextField)
+	}
+	if moderation.StreamSelectors[1].EventType != "response.completed" {
+		t.Errorf("StreamSelectors[1].EventType = %q, want response.completed",
+			moderation.StreamSelectors[1].EventType)
+	}
+	if moderation.StreamSelectors[1].TextField != "" {
+		t.Errorf("StreamSelectors[1].TextField = %q, want omitted", moderation.StreamSelectors[1].TextField)
+	}
+
+	data, err := json.Marshal(moderation.StreamSelectors[1])
+	if err != nil {
+		t.Fatalf("json.Marshal(StreamSelectors[1]) returned error: %v", err)
+	}
+	if strings.Contains(string(data), "text_field") {
+		t.Errorf("json.Marshal(StreamSelectors[1]) = %s, want text_field omitted", data)
 	}
 }
 
@@ -1985,7 +1962,7 @@ func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {
 			Runtime:    "python_3_12",
 			EntryPoint: "main.py",
 		},
-		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(1200)},
+		SessionConfiguration: &SessionConfiguration{IdleTimeoutSeconds: new(14400)},
 	}
 
 	req, err := CreateHostedAgentAPIRequest(agent, nil)
@@ -1997,8 +1974,8 @@ func TestCreateAgentAPIRequest_CodeDeploySessionConfiguration(t *testing.T) {
 	if codeDef.CodeConfiguration == nil {
 		t.Fatal("expected code deploy path")
 	}
-	if codeDef.SessionConfiguration == nil || codeDef.SessionConfiguration.IdleTimeoutSeconds != 1200 {
-		t.Errorf("SessionConfiguration = %+v, want IdleTimeoutSeconds=1200", codeDef.SessionConfiguration)
+	if codeDef.SessionConfiguration == nil || codeDef.SessionConfiguration.IdleTimeoutSeconds != 14400 {
+		t.Errorf("SessionConfiguration = %+v, want IdleTimeoutSeconds=14400", codeDef.SessionConfiguration)
 	}
 }
 
@@ -2047,10 +2024,12 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 		wantErr bool
 	}{
 		{name: "min valid", seconds: MinSessionIdleTimeoutSeconds},
-		{name: "max valid", seconds: MaxSessionIdleTimeoutSeconds},
+		{name: "previous max valid", seconds: 3600},
+		{name: "above previous max valid", seconds: 3601},
+		{name: "max valid", seconds: 14400},
 		{name: "mid valid", seconds: 900},
 		{name: "below min", seconds: MinSessionIdleTimeoutSeconds - 1, wantErr: true},
-		{name: "above max", seconds: MaxSessionIdleTimeoutSeconds + 1, wantErr: true},
+		{name: "above max", seconds: 14401, wantErr: true},
 		{name: "zero", seconds: 0, wantErr: true},
 		{name: "negative", seconds: -1, wantErr: true},
 	}
@@ -2072,6 +2051,12 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 				if !strings.Contains(err.Error(), "idleTimeoutSeconds") {
 					t.Errorf("error = %q, want it to mention idleTimeoutSeconds", err)
 				}
+				if strings.Contains(err.Error(), "idle_timeout_seconds") {
+					t.Errorf("error = %q, must not mention the API wire field", err)
+				}
+				if !strings.Contains(err.Error(), "between 120 and 14400 seconds") {
+					t.Errorf("error = %q, want the supported range", err)
+				}
 				return
 			}
 			if err != nil {
@@ -2082,6 +2067,15 @@ func TestCreateHostedAgentAPIRequest_SessionIdleTimeoutBoundaries(t *testing.T) 
 			if imgDef.SessionConfiguration == nil ||
 				imgDef.SessionConfiguration.IdleTimeoutSeconds != test.seconds {
 				t.Errorf("IdleTimeoutSeconds = %+v, want %d", imgDef.SessionConfiguration, test.seconds)
+			}
+
+			data, err := json.Marshal(imgDef)
+			if err != nil {
+				t.Fatalf("marshal error: %v", err)
+			}
+			want := fmt.Sprintf(`"session_configuration":{"idle_timeout_seconds":%d}`, test.seconds)
+			if !strings.Contains(string(data), want) {
+				t.Errorf("wire payload missing %s, got %s", want, data)
 			}
 		})
 	}

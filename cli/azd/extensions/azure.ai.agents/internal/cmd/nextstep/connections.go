@@ -11,11 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type bundledConnection struct {
@@ -24,13 +21,7 @@ type bundledConnection struct {
 	Target   string `json:"target"`
 }
 
-type bundledConnectionConfig struct {
-	Connections []bundledConnection `json:"connections"`
-}
-
-// populateConnections prefers enabled unified connections.
-// Bundled and manifest sources are retained only for legacy diagnostics;
-// they are not supported by provisioning or agent deployment.
+// populateConnections collects enabled unified connection services.
 func populateConnections(
 	ctx context.Context,
 	src Source,
@@ -44,7 +35,7 @@ func populateConnections(
 	}
 
 	collected := map[string]ResourceRef{}
-	hasSplitLoadError := collectSplitConnections(
+	collectSplitConnections(
 		ctx,
 		src,
 		envName,
@@ -53,26 +44,6 @@ func populateConnections(
 		errs,
 		collected,
 	)
-	if len(collected) == 0 && !hasSplitLoadError {
-		collectBundledConnections(
-			ctx,
-			src,
-			envName,
-			projectCfg,
-			state,
-			errs,
-			collected,
-		)
-		collectManifestConnections(
-			ctx,
-			src,
-			envName,
-			projectCfg,
-			state,
-			errs,
-			collected,
-		)
-	}
 
 	refs := make([]ResourceRef, 0, len(collected))
 	for _, ref := range collected {
@@ -184,149 +155,6 @@ func collectSplitConnections(
 	return hasLoadError
 }
 
-func collectBundledConnections(
-	ctx context.Context,
-	src Source,
-	envName string,
-	projectCfg *azdext.ProjectConfig,
-	state *State,
-	errs *[]error,
-	collected map[string]ResourceRef,
-) {
-	for _, serviceName := range sortedServiceKeys(projectCfg) {
-		svc := projectCfg.Services[serviceName]
-		if svc == nil || svc.GetHost() != agentHost {
-			continue
-		}
-		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
-		if err != nil {
-			recordConnectionLoadError(
-				state,
-				errs,
-				fmt.Sprintf(
-					"agent service %q deployment condition: %v",
-					serviceName,
-					err,
-				),
-			)
-			continue
-		}
-		if !enabled {
-			continue
-		}
-
-		resolved, err := resolveAgentConnectionConfig(svc, projectCfg.Path)
-		if err != nil {
-			recordConnectionLoadError(
-				state,
-				errs,
-				fmt.Sprintf(
-					"agent service %q: %v",
-					serviceName,
-					err,
-				),
-			)
-			continue
-		}
-		if resolved == nil {
-			continue
-		}
-		recordResolvedConditionError(
-			state,
-			errs,
-			"agent service",
-			serviceName,
-			resolved,
-		)
-
-		var decoded bundledConnectionConfig
-		if err := decodeJSONMap(resolved, &decoded); err != nil {
-			recordConnectionLoadError(
-				state,
-				errs,
-				fmt.Sprintf(
-					"agent service %q: decode connections: %v",
-					serviceName,
-					err,
-				),
-			)
-			continue
-		}
-		for _, conn := range decoded.Connections {
-			if conn.Name == "" {
-				continue
-			}
-			if _, exists := collected[conn.Name]; exists {
-				continue
-			}
-			collected[conn.Name] = ResourceRef{
-				Name:        conn.Name,
-				ServiceName: serviceName,
-				Detail: formatConnectionDetail(
-					conn.Category,
-					conn.Target,
-				),
-			}
-		}
-	}
-}
-
-func collectManifestConnections(
-	ctx context.Context,
-	src Source,
-	envName string,
-	projectCfg *azdext.ProjectConfig,
-	state *State,
-	errs *[]error,
-	collected map[string]ResourceRef,
-) {
-	for _, serviceName := range sortedServiceKeys(projectCfg) {
-		svc := projectCfg.Services[serviceName]
-		if svc == nil || svc.GetHost() != agentHost {
-			continue
-		}
-		enabled, err := isServiceEnabled(ctx, src, envName, serviceName)
-		if err != nil {
-			recordConnectionLoadError(
-				state,
-				errs,
-				fmt.Sprintf(
-					"agent service %q deployment condition: %v",
-					serviceName,
-					err,
-				),
-			)
-			continue
-		}
-		if !enabled {
-			continue
-		}
-
-		data := readManifestBytes(projectCfg.Path, svc.GetRelativePath())
-		if data == nil {
-			continue
-		}
-		resources, err := agent_yaml.ExtractResourceDefinitions(data)
-		if err != nil {
-			continue
-		}
-		for _, resource := range resources {
-			conn, ok := resource.(agent_yaml.ConnectionResource)
-			if !ok || conn.Name == "" {
-				continue
-			}
-			if _, exists := collected[conn.Name]; exists {
-				continue
-			}
-			collected[conn.Name] = ResourceRef{
-				Name:        conn.Name,
-				ServiceName: serviceName,
-				Detail:      connectionDetail(conn),
-			}
-		}
-	}
-}
-
 func resolveServiceProperties(
 	svc *azdext.ServiceConfig,
 	projectRoot string,
@@ -343,81 +171,6 @@ func resolveServiceProperties(
 		return nil, fmt.Errorf("resolve $ref includes: %w", err)
 	}
 	return resolved, nil
-}
-
-func resolveAgentConnectionConfig(
-	svc *azdext.ServiceConfig,
-	projectRoot string,
-) (map[string]any, error) {
-	inline, err := resolveAgentConnectionProperties(
-		svc.GetAdditionalProperties(),
-		projectRoot,
-		"service-level properties",
-	)
-	if err != nil {
-		return nil, err
-	}
-	if mapHasConnectionKind(inline) {
-		if _, found := inline["connections"]; !found {
-			return nil, nil
-		}
-		return inline, nil
-	}
-	legacy, err := resolveAgentConnectionProperties(
-		svc.GetConfig(),
-		projectRoot,
-		"deprecated config",
-	)
-	if err != nil {
-		return nil, err
-	}
-	resolved := selectAgentConnectionProperties(inline, legacy)
-	if len(resolved) == 0 {
-		return nil, nil
-	}
-	if _, found := resolved["connections"]; !found {
-		return nil, nil
-	}
-	return resolved, nil
-}
-
-func resolveAgentConnectionProperties(
-	props *structpb.Struct,
-	projectRoot string,
-	source string,
-) (map[string]any, error) {
-	if props == nil || len(props.GetFields()) == 0 {
-		return nil, nil
-	}
-	resolved := props.AsMap()
-	if projectRoot == "" {
-		return resolved, nil
-	}
-	resolved, err := foundry.ResolveFileRefs(resolved, projectRoot)
-	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", source, err)
-	}
-	return resolved, nil
-}
-
-// Mirrors provision's source precedence.
-// Importing project would create a package cycle.
-func selectAgentConnectionProperties(
-	inline, legacy map[string]any,
-) map[string]any {
-	if len(inline) == 0 {
-		return legacy
-	}
-	if !mapHasConnectionKind(inline) &&
-		mapHasConnectionKind(legacy) {
-		return legacy
-	}
-	return inline
-}
-
-func mapHasConnectionKind(values map[string]any) bool {
-	kind, ok := values["kind"].(string)
-	return ok && kind != ""
 }
 
 func decodeJSONMap(values map[string]any, out any) error {

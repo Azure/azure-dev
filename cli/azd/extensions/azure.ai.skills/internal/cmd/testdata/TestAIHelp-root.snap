@@ -3,13 +3,14 @@ at runtime — from your terminal.
 
 Skills carry either inline JSON (description + Markdown instructions) or a
 packaged ZIP archive bundling SKILL.md plus any sibling assets. Use this
-command group to create, update, show, list, download, and delete skills in
-a Foundry project.
+command group to compose skills into azure.yaml or create, update, show, list,
+download, and delete skills in a Foundry project.
 
 Usage
   azd ai skill [command]
 
 Available Commands
+  add      : Add or update a Foundry skill service in azure.yaml.
   context  : Get the context of the azd project & environment.
   create   : Create a new Foundry skill.
   delete   : Delete a Foundry skill.

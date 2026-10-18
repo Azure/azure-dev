@@ -30,9 +30,10 @@ import (
 
 // AgentClient provides methods for interacting with the Azure AI Agents API
 type AgentClient struct {
-	endpoint   string
-	pipeline   runtime.Pipeline
-	credential azcore.TokenCredential
+	endpoint          string
+	pipeline          runtime.Pipeline
+	telephonyPipeline runtime.Pipeline
+	credential        azcore.TokenCredential
 }
 
 const (
@@ -86,11 +87,35 @@ func NewAgentClient(endpoint string, cred azcore.TokenCredential) *AgentClient {
 		runtime.PipelineOptions{},
 		clientOptions,
 	)
+	telephonyOptions := *clientOptions
+	transport := telephonyOptions.Transport
+	if transport == nil {
+		transport = &http.Client{
+			Transport: http.DefaultTransport.(*http.Transport).Clone(),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+	} else if client, ok := transport.(*http.Client); ok {
+		clone := *client
+		clone.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		transport = &clone
+	}
+	telephonyOptions.Transport = &telephonyResponseLimitTransport{next: transport}
+	telephonyPipeline := runtime.NewPipeline(
+		"azure-ai-agents",
+		"v1.0.0",
+		runtime.PipelineOptions{},
+		&telephonyOptions,
+	)
 
 	return &AgentClient{
-		endpoint:   endpoint,
-		pipeline:   pipeline,
-		credential: cred,
+		endpoint:          endpoint,
+		pipeline:          pipeline,
+		telephonyPipeline: telephonyPipeline,
+		credential:        cred,
 	}
 }
 
@@ -240,8 +265,9 @@ func (c *AgentClient) CreateAgentWithHeaders(
 	return &agent, nil
 }
 
-// voiceAgentsPreviewFeature is the opt-in token required in the Foundry-Features
-// header while voice agents remain a preview capability.
+// voiceAgentsPreviewFeature is the opt-in token retained by Voice Agent write
+// operations and legacy telephony calls. Stable management reads use the shared
+// Agents API contract.
 const voiceAgentsPreviewFeature = "VoiceAgents=V1Preview"
 
 // TelephonyBindingAPIVersion is the preview API version for voice telephony bindings.
@@ -296,9 +322,8 @@ func (c *AgentClient) doVoiceJSONAgentRequest(
 	return &agent, nil
 }
 
-// GetVoiceAgent retrieves a voice agent through the unified /agents
-// endpoint with the voice preview opt-in header. Use this instead of GetAgent
-// when deciding whether to create or update a prompt voice agent.
+// GetVoiceAgent retrieves a voice agent through the unified /agents endpoint.
+// Use this instead of GetAgent when the internal overridden-host diagnostic is needed.
 func (c *AgentClient) GetVoiceAgent(
 	ctx context.Context,
 	agentName string,
@@ -311,7 +336,6 @@ func (c *AgentClient) GetVoiceAgent(
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Raw().Header.Set("Foundry-Features", voiceAgentsPreviewFeature)
 	if overriddenHost != "" {
 		req.Raw().Header.Set("x-ms-overridden-host", overriddenHost)
 	}
@@ -837,11 +861,12 @@ func (c *AgentClient) GetAgentVersion(
 	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, feature)
 }
 
-// GetVoiceAgentVersion retrieves a voice version with the Voice Agents API contract.
-func (c *AgentClient) GetVoiceAgentVersion(
+// GetPromptAgentVersion retrieves a managed prompt agent version with the
+// GitHub Copilot preview contract enabled so harness metadata is included.
+func (c *AgentClient) GetPromptAgentVersion(
 	ctx context.Context, agentName, agentVersion, apiVersion string,
 ) (*AgentVersionObject, error) {
-	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, voiceAgentsPreviewFeature)
+	return c.getAgentVersion(ctx, agentName, agentVersion, apiVersion, GitHubCopilotPreviewFeature)
 }
 
 func (c *AgentClient) getAgentVersion(

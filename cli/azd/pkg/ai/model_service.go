@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/syncmap"
+	"github.com/benbjohnson/clock"
 )
 
 // AiModelService provides operations for querying AI model availability,
@@ -23,6 +24,7 @@ import (
 type AiModelService struct {
 	azureClient    *azapi.AzureClient
 	subManager     *account.SubscriptionsManager
+	clock          clock.Clock
 	catalogCacheMu sync.RWMutex
 	catalogCache   map[string][]*armcognitiveservices.Model // key: "subscriptionId:location"
 }
@@ -32,9 +34,19 @@ func NewAiModelService(
 	azureClient *azapi.AzureClient,
 	subManager *account.SubscriptionsManager,
 ) *AiModelService {
+	return NewAiModelServiceWithClock(azureClient, subManager, clock.New())
+}
+
+// NewAiModelServiceWithClock creates a new AiModelService with the supplied clock.
+func NewAiModelServiceWithClock(
+	azureClient *azapi.AzureClient,
+	subManager *account.SubscriptionsManager,
+	clock clock.Clock,
+) *AiModelService {
 	return &AiModelService{
 		azureClient:  azureClient,
 		subManager:   subManager,
+		clock:        clock,
 		catalogCache: make(map[string][]*armcognitiveservices.Model),
 	}
 }
@@ -103,7 +115,7 @@ func (s *AiModelService) ListFilteredModels(
 		return nil, err
 	}
 
-	models := s.convertToAiModelsAt(rawModels, time.Now().UTC(), filteredOptions.Statuses)
+	models := s.convertToAiModelsAt(rawModels, s.clock.Now().UTC(), filteredOptions.Statuses)
 	filteredOptions.Statuses = nil
 
 	return FilterModels(models, &filteredOptions), nil
@@ -605,7 +617,7 @@ func (s *AiModelService) fetchModelsForLocations(
 func (s *AiModelService) convertToAiModels(
 	rawByLocation map[string][]*armcognitiveservices.Model,
 ) []AiModel {
-	return s.convertToAiModelsAt(rawByLocation, time.Now().UTC(), nil)
+	return s.convertToAiModelsAt(rawByLocation, s.clock.Now().UTC(), nil)
 }
 
 // convertToAiModelsAt converts raw ARM models grouped by location into domain AiModel types,

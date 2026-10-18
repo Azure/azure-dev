@@ -60,7 +60,7 @@ func TestResolveJudgeModel_DetectsTheOnlyDeployment(t *testing.T) {
 // declares none has to say which to use. Failing here is the point: `init` used
 // to exit 0 having written a configuration the service later rejects.
 func TestResolveJudgeModel_NoDeploymentsNamesTheFlag(t *testing.T) {
-	_, err := resolveJudgeModel(newInitCommand(), projectWith("api", "web"))
+	_, err := resolveJudgeModel(noPromptCmd(t, true), projectWith("api", "web"))
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "--judge-model")

@@ -152,10 +152,10 @@ services:
     triggers:
       default:
         type: schedule
-        cron_expression: "0 2 * * *"
+        cronExpression: "0 2 * * *"
     action:
       type: invoke_agent_responses_api
-      agent_name: researcher
+      agentName: researcher
       input:
         topic: ${DIGEST_TOPIC}
 
@@ -172,4 +172,4 @@ services:
           eventType: Microsoft.Storage.BlobCreated
     action:
       type: invoke_agent_responses_api
-      agent_name: writer
+      agentName: writer

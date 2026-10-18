@@ -12,9 +12,9 @@ example, which deployment mode a user picked.
 > user privacy before you start collecting it. See [Your responsibility for
 > content](#your-responsibility-for-content) below.
 
-Telemetry is a preview service `azd` offers to eligible extensions installed
+Telemetry is a stable gRPC service since azd 1.36.0, offered to eligible extensions installed
 from the official `azd` registry. Import
-`github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta` for its request
+`github.com/azure/azure-dev/cli/azd/pkg/azdext` (or `contracts/v1`) for its request
 and response types. Call `ReportUsage` with an event name and the attributes
 you care about. `azd` core owns the identity fields, namespaces your attributes,
 and bounds their size and number. It does not inspect what they mean.
@@ -34,13 +34,13 @@ for the reasoning behind this design.
 ## Require a host with telemetry support
 
 A published extension version that depends on this service should declare the
-first `azd` release that includes `TelemetryService` in its `extension.yaml`:
+first `azd` release that includes the stable `TelemetryService` in its `extension.yaml`:
 
 ```yaml
-requiredAzdVersion: ">=1.33.0"
+requiredAzdVersion: ">=1.36.0"
 ```
 
-Use the first released `azd` version containing the service as the lower bound.
+Pin the SDK dependency to `github.com/azure/azure-dev/cli/azd v1.36.0` or later once published.
 `azd` uses this field while resolving extension installs and updates, so new
 installations do not select the extension on an older host. See
 [Extension Resolution and Versioning](./extension-resolution-and-versioning.md#azd-version-compatibility)
@@ -100,7 +100,7 @@ have an appropriate shared package:
 ```go
 if _, err := client.Telemetry().ReportUsage(
     ctx,
-    &v1beta.ReportUsageRequest{
+    &azdext.ReportUsageRequest{
         EventName: "deploy.completed",
         Attributes: map[string]string{
             "deploy.mode": "container",
@@ -121,9 +121,15 @@ later unrelated failure does not lose the signal.
 
 An event with no attributes is valid — "this happened" is a legitimate signal.
 
-There is a complete working example in the demo extension:
+There is a complete stable API example in the demo extension:
 [`extensions/microsoft.azd.demo/internal/cmd/telemetry.go`](../../extensions/microsoft.azd.demo/internal/cmd/telemetry.go),
 runnable with `azd demo telemetry`.
+
+When upgrading the SDK, keep `client.Telemetry()` but replace beta telemetry
+request/response types and shared reporter mocks with stable types. This is an
+intentional source break, not a binary break: released beta extensions still
+work on the new host. No `TelemetryBeta()` accessor is needed to preserve
+those binaries. See [contract versioning](contract-versioning.md#october-2026-graduation-azd-1360).
 
 ## Declare and validate attributes
 
@@ -144,7 +150,9 @@ var DeployMode = fields.AttributeKey{
 Declarations form a shared first-party field schema and are not exclusive to
 the extension that introduced them. Another first-party extension may reuse an
 existing key when its meaning, allowed values, classification, and purpose are
-identical. If any of those differ, declare a distinct key.
+identical. If any of those differ, declare a distinct key. Prefer feature-scoped
+key suffixes (for example, `agent.invoke.protocol`) over generic ones like
+`protocol`, since a different extension may use the latter for unrelated values.
 
 The extension still sends the suffix:
 

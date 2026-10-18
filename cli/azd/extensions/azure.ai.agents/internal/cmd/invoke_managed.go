@@ -55,7 +55,7 @@ func (a *InvokeAction) storedManagedConversationID(
 	if azdClient == nil || a.flags.forceNewConversation() {
 		return ""
 	}
-	value, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil)
+	value, err := getAgentSpecificContextValue(ctx, azdClient, "conversations", agentKey)
 	if err != nil || !strings.HasPrefix(value, "conv_") {
 		return ""
 	}
@@ -91,7 +91,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentName,
 			"agent name could not be resolved",
-			"set 'name' in agent.yaml or pass the agent name as the first argument",
+			"set 'name' on the agent service in azure.yaml or pass the agent name as the first argument",
 		)
 	}
 

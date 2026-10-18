@@ -280,8 +280,8 @@ func TestPopulateSplitToolboxes_PrefersSplitCanonicalKey(t *testing.T) {
 
 	state := &State{
 		Toolboxes: []ResourceRef{
-			{Name: "my+tool", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
-			{Name: "legacy", ServiceName: "agent", ToolboxSource: ToolboxSourceLegacyManifest},
+			{Name: "my+tool", ServiceName: "agent", ToolboxSource: ToolboxSourceBundled},
+			{Name: "bundled", ServiceName: "agent", ToolboxSource: ToolboxSourceBundled},
 		},
 	}
 	project := &azdext.ProjectConfig{
@@ -305,8 +305,8 @@ func TestPopulateSplitToolboxes_PrefersSplitCanonicalKey(t *testing.T) {
 	)
 	require.Empty(t, errs)
 	require.Len(t, state.Toolboxes, 2)
-	require.Equal(t, "legacy", state.Toolboxes[0].Name)
-	require.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
+	require.Equal(t, "bundled", state.Toolboxes[0].Name)
+	require.Equal(t, ToolboxSourceBundled, state.Toolboxes[0].ToolboxSource)
 	require.Equal(t, "my-tool", state.Toolboxes[1].Name)
 	require.Equal(t, ToolboxSourceSplit, state.Toolboxes[1].ToolboxSource)
 }
@@ -478,7 +478,7 @@ func TestAssembleState_KeepsBundledToolboxOwners(t *testing.T) {
 	require.Equal(t, 1, src.calls["dev/TOOLBOX_SHARED_MCP_ENDPOINT"])
 }
 
-func TestAssembleState_MixedShapeToolboxesPreferKindedNestedConfig(t *testing.T) {
+func TestAssembleState_MixedShapeToolboxesIgnoreNestedConfig(t *testing.T) {
 	t.Parallel()
 
 	agent := newAgentService(t, map[string]any{
@@ -501,21 +501,16 @@ func TestAssembleState_MixedShapeToolboxesPreferKindedNestedConfig(t *testing.T)
 
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
-	require.True(t, state.HasToolboxes)
-	require.True(t, state.ToolboxEndpointsChecked)
-	require.Equal(t, []string{"nested-tools"}, toolboxNames(state.Toolboxes))
-	require.Equal(t, []string{"nested-tools"}, toolboxNames(state.MissingToolboxEndpoints))
+	require.False(t, state.HasToolboxes)
+	require.False(t, state.ToolboxEndpointsChecked)
+	require.Empty(t, state.Toolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
 }
 
-func TestAssembleState_MixedShapeEmptyInlineFallsBackToManifest(t *testing.T) {
+func TestAssembleState_MixedShapeEmptyInlineIgnoresLegacySources(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/agent", `
-resources:
-  - name: legacy-tools
-    kind: toolbox
-`)
 	agent := newAgentService(t, map[string]any{
 		"toolboxes": []any{},
 	})
@@ -536,21 +531,16 @@ resources:
 
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
-	require.True(t, state.HasToolboxes)
-	require.True(t, state.ToolboxEndpointsChecked)
-	require.Equal(t, []string{"legacy-tools"}, toolboxNames(state.Toolboxes))
-	require.Equal(t, []string{"legacy-tools"}, toolboxNames(state.MissingToolboxEndpoints))
+	require.False(t, state.HasToolboxes)
+	require.False(t, state.ToolboxEndpointsChecked)
+	require.Empty(t, state.Toolboxes)
+	require.Empty(t, state.MissingToolboxEndpoints)
 }
 
-func TestAssembleState_ExplicitEmptyToolboxesSuppressLegacyManifest(t *testing.T) {
+func TestAssembleState_ExplicitEmptyToolboxesRemainEmpty(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/agent", `
-resources:
-  - name: legacy-tools
-    kind: toolbox
-`)
 	agent := newAgentService(t, map[string]any{
 		"kind":      "hostedAgent",
 		"toolboxes": []any{},
@@ -573,15 +563,17 @@ resources:
 	assert.False(t, state.HasToolboxes)
 }
 
-func TestAssembleState_AbsentToolboxesFallsBackToLegacyManifest(t *testing.T) {
+func TestAssembleState_AbsentToolboxesIgnoresLegacyManifest(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/agent", `
-resources:
-  - name: legacy-tools
-    kind: toolbox
-`)
+	legacyDir := filepath.Join(projectRoot, "src", "agent")
+	require.NoError(t, os.MkdirAll(legacyDir, 0o750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(legacyDir, "agent.manifest.yaml"),
+		[]byte("resources:\n  - name: legacy-tools\n    kind: toolbox\n"),
+		0o600,
+	))
 	agent := newAgentService(t, map[string]any{"kind": "hostedAgent"})
 	agent.RelativePath = "src/agent"
 
@@ -597,25 +589,14 @@ resources:
 
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
-	require.Len(t, state.Toolboxes, 1)
-	assert.Equal(t, "legacy-tools", state.Toolboxes[0].Name)
-	assert.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[0].ToolboxSource)
+	assert.Empty(t, state.Toolboxes)
+	assert.False(t, state.HasToolboxes)
 }
 
 func TestAssembleState_ToolboxSourcePrecedence(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/b", `
-resources:
-  - name: legacy-only
-    kind: toolbox
-`)
-	writeManifest(t, projectRoot, "src/a", `
-resources:
-  - name: same
-    kind: toolbox
-`)
 
 	agentA := newAgentService(t, map[string]any{
 		"kind": "hostedAgent",
@@ -652,12 +633,11 @@ resources:
 
 	state, errs := assembleState(t.Context(), src)
 	require.Empty(t, errs)
-	require.Equal(t, []string{"bundled-only", "legacy-only", "same"},
+	require.Equal(t, []string{"bundled-only", "same"},
 		toolboxNames(state.Toolboxes))
 	assert.Equal(t, ToolboxSourceBundled, state.Toolboxes[0].ToolboxSource)
-	assert.Equal(t, ToolboxSourceLegacyManifest, state.Toolboxes[1].ToolboxSource)
-	assert.Equal(t, ToolboxSourceSplit, state.Toolboxes[2].ToolboxSource)
-	assert.Equal(t, "same", state.Toolboxes[2].ServiceName)
+	assert.Equal(t, ToolboxSourceSplit, state.Toolboxes[1].ToolboxSource)
+	assert.Equal(t, "same", state.Toolboxes[1].ServiceName)
 }
 
 func TestAssembleState_ResolvesToolboxRefs(t *testing.T) {
@@ -724,17 +704,15 @@ func TestAssembleState_InlineToolboxSkipsUnusedLegacyRef(t *testing.T) {
 	assert.Equal(t, 1, src.calls["dev/TOOLBOX_INLINE_TOOLS_MCP_ENDPOINT"])
 }
 
-func TestAssembleState_ToolboxCollectionIgnoresUnrelatedRefs(t *testing.T) {
+func TestAssembleState_InvalidDefinitionRefStopsToolboxCollection(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/agent", `
-resources:
-  - name: valid-tools
-    kind: toolbox
-`)
 	agent := newAgentService(t, map[string]any{
 		"kind": "hostedAgent",
+		"toolboxes": []any{
+			"valid-tools",
+		},
 		"connections": []any{
 			map[string]any{"$ref": "missing-connection.yaml"},
 		},
@@ -753,12 +731,13 @@ resources:
 	}
 
 	state, errs := assembleState(t.Context(), src)
-	require.NotEmpty(t, errs)
-	require.Len(t, state.ConnectionLoadErrors, 1)
-	require.Empty(t, state.ToolboxLoadErrors)
-	require.True(t, state.ToolboxEndpointsChecked)
-	require.Equal(t, []string{"valid-tools"}, toolboxNames(state.Toolboxes))
-	require.Equal(t, 1, src.calls["dev/TOOLBOX_VALID_TOOLS_MCP_ENDPOINT"])
+	require.Len(t, errs, 2)
+	require.Empty(t, state.ConnectionLoadErrors)
+	require.Len(t, state.EnvironmentLoadErrors, 1)
+	require.Len(t, state.ToolboxLoadErrors, 1)
+	require.False(t, state.ToolboxEndpointsChecked)
+	require.Empty(t, state.Toolboxes)
+	require.Equal(t, 0, src.calls["dev/TOOLBOX_VALID_TOOLS_MCP_ENDPOINT"])
 }
 
 func TestAssembleState_DisabledAgentIgnoresUnrelatedRefs(t *testing.T) {
@@ -858,15 +837,10 @@ toolboxes:
 	assert.Equal(t, 0, src.calls["dev/TOOLBOX_REFERENCED_TOOLS_MCP_ENDPOINT"])
 }
 
-func TestAssembleState_ToolboxLoadErrorSuppressesLegacyAndProbe(t *testing.T) {
+func TestAssembleState_ToolboxLoadErrorSuppressesProbe(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	writeManifest(t, projectRoot, "src/agent", `
-resources:
-  - name: stale-tools
-    kind: toolbox
-`)
 	agent := newAgentService(t, map[string]any{
 		"$ref":      "missing-toolbox.yaml",
 		"toolboxes": []any{},
@@ -1728,19 +1702,14 @@ protocols:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			projectRoot := t.TempDir()
-			relPath := "echo"
-			if tt.manifestRel != "" {
-				relPath = tt.manifestRel
-			} else {
-				svcDir := filepath.Join(projectRoot, relPath)
-				require.NoError(t, os.MkdirAll(svcDir, 0o750))
-				require.NoError(t, os.WriteFile(
-					filepath.Join(svcDir, "agent.yaml"),
-					[]byte(tt.manifest),
-					0o600,
-				))
+			svc := &azdext.ServiceConfig{}
+			if tt.manifestRel == "" {
+				var definition map[string]any
+				if err := yaml.Unmarshal([]byte(tt.manifest), &definition); err == nil {
+					svc.AdditionalProperties = mustStruct(t, definition)
+				}
 			}
-			got := loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: relPath})
+			got := loadServiceProtocol(projectRoot, svc)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -1762,11 +1731,17 @@ func TestLoadServiceProtocol_RootRelativePath(t *testing.T) {
 		0o600,
 	))
 
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{}))
-	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: "."}))
+	ref := mustStruct(t, map[string]any{"$ref": "agent.yaml"})
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{
+		AdditionalProperties: ref,
+	}))
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{
+		RelativePath:         ".",
+		AdditionalProperties: ref,
+	}))
 }
 
-func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
+func TestLoadServiceProtocol_PreservesRootRefResolution(t *testing.T) {
 	t.Parallel()
 
 	parent := t.TempDir()
@@ -1780,7 +1755,11 @@ func TestLoadServiceProtocol_RejectsTraversal(t *testing.T) {
 		0o600,
 	))
 
-	assert.Equal(t, "", loadServiceProtocol(projectRoot, &azdext.ServiceConfig{RelativePath: "../outside"}))
+	assert.Equal(t, ProtocolInvocations, loadServiceProtocol(projectRoot, &azdext.ServiceConfig{
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"$ref": "../outside/agent.yaml",
+		}),
+	}))
 }
 
 func TestLoadServiceProtocol_InlineAdditionalPropertiesWinOverAgentYaml(t *testing.T) {
@@ -1811,7 +1790,7 @@ func TestLoadServiceProtocol_InlineAdditionalPropertiesWinOverAgentYaml(t *testi
 	assert.Equal(t, ProtocolInvocationsWS, got)
 }
 
-func TestLoadServiceProtocol_LegacyConfigFallback(t *testing.T) {
+func TestLoadServiceProtocol_IgnoresNestedConfig(t *testing.T) {
 	t.Parallel()
 
 	config, err := structpb.NewStruct(map[string]any{
@@ -1823,10 +1802,10 @@ func TestLoadServiceProtocol_LegacyConfigFallback(t *testing.T) {
 	require.NoError(t, err)
 
 	got := loadServiceProtocol(t.TempDir(), &azdext.ServiceConfig{Config: config})
-	assert.Equal(t, ProtocolInvocationsWS, got)
+	assert.Empty(t, got)
 }
 
-func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
+func TestAssembleState_PopulatesProtocolFromRootRef(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
@@ -1842,7 +1821,12 @@ func TestAssembleState_PopulatesProtocolFromAgentYaml(t *testing.T) {
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": {
+					Name: "echo", Host: agentHost, RelativePath: "echo",
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"$ref": "echo/agent.yaml",
+					}),
+				},
 			},
 		},
 	}
@@ -2170,7 +2154,13 @@ output AZURE_AI_MODEL_DEPLOYMENT_NAME string = ''
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "MODEL", "value": "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+					map[string]any{"name": "STATIC", "value": "hardcoded"},
+				),
 			},
 		},
 		values: map[string]string{
@@ -2362,8 +2352,16 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
+				"ping": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 	}
@@ -2396,7 +2394,11 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 		values: map[string]string{
@@ -2445,7 +2447,12 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "MODEL", "value": "${AZURE_AI_MODEL_DEPLOYMENT_NAME:-gpt-4o-mini}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY:-dev-fallback}"},
+				),
 			},
 		},
 		// Intentionally leave AZURE_AI_MODEL_DEPLOYMENT_NAME and MY_API_KEY
@@ -2479,7 +2486,10 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 		valueErr: errors.New("gRPC unavailable"),
@@ -2496,9 +2506,8 @@ environment_variables:
 func TestAssembleState_PopulatesUnresolvedPlaceholders(t *testing.T) {
 	t.Parallel()
 
-	// Reproduces the toolbox-sample bug: agent.manifest.yaml processing
-	// leaves a {{NAME}} placeholder behind in agent.yaml, while a separate
-	// env var ref is also unset. The resolver should see both.
+	// The direct definition contains both a placeholder and an unset
+	// environment reference. The resolver should see both.
 	projectRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
 	require.NoError(t, os.WriteFile(
@@ -2518,7 +2527,11 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "TOOLBOX_ENDPOINT", "value": "{{TOOLBOX_ENDPOINT}}"},
+					map[string]any{"name": "MCP_ENDPOINT", "value": "${TOOLBOX_MCP_ENDPOINT}"},
+				),
 			},
 		},
 	}
@@ -2531,48 +2544,38 @@ environment_variables:
 }
 
 // TestAssembleState_PartitionsToolboxEndpointVars locks the partition
-// behavior added for the toolbox-sample post-init UX: when a service
-// has a manifest-declared toolbox AND agent.yaml references the
-// canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
+// behavior for direct service definitions: when a service declares a
+// toolbox and references the canonical TOOLBOX_<NAME>_MCP_ENDPOINT env var, the missing-var
 // classifier must route the entry into MissingToolboxEndpoints
 // (provision-managed) rather than MissingManualVars (operator-supplied).
-// Non-toolbox manual vars in the same agent.yaml must still appear in
+// Non-toolbox manual vars in the same definition must still appear in
 // MissingManualVars.
 func TestAssembleState_PartitionsToolboxEndpointVars(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	// agent.manifest.yaml declares the toolbox by name; envkey derives
-	// "TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT" from "web-search-tools",
-	// matching the ${...} ref in agent.yaml below.
-	writeManifest(t, projectRoot, "echo", `
-template:
-  kind: containerAgent
-  name: hello
-resources:
-  - name: web-search-tools
-    kind: toolbox
-    tools:
-      - id: tool-1
-`)
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-  - name: API_KEY
-    value: ${MY_API_KEY}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": {
+					Name: "echo", Host: agentHost, RelativePath: "echo",
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind":      "hostedAgent",
+						"toolboxes": []any{"web-search-tools"},
+						"environmentVariables": []any{
+							map[string]any{
+								"name":  "MCP_ENDPOINT",
+								"value": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+							},
+							map[string]any{
+								"name":  "API_KEY",
+								"value": "${MY_API_KEY}",
+							},
+						},
+					}),
+				},
 			},
 		},
 	}
@@ -2589,32 +2592,32 @@ environment_variables:
 	assert.Equal(t, "echo", state.MissingToolboxEndpoints[0].ServiceName)
 }
 
-// TestAssembleState_ToolboxEndpointWithoutManifestStaysManual locks
+// TestAssembleState_ToolboxEndpointWithoutDeclarationStaysManual locks
 // the partition's guard: a TOOLBOX_*_MCP_ENDPOINT-shaped variable
-// whose name does NOT match a manifest-declared toolbox is treated
+// whose name does NOT match a declared toolbox is treated
 // as a generic user variable and stays in MissingManualVars. The
-// partition is a no-op when no manifest toolbox claims the key.
-func TestAssembleState_ToolboxEndpointWithoutManifestStaysManual(t *testing.T) {
+// partition is a no-op when no toolbox claims the key.
+func TestAssembleState_ToolboxEndpointWithoutDeclarationStaysManual(t *testing.T) {
 	t.Parallel()
 
 	projectRoot := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(projectRoot, "echo"), 0o750))
-	require.NoError(t, os.WriteFile(
-		filepath.Join(projectRoot, "echo", "agent.yaml"),
-		[]byte(`kind: hostedAgent
-environment_variables:
-  - name: MCP_ENDPOINT
-    value: ${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}
-`),
-		0o600,
-	))
-
 	src := &fakeSource{
 		envName: "dev",
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": {
+					Name: "echo", Host: agentHost, RelativePath: "echo",
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hostedAgent",
+						"environmentVariables": []any{
+							map[string]any{
+								"name":  "MCP_ENDPOINT",
+								"value": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+							},
+						},
+					}),
+				},
 			},
 		},
 	}
@@ -2648,8 +2651,14 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
-				"ping": {Name: "ping", Host: agentHost, RelativePath: "ping"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "A", "value": "{{SHARED_PLACEHOLDER}}"},
+				),
+				"ping": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "A", "value": "{{SHARED_PLACEHOLDER}}"},
+				),
 			},
 		},
 	}
@@ -2661,7 +2670,7 @@ environment_variables:
 
 // TestAssembleState_NonAzurePrefixBicepOutputIsInfra is the B1 fix proof.
 // It locks issue #7975 State Inputs line 74 ("HasUnresolvedInfraVars =
-// agent.yaml ${VAR} refs that map to known Bicep outputs are unset in
+// definition ${VAR} refs that map to known Bicep outputs are unset in
 // azd env"). Pre-C1, the resolver split on the AZURE_ prefix; this
 // test guarantees the new classifier is set-membership based and
 // correctly routes a non-AZURE_ Bicep output to MissingInfraVars.
@@ -2697,7 +2706,14 @@ output BING_GROUNDING_CONNECTION_ID string = ''
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{
+						"name": "TOOLBOX", "value": "${TOOLBOX_WEB_SEARCH_TOOLS_MCP_ENDPOINT}",
+					},
+					map[string]any{"name": "BING", "value": "${BING_GROUNDING_CONNECTION_ID}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 	}
@@ -2740,7 +2756,12 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "ENDPOINT", "value": "${FOUNDRY_PROJECT_ENDPOINT}"},
+					map[string]any{"name": "TOOLBOX", "value": "${TOOLBOX_MCP_ENDPOINT}"},
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 	}
@@ -2785,7 +2806,10 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "TOOLBOX", "value": "${TOOLBOX_MCP_ENDPOINT}"},
+				),
 			},
 		},
 		values: map[string]string{
@@ -2831,7 +2855,10 @@ environment_variables:
 		project: &azdext.ProjectConfig{
 			Path: projectRoot,
 			Services: map[string]*azdext.ServiceConfig{
-				"echo": {Name: "echo", Host: agentHost, RelativePath: "echo"},
+				"echo": agentServiceWithEnvironment(
+					t,
+					map[string]any{"name": "KEY", "value": "${MY_API_KEY}"},
+				),
 			},
 		},
 	}

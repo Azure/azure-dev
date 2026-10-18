@@ -35,6 +35,11 @@ goals:
   - "Accept the defaults for model version, SKU, capacity. If prompted for a model deployment name, use a '{prefix}-'-prefixed name."
   - "If asked for container/resource size, select 'Small'. NOTE: with code deploy auto-selected, this prompt is unlikely."
   - "Wait for initialization to complete — look for 'Next:' or a success message."
-  - "Verify the scaffold at agent-framework-agent-basic-responses/: confirm azure.yaml exists and references an azure.ai.agent service with the agent definition embedded inline (agent name, kind, protocols, and environmentVariables referencing AZURE_AI_MODEL_DEPLOYMENT_NAME for the model)."
+  - >-
+    Verify the scaffold at agent-framework-agent-basic-responses/: confirm azure.yaml exists and defines an azure.ai.agent
+    service with the direct agent definition embedded inline (name, kind, and protocols) plus the service-level mapping
+    `env:\n  AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}`. The deprecated inline agent-definition
+    environmentVariables field should not be present or required for this generated project. Report a finding if the model
+    template is absent from service-level env or appears only in deprecated inline environmentVariables.
   - "Take a screenshot of the completed init output."
   - "STOP here — do NOT run 'azd provision'. Report a finding for any confusing prompt, wrong default, or scaffold problem."

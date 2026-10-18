@@ -64,7 +64,7 @@ func validateEnvironmentVariableNames(
 			strings.Join(quotedNames, ", "),
 			verb,
 		),
-		"rename the invalid environment variables in azure.yaml or "+
-			"agent.yaml, then run `azd deploy` again",
+		"rename the invalid environment variables in the direct/root-$ref "+
+			"agent definition, then run `azd deploy` again",
 	)
 }

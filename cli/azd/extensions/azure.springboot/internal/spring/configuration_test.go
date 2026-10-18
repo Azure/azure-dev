@@ -5,8 +5,8 @@ package spring
 
 import (
 	"errors"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -162,7 +162,7 @@ func TestApplyCredentialRepairs(t *testing.T) {
 				Replacement: tt.replacement, original: tt.original,
 			}})
 			require.NoError(t, err)
-			data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+			data, err := fs.ReadFile(os.DirFS(directory), file)
 			require.NoError(t, err)
 			require.Equal(t,
 				"# keep this comment\r\nspring.datasource.password = "+tt.replacement+"\r\n", string(data))
@@ -179,7 +179,7 @@ func TestApplyCredentialRepairsRejectsChangedSource(t *testing.T) {
 		Replacement: "${DATABASE_PASSWORD}", original: "${DATABASE_PASSWORD:analyzed}",
 	}})
 	require.ErrorContains(t, err, "changed after analysis")
-	data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+	data, readErr := fs.ReadFile(os.DirFS(directory), file)
 	require.NoError(t, readErr)
 	require.Contains(t, string(data), "changed")
 }
@@ -198,7 +198,7 @@ func TestApplyCredentialRepairsStagingFailureLeavesSourceUnchanged(t *testing.T)
 		Replacement: "${DATABASE_PASSWORD}", original: "${DATABASE_PASSWORD:local}",
 	}}, ops)
 	require.ErrorContains(t, err, "injected write failure")
-	data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+	data, readErr := fs.ReadFile(os.DirFS(directory), file)
 	require.NoError(t, readErr)
 	require.Equal(t, original, string(data))
 }
@@ -230,7 +230,7 @@ func TestApplyCredentialRepairsRenameFailureRollsBack(t *testing.T) {
 	err := applyCredentialRepairs(t.Context(), directory, repairs, ops)
 	require.ErrorContains(t, err, "injected rename failure")
 	for _, file := range files {
-		data, readErr := os.ReadFile(filepath.Join(directory, filepath.FromSlash(file)))
+		data, readErr := fs.ReadFile(os.DirFS(directory), file)
 		require.NoError(t, readErr)
 		require.Equal(t, "spring.datasource.password=local\n", string(data))
 	}

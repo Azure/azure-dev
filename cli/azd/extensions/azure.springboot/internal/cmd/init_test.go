@@ -382,7 +382,7 @@ func TestInitRepairsDatasourcePasswordInteractively(t *testing.T) {
 	require.Contains(t, prompts.confirmations[0], "spring.datasource.password")
 	require.NotContains(t, prompts.confirmations[0], secret)
 	require.NotContains(t, output.String(), secret)
-	data, err := os.ReadFile(file)
+	data, err := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "spring.datasource.password=${MYSQL_PASSWORD}\n")
 	require.NotContains(t, string(data), secret)
@@ -398,7 +398,7 @@ func TestInitNoPromptDoesNotRepairDatasourcePassword(t *testing.T) {
 	require.NoError(t, os.WriteFile(file, []byte(original), 0o600))
 	command.SetArgs([]string{"init", "--yes", "--no-prompt"})
 	require.ErrorContains(t, command.ExecuteContext(t.Context()), "runtime placeholder without a default")
-	data, err := os.ReadFile(file)
+	data, err := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
 	require.NoError(t, err)
 	require.Equal(t, original, string(data))
 }

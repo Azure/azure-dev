@@ -279,10 +279,10 @@ func TestGenerateUsesExistingDockerfile(t *testing.T) {
 	writeFixture(t, directory, "Dockerfile", "FROM eclipse-temurin:17-jre\n")
 	writeFixture(t, directory, ".dockerignore", "private/\n")
 	require.NoError(t, plan.Write(t.Context(), directory))
-	dockerfile, err := os.ReadFile(filepath.Join(directory, "Dockerfile"))
+	dockerfile, err := fs.ReadFile(os.DirFS(directory), "Dockerfile")
 	require.NoError(t, err)
 	require.Equal(t, "FROM eclipse-temurin:17-jre\n", string(dockerfile))
-	ignore, err := os.ReadFile(filepath.Join(directory, ".dockerignore"))
+	ignore, err := fs.ReadFile(os.DirFS(directory), ".dockerignore")
 	require.NoError(t, err)
 	require.Equal(t, "private/\n", string(ignore))
 }

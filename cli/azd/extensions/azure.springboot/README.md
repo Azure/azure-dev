@@ -117,6 +117,8 @@ passwords in MySQL/PostgreSQL JDBC user-info or `password` query parameters acro
 all conventional packaged application configuration, including inactive profiles,
 and external application files copied into the runtime image. Empty values and
 runtime placeholders without defaults are allowed.
+JDBC URLs that cannot be safely parsed are rejected, including unresolved host
+or port placeholders, even in inactive packaged profiles and retained external files.
 For Java properties files, interactive initialization can offer to remove a
 literal password or non-empty placeholder fallback while preserving the existing
 placeholder name. The sanitized file/property list is shown before confirmation;

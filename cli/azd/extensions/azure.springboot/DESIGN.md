@@ -71,6 +71,8 @@ flowchart TD
   the runtime image. Reject literal `spring.datasource.password` values and
   MySQL/PostgreSQL JDBC user-info or `password` query values. Allow only empty
   values or a single runtime placeholder without a non-empty default.
+- Reject MySQL/PostgreSQL JDBC URLs that cannot be safely parsed, including
+  unresolved host/port placeholders; parsing failures never imply credential safety.
 - Interactive runs may explicitly repair `spring.datasource.password` in Java
   properties files by removing a placeholder fallback or replacing a literal
   with a runtime-only placeholder. Show only file/property names, require a

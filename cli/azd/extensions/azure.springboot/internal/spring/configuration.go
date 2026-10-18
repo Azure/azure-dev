@@ -553,12 +553,20 @@ func validateKnownCredentialDocument(doc document) error {
 			Repairs: []CredentialRepair{repair},
 		}
 	}
-	if jdbc, ok := doc.values[canonical("spring.datasource.url")]; ok &&
-		jdbcURLHasLiteralPassword(jdbc.text) {
-		return unsupportedConfiguration(
-			"literal JDBC credentials in %s are not supported; "+
-				"replace the password in %s with a runtime placeholder without a default",
-			jdbc.source, jdbc.key)
+	if jdbc, ok := doc.values[canonical("spring.datasource.url")]; ok {
+		literal, err := jdbcURLHasLiteralPassword(jdbc.text)
+		if err != nil {
+			return unsupportedConfiguration(
+				"cannot safely inspect JDBC credentials in %s; "+
+					"use a parseable MySQL/PostgreSQL URL in %s with a concrete host and port",
+				jdbc.source, jdbc.key)
+		}
+		if literal {
+			return unsupportedConfiguration(
+				"literal JDBC credentials in %s are not supported; "+
+					"replace the password in %s with a runtime placeholder without a default",
+				jdbc.source, jdbc.key)
+		}
 	}
 	return nil
 }
@@ -839,39 +847,41 @@ func runtimePlaceholder(value string) (name, fallback string, ok bool) {
 	return name, fallback, true
 }
 
-func jdbcURLHasLiteralPassword(value string) bool {
+func jdbcURLHasLiteralPassword(value string) (bool, error) {
 	value = strings.TrimSpace(value)
 	if _, fallback, ok := runtimePlaceholder(value); ok {
 		if fallback == "" {
-			return false
+			return false, nil
 		}
 		value = fallback
 	}
 	if !strings.HasPrefix(value, "jdbc:mysql://") && !strings.HasPrefix(value, "jdbc:postgresql://") {
-		return false
+		return false, nil
 	}
-	address, err := url.Parse(strings.TrimPrefix(value, "jdbc:"))
+	// Preserve runtime credential placeholders through URL parsing without accepting placeholder hosts.
+	parseable := strings.NewReplacer("${", "%24%7B", "}", "%7D").Replace(strings.TrimPrefix(value, "jdbc:"))
+	address, err := url.Parse(parseable)
 	if err != nil {
-		return false
+		return false, errors.New("JDBC URL cannot be safely inspected")
 	}
 	if address.User != nil {
 		if password, present := address.User.Password(); present && hasLiteralCredential(password) {
-			return true
+			return true, nil
 		}
 	}
 	query, err := url.ParseQuery(address.RawQuery)
 	if err != nil {
-		return false
+		return false, errors.New("JDBC query cannot be safely inspected")
 	}
 	for key, values := range query {
 		if !strings.EqualFold(key, "password") {
 			continue
 		}
 		if slices.ContainsFunc(values, hasLiteralCredential) {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func splitPropertiesDocuments(data string) []string {

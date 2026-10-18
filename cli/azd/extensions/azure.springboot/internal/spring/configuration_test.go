@@ -114,11 +114,71 @@ func TestKnownDatasourceCredentialReferences(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.jdbc {
-				require.False(t, jdbcURLHasLiteralPassword(tt.value))
+				literal, err := jdbcURLHasLiteralPassword(tt.value)
+				require.NoError(t, err)
+				require.False(t, literal)
 			} else {
 				require.False(t, hasLiteralCredential(tt.value))
 			}
 		})
+	}
+}
+
+func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
+	const secret = "jdbc-fixture-not-a-secret"
+	for _, engine := range []string{"mysql", "postgresql"} {
+		for _, file := range []string{
+			"src/main/resources/application-unused.properties",
+			"config/application.properties",
+		} {
+			for _, tt := range []struct {
+				name    string
+				address string
+			}{
+				{"placeholder host query", "${DB_HOST:localhost}/catalog?password=" + secret},
+				{"placeholder host user info", "app:" + secret + "@${DB_HOST:localhost}/catalog"},
+				{"placeholder port", "localhost:${DB_PORT:5432}/catalog?password=" + secret},
+				{"malformed query", "localhost/catalog?option=%ZZ&password=" + secret},
+			} {
+				t.Run(engine+"/"+file+"/"+tt.name, func(t *testing.T) {
+					directory := t.TempDir()
+					writeFixture(t, directory, "pom.xml", "<project/>")
+					writeFixture(t, directory, file, "spring.datasource.url=jdbc:"+engine+"://"+tt.address+"\n")
+					application, err := Analyze(t.Context(), directory,
+						staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+					require.ErrorContains(t, err, "cannot safely inspect JDBC credentials")
+					require.ErrorContains(t, err, file)
+					require.ErrorContains(t, err, "spring.datasource.url")
+					require.NotContains(t, err.Error(), secret)
+					require.NotContains(t, err.Error(), tt.address)
+					require.Nil(t, application)
+				})
+			}
+		}
+	}
+}
+
+func TestJDBCURLCredentialPlaceholders(t *testing.T) {
+	const secret = "jdbc-fixture-not-a-secret"
+	for _, engine := range []string{"mysql", "postgresql"} {
+		for _, tt := range []struct {
+			name    string
+			address string
+			literal bool
+		}{
+			{"query reference", "localhost/catalog?password=${DB_PASSWORD}", false},
+			{"user info reference", "app:${DB_PASSWORD}@localhost/catalog", false},
+			{"query default", "localhost/catalog?password=${DB_PASSWORD:" + secret + "}", true},
+			{"user info default", "app:${DB_PASSWORD:" + secret + "}@localhost/catalog", true},
+			{"empty query default", "localhost/catalog?password=${DB_PASSWORD:}", false},
+			{"empty user info default", "app:${DB_PASSWORD:}@localhost/catalog", false},
+		} {
+			t.Run(engine+"/"+tt.name, func(t *testing.T) {
+				literal, err := jdbcURLHasLiteralPassword("jdbc:" + engine + "://" + tt.address)
+				require.NoError(t, err)
+				require.Equal(t, tt.literal, literal)
+			})
+		}
 	}
 }
 

@@ -189,6 +189,8 @@ database. The script must initialize/migrate the schema as the administrator
 and grant only required table/schema/sequence permissions to `azd_app`.
 `CONNECT` is granted by the hook; public database privileges and public schema
 creation are revoked. Runtime admin, DDL, TEMP, or object ownership fail validation.
+Administrative flags are checked on `azd_app` and all direct/transitive role
+memberships, including roles reachable through `SET ROLE`.
 
 Example grants after app-owned schema initialization (replace object names):
 

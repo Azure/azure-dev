@@ -167,20 +167,30 @@ class BootstrapTests(unittest.TestCase):
             raise AssertionError("Unexpected CLI call")
 
         safe = (False, False, False, False, False, False)
+        safe_flags = (False, False, False)
         cases = (
-            ("initial", None, "16384", False, safe),
-            ("repeat", "16384", "16384", True, safe),
-            ("recreated database", "16384", "16402", True, safe),
-            ("direct unsafe privilege", None, "16384", False, (True, False, False, False, False, False)),
-            ("inherited object ownership", None, "16384", False, (False, False, False, False, False, True)),
+            ("initial", None, "16384", False, safe_flags, safe),
+            ("repeat", "16384", "16384", True, safe_flags, safe),
+            ("recreated database", "16384", "16402", True, safe_flags, safe),
+            ("direct unsafe privilege", None, "16384", False, safe_flags,
+             (True, False, False, False, False, False)),
+            ("inherited object ownership", None, "16384", False, safe_flags,
+             (False, False, False, False, False, True)),
+            ("runtime administrator", None, "16384", False, (True, False, False), safe),
+            ("direct database creator membership", None, "16384", False, (False, True, False), safe),
+            ("direct role creator membership", None, "16384", False, (False, False, True), safe),
+            ("transitive database creator membership", None, "16384", False, (False, True, False), safe),
+            ("transitive role creator membership", None, "16384", False, (False, False, True), safe),
+            ("repeat with administrative membership", "16384", "16384", True, (False, True, False), safe),
+            ("missing runtime role", None, "16384", False, (None, None, None), safe),
         )
-        for name, stored_database_oid, database_oid, mapping_exists, unsafe in cases:
+        for name, stored_database_oid, database_oid, mapping_exists, flags, unsafe in cases:
             postgres, database = MagicMock(), MagicMock()
             postgres.__enter__.return_value = postgres
             database.__enter__.return_value = database
             postgres.execute.return_value.fetchone.return_value = (principal, 0) if mapping_exists else None
             database.execute.return_value.fetchone.side_effect = [
-                (database_oid,), (False, False, False), unsafe,
+                (database_oid,), flags, unsafe,
             ]
             psycopg = MagicMock()
             psycopg.connect.side_effect = [postgres, database]
@@ -194,7 +204,7 @@ class BootstrapTests(unittest.TestCase):
                     patch.object(bootstrap, "command", side_effect=command), \
                     patch.object(bootstrap, "bootstrap_sql", return_value=script), \
                     patch.object(bootstrap, "set_value") as setter, patch("builtins.print"):
-                if any(unsafe):
+                if flags != safe_flags or any(unsafe):
                     with self.assertRaisesRegex(RuntimeError, "must not have admin"):
                         bootstrap.bootstrap(settings, current)
                     setter.assert_not_called()
@@ -204,11 +214,17 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(psycopg.connect.call_args.kwargs["password"], "runtime-token")
             self.assertEqual(psycopg.connect.call_args.kwargs["sslmode"], "verify-full")
             executed = [call.args[0] for call in database.execute.call_args_list]
+            flag_query = next(call for call in database.execute.call_args_list
+                              if "bool_or(rolsuper)" in call.args[0])
+            self.assertIn("bool_or(rolcreatedb)", flag_query.args[0])
+            self.assertIn("bool_or(rolcreaterole)", flag_query.args[0])
+            self.assertIn("WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", flag_query.args[0])
+            self.assertEqual(flag_query.args[1], ("azd_app", "azd_app"))
             self.assertEqual(script in executed, stored_database_oid != database_oid)
             if not mapping_exists:
                 self.assertIn("pgaadauth_create_principal_with_oid", postgres.execute.call_args.args[0])
                 self.assertEqual(postgres.execute.call_args.args[1], ("azd_app", principal))
-            if not any(unsafe):
+            if flags == safe_flags and not any(unsafe):
                 self.assertEqual(setter.call_args.args[0], "SPRING_DATABASE_BOOTSTRAP_DIGEST")
                 self.assertEqual(
                     setter.call_args.args[1],

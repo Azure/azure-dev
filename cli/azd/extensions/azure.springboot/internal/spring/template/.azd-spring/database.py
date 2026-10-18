@@ -156,7 +156,8 @@ def bootstrap(settings, env):
             connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
             connection.execute(script, prepare=False)
         flags = connection.execute(
-            "SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname = %s", (ROLE,),
+            "SELECT bool_or(rolsuper), bool_or(rolcreatedb), bool_or(rolcreaterole) FROM pg_roles "
+            "WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", (ROLE, ROLE),
         ).fetchone()
         if flags != (False, False, False):
             raise RuntimeError("Runtime SQL role must not have administrative privileges")

@@ -1,0 +1,96 @@
+# Register in azure-sdk/internal only. Authorize this pipeline explicitly on the
+# service connection and require a maintainer approval/check there before use.
+# See docs/guides/evaluation-scenario-ci.md. No PR or scheduled live execution.
+trigger: none
+pr: none
+
+parameters:
+  - name: runLive
+    displayName: Run the live evaluation quality gate (incurs Azure cost)
+    type: boolean
+    default: false
+  - name: serviceConnection
+    displayName: Approved Azure test service connection
+    type: string
+    default: azure-sdk-tests
+
+extends:
+  template: /eng/pipelines/templates/stages/1es-redirect.yml
+  parameters:
+    stages:
+      - stage: EvaluationScenario
+        displayName: Installed-package live evaluation
+        condition: >-
+          and(succeeded(),
+          ${{ parameters.runLive }},
+          eq(variables['System.TeamProject'], 'internal'),
+          eq(variables['Build.Reason'], 'Manual'),
+          eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+        variables:
+          - template: /eng/pipelines/templates/variables/image.yml
+          - name: AZURE_DEV_COLLECT_TELEMETRY
+            value: "no"
+          - name: NO_COLOR
+            value: "1"
+        jobs:
+          - job: Live
+            displayName: Reconcile, run, reattach, gate, and sanitize
+            timeoutInMinutes: 25
+            pool:
+              name: $(LINUXPOOL)
+              image: $(LINUXVMIMAGE)
+              os: linux
+            templateContext:
+              outputs:
+                - output: pipelineArtifact
+                  path: $(Build.ArtifactStagingDirectory)/eval-scenario
+                  artifact: scenario-5-evaluation-results-$(System.JobAttempt)
+                  condition: and(always(), eq(variables['EvalScenarioArtifactReady'], 'true'))
+                  displayName: Publish sanitized evaluation results
+            steps:
+              - checkout: self
+                persistCredentials: false
+
+              - task: UsePythonVersion@0
+                inputs:
+                  versionSpec: "3.12"
+                displayName: Set up Python 3.12
+
+              - template: /eng/pipelines/templates/steps/install-azd-live-sh.yml
+                parameters:
+                  Version: latest
+
+              - pwsh: ./eng/scripts/eval-scenario-ci/install_packages.ps1
+                displayName: Install and verify latest canonical evaluation packages
+                env:
+                  AZD_CONFIG_DIR: $(Agent.TempDirectory)/eval-scenario-azd-config
+
+              - pwsh: python -m unittest discover -s eng/scripts/eval-scenario-ci -p "test_*.py" -v
+                displayName: Check evidence and CI contracts before authentication
+
+              - task: AzureCLI@2
+                displayName: Run live Scenario 5 using the approved service connection
+                timeoutInMinutes: 20
+                inputs:
+                  azureSubscription: ${{ parameters.serviceConnection }}
+                  keepAzSessionActive: true
+                  visibleAzLogin: false
+                  scriptType: pscore
+                  scriptLocation: scriptPath
+                  scriptPath: eng/scripts/eval-scenario-ci/run_live.ps1
+                  arguments: >-
+                    -TemporaryDirectory "$(Agent.TempDirectory)"
+                    -EvidenceDirectory "$(Build.ArtifactStagingDirectory)/eval-scenario"
+                env:
+                  AZD_CONFIG_DIR: $(Agent.TempDirectory)/eval-scenario-azd-config
+                  AZURE_AI_PROJECT_ENDPOINT: $(EVAL_SCENARIO_PROJECT_ENDPOINT)
+                  AZURE_LOCATION: $(EVAL_SCENARIO_LOCATION)
+                  AZURE_RESOURCE_GROUP: $(EVAL_SCENARIO_RESOURCE_GROUP)
+
+              - pwsh: |
+                  $config = Join-Path $env:AGENT_TEMPDIRECTORY "eval-scenario-azd-config"
+                  if (Test-Path -LiteralPath $config) {
+                    Remove-Item -LiteralPath $config -Recurse -Force
+                  }
+                condition: always()
+                displayName: Remove isolated azd configuration

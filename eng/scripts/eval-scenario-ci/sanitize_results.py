@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any
 
 EVALUATOR = "builtin.f1_score"
-EVALUATOR_THRESHOLD = 0.9
-QUALITY_GATE_THRESHOLD = 0.8
 EXPECTED_FIXTURE = [
     {
         "query": "What is the capital of France?",
@@ -38,12 +36,18 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _invalid_constant(_: str) -> Any:
+    raise EvidenceError("JSON contains a non-finite number.")
+
+
 def _load_json(path: Path) -> Any:
     try:
         with path.open(encoding="utf-8") as stream:
-            return json.load(stream, object_pairs_hook=_unique_object)
-    except (OSError, json.JSONDecodeError) as error:
-        raise EvidenceError(f"{path.name} is not valid JSON.") from error
+            return json.load(
+                stream, object_pairs_hook=_unique_object, parse_constant=_invalid_constant
+            )
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise EvidenceError("An evidence input is not valid JSON.") from error
 
 
 def _load_fixture(path: Path) -> list[dict[str, str]]:
@@ -54,7 +58,9 @@ def _load_fixture(path: Path) -> list[dict[str, str]]:
                 if not line.strip():
                     continue
                 try:
-                    row = json.loads(line, object_pairs_hook=_unique_object)
+                    row = json.loads(
+                        line, object_pairs_hook=_unique_object, parse_constant=_invalid_constant
+                    )
                 except json.JSONDecodeError as error:
                     raise EvidenceError(
                         f"The fixture row at line {line_number} is not valid JSON."
@@ -64,7 +70,7 @@ def _load_fixture(path: Path) -> list[dict[str, str]]:
                         f"The fixture row at line {line_number} is not an object."
                     )
                 rows.append(row)
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise EvidenceError("The fixture could not be read.") from error
 
     if rows != EXPECTED_FIXTURE:
@@ -90,12 +96,12 @@ def _run_counts(summary: Any) -> dict[str, int]:
         name: _required_int(counts, name)
         for name in ("total", "passed", "failed", "errored", "skipped")
     }
-    if result["total"] < result["passed"] + result["failed"]:
+    if result["total"] < sum(result[name] for name in ("passed", "failed", "errored", "skipped")):
         raise EvidenceError("The run summary contains inconsistent result counts.")
     return result
 
 
-def _result_for_sample(item: dict[str, Any]) -> dict[str, Any]:
+def _result_for_sample(item: dict[str, Any], evaluator_threshold: float) -> dict[str, Any]:
     results = item.get("results")
     if not isinstance(results, list):
         raise EvidenceError("An exported item does not contain evaluator results.")
@@ -122,41 +128,62 @@ def _result_for_sample(item: dict[str, Any]) -> dict[str, Any]:
     passed = result.get("passed")
     if not isinstance(passed, bool):
         raise EvidenceError("An F1 result does not contain a pass verdict.")
-    if passed != (score >= EVALUATOR_THRESHOLD):
+    if passed != (score >= evaluator_threshold):
         raise EvidenceError("An F1 result is inconsistent with the configured threshold.")
 
     return {"score": score, "passed": passed}
 
 
-def _samples(export: Any, fixture: list[dict[str, str]]) -> list[dict[str, Any]]:
+def _samples(
+    export: Any, fixture: list[dict[str, str]], evaluator_threshold: float
+) -> list[dict[str, Any]]:
     if not isinstance(export, dict) or not isinstance(export.get("items"), list):
         raise EvidenceError("The export does not contain an items array.")
     items = export["items"]
     if len(items) != len(fixture):
         raise EvidenceError("The export does not contain one item per fixture row.")
 
+    fields = ("query", "response", "ground_truth")
+    indexed: dict[tuple[str, ...], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("datasource_item"), dict):
+            raise EvidenceError("An exported item does not contain a fixture row.")
+        row = item["datasource_item"]
+        if any(not isinstance(row.get(field), str) for field in fields):
+            raise EvidenceError("An exported fixture field is not a string.")
+        key = tuple(row[field] for field in fields)
+        if key in indexed:
+            raise EvidenceError("The export contains duplicate fixture rows.")
+        indexed[key] = item
+
     samples: list[dict[str, Any]] = []
-    used: set[int] = set()
     for expected in fixture:
-        matches = [
-            index
-            for index, item in enumerate(items)
-            if isinstance(item, dict)
-            and isinstance(item.get("datasource_item"), dict)
-            and all(item["datasource_item"].get(key) == value for key, value in expected.items())
-        ]
-        if len(matches) != 1 or matches[0] in used:
+        item = indexed.pop(tuple(expected[field] for field in fields), None)
+        if item is None:
             raise EvidenceError("An exported item could not be matched to one fixture row.")
-        index = matches[0]
-        used.add(index)
-        verdict = _result_for_sample(items[index])
-        samples.append({**expected, **verdict})
+        samples.append({**expected, **_result_for_sample(item, evaluator_threshold)})
     return samples
 
 
-def build_evidence(summary: Any, export: Any, fixture: list[dict[str, str]]) -> dict[str, Any]:
+def _validate_threshold(value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EvidenceError("Thresholds must be finite numbers between zero and one.")
+    if not math.isfinite(value) or not 0 <= value <= 1:
+        raise EvidenceError("Thresholds must be finite numbers between zero and one.")
+
+
+def build_evidence(
+    summary: Any,
+    export: Any,
+    fixture: list[dict[str, str]],
+    *,
+    evaluator_threshold: float,
+    quality_gate_threshold: float,
+) -> dict[str, Any]:
+    _validate_threshold(evaluator_threshold)
+    _validate_threshold(quality_gate_threshold)
     counts = _run_counts(summary)
-    samples = _samples(export, fixture)
+    samples = _samples(export, fixture, evaluator_threshold)
     sample_passed = sum(sample["passed"] for sample in samples)
     sample_failed = len(samples) - sample_passed
     if (
@@ -170,9 +197,8 @@ def build_evidence(summary: Any, export: Any, fixture: list[dict[str, str]]) -> 
             "The aggregate result counts do not match the sanitized sample verdicts."
         )
 
-    scored = counts["passed"] + counts["failed"]
-    pass_rate = counts["passed"] / scored if scored else 0.0
-    quality_passed = counts["total"] > 0 and scored > 0 and pass_rate >= QUALITY_GATE_THRESHOLD
+    pass_rate = counts["passed"] / counts["total"] if counts["total"] else 0.0
+    quality_passed = counts["total"] > 0 and pass_rate >= quality_gate_threshold
 
     return {
         "schema_version": 1,
@@ -180,25 +206,33 @@ def build_evidence(summary: Any, export: Any, fixture: list[dict[str, str]]) -> 
         "counts": counts,
         "quality_gate": {
             "metric": "pass-rate",
-            "threshold": QUALITY_GATE_THRESHOLD,
+            "threshold": quality_gate_threshold,
             "pass_rate": pass_rate,
             "passed": quality_passed,
         },
         "evaluator": {
             "name": EVALUATOR,
-            "threshold": EVALUATOR_THRESHOLD,
+            "threshold": evaluator_threshold,
         },
         "samples": samples,
     }
 
 
 def write_evidence(
-    summary_path: Path, export_path: Path, fixture_path: Path, output_path: Path
+    summary_path: Path,
+    export_path: Path,
+    fixture_path: Path,
+    output_path: Path,
+    *,
+    evaluator_threshold: float,
+    quality_gate_threshold: float,
 ) -> dict[str, Any]:
     evidence = build_evidence(
         _load_json(summary_path),
         _load_json(export_path),
         _load_fixture(fixture_path),
+        evaluator_threshold=evaluator_threshold,
+        quality_gate_threshold=quality_gate_threshold,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -224,11 +258,18 @@ def main() -> int:
     parser.add_argument("--export", type=Path, required=True)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--evaluator-threshold", type=float, required=True)
+    parser.add_argument("--quality-gate-threshold", type=float, required=True)
     args = parser.parse_args()
 
     try:
         evidence = write_evidence(
-            args.run_summary, args.export, args.fixture, args.output
+            args.run_summary,
+            args.export,
+            args.fixture,
+            args.output,
+            evaluator_threshold=args.evaluator_threshold,
+            quality_gate_threshold=args.quality_gate_threshold,
         )
     except EvidenceError as error:
         print(f"error: {error}", file=sys.stderr)

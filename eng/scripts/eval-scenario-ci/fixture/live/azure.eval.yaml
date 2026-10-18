@@ -9,7 +9,7 @@ evals:
     evaluators:
       - evaluator: builtin.f1_score
         initialization_parameters:
-          threshold: 0.9
+          $ref: ./f1-parameters.json
         data_mapping:
           query: "{{item.query}}"
           response: "{{item.response}}"

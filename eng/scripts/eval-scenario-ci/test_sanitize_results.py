@@ -1,27 +1,43 @@
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from sanitize_results import EXPECTED_FIXTURE, EvidenceError, build_evidence, write_evidence
+from sanitize_results import (
+    EXPECTED_FIXTURE,
+    EvidenceError,
+    build_evidence as _build_evidence,
+    write_evidence as _write_evidence,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+SCRIPT_ROOT = Path(__file__).resolve().parent
+THRESHOLDS = {
+    "evaluator_threshold": json.loads(
+        (SCRIPT_ROOT / "fixture" / "live" / "f1-parameters.json").read_text(encoding="utf-8")
+    )["threshold"],
+    "quality_gate_threshold": 0.8,
+}
+build_evidence = partial(_build_evidence, **THRESHOLDS)
+write_evidence = partial(_write_evidence, **THRESHOLDS)
 
 
-def completed_summary(*, passed: int, failed: int, errored: int = 0) -> dict:
+def completed_summary(*, passed: int, failed: int, errored: int = 0, skipped: int = 0) -> dict:
     return {
         "id": "evalrun-sensitive",
         "status": "completed",
         "report_url": "https://user:password@example.test/report?sig=secret",
         "result_counts": {
-            "total": passed + failed + errored,
+            "total": passed + failed + errored + skipped,
             "passed": passed,
             "failed": failed,
             "errored": errored,
-            "skipped": 0,
+            "skipped": skipped,
         },
     }
 
@@ -44,7 +60,7 @@ def exported_items(scores: list[float]) -> dict:
                     {
                         "name": "f1_score",
                         "score": score,
-                        "passed": score >= 0.9,
+                        "passed": score >= THRESHOLDS["evaluator_threshold"],
                         "reason": "raw service explanation",
                         "sample": {"token": "secret"},
                     }
@@ -132,6 +148,91 @@ class BuildEvidenceTests(unittest.TestCase):
                 EXPECTED_FIXTURE,
             )
 
+    def test_counts_include_errored_and_skipped_before_matching_samples(self) -> None:
+        for component in ("errored", "skipped"):
+            with self.subTest(component=component):
+                summary = completed_summary(passed=2, failed=0, **{component: 1})
+                summary["result_counts"]["total"] = 2
+                with self.assertRaisesRegex(EvidenceError, "inconsistent result counts"):
+                    build_evidence(summary, exported_items([1.0, 1.0]), EXPECTED_FIXTURE)
+
+    def test_rejects_operational_outcomes_even_when_the_counts_add_up(self) -> None:
+        for component in ("errored", "skipped"):
+            with self.subTest(component=component):
+                summary = completed_summary(passed=1, failed=0, **{component: 1})
+                with self.assertRaisesRegex(EvidenceError, "do not match"):
+                    build_evidence(summary, exported_items([1.0, 1.0]), EXPECTED_FIXTURE)
+
+    def test_rejects_missing_or_invalid_counts(self) -> None:
+        for component in ("total", "passed", "failed", "errored", "skipped"):
+            for invalid in (None, True, -1, 1.5, "2"):
+                with self.subTest(component=component, invalid=invalid):
+                    summary = completed_summary(passed=2, failed=0)
+                    summary["result_counts"][component] = invalid
+                    with self.assertRaisesRegex(EvidenceError, "non-negative integer"):
+                        build_evidence(summary, exported_items([1.0, 1.0]), EXPECTED_FIXTURE)
+            summary = completed_summary(passed=2, failed=0)
+            del summary["result_counts"][component]
+            with self.subTest(component=component, missing=True):
+                with self.assertRaisesRegex(EvidenceError, "non-negative integer"):
+                    build_evidence(summary, exported_items([1.0, 1.0]), EXPECTED_FIXTURE)
+
+    def test_matches_reordered_rows_without_changing_fixture_order(self) -> None:
+        export = exported_items([1.0, 0.5])
+        export["items"].reverse()
+        evidence = build_evidence(
+            completed_summary(passed=1, failed=1), export, EXPECTED_FIXTURE
+        )
+        self.assertEqual([row["query"] for row in evidence["samples"]],
+                         [row["query"] for row in EXPECTED_FIXTURE])
+        self.assertEqual([row["score"] for row in evidence["samples"]], [1.0, 0.5])
+
+    def test_rejects_duplicate_or_unmatched_exported_rows(self) -> None:
+        export = exported_items([1.0, 1.0])
+        export["items"][1]["datasource_item"] = export["items"][0]["datasource_item"]
+        with self.assertRaisesRegex(EvidenceError, "duplicate fixture rows"):
+            build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+        export["items"][1]["datasource_item"] = {
+            "query": "unexpected", "response": "x", "ground_truth": "x"
+        }
+        with self.assertRaisesRegex(EvidenceError, "matched to one fixture row"):
+            build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+
+    def test_rejects_unhashable_or_non_string_export_fields(self) -> None:
+        for invalid in ({}, [], None, 42):
+            with self.subTest(invalid=invalid):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["datasource_item"]["query"] = invalid
+                with self.assertRaisesRegex(EvidenceError, "not a string"):
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+
+    def test_uses_explicit_thresholds_in_verdicts_gate_and_artifact(self) -> None:
+        export = exported_items([0.7, 0.4])
+        export["items"][0]["results"][0]["passed"] = True
+        evidence = build_evidence(
+            completed_summary(passed=1, failed=1), export, EXPECTED_FIXTURE,
+            evaluator_threshold=0.6, quality_gate_threshold=0.5,
+        )
+        self.assertTrue(evidence["quality_gate"]["passed"])
+        self.assertEqual(evidence["quality_gate"]["threshold"], 0.5)
+        self.assertEqual(evidence["evaluator"]["threshold"], 0.6)
+        breached = build_evidence(
+            completed_summary(passed=1, failed=1), export, EXPECTED_FIXTURE,
+            evaluator_threshold=0.6, quality_gate_threshold=0.51,
+        )
+        self.assertFalse(breached["quality_gate"]["passed"])
+
+    def test_rejects_invalid_thresholds(self) -> None:
+        for name in THRESHOLDS:
+            for invalid in (True, "0.8", -0.1, 1.1, float("nan"), float("inf")):
+                with self.subTest(name=name, invalid=invalid):
+                    with self.assertRaisesRegex(EvidenceError, "Thresholds must be finite"):
+                        build_evidence(
+                            completed_summary(passed=2, failed=0),
+                            exported_items([1.0, 1.0]), EXPECTED_FIXTURE,
+                            **{name: invalid},
+                        )
+
 
 class WriteEvidenceTests(unittest.TestCase):
     def test_writes_the_reviewed_fixture_and_safe_document(self) -> None:
@@ -179,24 +280,119 @@ class WriteEvidenceTests(unittest.TestCase):
             with self.assertRaises(EvidenceError):
                 write_evidence(summary_path, export_path, fixture_path, output_path)
 
+    def test_fails_closed_at_every_json_and_jsonl_input_boundary(self) -> None:
+        invalid_documents = (
+            ("summary", '{"status":"completed","status":"failed"}', "duplicate property"),
+            ("summary", '{"nested":{"x":1,"x":2}}', "duplicate property"),
+            ("export", '{"items":[],"items":[]}', "duplicate property"),
+            ("summary", '{"status":', "not valid JSON"),
+            ("export", "service-secret-not-json", "not valid JSON"),
+            ("summary", '{"unexpected": NaN}', "non-finite number"),
+            ("export", '{"unexpected": Infinity}', "non-finite number"),
+            ("fixture", '{"query":"x","query":"y"}\n', "duplicate property"),
+            ("fixture", '{"query":\n', "line 1 is not valid JSON"),
+            ("fixture", "[]\n", "line 1 is not an object"),
+            ("fixture", '"service-secret"\n', "line 1 is not an object"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {name: root / f"{name}.json" for name in ("summary", "export", "fixture")}
+            output = root / "safe" / "results.json"
+            for name, document, message in invalid_documents:
+                with self.subTest(input=name, document=document):
+                    paths["summary"].write_text(
+                        json.dumps(completed_summary(passed=2, failed=0)), encoding="utf-8"
+                    )
+                    paths["export"].write_text(
+                        json.dumps(exported_items([1.0, 1.0])), encoding="utf-8"
+                    )
+                    paths["fixture"].write_text(
+                        "".join(json.dumps(row) + "\n" for row in EXPECTED_FIXTURE),
+                        encoding="utf-8",
+                    )
+                    paths[name].write_text(document, encoding="utf-8")
+                    with self.assertRaisesRegex(EvidenceError, message) as caught:
+                        write_evidence(paths["summary"], paths["export"], paths["fixture"], output)
+                    self.assertNotIn("service-secret", str(caught.exception))
+                    self.assertFalse(output.exists())
+                    self.assertFalse(output.with_suffix(".json.tmp").exists())
+
+    def test_cli_rejects_malformed_evidence_without_disclosing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            malformed = root / "malformed.json"
+            malformed.write_text("https://user:secret@example.test/?sig=sas-secret", encoding="utf-8")
+            output = root / "results.json"
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT_ROOT / "sanitize_results.py"),
+                 "--run-summary", str(malformed), "--export", str(malformed),
+                 "--fixture", str(malformed), "--output", str(output),
+                 "--evaluator-threshold", "0.9", "--quality-gate-threshold", "0.8"],
+                capture_output=True, text=True, check=False, timeout=15,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("not valid JSON", result.stderr)
+            self.assertNotIn("secret", result.stdout + result.stderr)
+            self.assertNotIn("example.test", result.stdout + result.stderr)
+            self.assertFalse(output.exists())
+
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_live_job_passes_required_azd_environment_inputs(self) -> None:
+    def test_github_actions_has_no_live_authentication_surface(self) -> None:
         workflow = (
             REPOSITORY_ROOT / ".github" / "workflows" / "eval-scenario-ci.yml"
         ).read_text(encoding="utf-8")
 
+        for forbidden in ("secrets.", "id-token:", "run_live", "auth login", "AZURE_SUBSCRIPTION_ID",
+                          "AZURE_AI_PROJECT_ENDPOINT", "live-scenario:", "m7md7sien/azd-foundry-feed"):
+            self.assertNotIn(forbidden, workflow)
+        self.assertIn("version: latest", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("ubuntu-24.04", workflow)
+        self.assertIn("windows-2025", workflow)
+
+    def test_both_ci_surfaces_share_canonical_latest_install_and_verification(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "eval-scenario-ci.yml"
+        ).read_text(encoding="utf-8")
+        pipeline = (
+            REPOSITORY_ROOT / "eng" / "pipelines" / "eval-scenario-live.yml"
+        ).read_text(encoding="utf-8")
+        installer = (SCRIPT_ROOT / "install_packages.ps1").read_text(encoding="utf-8")
+        for surface in (workflow, pipeline):
+            self.assertIn("eng/scripts/eval-scenario-ci/install_packages.ps1", surface)
+            self.assertNotIn("azd extension install", surface)
+        self.assertIn("--source azd --version latest --no-prompt", installer)
+        self.assertIn("$package.installedVersion -cne $package.version", installer)
+        self.assertNotIn("extension source add", installer)
+
+    def test_ado_live_gate_is_manual_opt_in_internal_and_main_only(self) -> None:
+        pipeline = (
+            REPOSITORY_ROOT / "eng" / "pipelines" / "eval-scenario-live.yml"
+        ).read_text(encoding="utf-8")
         for expected in (
-            "AZURE_AI_PROJECT_ENDPOINT: ${{ secrets.AZURE_AI_PROJECT_ENDPOINT }}",
-            "AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}",
-            "AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}",
-            "AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}",
-            '"AZURE_AI_PROJECT_ENDPOINT",',
-            '"AZURE_LOCATION",',
-            '"AZURE_RESOURCE_GROUP",',
-            '"AZURE_SUBSCRIPTION_ID"',
+            "trigger: none", "pr: none", "default: false",
+            "${{ parameters.runLive }}",
+            "eq(variables['System.TeamProject'], 'internal')",
+            "eq(variables['Build.Reason'], 'Manual')",
+            "eq(variables['Build.SourceBranch'], 'refs/heads/main')",
+            "template: /eng/pipelines/templates/stages/1es-redirect.yml",
+            "task: AzureCLI@2", "keepAzSessionActive: true", "visibleAzLogin: false",
+            "output: pipelineArtifact",
+            "eq(variables['EvalScenarioArtifactReady'], 'true')",
         ):
-            self.assertIn(expected, workflow)
+            self.assertIn(expected, pipeline)
+
+    def test_live_runner_uses_the_fixture_threshold_and_one_quality_gate_value(self) -> None:
+        runner = (SCRIPT_ROOT / "run_live.ps1").read_text(encoding="utf-8")
+        config = (SCRIPT_ROOT / "fixture" / "live" / "azure.eval.yaml").read_text(encoding="utf-8")
+        self.assertIn("$ref: ./f1-parameters.json", config)
+        self.assertIn('"fixture/live/f1-parameters.json"', runner)
+        self.assertIn("$evaluatorThreshold = [string] $evaluatorParameters.threshold", runner)
+        self.assertIn('--fail-on "pass-rate=$qualityGateThreshold"', runner)
+        self.assertIn("--evaluator-threshold $evaluatorThreshold", runner)
+        self.assertIn("--quality-gate-threshold $qualityGateThreshold", runner)
+        self.assertEqual(runner.count('$qualityGateThreshold = "0.8"'), 1)
 
     def test_fixture_contains_only_the_inert_reconciliation_marker(self) -> None:
         marker = (

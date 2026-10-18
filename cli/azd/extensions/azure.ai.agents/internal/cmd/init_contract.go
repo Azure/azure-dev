@@ -167,6 +167,10 @@ func ValidateModeFlags(cmd *cobra.Command, mode Mode) error {
 	message := fmt.Sprintf("%s init cannot apply these explicitly set inputs: ", mode)
 	suggestion := "Remove the conflicting flags or select an init mode that supports them."
 	switch mode {
+	case ModeHostedFromCode:
+		message = "hosted init cannot apply these explicitly set inputs: "
+	case ModeImage:
+		message = "image init cannot apply these explicitly set inputs: "
 	case ModePromptVoice:
 		message = "new prompt voice agents cannot use these init inputs: "
 		suggestion = "remove these inputs to create a prompt voice agent; use the hosted init flow for source/code settings " +

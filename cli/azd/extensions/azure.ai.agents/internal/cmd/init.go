@@ -817,8 +817,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				userProvidedTemplate || cmd.Flags().Changed("template") || cmd.Flags().Changed("manifest"),
 				flags.kind, flags.image,
 			)
-			// With no explicit selection, interactive users can still choose voice or a template.
-			if flags.noPrompt || mode != ModeHostedFromCode || flags.kind != "" {
+			// Interactive users can still choose voice or a template, but neither accepts prompt-only inputs.
+			promptOnlyInput := cmd.Flags().Changed("description") || cmd.Flags().Changed("rai-policy") ||
+				cmd.Flags().Changed("instructions") || cmd.Flags().Changed("harness")
+			if flags.noPrompt || mode != ModeHostedFromCode || flags.kind != "" || promptOnlyInput {
 				if err := ValidateModeFlags(cmd, mode); err != nil {
 					return err
 				}
@@ -1112,6 +1114,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						useExisting = *confirmResp.Value
 					}
 					if useExisting {
+						if err := ValidateModeFlags(cmd, mode); err != nil {
+							return err
+						}
 						recordInitProject(ctx, detection.project)
 						if err := runReuseProjectAgentServices(
 							ctx, flags, azdClient, detection.services,

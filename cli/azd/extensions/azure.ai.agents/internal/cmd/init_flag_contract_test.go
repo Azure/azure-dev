@@ -130,6 +130,58 @@ func TestInitContractRejectsChangedFlagsInteractively(t *testing.T) {
 	require.Equal(t, []string{"--deploy-mode", "--runtime"}, RejectedFlags(cmd, ModePrompt))
 }
 
+func TestInitContractRejectsPromptOnlyFlagsInteractivelyWithoutKind(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, test := range []struct {
+		flag  string
+		value string
+	}{
+		{flag: "description", value: "My agent"},
+		{flag: "rai-policy", value: "none"},
+		{flag: "instructions", value: "Be helpful"},
+		{flag: "harness", value: "github_copilot_preview"},
+	} {
+		for _, value := range []string{test.value, ""} {
+			t.Run(test.flag+"/"+value, func(t *testing.T) {
+				t.Chdir(t.TempDir())
+				cmd := newInitCommand(nil)
+				var output bytes.Buffer
+				cmd.SetOut(&output)
+				cmd.SetErr(&output)
+				cmd.SetArgs([]string{"--" + test.flag + "=" + value})
+				err := cmd.Execute()
+				require.ErrorContains(t, err, "--"+test.flag)
+				require.ErrorContains(t, err, "hosted init cannot apply")
+				require.NotContains(t, err.Error(), "hosted-from-code")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+				require.NoFileExists(t, "azure.yaml")
+				require.NoDirExists(t, ".azure")
+			})
+		}
+	}
+}
+
+func TestValidateModeFlagsUsesFriendlyModeLabels(t *testing.T) {
+	for _, test := range []struct {
+		mode  Mode
+		label string
+	}{
+		{mode: ModeHostedFromCode, label: "hosted"},
+		{mode: ModeImage, label: "image"},
+	} {
+		t.Run(string(test.mode), func(t *testing.T) {
+			cmd := newInitCommand(nil)
+			require.NoError(t, cmd.Flags().Set("description", ""))
+			err := ValidateModeFlags(cmd, test.mode)
+			require.ErrorContains(t, err, test.label+" init cannot apply")
+			require.ErrorContains(t, err, "--description")
+			require.NotContains(t, err.Error(), "hosted-from-code")
+		})
+	}
+}
+
 func TestInitModeContractRejectsBeforeHostAccess(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	for _, test := range []struct {

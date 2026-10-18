@@ -50,7 +50,11 @@ function azd {
         }
         "ai eval run show *" {
             Get-Content -LiteralPath (Join-Path $env:TEST_DIRECTORY "summary.json") -Raw
-            if ($env:TEST_SCENARIO -in @("breach", "exit-mismatch")) { $global:LASTEXITCODE = 1 }
+            if ($env:TEST_SCENARIO -in @("breach", "pass-breach-exit")) { $global:LASTEXITCODE = 2 }
+            if ($env:TEST_SCENARIO -in @("exit-mismatch", "breach-operational-failure")) {
+                $global:LASTEXITCODE = 1
+            }
+            if ($env:TEST_SCENARIO -eq "breach-unexpected-exit") { $global:LASTEXITCODE = 17 }
         }
         "ai eval run output export *" {
             $outputIndex = [Array]::IndexOf($args, "--output-file")
@@ -119,11 +123,15 @@ class PowerShellScriptTests(unittest.TestCase):
                 result = self.run_script(Path(directory), "install_packages.ps1", scenario)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_live_runner_offline_pass_breach_and_operational_failures(self) -> None:
-        for scenario in ("passed", "breach", "exit-mismatch", "invalid-start", "up-failed"):
+    def test_live_runner_requires_exit_zero_for_pass_and_two_for_breach(self) -> None:
+        for scenario in (
+            "passed", "breach", "exit-mismatch", "pass-breach-exit",
+            "breach-operational-failure", "breach-zero-exit", "breach-unexpected-exit",
+            "invalid-start", "up-failed",
+        ):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
-                breached = scenario == "breach"
+                breached = scenario.startswith("breach")
                 (root / "summary.json").write_text(
                     json.dumps(completed_summary(passed=1 if breached else 2, failed=1 if breached else 0)),
                     encoding="utf-8",
@@ -157,7 +165,7 @@ class PowerShellScriptTests(unittest.TestCase):
                     self.assertEqual(lifecycle[2][4], "offline-test-run")
                     self.assertEqual(lifecycle[3][5], "offline-test-run")
                 else:
-                    self.assertNotEqual(result.returncode, 0, output)
+                    self.assertEqual(result.returncode, 1, output)
                     self.assertNotIn("variable=EvalScenarioArtifactReady]true", output)
                     self.assertFalse(artifact.exists())
 

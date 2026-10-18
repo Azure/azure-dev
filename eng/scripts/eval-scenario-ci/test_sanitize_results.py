@@ -133,6 +133,60 @@ class BuildEvidenceTests(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
 
+    def test_rejects_a_single_differently_named_or_unidentified_evaluator(self) -> None:
+        for name in ("builtin.relevance", "relevance", None):
+            with self.subTest(name=name):
+                export = exported_items([1.0, 1.0])
+                for item in export["items"]:
+                    item["results"][0]["name"] = name
+                with self.assertRaisesRegex(EvidenceError, "one F1 result"):
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+
+    def test_accepts_explicit_f1_names_and_metric(self) -> None:
+        for identity in ({"name": "builtin.f1_score"}, {"name": "f1_score"}, {"metric": "f1_score"}):
+            with self.subTest(identity=identity):
+                export = exported_items([1.0, 1.0])
+                for item in export["items"]:
+                    result = item["results"][0]
+                    del result["name"]
+                    result.update(identity)
+                evidence = build_evidence(
+                    completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE
+                )
+                self.assertEqual(evidence["evaluator"]["name"], "builtin.f1_score")
+                self.assertEqual(evidence["outcome"], "passed")
+
+    def test_accepts_quoted_numeric_scores_and_emits_numeric_artifact_scores(self) -> None:
+        for scores in (("1.0", "0.5"), ("9e-1", "0"), (" 1.0 ", 0.5)):
+            with self.subTest(scores=scores):
+                export = exported_items([1.0, 0.5])
+                for item, score in zip(export["items"], scores, strict=True):
+                    item["results"][0]["score"] = score
+                evidence = build_evidence(
+                    completed_summary(passed=1, failed=1), export, EXPECTED_FIXTURE
+                )
+                serialized = json.loads(json.dumps(evidence))
+                self.assertEqual(
+                    [sample["score"] for sample in serialized["samples"]],
+                    [float(score) for score in scores],
+                )
+                for sample in serialized["samples"]:
+                    self.assertIsInstance(sample["score"], float)
+                self.assertEqual(evidence["outcome"], "quality_gate_breached")
+
+    def test_rejects_invalid_scores_without_disclosing_raw_values(self) -> None:
+        for score in (
+            True, False, None, [], {}, "", "service-secret", "NaN", "Infinity",
+            "-Infinity", "1e999", "-0.1", "1.1", float("nan"), float("inf"),
+            -0.1, 1.1, 10**400,
+        ):
+            with self.subTest(score=score):
+                export = exported_items([1.0, 1.0])
+                export["items"][0]["results"][0]["score"] = score
+                with self.assertRaisesRegex(EvidenceError, "score") as caught:
+                    build_evidence(completed_summary(passed=2, failed=0), export, EXPECTED_FIXTURE)
+                self.assertNotIn("service-secret", str(caught.exception))
+
     def test_rejects_a_verdict_that_disagrees_with_the_evaluator_threshold(self) -> None:
         export = exported_items([1.0, 1.0])
         export["items"][0]["results"][0]["passed"] = False

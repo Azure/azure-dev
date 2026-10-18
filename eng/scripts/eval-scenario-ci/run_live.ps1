@@ -86,7 +86,7 @@ try {
         $safe = Get-Content -LiteralPath $artifact -Raw | ConvertFrom-Json
         $qualityGateBreached = -not $safe.quality_gate.passed
         if (($safe.quality_gate.passed -and $gateExitCode -ne 0) -or
-            ($qualityGateBreached -and $gateExitCode -eq 0)) {
+            ($qualityGateBreached -and $gateExitCode -ne 2)) {
             Remove-Item -LiteralPath $artifact -Force
             throw "Operational failure: the CLI exit code disagreed with the quality gate."
         }

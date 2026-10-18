@@ -61,12 +61,20 @@ errored, and skipped counts. This two-row fixture additionally requires exactly
 two scored rows and no errored, skipped, or unaccounted rows. Pass rate is
 `passed / total`, matching the CLI.
 
+Each sample must explicitly identify F1 by name (`builtin.f1_score` or `f1_score`)
+or metric (`f1_score`); a singleton result for another evaluator is not F1 evidence.
+Scores may be JSON numbers or quoted numeric values, as in raw service exports.
+Both forms must be finite and between zero and one, and artifact scores are
+always numeric.
+
 The artifact contains only aggregate counts, thresholds, and the reviewed
 `query`, `response`, `ground_truth`, numeric `score`, and `passed` fields.
 Duplicate JSON properties, malformed JSON/JSONL, non-finite numbers, fixture
 drift, and inconsistent results fail closed. A validated threshold breach
-publishes sanitized evidence and fails the job; a CLI failure that disagrees
-with the evidence is an operational failure and cannot authorize publication.
+requires CLI exit code `2`, publishes sanitized evidence, and fails the job.
+A passing gate requires exit code `0`. Any other exit or disagreement with the
+evidence is an operational failure and cannot authorize publication, even if
+the exported scores are below threshold.
 Raw command output and the temporary project are removed in `finally`; the
 pipeline also removes its isolated azd configuration.
 

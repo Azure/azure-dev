@@ -112,16 +112,17 @@ def _result_for_sample(item: dict[str, Any], evaluator_threshold: float) -> dict
         if isinstance(result, dict)
         and (result.get("name") in {EVALUATOR, "f1_score"} or result.get("metric") == "f1_score")
     ]
-    if not candidates and len(results) == 1 and isinstance(results[0], dict):
-        candidates = [results[0]]
     if len(candidates) != 1:
         raise EvidenceError("An exported item does not contain one F1 result.")
 
     result = candidates[0]
     score = result.get("score")
-    if isinstance(score, bool) or not isinstance(score, (int, float)):
+    if isinstance(score, bool) or not isinstance(score, (int, float, str)):
         raise EvidenceError("An F1 result does not contain a numeric score.")
-    score = float(score)
+    try:
+        score = float(score)
+    except (ValueError, OverflowError) as error:
+        raise EvidenceError("An F1 result does not contain a numeric score.") from error
     if not math.isfinite(score) or score < 0 or score > 1:
         raise EvidenceError("An F1 result contains an invalid score.")
 

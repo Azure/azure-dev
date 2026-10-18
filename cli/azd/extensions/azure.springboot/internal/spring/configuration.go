@@ -348,6 +348,9 @@ func readDocumentFile(root *os.Root, file, extension string) ([]document, error)
 	if extension == ".properties" {
 		var docs []document
 		for _, part := range splitPropertiesDocuments(string(data)) {
+			if err := validateDuplicateCredentialProperties(part, file); err != nil {
+				return nil, err
+			}
 			p := properties.NewProperties()
 			p.DisableExpansion = true
 			if err := p.Load([]byte(part), properties.UTF8); err != nil {
@@ -380,6 +383,73 @@ func readDocumentFile(root *os.Root, file, extension string) ([]document, error)
 		docs = append(docs, newDocument(flat, file))
 	}
 	return docs, nil
+}
+
+func validateDuplicateCredentialProperties(data, file string) error {
+	counts := map[string]int{}
+	continuation := false
+	for line := range strings.SplitSeq(data, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		if continuation {
+			continuation = hasPropertiesContinuation(line)
+			continue
+		}
+		continuation = hasPropertiesContinuation(line)
+		keyText, ok := propertiesLineKey(line)
+		if !ok {
+			continue
+		}
+		parsed := properties.NewProperties()
+		parsed.DisableExpansion = true
+		if err := parsed.Load([]byte(keyText+"="), properties.UTF8); err != nil {
+			return invalidConfiguration("invalid Java properties in %s", file)
+		}
+		keys := parsed.Keys()
+		if len(keys) != 1 {
+			continue
+		}
+		key := canonical(keys[0])
+		if key != canonical("spring.datasource.password") && key != canonical("spring.datasource.url") {
+			continue
+		}
+		counts[key]++
+		if counts[key] > 1 {
+			return unsupportedConfiguration(
+				"duplicate datasource credential property %s in %s is not supported; keep one runtime-safe value",
+				keys[0], file)
+		}
+	}
+	return nil
+}
+
+func propertiesLineKey(line string) (string, bool) {
+	line = strings.TrimLeft(line, " \t\f")
+	if line == "" || line[0] == '#' || line[0] == '!' {
+		return "", false
+	}
+	escaped := false
+	for i, char := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '=' || char == ':' || char == ' ' || char == '\t' || char == '\f' {
+			return line[:i], true
+		}
+	}
+	return line, true
+}
+
+func hasPropertiesContinuation(line string) bool {
+	backslashes := 0
+	for i := len(line) - 1; i >= 0 && line[i] == '\\'; i-- {
+		backslashes++
+	}
+	return backslashes%2 == 1
 }
 
 func validateKnownCredentials(ctx context.Context, root *os.Root, locations []string) error {
@@ -612,11 +682,20 @@ func applyCredentialRepairs(
 		staged = append(staged, stagedCredentialRepair{
 			target: file, updated: updatedName, original: originalName,
 		})
+		if err := syncCredentialRepairDirectory(root, file); err != nil {
+			return fmt.Errorf("syncing staged credential repair for %s: %w", file, err)
+		}
 	}
 	var applied []int
 	for i := range staged {
 		file := &staged[i]
-		if err := ops.rename(root, file.updated, file.target); err != nil {
+		applyErr := ops.rename(root, file.updated, file.target)
+		if applyErr == nil {
+			file.updated = ""
+			applied = append(applied, i)
+			applyErr = syncCredentialRepairDirectory(root, file.target)
+		}
+		if applyErr != nil {
 			var rollbackErr error
 			for _, previousIndex := range slices.Backward(applied) {
 				previous := &staged[previousIndex]
@@ -626,13 +705,13 @@ func applyCredentialRepairs(
 						fmt.Errorf("restoring %s: %w", previous.target, restoreErr))
 				} else {
 					previous.original = ""
+					rollbackErr = errors.Join(rollbackErr,
+						syncCredentialRepairDirectory(root, previous.target))
 				}
 			}
 			return fmt.Errorf("applying credential repair to %s: %w",
-				file.target, errors.Join(err, rollbackErr))
+				file.target, errors.Join(applyErr, rollbackErr))
 		}
-		file.updated = ""
-		applied = append(applied, i)
 	}
 	var cleanupErr error
 	for i := range staged {
@@ -642,6 +721,9 @@ func applyCredentialRepairs(
 		} else {
 			staged[i].original = ""
 		}
+	}
+	for _, file := range staged {
+		cleanupErr = errors.Join(cleanupErr, syncCredentialRepairDirectory(root, file.target))
 	}
 	if cleanupErr != nil {
 		return cleanupErr

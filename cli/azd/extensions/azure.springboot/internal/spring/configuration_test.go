@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -117,6 +118,27 @@ func TestKnownDatasourceCredentialReferences(t *testing.T) {
 			} else {
 				require.False(t, hasLiteralCredential(tt.value))
 			}
+		})
+	}
+}
+
+func TestAnalyzeRejectsDuplicateDatasourceCredentialProperties(t *testing.T) {
+	const secret = "earlier-value-must-not-be-disclosed"
+	for _, property := range []string{"spring.datasource.password", "spring.datasource.url"} {
+		t.Run(property, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			safe := "${DATABASE_PASSWORD}"
+			if strings.HasSuffix(property, ".url") {
+				safe = "jdbc:postgresql://localhost/catalog"
+			}
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				property+"="+secret+"\n"+property+"="+safe+"\n")
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			require.ErrorContains(t, err, "duplicate datasource credential property")
+			require.NotContains(t, err.Error(), secret)
+			require.Nil(t, application)
 		})
 	}
 }

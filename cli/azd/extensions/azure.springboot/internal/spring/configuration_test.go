@@ -125,7 +125,7 @@ func TestKnownDatasourceCredentialReferences(t *testing.T) {
 }
 
 func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
-	const secret = "jdbc-fixture-not-a-secret"
+	const testValue = "jdbc-fixture-value"
 	for _, engine := range []string{"mysql", "postgresql"} {
 		for _, file := range []string{
 			"src/main/resources/application-unused.properties",
@@ -135,10 +135,10 @@ func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
 				name    string
 				address string
 			}{
-				{"placeholder host query", "${DB_HOST:localhost}/catalog?password=" + secret},
-				{"placeholder host user info", "app:" + secret + "@${DB_HOST:localhost}/catalog"},
-				{"placeholder port", "localhost:${DB_PORT:5432}/catalog?password=" + secret},
-				{"malformed query", "localhost/catalog?option=%ZZ&password=" + secret},
+				{"placeholder host query", "${DB_HOST:localhost}/catalog?password=" + testValue},
+				{"placeholder host user info", "app:" + testValue + "@${DB_HOST:localhost}/catalog"},
+				{"placeholder port", "localhost:${DB_PORT:5432}/catalog?password=" + testValue},
+				{"malformed query", "localhost/catalog?option=%ZZ&password=" + testValue},
 			} {
 				t.Run(engine+"/"+file+"/"+tt.name, func(t *testing.T) {
 					directory := t.TempDir()
@@ -149,7 +149,7 @@ func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
 					require.ErrorContains(t, err, "cannot safely inspect JDBC credentials")
 					require.ErrorContains(t, err, file)
 					require.ErrorContains(t, err, "spring.datasource.url")
-					require.NotContains(t, err.Error(), secret)
+					require.NotContains(t, err.Error(), testValue)
 					require.NotContains(t, err.Error(), tt.address)
 					require.Nil(t, application)
 				})
@@ -159,7 +159,7 @@ func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
 }
 
 func TestJDBCURLCredentialPlaceholders(t *testing.T) {
-	const secret = "jdbc-fixture-not-a-secret"
+	const testValue = "jdbc-fixture-value"
 	for _, engine := range []string{"mysql", "postgresql"} {
 		for _, tt := range []struct {
 			name    string
@@ -168,8 +168,8 @@ func TestJDBCURLCredentialPlaceholders(t *testing.T) {
 		}{
 			{"query reference", "localhost/catalog?password=${DB_PASSWORD}", false},
 			{"user info reference", "app:${DB_PASSWORD}@localhost/catalog", false},
-			{"query default", "localhost/catalog?password=${DB_PASSWORD:" + secret + "}", true},
-			{"user info default", "app:${DB_PASSWORD:" + secret + "}@localhost/catalog", true},
+			{"query default", "localhost/catalog?password=${DB_PASSWORD:" + testValue + "}", true},
+			{"user info default", "app:${DB_PASSWORD:" + testValue + "}@localhost/catalog", true},
 			{"empty query default", "localhost/catalog?password=${DB_PASSWORD:}", false},
 			{"empty user info default", "app:${DB_PASSWORD:}@localhost/catalog", false},
 		} {

@@ -558,7 +558,7 @@ func validateKnownCredentialDocument(doc document) error {
 		if err != nil {
 			return unsupportedConfiguration(
 				"cannot safely inspect JDBC credentials in %s; "+
-					"use a parseable MySQL/PostgreSQL URL in %s with a concrete host and port",
+					"use a valid MySQL/PostgreSQL URL in %s with a concrete host and port",
 				jdbc.source, jdbc.key)
 		}
 		if literal {
@@ -859,8 +859,8 @@ func jdbcURLHasLiteralPassword(value string) (bool, error) {
 		return false, nil
 	}
 	// Preserve runtime credential placeholders through URL parsing without accepting placeholder hosts.
-	parseable := strings.NewReplacer("${", "%24%7B", "}", "%7D").Replace(strings.TrimPrefix(value, "jdbc:"))
-	address, err := url.Parse(parseable)
+	normalizedURL := strings.NewReplacer("${", "%24%7B", "}", "%7D").Replace(strings.TrimPrefix(value, "jdbc:"))
+	address, err := url.Parse(normalizedURL)
 	if err != nil {
 		return false, errors.New("JDBC URL cannot be safely inspected")
 	}

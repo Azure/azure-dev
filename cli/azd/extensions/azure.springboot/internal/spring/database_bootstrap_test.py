@@ -205,6 +205,7 @@ class BootstrapTests(unittest.TestCase):
                     patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
                     patch.object(bootstrap, "command", side_effect=command), \
                     patch.object(bootstrap, "bootstrap_sql", return_value=script), \
+                    patch.object(bootstrap, "execute_bootstrap_sql") as execute_script, \
                     patch.object(bootstrap, "set_value") as setter, patch("builtins.print"):
                 if flags != safe_flags or any(unsafe):
                     with self.assertRaisesRegex(RuntimeError, "must not have admin"):
@@ -215,14 +216,16 @@ class BootstrapTests(unittest.TestCase):
                     bootstrap.bootstrap(settings, current)
             self.assertEqual(psycopg.connect.call_args.kwargs["password"], "runtime-token")
             self.assertEqual(psycopg.connect.call_args.kwargs["sslmode"], "verify-full")
-            executed = [call.args[0] for call in database.execute.call_args_list]
             flag_query = next(call for call in database.execute.call_args_list
                               if "bool_or(rolsuper)" in call.args[0])
             self.assertIn("bool_or(rolcreatedb)", flag_query.args[0])
             self.assertIn("bool_or(rolcreaterole)", flag_query.args[0])
             self.assertIn("WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", flag_query.args[0])
             self.assertEqual(flag_query.args[1], ("azd_app", "azd_app"))
-            self.assertEqual(script in executed, stored_database_oid != database_oid)
+            if stored_database_oid != database_oid:
+                execute_script.assert_called_once_with(database, script)
+            else:
+                execute_script.assert_not_called()
             if not mapping_exists:
                 self.assertIn("pgaadauth_create_principal_with_oid", postgres.execute.call_args.args[0])
                 self.assertEqual(postgres.execute.call_args.args[1], ("azd_app", principal))

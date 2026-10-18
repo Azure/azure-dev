@@ -187,10 +187,16 @@ using an in-memory Azure CLI token in the selected subscription and verified TLS
 to non-admin role `azd_app`, then executes the supplied SQL in the application
 database. The script must initialize/migrate the schema as the administrator
 and grant only required table/schema/sequence permissions to `azd_app`.
+The hook owns the transaction: commands such as `BEGIN`, `COMMIT`, and `ROLLBACK`
+are rejected, including commits inside called procedures.
+SQL runs through PostgreSQL's atomic execution context so failed validation
+rolls back schema/grant changes; comments, strings, and routine bodies are not
+rejected merely for containing these words.
 `CONNECT` is granted by the hook; public database privileges and public schema
 creation are revoked. Runtime admin, DDL, TEMP, or object ownership fail validation.
 Administrative flags, database/schema creation, temporary-table privileges, and
-relation ownership are checked on `azd_app` and all direct/transitive role
+object ownership (including routines, types, and schemas, not just relations)
+are checked on `azd_app` and all direct/transitive role
 memberships, including roles reachable through `SET ROLE` when inheritance is disabled.
 This is the extension's runtime policy, not an Entra authentication requirement.
 
@@ -231,7 +237,8 @@ python internal/spring/database_bootstrap_test.py
 CI also runs `internal/spring/database_privileges_test.py` against disposable
 PostgreSQL 15. To run locally, install the bootstrap requirements and set
 `SPRING_TEST_POSTGRES_DSN` to a disposable PostgreSQL 15 superuser connection string.
-The tests create roles/grants inside transactions that are always rolled back.
+Privilege cases roll back their fixtures. Transaction-boundary cases use separate
+connections to verify rejected changes were not committed, then remove their fixtures.
 
 Documented decision fixtures are in
 [`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).

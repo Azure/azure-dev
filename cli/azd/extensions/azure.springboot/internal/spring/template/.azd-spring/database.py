@@ -73,6 +73,28 @@ def bootstrap_digest(host, database, database_oid, principal, script):
     return hashlib.sha256(state.encode()).hexdigest()
 
 
+def execute_bootstrap_sql(connection, script):
+    import psycopg
+    from psycopg import sql
+
+    # Execute through PostgreSQL's atomic SPI context, not the top-level SQL protocol.
+    # SPI rejects transaction commands (including nested procedure commits), so supplied SQL
+    # cannot commit grants before validation. PostgreSQL parses comments/strings/function bodies;
+    # no client-side SQL splitting or keyword matching is needed.
+    # https://www.postgresql.org/docs/15/spi-spi-execute.html
+    # Quote both the SQL string and the DO body; supplied dollar quotes cannot end our wrapper.
+    body = sql.SQL("BEGIN EXECUTE {}; END").format(sql.Literal(script)).as_string(connection)
+    try:
+        connection.execute(sql.SQL("DO {}").format(sql.Literal(body)))
+    except (psycopg.errors.FeatureNotSupported, psycopg.errors.InvalidTransactionTermination) as error:
+        if error.sqlstate == "2D000" or error.diag.message_primary == "EXECUTE of transaction commands is not implemented":
+            raise RuntimeError(
+                "Bootstrap SQL cannot control transactions; remove transaction commands such as "
+                "BEGIN, COMMIT, ROLLBACK, and SAVEPOINT, including inside called procedures"
+            ) from None
+        raise
+
+
 def validate_runtime_privileges(connection):
     # MEMBER includes direct/transitive SET ROLE targets, even through NOINHERIT.
     # USAGE or checking only the login role would miss privileges acquired by switching roles.
@@ -84,6 +106,10 @@ def validate_runtime_privileges(connection):
     ).fetchone()
     if flags != (False, False, False):
         raise RuntimeError("Runtime SQL role must not have administrative privileges")
+    # Ownership permits ALTER/DROP even after CREATE is revoked. Shared owner dependencies
+    # cover routines, types, schemas, and other objects without an incomplete catalog list.
+    # Scope them to this database and shared objects; retain pg_class for temporary relations.
+    # https://www.postgresql.org/docs/15/catalog-pg-shdepend.html
     unsafe = connection.execute(
         "WITH runtime_roles AS ("
         "SELECT oid FROM pg_roles WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')) "
@@ -93,7 +119,10 @@ def validate_runtime_privileges(connection):
         "bool_or(EXISTS (SELECT 1 FROM pg_namespace "
         "WHERE has_schema_privilege(runtime_roles.oid, pg_namespace.oid, 'CREATE') "
         "AND nspname NOT LIKE 'pg_temp_%%' AND nspname NOT LIKE 'pg_toast_temp_%%')), "
-        "bool_or(EXISTS (SELECT 1 FROM pg_class WHERE relowner = runtime_roles.oid)) "
+        "bool_or(EXISTS (SELECT 1 FROM pg_class WHERE relowner = runtime_roles.oid) "
+        "OR EXISTS (SELECT 1 FROM pg_shdepend WHERE refclassid = 'pg_authid'::regclass "
+        "AND refobjid = runtime_roles.oid AND deptype = 'o' "
+        "AND dbid IN (0, (SELECT oid FROM pg_database WHERE datname = current_database())))) "
         "FROM runtime_roles",
         (ROLE, ROLE),
     ).fetchone()
@@ -193,7 +222,7 @@ def bootstrap(settings, env):
             connection.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(
                 sql.Identifier(database)))
             connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-            connection.execute(script, prepare=False)
+            execute_bootstrap_sql(connection, script)
         # A validation failure rolls back this schema/grant transaction without recording success.
         validate_runtime_privileges(connection)
         connection.execute(

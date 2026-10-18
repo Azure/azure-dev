@@ -3,8 +3,10 @@
 
 """Privilege regressions against a disposable PostgreSQL 15 server, without Azure."""
 
+import json
 import os
 import unittest
+from unittest.mock import MagicMock, patch
 
 from database_bootstrap_test import bootstrap
 
@@ -17,6 +19,7 @@ class DatabasePrivilegeTests(unittest.TestCase):
         dsn = os.environ.get("SPRING_TEST_POSTGRES_DSN")
         if not dsn:
             raise RuntimeError("Set SPRING_TEST_POSTGRES_DSN to a disposable PostgreSQL 15 superuser connection")
+        cls.dsn = dsn
         cls.connection = psycopg.connect(dsn, autocommit=True, connect_timeout=10)
         cls.addClassCleanup(cls.connection.close)
         version = int(cls.connection.execute("SHOW server_version_num").fetchone()[0])
@@ -109,6 +112,143 @@ class DatabasePrivilegeTests(unittest.TestCase):
                         sql.Identifier(target), sql.SQL(flag)))
                     with self.assertRaisesRegex(RuntimeError, "administrative privileges"):
                         bootstrap.validate_runtime_privileges(self.connection)
+
+    def test_non_relation_ownership(self):
+        from psycopg import sql
+
+        objects = {
+            "FUNCTION": ("owned()", "CREATE FUNCTION privilege_test.owned() RETURNS integer "
+                         "LANGUAGE sql AS 'SELECT 1'"),
+            "PROCEDURE": ("owned()", "CREATE PROCEDURE privilege_test.owned() "
+                          "LANGUAGE plpgsql AS 'BEGIN NULL; END'"),
+            "DOMAIN": ("owned", "CREATE DOMAIN privilege_test.owned AS integer"),
+            "TYPE": ("owned", "CREATE TYPE privilege_test.owned AS ENUM ('value')"),
+        }
+        for depth in (0, 1, 2):
+            for kind, (name, create) in objects.items():
+                with self.subTest(depth=depth, kind=kind), self.connection.transaction(force_rollback=True):
+                    target = self.initialize_roles(depth)
+                    self.connection.execute(create)
+                    self.connection.execute(sql.SQL("GRANT USAGE, CREATE ON SCHEMA privilege_test TO {}").format(
+                        sql.Identifier(target)))
+                    self.connection.execute(sql.SQL("ALTER {} privilege_test.{} OWNER TO {}").format(
+                        sql.SQL(kind), sql.SQL(name), sql.Identifier(target)))
+                    self.connection.execute(sql.SQL("REVOKE CREATE ON SCHEMA privilege_test FROM {}").format(
+                        sql.Identifier(target)))
+                    self.assertEqual(self.connection.execute(
+                        "SELECT has_schema_privilege(%s, 'privilege_test', 'CREATE'), "
+                        "EXISTS (SELECT 1 FROM pg_class WHERE relowner = (SELECT oid FROM pg_roles WHERE rolname = %s))",
+                        (target, target),
+                    ).fetchone(), (False, False))
+                    # Ownership alone still permits DDL after switching to the reachable role.
+                    self.connection.execute("SAVEPOINT owner_operation")
+                    self.connection.execute("SET SESSION AUTHORIZATION azd_app")
+                    self.connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(target)))
+                    self.connection.execute(sql.SQL("DROP {} privilege_test.{}").format(sql.SQL(kind), sql.SQL(name)))
+                    self.connection.execute("ROLLBACK TO SAVEPOINT owner_operation")
+                    self.connection.execute("RELEASE SAVEPOINT owner_operation")
+                    with self.assertRaisesRegex(RuntimeError, "object ownership"):
+                        bootstrap.validate_runtime_privileges(self.connection)
+
+    def test_bootstrap_transaction_boundaries_and_rollback(self):
+        import psycopg
+        from psycopg import sql
+
+        principal = "00000000-0000-0000-0000-000000000002"
+        env = {
+            "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "SPRING_APPLICATION_PRINCIPAL_ID": principal,
+            "SPRING_APPLICATION_ID": "/example/app",
+            "SPRING_DATABASE_HOST": "example.postgres.database.azure.com",
+            "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
+        }
+        database = self.connection.execute("SELECT current_database()").fetchone()[0]
+        settings = {"engine": "postgresql", "auth": "managedIdentity", "database": database}
+        unsafe = ("CREATE TABLE privilege_test.bootstrap_marker (value text); "
+                  "GRANT CREATE ON SCHEMA privilege_test TO azd_app; ")
+        scripts = [
+            ("unsafe grants", unsafe, "must not have admin, DDL, TEMP"),
+            ("wrapped", "BEGIN; " + unsafe + "COMMIT;", "cannot control transactions"),
+            ("start transaction", "START TRANSACTION; " + unsafe + "END;", "cannot control transactions"),
+        ]
+        # Each command follows real writes, so rejecting it must also undo earlier statements.
+        for control in (
+            "COMMIT", "COMMIT AND CHAIN", "END", "ROLLBACK", "ABORT", "SAVEPOINT user_savepoint",
+            "RELEASE SAVEPOINT user_savepoint", "ROLLBACK TO SAVEPOINT user_savepoint",
+            "PREPARE TRANSACTION 'bootstrap_case'", "COMMIT PREPARED 'bootstrap_case'",
+            "ROLLBACK PREPARED 'bootstrap_case'",
+        ):
+            scripts.append((control, unsafe + control + ";", "cannot control transactions"))
+        scripts.extend([
+            ("nested block", unsafe + "DO $nested$ BEGIN COMMIT; END $nested$;", "cannot control transactions"),
+            ("nested procedure", unsafe + "CREATE PROCEDURE privilege_test.commit_changes() LANGUAGE plpgsql "
+             "AS $procedure$ BEGIN COMMIT; END $procedure$; CALL privilege_test.commit_changes();",
+             "cannot control transactions"),
+        ])
+        # Commit only the fixture setup, allowing an independent connection to observe whether the
+        # production bootstrap accidentally commits rejected DDL/grants. Everything is disposable.
+        with self.connection.transaction():
+            self.initialize_roles(0)
+            self.connection.execute(sql.SQL("GRANT TEMP ON DATABASE {} TO PUBLIC").format(sql.Identifier(database)))
+        baseline = self.connection.execute(
+            "SELECT datacl FROM pg_database WHERE datname = current_database()",
+        ).fetchone()
+        try:
+            for name, script, message in scripts:
+                with self.subTest(name=name):
+                    application = psycopg.connect(self.dsn, connect_timeout=10)
+                    mapping = MagicMock()
+                    mapping.__enter__.return_value = mapping
+                    mapping.execute.return_value.fetchone.return_value = (principal, 0)
+                    responses = [
+                        json.dumps({"identity": {"type": "SystemAssigned", "principalId": principal},
+                                    "properties": {"outboundIpAddresses": ["203.0.113.10"]}}),
+                        json.dumps({"accessToken": "unused-test-token", "tenant": "test-tenant"}),
+                        json.dumps({"tenantId": "test-tenant"}),
+                    ]
+                    # Only Azure identity/token acquisition and its mapping connection are mocked.
+                    # The application connection, transaction, supplied SQL and validator are real.
+                    with patch("psycopg.connect", side_effect=[mapping, application]), \
+                            patch.object(bootstrap, "command", side_effect=responses), \
+                            patch.object(bootstrap, "bootstrap_sql", return_value=script), \
+                            patch.object(bootstrap, "set_value") as setter, patch("builtins.print") as printer:
+                        with self.assertRaisesRegex(RuntimeError, message):
+                            bootstrap.bootstrap(settings, env)
+                        setter.assert_not_called()
+                        printer.assert_not_called()
+                    self.assertTrue(application.closed)
+                    self.assertEqual(self.connection.execute(
+                        "SELECT to_regclass('privilege_test.bootstrap_marker'), "
+                        "has_schema_privilege('azd_app', 'privilege_test', 'CREATE')",
+                    ).fetchone(), (None, False))
+                    self.assertEqual(self.connection.execute(
+                        "SELECT datacl FROM pg_database WHERE datname = current_database()",
+                    ).fetchone(), baseline)
+
+            # Valid BEGIN/END blocks, comments, strings and dollar-quoted routine bodies are SQL,
+            # not transaction commands. They must still execute without keyword-based rejection.
+            safe = (
+                "CREATE TABLE privilege_test.bootstrap_marker (value text); "
+                "-- COMMIT is harmless in a comment\n"
+                "DO $body$ BEGIN INSERT INTO privilege_test.bootstrap_marker "
+                "VALUES ('BEGIN; COMMIT; $azd_bootstrap$ ''quoted'''); END $body$; "
+                "CREATE FUNCTION privilege_test.safe() RETURNS text LANGUAGE sql "
+                "AS $function$ SELECT 'ROLLBACK'::text $function$; "
+                "GRANT USAGE ON SCHEMA privilege_test TO azd_app; "
+                "GRANT SELECT ON privilege_test.bootstrap_marker TO azd_app;"
+            )
+            with psycopg.connect(self.dsn, connect_timeout=10) as application:
+                application.execute(sql.SQL("REVOKE ALL ON DATABASE {} FROM PUBLIC").format(sql.Identifier(database)))
+                bootstrap.execute_bootstrap_sql(application, safe)
+                bootstrap.validate_runtime_privileges(application)
+            self.assertEqual(self.connection.execute(
+                "SELECT value FROM privilege_test.bootstrap_marker",
+            ).fetchone(), ("BEGIN; COMMIT; $azd_bootstrap$ 'quoted'",))
+        finally:
+            with self.connection.transaction():
+                self.connection.execute("DROP SCHEMA privilege_test CASCADE")
+                self.connection.execute("DROP OWNED BY azd_app, privilege_parent, azure_pg_admin")
+                self.connection.execute("DROP ROLE azd_app, privilege_parent, azure_pg_admin")
 
 
 if __name__ == "__main__":

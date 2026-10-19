@@ -57,18 +57,18 @@ func runHandlerSuite(t *testing.T, newHandler newHandlerForCaseFunc, params []an
 
 			h := newHandler(t, tc)
 
-			call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", tc.params)
+			call, err := newCall(jsonrpc2.NewNumberID(1), "Test", tc.params)
 			require.NoError(t, err)
 
 			ctx := t.Context()
 			if tc.err != nil {
-				_ = h(ctx, nil, validateError(t, tc.err), call)
+				_ = invokeHandler(h, ctx, nil, validateError(t, tc.err), call)
 			} else if tc.cancel {
 				ctx, cancel := context.WithCancel(ctx)
 				cancel()
-				_ = h(ctx, nil, validateCancel(t), call)
+				_ = invokeHandler(h, ctx, nil, validateCancel(t), call)
 			} else {
-				_ = h(ctx, nil, validateResult(t, tc.expected), call)
+				_ = invokeHandler(h, ctx, nil, validateResult(t, tc.expected), call)
 			}
 		})
 	}
@@ -199,7 +199,7 @@ func validateParam(t *testing.T, params any, n int, expected any) {
 	require.Equal(t, expected, args[n])
 }
 
-func validateError(t *testing.T, expected error) jsonrpc2.Replier {
+func validateError(t *testing.T, expected error) func(context.Context, any, error) error {
 	return func(ctx context.Context, result any, err error) error {
 		require.Nil(t, result)
 		require.Equal(t, expected, err)
@@ -207,7 +207,7 @@ func validateError(t *testing.T, expected error) jsonrpc2.Replier {
 	}
 }
 
-func validateCancel(t *testing.T) jsonrpc2.Replier {
+func validateCancel(t *testing.T) func(context.Context, any, error) error {
 	return func(ctx context.Context, result any, err error) error {
 		require.Nil(t, result)
 		var rpcErr *jsonrpc2.Error
@@ -217,7 +217,7 @@ func validateCancel(t *testing.T) jsonrpc2.Replier {
 	}
 }
 
-func validateResult(t *testing.T, expected any) jsonrpc2.Replier {
+func validateResult(t *testing.T, expected any) func(context.Context, any, error) error {
 	return func(ctx context.Context, result any, err error) error {
 		require.Nil(t, err)
 		require.Equal(t, expected, result)
@@ -271,10 +271,10 @@ func TestUnmarshalArgs_NonArrayParams(t *testing.T) {
 	fnType := reflect.TypeFor[func(ctx context.Context, s string) error]()
 
 	// Params as an object instead of array
-	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", map[string]string{"key": "value"})
+	req, err := newCall(jsonrpc2.NewNumberID(1), "Test", map[string]string{"key": "value"})
 	require.NoError(t, err)
 
-	_, err = unmarshalArgs(nil, req, fnType)
+	_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 	require.Error(t, err)
 }
 
@@ -282,10 +282,10 @@ func TestUnmarshalArgs_WrongParamCount(t *testing.T) {
 	fnType := reflect.TypeFor[func(ctx context.Context, a, b string) error]()
 
 	// Only one param when two are expected
-	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"only-one"})
+	req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{"only-one"})
 	require.NoError(t, err)
 
-	_, err = unmarshalArgs(nil, req, fnType)
+	_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 	require.Error(t, err)
 }
 
@@ -293,10 +293,10 @@ func TestUnmarshalArgs_TypeMismatch(t *testing.T) {
 	fnType := reflect.TypeFor[func(ctx context.Context, n int) error]()
 
 	// Pass a string where int is expected
-	req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"not-an-int"})
+	req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{"not-an-int"})
 	require.NoError(t, err)
 
-	_, err = unmarshalArgs(nil, req, fnType)
+	_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 	require.Error(t, err)
 }
 
@@ -305,7 +305,7 @@ func TestNewHandler_ValueAndErrorReturn(t *testing.T) {
 		return "echo: " + msg, nil
 	})
 
-	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{"hello"})
+	call, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{"hello"})
 	require.NoError(t, err)
 
 	var gotResult any
@@ -315,7 +315,7 @@ func TestNewHandler_ValueAndErrorReturn(t *testing.T) {
 		return nil
 	}
 
-	_ = h(t.Context(), nil, replier, call)
+	_ = invokeHandler(h, t.Context(), nil, replier, call)
 	require.Equal(t, "echo: hello", gotResult)
 }
 
@@ -325,7 +325,7 @@ func TestNewHandler_ValueAndErrorReturn_WithError(t *testing.T) {
 		return "", expectedErr
 	})
 
-	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	call, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{})
 	require.NoError(t, err)
 
 	var gotErr error
@@ -334,7 +334,7 @@ func TestNewHandler_ValueAndErrorReturn_WithError(t *testing.T) {
 		return nil
 	}
 
-	_ = h(t.Context(), nil, replier, call)
+	_ = invokeHandler(h, t.Context(), nil, replier, call)
 	require.Equal(t, expectedErr, gotErr)
 }
 
@@ -346,7 +346,7 @@ func TestNewHandler_Cancellation_ValueReturn(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
-	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	call, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{})
 	require.NoError(t, err)
 
 	var gotErr error
@@ -355,7 +355,7 @@ func TestNewHandler_Cancellation_ValueReturn(t *testing.T) {
 		return nil
 	}
 
-	_ = h(ctx, nil, replier, call)
+	_ = invokeHandler(h, ctx, nil, replier, call)
 	require.Error(t, gotErr)
 
 	var rpcErr *jsonrpc2.Error

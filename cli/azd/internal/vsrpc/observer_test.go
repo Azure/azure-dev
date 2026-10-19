@@ -17,7 +17,7 @@ func TestUnmarshalObserver(t *testing.T) {
 
 	t.Parallel()
 	t.Run("Ok", func(t *testing.T) {
-		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
+		req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{
 			map[string]any{
 				"__jsonrpc_marshaled": 1,
 				"handle":              1,
@@ -29,7 +29,7 @@ func TestUnmarshalObserver(t *testing.T) {
 		// messages back later. Create a new dummy jsonrpc2.Conn so we can validate this.
 		con := jsonrpc2.NewConn(nil)
 
-		args, err := unmarshalArgs(con, req, fnType)
+		args, err := unmarshalArgs(con, req.Method(), req.Params(), fnType)
 		require.NoError(t, err)
 		require.Len(t, args, 1)
 		require.Equal(t, con, args[0].Interface().(*Observer[int]).c,
@@ -37,19 +37,19 @@ func TestUnmarshalObserver(t *testing.T) {
 	})
 
 	t.Run("No Tag", func(t *testing.T) {
-		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
+		req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{
 			map[string]any{
 				"handle": 1,
 			},
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArgs(nil, req, fnType)
+		_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 		require.Error(t, err)
 	})
 
 	t.Run("Bad Tag", func(t *testing.T) {
-		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
+		req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{
 			map[string]any{
 				"__jsonrpc_marshaled": 0,
 				"handle":              1,
@@ -57,29 +57,29 @@ func TestUnmarshalObserver(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArgs(nil, req, fnType)
+		_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 		require.Error(t, err)
 	})
 
 	t.Run("No Handle", func(t *testing.T) {
-		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
+		req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{
 			map[string]any{
 				"__jsonrpc_marshaled": 1,
 			},
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArgs(nil, req, fnType)
+		_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 		require.Error(t, err)
 	})
 
 	t.Run("Bad Format", func(t *testing.T) {
-		req, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{
+		req, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{
 			"not-an-observer",
 		})
 		require.NoError(t, err)
 
-		_, err = unmarshalArgs(nil, req, fnType)
+		_, err = unmarshalArgs(nil, req.Method(), req.Params(), fnType)
 		require.Error(t, err)
 	})
 }

@@ -162,7 +162,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 	cancelers := make(map[jsonrpc2.ID]context.CancelFunc)
 	cancelersMu := sync.Mutex{}
 
-	rpcServer.Go(r.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+	rpcServer.Go(r.Context(), func(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 		log.Printf("handling rpc %s", req.Method())
 
 		// Observe cancellation messages from the client to us. The protocol is a message sent to the `$/cancelRequest`
@@ -175,13 +175,13 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 		// with a special code that StreamJsonRpc understands as a cancellation error.
 		if req.Method() == "$/cancelRequest" {
 			var cancelArgs struct {
-				Id *int32 `json:"id"`
+				Id *int64 `json:"id"`
 			}
 			if err := json.Unmarshal(req.Params(), &cancelArgs); err != nil {
-				return reply(ctx, nil, jsonrpc2.ErrInvalidParams)
+				return nil, jsonrpc2.ErrInvalidParams
 			}
 			if cancelArgs.Id == nil {
-				return reply(ctx, nil, jsonrpc2.ErrInvalidParams)
+				return nil, jsonrpc2.ErrInvalidParams
 			}
 
 			id := jsonrpc2.NewNumberID(*cancelArgs.Id)
@@ -194,80 +194,62 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 				// We'll remove the cancel function from the map once the function observes cancellation and the handler
 				// returns, no need to remove it eagerly here.
 			}
-			return reply(ctx, nil, nil)
+			return nil, nil
 		}
 
 		handler, ok := handlers[req.Method()]
 		if !ok {
-			return reply(ctx, nil, jsonrpc2.ErrMethodNotFound)
+			return nil, jsonrpc2.ErrMethodNotFound
 		}
 
-		go func() {
-			var respErr error
-			childCtx, span := tracing.Start(ctx, events.VsRpcEventPrefix+req.Method())
-			span.SetAttributes(fields.RpcMethod.String(req.Method()))
-			defer func() {
-				if respErr != nil {
-					cmd.MapError(respErr, span)
-					if rpcErr, ok := errors.AsType[*jsonrpc2.Error](respErr); ok {
-						span.SetAttributes(fields.JsonRpcErrorCode.Int(int(rpcErr.Code)))
-					}
-				}
-
-				// Include any usage attributes set
-				span.SetAttributes(tracing.GetUsageAttributes()...)
-				span.End()
-			}()
-
-			// Wrap the reply function to capture the response error returned by the handler before replying.
-			origReply := reply
-			reply = func(ctx context.Context, result any, err error) error {
-				if err != nil {
-					respErr = err
-				}
-				return origReply(ctx, result, err)
-			}
-
-			start := time.Now()
-
-			// If this is a call, create a new context and cancel function to track the request and allow it to be
-			// canceled.
-			call, isCall := req.(*jsonrpc2.Call)
-			if isCall {
-				span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(call.ID())))
-				var cancel context.CancelFunc
-				//nolint:gosec // G118: cancel is stored in cancelers and invoked later by request cancellation handling.
-				childCtx, cancel = context.WithCancel(childCtx)
-				cancelersMu.Lock()
-				cancelers[call.ID()] = cancel
-				cancelersMu.Unlock()
-			}
-
-			replyErr := handler(childCtx, rpcServer, reply, req)
-
-			if isCall {
-				cancelersMu.Lock()
-				cancel, has := cancelers[call.ID()]
-				cancelersMu.Unlock()
-				if has {
-					cancel()
-					cancelersMu.Lock()
-					delete(cancelers, call.ID())
-					cancelersMu.Unlock()
-				}
-			}
-
+		var respErr error
+		childCtx, span := tracing.Start(ctx, events.VsRpcEventPrefix+req.Method())
+		span.SetAttributes(fields.RpcMethod.String(req.Method()))
+		defer func() {
 			if respErr != nil {
-				log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), respErr)
-			} else if replyErr != nil {
-				log.Printf("failed to reply to rpc %s, err: %v", req.Method(), respErr)
-			} else {
-				log.Printf("handled rpc %s in %s", req.Method(), time.Since(start))
+				cmd.MapError(respErr, span)
+				if rpcErr, ok := errors.AsType[*jsonrpc2.Error](respErr); ok {
+					span.SetAttributes(fields.JsonRpcErrorCode.Int(int(rpcErr.Code)))
+				}
 			}
+
+			span.SetAttributes(tracing.GetUsageAttributes()...)
+			span.End()
 		}()
 
-		return nil
+		if req.IsCall() {
+			id := req.ID()
+			span.SetAttributes(fields.JsonRpcId.String(fmt.Sprint(id)))
+			var cancel context.CancelFunc
+			childCtx, cancel = context.WithCancel(childCtx)
+			cancelersMu.Lock()
+			cancelers[id] = cancel
+			cancelersMu.Unlock()
+			defer func() {
+				cancelersMu.Lock()
+				delete(cancelers, id)
+				cancelersMu.Unlock()
+				cancel()
+			}()
+		}
+
+		// Register cancellation before releasing the read loop. Async also gives the
+		// handler ownership of the request's otherwise borrowed method and params.
+		jsonrpc2.Async(ctx)
+		start := time.Now()
+		result, err := handler(childCtx, rpcServer, req.Method(), req.Params())
+		respErr = err
+
+		if err != nil {
+			log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), err)
+		} else {
+			log.Printf("handled rpc %s in %s", req.Method(), time.Since(start))
+		}
+		return result, err
 	})
 
 	<-rpcServer.Done()
+	if err := rpcServer.Err(); err != nil {
+		log.Printf("rpc connection failed: %v", err)
+	}
 }

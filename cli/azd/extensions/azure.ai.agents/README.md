@@ -563,6 +563,59 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+## Initializing a native A2A agent
+
+For an application that implements native A2A 1.0, use the existing-code init flow.
+In the protocol multi-select, select `a2a — Native A2A 1.0` and deselect `responses`
+if your application does not implement Responses. Responses remains selected by
+default; all other choices, including native A2A, start unselected. There is no
+additional version prompt or native A2A 0.3 choice.
+
+For non-interactive initialization from your source directory:
+
+```bash
+azd ai agent init --src . --agent-name my-native-agent --protocol a2a \
+  --deploy-mode code --runtime python_3_13 --entry-point app.py \
+  --dep-resolution remote_build --no-prompt
+```
+
+The selected protocol describes your **application implementation**, not a platform
+translation endpoint. Selecting only `a2a` writes this configuration into the hosted
+service (without automatically adding Responses):
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-native-agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: my-native-agent
+    protocols:
+      - protocol: a2a
+        version: 1.0.0
+    agentEndpoint:
+      protocols: [a2a]
+```
+
+You can select additional protocols that your application implements; init composes
+those endpoint protocols without replacing existing authorization schemes or version
+selectors. Adopting a sample/project manifest preserves its protocol declarations
+rather than changing them to native A2A.
+
+Init writes configuration only; it does **not** create an A2A application. Your
+application must serve:
+
+- `POST /invocations/a2a`
+- `GET /invocations/a2a/.well-known/agent-card.json`
+- `GET /readiness`
+
+Native A2A requires subscription onboarding/service support. Init does not enable
+that service feature, and successful initialization does not confirm onboarding.
+The [native init scaffold scenario](tests/cli-interactive-tester-scenarios/tier1/1.11-init-native-a2a.yaml)
+checks the local configuration separately from live deployment and invocation.
+For invocation file input, continue to specify `--a2a-version` explicitly;
+init does not inspect request bodies.
+
 ## Invoking agents over A2A
 
 Without the `agents.a2a` preview, messages and files use A2A 0.3. File bytes
@@ -578,7 +631,7 @@ version-selection behavior below. This changes the message default to 1.0
 and requires an explicit supported version for every A2A file invocation.
 
 Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
-agent using public A2A version `1.0` or `0.3`:
+agent using public A2A version `1.0` or `0.3` through its Foundry A2A endpoint:
 
 ```bash
 # Explicitly select the public A2A request version

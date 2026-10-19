@@ -387,6 +387,14 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
 | `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
 | `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: native A2A 1.0 picker label, native-only configuration, and required application-route guidance; no application generation or cloud execution |
+
+The native A2A init scenario is a configuration-only specification. It is not a
+native A2A sample, deployment verifier, or execution test. Subscription onboarding
+is pending: this change was validated with Go unit mocks only, and this scenario
+has **not** been executed. Do not run it without separate approval. Even after
+approval, stop after local init; do not provision, deploy, invoke, or delete retained
+resources. Init does not enable a subscription-level native A2A service feature.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.

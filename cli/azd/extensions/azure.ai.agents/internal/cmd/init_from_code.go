@@ -12,6 +12,7 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -164,6 +165,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		if err := a.addToProject(ctx, srcDir, localDefinition, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
+
+		printNativeA2AGuidance(os.Stdout, localDefinition)
 
 		// Run post-init validations (advisory warnings only)
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
@@ -654,18 +657,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 	}
 
-	// An activity agent additionally advertises the friendly "activity" endpoint
-	// guarded by BotServiceRbac. We compose this into any existing agent_endpoint
-	// rather than overwriting it, so Activity can coexist with the other
-	// protocols the agent selected (responses/invocations). Injecting it here
-	// mirrors the manifest-based init so the generated azure.yaml is identical and
-	// `azd deploy` provisions the Azure Bot connector. Phase 1 covers the simple
-	// use case; digital-worker is a Phase 2 addition. No-op for non-activity agents.
-	if project.IsActivityProtocol(*definition) {
-		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
-			definition.AgentEndpoint, definition.Protocols,
-		)
-	}
+	// Activity and native A2A need explicit endpoint configuration. Compose the
+	// selected protocols without replacing endpoint auth or version selectors.
+	// Activity retains its existing BotServiceRbac default.
+	composeLocalAgentEndpoint(definition)
 
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
@@ -1056,6 +1051,46 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 	}, false)
 }
 
+// composeLocalAgentEndpoint enables selected implementation protocols without replacing
+// existing endpoint authorization or version selectors. Only from-code init uses
+// this helper: adopted project manifests retain their declared intent.
+func composeLocalAgentEndpoint(definition *agent_yaml.ContainerAgent) {
+	if project.IsActivityProtocol(*definition) {
+		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
+			definition.AgentEndpoint, definition.Protocols,
+		)
+	}
+	if !hasNativeA2A(definition) {
+		return
+	}
+	if definition.AgentEndpoint == nil {
+		definition.AgentEndpoint = &agent_yaml.AgentEndpoint{}
+	}
+	for _, protocol := range definition.Protocols {
+		name := protocol.Protocol
+		if name == "activity_protocol" {
+			name = "activity"
+		}
+		if !slices.Contains(definition.AgentEndpoint.Protocols, name) {
+			definition.AgentEndpoint.Protocols = append(definition.AgentEndpoint.Protocols, name)
+		}
+	}
+}
+
+func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
+	return slices.ContainsFunc(definition.Protocols, func(protocol agent_yaml.ProtocolVersionRecord) bool {
+		return protocol.Protocol == "a2a" && protocol.Version == "1.0.0"
+	})
+}
+
+func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
+	if hasNativeA2A(definition) {
+		fmt.Fprintln(writer, "\nNative A2A 1.0 configured; init does not generate an A2A application.")
+		fmt.Fprintln(writer, "Your application must serve POST /invocations/a2a, "+
+			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
+	}
+}
+
 // protocolInfo pairs a protocol name with the default generated version.
 type protocolInfo struct {
 	Name    string
@@ -1077,6 +1112,7 @@ var knownProtocols = []protocolInfo{
 	// forward), so new agents default to it, matching the latest-version
 	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
+	{Name: "a2a", Version: "1.0.0"},
 }
 
 func protocolNames(voiceEnabled bool) []string {
@@ -1146,18 +1182,23 @@ func promptProtocols(
 			continue
 		}
 		versionOf[p.Name] = p.Version
+		label := p.Name
+		if p.Name == "a2a" {
+			label = "a2a — Native A2A 1.0"
+		}
 		choices = append(choices, &azdext.MultiSelectChoice{
 			Value:    p.Name,
-			Label:    p.Name,
+			Label:    label,
 			Selected: p.Name == "responses",
 		})
 	}
 
 	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
-			Message:     "Which protocols does your agent support?",
-			Choices:     choices,
-			HelpMessage: "Use arrow keys to move, space to toggle, enter to confirm",
+			Message: "Which protocols does your agent support?",
+			Choices: choices,
+			HelpMessage: "Select protocols implemented by your application, not platform translation endpoints. " +
+				"Use arrow keys to move, space to toggle, enter to confirm",
 		},
 	})
 	if err != nil {

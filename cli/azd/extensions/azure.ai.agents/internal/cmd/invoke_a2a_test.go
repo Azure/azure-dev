@@ -11,51 +11,63 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-// TestBuildA2ARequestBody_WrapsMessage verifies a plain message is wrapped into
-// a JSON-RPC 2.0 message/send request with a single user text part.
+// TestBuildA2ARequestBody_WrapsMessage verifies dialect-specific wire shapes,
+// including the configuration that requests synchronous text output.
 func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 	t.Parallel()
 
-	a := &InvokeAction{flags: &invokeFlags{message: "Hello!"}}
-	body, label, err := a.buildA2ARequestBody()
-	if err != nil {
-		t.Fatalf("buildA2ARequestBody: %v", err)
-	}
-	if label != `"Hello!"` {
-		t.Errorf("label = %q, want %q", label, `"Hello!"`)
-	}
-
-	var req map[string]any
-	if err := json.Unmarshal(body, &req); err != nil {
-		t.Fatalf("body is not valid JSON: %v (%s)", err, string(body))
-	}
-	if req["jsonrpc"] != "2.0" {
-		t.Errorf("jsonrpc = %v, want 2.0", req["jsonrpc"])
-	}
-	if req["method"] != "message/send" {
-		t.Errorf("method = %v, want message/send", req["method"])
-	}
-	if req["id"] == nil || req["id"] == "" {
-		t.Error("request id must be set")
-	}
-	params, _ := req["params"].(map[string]any)
-	msg, _ := params["message"].(map[string]any)
-	if msg["role"] != "user" {
-		t.Errorf("message.role = %v, want user", msg["role"])
-	}
-	if msg["messageId"] == nil || msg["messageId"] == "" {
-		t.Error("message.messageId must be set")
-	}
-	parts, _ := msg["parts"].([]any)
-	if len(parts) != 1 {
-		t.Fatalf("want 1 part, got %d", len(parts))
-	}
-	p0, _ := parts[0].(map[string]any)
-	if p0["kind"] != "text" || p0["text"] != "Hello!" {
-		t.Errorf("part = %+v, want {kind:text, text:Hello!}", p0)
+	for _, tt := range []struct {
+		name, explicit, resolved, method, role string
+		part                                   map[string]any
+		configuration                          map[string]any
+	}{
+		{"default", "", "", "SendMessage", "ROLE_USER",
+			map[string]any{"text": "Hello!"},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text"}}},
+		{"1.0", "1.0", "", "SendMessage", "ROLE_USER",
+			map[string]any{"text": "Hello!"},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text"}}},
+		{"0.3", "0.3", "", "message/send", "user",
+			map[string]any{"kind": "text", "text": "Hello!"}, map[string]any{"blocking": true}},
+		{"explicit wins", "0.3", "1.0", "message/send", "user",
+			map[string]any{"kind": "text", "text": "Hello!"}, map[string]any{"blocking": true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{
+				flags:              &invokeFlags{message: "Hello!", a2aVersion: tt.explicit},
+				resolvedA2AVersion: tt.resolved,
+			}
+			body, label, err := a.buildA2ARequestBody()
+			require.NoError(t, err)
+			require.Equal(t, `"Hello!"`, label)
+			var req struct {
+				JSONRPC string `json:"jsonrpc"`
+				ID      string `json:"id"`
+				Method  string `json:"method"`
+				Params  struct {
+					Message struct {
+						Role      string           `json:"role"`
+						MessageID string           `json:"messageId"`
+						Parts     []map[string]any `json:"parts"`
+					} `json:"message"`
+					Configuration map[string]any `json:"configuration"`
+				} `json:"params"`
+			}
+			require.NoError(t, json.Unmarshal(body, &req))
+			require.Equal(t, "2.0", req.JSONRPC)
+			require.NotEmpty(t, req.ID)
+			require.Equal(t, tt.method, req.Method)
+			require.Equal(t, tt.role, req.Params.Message.Role)
+			require.NotEmpty(t, req.Params.Message.MessageID)
+			require.Equal(t, []map[string]any{tt.part}, req.Params.Message.Parts)
+			require.Equal(t, tt.configuration, req.Params.Configuration)
+		})
 	}
 }
 
@@ -66,21 +78,21 @@ func TestBuildA2ARequestBody_PassesFileVerbatim(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "a2a.json")
-	content := `{"jsonrpc":"2.0","id":"x","method":"message/send","params":{"message":{"role":"user","parts":[]}}}`
+	content := " \r\n" +
+		`{"jsonrpc":"2.0","id":"x","method":"message/send","params":{"message":{"role":"user","parts":[]}}}` + "\n\t"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("write temp file: %v", err)
 	}
 
-	a := &InvokeAction{flags: &invokeFlags{inputFile: path}}
-	body, label, err := a.buildA2ARequestBody()
-	if err != nil {
-		t.Fatalf("buildA2ARequestBody: %v", err)
-	}
-	if string(body) != content {
-		t.Errorf("body = %q, want verbatim %q", string(body), content)
-	}
-	if label == "" {
-		t.Error("expected a non-empty body label for file input")
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			a := &InvokeAction{flags: &invokeFlags{inputFile: path, a2aVersion: version}}
+			body, label, err := a.buildA2ARequestBody()
+			require.NoError(t, err)
+			require.Equal(t, content, string(body))
+			require.NotEmpty(t, label)
+		})
 	}
 }
 
@@ -138,7 +150,7 @@ func TestExtractA2AText(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := extractA2AText([]byte(tt.body)); got != tt.want {
+			if got := extractA2AText([]byte(tt.body), "0.3"); got != tt.want {
 				t.Errorf("extractA2AText(%s) = %q, want %q", tt.body, got, tt.want)
 			}
 		})
@@ -195,23 +207,16 @@ func TestA2ALocal_NotSupported(t *testing.T) {
 // header are set on the request.
 func TestApplyA2ARequestHeaders(t *testing.T) {
 	t.Parallel()
-	req, err := http.NewRequest(http.MethodPost, "https://example.com/a2a", nil)
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	applyA2ARequestHeaders(req, "test-token", &userIdentityFlags{userIdentity: "user-1"})
-
-	if got := req.Header.Get(a2aVersionHeader); got != a2aProtocolVersion {
-		t.Errorf("%s = %q, want %q", a2aVersionHeader, got, a2aProtocolVersion)
-	}
-	if a2aProtocolVersion != "0.3" {
-		t.Errorf("a2aProtocolVersion = %q, want %q (must match the message/send body shape)", a2aProtocolVersion, "0.3")
-	}
-	if got := req.Header.Get("Authorization"); got != "Bearer test-token" {
-		t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
-	}
-	if got := req.Header.Get(agent_api.UserIdentityHeader); got != "user-1" {
-		t.Errorf("%s = %q, want %q", agent_api.UserIdentityHeader, got, "user-1")
+	for _, version := range []string{"0.3", "1.0"} {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://example.com/a2a", nil)
+			require.NoError(t, err)
+			applyA2ARequestHeaders(req, "test-token", &userIdentityFlags{userIdentity: "user-1"}, version)
+			require.Equal(t, version, req.Header.Get(a2aVersionHeader))
+			require.Equal(t, "Bearer test-token", req.Header.Get("Authorization"))
+			require.Equal(t, "user-1", req.Header.Get(agent_api.UserIdentityHeader))
+		})
 	}
 }
 

@@ -48,6 +48,7 @@ type invokeFlags struct {
 	conversation    string
 	newConversation bool
 	protocol        string
+	a2aVersion      string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -85,6 +86,7 @@ type InvokeAction struct {
 	clientHeaders         http.Header
 	invocationsTransport  http.RoundTripper
 	protocolServiceName   string
+	resolvedA2AVersion    string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
 	resolvedBodyLabel     string
@@ -119,6 +121,12 @@ Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
+
+A2A Version:
+Use --a2a-version to select the A2A wire version: 0.3 or 1.0. Plain messages
+use 1.0 by default. With --input-file, an explicit --a2a-version is required
+and must match the file's JSON-RPC request. File contents are sent unchanged.
+This is separate from --version, which selects the deployed agent version.
 
 Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
@@ -175,7 +183,10 @@ Raw output includes the returned headers without a formatted latency summary.` +
   azd ai agent invoke --protocol a2a "Hello!"
 
   # Invoke the a2a protocol with a complete JSON-RPC request from a file
-  azd ai agent invoke --protocol a2a -f a2a-request.json
+  azd ai agent invoke --protocol a2a --a2a-version 1.0 -f a2a-request.json
+
+  # Invoke using the older A2A wire version
+  azd ai agent invoke --protocol a2a --a2a-version 0.3 "Hello!"
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -247,6 +258,8 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		"Protocol to use: responses, invocations, or a2a. "+
 			"Auto-detected from deployment data or the agent definition; "+
 			"pass --protocol when it cannot be determined.")
+	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
+		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -428,6 +441,12 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
 			)
 		}
 	}
+	if cmd.Flags().Changed("a2a-version") && flags.a2aVersion == "" {
+		return validateA2AVersion(flags.a2aVersion)
+	}
+	if err := validateInvokeA2AVersionFlags(&flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
+		return err
+	}
 	clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 	if err != nil {
 		return err
@@ -574,6 +593,9 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+		return err
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -608,12 +630,17 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+<<<<<<< ours
 			if a.flags.longRunning || a.flags.noWait {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
 					"--long-running and --no-wait are not supported for prompt agents",
 					"remove these flags or invoke a hosted Responses agent",
 				)
+=======
+			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses); err != nil {
+				return err
+>>>>>>> theirs
 			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
@@ -624,6 +651,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
+		return err
+	}
+	if err := validateInvokeA2AVersionFlags(a.flags, protocol); err != nil {
+		a.closeResolvedRemoteContextClient()
 		return err
 	}
 

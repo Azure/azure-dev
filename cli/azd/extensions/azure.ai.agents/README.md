@@ -561,6 +561,56 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+## Invoking agents over A2A
+
+Use `--protocol a2a` to invoke a deployed agent through the A2A translation
+endpoint. For a plain message, `--a2a-version` selects the request format:
+`1.0` (the default) or `0.3`.
+
+```bash
+# Plain message translated using A2A 1.0 by default
+azd ai agent invoke --protocol a2a "Hello!"
+
+# Explicitly select the A2A request version
+azd ai agent invoke --protocol a2a --a2a-version 1.0 "Hello!"
+azd ai agent invoke --protocol a2a --a2a-version 0.3 "Hello!"
+```
+
+**File input requires an explicit version.** When using `--input-file` (`-f`)
+with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
+agent configuration declares an A2A version. No version is inferred from the
+agent configuration or request body.
+
+The file must contain a complete public JSON-RPC request for the selected A2A
+version, not a version envelope. The CLI sends the file bytes unchanged; it
+does not wrap, rewrite, or convert the body. Matching `--a2a-version` to the
+body is the caller's responsibility. For example, save this A2A 0.3 request as
+`a2a-request.json`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "role": "user",
+      "messageId": "hello-message-1",
+      "parts": [{"kind": "text", "text": "Hello!"}]
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke --protocol a2a --a2a-version 0.3 --input-file a2a-request.json
+```
+
+`--a2a-version` is valid only for A2A; do not use it with Responses or
+Invocations. It is separate from `--version`, which continues to select a
+**deployed agent version**, not an A2A protocol version. A2A invocation remains
+remote-only (`--local` is not supported).
+
 ## Invoke latency diagnostics
 
 Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations

@@ -1,0 +1,30 @@
+# Tier 0 (offline) — A2A request-version help and validation; no successful invocation.
+name: "invoke-a2a-version-validation"
+command: "azd ai agent invoke --help"
+cwd: "~/working/azd-agents-a2a-version-{instance}"
+tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_CHECK_VERSION: "false"
+pre:
+  - run: |
+      set -eu
+      work="$HOME/working/azd-agents-a2a-version-{instance}"
+      rm -rf "$work"
+      mkdir -p "$work"
+      printf '%s\n' '{"jsonrpc":"2.0","id":"hello-1","method":"message/send","params":{"message":{"role":"user","messageId":"hello-message-1","parts":[{"kind":"text","text":"Hello!"}]}}}' > "$work/a2a-request.json"
+    cwd: "~/working"
+    name: "seed a complete public A2A 0.3 JSON-RPC request in an isolated directory"
+
+goals:
+  - "Confirm invoke help exits with code 0 and advertises --a2a-version with supported values 0.3 and 1.0. Confirm it explains the 1.0 default for plain messages and the explicit --a2a-version requirement for A2A file input."
+  - "Confirm help describes --version as the deployed agent version, separately from --a2a-version. Confirm its A2A file-input example includes an explicit --a2a-version."
+  - 'Run azd ai agent invoke --protocol a2a --input-file a2a-request.json. Confirm it exits non-zero with a validation error explaining that --input-file with A2A requires an explicit --a2a-version; the 1.0 plain-message default must not silently apply to file input.'
+  - 'Run azd ai agent invoke --protocol a2a --version 3 --input-file a2a-request.json. Confirm it exits non-zero with the same explicit --a2a-version requirement; --version must not satisfy it.'
+  - 'Run azd ai agent invoke --protocol a2a --a2a-version 2.0 "Hello!". Confirm it exits non-zero with an unsupported-version validation error naming --a2a-version and listing 0.3 and 1.0 as supported values.'
+  - 'Run azd ai agent invoke --protocol a2a --a2a-version= "Hello!". Confirm it exits non-zero with a validation error for the empty --a2a-version value, rather than silently selecting the default.'
+  - 'Run azd ai agent invoke --protocol responses --a2a-version 1.0 "Hello!". Confirm it exits non-zero with a validation error explaining that --a2a-version is supported only with the a2a protocol.'
+  - 'Run azd ai agent invoke --protocol invocations --a2a-version 0.3 "Hello!". Confirm it exits non-zero with the same A2A-only validation error.'
+  - "Confirm every invalid command is rejected before authentication, an agent picker, network activity, or agent execution. No product prompts are allowed. Do not run a valid invocation, init, provision, or deploy in this offline scenario."
+  - "Take a screenshot of the help and validation output on a best-effort basis."
+  - "Report a finding if help contradicts the version contract, an invalid combination is accepted, validation reports a different error, or any command prompts or begins agent execution."

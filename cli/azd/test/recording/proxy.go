@@ -19,7 +19,7 @@ import (
 	"strings"
 	"syscall"
 
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 )
 
 // gzipReader wraps a response body so it can lazily

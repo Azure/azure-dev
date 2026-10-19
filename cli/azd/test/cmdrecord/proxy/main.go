@@ -17,7 +17,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
 	"github.com/braydonk/yaml"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"gopkg.in/dnaeon/go-vcr.v4/pkg/recorder"
 )
 
 type ErrExitCode struct {

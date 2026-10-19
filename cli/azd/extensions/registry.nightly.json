@@ -858,7 +858,7 @@
       "description": "Define and run Foundry evaluations from your terminal. (Beta)",
       "versions": [
         {
-          "version": "1.0.0-beta.2.nightly.6970696",
+          "version": "1.0.0-beta.2.nightly.6972648",
           "requiredAzdVersion": ">=1.33.0",
           "capabilities": [
             "custom-commands",
@@ -889,7 +889,7 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4d9bd29936b939771d47e59b1fc73eb93a8921b26790c9547c110be3c0e9fe2c"
+                "value": "c8e369d3cede8df5f561957bf62ae4b25f1ed035e0035bba5693b6ba4c23008c"
               },
               "entryPoint": "azure-ai-evaluations-darwin-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-darwin-amd64.zip"
@@ -897,7 +897,7 @@
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "6936dc45521a2bfcb853726b73a799ee6a809e1ce1b11fc748311f739efe053d"
+                "value": "ecac5ff63027dbeb190bc392488ca06ab6807e45feccd5e892e939cf2d46ae0a"
               },
               "entryPoint": "azure-ai-evaluations-darwin-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-darwin-arm64.zip"
@@ -905,7 +905,7 @@
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "107691caf1abcb36acede788448f827a0d6c91e71c98d0eab26defe9952f011e"
+                "value": "cb89d091add2d544f4ee10259aa9c7a7763dcd0d62407412611355bbab9af95b"
               },
               "entryPoint": "azure-ai-evaluations-linux-amd64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-linux-amd64.tar.gz"
@@ -913,7 +913,7 @@
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3bd6a597c718b900126859a492c17ac2bb937f47beedabec3e6c8daf38bb71a3"
+                "value": "f9c54584c31aaeda73473e2bb53e835c8fdb8e9ead48b1c6c26788a0f562c048"
               },
               "entryPoint": "azure-ai-evaluations-linux-arm64",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-linux-arm64.tar.gz"
@@ -921,7 +921,7 @@
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "827ac14a0d6fcf9b94bbbcc8210ec230e40ffd56728e48a356da362bc372b0d7"
+                "value": "c5909d4575ba79fe2b9c7fd1c241e831fd36bc3f9016886aca4f5c23a9c7c634"
               },
               "entryPoint": "azure-ai-evaluations-windows-amd64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-windows-amd64.zip"
@@ -929,7 +929,7 @@
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1c234a67d2e825ea6870d4f8d150c041fc94425002cea48e7d2761d32121d4c7"
+                "value": "9e0179d59ee9863b79da2b00b6540aa1c3930e57b2f23f6431ef0178e3cf8ff4"
               },
               "entryPoint": "azure-ai-evaluations-windows-arm64.exe",
               "url": "https://azuresdkartifacts.z5.web.core.windows.net/azd/extensions/azure-ai-evaluations/nightly/azure-ai-evaluations-windows-arm64.zip"

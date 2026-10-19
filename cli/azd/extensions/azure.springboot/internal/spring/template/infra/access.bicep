@@ -1,6 +1,7 @@
 param registryName string
 param principalId string
 param postgresServerName string
+param mysqlServerName string
 param outboundIps array
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -24,6 +25,18 @@ resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' existin
 resource firewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = [
   for ip in union(outboundIps, []): if (postgresServerName != '') {
     parent: postgres
+    name: 'aca-${replace(ip, '.', '-')}'
+    properties: { startIpAddress: ip, endIpAddress: ip }
+  }
+]
+
+resource mysql 'Microsoft.DBforMySQL/flexibleServers@2023-12-30' existing = {
+  name: mysqlServerName
+}
+
+resource mysqlFirewall 'Microsoft.DBforMySQL/flexibleServers/firewallRules@2023-12-30' = [
+  for ip in union(outboundIps, []): if (mysqlServerName != '') {
+    parent: mysql
     name: 'aca-${replace(ip, '.', '-')}'
     properties: { startIpAddress: ip, endIpAddress: ip }
   }

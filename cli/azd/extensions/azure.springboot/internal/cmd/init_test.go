@@ -198,6 +198,30 @@ func TestInitNoPromptChannelRequiredForResolvedConfiguration(t *testing.T) {
 	require.NoError(t, command.ExecuteContext(t.Context()))
 }
 
+func TestInitDatabaseNetworkDescription(t *testing.T) {
+	for _, profile := range []string{"h2", "mysql", "postgres"} {
+		t.Run(profile, func(t *testing.T) {
+			command, _, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+				t.Fatal("resolved --yes invocation must not open a prompt channel")
+				return nil, errors.New("unavailable")
+			})
+			command.SetArgs([]string{"init", "--yes", "--no-prompt", "--profiles", profile})
+			require.NoError(t, command.ExecuteContext(t.Context()))
+			const message = "Database network: public endpoint restricted to reported Container Apps outbound IPs."
+			if profile == "h2" {
+				require.NotContains(t, output.String(), message)
+			} else {
+				require.Contains(t, output.String(), message)
+			}
+			require.NotContains(t, output.String(), "allows all public IP addresses")
+			init, _, err := command.Find([]string{"init"})
+			require.NoError(t, err)
+			require.Contains(t, init.Long, "Container Apps outbound IPs")
+			require.NotContains(t, init.Long, "broad development")
+		})
+	}
+}
+
 func TestInitMissingPromptChannel(t *testing.T) {
 	command, _, _ := fixtureCommand(t, "profile-choice", func() (initPrompter, error) {
 		return nil, errors.New("unavailable")

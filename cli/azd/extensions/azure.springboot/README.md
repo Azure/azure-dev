@@ -133,9 +133,16 @@ Generated Dockerfile-specific ignore rules exclude exact development artifacts
 without broad credential-like filename patterns.
 Development Compose files are left alone.
 
-**Development defaults:** SQL authentication uses generated administrator
-credentials and the template's firewall rules allow all public IP addresses.
-JDBC connections require TLS. This is not a restrictive production network policy.
+**Development defaults:** password authentication uses generated administrator
+credentials. Database public endpoints allow only ACA-reported outbound IPv4
+addresses, plus the explicit bootstrap IP for PostgreSQL managed identity.
+Local SQL access in password mode requires an explicitly added firewall rule.
+JDBC connections require TLS. This is restricted public access, not private
+connectivity or an application-exclusive network boundary.
+ACA addresses can change; run `azd provision` to refresh the allowlist. Incremental
+deployment does not remove obsolete rules, including any legacy
+`development-public-access` rule from an older template; remove those explicitly.
+There is no VNet integration, private endpoint, or fixed-egress configuration.
 Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
@@ -217,10 +224,9 @@ invalidates cached grants, including after a failed recovery attempt.
 Principal mapping and privilege checks still run. Changed SQL executes again:
 make it an intentional, repeatable migration, not a destructive sample reset.
 
-The template declares exact bootstrap and ACA-reported IPv4 firewall rules for
-this path. ACA addresses can change; obsolete rules are not reconciled. This is
-not production fixed egress/private networking. RBAC propagation may still delay
-registry access. MySQL/managed identity needs separate server-identity/Graph
+The bootstrap IP rule remains after provisioning; it is not removed automatically.
+RBAC propagation may still delay registry access.
+MySQL/managed identity needs separate server-identity/Graph
 configuration and live validation; it is explicitly rejected.
 
 The selected namespace-first command follows existing extension conventions and

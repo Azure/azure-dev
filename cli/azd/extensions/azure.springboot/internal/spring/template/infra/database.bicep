@@ -48,12 +48,12 @@ resource pgDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
-resource pgFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (engine == 'postgresql') {
+resource pgFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (engine == 'postgresql' && managedIdentity) {
   parent: postgres
-  name: managedIdentity ? 'bootstrap-local-ip' : 'development-public-access'
+  name: 'bootstrap-local-ip'
   properties: {
-    startIpAddress: managedIdentity ? bootstrapIp : '0.0.0.0'
-    endIpAddress: managedIdentity ? bootstrapIp : '255.255.255.255'
+    startIpAddress: bootstrapIp
+    endIpAddress: bootstrapIp
   }
 }
 
@@ -76,12 +76,6 @@ resource mysqlDatabase 'Microsoft.DBforMySQL/flexibleServers/databases@2023-12-3
   parent: mysql
   name: databaseName
   properties: { charset: 'utf8mb4', collation: 'utf8mb4_unicode_ci' }
-}
-
-resource mysqlFirewall 'Microsoft.DBforMySQL/flexibleServers/firewallRules@2023-12-30' = if (engine == 'mysql') {
-  parent: mysql
-  name: 'development-public-access'
-  properties: { startIpAddress: '0.0.0.0', endIpAddress: '255.255.255.255' }
 }
 
 output host string = engine == 'mysql' ? mysql!.properties.fullyQualifiedDomainName : postgres!.properties.fullyQualifiedDomainName

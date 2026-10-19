@@ -66,9 +66,8 @@ module access 'access.bicep' = {
   params: {
     registryName: hosting.outputs.registryName
     principalId: bootstrap.outputs.principalId
-    postgresServerName: databaseEngine == 'postgresql' && databaseAuth == 'managedIdentity'
-      ? database!.outputs.serverName
-      : ''
+    postgresServerName: databaseEngine == 'postgresql' ? database!.outputs.serverName : ''
+    mysqlServerName: databaseEngine == 'mysql' ? database!.outputs.serverName : ''
     outboundIps: bootstrap.outputs.outboundIps
   }
 }

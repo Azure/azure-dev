@@ -399,6 +399,27 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 			for name, content := range infrastructure {
 				require.Equal(t, content, plan.Files[name], "all modes must use exactly the same Bicep")
 			}
+			main := string(plan.Files["infra/main.bicep"])
+			require.Contains(t, main,
+				"postgresServerName: databaseEngine == 'postgresql' ? database!.outputs.serverName : ''")
+			require.Contains(t, main, "mysqlServerName: databaseEngine == 'mysql' ? database!.outputs.serverName : ''")
+			require.Contains(t, main, "outboundIps: bootstrap.outputs.outboundIps")
+			require.Contains(t, main, "dependsOn: [access]")
+			access := string(plan.Files["infra/access.bicep"])
+			for _, server := range []string{"postgres", "mysql"} {
+				require.Contains(t, access, "for ip in union(outboundIps, []): if ("+server+"ServerName != '')")
+			}
+			require.Equal(t, 2, strings.Count(access, "properties: { startIpAddress: ip, endIpAddress: ip }"))
+			database := string(plan.Files["infra/database.bicep"])
+			require.Contains(t, database, "if (engine == 'postgresql' && managedIdentity)")
+			require.Contains(t, database, "name: 'bootstrap-local-ip'")
+			require.Contains(t, database, "startIpAddress: bootstrapIp")
+			require.Contains(t, database, "endIpAddress: bootstrapIp")
+			for name, content := range infrastructure {
+				require.NotContains(t, string(content), "development-public-access", name)
+				require.NotContains(t, string(content), "255.255.255.255", name)
+				require.NotContains(t, string(content), "startIpAddress: '0.0.0.0'", name)
+			}
 			config, err := project.Parse(t.Context(), string(plan.Files["azure.yaml"]))
 			require.NoError(t, err)
 			require.Len(t, config.Services, 1)

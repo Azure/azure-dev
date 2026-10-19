@@ -43,8 +43,9 @@ asked only for unresolved decisions; --yes does not supply missing choices.
 Embedded databases do not create a cloud database.
 
 Maven inspection executes project-controlled code. Generated SQL infrastructure
-uses an extension-owned template. Password authentication retains broad development
-firewall rules. PostgreSQL managed identity requires Azure Identity Extensions in
+uses an extension-owned template with public database access restricted to reported
+Container Apps outbound IPs. PostgreSQL managed identity also allows an explicit
+bootstrap IP and requires Azure Identity Extensions in
 the app and an explicit administrator-run schema/grant script before provisioning.
 This command does not provision Azure resources or create an azd environment.
 Existing deployment files are not overwritten.`,
@@ -122,9 +123,9 @@ Existing deployment files are not overwritten.`,
 			for _, requirement := range application.Requirements {
 				fmt.Fprintf(cmd.OutOrStdout(), "Database: %s server and %s database (%s authentication).\n",
 					requirement.Kind, requirement.Name, requirement.Authentication)
-				if requirement.Authentication == "password" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Warning: generated database firewall allows all public IP addresses.")
-				} else {
+				fmt.Fprintln(cmd.OutOrStdout(),
+					"Database network: public endpoint restricted to reported Container Apps outbound IPs.")
+				if requirement.Authentication == "managedIdentity" {
 					fmt.Fprintln(cmd.OutOrStdout(),
 						"Required: Entra administrator, bootstrap IPv4, and reviewed SQL schema/grant script.")
 				}

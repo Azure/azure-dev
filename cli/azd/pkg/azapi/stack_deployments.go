@@ -18,7 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -46,9 +46,9 @@ const (
 var defaultDeploymentStackOptions = &deploymentStackOptions{
 	BypassStackOutOfSyncError: new(false),
 	ActionOnUnmanage: &armdeploymentstacks.ActionOnUnmanage{
-		ManagementGroups: to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
-		ResourceGroups:   to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
-		Resources:        to.Ptr(armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete),
+		ManagementGroups: new(armdeploymentstacks.UnmanageActionManagementGroupModeDelete),
+		ResourceGroups:   new(armdeploymentstacks.UnmanageActionResourceGroupModeDelete),
+		Resources:        new(armdeploymentstacks.UnmanageActionResourceModeDelete),
 	},
 	DenySettings: &armdeploymentstacks.DenySettings{
 		Mode: to.Ptr(armdeploymentstacks.DenySettingsModeNone),

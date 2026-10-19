@@ -165,6 +165,10 @@ and render only the message in bold yellow. The `?` marker, `[y/N]` choices, and
 answer retain the standard blue prompt styling. Their
 default remains No, including with `--no-prompt`. Users can explicitly choose Yes to
 continue despite a critical warning.
+In no-prompt mode, declining critical warnings is a command failure: display an
+error with remediation guidance and exit nonzero. Do not display a success message
+or attribute the cancellation to the user. An interactive No remains an intentional
+cancellation with exit code 0.
 Keep this pattern scoped to provision validation rather than changing global warning
 or error prefixes.
 

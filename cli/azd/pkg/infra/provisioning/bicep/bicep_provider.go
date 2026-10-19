@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/drone/envsubst"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -2582,6 +2583,7 @@ const (
 	provisionValidationOutcomeWarningsAccepted = "warnings_accepted"
 	provisionValidationOutcomeCanceledByErrors = "canceled_by_errors"
 	provisionValidationOutcomeCanceledByUser   = "canceled_by_user"
+	provisionValidationOutcomeCanceledNoPrompt = "canceled_by_no_prompt"
 	provisionValidationOutcomeSkipped          = "skipped"
 	provisionValidationOutcomeError            = "error"
 )
@@ -2617,7 +2619,8 @@ func resolveProvisionValidationGates(userConfig config.Config) (skipValidation b
 // It returns (validation context, canceled, err) where:
 //   - canceled=true, err=nil: validation detected issues and provisioning should be skipped
 //     (exit code 0).
-//   - canceled=false, err!=nil: the validation itself failed to run (exit code 1).
+//   - canceled=false, err!=nil: validation failed to run or critical warnings could not
+//     be confirmed in no-prompt mode (exit code 1).
 //   - canceled=false, err=nil: validation passed, proceed with provisioning.
 func (p *BicepProvider) validateProvision(
 	ctx context.Context,
@@ -2863,6 +2866,15 @@ func (p *BicepProvider) runLocalProvisionValidation(
 				)
 			}
 			if !continueDeployment {
+				if p.console.IsNoPromptMode() {
+					p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledNoPrompt, diagnosticIDs)
+					return valCtx, false, &internal.ErrorWithSuggestion{
+						Err:     internal.ErrValidationFailed,
+						Message: "Provisioning was canceled because critical warnings require interactive confirmation.",
+						Suggestion: "Resolve the critical warnings, or rerun in an interactive terminal " +
+							"without --no-prompt to explicitly confirm deployment.",
+					}
+				}
 				// User chose not to continue — this is an intentional cancel, not a failure.
 				p.setProvisionValidationOutcome(span, provisionValidationOutcomeCanceledByUser, diagnosticIDs)
 				return valCtx, true, nil

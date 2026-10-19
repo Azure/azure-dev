@@ -398,7 +398,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings cannot be confirmed non-interactively; command fails), `skipped`, `error` |
 | `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
 | `validation.provision.rules` | string[] | Rule IDs executed |
 | `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |

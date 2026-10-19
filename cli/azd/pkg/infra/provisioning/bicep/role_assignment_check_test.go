@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -155,31 +158,39 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 		answer      bool
 		wantDefault bool
 		wantCancel  bool
+		wantError   bool
 		wantSummary string
+		wantOutcome string
 	}{
 		{
 			name: "critical automation", critical: true, noPrompt: true,
-			wantCancel: true, wantSummary: "1 critical warning found.",
+			wantError: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledNoPrompt,
 		},
 		{
 			name: "regular automation", regular: true, noPrompt: true,
 			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
 		{
 			name: "mixed automation", critical: true, regular: true, noPrompt: true,
-			wantCancel: true, wantSummary: "2 warnings found (1 critical).",
+			wantError: true, wantSummary: "2 warnings found (1 critical).",
+			wantOutcome: provisionValidationOutcomeCanceledNoPrompt,
 		},
 		{
 			name: "critical explicit yes", critical: true, answer: true,
 			wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
 		{
 			name: "critical explicit no", critical: true,
 			wantCancel: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledByUser,
 		},
 		{
 			name: "regular explicit no", regular: true, wantDefault: true,
 			wantCancel: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledByUser,
 		},
 	}
 
@@ -243,8 +254,21 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			_, canceled, err := provider.traceLocalProvisionValidation(
 				t.Context(), nil, filepath.Join(t.TempDir(), "main.bicepparam"),
 				raw, azure.ArmParameters{}, false)
-			require.NoError(t, err)
+			if tt.wantError {
+				require.ErrorIs(t, err, internal.ErrValidationFailed)
+				require.NotErrorIs(t, err, internal.ErrAbortedByUser)
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+				require.True(t, ok)
+				require.Contains(t, suggestion.Message, "Provisioning was canceled")
+				require.Contains(t, suggestion.Message, "critical warnings")
+				require.Contains(t, suggestion.Suggestion, "without --no-prompt")
+			} else {
+				require.NoError(t, err)
+			}
 			require.Equal(t, tt.wantCancel, canceled)
+			outcome := findSpanAttribute(tracing.GetUsageAttributes(), "validation.provision.outcome")
+			require.NotNil(t, outcome)
+			require.Equal(t, tt.wantOutcome, outcome.Value.AsString())
 			if tt.noPrompt {
 				require.Contains(t, outputBuffer.String(), tt.wantSummary)
 			} else {

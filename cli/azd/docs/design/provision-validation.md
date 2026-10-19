@@ -196,7 +196,7 @@ Validating deployment
 
 An explicit **Yes** continues deployment despite any warning, including a critical warning. **No** cancels with exit code 0 (an intentional cancel, not a failure).
 
-With `--no-prompt`, azd uses the same confirmation default: critical warnings cancel provisioning, while regular-only warnings proceed. Provider-agnostic preview validation uses `Proceed with the preview anyway?`; Bicep preview does not add local validation checks.
+With `--no-prompt` (including automatically enabled non-interactive mode), critical warnings cancel provisioning with an error and exit code 1, not a success message. Resolve the critical warnings, or rerun interactively without `--no-prompt` to explicitly confirm deployment. Telemetry records `validation.provision.outcome=canceled_by_no_prompt`, distinct from an interactive No (`canceled_by_user`, exit code 0). Regular-only warnings still proceed. Provider-agnostic preview validation uses `Proceed with the preview anyway?`; Bicep preview does not add local validation checks.
 
 ### Scenario 3: Errors Only
 
@@ -243,16 +243,16 @@ ERROR: local provision validation failed: validation check failed: <underlying e
 
 ## Exit Code Behavior
 
-The exit code distinguishes between **successful operation** (the CLI did what it was supposed to do) and **internal failure** (the CLI could not complete its task).
+The exit code distinguishes intentional interactive cancellation from failures that automation must not treat as successful provisioning.
 
-Provision validation detecting errors and canceling provisioning is a **successful outcome** — the CLI performed the validation and correctly prevented a bad deployment. Only failures in the validation machinery itself produce a non-zero exit code.
+An interactive No retains exit code 0. Critical warnings in no-prompt mode instead produce an error and exit code 1 because deployment cannot proceed without interactive confirmation. Failures in the validation machinery also produce a non-zero exit code. The existing exit-code-0 behavior for error-severity findings is unchanged by this critical-warning change.
 
 | Outcome | Exit Code | Rationale |
 |---|---|---|
 | No issues | 0 | Deployment proceeds and succeeds. |
 | Warnings only, user continues | 0 | User acknowledged warnings; deployment proceeds. |
 | Warnings only, user declines | 0 | User chose to cancel; intentional, not a failure. |
-| Critical warning, `--no-prompt` | 0 | Default No intentionally cancels provisioning. |
+| Critical warning, `--no-prompt` | 1 | Interactive confirmation is required; automatic cancellation must fail CI rather than report success. |
 | Regular warnings only, `--no-prompt` | 0 | Default Yes allows deployment to proceed. |
 | Errors detected | 0 | Validation successfully detected problems and canceled provisioning. |
 | Check function error | 1 | Internal failure running a check (the `validate` function returned a non-nil error). |

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -178,4 +179,22 @@ func TestProvisionAction_ProvisionValidationCanceled(t *testing.T) {
 
 	// Verify project manager was called (action didn't exit prematurely)
 	require.Empty(t, serviceManager.initializedServices)
+}
+
+func TestWrapProvisionError_NoPromptValidationFailure(t *testing.T) {
+	t.Parallel()
+	console := mockinput.NewMockConsole()
+	validationErr := &internal.ErrorWithSuggestion{
+		Err:        internal.ErrValidationFailed,
+		Message:    "Provisioning was canceled because critical warnings require interactive confirmation.",
+		Suggestion: "Resolve the critical warnings, or rerun without --no-prompt.",
+	}
+
+	err := wrapProvisionError(t.Context(), validationErr, provisionErrorDeps{console: console})
+
+	require.ErrorIs(t, err, internal.ErrValidationFailed)
+	require.NotErrorIs(t, err, internal.ErrAbortedByUser)
+	code, _ := classify(err)
+	require.Equal(t, "error.suggestion", code)
+	require.NotContains(t, strings.Join(console.Output(), "\n"), "SUCCESS:")
 }

@@ -698,7 +698,7 @@ var (
 	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
 	// Example: "passed", "warnings_accepted", "canceled_by_errors",
-	//          "canceled_by_user", "skipped", "error"
+	//          "canceled_by_user", "canceled_by_no_prompt", "skipped", "error"
 	ProvisionValidationOutcomeKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,

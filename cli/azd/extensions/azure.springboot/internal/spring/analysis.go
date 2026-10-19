@@ -109,6 +109,9 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, fmt.Errorf("resolving application directory: %w", err)
 	}
+	if err := validateResourceLayout(m.Build.Resources, projectDirectory); err != nil {
+		return nil, err
+	}
 	buildDirectory, err := filepath.Rel(projectDirectory, m.Build.Directory)
 	if err != nil || !filepath.IsLocal(buildDirectory) || buildDirectory == "." {
 		return nil, unsupportedConfiguration(
@@ -221,6 +224,26 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		a.Requirements = []Requirement{*requirement}
 	}
 	return a, nil
+}
+
+func validateResourceLayout(resources []buildResource, projectDirectory string) error {
+	for _, resource := range resources {
+		if strings.Contains(resource.Directory, "${") || strings.Contains(resource.TargetPath, "${") {
+			return unsupportedConfiguration("Maven build.resources must be fully resolved")
+		}
+		directory := resource.Directory
+		if !filepath.IsAbs(directory) {
+			directory = filepath.Join(projectDirectory, directory)
+		}
+		relative, err := filepath.Rel(projectDirectory, directory)
+		if err != nil || filepath.ToSlash(relative) != "src/main/resources" ||
+			strings.TrimSpace(resource.TargetPath) != "" {
+			return unsupportedConfiguration(
+				"custom Maven build.resources are not yet supported; application configuration must use " +
+					"src/main/resources without a targetPath")
+		}
+	}
+	return nil
 }
 
 func inspectCode(ctx context.Context, root *os.Root) error {

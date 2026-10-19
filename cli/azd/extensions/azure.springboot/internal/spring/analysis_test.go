@@ -906,6 +906,39 @@ func TestAnalyzeUsesCompilerPropertyFallbackForGeneratedContainer(t *testing.T) 
 	require.Contains(t, dockerfile, "eclipse-temurin:21-jre")
 }
 
+func TestAnalyzeRejectsUnsupportedMavenResourceLayout(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		directory  string
+		targetPath string
+	}{
+		{name: "custom directory", directory: "src/main/config"},
+		{name: "custom target path", directory: "src/main/resources", targetPath: "config"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/config/application.properties",
+				"spring.datasource.url=jdbc:postgresql://localhost/catalog")
+			resourceDirectory := filepath.Join(directory, filepath.FromSlash(tt.directory))
+			var escaped strings.Builder
+			require.NoError(t, xml.EscapeText(&escaped, []byte(resourceDirectory)))
+			resource := "<resources><resource><directory>" + escaped.String() + "</directory>"
+			if tt.targetPath != "" {
+				resource += "<targetPath>" + tt.targetPath + "</targetPath>"
+			}
+			resource += "</resource></resources>"
+			data := strings.Replace(string(effectiveModel(t, directory, allDrivers())),
+				"<build>", "<build>"+resource, 1)
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: []byte(data)}, envLookup(nil))
+			require.ErrorContains(t, err, "custom Maven build.resources are not yet supported")
+			require.Nil(t, application)
+		})
+	}
+}
+
 func TestGeneratedImageSkipsCompilationForHigherTestRelease(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")

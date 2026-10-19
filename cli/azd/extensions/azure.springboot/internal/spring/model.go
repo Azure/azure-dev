@@ -137,6 +137,11 @@ func (c pluginConfiguration) withDefaults(parent pluginConfiguration) pluginConf
 	return c
 }
 
+type buildResource struct {
+	Directory  string `xml:"directory"`
+	TargetPath string `xml:"targetPath"`
+}
+
 type model struct {
 	RepackageDirectories []string     `xml:"-"`
 	Artifact             string       `xml:"artifactId"`
@@ -152,9 +157,10 @@ type model struct {
 		RepackageSkip string `xml:"spring-boot.repackage.skip"`
 	} `xml:"properties"`
 	Build struct {
-		Directory string        `xml:"directory"`
-		FinalName string        `xml:"finalName"`
-		Plugins   []buildPlugin `xml:"plugins>plugin"`
+		Directory string          `xml:"directory"`
+		FinalName string          `xml:"finalName"`
+		Plugins   []buildPlugin   `xml:"plugins>plugin"`
+		Resources []buildResource `xml:"resources>resource"`
 	} `xml:"build"`
 }
 

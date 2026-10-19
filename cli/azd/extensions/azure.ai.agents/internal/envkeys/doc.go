@@ -14,8 +14,4 @@
 // Input deliberately has no Set method. Init records user choices using Name()
 // with its existing environment helpers. JSON supports future structured keys;
 // no deployment JSON key is registered in this first wave.
-//
-// Run ../scripts/check_envkey_literals.sh from the extension directory to check
-// the raw-literal ratchet. Its --counts option prints baseline-format counts;
-// lower the checked-in baseline as subsequent migrations remove literals.
 package envkeys

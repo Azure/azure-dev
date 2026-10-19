@@ -855,14 +855,27 @@ func jdbcURLHasLiteralPassword(value string) (bool, error) {
 		}
 		value = fallback
 	}
-	if !strings.HasPrefix(value, "jdbc:mysql://") && !strings.HasPrefix(value, "jdbc:postgresql://") {
+	engine := ""
+	switch {
+	case strings.HasPrefix(value, "jdbc:mysql:"):
+		engine = "mysql"
+	case strings.HasPrefix(value, "jdbc:postgresql:"):
+		engine = "postgresql"
+	default:
 		return false, nil
+	}
+	if !strings.HasPrefix(value, "jdbc:"+engine+"://") {
+		return false, errors.New("JDBC URL format cannot be safely inspected")
 	}
 	// Preserve runtime credential placeholders through URL parsing without accepting placeholder hosts.
 	normalizedURL := strings.NewReplacer("${", "%24%7B", "}", "%7D").Replace(strings.TrimPrefix(value, "jdbc:"))
 	address, err := url.Parse(normalizedURL)
 	if err != nil {
 		return false, errors.New("JDBC URL cannot be safely inspected")
+	}
+	if address.Scheme != engine || address.Host == "" || address.Opaque != "" ||
+		strings.ContainsAny(address.Host, "()=;,") {
+		return false, errors.New("JDBC URL authority cannot be safely inspected")
 	}
 	if address.User != nil {
 		if password, present := address.User.Password(); present && hasLiteralCredential(password) {

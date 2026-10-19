@@ -158,6 +158,40 @@ func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRejectsAlternateJDBCFormats(t *testing.T) {
+	const testValue = "alternate-jdbc-fixture-value"
+	for _, tt := range []struct {
+		name string
+		url  string
+	}{
+		{
+			name: "PostgreSQL database-only format",
+			url:  "jdbc:postgresql:catalog?password=" + testValue,
+		},
+		{
+			name: "MySQL address format",
+			url: "jdbc:mysql://address=(host=localhost)(user=app)(password=" +
+				testValue + ")/catalog",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			const file = "src/main/resources/application-unused.properties"
+			writeFixture(t, directory, file, "spring.datasource.url="+tt.url+"\n")
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			require.ErrorContains(t, err, "cannot safely inspect JDBC credentials")
+			require.ErrorContains(t, err, file)
+			require.ErrorContains(t, err, "spring.datasource.url")
+			require.NotContains(t, err.Error(), testValue)
+			require.NotContains(t, err.Error(), tt.url)
+			require.Nil(t, application)
+		})
+	}
+}
+
 func TestJDBCURLCredentialPlaceholders(t *testing.T) {
 	const testValue = "jdbc-fixture-value"
 	for _, engine := range []string{"mysql", "postgresql"} {

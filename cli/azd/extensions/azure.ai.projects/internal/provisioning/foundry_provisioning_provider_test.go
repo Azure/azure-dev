@@ -301,6 +301,88 @@ func TestInitializeExistingProjectEffectiveDeployments(t *testing.T) {
 	}
 }
 
+func TestReuseOnlyDeploymentChangesAfterInitialize(t *testing.T) {
+	const deployment = `[{"name":"env-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, value := range []string{deployment, "", "[]", "{"} {
+		for _, operation := range []string{"refresh", "deploy", "state", "preview", "outputs"} {
+			t.Run(operation+"/"+value, func(t *testing.T) {
+				root := t.TempDir()
+				const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+				raw := "services:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n" +
+					"    deployments:\n      - name: yaml-chat\n" +
+					"        model: {name: gpt-4.1, format: OpenAI, version: '1'}\n" +
+					"        sku: {name: Standard, capacity: 1}\n"
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0600))
+				env := &resolveEnvStubEnvServer{envName: "env", get: map[string]string{
+					ProjectDeploymentsEnvKey: "[]", envKeySubscriptionID: "sub",
+					envKeyLocation: "westus", envKeyFoundryRG: "rg",
+					"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				}}
+				client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+				p := &FoundryProvisioningProvider{azdClient: client}
+				require.NoError(t, p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
+					Provider: FoundryProviderName,
+				}))
+				require.True(t, p.existingProjectReuseOnly)
+				env.get[ProjectDeploymentsEnvKey] = value
+				if operation == "refresh" {
+					err := p.refreshReuseOnlyDeployments(t.Context())
+					if value == "{" {
+						require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, value == "[]", p.existingProjectReuseOnly)
+					if value != "[]" {
+						source, err := p.resolveTemplate(t.Context(), func(string) {})
+						require.NoError(t, err)
+						envelope, ok := source.parameters["deployments"].(map[string]any)
+						require.True(t, ok)
+						list, ok := envelope["value"].([]synthesis.Deployment)
+						require.True(t, ok)
+						require.Len(t, list, 1)
+						want := "env-chat"
+						if value == "" {
+							want = "yaml-chat"
+						}
+						assert.Equal(t, want, list[0].Name)
+					}
+					return
+				}
+				if value == "[]" {
+					env.get[envKeySubscriptionID] = ""
+				} else {
+					// Require mutation validation before any Azure I/O.
+					env.get["AZURE_AI_PROJECT_ID"] = ""
+				}
+				var err error
+				switch operation {
+				case "deploy":
+					_, err = p.Deploy(t.Context(), func(string) {})
+				case "state":
+					_, err = p.State(t.Context(), &azdext.ProvisioningStateOptions{})
+				case "preview":
+					_, err = p.Preview(t.Context(), func(string) {})
+				case "outputs":
+					_, err = p.PlannedOutputs(t.Context())
+				}
+				switch value {
+				case "{":
+					require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				case "[]":
+					require.NoError(t, err)
+				default:
+					require.ErrorContains(t, err, "AZURE_AI_PROJECT_ID")
+				}
+				assert.True(t, p.existingProjectReuseOnly)
+			})
+		}
+	}
+}
+
 func TestSanitizeFoundryName(t *testing.T) {
 	tests := []struct {
 		in   string

@@ -95,16 +95,19 @@ func projectLifecycleHandler(
 	if err != nil {
 		return err
 	}
+	onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
+	if err != nil {
+		return err
+	}
 	if deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey]); err != nil {
 		return err
 	} else if present {
+		if onDisk {
+			return nil
+		}
 		return seedProjectModelDeploymentName(ctx, azdClient, envName, values, deployments)
 	}
 	if len(cfg.Deployments) > 0 && !azdext.DetectInteractive().NoPrompt {
-		onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
-		if err != nil {
-			return err
-		}
 		if !onDisk {
 			location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
 			if location == "" {
@@ -141,6 +144,9 @@ func projectLifecycleHandler(
 		)
 	}
 
+	if onDisk {
+		return nil
+	}
 	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
 }
 
@@ -242,13 +248,17 @@ func encodeProjectDeployments(
 	return provisioning.EncodeProjectDeployments(deployments)
 }
 
-// projectOnDiskFoundryTemplatePresent mirrors the provider's onDiskTemplatePresent
-// check: any configured <module>.bicep or <module>.bicepparam means on-disk
-// parameters win over AI_PROJECT_DEPLOYMENTS, so interactive model selection
-// must be skipped for unmarked user-authored templates as well as ejections.
+// projectOnDiskFoundryTemplatePresent detects ejected infrastructure
+// and user-authored Bicep. Their parameters own the deployments, so
+// model prompts and inferred runtime defaults must be skipped.
 func projectOnDiskFoundryTemplatePresent(project *azdext.ProjectConfig) (bool, error) {
 	if project == nil || project.GetPath() == "" {
 		return false, nil
+	}
+	if ejected, err := findEjectedFoundryProjectInfrastructure(project); err != nil {
+		return false, err
+	} else if ejected != nil {
+		return true, nil
 	}
 	declaration, err := readProjectInfraDeclaration(project)
 	if err != nil {

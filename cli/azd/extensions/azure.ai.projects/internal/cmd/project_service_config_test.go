@@ -265,6 +265,7 @@ func TestProjectLifecycleHandlerClearsEmptyDeployments(t *testing.T) {
 func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
 	t.Setenv("AZD_NO_PROMPT", "true")
 	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "deployment.yaml"),
 		[]byte("name: gpt-4o\nmodel: {name: gpt-4o, format: OpenAI, version: '2024-08-06'}\n"+
@@ -621,6 +622,59 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProjectLifecycleHandlerOnDiskRuntimeDefault(t *testing.T) {
+	const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+	for _, kind := range []string{"bicep", "bicepparam", "terraform", "terraform-layer"} {
+		for _, override := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/override=%v", kind, override), func(t *testing.T) {
+				t.Setenv("AZD_NO_PROMPT", "false")
+				root := t.TempDir()
+				raw := "name: test\n"
+				if kind == "terraform-layer" {
+					raw += "infra:\n  layers:\n    - name: foundry\n      provider: terraform\n      path: infra\n"
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0600))
+				infra := filepath.Join(root, "infra")
+				require.NoError(t, os.Mkdir(infra, 0750))
+				if strings.HasPrefix(kind, "terraform") {
+					require.NoError(t, os.WriteFile(
+						filepath.Join(infra, foundryEjectionMarker), []byte(foundryTerraformMarkerVersion), 0600,
+					))
+				} else {
+					require.NoError(t, os.WriteFile(filepath.Join(infra, "main."+kind), []byte("// on disk"), 0600))
+				}
+				require.NoError(t, os.WriteFile(filepath.Join(infra, "main.parameters.json"),
+					[]byte(`{"parameters":{"deployments":{"value":[{"name":"on-disk-chat"}]}}}`), 0600))
+				server := &recordingProjectEnvironmentServer{envName: "new-env", values: map[string]string{}}
+				if override {
+					server.values[projectDeploymentsEnvKey] = `[{"name":"env-chat",` +
+						`"model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+						`"sku":{"name":"Standard","capacity":1}}]`
+				}
+				client := newProjectEnvironmentClient(t, server)
+				args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+					Path: root, Services: map[string]*azdext.ServiceConfig{"project": {
+						Host: aiProjectHost,
+						AdditionalProperties: mustProjectProperties(t, map[string]any{
+							"deployments": []any{map[string]any{
+								"name":  "yaml-chat",
+								"model": map[string]any{"name": "gpt-4.1", "format": "OpenAI", "version": "1"},
+								"sku":   map[string]any{"name": "Standard", "capacity": 1},
+							}},
+						}),
+					}},
+				}}
+				require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
+				assert.NotContains(t, server.values, key)
+				assert.Empty(t, server.models)
+				server.values[key] = "on-disk-chat"
+				require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
+				assert.Equal(t, "on-disk-chat", server.values[key])
+			})
+		}
 	}
 }
 

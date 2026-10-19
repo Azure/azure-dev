@@ -488,9 +488,10 @@ resource {{bicepName .Name}}OpenAIIdentity 'Microsoft.Authorization/roleAssignme
 {{- $svc := . -}}
 {{- range $index, $existing := .Existing}}
 {{- range .RoleAssignments}}
+{{- $deploymentName := printf "%s_%s_%s" (bicepName $svc.Name) $existing.Name .Name}}
 
 module {{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}} 'modules/role-assignment.bicep' = {
-  name: '{{bicepName $svc.Name}}_{{$existing.Name}}_{{.Name}}'
+  name: '{{if isFunctionApp $svc.Host}}{{functionAppName $deploymentName}}{{else}}{{$deploymentName}}{{end}}'
   scope: resourceGroup({{$existing.Name}}IdSegments[2], {{$existing.Name}}IdSegments[4])
   params: {
     {{ if eq .Scope 0 -}}resourceId: {{$existing.Name}}Id{{- end}}

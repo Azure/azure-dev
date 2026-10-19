@@ -524,6 +524,72 @@ func TestServiceIdentityDeploymentName(t *testing.T) {
 	}
 }
 
+func TestExistingResourceRoleAssignmentDeploymentName(t *testing.T) {
+	tmpl, err := Load()
+	require.NoError(t, err)
+
+	roleDeployment := regexp.MustCompile(
+		`(?m)^module (\w+) 'modules/role-assignment.bicep' = \{\n  name: '([^']+)'\n  scope:`)
+	for _, host := range []HostKind{FunctionAppKind, AppServiceKind, ContainerAppKind} {
+		for _, length := range []int{3, 41, 63} {
+			t.Run(string(host)+"/"+strconv.Itoa(length), func(t *testing.T) {
+				spec := InfraSpec{}
+				for _, name := range []string{"existingStorage", "existingStorageOther"} {
+					spec.Existing = append(spec.Existing, ExistingResource{
+						Name:             name,
+						ResourceType:     "Microsoft.Storage/storageAccounts",
+						ApiVersion:       "2023-05-01",
+						ResourceIdEnvVar: AlphaSnakeUpper(name) + "_ID",
+						RoleAssignments: []RoleAssignment{
+							{Name: "Contributor", RoleDefinitionId: "ba92f5b4-2d11-453d-a403-e96b0029c9fe"},
+							{Name: "Reader", RoleDefinitionId: "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"},
+						},
+					})
+				}
+				for _, name := range []string{strings.Repeat("a", length), strings.Repeat("a", length-1) + "b"} {
+					spec.Services = append(spec.Services, ServiceSpec{
+						Name:            name,
+						Host:            host,
+						Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+						FunctionStorage: &FunctionStorage{ExistingName: "existingStorage"},
+						Existing:        []*ExistingResource{&spec.Existing[0], &spec.Existing[1]},
+					})
+				}
+				files, err := ExecInfraFs(tmpl, spec)
+				require.NoError(t, err)
+				source, err := fs.ReadFile(files, "resources.bicep")
+				require.NoError(t, err)
+				normalizedSource := strings.ReplaceAll(string(source), "\r\n", "\n")
+				matches := roleDeployment.FindAllStringSubmatch(normalizedSource, -1)
+				require.Len(t, matches, 8)
+
+				deployments := make(map[string]string, len(matches))
+				names := make(map[string]bool, len(matches))
+				for _, match := range matches {
+					deployments[match[1]] = match[2]
+					assert.False(t, names[match[2]], "duplicate deployment name: %s", match[2])
+					names[match[2]] = true
+				}
+				for _, service := range spec.Services {
+					for _, existing := range service.Existing {
+						for _, role := range existing.RoleAssignments {
+							symbol := BicepName(service.Name) + "_" + existing.Name + "_" + role.Name
+							deploymentName, ok := deployments[symbol]
+							require.True(t, ok, "missing role assignment module: %s", symbol)
+							if host == FunctionAppKind {
+								assert.Equal(t, FunctionAppName(symbol), deploymentName)
+								assert.LessOrEqual(t, len(deploymentName), 64)
+							} else {
+								assert.Equal(t, symbol, deploymentName)
+							}
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestFunctionAppInsightsRoleAssignment(t *testing.T) {
 	tmpl, err := Load()
 	require.NoError(t, err)

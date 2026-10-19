@@ -5390,7 +5390,7 @@ interactions:
                 - azsdk-go-armcognitiveservices/v1.8.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 8230503ff6d079191c26c5adf67706f3
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/usages?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/usages?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -5463,7 +5463,7 @@ interactions:
                 - azsdk-go-armcognitiveservices/v1.8.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 8230503ff6d079191c26c5adf67706f3
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/models?api-version=2025-06-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.CognitiveServices/locations/eastus2/models?api-version=2025-09-01
         method: GET
       response:
         proto: HTTP/2.0

@@ -25,23 +25,59 @@ import (
 // a2aJSONRPCVersion is the JSON-RPC protocol version A2A rides on.
 const a2aJSONRPCVersion = "2.0"
 
-// a2aSendMethod is the A2A JSON-RPC method for sending a (non-streaming) message.
-// See the A2A protocol spec (https://a2a-protocol.org/latest/specification/).
-const a2aSendMethod = "message/send"
-
 // a2aVersionHeader is the A2A protocol version header (§3.2). Sending it makes
 // the request's protocol version explicit; if the server does not support it,
 // the A2A spec has the agent return VersionNotSupportedError rather than
 // silently applying a compatibility default.
 const a2aVersionHeader = "A2A-Version"
 
-// a2aProtocolVersion is the A2A protocol version this client speaks. It is a
-// constant tied to the request shape we emit (the v0.3 JSON-RPC message/send
-// envelope in buildA2ARequestBody), not derived from the agent's advertised
-// protocol version: the header must describe the body we actually send. The A2A
-// spec treats an omitted version as a 0.3 compatibility default; we send it
-// explicitly so a Foundry endpoint on a newer contract negotiates deterministically.
-const a2aProtocolVersion = "0.3"
+// validateInvokeA2AVersionFlags validates explicit dialect selection. An empty
+// protocol is unresolved, so route-specific checks must wait for resolution.
+func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentProtocol) error {
+	if flags.a2aVersion != "" {
+		if err := validateA2AVersion(flags.a2aVersion); err != nil {
+			return err
+		}
+		if protocol != "" && protocol != agent_api.AgentProtocolA2A {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--a2a-version is only supported with the a2a protocol",
+				"omit --a2a-version or select --protocol a2a",
+			)
+		}
+	}
+	if protocol == agent_api.AgentProtocolA2A && flags.inputFile != "" && flags.a2aVersion == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--input-file with the a2a protocol requires an explicit --a2a-version",
+			"pass --a2a-version 0.3 or --a2a-version 1.0 to match the file's request dialect",
+		)
+	}
+	return nil
+}
+
+func validateA2AVersion(version string) error {
+	if version != "0.3" && version != "1.0" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid --a2a-version %q: supported versions are 0.3 and 1.0", version),
+			"use --a2a-version 0.3 or --a2a-version 1.0",
+		)
+	}
+	return nil
+}
+
+// a2aProtocolVersion returns the effective dialect, independently of the deployed
+// agent version. File input still requires an explicit flag, even when resolved.
+func (a *InvokeAction) a2aProtocolVersion() string {
+	if a.flags.a2aVersion != "" {
+		return a.flags.a2aVersion
+	}
+	if a.resolvedA2AVersion != "" {
+		return a.resolvedA2AVersion
+	}
+	return "1.0"
+}
 
 // buildA2ARequestBody returns the JSON request body for an A2A invoke and a
 // human-readable label describing it.
@@ -49,12 +85,19 @@ const a2aProtocolVersion = "0.3"
 // When the user supplied --input-file, its bytes are forwarded verbatim — the
 // file is assumed to already contain a complete JSON-RPC request (the A2A
 // analogue of the invocations protocol's opaque body pass-through). Otherwise
-// the plain message is wrapped in a JSON-RPC 2.0 `message/send` request whose
-// params carry a single user text Part, per the A2A specification.
+// the plain message is wrapped in a JSON-RPC 2.0 request for the selected
+// dialect, with a single user text part and synchronous output configuration.
 //
 // NOTE: The A2A request envelope is centralized here so it can be adjusted in
 // one place if the Foundry A2A contract differs from the vanilla A2A spec.
 func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {
+		return nil, "", err
+	}
+	version := a.a2aProtocolVersion()
+	if err := validateA2AVersion(version); err != nil {
+		return nil, "", err
+	}
 	body, label, err := a.resolveBody()
 	if err != nil {
 		return nil, "", err
@@ -64,18 +107,28 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 		return body, label, nil
 	}
 
+	method, role := "SendMessage", "ROLE_USER"
+	part := map[string]any{"text": string(body)}
+	configuration := map[string]any{
+		"returnImmediately":   false,
+		"acceptedOutputModes": []string{"text"},
+	}
+	if version == "0.3" {
+		method, role = "message/send", "user"
+		part["kind"] = "text"
+		configuration = map[string]any{"blocking": true}
+	}
 	request := map[string]any{
 		"jsonrpc": a2aJSONRPCVersion,
 		"id":      uuid.NewString(),
-		"method":  a2aSendMethod,
+		"method":  method,
 		"params": map[string]any{
 			"message": map[string]any{
-				"role":      "user",
+				"role":      role,
 				"messageId": uuid.NewString(),
-				"parts": []map[string]any{
-					{"kind": "text", "text": string(body)},
-				},
+				"parts":     []map[string]any{part},
 			},
+			"configuration": configuration,
 		},
 	}
 	payload, err := json.Marshal(request)
@@ -102,15 +155,15 @@ func (a *InvokeAction) a2aLocal(_ context.Context) error {
 // A2A-Version header (so the server negotiates deterministically instead of
 // applying an implicit default), the Foundry bearer token, and the remote user
 // identity header. The caller sets Content-Type and any raw-mode headers.
-func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags) {
-	req.Header.Set(a2aVersionHeader, a2aProtocolVersion)
+func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *userIdentityFlags, version string) {
+	req.Header.Set(a2aVersionHeader, version)
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	applyRemoteUserIdentityHeader(req, identity)
 }
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
-// message/send request. Memory is bound to the agent session, like the
+// request in the selected dialect. Memory is bound to the agent session, like the
 // invocations protocol.
 func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	body, bodyLabel, err := a.buildA2ARequestBody()
@@ -170,7 +223,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags)
+	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags, a.a2aProtocolVersion())
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -195,7 +248,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
-	if err := handleA2AResponse(resp, rc.name, raw); err != nil {
+	if err := handleA2AResponse(resp, rc.name, raw, a.a2aProtocolVersion()); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}
@@ -215,7 +268,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 // agent error, and the agent's reply text is extracted from the JSON-RPC
 // `result` (a Message or Task) and printed. Non-JSON-RPC bodies fall back to
 // pretty-printed JSON or the raw body.
-func handleA2AResponse(resp *http.Response, agentName string, raw bool) error {
+func handleA2AResponse(resp *http.Response, agentName string, raw bool, version string) error {
 	if raw {
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -250,7 +303,7 @@ func handleA2AResponse(resp *http.Response, agentName string, raw bool) error {
 		return agentErr
 	}
 
-	printA2AResult(respBody, agentName)
+	printA2AResult(respBody, agentName, version)
 	return nil
 }
 
@@ -287,8 +340,8 @@ func a2aErrorFromBody(respBody []byte) error {
 // printA2AResult prints the agent's reply. It extracts the text of the JSON-RPC
 // result (a Message or Task); when no text can be found it pretty-prints the
 // JSON body, falling back to the raw body for non-JSON.
-func printA2AResult(respBody []byte, agentName string) {
-	if text := extractA2AText(respBody); text != "" {
+func printA2AResult(respBody []byte, agentName string, version string) {
+	if text := extractA2AText(respBody, version); text != "" {
 		fmt.Printf("[%s] %s\n", agentName, text)
 		return
 	}
@@ -305,11 +358,11 @@ func printA2AResult(respBody []byte, agentName string) {
 }
 
 // extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A
-// response. The JSON-RPC `result` is either a Message (with `parts`) or a Task
-// (whose `status.message`, `artifacts[].parts`, or `history[]` carry the text).
+// response. In 0.3, `result` is a Message or Task; in 1.0 it wraps `message`
+// or `task`. Tasks carry text in status.message, artifacts, or history.
 // Returns "" when no text can be found, signaling the caller to fall back to
 // printing the JSON body.
-func extractA2AText(respBody []byte) string {
+func extractA2AText(respBody []byte, version string) string {
 	var envelope struct {
 		Result json.RawMessage `json:"result"`
 	}
@@ -320,6 +373,17 @@ func extractA2AText(respBody []byte) string {
 	var result map[string]any
 	if err := json.Unmarshal(envelope.Result, &result); err != nil {
 		return ""
+	}
+
+	if version == "1.0" {
+		if message, ok := result["message"].(map[string]any); ok {
+			return a2aTextFromParts(message["parts"])
+		}
+		task, ok := result["task"].(map[string]any)
+		if !ok {
+			return ""
+		}
+		result = task
 	}
 
 	// Message result: parts directly on the object.
@@ -360,7 +424,7 @@ func extractA2AText(respBody []byte) string {
 			if !ok {
 				continue
 			}
-			if role, _ := m["role"].(string); role == "user" {
+			if role, _ := m["role"].(string); role == "user" || role == "ROLE_USER" {
 				continue
 			}
 			if text := a2aTextFromParts(m["parts"]); text != "" {

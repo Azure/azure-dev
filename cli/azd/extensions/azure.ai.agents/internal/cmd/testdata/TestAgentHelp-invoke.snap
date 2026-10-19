@@ -25,6 +25,12 @@ instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
+A2A Version:
+Use --a2a-version to select the A2A wire version: 0.3 or 1.0. Plain messages
+use 1.0 by default. With --input-file, an explicit --a2a-version is required
+and must match the file's JSON-RPC request. File contents are sent unchanged.
+This is separate from --version, which selects the deployed agent version.
+
 Local Development
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. The a2a protocol is remote-only and cannot be used with
@@ -78,6 +84,7 @@ Usage
   azd ai agent invoke [name] [message] [flags]
 
 Flags
+      --a2a-version string        : A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.
       --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
       --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)
       --client-header stringArray : Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.
@@ -118,7 +125,10 @@ Examples
     azd ai agent invoke --protocol a2a "Hello!"
 
   Invoke the a2a protocol with a complete JSON-RPC request from a file
-    azd ai agent invoke --protocol a2a -f a2a-request.json
+    azd ai agent invoke --protocol a2a --a2a-version 1.0 -f a2a-request.json
+
+  Invoke using the older A2A wire version
+    azd ai agent invoke --protocol a2a --a2a-version 0.3 "Hello!"
 
   Invoke with a file as the request body
     azd ai agent invoke -f request.json

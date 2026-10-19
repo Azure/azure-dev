@@ -94,7 +94,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 266093f52c38e55828b9bfbc52bdbbce
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0

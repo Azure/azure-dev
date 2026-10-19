@@ -9249,7 +9249,7 @@ interactions:
                 - application/json
             User-Agent:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin)
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourcegroups/rg-azdtest-d7ffc20?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourcegroups/rg-azdtest-d7ffc20?api-version=2025-04-01
         method: PUT
       response:
         proto: HTTP/2.0
@@ -9529,7 +9529,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 8abb2f864d65f93244d2155c72b7239e
-        url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2021-04-01
+        url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2025-04-01
         method: POST
       response:
         proto: HTTP/2.0
@@ -9746,7 +9746,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 8abb2f864d65f93244d2155c72b7239e
-        url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2021-04-01
+        url: https://management.azure.com:443/providers/Microsoft.Resources/calculateTemplateHash?api-version=2025-04-01
         method: POST
       response:
         proto: HTTP/2.0

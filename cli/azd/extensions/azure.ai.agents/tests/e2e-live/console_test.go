@@ -15,7 +15,7 @@ import (
 	"time"
 
 	expect "github.com/Netflix/go-expect"
-	"github.com/creack/pty"
+	"github.com/creack/pty/v2"
 	"github.com/hinshun/vt10x"
 )
 

@@ -94,7 +94,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 28cde718a413bc295ce592e23cd41fb2
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks?api-version=2025-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -240,7 +240,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 28cde718a413bc295ce592e23cd41fb2
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60/validate?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60/validate?api-version=2025-07-01
         method: POST
       response:
         proto: HTTP/2.0
@@ -457,7 +457,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 28cde718a413bc295ce592e23cd41fb2
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2025-07-01
         method: PUT
       response:
         proto: HTTP/2.0
@@ -599,7 +599,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 28cde718a413bc295ce592e23cd41fb2
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2025-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -670,7 +670,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 28cde718a413bc295ce592e23cd41fb2
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2025-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -810,7 +810,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 40ee186426248dde07cb3782a9054c17
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks?api-version=2025-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -883,7 +883,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 40ee186426248dde07cb3782a9054c17
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2024-03-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2025-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -954,7 +954,7 @@ interactions:
                 - azsdk-go-armdeploymentstacks/v1.0.1 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 40ee186426248dde07cb3782a9054c17
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2024-03-01&bypassStackOutOfSyncError=false&unmanageAction.ManagementGroups=delete&unmanageAction.ResourceGroups=delete&unmanageAction.Resources=delete
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/providers/Microsoft.Resources/deploymentStacks/azd-stack-azdtest-d155b60?api-version=2025-07-01&bypassStackOutOfSyncError=false&unmanageAction.ManagementGroups=delete&unmanageAction.ResourceGroups=delete&unmanageAction.Resources=delete
         method: DELETE
       response:
         proto: HTTP/2.0

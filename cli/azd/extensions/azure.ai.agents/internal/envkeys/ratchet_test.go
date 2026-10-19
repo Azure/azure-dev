@@ -52,20 +52,20 @@ func TestLiteralRatchetBehavior(t *testing.T) {
 	requireRatchetTools(t)
 	root := t.TempDir()
 	scripts := filepath.Join(root, "scripts")
-	require.NoError(t, os.MkdirAll(scripts, 0o755))
+	require.NoError(t, os.MkdirAll(scripts, 0o750))
 	source, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "check_envkey_literals.sh"))
 	require.NoError(t, err)
 	script := filepath.Join(scripts, "check_envkey_literals.sh")
-	require.NoError(t, os.WriteFile(script, source, 0o600))
+	require.NoError(t, os.WriteFile(script, source, 0o600)) // #nosec G703 -- script is under t.TempDir()
 	for _, extension := range []string{"azure.ai.agents", "azure.ai.projects"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(root, extension), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, extension), 0o750))
 	}
 	agents := filepath.Join(root, "azure.ai.agents")
 	fixture := filepath.Join(agents, "fixture.go")
 	write := func(path, text string) {
 		t.Helper()
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
-		require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+		require.NoError(t, os.WriteFile(path, []byte(text), 0o600)) // #nosec G703 -- path is under t.TempDir()
 	}
 	// Count occurrences, including two literals on the same line and test fixtures.
 	write(fixture, "package fixture\nvar keys = []string{\"AZURE_AI_A\", \"AZURE_AI_B\"}\n")

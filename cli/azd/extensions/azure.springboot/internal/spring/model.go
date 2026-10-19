@@ -99,14 +99,16 @@ type buildPlugin struct {
 }
 
 type pluginConfiguration struct {
-	Skip            string `xml:"skip"`
-	Classifier      string `xml:"classifier"`
-	Layout          string `xml:"layout"`
-	OutputDirectory string `xml:"outputDirectory"`
-	Release         string `xml:"release"`
-	Source          string `xml:"source"`
-	Target          string `xml:"target"`
-	CombineSelf     string `xml:"combine.self,attr"`
+	Skip                 string   `xml:"skip"`
+	Classifier           string   `xml:"classifier"`
+	Layout               string   `xml:"layout"`
+	OutputDirectory      string   `xml:"outputDirectory"`
+	Release              string   `xml:"release"`
+	Source               string   `xml:"source"`
+	Target               string   `xml:"target"`
+	Delimiters           []string `xml:"delimiters>delimiter"`
+	UseDefaultDelimiters string   `xml:"useDefaultDelimiters"`
+	CombineSelf          string   `xml:"combine.self,attr"`
 }
 
 func (c pluginConfiguration) withDefaults(parent pluginConfiguration) pluginConfiguration {
@@ -134,12 +136,19 @@ func (c pluginConfiguration) withDefaults(parent pluginConfiguration) pluginConf
 	if c.Target == "" {
 		c.Target = parent.Target
 	}
+	if len(c.Delimiters) == 0 {
+		c.Delimiters = slices.Clone(parent.Delimiters)
+	}
+	if c.UseDefaultDelimiters == "" {
+		c.UseDefaultDelimiters = parent.UseDefaultDelimiters
+	}
 	return c
 }
 
 type buildResource struct {
 	Directory  string `xml:"directory"`
 	TargetPath string `xml:"targetPath"`
+	Filtering  string `xml:"filtering"`
 }
 
 type model struct {

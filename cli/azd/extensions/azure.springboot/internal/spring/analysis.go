@@ -109,7 +109,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, fmt.Errorf("resolving application directory: %w", err)
 	}
-	if err := validateResourceLayout(m.Build.Resources, projectDirectory); err != nil {
+	if err := validateResourceLayout(m, projectDirectory); err != nil {
 		return nil, err
 	}
 	buildDirectory, err := filepath.Rel(projectDirectory, m.Build.Directory)
@@ -226,8 +226,8 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	return a, nil
 }
 
-func validateResourceLayout(resources []buildResource, projectDirectory string) error {
-	for _, resource := range resources {
+func validateResourceLayout(m *model, projectDirectory string) error {
+	for _, resource := range m.Build.Resources {
 		if strings.Contains(resource.Directory, "${") || strings.Contains(resource.TargetPath, "${") {
 			return unsupportedConfiguration("Maven build.resources must be fully resolved")
 		}
@@ -243,7 +243,43 @@ func validateResourceLayout(resources []buildResource, projectDirectory string) 
 					"src/main/resources without a targetPath")
 		}
 	}
+	if slices.ContainsFunc(m.Build.Resources, func(resource buildResource) bool {
+		return strings.EqualFold(strings.TrimSpace(resource.Filtering), "true")
+	}) && resourceFilteringExpandsRuntimePlaceholders(m.Build.Plugins) {
+		return unsupportedConfiguration(
+			"Maven resource filtering with ${...} delimiters is not supported because it can embed runtime credentials")
+	}
 	return nil
+}
+
+func resourceFilteringExpandsRuntimePlaceholders(plugins []buildPlugin) bool {
+	var configurations []pluginConfiguration
+	for _, plugin := range plugins {
+		if plugin.Artifact != "maven-resources-plugin" ||
+			plugin.Group != "" && plugin.Group != "org.apache.maven.plugins" {
+			continue
+		}
+		for _, execution := range plugin.Executions {
+			if slices.Contains(execution.Goals, "resources") {
+				configurations = append(configurations,
+					execution.Configuration.withDefaults(plugin.Configuration))
+			}
+		}
+		if len(configurations) == 0 {
+			configurations = append(configurations, plugin.Configuration)
+		}
+	}
+	if len(configurations) == 0 {
+		return true
+	}
+	return slices.ContainsFunc(configurations, func(configuration pluginConfiguration) bool {
+		if !strings.EqualFold(strings.TrimSpace(configuration.UseDefaultDelimiters), "false") {
+			return true
+		}
+		return slices.ContainsFunc(configuration.Delimiters, func(delimiter string) bool {
+			return strings.Contains(delimiter, "$")
+		})
+	})
 }
 
 func inspectCode(ctx context.Context, root *os.Root) error {

@@ -939,6 +939,60 @@ func TestAnalyzeRejectsUnsupportedMavenResourceLayout(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRejectsResourceFilteringThatExpandsRuntimePlaceholders(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		configuration string
+		error         bool
+	}{
+		{name: "default delimiters", error: true},
+		{
+			name: "custom dollar delimiter",
+			configuration: "<useDefaultDelimiters>false</useDefaultDelimiters>" +
+				"<delimiters><delimiter>${*}</delimiter></delimiters>",
+			error: true,
+		},
+		{
+			name: "Spring Boot parent delimiters",
+			configuration: "<useDefaultDelimiters>false</useDefaultDelimiters>" +
+				"<delimiters><delimiter>@</delimiter></delimiters>",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application-unused.properties",
+				"spring.datasource.password=${DATABASE_PASSWORD}\n")
+			resourceDirectory := filepath.Join(directory, "src", "main", "resources")
+			var escaped strings.Builder
+			require.NoError(t, xml.EscapeText(&escaped, []byte(resourceDirectory)))
+			resource := "<resources><resource><filtering>true</filtering><directory>" +
+				escaped.String() + "</directory></resource></resources>"
+			resourcesPlugin := "<plugin><groupId>org.apache.maven.plugins</groupId>" +
+				"<artifactId>maven-resources-plugin</artifactId><configuration>" +
+				tt.configuration + "</configuration></plugin>"
+			data := strings.Replace(string(effectiveModel(t, directory, allDrivers())),
+				"<build>", "<build>"+resource, 1)
+			data = strings.Replace(data, "</plugins>", resourcesPlugin+"</plugins>", 1)
+			data = strings.Replace(data, "</properties>",
+				"<DATABASE_PASSWORD>build-time-secret</DATABASE_PASSWORD></properties>", 1)
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: []byte(data)}, envLookup(nil))
+			if tt.error {
+				require.ErrorContains(t, err, "Maven resource filtering with ${...} delimiters")
+				require.NotContains(t, err.Error(), "build-time-secret")
+				require.Nil(t, application)
+				return
+			}
+			require.NoError(t, err)
+			plan, err := Generate(t.Context(), application)
+			require.NoError(t, err)
+			require.Contains(t, plan.Files, ".azd-spring/Dockerfile")
+		})
+	}
+}
+
 func TestGeneratedImageSkipsCompilationForHigherTestRelease(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")

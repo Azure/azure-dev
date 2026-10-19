@@ -198,6 +198,8 @@ var voiceInitChoice = &azdext.SelectChoice{
 // --kind prompt-voice in no-prompt mode).
 // Returns initModeFromCode, initModeTemplate, or initModeVoice.
 func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.InitModeSelection)()
+
 	empty, err := dirIsEmpty(".")
 	if err != nil {
 		return "", fmt.Errorf("checking current directory: %w", err)
@@ -225,7 +227,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 
 	defaultIndex := int32(0)
 
-	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.InitModeSelection).Select(ctx, &azdext.SelectRequest{
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How do you want to initialize your agent?",
 			Choices:       choices,
@@ -270,10 +272,7 @@ func fetchAgentTemplatesFromURL(
 	ctx context.Context,
 	httpClient *http.Client,
 	url string,
-) (timingResult0 []AgentTemplate, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.TemplateCatalogLoading, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]AgentTemplate, error) {
 	displayURL := catalogURLForDisplay(url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -379,6 +378,8 @@ func promptAgentTemplate(
 	httpClient *http.Client,
 	noPrompt bool,
 ) (*AgentTemplate, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateSelection)()
+
 	if noPrompt {
 		return nil, exterrors.Validation(
 			exterrors.CodePromptFailed,
@@ -406,7 +407,7 @@ func promptAgentTemplate(
 		{Label: "C#", Value: "dotnetCsharp"},
 	}
 
-	langResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.TemplateLanguageSelection).Select(ctx, &azdext.SelectRequest{
+	langResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a language",
 			Choices: languageChoices,
@@ -544,7 +545,7 @@ func promptSelectTemplate(
 		opts.SelectedIndex = defaultIdx
 	}
 
-	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.TemplateSelection).Select(ctx, &azdext.SelectRequest{
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: opts,
 	})
 	if err != nil {

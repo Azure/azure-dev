@@ -461,6 +461,7 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	if provider == "" {
 		return nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 
 	projectRoot, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
@@ -485,9 +486,7 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 			return err
 		}
 	}
-	return inittelemetry.MeasureError(ctx, inittelemetry.InfraGeneration, inittelemetry.Execution, "",
-		func() error { return ejectInfra(projectRoot, provider, env) },
-	)
+	return ejectInfra(projectRoot, provider, env)
 }
 
 // ejectInfra synthesizes infrastructure templates from azure.yaml. A project

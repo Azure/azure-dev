@@ -148,9 +148,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
 		if strings.TrimSpace(localDefinition.Image) == "" {
-			if err := inittelemetry.MeasureError(ctx, inittelemetry.FileGeneration, inittelemetry.Execution, "",
-				func() error { return a.writeAgentIgnoreToSrcDir(srcDir) },
-			); err != nil {
+			endGeneration := inittelemetry.Start(ctx, inittelemetry.FileGeneration)
+			err := a.writeAgentIgnoreToSrcDir(srcDir)
+			endGeneration()
+			if err != nil {
 				return fmt.Errorf("failed to write .agentignore: %w", err)
 			}
 		}
@@ -162,9 +163,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 
 		// Run post-init validations (advisory warnings only)
-		endValidation := inittelemetry.Start(ctx, inittelemetry.PostInitValidation, inittelemetry.Execution, "")
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
-		endValidation(nil)
 
 		fmt.Println("\nYou can customize environment variables and other settings " +
 			"in the agent service entry in azure.yaml.")
@@ -192,6 +191,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.ProjectConfig, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
@@ -231,11 +232,9 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 				{Command: &azdext.WorkflowCommand{Args: initArgs}},
 			},
 		}
-		if _, err := inittelemetry.Measure(ctx, inittelemetry.ProjectScaffolding, inittelemetry.External, "",
-			func() (*azdext.EmptyResponse, error) {
-				return a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{Workflow: workflow})
-			},
-		); err != nil {
+		if _, err := a.azdClient.Workflow().Run(ctx, &azdext.RunWorkflowRequest{
+			Workflow: workflow,
+		}); err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("project initialization was cancelled")
 			}
@@ -276,6 +275,8 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context) (*agent_yaml.ContainerAgent, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
+
 	// Default agent name to sanitized cwd
 	defaultName := "my-agent"
 	if cwd, err := os.Getwd(); err == nil {
@@ -443,7 +444,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 
 		defaultIdx := int32(0)
-		projectResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{
+		projectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select a Foundry project to host your agent and any models or tools it uses.",
 				Choices:       projectChoices,
@@ -564,7 +565,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		}
 	} else {
 		defaultIndex := int32(0)
-		modelConfigResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelStrategySelection).Select(ctx, &azdext.SelectRequest{
+		modelConfigResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "How would you like to configure model(s) for your agent?",
 				Choices:       modelConfigChoices,
@@ -894,6 +895,8 @@ func (a *InitFromCodeAction) addToProject(
 	definition *agent_yaml.ContainerAgent,
 	isCodeDeploy bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if a.serviceNameOverride != "" {
@@ -986,9 +989,7 @@ func (a *InitFromCodeAction) addToProject(
 
 	req := &azdext.AddServiceRequest{Service: serviceConfig}
 
-	if _, err := inittelemetry.Measure(ctx, inittelemetry.ProjectConfigurationUpdate, inittelemetry.External, "",
-		func() (*azdext.EmptyResponse, error) { return a.azdClient.Project().AddService(ctx, req) },
-	); err != nil {
+	if _, err := a.azdClient.Project().AddService(ctx, req); err != nil {
 		return fmt.Errorf("adding agent service to project: %w", err)
 	}
 	if err := setServiceEnvironment(
@@ -1085,6 +1086,8 @@ func promptProtocols(
 	noPrompt bool,
 	flagProtocols []string,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ProtocolSelection)()
+
 	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
 		return validateExplicitProtocols(flagProtocols)
@@ -1108,7 +1111,7 @@ func promptProtocols(
 		})
 	}
 
-	resp, err := inittelemetry.Prompts(promptClient, inittelemetry.ProtocolSelection).MultiSelect(ctx, &azdext.MultiSelectRequest{
+	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
 			Message:     "Which protocols does your agent support?",
 			Choices:     choices,
@@ -1200,6 +1203,8 @@ func knownProtocolNames() string {
 // When noPrompt is true and no flag is provided, defaults to "code".
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedTemplate bool) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.DeployModeSelection)()
+
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
@@ -1238,7 +1243,7 @@ func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt
 	}
 
 	defaultIdx := int32(0) // Code deploy is the default
-	deployModeResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.DeployModeSelection).Select(ctx, &azdext.SelectRequest{
+	deployModeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "How would you like to deploy your agent?",
 			Choices:       deployModeChoices,
@@ -1317,6 +1322,8 @@ type codeDeployOptions struct {
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, flags or defaults are used without prompting.
 func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedTemplate bool) (*agent_yaml.CodeConfiguration, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.CodeConfiguration)()
+
 	if srcDir == "" {
 		srcDir = "."
 	}
@@ -1356,7 +1363,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		log.Printf("Auto-detected runtime: %s", runtime)
 	} else {
 		defaultIdx := int32(0) // First item in the filtered list
-		runtimeResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.RuntimeSelection).Select(ctx, &azdext.SelectRequest{
+		runtimeResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select the runtime for your agent",
 				Choices:       runtimeChoices,
@@ -1382,7 +1389,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		entryPoint = defaultEntryPoint
 		log.Printf("Auto-detected entry point: %s", entryPoint)
 	} else {
-		entryPointResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.EntryPointInput).Prompt(ctx, &azdext.PromptRequest{
+		entryPointResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:      "Enter the file path for the entry point of the agent",
 				DefaultValue: defaultEntryPoint,
@@ -1411,7 +1418,7 @@ func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir s
 		log.Printf("Defaulted dependency resolution to remote_build")
 	} else {
 		depDefaultIdx := int32(0)
-		depResResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.DependencyResolutionSelection).Select(ctx, &azdext.SelectRequest{
+		depResResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "How should dependencies be resolved?",
 				Choices:       depResChoices,

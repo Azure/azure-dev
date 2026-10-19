@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/inittelemetry"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -383,10 +382,7 @@ func resolveDeploymentCandidatesAtLocation(
 	modelName string,
 	options *azdext.AiModelDeploymentOptions,
 	checkQuota bool,
-) (timingResult0 []*azdext.AiModelDeployment, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ModelDeploymentResolution, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]*azdext.AiModelDeployment, error) {
 	request := &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    modelName,
@@ -414,7 +410,7 @@ func promptForDeploymentCandidate(
 			Label: deploymentCandidateLabel(candidate),
 		}
 	}
-	response, err := inittelemetry.Prompts(client.Prompt(), inittelemetry.ModelLocationSelection).Select(ctx, &azdext.SelectRequest{
+	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a model deployment",
 			Choices: choices,

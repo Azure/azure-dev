@@ -64,14 +64,10 @@ func (a *modelSelector) loadAiCatalog(ctx context.Context) error {
 		return fmt.Errorf("failed to start spinner: %w", err)
 	}
 
-	modelResp, err := inittelemetry.Measure(ctx, inittelemetry.ModelCatalogLoading, inittelemetry.External, "",
-		func() (*azdext.ListModelsResponse, error) {
-			return a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
-				AzureContext: a.azureContext,
-				Filter:       agentModelFilter(nil, nil),
-			})
-		},
-	)
+	modelResp, err := a.azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{
+		AzureContext: a.azureContext,
+		Filter:       agentModelFilter(nil, nil),
+	})
 	stopErr := spinner.Stop(ctx)
 	if err != nil {
 		return exterrors.FromAiService(err, exterrors.CodeModelCatalogFailed)
@@ -133,6 +129,8 @@ func (a *modelSelector) updateEnvLocation(ctx context.Context, selectedLocation 
 func (a *modelSelector) getModelDetails(
 	ctx context.Context, modelName string, allowSkip bool,
 ) (*azdext.AiModelDeployment, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	if err := a.loadAiCatalog(ctx); err != nil {
 		return nil, err
 	}
@@ -169,7 +167,7 @@ func (a *modelSelector) getModelDetails(
 		}
 
 		defaultIdx := int32(0)
-		resp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelSelection).Select(ctx, &azdext.SelectRequest{
+		resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       fmt.Sprintf("Model '%s' is selected.", model.Name),
 				Choices:       choices,
@@ -236,7 +234,7 @@ func (a *modelSelector) getModelDetails(
 	}
 
 	for {
-		deploymentResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+		deploymentResp, err := a.azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
 			AzureContext: a.azureContext,
 			ModelName:    model.Name,
 			Options: &azdext.AiModelDeploymentOptions{
@@ -397,7 +395,7 @@ func (a *modelSelector) promptForAlternativeModel(
 	}
 
 	defaultIndex := int32(1)
-	selectResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelAlternativeSelection).Select(ctx, &azdext.SelectRequest{
+	selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:         "Would you like to select a different model or exit?",
 			Choices:         choices,
@@ -418,7 +416,7 @@ func (a *modelSelector) promptForAlternativeModel(
 		{Label: "All available models", Value: "all"},
 	}
 
-	regionResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelLocationSelection).Select(ctx, &azdext.SelectRequest{
+	regionResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:         "Which models would you like to explore?",
 			Choices:         regionChoices,
@@ -441,7 +439,7 @@ func (a *modelSelector) promptForAlternativeModel(
 		promptReq.Filter = agentModelFilter([]string{a.azureContext.Scope.Location}, nil)
 	}
 
-	modelResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, promptReq)
+	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
 		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
@@ -460,7 +458,7 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 		},
 	}
 
-	modelResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, promptReq)
+	modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
 		return nil, exterrors.FromPrompt(err, "failed to prompt for model selection")
 	}
@@ -471,6 +469,8 @@ func (a *modelSelector) promptModelFromCatalog(ctx context.Context) (*azdext.AiM
 // promptExistingDeployment shows the list of existing deployments in the
 // Foundry project and lets the user pick one.
 func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.Deployment, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	if len(a.allDeployments) == 0 {
 		return nil, fmt.Errorf("no existing deployments available")
 	}
@@ -502,7 +502,7 @@ func (a *modelSelector) promptExistingDeployment(ctx context.Context) (*project.
 	}
 
 	defaultIdx := int32(0)
-	resp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx, &azdext.SelectRequest{
+	resp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message:       "Select an existing deployment",
 			Choices:       choices,
@@ -571,7 +571,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		}
 
 		defaultIndex := int32(3)
-		selectResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelLocationMismatchSelection).Select(ctx, &azdext.SelectRequest{
+		selectResp, err := a.azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:         "What would you like to do?",
 				Choices:         choices,
@@ -601,7 +601,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 				}
 				return nil, "", err
 			}
-			locationResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelLocationSelection).PromptAiModelLocationWithQuota(ctx,
+			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        currentModel.Name,
@@ -632,7 +632,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 		}
 
 		if selectedChoice == "model_all_regions" {
-			modelResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+			modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
 				AzureContext: a.azureContext,
 				Filter:       agentModelFilter(nil, []string{currentModel.Name}),
 				Quota: &azdext.QuotaCheckOptions{
@@ -664,7 +664,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 				}
 				return nil, "", err
 			}
-			locationResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelLocationSelection).PromptAiModelLocationWithQuota(ctx,
+			locationResp, err := a.azdClient.Prompt().PromptAiModelLocationWithQuota(ctx,
 				&azdext.PromptAiModelLocationWithQuotaRequest{
 					AzureContext:     a.azureContext,
 					ModelName:        selectedModel.Name,
@@ -706,7 +706,7 @@ func (a *modelSelector) promptForModelLocationMismatch(
 			},
 		}
 
-		modelResp, err := inittelemetry.Prompts(a.azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, promptReq)
+		modelResp, err := a.azdClient.Prompt().PromptAiModel(ctx, promptReq)
 		if err != nil {
 			if hasAiErrorReason(err, azdext.AiErrorReasonNoModelsMatch) {
 				message = fmt.Sprintf("No models are available in your current location '%s'.", currentLocation)

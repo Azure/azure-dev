@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -224,10 +223,7 @@ func reconcileProjectEnvironmentWithRollback(
 	mode projectMode,
 	project *resolvedProject,
 	projectReplaced bool,
-) (timingResult0 func() error, timingResult1 map[string]string, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) (func() error, map[string]string, error) {
 	response, err := client.Environment().GetValues(ctx,
 		&azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {

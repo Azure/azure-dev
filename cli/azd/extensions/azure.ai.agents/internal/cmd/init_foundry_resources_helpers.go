@@ -66,10 +66,7 @@ func listFoundryProjectConnections(
 	credential azcore.TokenCredential,
 	accountName string,
 	projectName string,
-) (timingResult0 []azure.Connection, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConnectionDiscovery, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]azure.Connection, error) {
 	client, err := azure.NewFoundryProjectsClient(accountName, projectName, credential)
 	if err != nil {
 		return nil, fmt.Errorf("creating Foundry projects client: %w", err)
@@ -190,7 +187,7 @@ func ensureNewFoundryProjectName(
 	}
 
 	for {
-		response, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.FoundryProjectNameInput).Prompt(ctx, request)
+		response, err := azdClient.Prompt().Prompt(ctx, request)
 		if err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("Foundry project name prompt was cancelled")
@@ -198,9 +195,7 @@ func ensureNewFoundryProjectName(
 			return exterrors.FromPrompt(err, "failed to prompt for Foundry project name")
 		}
 
-		if err := inittelemetry.MeasureError(ctx, inittelemetry.InputValidation, inittelemetry.Execution, inittelemetry.User,
-			func() error { return validateNewFoundryProjectName(response.Value) },
-		); err == nil {
+		if err := validateNewFoundryProjectName(response.Value); err == nil {
 			return setEnvValue(
 				ctx,
 				azdClient,
@@ -312,10 +307,7 @@ func listFoundryProjects(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId string,
-) (timingResult0 []FoundryProjectInfo, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.FoundryProjectDiscovery, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]FoundryProjectInfo, error) {
 	resourcesClient, err := armresources.NewClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resources client: %w", err)
@@ -418,10 +410,7 @@ func listProjectDeployments(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	subscriptionId, resourceGroup, accountName string,
-) (timingResult0 []FoundryDeploymentInfo, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ModelDeploymentDiscovery, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]FoundryDeploymentInfo, error) {
 	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(subscriptionId, credential, azure.NewArmClientOptions())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create deployments client: %w", err)
@@ -927,7 +916,7 @@ func configureAcrConnectionWithRegistryLoader(
 			return nil
 		}
 
-		resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AcrConnectionInput).Prompt(ctx, &azdext.PromptRequest{
+		resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Enter your ACR login server (e.g., myregistry.azurecr.io), or leave blank to create a new one",
 				IgnoreHintKeys: true,
@@ -1024,7 +1013,7 @@ func configureAcrConnectionWithRegistryLoader(
 		}
 
 		defaultIndex := int32(0)
-		selectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AcrConnectionSelection).Select(ctx, &azdext.SelectRequest{
+		selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select a container registry connection to use for this agent",
 				Choices:       choices,
@@ -1185,7 +1174,7 @@ func configureAppInsightsConnection(
 				"  • Or create a new one during 'azd up'\n\n" +
 				"Docs: " + output.WithLinkFormat("https://aka.ms/azdaiagent/docs"))
 
-		resourceIdResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsResourceInput).Prompt(ctx, &azdext.PromptRequest{
+		resourceIdResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:        "Enter your Application Insights resource ID, or leave blank to create a new one",
 				IgnoreHintKeys: true,
@@ -1200,7 +1189,7 @@ func configureAppInsightsConnection(
 				return err
 			}
 
-			connStrResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsConnectionInput).Prompt(ctx, &azdext.PromptRequest{
+			connStrResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 				Options: &azdext.PromptOptions{
 					Message:        "Enter your Application Insights connection string",
 					IgnoreHintKeys: true,
@@ -1243,7 +1232,7 @@ func configureAppInsightsConnection(
 		}
 
 		defaultIndex := int32(0)
-		selectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.AppInsightsConnectionSelection).Select(ctx, &azdext.SelectRequest{
+		selectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message:       "Select an Application Insights connection to use for this agent",
 				Choices:       choices,
@@ -1281,10 +1270,7 @@ func createNewEnvironment(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-) (timingResult0 *azdext.Environment, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) (*azdext.Environment, error) {
 	if envName != "" {
 		if existingEnv := getExistingEnvironment(ctx, envName, azdClient); existingEnv != nil {
 			return existingEnv, nil
@@ -1501,10 +1487,12 @@ func ensureSubscription(
 	envName string,
 	promptMessage string,
 ) (azcore.TokenCredential, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.SubscriptionSelection)()
+
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Println(promptMessage)
 
-		subscriptionResponse, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.SubscriptionSelection).PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
+		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
 			if exterrors.IsCancellation(err) {
 				return nil, exterrors.Cancelled("subscription selection was cancelled")
@@ -1532,13 +1520,9 @@ func ensureSubscription(
 		azureContext.Scope.SubscriptionId = subscriptionResponse.Subscription.Id
 		azureContext.Scope.TenantId = subscriptionResponse.Subscription.UserTenantId
 	} else {
-		tenantResponse, err := inittelemetry.Measure(ctx, inittelemetry.TenantLookup, inittelemetry.External, "",
-			func() (*azdext.LookupTenantResponse, error) {
-				return azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-					SubscriptionId: azureContext.Scope.SubscriptionId,
-				})
-			},
-		)
+		tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: azureContext.Scope.SubscriptionId,
+		})
 		if err != nil {
 			return nil, exterrors.Auth(
 				exterrors.CodeTenantLookupFailed,
@@ -1674,7 +1658,9 @@ func promptLocationForInit(
 	azureContext *azdext.AzureContext,
 	allowedLocations []string,
 ) (string, error) {
-	locationResponse, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.LocationSelection).PromptLocation(ctx, &azdext.PromptLocationRequest{
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
+	locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
 		AzureContext:     azureContext,
 		AllowedLocations: allowedLocations,
 	})
@@ -1722,6 +1708,8 @@ func selectNewModel(
 	azureContext *azdext.AzureContext,
 	modelFlag string,
 ) (*azdext.AiModel, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	defaultModel := defaultAgentModel
 	if modelFlag != "" {
 		defaultModel = modelFlag
@@ -1739,7 +1727,7 @@ func selectNewModel(
 		DefaultValue: defaultModel,
 	}
 
-	modelResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelSelection).PromptAiModel(ctx, promptReq)
+	modelResp, err := azdClient.Prompt().PromptAiModel(ctx, promptReq)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
 			return nil, exterrors.Cancelled("model selection was cancelled")
@@ -1767,10 +1755,7 @@ func resolveModelDeployments(
 	azureContext *azdext.AzureContext,
 	model *azdext.AiModel,
 	location string,
-) (timingResult0 []*azdext.AiModelDeployment, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ModelDeploymentResolution, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]*azdext.AiModelDeployment, error) {
 	resolveResp, err := azdClient.Ai().ResolveModelDeployments(ctx, &azdext.ResolveModelDeploymentsRequest{
 		AzureContext: azureContext,
 		ModelName:    model.Name,
@@ -1904,6 +1889,8 @@ func selectFoundryProject(
 	bicepless bool,
 	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.FoundryProjectSelection)()
+
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
 		spinnerText = "Getting details on the provided Foundry project..."
@@ -1997,7 +1984,7 @@ func selectFoundryProject(
 			Value: "__create_new__",
 		})
 
-		projectResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.FoundryProjectSelection).Select(ctx, &azdext.SelectRequest{
+		projectResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 			Options: &azdext.SelectOptions{
 				Message: "Select a Foundry project",
 				Choices: projectChoices,
@@ -2070,6 +2057,8 @@ func selectModelDeployment(
 	modelDeploymentFlag string,
 	modelFilter string,
 ) (*FoundryDeploymentInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Text:        "Searching for model deployments in your Foundry Project...",
 		ClearOnStop: true,
@@ -2134,7 +2123,7 @@ func selectModelDeployment(
 		Value: "__create_new__",
 	})
 
-	deployResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.ModelDeploymentSelection).Select(ctx, &azdext.SelectRequest{
+	deployResp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a model deployment",
 			Choices: deployChoices,

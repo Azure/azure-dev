@@ -290,13 +290,12 @@ func runProjectWorkflow(
 	projectRoot string,
 	operation string,
 	errorCode string,
-) (timingErr error) {
+) error {
 	step := inittelemetry.ProjectAuthoring
 	if errorCode == exterrors.CodeDeploymentAuthoringFailed {
 		step = inittelemetry.ModelDeploymentAuthoring
 	}
-	endTiming := inittelemetry.Start(ctx, step, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
+	defer inittelemetry.Start(ctx, step)()
 
 	projectRoot, err := filepath.Abs(projectRoot)
 	if err != nil {
@@ -313,12 +312,10 @@ func runProjectWorkflow(
 			{Command: &azdext.WorkflowCommand{Args: args}},
 		},
 	}
-	_, err = azdClient.Workflow().Run(
+	if _, err := azdClient.Workflow().Run(
 		ctx,
 		&azdext.RunWorkflowRequest{Workflow: workflow},
-	)
-	endTiming(err)
-	if err != nil {
+	); err != nil {
 		if exterrors.IsCancellation(err) {
 			return exterrors.Cancelled(operation + " was cancelled")
 		}

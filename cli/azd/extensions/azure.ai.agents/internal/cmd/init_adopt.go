@@ -260,6 +260,8 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
@@ -276,9 +278,7 @@ func loadExplicitAzureYaml(
 		return nil, err
 	}
 
-	return inittelemetry.Measure(ctx, inittelemetry.ManifestValidation, inittelemetry.Execution, inittelemetry.Config,
-		func() ([]byte, error) { return validateExplicitAzureYamlContent(flags.templatePointer, content) },
-	)
+	return validateExplicitAzureYamlContent(flags.templatePointer, content)
 }
 
 func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([]byte, error) {
@@ -367,23 +367,12 @@ func readExplicitManifestContent(
 	templatePointer string,
 	httpClient *http.Client,
 	readAuthenticated authenticatedManifestReader,
-) (contentResult []byte, timingErr error) {
+) ([]byte, error) {
 	display := safeInitSourceDisplay(templatePointer)
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, err
 	}
-	if kind != initSourceLocal {
-		if content, cached := readCachedTemplateManifest(templatePointer); cached {
-			return content, nil
-		}
-	}
-	category := inittelemetry.External
-	if kind == initSourceLocal {
-		category = inittelemetry.Execution
-	}
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ManifestLoading, category, inittelemetry.Config)
-	defer func() { endTiming(timingErr) }()
 	if kind == initSourceLocal {
 		//nolint:gosec // the path is an explicit user-provided init source
 		content, err := os.ReadFile(templatePointer)
@@ -394,6 +383,10 @@ func readExplicitManifestContent(
 				"Provide an existing local azure.yaml path.",
 			)
 		}
+		return content, nil
+	}
+
+	if content, cached := readCachedTemplateManifest(templatePointer); cached {
 		return content, nil
 	}
 
@@ -435,10 +428,7 @@ func readPublicGitHubManifest(
 	ctx context.Context,
 	templatePointer string,
 	httpClient *http.Client,
-) (timingResult0 []byte, timingResult1 bool, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ManifestLoading, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]byte, bool, error) {
 	urlInfo := parseGitHubUrlNaive(templatePointer)
 	if urlInfo == nil {
 		return nil, false, nil
@@ -474,10 +464,7 @@ func readAuthenticatedManifestContent(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	templatePointer string,
-) (timingResult0 []byte, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ManifestLoading, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]byte, error) {
 	if azdClient == nil {
 		return nil, exterrors.Dependency(
 			exterrors.CodeGitHubDownloadFailed,
@@ -1022,6 +1009,8 @@ func stageAzdTemplateRepository(
 	parseSource azdTemplateRepositoryParser,
 	downloadSource azdTemplateRepositoryDownloader,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	if !strings.Contains(templateSource, "://") {
 		info, statErr := os.Stat(templateSource)
@@ -1120,9 +1109,7 @@ func downloadAzdTemplateRepository(
 	httpClient *http.Client,
 	source *GitHubUrlInfo,
 	stagingDir string,
-) (timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.TemplateDownload, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
+) error {
 	dirPath := strings.Trim(source.FilePath, "/")
 	if strings.EqualFold(source.Hostname, "github.com") && httpClient != nil {
 		err := downloadDirectoryContentsWithoutGhCli(
@@ -1762,6 +1749,8 @@ func stageAzureYamlTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	pointer := flags.templatePointer
 

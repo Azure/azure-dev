@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/inittelemetry"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
@@ -50,10 +49,7 @@ type projectServiceReconciler struct {
 // Writes use persisted data; discovery uses expanded data.
 func (r *projectServiceReconciler) discoverProjectService(
 	ctx context.Context,
-) (timingResult0 *projectServiceInfo, timingResult1 *azdext.ProjectConfig, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConfigurationLoading, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) (*projectServiceInfo, *azdext.ProjectConfig, error) {
 	response, err := r.client.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
 		return nil, nil, err

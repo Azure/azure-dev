@@ -21,7 +21,6 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/inittelemetry"
 	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
@@ -94,14 +93,12 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
   # Eject the configured infrastructure as Bicep
   azd ai project add --infra=bicep`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) (runErr error) {
-			ctx, timing := inittelemetry.NewContext(cmd.Context(), inittelemetry.ProjectAdd, extCtx.NoPrompt)
-			defer func() { timing.Report(ctx, runErr) }()
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 			flags.forceSet = cmd.Flags().Changed("force")
 			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
-			return action.Run(ctx)
+			return action.Run(cmd.Context())
 		},
 	}
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
@@ -122,9 +119,7 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	return cmd
 }
 
-func (a *ProjectAddAction) Run(ctx context.Context) (runErr error) {
-	endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation, inittelemetry.Execution, "")
-	defer func() { endValidation(runErr) }()
+func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
@@ -171,7 +166,6 @@ func (a *ProjectAddAction) Run(ctx context.Context) (runErr error) {
 		defer client.Close()
 	}
 	a.client = client
-	endValidation(nil)
 
 	projectRoot := projectRootPath()
 	project, _, err := ensureProjectWithEnvironment(
@@ -498,9 +492,7 @@ func resolveProjectTarget(
 ) (*resolvedProject, error) {
 	projectID, endpoint := flags.projectID, flags.projectEndpoint
 	if flags.newProject {
-		return inittelemetry.Measure(ctx, inittelemetry.ProjectModeSelection, inittelemetry.Execution, inittelemetry.Flag,
-			func() (*resolvedProject, error) { return &resolvedProject{Mode: projectModeNew}, nil },
-		)
+		return &resolvedProject{Mode: projectModeNew}, nil
 	}
 	if projectID != "" {
 		return lookupResolvedProject(ctx, client, projectID)
@@ -526,7 +518,7 @@ func resolveProjectTarget(
 					"rerun with --project-id or --project-endpoint to select the intended project",
 				)
 			}
-			choice, promptErr := inittelemetry.Prompts(client.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{
+			choice, promptErr := client.Prompt().Select(ctx, &azdext.SelectRequest{
 				Options: &azdext.SelectOptions{
 					Message: "The project service and environment identify different projects. Which should be used?",
 					Choices: []*azdext.SelectChoice{
@@ -552,9 +544,7 @@ func resolveProjectTarget(
 		return resolvedProjectFromEndpoint(serviceEndpointValue)
 	}
 	if flags.noPrompt {
-		return inittelemetry.Measure(ctx, inittelemetry.ProjectModeSelection, inittelemetry.Execution, inittelemetry.Default,
-			func() (*resolvedProject, error) { return &resolvedProject{Mode: projectModeNew}, nil },
-		)
+		return &resolvedProject{Mode: projectModeNew}, nil
 	}
 	return promptProjectTarget(ctx, client, values)
 }
@@ -568,7 +558,7 @@ func promptProjectTarget(
 		{Label: "Create a new Foundry project", Value: "new"},
 		{Label: "Use an existing Foundry project", Value: "existing"},
 	}
-	response, err := inittelemetry.Prompts(client.Prompt(), inittelemetry.ProjectModeSelection).Select(ctx, &azdext.SelectRequest{
+	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a Foundry project configuration",
 			Choices: choices,
@@ -623,7 +613,7 @@ func promptProjectTarget(
 			Value: projects[i].ResourceId,
 		}
 	}
-	response, err = inittelemetry.Prompts(client.Prompt(), inittelemetry.FoundryProjectSelection).Select(ctx, &azdext.SelectRequest{
+	response, err = client.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select an existing Foundry project",
 			Choices: projectChoices,
@@ -654,7 +644,7 @@ func resolveInteractiveSubscription(
 	subscriptionID := strings.TrimSpace(values["AZURE_SUBSCRIPTION_ID"])
 	userTenantID := strings.TrimSpace(values["AZURE_TENANT_ID"])
 	if subscriptionID == "" {
-		response, err := inittelemetry.Prompts(client.Prompt(), inittelemetry.SubscriptionSelection).PromptSubscription(
+		response, err := client.Prompt().PromptSubscription(
 			ctx, &azdext.PromptSubscriptionRequest{},
 		)
 		if err != nil {
@@ -695,10 +685,7 @@ func resolveInteractiveSubscription(
 func listFoundryProjects(
 	ctx context.Context,
 	subscriptionID, userTenantID string,
-) (timingResult0 []resolvedProject, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.FoundryProjectDiscovery, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) ([]resolvedProject, error) {
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
 		&azidentity.AzureDeveloperCLICredentialOptions{
 			TenantID:                   userTenantID,
@@ -794,7 +781,7 @@ func confirmExplicitProjectReplacement(
 			Value: "cancel",
 		},
 	}
-	response, err := inittelemetry.Prompts(client.Prompt(), inittelemetry.ProjectReplacementConfirmation).Select(ctx, &azdext.SelectRequest{
+	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: fmt.Sprintf(
 				"Replace the configured project %q with %q?",
@@ -858,7 +845,7 @@ func resolveAzureContext(
 				TenantId:       target.UserTenantId,
 			},
 		}
-		response, err := inittelemetry.Prompts(client.Prompt(), inittelemetry.LocationSelection).PromptLocation(ctx, &azdext.PromptLocationRequest{
+		response, err := client.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
 			AzureContext: azureContext,
 		})
 		if err != nil {
@@ -932,10 +919,7 @@ func lookupResolvedProject(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	resourceID string,
-) (timingResult0 *resolvedProject, timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.FoundryProjectLookup, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) (*resolvedProject, error) {
 	project, err := projectFromResourceID(resourceID)
 	if err != nil {
 		return nil, err
@@ -1057,10 +1041,7 @@ func scaffoldProject(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	envName string,
-) (timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) error {
 	workflow := &azdext.Workflow{
 		Name: "init",
 		Steps: []*azdext.WorkflowStep{{
@@ -1153,10 +1134,7 @@ func setProjectConfigValue(
 	client *azdext.AzdClient,
 	path string,
 	value any,
-) (timingErr error) {
-	endTiming := inittelemetry.Start(ctx, inittelemetry.ProjectConfigurationUpdate, inittelemetry.External, "")
-	defer func() { endTiming(timingErr) }()
-
+) error {
 	structValue, err := structpb.NewValue(value)
 	if err != nil {
 		return err

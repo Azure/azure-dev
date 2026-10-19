@@ -213,11 +213,8 @@ never include prompts, responses, resource or service names, IDs, paths, URLs,
 connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
-Setup timing is recorded by the command-scoped `internal/inittelemetry` tracker.
-See [Init step timing telemetry](docs/init-telemetry.md) for the schema, prompt
-boundaries, cross-extension correlation, and P75/P90 query examples.
-
-The other events currently emitted by this extension are documented under
+Init also records [business-step elapsed times](docs/init-telemetry.md), including
+loading and interaction together. The other events are documented under
 [Agent context telemetry](#agent-context-telemetry),
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and

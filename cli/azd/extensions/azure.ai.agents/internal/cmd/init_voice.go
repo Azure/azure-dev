@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 
@@ -118,9 +117,7 @@ func runInitVoice(
 	if err != nil {
 		return err
 	}
-	if err := inittelemetry.MeasureError(ctx, inittelemetry.FileGeneration, inittelemetry.Execution, "",
-		func() error { return os.MkdirAll(serviceDir, osutil.PermissionDirectory) },
-	); err != nil {
+	if err := os.MkdirAll(serviceDir, osutil.PermissionDirectory); err != nil {
 		return fmt.Errorf("creating voice agent service directory %q: %w", serviceDir, err)
 	}
 
@@ -165,14 +162,9 @@ func resolveVoiceProjectResourceID(
 	explicitProjectID string,
 ) (string, error) {
 	if strings.TrimSpace(explicitProjectID) != "" {
-		return inittelemetry.Measure(ctx, inittelemetry.FoundryProjectSelection, inittelemetry.Execution, inittelemetry.Flag,
-			func() (string, error) { return explicitProjectID, nil },
-		)
+		return explicitProjectID, nil
 	}
-	configuredProjectID, err := inittelemetry.Measure(
-		ctx, inittelemetry.FoundryProjectSelection, inittelemetry.External, inittelemetry.Environment,
-		func() (string, error) { return getEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ID") },
-	)
+	configuredProjectID, err := getEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ID")
 	if err != nil {
 		return "", fmt.Errorf("reading AZURE_AI_PROJECT_ID from environment %q: %w", envName, err)
 	}

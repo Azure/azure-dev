@@ -110,6 +110,8 @@ func configureAzureYamlEnvironmentVariables(
 	projectDir string,
 	noPrompt bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration)()
+
 	manifestPath := filepath.Join(projectDir, "azure.yaml")
 	//nolint:gosec // projectDir is the user-selected project root created by init
 	content, err := os.ReadFile(manifestPath)
@@ -166,7 +168,7 @@ func configureAzureYamlEnvironmentVariables(
 	fmt.Println()
 
 	for _, reference := range missing {
-		promptResp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.EnvironmentValueInput).Prompt(ctx, &azdext.PromptRequest{
+		promptResp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 			Options: &azdext.PromptOptions{
 				Message:         fmt.Sprintf("Enter a value for %s", reference.Name),
 				Required:        true,

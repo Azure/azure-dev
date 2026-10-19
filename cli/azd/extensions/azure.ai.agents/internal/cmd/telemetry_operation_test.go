@@ -372,6 +372,10 @@ func TestFailedInitReportsIntentWithoutChangingFailure(t *testing.T) {
 			require.Len(t, markers, 1)
 			require.Equal(t, "agent.operation.v1.init.voice_managed.none", markers[0].EventName)
 			require.Empty(t, markers[0].Attributes)
+			require.Len(t, capture.events, 2)
+			require.Equal(t, "agent.init.step", capture.events[1].EventName)
+			require.Equal(t, "input_validation", capture.events[1].Attributes["init.step.id"])
+			require.Len(t, capture.events[1].Attributes, 3)
 			require.NotContains(t, output.String(), "sensitive transport text")
 		})
 	}

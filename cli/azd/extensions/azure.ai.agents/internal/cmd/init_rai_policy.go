@@ -75,6 +75,8 @@ func resolvePromptRaiPolicy(
 	foundryProject *FoundryProjectInfo,
 	credential azcore.TokenCredential,
 ) (raiPolicySelection, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.RaiPolicyConfiguration)()
+
 	requested := strings.TrimSpace(flags.raiPolicy)
 	switch {
 	case strings.EqualFold(requested, raiPolicyFlagNone):
@@ -142,15 +144,11 @@ func promptForRaiPolicy(
 ) (raiPolicySelection, error) {
 	var existing []azure.RaiPolicyInfo
 	if foundryProject != nil && credential != nil {
-		policies, err := inittelemetry.Measure(ctx, inittelemetry.RaiPolicyDiscovery, inittelemetry.External, "",
-			func() ([]azure.RaiPolicyInfo, error) {
-				return azure.ListRaiPolicies(
-					ctx, credential,
-					foundryProject.SubscriptionId,
-					foundryProject.ResourceGroupName,
-					foundryProject.AccountName,
-				)
-			},
+		policies, err := azure.ListRaiPolicies(
+			ctx, credential,
+			foundryProject.SubscriptionId,
+			foundryProject.ResourceGroupName,
+			foundryProject.AccountName,
 		)
 		if err != nil {
 			fmt.Println(color.HiBlackString(
@@ -182,7 +180,7 @@ func promptForRaiPolicy(
 		choices = append(choices, &azdext.SelectChoice{Label: label, Value: policy.ResourceID})
 	}
 
-	resp, err := inittelemetry.Prompts(azdClient.Prompt(), inittelemetry.RaiPolicySelection).Select(ctx, &azdext.SelectRequest{
+	resp, err := azdClient.Prompt().Select(ctx, &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
 			Message: "Select a Responsible AI policy for this agent",
 			Choices: choices,

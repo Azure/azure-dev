@@ -1,8 +1,4 @@
 import: ../../.vscode/cspell.yaml
-overrides:
-  - filename: ["internal/inittelemetry/*.go", "internal/cmd/*.go"]
-    words:
-      - inittelemetry
 words:
   - alnum
   - exterrors

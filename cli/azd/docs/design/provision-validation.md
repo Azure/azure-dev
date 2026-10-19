@@ -129,7 +129,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 | Check | What It Does | Severity |
 |---|---|---|
-| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and verifies the current principal has `roleAssignments/write` permission on the subscription. Diagnostic: `role_assignment_missing`. | Critical warning |
+| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and checks `roleAssignments/write` permission on the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical only when a snapshot assignment explicitly targets that subscription scope; otherwise regular warning |
 | Conditional role assignment permissions | Warns when all roles granting the required permission have ABAC conditions. Diagnostic: `role_assignment_conditional`. | Warning |
 | Reserved resource names | Checks predicted resource names against Azure's reserved-word restrictions. Diagnostic: `reserved_resource_name`. | Warning |
 | AI model availability | Checks whether the requested model, SKU, and version exist in the deployment location's catalog. Diagnostic: `ai_model_not_found`. | Warning |
@@ -139,7 +139,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 Results are displayed using the `ProvisionValidationReport` UX component (`pkg/output/ux/provision_validation_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors.
 
-Regular warnings use `(!) Warning:`. The built-in missing-role-permission warning uses a bold yellow `(!) Critical warning:` heading and labeled principal, subscription, and required-permission details. Critical warnings retain warning severity: they are advisory, not blocking errors. Extension findings remain regular warnings.
+Regular warnings use `(!) Warning:`. The built-in missing-role-permission warning uses a bold yellow `(!) Critical warning:` heading only when a snapshot role assignment explicitly targets the subscription scope checked by the permission lookup. Cross-subscription, resource-group, resource-level, unresolved, and absent scopes remain regular warnings because permissions at those actual scopes were not verified. A finding for an unverified scope does not assert likely deployment failure. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Extension findings remain regular warnings.
 
 Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation: `2 critical warnings found.` when all warnings are critical, `2 warnings found (1 critical).` for mixed warnings, or `2 warnings found.` for regular-only warnings. A single finding uses `1 critical warning found.` or `1 warning found.`.
 
@@ -198,6 +198,8 @@ An explicit **Yes** continues deployment despite any warning, including a critic
 
 With `--no-prompt` (including automatically enabled non-interactive mode), critical warnings cancel provisioning with an error and exit code 1, not a success message. Resolve the critical warnings, or rerun interactively without `--no-prompt` to explicitly confirm deployment. Telemetry records `validation.provision.outcome=canceled_by_no_prompt`, distinct from an interactive No (`canceled_by_user`, exit code 0). Regular-only warnings still proceed. Provider-agnostic preview validation uses `Proceed with the preview anyway?`; Bicep preview does not add local validation checks.
 
+Outside no-prompt mode, exhausted or invalid final piped input cannot silently accept the critical confirmation's default No: it produces a prompt error and exit code 1 (`error` telemetry outcome). A valid final `y`/`n` token, with or without a newline, is accepted; an entered empty line explicitly accepts the default. Regular confirmations retain their existing EOF default behavior.
+
 ### Scenario 3: Errors Only
 
 One or more checks return errors. The errors are displayed and the deployment is **immediately canceled** — the user is not prompted. The CLI exits with a zero exit code.
@@ -253,9 +255,13 @@ An interactive No retains exit code 0. Critical warnings in no-prompt mode inste
 | Warnings only, user continues | 0 | User acknowledged warnings; deployment proceeds. |
 | Warnings only, user declines | 0 | User chose to cancel; intentional, not a failure. |
 | Critical warning, `--no-prompt` | 1 | Interactive confirmation is required; automatic cancellation must fail CI rather than report success. |
+| Critical warning, exhausted stdin without a valid response | 1 | Missing confirmation input is a prompt failure, not an intentional user cancellation. |
 | Regular warnings only, `--no-prompt` | 0 | Default Yes allows deployment to proceed. |
 | Errors detected | 0 | Validation successfully detected problems and canceled provisioning. |
 | Check function error | 1 | Internal failure running a check (the `validate` function returned a non-nil error). |
+
+For parallel provisioning layers, intentional cancellation is successful only when every joined layer error is a validation-cancellation result. A real failure in any layer remains an error even when another layer cancels.
+Cancellation is propagated before lifecycle wrappers run post-provision handlers or layer post-hooks, so those post actions do not execute when deployment was canceled during validation.
 
 ## File Layout
 

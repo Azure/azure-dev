@@ -209,6 +209,9 @@ type ConsoleOptions struct {
 
 	// IsWarning renders confirmation messages in yellow, keeping the marker, choices, and answer blue.
 	IsWarning bool
+	// RequireResponse rejects exhausted confirmation input instead of using its default.
+	// An entered empty line still accepts the default.
+	RequireResponse bool
 }
 
 type ConsoleHandles struct {
@@ -1001,16 +1004,20 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		defaultValue = value
 	}
 
-	survey := &survey.Confirm{
+	confirmation := &survey.Confirm{
 		Message: options.Message,
 		Help:    options.Help,
 		Default: defaultValue,
+	}
+	var prompt survey.Prompt = confirmation
+	if options.RequireResponse && !c.noPrompt {
+		prompt = &confirmWithRequiredResponse{Confirm: confirmation}
 	}
 
 	var response bool
 
 	err := c.doInteraction(func(c *AskerConsole) error {
-		return c.asker(survey, &response)
+		return c.asker(prompt, &response)
 	})
 	if err != nil {
 		return false, err

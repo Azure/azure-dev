@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -124,7 +125,12 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(),
-				&validationContext{Props: resourcesProperties{HasRoleAssignments: true}})
+				&validationContext{
+					Props: resourcesProperties{HasRoleAssignments: true},
+					SnapshotResources: []armTemplateResource{{
+						Type: "Microsoft.Authorization/roleAssignments", Scope: "/subscriptions/SUBSCRIPTION_ID",
+					}},
+				})
 			require.NoError(t, err)
 			require.Len(t, results, 1)
 			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
@@ -151,16 +157,20 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 
 func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 	tests := []struct {
-		name        string
-		critical    bool
-		regular     bool
-		noPrompt    bool
-		answer      bool
-		wantDefault bool
-		wantCancel  bool
-		wantError   bool
-		wantSummary string
-		wantOutcome string
+		name              string
+		critical          bool
+		crossSubscription bool
+		regular           bool
+		noPrompt          bool
+		realConsole       bool
+		input             string
+		answer            bool
+		wantDefault       bool
+		wantCancel        bool
+		wantError         bool
+		wantEOF           bool
+		wantSummary       string
+		wantOutcome       string
 	}{
 		{
 			name: "critical automation", critical: true, noPrompt: true,
@@ -169,6 +179,11 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 		},
 		{
 			name: "regular automation", regular: true, noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "cross-subscription automation", crossSubscription: true, noPrompt: true,
 			wantDefault: true, wantSummary: "1 warning found.",
 			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
@@ -192,6 +207,46 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			wantCancel: true, wantSummary: "1 warning found.",
 			wantOutcome: provisionValidationOutcomeCanceledByUser,
 		},
+		{
+			name: "critical exhausted stdin", critical: true, realConsole: true,
+			wantEOF: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeError,
+		},
+		{
+			name: "critical invalid exhausted stdin", critical: true, realConsole: true, input: "invalid",
+			wantEOF: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeError,
+		},
+		{
+			name: "critical piped no", critical: true, realConsole: true, input: "n",
+			wantCancel: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledByUser,
+		},
+		{
+			name: "critical piped no line", critical: true, realConsole: true, input: "n\n",
+			wantCancel: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledByUser,
+		},
+		{
+			name: "critical entered default", critical: true, realConsole: true, input: "\n",
+			wantCancel: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledByUser,
+		},
+		{
+			name: "critical piped yes", critical: true, realConsole: true, input: "y\n",
+			wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "critical piped yes token", critical: true, realConsole: true, input: "y",
+			wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "regular exhausted stdin", regular: true, realConsole: true,
+			wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
 	}
 
 	for _, tt := range tests {
@@ -203,10 +258,15 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			resources := make([]armTemplateResource, 0, 2)
-			if tt.critical {
+			if tt.critical || tt.crossSubscription {
+				scope := "/subscriptions/SUBSCRIPTION_ID"
+				if tt.crossSubscription {
+					scope = "/subscriptions/other-subscription"
+				}
 				resources = append(resources, armTemplateResource{
 					Type: "Microsoft.Authorization/roleAssignments",
 					Name: "assignment", APIVersion: "2022-04-01",
+					Scope: scope,
 				})
 			}
 			if tt.regular {
@@ -226,11 +286,11 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 
 			var outputBuffer strings.Builder
 			prompted := false
-			if tt.noPrompt {
-				provider.console = input.NewConsole(true, false,
+			if tt.noPrompt || tt.realConsole {
+				provider.console = input.NewConsole(tt.noPrompt, false,
 					input.Writers{Output: &outputBuffer},
 					input.ConsoleHandles{
-						Stdin: strings.NewReader(""), Stdout: &outputBuffer, Stderr: &outputBuffer,
+						Stdin: strings.NewReader(tt.input), Stdout: &outputBuffer, Stderr: &outputBuffer,
 					},
 					&output.NoneFormatter{}, nil)
 			} else {
@@ -244,6 +304,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 					}
 					require.Equal(t, wantMessage, options.Message)
 					require.Equal(t, tt.critical, options.IsWarning)
+					require.Equal(t, tt.critical, options.RequireResponse)
 					require.Equal(t, tt.wantDefault, options.DefaultValue)
 					return tt.answer, nil
 				})
@@ -254,7 +315,10 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			_, canceled, err := provider.traceLocalProvisionValidation(
 				t.Context(), nil, filepath.Join(t.TempDir(), "main.bicepparam"),
 				raw, azure.ArmParameters{}, false)
-			if tt.wantError {
+			if tt.wantEOF {
+				require.ErrorIs(t, err, io.EOF)
+				require.NotErrorIs(t, err, internal.ErrAbortedByUser)
+			} else if tt.wantError {
 				require.ErrorIs(t, err, internal.ErrValidationFailed)
 				require.NotErrorIs(t, err, internal.ErrAbortedByUser)
 				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
@@ -269,11 +333,54 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			outcome := findSpanAttribute(tracing.GetUsageAttributes(), "validation.provision.outcome")
 			require.NotNil(t, outcome)
 			require.Equal(t, tt.wantOutcome, outcome.Value.AsString())
-			if tt.noPrompt {
+			if tt.noPrompt || tt.realConsole {
 				require.Contains(t, outputBuffer.String(), tt.wantSummary)
 			} else {
 				require.True(t, prompted)
 				require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), tt.wantSummary)
+			}
+		})
+	}
+}
+
+func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
+	tests := []struct {
+		name     string
+		scopes   []string
+		critical bool
+	}{
+		{name: "checked subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}, critical: true},
+		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}, critical: true},
+		{name: "cross subscription", scopes: []string{"/subscriptions/other-subscription"}},
+		{name: "resource group", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"}},
+		{name: "resource", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"}},
+		{name: "unknown", scopes: []string{""}},
+		{name: "unresolved", scopes: []string{"[subscription().id]"}},
+		{name: "no snapshot"},
+		{
+			name:     "checked and unchecked assignments",
+			scopes:   []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			critical: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			prepareRoleWarningMocks(t, mockContext, false)
+			provider := newWarningBicepProvider(mockContext)
+			valCtx := &validationContext{Props: resourcesProperties{HasRoleAssignments: true}}
+			for _, scope := range tt.scopes {
+				valCtx.SnapshotResources = append(valCtx.SnapshotResources, armTemplateResource{
+					Type: "Microsoft.Authorization/roleAssignments", Scope: scope,
+				})
+			}
+			results, err := provider.checkRoleAssignmentPermissions(t.Context(), valCtx)
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			require.Equal(t, tt.critical, results[0].IsCritical)
+			if !tt.critical {
+				require.NotContains(t, results[0].Message, "Deployment will likely fail")
+				require.Contains(t, results[0].Message, "scopes were not verified")
 			}
 		})
 	}

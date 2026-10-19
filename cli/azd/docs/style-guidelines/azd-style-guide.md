@@ -147,7 +147,9 @@ ERROR: Unable to complete provisioning of Azure resources, 'azd up' failed
 ### Provision Validation Warnings
 
 Provision validation reports use `(!) Warning:` for regular findings and a bold yellow
-`(!) Critical warning:` heading for the built-in missing-role-permission finding.
+`(!) Critical warning:` heading for a built-in missing-role-permission finding only
+when a snapshot assignment explicitly targets the subscription scope whose permissions
+were checked. Unverified assignment scopes remain regular warnings.
 Critical warnings are advisory, not blocking errors. The failure-likelihood line is
 yellow; principal, subscription, and required-permission labels are gray.
 
@@ -169,6 +171,8 @@ In no-prompt mode, declining critical warnings is a command failure: display an
 error with remediation guidance and exit nonzero. Do not display a success message
 or attribute the cancellation to the user. An interactive No remains an intentional
 cancellation with exit code 0.
+Exhausted piped input without a valid response also fails critical confirmation;
+an entered empty line may accept the default. Regular confirmation defaults are unchanged.
 Keep this pattern scoped to provision validation rather than changing global warning
 or error prefixes.
 

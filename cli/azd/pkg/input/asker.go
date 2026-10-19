@@ -17,6 +17,10 @@ import (
 
 type Asker func(p survey.Prompt, response any) error
 
+type confirmWithRequiredResponse struct {
+	*survey.Confirm
+}
+
 func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 	if noPrompt {
 		return askOneNoPrompt
@@ -90,6 +94,11 @@ func withShowCursor(o *survey.AskOptions) error {
 }
 
 func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
+	requireResponse := false
+	if confirmation, ok := p.(*confirmWithRequiredResponse); ok {
+		p = confirmation.Confirm
+		requireResponse = true
+	}
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
 	// Instead, it reads a byte at a time until a delimiter is found or EOF is encountered,
 	// returning bytes read with no extra characters consumed.
@@ -256,6 +265,9 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 				*pResponse = false
 				return nil
 			case "":
+				if requireResponse && errors.Is(err, io.EOF) {
+					return fmt.Errorf("confirmation requires a response: %w", io.EOF)
+				}
 				// An empty line (the user pressed Enter) or EOF (piped stdin exhausted) accepts
 				// the prompt's default value, consistent with how Input and Select fall back to
 				// their defaults. Real CI/agent runs auto-enable no-prompt mode (askOneNoPrompt),
@@ -267,6 +279,9 @@ func askOnePrompt(p survey.Prompt, response any, isTerminal bool, stdout io.Writ
 			// A final invalid token immediately followed by EOF has no further input to reprocess;
 			// fall back to the default rather than looping forever.
 			if errors.Is(err, io.EOF) {
+				if requireResponse {
+					return fmt.Errorf("confirmation requires a response: %w", io.EOF)
+				}
 				*pResponse = defaultValue
 				return nil
 			}

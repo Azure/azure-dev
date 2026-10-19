@@ -34,8 +34,10 @@ The validation framework is pluggable — new checks can be added via `AddCheck(
 **UX behavior:**
 
 - No issues → proceed silently
-- Warnings only → display indented warning details, separated suggestions, and a per-report total, then prompt to continue. Regular warnings default to **Yes**; the built-in missing-role-permission warning is **critical** and defaults to **No**. In no-prompt mode, critical warnings fail provisioning with an error and exit code 1 (`canceled_by_no_prompt` telemetry outcome). Users can explicitly continue interactively; an interactive No retains exit code 0 (`canceled_by_user`).
+- Warnings only → display indented warning details, separated suggestions, and a per-report total, then prompt to continue. Regular warnings default to **Yes**. A built-in missing-role-permission warning is **critical** and defaults to **No** only when a snapshot assignment explicitly targets the subscription scope actually checked; unverified scopes remain regular warnings. In no-prompt mode, critical warnings fail with exit code 1 (`canceled_by_no_prompt`). Exhausted piped input without a valid response also fails critical confirmation (`error`). Users can explicitly continue interactively; an interactive No retains exit code 0 (`canceled_by_user`). In parallel layers, cancellation cannot hide a real failure in another layer.
 - Errors → display and cancel
+
+Validation cancellation stops project post-provision handlers and layer post-hooks before they can run.
 
 Disable local validation with: `azd config set validation.provision off`.
 (The separate `azd config set provision.preflight off` disables only the server-side ARM preflight call.)

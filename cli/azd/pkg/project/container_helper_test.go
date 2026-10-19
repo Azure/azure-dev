@@ -18,7 +18,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -499,7 +500,7 @@ func Test_ContainerHelper_RunRemoteBuild_PassesBuildArgs(t *testing.T) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		uploadURL := "https://upload.example.com/container/source.tar.gz?sig=abc"
 		return mocks.CreateHttpResponseWithBody(
-			request, http.StatusOK, armcontainerregistry.SourceUploadDefinition{
+			request, http.StatusOK, armcontainerregistrytasks.SourceUploadDefinition{
 				UploadURL:    &uploadURL,
 				RelativePath: new("source.tar.gz"),
 			},
@@ -611,7 +612,7 @@ func Test_ContainerHelper_RunRemoteBuild_PassesBuildArgs(t *testing.T) {
 	}
 }
 
-func acrArgumentsToMap(t *testing.T, args []*armcontainerregistry.Argument) map[string]string {
+func acrArgumentsToMap(t *testing.T, args []*armcontainerregistrytasks.Argument) map[string]string {
 	t.Helper()
 
 	result := map[string]string{}

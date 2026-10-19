@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
@@ -302,17 +302,17 @@ func TestContainerHelperRemoteBuildFallback(t *testing.T) {
 func TestContainerHelperRemoteBuildNoFallback(t *testing.T) {
 	tests := []struct {
 		name         string
-		status       armcontainerregistry.RunStatus
+		status       armcontainerregistrytasks.RunStatus
 		scheduleCode string
 		logError     bool
 		platform     string
 		contextError error
 	}{
-		{name: "Success", status: armcontainerregistry.RunStatusSucceeded},
-		{name: "Failed", status: armcontainerregistry.RunStatusFailed},
-		{name: "Error", status: armcontainerregistry.RunStatusError},
-		{name: "Timeout", status: armcontainerregistry.RunStatusTimeout},
-		{name: "Canceled", status: armcontainerregistry.RunStatusCanceled},
+		{name: "Success", status: armcontainerregistrytasks.RunStatusSucceeded},
+		{name: "Failed", status: armcontainerregistrytasks.RunStatusFailed},
+		{name: "Error", status: armcontainerregistrytasks.RunStatusError},
+		{name: "Timeout", status: armcontainerregistrytasks.RunStatusTimeout},
+		{name: "Canceled", status: armcontainerregistrytasks.RunStatusCanceled},
 		{name: "BadRequest", scheduleCode: "BadRequest"},
 		{name: "AuthorizationFailed", scheduleCode: "AuthorizationFailed"},
 		{name: "UnknownOutcome", logError: true},
@@ -340,7 +340,7 @@ func TestContainerHelperRemoteBuildNoFallback(t *testing.T) {
 			}
 
 			result, err := f.publish(ctx)
-			if tt.status == armcontainerregistry.RunStatusSucceeded {
+			if tt.status == armcontainerregistrytasks.RunStatusSucceeded {
 				require.NoError(t, err)
 				require.Len(t, result.Artifacts, 1)
 			} else {
@@ -399,7 +399,7 @@ type remoteBuildFixture struct {
 	target         *environment.TargetResource
 	options        *PublishOptions
 	scheduleCode   string
-	runStatus      armcontainerregistry.RunStatus
+	runStatus      armcontainerregistrytasks.RunStatus
 	logError       bool
 	failure        string
 	cancelAt       string
@@ -456,7 +456,7 @@ func newRemoteBuildFixture(t *testing.T) *remoteBuildFixture {
 		mocks: m, config: createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript),
 		serviceContext: NewServiceContext(), env: environment.NewWithValues("dev", map[string]string{}),
 		target:  environment.NewTargetResource("SUBSCRIPTION_ID", "RESOURCE_GROUP", "app", "Microsoft.App/containerApps"),
-		options: &PublishOptions{}, runStatus: armcontainerregistry.RunStatusSucceeded,
+		options: &PublishOptions{}, runStatus: armcontainerregistrytasks.RunStatusSucceeded,
 		localError: errors.New("local operation failed"),
 	}
 	f.config.Project.Path = t.TempDir()
@@ -524,7 +524,7 @@ func (f *remoteBuildFixture) respond(request *http.Request) (*http.Response, err
 	}
 	switch {
 	case strings.Contains(request.URL.Path, "listBuildSourceUploadUrl"):
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.SourceUploadDefinition{
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistrytasks.SourceUploadDefinition{
 			UploadURL: new("https://upload.example.com/source.tar.gz"), RelativePath: new("source.tar.gz"),
 		})
 	case strings.HasSuffix(request.URL.Path, "/source.tar.gz"):
@@ -544,14 +544,14 @@ func (f *remoteBuildFixture) respond(request *http.Request) (*http.Response, err
 		if f.scheduleCode != "" {
 			return errorResponse(f.scheduleCode)
 		}
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.Run{
-			Properties: &armcontainerregistry.RunProperties{RunID: new("run-id")},
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistrytasks.Run{
+			Properties: &armcontainerregistrytasks.RunProperties{RunID: new("run-id")},
 		})
 	case strings.Contains(request.URL.Path, "listLogSasUrl"):
 		if f.logError {
 			return errorResponse("TasksOperationsNotAllowed")
 		}
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.RunGetLogResult{
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistrytasks.RunGetLogResult{
 			LogLink: new("https://logs.example.com/run.log"),
 		})
 	case strings.HasSuffix(request.URL.Path, "/run.log"):
@@ -567,8 +567,8 @@ func (f *remoteBuildFixture) respond(request *http.Request) (*http.Response, err
 		}
 		return response, nil
 	case strings.Contains(request.URL.Path, "/runs/run-id"):
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistry.Run{
-			Properties: &armcontainerregistry.RunProperties{Status: new(f.runStatus)},
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, armcontainerregistrytasks.Run{
+			Properties: &armcontainerregistrytasks.RunProperties{Status: new(f.runStatus)},
 		})
 	default:
 		return nil, errors.New("unexpected remote build request: " + request.URL.Path)

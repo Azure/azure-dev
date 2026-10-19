@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "{pkg/containerregistry/remote_build.go,pkg/project/container_helper.go,test/recording/sanitize.go}"
+    words:
+      - armcontainerregistrytasks
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient

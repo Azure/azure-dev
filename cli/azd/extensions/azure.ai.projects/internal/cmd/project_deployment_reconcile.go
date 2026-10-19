@@ -220,6 +220,9 @@ func reconcileAdoptedDeploymentChoices(
 			case choice == "deploy":
 				remaining = append(remaining, item)
 				referenced = append(referenced, expandedItem)
+				if !present {
+					changed = true
+				}
 				continue
 			case choice == "skip":
 				changed = true

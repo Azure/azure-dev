@@ -55,8 +55,10 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 		{name: "no prompt reuses existing", override: true, noPrompt: true},
 		{name: "YAML fallback reuse preserves portable declarations"},
 		{name: "YAML fallback skip preserves portable declarations", choice: 2},
+		{name: "YAML fallback deploy seeds environment", choice: 1},
 		{name: "YAML fallback no prompt preserves portable declarations", noPrompt: true},
 		{name: "YAML fallback deployment write rollback", failKey: projectDeploymentsEnvKey},
+		{name: "YAML fallback deploy write rollback", choice: 1, failKey: projectDeploymentsEnvKey},
 		{name: "YAML fallback default write rollback", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "deployment write rollback", override: true, failKey: projectDeploymentsEnvKey},
 		{name: "default write rollback", override: true, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
@@ -97,7 +99,9 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, test.choice != 1, changed)
+			// Deploy-as-configured is a no-op only when an override already exists.
+			wantChanged := !(test.override && test.choice == 1)
+			assert.Equal(t, wantChanged, changed)
 			got, present, err := provisioning.DecodeProjectDeployments(env.values[projectDeploymentsEnvKey])
 			require.NoError(t, err)
 			require.True(t, present)

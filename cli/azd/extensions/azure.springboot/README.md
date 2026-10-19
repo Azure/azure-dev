@@ -1,6 +1,6 @@
-# Spring Boot
+# Spring Boot (Beta)
 
-Development extension for `azd spring init`. It infers a Spring Boot application's
+Beta extension for `azd spring init`. It infers a Spring Boot application's
 active database and generates an azd project without requiring an existing `azure.yaml`.
 It is not yet published to the extension registry.
 
@@ -13,7 +13,7 @@ From this extension directory, build and register a local bundle:
 ```sh
 azd x build
 azd x pack --bundle --output ./bin/bundle
-azd extension install ./bin/bundle/azure-springboot_0.0.1.zip --force
+azd extension install ./bin/bundle/azure-springboot_1.0.0-beta.1.zip --force
 ```
 
 Then, from a **trusted application directory**:

@@ -2,8 +2,8 @@
 capabilities:
     - custom-commands
     - metadata
-description: Infer Spring Boot application dependencies and generate an azd project.
-displayName: Spring Boot
+description: Infer Spring Boot application dependencies and generate an azd project. (Beta)
+displayName: Spring Boot (Beta)
 id: azure.springboot
 language: go
 namespace: spring
@@ -11,5 +11,5 @@ tags:
     - spring
     - java
 usage: azd spring <command> [options]
-version: 0.0.1
+version: 1.0.0-beta.1
 requiredAzdVersion: ">=1.34.2"

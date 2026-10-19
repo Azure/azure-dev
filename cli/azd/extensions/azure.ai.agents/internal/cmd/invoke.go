@@ -1253,7 +1253,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
 // api-version come from the parsed URL.
 //
-// agentKey is the persistence key used by the global UserConfig store. It is
+// agentKey is the persistence key used by the extension-owned state store. It is
 // non-empty whenever session/conversation IDs should be saved or resumed:
 //   - project mode: derived from AGENT_{SVC}_ENDPOINT
 //   - ephemeral mode: derived from the parsed --agent-endpoint URL
@@ -1352,8 +1352,8 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 			rc.apiVersion = a.endpoint.APIVersion
 		}
 		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
-		// Best-effort attach to the parent azd daemon so session/conversation IDs
-		// persist across invokes via global UserConfig. When running the extension
+		// Best-effort attach to the parent azd daemon so environment-backed context
+		// remains available. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.
 		if azdClient, err := azdext.NewAzdClient(); err == nil {
 			rc.azdClient = azdClient
@@ -1446,13 +1446,6 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	return rc, nil
 }
 
-func (rc *remoteContext) legacyKeys() []string {
-	if rc.version != "" {
-		return nil
-	}
-	return legacyKeysForRemote(rc.name)
-}
-
 func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteContext) (string, error) {
 	if rc.version == "" {
 		if rc.agentKey != "" && rc.azdClient != nil {
@@ -1464,7 +1457,6 @@ func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteCon
 				a.flags.newSession,
 				"sessions",
 				false,
-				rc.legacyKeys()...,
 			)
 		}
 		return a.flags.session, nil
@@ -1602,7 +1594,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	var responseStore responseStateStore
 	if rc.azdClient != nil && agentKey != "" {
-		responseStore = newUserConfigResponseStateStore(rc.azdClient)
+		responseStore = newResponseStateStore(rc.azdClient)
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -1636,7 +1628,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.name,
 			rc.apiVersion,
 			a.flags.sessionRequestOptions(),
-			rc.legacyKeys()...,
 		)
 		if err != nil {
 			return err

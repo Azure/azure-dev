@@ -216,7 +216,7 @@ func resolveCurrentInvocationID(
 	var id string
 	switch protocol {
 	case agent_api.AgentProtocolResponses:
-		record, err := newUserConfigResponseStateStore(rc.azdClient).Get(ctx, rc.agentKey)
+		record, err := newResponseStateStore(rc.azdClient).Get(ctx, rc.agentKey)
 		if err != nil {
 			return "", classifyResponseStateReadError(err)
 		}

@@ -26,6 +26,8 @@ words:
   - orgid
   - pcma
   - pcmu
+  - PSTN
+  - pstn
   - webrtc
   # Azure region names
   - australiaeast

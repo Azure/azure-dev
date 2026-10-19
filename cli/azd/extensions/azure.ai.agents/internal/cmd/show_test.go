@@ -404,13 +404,14 @@ func TestResolveNextStepFromStatus_NonActiveBranches(t *testing.T) {
 }
 
 func TestDisplayHarness(t *testing.T) {
-	assert.Equal(t, "GitHub Copilot (github_copilot_preview)", displayHarness("github_copilot_preview"))
+	assert.Equal(t, "Microsoft Copilot (microsoft_copilot_preview)", displayHarness("microsoft_copilot_preview"))
+	assert.Equal(t, "Microsoft Copilot (github_copilot_preview)", displayHarness("github_copilot_preview"))
 	assert.Equal(t, "custom-harness", displayHarness("custom-harness"))
 }
 
 func TestHarnessTypeFromMap(t *testing.T) {
-	assert.Equal(t, "github_copilot_preview", harnessTypeFromMap(map[string]any{
-		"harness": map[string]any{"type": "github_copilot_preview"},
+	assert.Equal(t, "microsoft_copilot_preview", harnessTypeFromMap(map[string]any{
+		"harness": map[string]any{"type": "microsoft_copilot_preview"},
 	}))
 	assert.Equal(t, "", harnessTypeFromMap(map[string]any{"harness": map[string]any{}}))
 	assert.Equal(t, "", harnessTypeFromMap(nil))
@@ -418,7 +419,7 @@ func TestHarnessTypeFromMap(t *testing.T) {
 
 func TestPromptDefinitionMap(t *testing.T) {
 	version := agent_api.AgentVersionObject{
-		Definition: map[string]any{"harness": map[string]any{"type": "github_copilot_preview"}},
+		Definition: map[string]any{"harness": map[string]any{"type": "microsoft_copilot_preview"}},
 	}
 	assert.NotNil(t, promptDefinitionMap(version)["harness"])
 
@@ -431,30 +432,30 @@ func TestPromptDefinitionMap(t *testing.T) {
 func TestPromptHarnessFromMap(t *testing.T) {
 	harness := promptHarnessFromMap(map[string]any{
 		"harness": map[string]any{
-			"type": "github_copilot_preview",
+			"type": "microsoft_copilot_preview",
 		},
 	})
 	require.NotNil(t, harness)
-	assert.Equal(t, "github_copilot_preview", harness.Type)
+	assert.Equal(t, "microsoft_copilot_preview", harness.Type)
 
 	assert.Nil(t, promptHarnessFromMap(nil))
 	assert.Nil(t, promptHarnessFromMap(map[string]any{}))
 }
 
 func TestPrintPromptHarness(t *testing.T) {
-	deployed := &agent_yaml.PromptHarness{Type: "github_copilot_preview"}
+	deployed := &agent_yaml.PromptHarness{Type: "microsoft_copilot_preview"}
 
 	var buf bytes.Buffer
 	printPromptHarness(&buf, deployed, nil)
-	assert.Equal(t, "Harness:\tGitHub Copilot (github_copilot_preview)\n", buf.String())
+	assert.Equal(t, "Harness:\tMicrosoft Copilot (microsoft_copilot_preview)\n", buf.String())
 }
 
 // TestPrintPromptHarnessFallsBackToLocal covers an agent deployed before the
 // harness block existed: the locally authored definition keeps the row honest.
 func TestPrintPromptHarnessFallsBackToLocal(t *testing.T) {
 	var buf bytes.Buffer
-	printPromptHarness(&buf, nil, &agent_yaml.PromptHarness{Type: "github_copilot_preview"})
-	assert.Contains(t, buf.String(), "Harness:\tGitHub Copilot (github_copilot_preview)\n")
+	printPromptHarness(&buf, nil, &agent_yaml.PromptHarness{Type: "microsoft_copilot_preview"})
+	assert.Contains(t, buf.String(), "Harness:\tMicrosoft Copilot (microsoft_copilot_preview)\n")
 
 	buf.Reset()
 	printPromptHarness(&buf, nil, nil)

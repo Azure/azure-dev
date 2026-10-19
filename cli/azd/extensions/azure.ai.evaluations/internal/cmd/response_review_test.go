@@ -49,13 +49,17 @@ func TestExplicitTraceScenarioCallers(t *testing.T) {
 }
 
 func TestResponseRunChecksSchemaBothDirections(t *testing.T) {
-	for _, mode := range []string{"trace switch", "dataset override", "response source"} {
+	for _, mode := range []string{"trace switch", "dataset override", "response source", "plain dataset"} {
 		for _, remote := range []string{"responses", "custom", "traces", "unknown", "legacy", "read failure"} {
 			t.Run(mode+"/"+remote, func(t *testing.T) {
 				group := responseGroup()
 				group.Name = "quality"
 				if mode == "trace switch" {
 					group.Source = &project.SourceDecl{Type: project.SourceTypeTraces, AgentName: "agent"}
+				}
+				if mode == "plain dataset" {
+					group.Source = nil
+					group.Dataset = "golden"
 				}
 				cfg := project.EvalConfig{
 					Evals: []project.Eval{group}, Datasets: []project.DatasetDecl{{Name: "golden", File: "rows.jsonl"}},
@@ -106,6 +110,9 @@ func TestResponseRunChecksSchemaBothDirections(t *testing.T) {
 				}
 				assert.Equal(t, 1, schemaReads)
 				compatible := remote == "custom" || remote == "legacy" || (remote == "traces" && mode == "trace switch")
+				if mode == "plain dataset" {
+					compatible = remote == "custom" || remote == "legacy"
+				}
 				if mode == "response source" {
 					compatible = remote == "responses"
 				}

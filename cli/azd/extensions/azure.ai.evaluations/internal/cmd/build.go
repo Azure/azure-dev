@@ -436,7 +436,7 @@ func buildEvalRequestWithAvailableColumns(
 
 	for _, ref := range group.Evaluators {
 		schema := schemas[evaluatorSchemaKey(ref.Evaluator, ref.Version)]
-		if schema == nil {
+		if schema == nil && (!group.IsLocalSource() || ref.Version == "") {
 			schema = schemas[ref.Evaluator]
 		}
 		if schema == nil {
@@ -535,7 +535,6 @@ func buildEvalRequestWithAvailableColumns(
 	if group.IsLocalSource() {
 		req.DataSourceConfig.ItemSchema = localItemSchema(group, req.TestingCriteria, schemas)
 	}
-
 	return req, nil
 }
 

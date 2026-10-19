@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"azureaieval/internal/failuretext"
 	"azureaieval/internal/urlsafe"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -32,8 +33,8 @@ func conciseServiceError(err error) error {
 		return err
 	}
 
-	diagnostic := serviceDiagnosticFrom(respErr)
-	message := urlsafe.Text(diagnostic.message)
+	diagnostic, details, omitted := serviceFailureFrom(respErr)
+	message := failuretext.Text(diagnostic.message)
 	code := stableServiceCode(respErr.ErrorCode)
 	if code == "" {
 		code = stableServiceCode(diagnostic.code)
@@ -65,6 +66,10 @@ func conciseServiceError(err error) error {
 	if target := refusedTarget(respErr); target != "" {
 		text += " from " + target
 	}
+	// The sentence often only says that the request was invalid; the details
+	// name what in it, such as the model that does not exist. They are for the
+	// human line only: safe, which -o json reads, stays the sentence it was.
+	text += serviceDetailsSuffix(message, details, omitted)
 	return &serviceError{text: text, safe: sentence, code: code, cause: err}
 }
 
@@ -125,34 +130,131 @@ func (e *authServiceError) SafeMessage() string { return e.safe }
 // Code reports the stable auth error code.
 func (e *authServiceError) Code() string { return e.LocalError.Code }
 
+// maxServiceDetails bounds how many detail messages follow a refusal's sentence
+// on its one line.
+const maxServiceDetails = 3
+
+// maxServiceDetailsRead bounds how many entries of a details array are read.
+const maxServiceDetailsRead = 50
+
+// serviceDetailsSuffix is the detail messages that follow a refusal's sentence,
+// shaped by failuretext like every other failure's: redacted, one line,
+// bounded, deduplicated against the sentence, and counted when they do not all
+// fit.
+func serviceDetailsSuffix(message string, details []failuretext.Detail, omitted int) string {
+	lines, more := failuretext.Lines(message, details, maxServiceDetails)
+	if len(lines) == 0 {
+		return ""
+	}
+	list := strings.Join(lines, "; ")
+	if more += omitted; more > 0 {
+		list += fmt.Sprintf("; and %d more", more)
+	}
+	return " (details: " + list + ")"
+}
+
 type serviceDiagnostic struct {
 	message string
 	code    string
 }
 
-// serviceDiagnosticFrom digs the human sentence and stable code out of an
-// error response body.
-//
-// Azure wraps it as {"error":{"message":...}}, sometimes nested another level
-// under innererror. Some evaluation endpoints put another serialized resource
-// envelope in the message itself. Reading only the outermost shape exposed that
-// whole backend object instead of the useful message inside it.
-func serviceDiagnosticFrom(respErr *azcore.ResponseError) serviceDiagnostic {
+// serviceFailureFrom reads the most specific sentence, stable code and details
+// out of an error response body.
+func serviceFailureFrom(
+	respErr *azcore.ResponseError,
+) (diagnostic serviceDiagnostic, details []failuretext.Detail, omitted int) {
+	envelope := serviceEnvelopeFrom(respErr)
+	if envelope == nil {
+		return serviceDiagnostic{}, nil, 0
+	}
+	omittedCount := 0
+	collectServiceDetails(envelope, 0, &details, &omittedCount, map[string]bool{})
+	return deepestDiagnostic(envelope, 0), details, omittedCount
+}
+
+// collectServiceDetails gathers the details arrays at every level the sentence
+// can be nested at, outermost first, in the order the service listed them.
+// Repeats are dropped before the read cap applies, so a run of identical entries
+// cannot fill the room and hide the one that names the cause.
+func collectServiceDetails(
+	envelope map[string]json.RawMessage, depth int, out *[]failuretext.Detail, omitted *int, seen map[string]bool,
+) {
+	if depth > 8 {
+		return
+	}
+	if raw, ok := envelope["details"]; ok {
+		var entries []json.RawMessage
+		if json.Unmarshal(raw, &entries) == nil {
+			for _, entry := range entries {
+				detail, ok := serviceDetailFrom(entry)
+				if !ok {
+					continue
+				}
+				if key := failuretext.Key(detail); key != "" {
+					if seen[key] {
+						continue
+					}
+					seen[key] = true
+				}
+				if len(*out) == maxServiceDetailsRead {
+					*omitted++
+					continue
+				}
+				*out = append(*out, detail)
+			}
+		}
+	}
+	for _, key := range []string{"error", "innererror", "innerError"} {
+		var nested map[string]json.RawMessage
+		if raw, ok := envelope[key]; ok && json.Unmarshal(raw, &nested) == nil {
+			collectServiceDetails(nested, depth+1, out, omitted, seen)
+		}
+	}
+}
+
+// serviceDetailFrom reads one entry of a details array: a bare string is its
+// message, an object is its code, message and target.
+func serviceDetailFrom(raw json.RawMessage) (failuretext.Detail, bool) {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return failuretext.Detail{Message: text}, strings.TrimSpace(text) != ""
+	}
+	var entry struct {
+		Code    json.RawMessage `json:"code"`
+		Message json.RawMessage `json:"message"`
+		Target  json.RawMessage `json:"target"`
+	}
+	if json.Unmarshal(raw, &entry) != nil {
+		return failuretext.Detail{}, false
+	}
+	asText := func(value json.RawMessage) string {
+		var s string
+		if json.Unmarshal(value, &s) == nil {
+			return strings.TrimSpace(s)
+		}
+		return ""
+	}
+	detail := failuretext.Detail{Code: asText(entry.Code), Message: asText(entry.Message), Target: asText(entry.Target)}
+	return detail, detail.Code != "" || detail.Message != ""
+}
+
+// serviceEnvelopeFrom reads the error response body once.
+func serviceEnvelopeFrom(respErr *azcore.ResponseError) map[string]json.RawMessage {
 	if respErr.RawResponse == nil || respErr.RawResponse.Body == nil {
-		return serviceDiagnostic{}
+		return nil
 	}
 	// Bounded: this is a diagnostic, and a service that answers an error with
 	// megabytes is not owed the memory to hold them.
 	body, err := io.ReadAll(io.LimitReader(respErr.RawResponse.Body, 1<<20))
 	if err != nil || len(body) == 0 {
-		return serviceDiagnostic{}
+		return nil
 	}
 
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return serviceDiagnostic{}
+		return nil
 	}
-	return deepestDiagnostic(envelope, 0)
+	return envelope
 }
 
 // deepestDiagnostic returns the most specific message and code the envelope carries.

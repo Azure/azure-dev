@@ -21,7 +21,10 @@ import (
 
 func TestValidateInitLocation(t *testing.T) {
 	t.Parallel()
-	allowed := promptHarnessRegionsForInit("github_copilot_preview")
+	allowed := promptHarnessRegionsForInit("microsoft_copilot_preview")
+	require.NotEmpty(t, allowed)
+	require.Equal(t, allowed, promptHarnessRegionsForInit("github_copilot_preview"),
+		"legacy harness must retain the same region restrictions")
 	require.Nil(t, promptHarnessRegionsForInit(""), "plain prompt must remain unrestricted")
 	for _, location := range []string{
 		"eastus2", "japaneast", "swedencentral", "uksouth",
@@ -82,7 +85,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
 			var allowed []string
 			if tt.restricted {
-				allowed = promptHarnessRegionsForInit("github_copilot_preview")
+				allowed = promptHarnessRegionsForInit("microsoft_copilot_preview")
 			}
 			id := ""
 			if tt.explicitID {
@@ -138,7 +141,7 @@ func (s *harnessLocationPromptServer) PromptLocation(
 }
 
 func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
-	allowed := promptHarnessRegionsForInit("github_copilot_preview")
+	allowed := promptHarnessRegionsForInit("microsoft_copilot_preview")
 	for _, location := range []string{"", "eastus", "eastus2", "japaneast"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"
@@ -168,7 +171,7 @@ func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
 func TestInspectAzureYamlCopilotHarness(t *testing.T) {
 	t.Parallel()
 	for _, source := range []string{"inline", "$ref"} {
-		for _, harness := range []string{"github_copilot_preview", ""} {
+		for _, harness := range []string{"microsoft_copilot_preview", "github_copilot_preview", ""} {
 			t.Run(source+"/"+harness, func(t *testing.T) {
 				t.Parallel()
 				root := t.TempDir()
@@ -200,7 +203,7 @@ func TestInspectAzureYamlRetainsRestrictedHarnessAcrossServices(t *testing.T) {
     host: azure.ai.agent
     kind: prompt
     harness:
-      type: github_copilot_preview
+      type: microsoft_copilot_preview
   other:
     host: azure.ai.agent
     kind: prompt
@@ -214,6 +217,6 @@ func TestInspectAzureYamlRetainsRestrictedHarnessAcrossServices(t *testing.T) {
 		info, err := inspectAzureYaml(content, "")
 		require.NoError(t, err)
 		require.True(t, info.promptOnly())
-		require.Equal(t, "github_copilot_preview", info.promptHarness)
+		require.Equal(t, "microsoft_copilot_preview", info.promptHarness)
 	}
 }

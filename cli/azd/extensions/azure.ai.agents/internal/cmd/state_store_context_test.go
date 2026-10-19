@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -232,10 +233,8 @@ func TestStateStoreSelectionCancellation(t *testing.T) {
 }
 
 func TestStateStoreRejectsOversizedSavedSelection(t *testing.T) {
-	a, _, server, _ := newStateStoreTestAction(t)
-	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{
-		a.target.agentKey: strings.Repeat("s", 129),
-	})
+	a, _, _, _ := newStateStoreTestAction(t)
+	saveAgentStateForTest(t, a.host, a.target.agentKey, agentStateRecord{StateStore: strings.Repeat("s", 129)})
 	require.ErrorContains(t, a.run(t.Context(), "items show", []string{"key"}),
 		"store name exceeds 128 characters")
 	require.ErrorContains(t, a.run(t.Context(), "select", []string{strings.Repeat("s", 129)}),
@@ -243,26 +242,27 @@ func TestStateStoreRejectsOversizedSavedSelection(t *testing.T) {
 }
 
 func TestStateStoreSelectionPersistence(t *testing.T) {
-	a, api, server, writer := newStateStoreTestAction(t)
-	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{
-		a.target.agentKey: "old", "another-agent": "unrelated",
-	})
-	server.setJSON(t, configPath("sessions"), map[string]string{"session-key": "session-id"})
-	server.setJSON(t, configPath("conversations"), map[string]string{"conversation-key": "conversation-id"})
+	a, api, _, writer := newStateStoreTestAction(t)
+	saveAgentStateForTest(t, a.host, a.target.agentKey, agentStateRecord{StateStore: "old"})
+	saveAgentStateForTest(t, a.host, "another-agent", agentStateRecord{StateStore: "unrelated"})
+	saveAgentStateForTest(t, a.host, "session-key", agentStateRecord{SessionID: "session-id"})
+	saveAgentStateForTest(t, a.host, "conversation-key", agentStateRecord{ConversationID: "conversation-id"})
 	api.On("GetStateStore", mock.Anything, "worker", "checkpoints/run-42").
 		Return(&agent_api.StateStore{Name: "checkpoints/run-42"}, nil).Once()
 	require.NoError(t, a.run(t.Context(), "select", []string{"checkpoints/run-42"}))
 	require.Contains(t, writer.String(), "checkpoints/run-42")
-	var selection map[string]string
-	server.getJSON(t, configPath(stateStoreConfigField), &selection)
-	require.Equal(t, map[string]string{
-		a.target.agentKey: "checkpoints/run-42", "another-agent": "unrelated",
-	}, selection)
-	var sessions, conversations map[string]string
-	server.getJSON(t, configPath("sessions"), &sessions)
-	server.getJSON(t, configPath("conversations"), &conversations)
-	require.Equal(t, map[string]string{"session-key": "session-id"}, sessions)
-	require.Equal(t, map[string]string{"conversation-key": "conversation-id"}, conversations)
+	selection := loadAgentStateForTest(t, a.host, a.target.agentKey)
+	require.NotNil(t, selection)
+	require.Equal(t, "checkpoints/run-42", selection.StateStore)
+	unrelated := loadAgentStateForTest(t, a.host, "another-agent")
+	require.NotNil(t, unrelated)
+	require.Equal(t, "unrelated", unrelated.StateStore)
+	session := loadAgentStateForTest(t, a.host, "session-key")
+	require.NotNil(t, session)
+	require.Equal(t, "session-id", session.SessionID)
+	conversation := loadAgentStateForTest(t, a.host, "conversation-key")
+	require.NotNil(t, conversation)
+	require.Equal(t, "conversation-id", conversation.ConversationID)
 	store, err := a.resolveStore(t.Context(), "")
 	require.NoError(t, err)
 	require.Equal(t, "checkpoints/run-42", store)
@@ -272,42 +272,34 @@ func TestStateStoreSelectionPersistence(t *testing.T) {
 	require.ErrorContains(t, err, "no active State Store")
 }
 
-type failingStateStoreConfig struct {
-	*invokeUserConfigServer
-}
-
-func (s *failingStateStoreConfig) Set(context.Context, *azdext.SetUserConfigRequest) (*azdext.EmptyResponse, error) {
-	return nil, errors.New("config write denied")
-}
-
 func TestStateStoreFailedSelectionRetainsPrevious(t *testing.T) {
-	for _, failWrite := range []bool{false, true} {
-		a, api, server, writer := newStateStoreTestAction(t)
-		server.setJSON(t, configPath(stateStoreConfigField), map[string]string{a.target.agentKey: "old"})
-		if failWrite {
-			a.host = newInvokeTestAzdClient(t, &failingStateStoreConfig{server})
-			api.On("GetStateStore", mock.Anything, "worker", "new").Return(&agent_api.StateStore{Name: "new"}, nil).Once()
-		} else {
-			api.On("GetStateStore", mock.Anything, "worker", "new").
-				Return(nil, &azcore.ResponseError{StatusCode: 404}).Once()
-		}
-		require.Error(t, a.run(t.Context(), "select", []string{"new"}))
-		require.Empty(t, writer.String())
-		var selection map[string]string
-		server.getJSON(t, configPath(stateStoreConfigField), &selection)
-		require.Equal(t, "old", selection[a.target.agentKey])
-	}
+	a, api, _, writer := newStateStoreTestAction(t)
+	saveAgentStateForTest(t, a.host, a.target.agentKey, agentStateRecord{StateStore: "old"})
+	api.On("GetStateStore", mock.Anything, "worker", "new").
+		Return(nil, &azcore.ResponseError{StatusCode: 404}).Once()
+	require.Error(t, a.run(t.Context(), "select", []string{"new"}))
+	require.Empty(t, writer.String())
+	selection := loadAgentStateForTest(t, a.host, a.target.agentKey)
+	require.NotNil(t, selection)
+	require.Equal(t, "old", selection.StateStore)
 }
 
 func TestStateStoreMissingAndCorruptSelection(t *testing.T) {
-	a, _, server, _ := newStateStoreTestAction(t)
-	require.ErrorContains(t, a.run(t.Context(), "items show", []string{"key"}), "no active State Store")
-	server.setJSON(t, configPath(stateStoreConfigField), "invalid selection shape")
-	require.ErrorContains(t, a.run(t.Context(), "show", nil), "could not read")
+	t.Run("missing", func(t *testing.T) {
+		a, _, _, _ := newStateStoreTestAction(t)
+		require.ErrorContains(t, a.run(t.Context(), "items show", []string{"key"}), "no active State Store")
+	})
+	t.Run("corrupt state", func(t *testing.T) {
+		a, _, _, _ := newStateStoreTestAction(t)
+		store, err := newAgentStateStoreForClient(a.host)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(store.statePath(a.target.agentKey), []byte("{"), 0o600))
+		require.ErrorContains(t, a.run(t.Context(), "show", nil), "could not read")
+	})
 }
 
 func TestStateStorePagedPicker(t *testing.T) {
-	a, api, server, _ := newStateStoreTestAction(t)
+	a, api, _, _ := newStateStoreTestAction(t)
 	prompt := &stateStorePromptMock{}
 	a.prompt = prompt
 	first := api.On("ListStateStores", mock.Anything, "worker", a.flags.page).
@@ -328,15 +320,15 @@ func TestStateStorePagedPicker(t *testing.T) {
 		Return(&agent_api.StateStore{Name: "later"}, nil).Once()
 	mock.InOrder(first, chooseNext, next, chooseStore, validate)
 	require.NoError(t, a.run(t.Context(), "select", nil))
-	var selection map[string]string
-	server.getJSON(t, configPath(stateStoreConfigField), &selection)
-	require.Equal(t, "later", selection[a.target.agentKey])
+	selection := loadAgentStateForTest(t, a.host, a.target.agentKey)
+	require.NotNil(t, selection)
+	require.Equal(t, "later", selection.StateStore)
 	prompt.AssertExpectations(t)
 }
 
 func TestStateStorePickerEscapesDisplayOnly(t *testing.T) {
 	const rawName = "alpha\n\x1b[31mred\\suffix"
-	a, api, server, _ := newStateStoreTestAction(t)
+	a, api, _, _ := newStateStoreTestAction(t)
 	prompt := &stateStorePromptMock{}
 	a.prompt = prompt
 	api.On("ListStateStores", mock.Anything, "worker", a.flags.page).
@@ -351,9 +343,9 @@ func TestStateStorePickerEscapesDisplayOnly(t *testing.T) {
 	api.On("GetStateStore", mock.Anything, "worker", rawName).
 		Return(&agent_api.StateStore{Name: rawName}, nil).Once()
 	require.NoError(t, a.run(t.Context(), "select", nil))
-	var selection map[string]string
-	server.getJSON(t, configPath(stateStoreConfigField), &selection)
-	require.Equal(t, rawName, selection[a.target.agentKey])
+	selection := loadAgentStateForTest(t, a.host, a.target.agentKey)
+	require.NotNil(t, selection)
+	require.Equal(t, rawName, selection.StateStore)
 	prompt.AssertExpectations(t)
 }
 

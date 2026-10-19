@@ -13,6 +13,7 @@ BeforeDiscovery {
         'azure.ai.projects' = @('azure.ai.projects/internal/version')
         'azure.ai.rle' = @('azure.ai.rle/internal/cmd')
         'azure.ai.routines' = @('azure.ai.routines/internal/cmd')
+        'azure.ai.search' = @('azure.ai.search/internal/cmd')
         'azure.ai.skills' = @('azureaiskills/internal/version')
         'azure.ai.toolboxes' = @('azure.ai.toolboxes/internal/cmd', 'azure.ai.toolboxes/internal/version')
         'azure.ai.training' = @('azure.ai.training/internal/cmd')

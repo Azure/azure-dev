@@ -4,6 +4,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"azureaiagent/internal/pkg/paths"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/santhosh-tekuri/jsonschema/v6/kind"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -75,6 +78,9 @@ func validateAgentServiceDefinition(
 
 	switch kind {
 	case agent_yaml.AgentKindHosted:
+		if err := validateHostedAgentContainerSettings(svc.GetName(), resolved); err != nil {
+			return AgentDefinitionValidation{}, err
+		}
 		if err := validateHostedAgentServiceDefinition(svc, resolved, projectRoot); err != nil {
 			return AgentDefinitionValidation{}, err
 		}
@@ -98,6 +104,58 @@ func validateAgentServiceDefinition(
 	}
 
 	return result, nil
+}
+
+func validateHostedAgentContainerSettings(serviceName string, properties *structpb.Struct) error {
+	if structKind(properties) != string(agent_yaml.AgentKindHosted) {
+		return nil
+	}
+	container, declared := properties.GetFields()["container"]
+	if !declared {
+		return nil
+	}
+	schema, err := compiledAgentDefinitionSchema()
+	if err != nil {
+		return fmt.Errorf("load agent resource schema: %w", err)
+	}
+	containerSchema := schema.Properties["container"]
+	if containerSchema == nil {
+		return fmt.Errorf("embedded agent schema does not define container settings")
+	}
+	if err := containerSchema.Validate(container.AsInterface()); err != nil {
+		validation, ok := errors.AsType[*jsonschema.ValidationError](err)
+		if !ok {
+			return fmt.Errorf("validate agent container settings: %w", err)
+		}
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("service %q has invalid container settings: %s", serviceName, resourceValidationMessage(validation)),
+			"fix container.resources in azure.yaml or its referenced file; use only cpu and memory with "+
+				"non-empty string values in the documented formats, or omit the fields to use defaults",
+		)
+	}
+	return nil
+}
+
+func resourceValidationMessage(validation *jsonschema.ValidationError) string {
+	if len(validation.Causes) > 0 {
+		messages := make([]string, 0, len(validation.Causes))
+		for _, cause := range validation.Causes {
+			messages = append(messages, resourceValidationMessage(cause))
+		}
+		return strings.Join(messages, "; ")
+	}
+	path := strings.Join(append([]string{"container"}, validation.InstanceLocation...), ".")
+	switch constraint := validation.ErrorKind.(type) {
+	case *kind.Type:
+		return fmt.Sprintf("%s must be %s", path, strings.Join(constraint.Want, " or "))
+	case *kind.Pattern:
+		return fmt.Sprintf("%s must match pattern %q", path, constraint.Want)
+	case *kind.AdditionalProperties:
+		return fmt.Sprintf("%s contains unsupported fields %q", path, constraint.Properties)
+	default:
+		return fmt.Sprintf("%s violates %s", path, strings.Join(validation.ErrorKind.KeywordPath(), "."))
+	}
 }
 
 func validatedAgentIdentity(

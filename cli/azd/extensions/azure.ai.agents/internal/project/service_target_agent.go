@@ -283,6 +283,21 @@ func serviceConfigHasRef(serviceConfig *azdext.ServiceConfig) bool {
 	return props != nil && props.GetFields()[AgentDefinitionRefKey] != nil
 }
 
+func serviceConfigHasContainerRef(serviceConfig *azdext.ServiceConfig) bool {
+	container := ServiceConfigProps(serviceConfig).GetFields()["container"].GetStructValue()
+	resources := container.GetFields()["resources"].GetStructValue()
+	for _, object := range []*structpb.Struct{
+		container, resources,
+		resources.GetFields()["cpu"].GetStructValue(),
+		resources.GetFields()["memory"].GetStructValue(),
+	} {
+		if object.GetFields()[AgentDefinitionRefKey] != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // adoptAndResolveServiceConfig expands a freshly supplied service config before
 // lifecycle methods decide whether to use the prompt or hosted agent path.
 func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
@@ -300,6 +315,23 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 		return err
 	}
 	return p.resolveServiceConfig()
+}
+
+func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
+	ctx context.Context, serviceConfig *azdext.ServiceConfig,
+) error {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return err
+	}
+	if serviceConfigHasContainerRef(p.serviceConfig) {
+		if err := p.loadProjectPath(ctx); err != nil {
+			return err
+		}
+		if err := ResolveAgentContainerSettings(p.serviceConfig, p.projectPath); err != nil {
+			return err
+		}
+	}
+	return validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig))
 }
 
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
@@ -847,7 +879,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	if p.isPromptAgentService() {
@@ -917,7 +949,7 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents have no container/code to build — the harness owns the
@@ -1065,7 +1097,7 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents have no container image to publish.
@@ -1561,7 +1593,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents are created on the managed harness, not the Foundry

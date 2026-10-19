@@ -506,7 +506,8 @@ func TestServiceIdentityDeploymentName(t *testing.T) {
 				source, err := fs.ReadFile(files, "resources.bicep")
 				require.NoError(t, err)
 
-				matches := identityDeployment.FindAllStringSubmatch(string(source), -1)
+				normalizedSource := strings.ReplaceAll(string(source), "\r\n", "\n")
+				matches := identityDeployment.FindAllStringSubmatch(normalizedSource, -1)
 				require.Len(t, matches, 1)
 				assert.Equal(t, BicepName(name), matches[0][1])
 				deploymentName := matches[0][2]
@@ -555,9 +556,10 @@ func TestFunctionAppInsightsRoleAssignment(t *testing.T) {
 			require.NoError(t, err)
 			source, err := fs.ReadFile(files, "resources.bicep")
 			require.NoError(t, err)
+			normalizedSource := strings.ReplaceAll(string(source), "\r\n", "\n")
 			for _, service := range spec.Services {
 				symbol := BicepName(service.Name)
-				assert.Contains(t, string(source),
+				assert.Contains(t, normalizedSource,
 					"module _functionInsightsMetricsPublisher_"+symbol+" 'modules/role-assignment.bicep' = {\n"+
 						"  name: 'function-metrics-"+FunctionAppName(symbol)+"'\n"+
 						"  params: {\n"+

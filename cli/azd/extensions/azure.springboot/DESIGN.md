@@ -84,6 +84,13 @@ flowchart TD
 - **Non-disclosure and scope:** never print credentials in evidence, choices, or
   diagnostics. This is targeted validation, not general secret scanning; do not claim to detect
   credentials in arbitrary properties, application code, or other packaged resources.
+- **Database network access:** generated MySQL/PostgreSQL servers use public
+  endpoints with firewall rules limited to the reported Container Apps outbound
+  IP addresses. PostgreSQL managed-identity bootstrap temporarily permits all
+  IPv4 sources because the local database egress address cannot be determined
+  reliably from HTTPS egress. The bootstrap hook removes only that temporary
+  rule on success or failure before recording bootstrap success; it must never
+  remain as deployed application access.
 
 ## Generation
 

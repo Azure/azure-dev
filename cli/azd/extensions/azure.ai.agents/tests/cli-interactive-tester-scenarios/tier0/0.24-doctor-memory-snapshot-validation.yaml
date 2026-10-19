@@ -24,7 +24,7 @@ pre:
 goals:
   - "Wait for doctor --local-only to report the invalid configuration without prompting."
   - "Confirm local.agent-yaml-valid fails with an explanation that enableMemorySnapshot must be a boolean, not a string."
-  - "Confirm remediation tells the user to correct the agent definition in azure.yaml."
+  - "Confirm remediation says to set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled."
   - "Confirm no remote checks run and no Azure resources are created."
   - "Confirm the command exits with code 1 instead of accepting or silently dropping the invalid setting."
   - "Take a screenshot of the report."

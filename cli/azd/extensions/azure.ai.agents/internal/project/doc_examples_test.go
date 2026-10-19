@@ -976,6 +976,9 @@ func TestMemorySnapshotValidationScenario(t *testing.T) {
 	require.Contains(t, scenario.Cwd, "-{instance}")
 	require.ElementsMatch(t, []string{"tier:0", "cmd:doctor", "negative-path", "parallel-safe"}, scenario.Tags)
 	require.NotEmpty(t, scenario.Goals)
+	require.Contains(t, scenario.Goals,
+		"Confirm remediation says to set enableMemorySnapshot to true or false, "+
+			"or omit it to keep memory snapshots disabled.")
 	for _, goal := range scenario.Goals {
 		require.NotEmpty(t, goal)
 	}

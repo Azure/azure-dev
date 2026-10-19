@@ -14743,7 +14743,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 47bc3a93ac9b74a0be378e18f9d0f973
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l9a7566/providers/Microsoft.Web/sites/func-j65vgz2lh2wh4?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l9a7566/providers/Microsoft.Web/sites/func-j65vgz2lh2wh4?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/1.1
@@ -14818,7 +14818,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 47bc3a93ac9b74a0be378e18f9d0f973
-        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l9a7566/providers/Microsoft.Web/serverfarms/plan-j65vgz2lh2wh4?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/rg-azdtest-l9a7566/providers/Microsoft.Web/serverfarms/plan-j65vgz2lh2wh4?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/1.1

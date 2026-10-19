@@ -19413,7 +19413,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - cce72b7b-956d-9327-1bb8-b8f2ebf93f61
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -19488,7 +19488,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - cce72b7b-956d-9327-1bb8-b8f2ebf93f61
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/slots?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/slots?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -19565,7 +19565,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - cce72b7b-956d-9327-1bb8-b8f2ebf93f61
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/config/web?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/config/web?api-version=2025-05-01
         method: PATCH
       response:
         proto: HTTP/2.0
@@ -19642,7 +19642,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - cce72b7b-956d-9327-1bb8-b8f2ebf93f61
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -19717,7 +19717,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.4; Windows_NT),azdev/0.0.0-dev.0 (Go go1.26.4; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - cce72b7b-956d-9327-1bb8-b8f2ebf93f61
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/slots?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-wf91d1a/providers/Microsoft.Web/sites/func-3byfkdyh5dhvo/slots?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0

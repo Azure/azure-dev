@@ -1,15 +1,5 @@
 # Release History
 
-## 1.0.0-beta.11 (2026-10-19)
-
-### Breaking Changes
-
-- [[#10483]](https://github.com/Azure/azure-dev/pull/10483) Require azd `>=1.37.0` for environment-independent local authoring and raw project configuration preservation.
-
-### Features Added
-
-- [[#10483]](https://github.com/Azure/azure-dev/pull/10483) Add `azd ai connection add <name> --file <path>` to add or update local Connection services with project selection and definition validation without resolving secrets or creating remote resources.
-
 ## 1.0.0-beta.10 (2026-10-15)
 
 ### Bugs Fixed

@@ -133,7 +133,8 @@ func resolveDeployment(
 ) (*spring.Application, error) {
 	cached := &cachedResolver{source: resolver}
 	answered := map[string]bool{}
-	repairedCredentials := false
+	type repairTarget struct{ file, property string }
+	repairedCredentials := map[repairTarget]bool{}
 	for range 32 {
 		analysis, err := spring.AnalyzeProject(ctx, directory, cached, inputs)
 		if err != nil {
@@ -141,13 +142,17 @@ func resolveDeployment(
 		}
 		if len(analysis.Diagnostics) != 0 {
 			if len(analysis.Diagnostics) == 1 && len(analysis.Diagnostics[0].Repairs) != 0 &&
-				!noPrompt && !repairedCredentials {
+				!noPrompt {
 				diagnostic := analysis.Diagnostics[0]
 				var targets []string
 				for _, repair := range diagnostic.Repairs {
+					if repairedCredentials[repairTarget{repair.File, repair.Property}] {
+						return nil, fmt.Errorf("datasource credential property %s in %s requires repair again; "+
+							"review the application configuration", repair.Property, repair.File)
+					}
 					targets = append(targets, repair.Property+" in "+repair.File)
 				}
-				question := "Replace packaged datasource password defaults with runtime-only placeholders?\n  " +
+				question := "Replace datasource password defaults with runtime-only placeholders?\n  " +
 					strings.Join(targets, "\n  ")
 				if err := confirm(ctx, getPrompts, question); err != nil {
 					return nil, err
@@ -155,7 +160,9 @@ func resolveDeployment(
 				if err := spring.ApplyCredentialRepairs(ctx, directory, diagnostic.Repairs); err != nil {
 					return nil, err
 				}
-				repairedCredentials = true
+				for _, repair := range diagnostic.Repairs {
+					repairedCredentials[repairTarget{repair.File, repair.Property}] = true
+				}
 				continue
 			}
 			var diagnostics []error

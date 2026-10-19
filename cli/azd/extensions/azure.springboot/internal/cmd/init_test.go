@@ -81,13 +81,15 @@ type fakePrompter struct {
 	answers       map[string]string
 	decline       bool
 	declinePlan   bool
+	declineAt     int
 	err           error
 	closed        bool
 }
 
 func (p *fakePrompter) Confirm(_ context.Context, message string) (bool, error) {
 	p.confirmations = append(p.confirmations, message)
-	return !p.decline && !(p.declinePlan && len(p.confirmations) == 2), p.err
+	return !p.decline && !(p.declinePlan && len(p.confirmations) == 2) &&
+		len(p.confirmations) != p.declineAt, p.err
 }
 
 func (p *fakePrompter) Decide(_ context.Context, decision spring.Decision) (string, error) {
@@ -451,6 +453,76 @@ func TestInitNoPromptDoesNotRepairDatasourcePassword(t *testing.T) {
 	data, err := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
 	require.NoError(t, err)
 	require.Equal(t, original, string(data))
+}
+
+func TestInitRepairsPackagedAndExternalPasswords(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		noPrompt  bool
+		declineAt int
+	}{
+		{name: "confirm both batches"},
+		{name: "decline external batch", declineAt: 2},
+		{name: "no prompt", noPrompt: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			prompts := &fakePrompter{declineAt: tt.declineAt}
+			command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+				require.False(t, tt.noPrompt, "no-prompt must not request repair consent")
+				return prompts, nil
+			})
+			files := []string{
+				filepath.Join("src", "main", "resources", "application-mysql.properties"),
+				filepath.Join("config", "application-mysql.properties"),
+			}
+			const testValue = "repair-fixture-value"
+			original := "spring.datasource.url=jdbc:mysql://localhost/catalog\n" +
+				"spring.datasource.password=${MYSQL_PASSWORD:" + testValue + "}\n"
+			for _, file := range files {
+				require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o750))
+				require.NoError(t, os.WriteFile(file, []byte(original), 0o600))
+			}
+			args := []string{"init", "--yes", "--profiles", "mysql"}
+			if tt.noPrompt {
+				args = append(args, "--no-prompt")
+			}
+			command.SetArgs(args)
+			err := command.ExecuteContext(t.Context())
+			if tt.noPrompt {
+				require.ErrorContains(t, err, "runtime placeholder without a default")
+				require.Empty(t, prompts.confirmations)
+			} else {
+				require.Len(t, prompts.confirmations, 2, "--yes must still confirm each newly discovered repair batch")
+				for index, message := range prompts.confirmations {
+					require.Contains(t, message, filepath.ToSlash(files[index]))
+					require.Contains(t, message, "spring.datasource.password")
+					require.NotContains(t, message, testValue)
+				}
+				if tt.declineAt != 0 {
+					require.ErrorContains(t, err, "cancelled")
+				} else {
+					require.NoError(t, err)
+				}
+			}
+			require.Equal(t, 1, resolver.calls, "repair passes must reuse Maven inspection")
+			require.NotContains(t, output.String(), testValue)
+			if err != nil {
+				require.NotContains(t, err.Error(), testValue)
+				_, statErr := os.Stat("azure.yaml")
+				require.ErrorIs(t, statErr, fs.ErrNotExist)
+			}
+			for index, file := range files {
+				data, readErr := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
+				require.NoError(t, readErr)
+				if tt.noPrompt || (index == 1 && tt.declineAt != 0) {
+					require.Equal(t, original, string(data), "unconfirmed files must remain unchanged")
+				} else {
+					require.NotContains(t, string(data), testValue)
+					require.Contains(t, string(data), "spring.datasource.password=${MYSQL_PASSWORD}")
+				}
+			}
+		})
+	}
 }
 
 func TestInitRejectsEmptyProfileSelection(t *testing.T) {

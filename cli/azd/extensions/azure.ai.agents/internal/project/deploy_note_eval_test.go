@@ -63,7 +63,11 @@ func TestDeployArtifacts_EvaluationGuidanceFollowsServiceManifest(t *testing.T) 
 			require.NotContains(t, note, "azd ai agent eval generate")
 			if tt.wantEvalGuidance {
 				require.Equal(t, 1, strings.Count(note, "azd ai eval init"))
-				require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations"))
+				require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations --source azd"))
+				require.Contains(t, note, "latest released evaluations extension")
+				require.Contains(t, note, "production azd registry")
+				require.NotContains(t, note, "--version")
+				require.NotContains(t, note, "azd extension source add")
 				require.Contains(t, note, "Set up an evaluation suite")
 			} else {
 				require.NotContains(t, note, "azd ai eval init")
@@ -126,7 +130,11 @@ func TestAugmentDeployNote_EvaluationGuidanceSurvivesReadmeReplacement(t *testin
 					require.NotContains(t, note, "Set up an evaluation suite")
 				} else {
 					require.Equal(t, 1, strings.Count(note, "azd ai eval init"))
-					require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations"))
+					require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations --source azd"))
+					require.Contains(t, note, "latest released evaluations extension")
+					require.Contains(t, note, "production azd registry")
+					require.NotContains(t, note, "--version")
+					require.NotContains(t, note, "azd extension source add")
 					require.Contains(t, note, "Set up an evaluation suite")
 				}
 			})
@@ -244,7 +252,12 @@ func TestFinalizeDeployGuidance(t *testing.T) {
 				require.NotContains(t, note, "Set up an evaluation suite")
 			} else {
 				require.Equal(t, 1, strings.Count(note, "azd ai eval init"))
-				require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations"))
+				require.Equal(t, 1, strings.Count(note, "azd extension install azure.ai.evaluations --source azd"))
+				require.Contains(t, note, "latest released evaluations extension")
+				require.Contains(t, note, "production azd registry")
+				require.NotContains(t, note, "--version")
+				require.NotContains(t, note, "azd extension source add")
+				require.Contains(t, note, "Set up an evaluation suite")
 			}
 			if tt.unavailableProject {
 				require.NotContains(t, note, "Next:")

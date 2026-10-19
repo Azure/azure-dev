@@ -18,7 +18,7 @@ import (
 
 	copilot "github.com/github/copilot-sdk/go"
 	"github.com/github/copilot-sdk/go/rpc"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/v2/mcp"
 
 	"github.com/azure/azure-dev/cli/azd/internal/agent/consent"
 	agentcopilot "github.com/azure/azure-dev/cli/azd/internal/agent/copilot"

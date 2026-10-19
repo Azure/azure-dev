@@ -7,8 +7,8 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mcp/tools/prompts"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/v2/mcp"
+	"github.com/mark3labs/mcp-go/v2/server"
 )
 
 // NewAzdErrorTroubleShootingTool creates a new azd error troubleshooting tool

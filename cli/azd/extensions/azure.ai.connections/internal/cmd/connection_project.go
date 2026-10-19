@@ -394,6 +394,51 @@ func validateConnectionProjectCandidate(
 			"Correct the project structure and core service settings in azure.yaml or azure.yml, then retry.",
 		)
 	}
+	return validateConnectionServiceGraph(services)
+}
+
+func validateConnectionServiceGraph(services map[string]any) error {
+	pending := make(map[string]int, len(services))
+	dependents := make(map[string][]string, len(services))
+	for key, raw := range services {
+		service, ok := raw.(map[string]any)
+		if !ok {
+			return invalidProjectSection("services")
+		}
+		uses, err := parseConnectionUses(service)
+		if err != nil {
+			return err
+		}
+		pending[key] = 0
+		for _, dependency := range uses {
+			// Resource dependencies do not affect service ordering.
+			if _, isService := services[dependency]; isService {
+				pending[key]++
+				dependents[dependency] = append(dependents[dependency], key)
+			}
+		}
+	}
+	queue := make([]string, 0, len(services))
+	for key, count := range pending {
+		if count == 0 {
+			queue = append(queue, key)
+		}
+	}
+	for index := 0; index < len(queue); index++ {
+		for _, dependent := range dependents[queue[index]] {
+			pending[dependent]--
+			if pending[dependent] == 0 {
+				queue = append(queue, dependent)
+			}
+		}
+	}
+	if len(queue) != len(services) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"the candidate project manifest contains a service dependency cycle; no changes were written.",
+			"Remove circular uses dependencies in azure.yaml or azure.yml, then retry.",
+		)
+	}
 	return nil
 }
 
@@ -961,7 +1006,7 @@ func (plan *connectionAddPlan) prepareWrites(
 // verifyUnchanged re-reads the manifest and definition before writes.
 // It checks the planned service's managed fields, dependency presence
 // and hosts, definition contents, and environment references. It also
-// checks effective-name uniqueness and validates dependencies.
+// checks effective-name uniqueness and validates the candidate graph.
 // Changes to unrelated services and unowned fields are left alone.
 //
 // This narrows the race window, but the RPCs lack compare-and-swap.
@@ -1008,7 +1053,12 @@ func (plan *connectionAddPlan) verifyUnchanged(ctx context.Context) error {
 			return err
 		}
 		_, err = validateConnectionDependencies(uses, current)
-		return err
+		if err != nil {
+			return err
+		}
+		services := maps.Clone(current.services)
+		services[plan.serviceName] = plan.serviceSection
+		return validateConnectionServiceGraph(services)
 	}
 	return exterrors.Validation(
 		exterrors.CodeProjectChanged,

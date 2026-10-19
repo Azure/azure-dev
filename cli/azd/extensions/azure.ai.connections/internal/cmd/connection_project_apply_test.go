@@ -282,6 +282,96 @@ func TestConnectionAddValidatesCompleteProjectBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestConnectionAddValidatesCandidateServiceGraph(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		projectUse string
+		workerUse  string
+		wantCycle  bool
+	}{
+		{name: "acyclic owner switch", projectUse: "project-a"},
+		{name: "direct owner cycle", projectUse: "search", wantCycle: true},
+		{name: "indirect owner cycle", projectUse: "worker", workerUse: "search", wantCycle: true},
+		{name: "self cycle", projectUse: "project-b", wantCycle: true},
+		{name: "resource dependency", projectUse: "cache"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			file := writeConnectionAddDefinition(t, root, "connection.yaml",
+				"category: Search\ntarget: https://search.example.test\n")
+			client := newConnectionAddProjectClientStub()
+			client.services["project-a"] = map[string]any{"host": aiProjectServiceHost}
+			client.services["project-b"] = map[string]any{
+				"host": aiProjectServiceHost, "uses": []any{test.projectUse},
+			}
+			client.services["search"] = map[string]any{
+				"host": aiConnectionHost, "uses": []any{"project-a"},
+				"category": "Search", "target": "old",
+			}
+			if test.workerUse != "" {
+				client.services["worker"] = map[string]any{
+					"host": "containerapp", "language": "js", "uses": []any{test.workerUse},
+				}
+			}
+			client.resources["cache"] = map[string]any{"type": "local"}
+			before, err := client.readAuthoringManifest(t.Context())
+			require.NoError(t, err)
+			plan, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, true, "project-b", true, nil, nil)
+			if test.wantCycle {
+				requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "dependency cycle")
+				assert.Nil(t, plan)
+				assert.Empty(t, client.mutationCalls)
+				after, err := client.readAuthoringManifest(t.Context())
+				require.NoError(t, err)
+				assert.Equal(t, before, after)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, plan.apply(t.Context(), client))
+			repeat, err := planConnectionAdd(t.Context(), client, root, "search",
+				file, true, "project-b", true, nil, nil)
+			require.NoError(t, err)
+			require.Equal(t, "unchanged", repeat.mutation)
+			calls := len(client.mutationCalls)
+			require.NoError(t, repeat.apply(t.Context(), client))
+			assert.Len(t, client.mutationCalls, calls)
+		})
+	}
+}
+
+func TestConnectionAddRejectsServiceCycleIntroducedAfterPlanning(t *testing.T) {
+	root := t.TempDir()
+	file := writeConnectionAddDefinition(t, root, "connection.yaml",
+		"category: Search\ntarget: https://search.example.test\n")
+	client := newConnectionAddProjectClientStub()
+	client.services["project-a"] = map[string]any{"host": aiProjectServiceHost}
+	client.services["project-b"] = map[string]any{
+		"host": aiProjectServiceHost, "uses": []any{"worker"},
+	}
+	client.services["worker"] = map[string]any{
+		"host": "containerapp", "language": "js", "uses": []any{"project-a"},
+	}
+	client.services["search"] = map[string]any{
+		"host": aiConnectionHost, "uses": []any{"project-a"},
+		"category": "Search", "target": "old",
+	}
+	plan, err := planConnectionAdd(t.Context(), client, root, "search",
+		file, true, "project-b", true, nil, nil)
+	require.NoError(t, err)
+	client.services["worker"] = map[string]any{
+		"host": "containerapp", "language": "js", "uses": []any{"search"},
+	}
+	before, err := client.readAuthoringManifest(t.Context())
+	require.NoError(t, err)
+	err = plan.apply(t.Context(), client)
+	requireConnectionValidationError(t, err, exterrors.CodeInvalidParameter, "dependency cycle")
+	assert.Empty(t, client.mutationCalls)
+	after, err := client.readAuthoringManifest(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
 func TestConnectionAddReportsUncertainAddFailureAndAllowsRerun(t *testing.T) {
 	for _, afterWrite := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before save", true: "after save"}[afterWrite], func(t *testing.T) {

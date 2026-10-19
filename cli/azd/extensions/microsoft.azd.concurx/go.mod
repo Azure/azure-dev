@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.0
-	charm.land/lipgloss/v2 v2.0.5
+	charm.land/lipgloss/v2 v2.0.6
 	github.com/azure/azure-dev/cli/azd v1.23.13
 	github.com/fatih/color v1.19.0
 	github.com/spf13/cobra v1.10.2

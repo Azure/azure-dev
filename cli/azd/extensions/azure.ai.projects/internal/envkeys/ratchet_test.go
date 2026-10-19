@@ -38,6 +38,7 @@ func runRatchet(t *testing.T, script string, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
+	// #nosec G204 -- script path and args are test-controlled under t.TempDir().
 	output, err := exec.CommandContext(ctx, "bash", append([]string{script}, args...)...).CombinedOutput()
 	return string(output), err
 }
@@ -52,19 +53,21 @@ func TestLiteralRatchetBehavior(t *testing.T) {
 	requireRatchetTools(t)
 	root := t.TempDir()
 	scripts := filepath.Join(root, "scripts")
-	require.NoError(t, os.MkdirAll(scripts, 0o755))
+	require.NoError(t, os.MkdirAll(scripts, 0o750))
 	source, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "check_envkey_literals.sh"))
 	require.NoError(t, err)
 	script := filepath.Join(scripts, "check_envkey_literals.sh")
+	// #nosec G703 -- script path is under t.TempDir().
 	require.NoError(t, os.WriteFile(script, source, 0o600))
 	for _, extension := range []string{"azure.ai.agents", "azure.ai.projects"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(root, extension), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, extension), 0o750))
 	}
 	agents := filepath.Join(root, "azure.ai.agents")
 	fixture := filepath.Join(agents, "fixture.go")
 	write := func(path, text string) {
 		t.Helper()
-		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o750))
+		// #nosec G703 -- path is under t.TempDir().
 		require.NoError(t, os.WriteFile(path, []byte(text), 0o600))
 	}
 	// Count occurrences, including two literals on the same line and test fixtures.
@@ -89,6 +92,7 @@ func TestLiteralRatchetBehavior(t *testing.T) {
 	output, err = runRatchet(t, script)
 	require.NoError(t, err, "%s", output)
 
+	// #nosec G304 -- baseline path is under t.TempDir().
 	content, err := os.ReadFile(baseline)
 	require.NoError(t, err)
 	write(baseline, strings.ReplaceAll(string(content), "\n", "\r\n"))

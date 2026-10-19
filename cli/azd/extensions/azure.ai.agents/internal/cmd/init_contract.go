@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -105,8 +106,9 @@ func Contract() []FlagSpec {
 				"voice agent; use --model for the speech-to-speech model and --voice for the output " +
 				"voice agent). When omitted, the hosted runtime is used. With --no-prompt, " +
 				"'prompt' requires --agent-name and either --model or --model-deployment."},
-		{Name: "harness", Modes: []Mode{ModePrompt}, AllowedValues: []string{"github_copilot_preview"},
-			Help: "Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand). " +
+		{Name: "harness", Modes: []Mode{ModePrompt},
+			AllowedValues: []string{agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot},
+			Help: "Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). " +
 				"Requires a Foundry project in a supported harness region; see the extension README for supported regions."},
 		{Name: "infra", Modes: []Mode{ModeHostedFromCode, ModePromptVoice, ModeTemplateAdopt, ModeImage},
 			AllowedValues: []string{"bicep", "terraform"},

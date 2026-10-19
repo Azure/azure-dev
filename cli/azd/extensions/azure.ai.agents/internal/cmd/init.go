@@ -89,8 +89,8 @@ type initFlags struct {
 	// "prompt-voice" writes a declarative (managed) voice service directly to
 	// azure.yaml (no code/image, template/language selection, or ACR).
 	kind string
-	// harness, when set, names the execution harness written to the scaffolded
-	// prompt agent definition (only "github_copilot_preview" is supported today). A
+	// harness names the scaffolded prompt agent's execution harness
+	// ("microsoft_copilot_preview" or its legacy alias). A
 	// harness is what makes a prompt agent a "managed" agent; there is no
 	// separate --kind for it. Rejected for hosted agents.
 	harness string
@@ -1410,7 +1410,7 @@ func validateInitKindHarness(requestedKind agentKindChoice, rawKind, harness str
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--harness is only valid with --kind prompt",
-			fmt.Sprintf("use --kind prompt --harness %s", agent_api.ManagedAgentHarnessGitHubCopilot),
+			fmt.Sprintf("use --kind prompt --harness %s", agent_api.ManagedAgentHarnessMicrosoftCopilot),
 		)
 	}
 	if rawKind != "" && !isPromptVoice &&

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -91,6 +92,25 @@ func TestResolveModeFromFlags(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.want, ResolveModeFromFlags(test.template, test.kind, test.image))
 		})
+	}
+}
+
+func TestInitHarnessContract(t *testing.T) {
+	cmd := newInitCommand(nil)
+	require.Contains(t, cmd.Flags().Lookup("harness").Usage,
+		"'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand)")
+	for _, spec := range Contract() {
+		if spec.Name != "harness" {
+			continue
+		}
+		require.ElementsMatch(t, []string{
+			agent_api.ManagedAgentHarnessMicrosoftCopilot,
+			agent_api.ManagedAgentHarnessGitHubCopilot,
+		}, spec.AllowedValues)
+		for _, value := range spec.AllowedValues {
+			require.NoError(t, validateInitKindHarness(
+				AgentKindChoicePrompt, "prompt", value, false))
+		}
 	}
 }
 

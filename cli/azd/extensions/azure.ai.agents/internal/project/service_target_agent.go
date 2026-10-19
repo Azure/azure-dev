@@ -43,6 +43,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -2541,7 +2542,7 @@ func (p *AgentServiceTargetProvider) deployHostedAgent(
 
 	// Create agent
 	progress("Submitting agent version creation request")
-	agentVersionResponse, err := p.createAgent(ctx, prep.request, azdEnv)
+	agentVersionResponse, err := p.createAgent(ctx, serviceConfig.Name, prep.request, azdEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -3534,7 +3535,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			ctx, agentDef.Name, versionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}
 	} else {
 		if localProfile.IsActivity {
@@ -3556,7 +3557,7 @@ func (p *AgentServiceTargetProvider) deployHostedCodeAgent(
 			ctx, agentDef.Name, &updateVersionRequest, zipData, sha256Hex, agent_api.AgentEndpointAPIVersion,
 		)
 		if err != nil {
-			return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+			return nil, hostedAgentCreateError(err, serviceConfig.Name, prep.request)
 		}
 	}
 
@@ -3979,9 +3980,109 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 	return exterrors.Service(exterrors.OpCreateAgent, code, errMsg, serviceName, suggestion)
 }
 
+var hostedAgentRetryServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_. -]*$`)
+
+func hostedAgentCreateError(err error, serviceName string, request *agent_api.CreateAgentRequest) error {
+	converted := exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+	responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || responseErr.StatusCode != http.StatusBadRequest || responseErr.RawResponse == nil || request == nil {
+		return converted
+	}
+	definition, ok := request.Definition.(agent_api.HostedAgentDefinition)
+	if !ok {
+		return converted
+	}
+
+	body, readErr := runtime.Payload(responseErr.RawResponse)
+	if readErr != nil {
+		return converted
+	}
+	type validationDetail struct {
+		Message string `json:"message"`
+		Param   string `json:"param"`
+	}
+	var payload struct {
+		Error struct {
+			validationDetail
+			Details []validationDetail `json:"details"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return converted
+	}
+	details := payload.Error.Details
+	if len(details) == 0 {
+		details = []validationDetail{payload.Error.validationDetail}
+	}
+
+	messages := make([]string, 0, len(details))
+	for _, detail := range details {
+		message := strings.TrimSpace(detail.Message)
+		// Pair validation is reported on the definition, rather than on an individual resource field.
+		if message == "" || !isHostedResourceValidation(detail.Param, message) {
+			return converted
+		}
+		if !slices.Contains(messages, message) {
+			messages = append(messages, message)
+		}
+	}
+
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](converted)
+	if !ok {
+		return converted
+	}
+	serviceResponse := fmt.Sprintf("Service response: HTTP %d", serviceErr.StatusCode)
+	if responseErr.ErrorCode != "" {
+		serviceResponse += fmt.Sprintf(" (%s)", serviceErr.ErrorCode)
+	}
+	serviceErr.Message = fmt.Sprintf(
+		"Foundry rejected the resource configuration for service %q (CPU=%q, memory=%q).\n%s\n"+
+			"%s.",
+		serviceName, definition.CPU, definition.Memory, strings.Join(messages, "\n"), serviceResponse,
+	)
+	requestID := responseErr.RawResponse.Header.Get("x-request-id")
+	if requestID == "" {
+		requestID = responseErr.RawResponse.Header.Get("x-ms-request-id")
+	}
+	if requestID == "" {
+		requestID = responseErr.RawResponse.Header.Get("apim-request-id")
+	}
+	for part := range strings.SplitSeq(requestID, ",") {
+		if id := strings.TrimSpace(part); id != "" {
+			serviceErr.Message += fmt.Sprintf("\nRequest ID: %s", id)
+			break
+		}
+	}
+	retry := "retry deployment, passing this service's name as a shell-escaped argument to azd deploy."
+	if hostedAgentRetryServiceNamePattern.MatchString(serviceName) {
+		retry = fmt.Sprintf("retry 'azd deploy %q'.", serviceName)
+	}
+	serviceErr.Suggestion = fmt.Sprintf(
+		"Update container.resources.cpu and container.resources.memory for service %q in azure.yaml "+
+			"(or its $ref file) to a supported pair, then %s",
+		serviceName, retry,
+	)
+	return serviceErr
+}
+
+func isHostedResourceValidation(param, message string) bool {
+	switch strings.ToLower(strings.Trim(param, "/")) {
+	case "cpu", "memory", "definition.cpu", "definition.memory", "definition/cpu", "definition/memory":
+		return true
+	case "", "definition":
+		message = strings.ToLower(message)
+		return strings.HasPrefix(message, "cpu must ") ||
+			strings.HasPrefix(message, "memory must ") ||
+			strings.HasPrefix(message, "cpu and memory must ")
+	default:
+		return false
+	}
+}
+
 // createAgent creates a new version of the agent using the API
 func (p *AgentServiceTargetProvider) createAgent(
 	ctx context.Context,
+	serviceName string,
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
 ) (*agent_api.AgentVersionObject, error) {
@@ -4017,7 +4118,7 @@ func (p *AgentServiceTargetProvider) createAgent(
 		ctx, request.Name, versionRequest, agent_api.AgentEndpointAPIVersion,
 	)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateAgent)
+		return nil, hostedAgentCreateError(err, serviceName, request)
 	}
 
 	_, _ = fmt.Fprintf(os.Stderr, "Agent version '%s' created successfully!\n", agentVersionResponse.Name)

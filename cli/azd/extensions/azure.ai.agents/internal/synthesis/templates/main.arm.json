@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "10468995517805873777"
+      "templateHash": "5530571767237704320"
     }
   },
   "definitions": {
@@ -284,7 +284,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "1074341602014715502"
+              "templateHash": "14140613716699017224"
             }
           },
           "definitions": {
@@ -1082,7 +1082,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.46.1.21595",
-                      "templateHash": "544637247330827061"
+                      "templateHash": "10623895663758620939"
                     }
                   },
                   "parameters": {
@@ -1108,7 +1108,8 @@
                     }
                   },
                   "variables": {
-                    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+                    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]",
+                    "repositoryReaderRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b93aa761-3e63-49ed-ac28-beffa264f7ac')]"
                   },
                   "resources": [
                     {
@@ -1147,21 +1148,74 @@
                     },
                     {
                       "condition": "[equals(parameters('mode'), 'reuse-connect')]",
-                      "type": "Microsoft.Authorization/roleAssignments",
-                      "apiVersion": "2022-04-01",
-                      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
-                      "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('projectPrincipalId'), variables('acrPullRoleId'))]",
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "[format('existing-acr-access-{0}', uniqueString(parameters('projectPrincipalId'), parameters('registryName')))]",
                       "properties": {
-                        "principalId": "[parameters('projectPrincipalId')]",
-                        "principalType": "ServicePrincipal",
-                        "roleDefinitionId": "[variables('acrPullRoleId')]"
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "registryName": {
+                            "value": "[parameters('registryName')]"
+                          },
+                          "principalId": {
+                            "value": "[parameters('projectPrincipalId')]"
+                          },
+                          "roleDefinitionId": "[if(equals(reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').roleAssignmentMode, 'AbacRepositoryPermissions'), createObject('value', variables('repositoryReaderRoleId')), createObject('value', variables('acrPullRoleId')))]"
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.46.1.21595",
+                              "templateHash": "6236166357861660234"
+                            }
+                          },
+                          "parameters": {
+                            "registryName": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "Name of the Azure Container Registry."
+                              }
+                            },
+                            "principalId": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "Principal receiving pull access on the registry."
+                              }
+                            },
+                            "roleDefinitionId": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "Pull role definition resource ID (AcrPull or Container Registry Repository Reader)."
+                              }
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+                              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
                       }
                     }
                   ],
                   "outputs": {
                     "endpoint": {
                       "type": "string",
-                      "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer)]"
+                      "value": "[if(equals(parameters('mode'), 'create'), reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), '2025-11-01').loginServer)]"
                     },
                     "resourceId": {
                       "type": "string",

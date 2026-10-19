@@ -204,3 +204,14 @@ func TestARMExistingRegistryShape(t *testing.T) {
 	}
 	assert.Len(t, found, 3)
 }
+
+func TestARMExistingRegistrySelectsPullRoleByPermissionMode(t *testing.T) {
+	raw, err := ARMTemplate()
+	require.NoError(t, err)
+	body := string(raw)
+	assert.Contains(t, body, "7f951dda-4ed3-4680-a7ca-43fe172d538d")
+	assert.Contains(t, body, "b93aa761-3e63-49ed-ac28-beffa264f7ac")
+	assert.Contains(t, body, "AbacRepositoryPermissions")
+	assert.Contains(t, body, "roleAssignmentMode")
+	assert.Contains(t, body, "2025-11-01")
+}

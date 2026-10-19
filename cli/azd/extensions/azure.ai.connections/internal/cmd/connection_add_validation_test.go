@@ -556,6 +556,7 @@ func TestValidateConnectionDefinitionForAuthoringRejectsInseparableOAuthBranches
 	input.ConnectorName = "${OAUTH}"
 	input.AuthorizationURL = "${OAUTH}"
 	input.TokenURL = "${OAUTH}"
+	// #nosec G101 -- OAuth template placeholders for inseparability validation, not credentials.
 	input.Credentials = map[string]any{
 		"clientId": "${OAUTH}", "clientSecret": "${OAUTH}",
 	}

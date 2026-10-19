@@ -693,6 +693,13 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
+Hosted implementation protocols:
+--protocol selects protocols implemented by your application, not platform
+translation endpoints. Use --protocol a2a for native A2A 1.0 (version 1.0.0).
+Init configures azure.yaml only; it does not generate an A2A application or enable
+subscription-level service features. Responses remains the default when no
+protocol is specified in --no-prompt mode. Native A2A 0.3 is not offered.
+
 Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
 source code or container scaffolding.
@@ -1280,7 +1287,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
+		fmt.Sprintf("Application implementation protocols (%s), not translation endpoints. Can be specified multiple times.",
+			knownProtocolNames()))
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")

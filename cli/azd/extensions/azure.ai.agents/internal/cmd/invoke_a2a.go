@@ -250,17 +250,26 @@ func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *use
 // request in the selected dialect. Memory is bound to the agent session, like the
 // invocations protocol.
 func (a *InvokeAction) a2aRemote(ctx context.Context) error {
-	body, bodyLabel, err := a.buildA2ARequestBody()
-	if err != nil {
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {
 		return err
 	}
-
+	// Read file input before target lookup, which may need authentication.
+	if _, _, err := a.resolveBody(); err != nil {
+		return err
+	}
 	rc, err := a.resolveRemoteContextForInvoke(ctx)
 	if err != nil {
 		return err
 	}
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
+	}
+	if err := a.resolveA2ATarget(ctx, rc); err != nil {
+		return err
+	}
+	body, bodyLabel, err := a.buildA2ARequestBody()
+	if err != nil {
+		return err
 	}
 	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
 

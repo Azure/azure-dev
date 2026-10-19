@@ -156,6 +156,8 @@ class DatabasePrivilegeTests(unittest.TestCase):
         principal = "00000000-0000-0000-0000-000000000002"
         env = {
             "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
             "SPRING_APPLICATION_PRINCIPAL_ID": principal,
             "SPRING_APPLICATION_ID": "/example/app",
             "SPRING_DATABASE_HOST": "example.postgres.database.azure.com",
@@ -201,6 +203,7 @@ class DatabasePrivilegeTests(unittest.TestCase):
                             "properties": {"outboundIpAddresses": ["203.0.113.10"]}}),
                 json.dumps({"accessToken": "unused-test-token", "tenant": "test-tenant"}),
                 json.dumps({"tenantId": "test-tenant"}),
+                "",
             ]
             with patch("psycopg.connect", side_effect=[mapping, application]), \
                     patch.object(bootstrap, "command", side_effect=responses), \
@@ -268,6 +271,8 @@ class DatabasePrivilegeTests(unittest.TestCase):
         principal = "00000000-0000-0000-0000-000000000002"
         env = {
             "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
             "SPRING_APPLICATION_PRINCIPAL_ID": principal,
             "SPRING_APPLICATION_ID": "/example/app",
             "SPRING_DATABASE_HOST": "example.postgres.database.azure.com",
@@ -316,6 +321,7 @@ class DatabasePrivilegeTests(unittest.TestCase):
                                     "properties": {"outboundIpAddresses": ["203.0.113.10"]}}),
                         json.dumps({"accessToken": "unused-test-token", "tenant": "test-tenant"}),
                         json.dumps({"tenantId": "test-tenant"}),
+                        "",
                     ]
                     # Only Azure identity/token acquisition and its mapping connection are mocked.
                     # The application connection, transaction, supplied SQL and validator are real.

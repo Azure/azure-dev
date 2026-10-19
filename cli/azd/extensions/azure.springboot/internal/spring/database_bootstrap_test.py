@@ -31,6 +31,59 @@ def prerequisite_environment(root):
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_bootstrap_firewall_cleanup_on_success_and_failure(self):
+        env = {
+            "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
+        }
+        settings = {"engine": "postgresql", "auth": "managedIdentity"}
+        for sql_fails in (False, True):
+            for cleanup_fails in (False, True):
+                with self.subTest(sql_fails=sql_fails, cleanup_fails=cleanup_fails), \
+                        patch.object(bootstrap, "bootstrap_database", return_value="verified-digest",
+                                     side_effect=RuntimeError("SQL bootstrap rejected") if sql_fails else None), \
+                        patch.object(bootstrap, "command",
+                                     side_effect=RuntimeError("az postgres failed") if cleanup_fails else None) as command, \
+                        patch.object(bootstrap, "set_value") as setter, patch("builtins.print") as printer:
+                    if sql_fails or cleanup_fails:
+                        message = "Failed to remove temporary PostgreSQL firewall" if cleanup_fails else "SQL bootstrap rejected"
+                        with self.assertRaisesRegex(RuntimeError, message) as error:
+                            bootstrap.bootstrap(settings, env)
+                        if sql_fails and cleanup_fails:
+                            formatted = "".join(traceback.format_exception(error.exception))
+                            self.assertIn("SQL bootstrap rejected", formatted)
+                            self.assertIn("Failed to remove temporary PostgreSQL firewall", formatted)
+                        setter.assert_not_called()
+                        printer.assert_not_called()
+                    else:
+                        bootstrap.bootstrap(settings, env)
+                        setter.assert_called_once_with("SPRING_DATABASE_BOOTSTRAP_DIGEST", "verified-digest")
+                        printer.assert_called_once()
+                    command.assert_called_once_with(
+                        "az", "postgres", "flexible-server", "firewall-rule", "delete",
+                        "--subscription", env["AZURE_SUBSCRIPTION_ID"],
+                        "--resource-group", env["AZURE_RESOURCE_GROUP"],
+                        "--server-name", env["SPRING_DATABASE_SERVER_NAME"],
+                        "--name", "bootstrap-local-ip", "--yes",
+                    )
+
+    def test_missing_cleanup_identity_does_not_start_bootstrap(self):
+        env = {
+            "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
+        }
+        for key in env:
+            with self.subTest(key=key), \
+                    patch.object(bootstrap, "bootstrap_database") as database, \
+                    patch.object(bootstrap, "command") as command:
+                with self.assertRaisesRegex(RuntimeError, key):
+                    bootstrap.bootstrap({"engine": "postgresql", "auth": "managedIdentity"},
+                                        {name: value for name, value in env.items() if name != key})
+                database.assert_not_called()
+                command.assert_not_called()
+
     def test_other_database_modes_are_rejected(self):
         for engine, auth in (("none", "password"), ("mysql", "password"), ("postgresql", "password")):
             with self.subTest(engine=engine, auth=auth), patch.object(bootstrap, "set_value") as setter:
@@ -149,6 +202,8 @@ class BootstrapTests(unittest.TestCase):
         script = "GRANT USAGE ON SCHEMA public TO azd_app;"
         env = {
             "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
             "SPRING_APPLICATION_PRINCIPAL_ID": principal,
             "SPRING_APPLICATION_ID": "/example/app",
             "SPRING_DATABASE_HOST": host,
@@ -157,6 +212,8 @@ class BootstrapTests(unittest.TestCase):
         settings = {"engine": "postgresql", "auth": "managedIdentity", "database": "catalog"}
 
         def command(tool, *arguments):
+            if arguments[:4] == ("postgres", "flexible-server", "firewall-rule", "delete"):
+                return ""
             if arguments[:2] == ("containerapp", "show"):
                 return json.dumps({"identity": {"type": "SystemAssigned", "principalId": principal},
                                    "properties": {"outboundIpAddresses": ["203.0.113.10"]}})
@@ -240,6 +297,8 @@ class BootstrapTests(unittest.TestCase):
         principal = "00000000-0000-0000-0000-000000000002"
         env = {
             "AZURE_SUBSCRIPTION_ID": "example-subscription",
+            "AZURE_RESOURCE_GROUP": "rg-example",
+            "SPRING_DATABASE_SERVER_NAME": "pg-example",
             "SPRING_APPLICATION_PRINCIPAL_ID": principal, "SPRING_APPLICATION_ID": "/example/app",
             "SPRING_DATABASE_HOST": "example.postgres.database.azure.com",
             "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
@@ -254,6 +313,7 @@ class BootstrapTests(unittest.TestCase):
                         "properties": {"outboundIpAddresses": ["203.0.113.10"]}}),
             json.dumps({"accessToken": "runtime-token", "tenant": "test-tenant"}),
             json.dumps({"tenantId": "test-tenant"}),
+            "",
         ]
         with patch.dict(sys.modules, {"psycopg": psycopg, "certifi": MagicMock()}), \
                 patch.object(bootstrap, "command", side_effect=responses), \

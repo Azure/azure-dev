@@ -225,7 +225,10 @@ invalidates cached grants, including after a failed recovery attempt.
 Principal mapping and privilege checks still run. Changed SQL executes again:
 make it an intentional, repeatable migration, not a destructive sample reset.
 
-The bootstrap IP rule remains after provisioning; it is not removed automatically.
+The hook deletes only its `bootstrap-local-ip` firewall rule after SQL setup, on
+success or failure, and reports cleanup failures without recording success.
+ACA rules remain. The next `azd provision` recreates temporary bootstrap access.
+Provisioning interrupted before the hook runs can leave the rule; remove it explicitly.
 RBAC propagation may still delay registry access.
 MySQL/managed identity needs separate server-identity/Graph
 configuration and live validation; it is explicitly rejected.

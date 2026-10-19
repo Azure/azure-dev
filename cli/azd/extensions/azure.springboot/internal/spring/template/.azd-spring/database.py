@@ -162,6 +162,32 @@ def prepare(settings, env):
 def bootstrap(settings, env):
     if settings["engine"] != "postgresql" or settings["auth"] != "managedIdentity":
         raise RuntimeError("SQL identity bootstrap requires PostgreSQL managed identity")
+    subscription = required(env, "AZURE_SUBSCRIPTION_ID")
+    group = required(env, "AZURE_RESOURCE_GROUP")
+    server = required(env, "SPRING_DATABASE_SERVER_NAME")
+    try:
+        digest = bootstrap_database(settings, env)
+    finally:
+        # Bicep opens this dedicated rule on each provision. Remove only that rule, even if
+        # SQL/authentication fails; the separate ACA egress rules must remain untouched.
+        # https://learn.microsoft.com/rest/api/postgresql/firewall-rules/delete
+        try:
+            command(
+                "az", "postgres", "flexible-server", "firewall-rule", "delete",
+                "--subscription", subscription, "--resource-group", group, "--server-name", server,
+                "--name", "bootstrap-local-ip", "--yes",
+            )
+        except RuntimeError as error:
+            raise RuntimeError(
+                "Failed to remove temporary PostgreSQL firewall rule bootstrap-local-ip; "
+                "remove it manually from the provisioned server before retrying azd provision"
+            ) from error
+    # Do not record/report success until both SQL validation and firewall cleanup succeed.
+    set_value("SPRING_DATABASE_BOOTSTRAP_DIGEST", digest)
+    print("Non-admin SQL identity verified; reviewed schema/grants applied or unchanged bootstrap skipped.")
+
+
+def bootstrap_database(settings, env):
     import certifi
     import psycopg
     from psycopg import sql
@@ -233,8 +259,7 @@ def bootstrap(settings, env):
         connection.execute(
             sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
                 sql.Identifier(database), sql.Identifier(ROLE)))
-    set_value("SPRING_DATABASE_BOOTSTRAP_DIGEST", digest)
-    print("Non-admin SQL identity verified; reviewed schema/grants applied or unchanged bootstrap skipped.")
+    return digest
 
 
 if __name__ == "__main__":

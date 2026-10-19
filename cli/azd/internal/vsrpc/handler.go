@@ -21,7 +21,7 @@ const (
 )
 
 // Handler is the type of function that handles incoming RPC requests.
-type Handler func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replier, req jsonrpc2.Request) error
+type Handler func(ctx context.Context, conn jsonrpc2.Conn, method string, params []byte) (any, error)
 
 // NewHandler is a generic helper for creating a Handler from an arbitrary function. The function must:
 //
@@ -58,10 +58,10 @@ func NewHandler(f any) Handler {
 		panic(fmt.Sprintf("NewHandler: second return value must be an error, got %s", fnType.Out(1)))
 	}
 
-	return func(ctx context.Context, conn jsonrpc2.Conn, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
-		args, err := unmarshalArgs(conn, req, fnType)
+	return func(ctx context.Context, conn jsonrpc2.Conn, method string, params []byte) (any, error) {
+		args, err := unmarshalArgs(conn, method, params, fnType)
 		if err != nil {
-			return reply(ctx, nil, err)
+			return nil, err
 		}
 
 		var results []reflect.Value
@@ -99,7 +99,7 @@ func NewHandler(f any) Handler {
 					Message: err.Error(),
 				}
 			}
-			return reply(ctx, nil, err)
+			return nil, err
 		} else if fnType.NumOut() == 2 {
 			// Function returns a value and an error
 			ret := results[0].Interface()
@@ -113,16 +113,16 @@ func NewHandler(f any) Handler {
 					Message: err.Error(),
 				}
 			}
-			return reply(ctx, ret, err)
+			return ret, err
 		}
-		return reply(ctx, nil, fmt.Errorf("unexpected number of return values"))
+		return nil, fmt.Errorf("unexpected number of return values")
 	}
 }
 
 // unmarshalArgs unmarshals the request parameters into the expected argument types for the function.
-func unmarshalArgs(conn jsonrpc2.Conn, req jsonrpc2.Request, fnType reflect.Type) ([]reflect.Value, error) {
+func unmarshalArgs(conn jsonrpc2.Conn, method string, params []byte, fnType reflect.Type) ([]reflect.Value, error) {
 	var args []json.RawMessage
-	if err := json.Unmarshal(req.Params(), &args); err != nil {
+	if err := json.Unmarshal(params, &args); err != nil {
 		return nil, jsonrpc2.NewError(
 			jsonrpc2.InvalidParams, fmt.Sprintf("unmarshalling params as array: %s", err.Error()))
 	}
@@ -132,7 +132,7 @@ func unmarshalArgs(conn jsonrpc2.Conn, req jsonrpc2.Request, fnType reflect.Type
 
 	if len(args) != expectedArgs {
 		return nil, jsonrpc2.NewError(
-			jsonrpc2.InvalidParams, fmt.Sprintf("expected %d params for %s, got %d", expectedArgs, req.Method(), len(args)))
+			jsonrpc2.InvalidParams, fmt.Sprintf("expected %d params for %s, got %d", expectedArgs, method, len(args)))
 	}
 
 	fnArgs := make([]reflect.Value, expectedArgs)

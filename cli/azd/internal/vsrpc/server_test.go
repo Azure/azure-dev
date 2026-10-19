@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
@@ -127,17 +129,17 @@ func TestObserverable(t *testing.T) {
 	var onCompletedParams []json.RawMessage
 
 	rpcConn := jsonrpc2.NewConn(newWebSocketStream(wsConn))
-	rpcConn.Go(t.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+	rpcConn.Go(t.Context(), func(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 		switch req.Method() {
 		case "$/invokeProxy/1/onNext":
-			onNextParams = append(onNextParams, req.Params())
+			onNextParams = append(onNextParams, json.RawMessage(slices.Clone(req.Params())))
 		case "$/invokeProxy/1/onCompleted":
-			onCompletedParams = append(onCompletedParams, req.Params())
+			onCompletedParams = append(onCompletedParams, json.RawMessage(slices.Clone(req.Params())))
 		default:
 			require.Fail(t, "unexpected rpc %s delivered", req.Method())
 		}
 
-		return nil
+		return nil, nil
 	})
 
 	// The second argument is the wire form of an IObserver as marshalled by StreamJsonRpc. We use the handle when sending
@@ -337,4 +339,103 @@ func TestServeRpc_CancelNilId(t *testing.T) {
 	// Send cancel request without an id field — should get InvalidParams
 	err = rpcConn.Notify(t.Context(), "$/cancelRequest", struct{}{})
 	require.NoError(t, err) // notification itself doesn't return an error
+}
+
+func TestServeRpc_CancelInt64ID(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveRpc(w, r, map[string]Handler{
+			"Wait": NewHandler(func(ctx context.Context) error {
+				close(started)
+				<-ctx.Done()
+				return ctx.Err()
+			}),
+		})
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	serverURL.Scheme = "ws"
+	ws, _, err := websocket.DefaultDialer.Dial(serverURL.String(), nil)
+	require.NoError(t, err)
+	defer ws.Close()
+	require.NoError(t, ws.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+	const id int64 = 1 << 40
+	require.NoError(t, ws.WriteJSON(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "Wait", "params": []any{},
+	}))
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request handler did not start")
+	}
+	require.NoError(t, ws.WriteJSON(map[string]any{
+		"jsonrpc": "2.0", "method": "$/cancelRequest", "params": map[string]any{"id": id},
+	}))
+
+	var response struct {
+		ID    int64           `json:"id"`
+		Error *jsonrpc2.Error `json:"error"`
+	}
+	require.NoError(t, ws.ReadJSON(&response))
+	require.Equal(t, id, response.ID)
+	require.NotNil(t, response.Error)
+	require.Equal(t, requestCanceledErrorCode, response.Error.Code)
+}
+
+func TestServeRpc_ConcurrentRequestsRetainParameters(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serveRpc(w, r, map[string]Handler{
+			"Echo": NewHandler(func(ctx context.Context, value string) (string, error) {
+				if value == "first" {
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return "", ctx.Err()
+					}
+				}
+				return value, nil
+			}),
+		})
+	}))
+	defer server.Close()
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	serverURL.Scheme = "ws"
+	ws, _, err := websocket.DefaultDialer.Dial(serverURL.String(), nil)
+	require.NoError(t, err)
+	defer ws.Close()
+	require.NoError(t, ws.SetReadDeadline(time.Now().Add(5*time.Second)))
+
+	require.NoError(t, ws.WriteJSON(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "Echo", "params": []any{"first"},
+	}))
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first request handler did not start")
+	}
+	require.NoError(t, ws.WriteJSON(map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "Echo", "params": []any{"second"},
+	}))
+
+	var response struct {
+		ID     int    `json:"id"`
+		Result string `json:"result"`
+	}
+	require.NoError(t, ws.ReadJSON(&response))
+	require.Equal(t, 2, response.ID)
+	require.Equal(t, "second", response.Result)
+	unblock()
+	require.NoError(t, ws.ReadJSON(&response))
+	require.Equal(t, 1, response.ID)
+	require.Equal(t, "first", response.Result)
 }

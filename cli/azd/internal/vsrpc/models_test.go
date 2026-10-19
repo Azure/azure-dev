@@ -494,7 +494,7 @@ func TestNewHandler_PanicRecovery_SingleReturn(t *testing.T) {
 		panic("boom")
 	})
 
-	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	call, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{})
 	require.NoError(t, err)
 
 	var gotErr error
@@ -503,7 +503,7 @@ func TestNewHandler_PanicRecovery_SingleReturn(t *testing.T) {
 		return nil
 	}
 
-	_ = h(t.Context(), nil, replier, call)
+	_ = invokeHandler(h, t.Context(), nil, replier, call)
 	require.Error(t, gotErr)
 	require.Contains(t, gotErr.Error(), "boom")
 }
@@ -513,7 +513,7 @@ func TestNewHandler_PanicRecovery_TwoReturns(t *testing.T) {
 		panic("kaboom")
 	})
 
-	call, err := jsonrpc2.NewCall(jsonrpc2.NewNumberID(1), "Test", []any{})
+	call, err := newCall(jsonrpc2.NewNumberID(1), "Test", []any{})
 	require.NoError(t, err)
 
 	var gotErr error
@@ -522,7 +522,7 @@ func TestNewHandler_PanicRecovery_TwoReturns(t *testing.T) {
 		return nil
 	}
 
-	_ = h(t.Context(), nil, replier, call)
+	_ = invokeHandler(h, t.Context(), nil, replier, call)
 	require.Error(t, gotErr)
 	require.Contains(t, gotErr.Error(), "kaboom")
 }
@@ -582,9 +582,9 @@ func TestMessageWriter_Write_ViaObserver(t *testing.T) {
 		defer c.Close()
 
 		rpcServer := jsonrpc2.NewConn(newWebSocketStream(c))
-		rpcServer.Go(r.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
+		rpcServer.Go(r.Context(), func(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 			received <- req.Method()
-			return nil
+			return nil, nil
 		})
 		<-rpcServer.Done()
 	})

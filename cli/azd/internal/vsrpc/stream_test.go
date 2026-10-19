@@ -74,7 +74,7 @@ func TestWsStream_ReadWrite(t *testing.T) {
 	stream := newWebSocketStream(wsConn)
 
 	// Send a JSON-RPC notification
-	notification, err := jsonrpc2.NewNotification("test/method", []string{"arg1"})
+	notification, err := newNotification("test/method", []string{"arg1"})
 	require.NoError(t, err)
 
 	n, err := stream.Write(t.Context(), notification)

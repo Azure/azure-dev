@@ -332,7 +332,7 @@ func (s *wsStream) Read(ctx context.Context) (jsonrpc2.Message, int64, error) {
 
 // Write implements jsonrpc2.Stream.
 func (s *wsStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, error) {
-	data, err := json.Marshal(msg)
+	data, err := jsonrpc2.EncodeMessage(msg)
 	if err != nil {
 		return 0, fmt.Errorf("marshaling message: %w", err)
 	}

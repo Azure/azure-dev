@@ -1040,6 +1040,7 @@ func TestExistingEndpointModeEnvironmentDeployments(t *testing.T) {
 	for _, test := range []struct {
 		name, value, oldEndpoint, projectID string
 		wantError                           bool
+		yamlDeployments                     bool
 	}{
 		{name: "no service", value: deployments, wantError: true},
 		{name: "changed endpoint", value: deployments, oldEndpoint: "https://other.services.ai.azure.com/api/projects/p",
@@ -1047,6 +1048,12 @@ func TestExistingEndpointModeEnvironmentDeployments(t *testing.T) {
 		{name: "clearing identity", value: deployments, oldEndpoint: endpoint, projectID: "project-id", wantError: true},
 		{name: "unchanged endpoint", value: deployments, oldEndpoint: endpoint},
 		{name: "intentional empty", value: "[]", projectID: "project-id"},
+		{name: "empty overrides YAML while clearing identity", value: "[]", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true},
+		{name: "blank falls back to YAML", value: " ", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true, wantError: true},
+		{name: "missing falls back to YAML", oldEndpoint: endpoint,
+			projectID: "project-id", yamlDeployments: true, wantError: true},
 		{name: "blank", value: " ", projectID: "project-id"},
 		{name: "missing", projectID: "project-id"},
 	} {
@@ -1056,6 +1063,10 @@ func TestExistingEndpointModeEnvironmentDeployments(t *testing.T) {
 				service = &projectServiceInfo{
 					Raw:      map[string]any{"endpoint": test.oldEndpoint},
 					Resolved: map[string]any{"endpoint": test.oldEndpoint},
+				}
+				if test.yamlDeployments {
+					service.Raw["deployments"] = []any{map[string]any{"name": "yaml-chat"}}
+					service.Resolved["deployments"] = []any{map[string]any{"name": "yaml-chat"}}
 				}
 			}
 			err := validateExistingEndpointMode(service, endpoint, "", map[string]string{

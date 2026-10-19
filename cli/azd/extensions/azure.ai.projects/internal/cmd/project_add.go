@@ -1449,7 +1449,7 @@ func validateExistingEndpointMode(
 				"before retaining project resources",
 		)
 	}
-	deployments, _, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
 	if err != nil {
 		return err
 	}
@@ -1457,8 +1457,10 @@ func validateExistingEndpointMode(
 	hasDeployments := len(deployments) > 0
 	if service != nil {
 		sameEndpoint = equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
-		hasDeployments = hasDeployments || hasManagedDeployments(service.Resolved) ||
-			hasManagedDeployments(service.Raw)
+		if !present {
+			hasDeployments = hasManagedDeployments(service.Resolved) ||
+				hasManagedDeployments(service.Raw)
+		}
 	}
 	if hasDeployments &&
 		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {

@@ -19,7 +19,7 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/gofrs/flock v0.13.1
 	github.com/google/uuid v1.6.0
-	github.com/mark3labs/mcp-go v1.3.0
+	github.com/mark3labs/mcp-go v0.58.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1

@@ -312,6 +312,22 @@ func TestHostedAgentCreateErrorRequestIDHeaders(t *testing.T) {
 		{"prefer x-ms-request-id over APIM", map[string]string{
 			"x-ms-request-id": "azure-request-id", "apim-request-id": "apim-id",
 		}, "azure-request-id"},
+		{"folded x-request-id", map[string]string{
+			"x-request-id": " request-id, request-id ",
+		}, "request-id"},
+		{"folded x-ms-request-id", map[string]string{
+			"x-ms-request-id": " azure-request-id, azure-request-id ",
+		}, "azure-request-id"},
+		{"folded APIM request ID", map[string]string{
+			"apim-request-id": " apim-id, apim-id ",
+		}, "apim-id"},
+		{"first non-empty token", map[string]string{
+			"apim-request-id": " , \t, apim-id, other-id ",
+		}, "apim-id"},
+		{"folded primary keeps precedence", map[string]string{
+			"x-request-id": " request-id, duplicate ", "apim-request-id": "apim-id",
+		}, "request-id"},
+		{"blank request ID", map[string]string{"apim-request-id": " , \t, "}, ""},
 		{"no request ID", nil, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

@@ -4017,8 +4017,11 @@ func hostedAgentCreateError(err error, serviceName string, request *agent_api.Cr
 	if requestID == "" {
 		requestID = responseErr.RawResponse.Header.Get("apim-request-id")
 	}
-	if requestID != "" {
-		serviceErr.Message += fmt.Sprintf("\nRequest ID: %s", requestID)
+	for part := range strings.SplitSeq(requestID, ",") {
+		if id := strings.TrimSpace(part); id != "" {
+			serviceErr.Message += fmt.Sprintf("\nRequest ID: %s", id)
+			break
+		}
 	}
 	retry := "retry deployment, passing this service's name as a shell-escaped argument to azd deploy."
 	if hostedAgentRetryServiceNamePattern.MatchString(serviceName) {

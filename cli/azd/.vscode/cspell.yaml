@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "{pkg/azapi,pkg/infra,test/azurecleanup,test/recording,test/mocks/mockarmresources,extensions/azure.ai.projects/internal/provisioning,extensions/azure.ai.projects/internal/exterrors}/**/*.go"
+    words:
+      - armdeployments
   - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
     words:
       - generateprojectclient

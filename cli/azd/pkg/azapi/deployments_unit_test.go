@@ -6,8 +6,8 @@ package azapi
 import (
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -96,33 +96,33 @@ func TestConvertFromStandardProvisioningState(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		input armresources.ProvisioningState
+		input armdeployments.ProvisioningState
 		want  DeploymentProvisioningState
 	}{
-		{"Accepted", armresources.ProvisioningStateAccepted,
+		{"Accepted", armdeployments.ProvisioningStateAccepted,
 			DeploymentProvisioningStateAccepted},
-		{"Canceled", armresources.ProvisioningStateCanceled,
+		{"Canceled", armdeployments.ProvisioningStateCanceled,
 			DeploymentProvisioningStateCanceled},
-		{"Creating", armresources.ProvisioningStateCreating,
+		{"Creating", armdeployments.ProvisioningStateCreating,
 			DeploymentProvisioningStateCreating},
-		{"Deleted", armresources.ProvisioningStateDeleted,
+		{"Deleted", armdeployments.ProvisioningStateDeleted,
 			DeploymentProvisioningStateDeleted},
-		{"Deleting", armresources.ProvisioningStateDeleting,
+		{"Deleting", armdeployments.ProvisioningStateDeleting,
 			DeploymentProvisioningStateDeleting},
-		{"Failed", armresources.ProvisioningStateFailed,
+		{"Failed", armdeployments.ProvisioningStateFailed,
 			DeploymentProvisioningStateFailed},
-		{"NotSpecified", armresources.ProvisioningStateNotSpecified,
+		{"NotSpecified", armdeployments.ProvisioningStateNotSpecified,
 			DeploymentProvisioningStateNotSpecified},
-		{"Ready", armresources.ProvisioningStateReady,
+		{"Ready", armdeployments.ProvisioningStateReady,
 			DeploymentProvisioningStateReady},
-		{"Running", armresources.ProvisioningStateRunning,
+		{"Running", armdeployments.ProvisioningStateRunning,
 			DeploymentProvisioningStateRunning},
-		{"Succeeded", armresources.ProvisioningStateSucceeded,
+		{"Succeeded", armdeployments.ProvisioningStateSucceeded,
 			DeploymentProvisioningStateSucceeded},
-		{"Updating", armresources.ProvisioningStateUpdating,
+		{"Updating", armdeployments.ProvisioningStateUpdating,
 			DeploymentProvisioningStateUpdating},
 		{"unknown_returns_empty",
-			armresources.ProvisioningState("SomethingNew"),
+			armdeployments.ProvisioningState("SomethingNew"),
 			DeploymentProvisioningState("")},
 	}
 
@@ -227,7 +227,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 	t.Run("empty_input", func(t *testing.T) {
 		t.Parallel()
 		result, err := GroupByResourceGroup(
-			[]*armresources.ResourceReference{},
+			[]*armdeployments.ResourceReference{},
 		)
 		require.NoError(t, err)
 		assert.Empty(t, result)
@@ -235,7 +235,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 
 	t.Run("groups_resources_correctly", func(t *testing.T) {
 		t.Parallel()
-		refs := []*armresources.ResourceReference{
+		refs := []*armdeployments.ResourceReference{
 			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1" +
 					"/providers/Microsoft.Web/sites/app1")},
@@ -256,7 +256,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 
 	t.Run("excludes_resource_group_type", func(t *testing.T) {
 		t.Parallel()
-		refs := []*armresources.ResourceReference{
+		refs := []*armdeployments.ResourceReference{
 			{ID: new(
 				"/subscriptions/sub1/resourceGroups/rg1")},
 			{ID: new(
@@ -274,7 +274,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 
 	t.Run("invalid_resource_id", func(t *testing.T) {
 		t.Parallel()
-		refs := []*armresources.ResourceReference{
+		refs := []*armdeployments.ResourceReference{
 			{ID: new("not-a-valid-resource-id")},
 		}
 
@@ -284,7 +284,7 @@ func TestGroupByResourceGroup(t *testing.T) {
 
 	t.Run("subscription_level_resources_skipped", func(t *testing.T) {
 		t.Parallel()
-		refs := []*armresources.ResourceReference{
+		refs := []*armdeployments.ResourceReference{
 			{ID: new(
 				"/subscriptions/sub1/providers" +
 					"/Microsoft.Resources/deployments/deploy1")},

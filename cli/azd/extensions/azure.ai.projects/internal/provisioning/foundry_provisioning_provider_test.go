@@ -18,7 +18,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -476,9 +476,9 @@ func TestDeploymentOutputsResources_NilSafe(t *testing.T) {
 	assert.Nil(t, deploymentOutputs(nil))
 	assert.Nil(t, deploymentResources(nil))
 
-	props := &armresources.DeploymentPropertiesExtended{
+	props := &armdeployments.DeploymentPropertiesExtended{
 		Outputs:         map[string]any{"K": "V"},
-		OutputResources: []*armresources.ResourceReference{{}},
+		OutputResources: []*armdeployments.ResourceReference{{}},
 	}
 	assert.NotNil(t, deploymentOutputs(props))
 	assert.Len(t, deploymentResources(props), 1)
@@ -489,12 +489,12 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 		subscriptionID = "00000000-0000-0000-0000-000000000001"
 		resourceGroup  = "rg-foundry"
 	)
-	properties := func(ids ...string) *armresources.DeploymentPropertiesExtended {
-		resources := make([]*armresources.ResourceReference, 0, len(ids))
+	properties := func(ids ...string) *armdeployments.DeploymentPropertiesExtended {
+		resources := make([]*armdeployments.ResourceReference, 0, len(ids))
 		for _, id := range ids {
-			resources = append(resources, &armresources.ResourceReference{ID: new(id)})
+			resources = append(resources, &armdeployments.ResourceReference{ID: new(id)})
 		}
-		return &armresources.DeploymentPropertiesExtended{OutputResources: resources}
+		return &armdeployments.DeploymentPropertiesExtended{OutputResources: resources}
 	}
 
 	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
@@ -505,7 +505,7 @@ func TestVerifyLayerResourceGroupOwnership(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
 		ownerID string
-		props   *armresources.DeploymentPropertiesExtended
+		props   *armdeployments.DeploymentPropertiesExtended
 	}{
 		{name: "no ownership marker"},
 		{name: "only resource inside group", props: properties(ownedID + "/providers/Microsoft.Storage/storageAccounts/a")},
@@ -547,8 +547,8 @@ func TestResolveLayerResourceGroupOwnership(t *testing.T) {
 		resourceGroup  = "rg-foundry"
 	)
 	ownedID := "/subscriptions/" + subscriptionID + "/resourceGroups/" + resourceGroup
-	properties := &armresources.DeploymentPropertiesExtended{
-		OutputResources: []*armresources.ResourceReference{{ID: new(ownedID)}},
+	properties := &armdeployments.DeploymentPropertiesExtended{
+		OutputResources: []*armdeployments.ResourceReference{{ID: new(ownedID)}},
 	}
 
 	assert.Equal(t, ownedID, resolveLayerResourceGroupOwnership(

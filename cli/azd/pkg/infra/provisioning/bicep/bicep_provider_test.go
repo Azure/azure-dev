@@ -25,7 +25,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -648,7 +649,7 @@ func prepareBicepMocks(
 	})
 }
 
-var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
+var testEnvDeployment armdeployments.DeploymentExtended = armdeployments.DeploymentExtended{
 	ID:       new("DEPLOYMENT_ID"),
 	Name:     new("test-env"),
 	Location: new("eastus2"),
@@ -656,16 +657,16 @@ var testEnvDeployment armresources.DeploymentExtended = armresources.DeploymentE
 		"azd-env-name": new("test-env"),
 	},
 	Type: new("Microsoft.Resources/deployments"),
-	Properties: &armresources.DeploymentPropertiesExtended{
+	Properties: &armdeployments.DeploymentPropertiesExtended{
 		Outputs: map[string]any{
 			"WEBSITE_URL": map[string]any{"value": "http://myapp.azurewebsites.net", "type": "string"},
 		},
-		OutputResources: []*armresources.ResourceReference{
+		OutputResources: []*armdeployments.ResourceReference{
 			{
 				ID: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
 			},
 		},
-		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+		ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 		Timestamp:         new(time.Now()),
 	},
 }
@@ -686,8 +687,8 @@ func prepareStateMocks(mockContext *mocks.MockContext) {
 		}, nil
 	})
 
-	deploymentsPage := &armresources.DeploymentListResult{
-		Value: []*armresources.DeploymentExtended{
+	deploymentsPage := &armdeployments.DeploymentListResult{
+		Value: []*armdeployments.DeploymentExtended{
 			&testEnvDeployment,
 		},
 	}
@@ -843,8 +844,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
-			DeploymentExtended: armresources.DeploymentExtended{
+		result := &armdeployments.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armdeployments.DeploymentExtended{
 				ID:       new("DEPLOYMENT_ID"),
 				Name:     new("test-env"),
 				Location: new("eastus2"),
@@ -852,8 +853,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 					"azd-env-name": new("test-env"),
 				},
 				Type: new("Microsoft.Resources/deployments"),
-				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Properties: &armdeployments.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -1069,8 +1070,8 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPut &&
 			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := &armresources.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
-			DeploymentExtended: armresources.DeploymentExtended{
+		result := &armdeployments.DeploymentsClientCreateOrUpdateAtSubscriptionScopeResponse{
+			DeploymentExtended: armdeployments.DeploymentExtended{
 				ID:       new("DEPLOYMENT_ID"),
 				Name:     new("test-env"),
 				Location: new("eastus2"),
@@ -1078,8 +1079,8 @@ func prepareLogAnalyticsDestroyMocks(mockContext *mocks.MockContext) {
 					"azd-env-name": new("test-env"),
 				},
 				Type: new("Microsoft.Resources/deployments"),
-				Properties: &armresources.DeploymentPropertiesExtended{
-					ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Properties: &armdeployments.DeploymentPropertiesExtended{
+					ProvisioningState: to.Ptr(armdeployments.ProvisioningStateSucceeded),
 					Timestamp:         new(time.Now()),
 				},
 			},
@@ -1728,13 +1729,13 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 			strings.HasSuffix(request.URL.Path, "/whatIf")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		// Return a WhatIfOperationResult with various scenarios
-		whatIfResult := armresources.WhatIfOperationResult{
+		whatIfResult := armdeployments.WhatIfOperationResult{
 			Status: new("Succeeded"),
-			Properties: &armresources.WhatIfOperationProperties{
-				Changes: []*armresources.WhatIfChange{
+			Properties: &armdeployments.WhatIfOperationProperties{
+				Changes: []*armdeployments.WhatIfChange{
 					// Create scenario: Before is nil, After has value
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeCreate),
+						ChangeType: to.Ptr(armdeployments.ChangeTypeCreate),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app1"),
 						Before:     nil,
 						After: map[string]any{
@@ -1744,7 +1745,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Delete scenario: After is nil, Before has value
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeDelete),
+						ChangeType: to.Ptr(armdeployments.ChangeTypeDelete),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app2"),
 						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
@@ -1754,7 +1755,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Modify scenario: Both Before and After have values
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeModify),
+						ChangeType: to.Ptr(armdeployments.ChangeTypeModify),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Web/sites/app3"),
 						Before: map[string]any{
 							"type": "Microsoft.Web/sites",
@@ -1767,7 +1768,7 @@ func TestPreviewWithNilResourceState(t *testing.T) {
 					},
 					// Edge case: Both Before and After are nil (should be skipped)
 					{
-						ChangeType: to.Ptr(armresources.ChangeTypeUnsupported),
+						ChangeType: to.Ptr(armdeployments.ChangeTypeUnsupported),
 						ResourceID: new("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Unknown/unknown"),
 						Before:     nil,
 						After:      nil,
@@ -2529,22 +2530,22 @@ func TestConvertPropertyChanges(t *testing.T) {
 
 	t.Run("SkipsNilEntries", func(t *testing.T) {
 		t.Parallel()
-		changes := []*armresources.WhatIfPropertyChange{nil, nil}
+		changes := []*armdeployments.WhatIfPropertyChange{nil, nil}
 		result := convertPropertyChanges(changes)
 		require.Empty(t, result)
 	})
 
 	t.Run("ConvertsAndRecurses", func(t *testing.T) {
 		t.Parallel()
-		modify := armresources.PropertyChangeTypeModify
-		create := armresources.PropertyChangeTypeCreate
+		modify := armdeployments.PropertyChangeTypeModify
+		create := armdeployments.PropertyChangeTypeCreate
 		childPath := "child"
-		parent := &armresources.WhatIfPropertyChange{
+		parent := &armdeployments.WhatIfPropertyChange{
 			Path:               new("parent"),
 			PropertyChangeType: &modify,
 			Before:             "old",
 			After:              "new",
-			Children: []*armresources.WhatIfPropertyChange{
+			Children: []*armdeployments.WhatIfPropertyChange{
 				{
 					Path:               &childPath,
 					PropertyChangeType: &create,
@@ -2552,7 +2553,7 @@ func TestConvertPropertyChanges(t *testing.T) {
 				},
 			},
 		}
-		result := convertPropertyChanges([]*armresources.WhatIfPropertyChange{parent})
+		result := convertPropertyChanges([]*armdeployments.WhatIfPropertyChange{parent})
 		require.Len(t, result, 1)
 		require.Equal(t, "parent", result[0].Path)
 		require.Equal(t, "old", result[0].Before)
@@ -2565,8 +2566,8 @@ func TestConvertPropertyChanges(t *testing.T) {
 
 	t.Run("NilPathAndChangeType", func(t *testing.T) {
 		t.Parallel()
-		change := &armresources.WhatIfPropertyChange{}
-		result := convertPropertyChanges([]*armresources.WhatIfPropertyChange{change})
+		change := &armdeployments.WhatIfPropertyChange{}
+		result := convertPropertyChanges([]*armdeployments.WhatIfPropertyChange{change})
 		require.Len(t, result, 1)
 		require.Equal(t, "", result[0].Path)
 		require.Nil(t, result[0].Before)

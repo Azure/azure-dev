@@ -139,6 +139,10 @@
                 }
               }
             },
+            "enableMemorySnapshot": {
+              "type": "boolean",
+              "description": "Opt in to version-level memory snapshots. Requires compatible snapshot hooks and platform availability. Defaults to disabled when omitted; confirm session state persistence requirements before enabling."
+            },
             "sessionConfiguration": {
               "type": "object",
               "description": "Optional hosted-agent session runtime settings. When omitted, the service applies its defaults (idle timeout 900 seconds).",

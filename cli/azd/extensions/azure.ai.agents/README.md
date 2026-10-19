@@ -1195,6 +1195,55 @@ Details:
   Values outside that range are rejected at deploy time and by schema
   validation.
 
+## Memory snapshots
+
+Hosted agents can opt in to version-level memory snapshots with
+`enableMemorySnapshot` on the service entry in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    enableMemorySnapshot: true
+```
+
+Use the existing `azd deploy` or `azd up` command. Both container-image and code
+deployments support the setting, including definitions loaded through a root
+`$ref`. No new CLI flag is required, and deployment does not modify YAML.
+
+When omitted, azd leaves the API field unset and preserves existing behavior.
+Explicit `true` or `false` is sent as `definition.enable_memory_snapshot`.
+The setting is only valid for hosted agents and must be a boolean.
+
+Before enabling, use a hosting library that implements both private snapshot
+hooks, or implement them in your own server. Confirm that Foundry has enabled
+snapshots for your subscription and region. azd does not upgrade project
+dependencies automatically. If the service rejects the opt-in or capture fails,
+deployment fails without retrying with snapshots disabled.
+
+For Python, snapshot hooks are published in `azure-ai-agentserver-core` version
+`2.3.0b1` and `azure-ai-agentserver-responses` version `2.4.0b1`. These are preview
+packages. Update your framework's hosting integration to a compatible version,
+explicitly select snapshot-capable AgentServer dependencies, and update the
+dependency lockfile before rebuilding and deploying the agent. Updating only
+`agent-framework-foundry-hosting` does not guarantee these preview dependencies
+are selected. Existing sample lock files and existing user projects are not
+automatically upgraded. For container-image deployments, rebuild the image with
+the updated dependencies before deploying a new version.
+
+A golden snapshot preserves version initialization, not conversation history or
+the latest state of a user session. The current customer snapshot mode rebuilds
+idle session sandboxes from this snapshot without a session data volume. Confirm
+your application's state persistence requirements before enabling it. Applications
+may need callbacks to release connections before capture and rebuild them after
+restore; azd does not invoke these callbacks.
+
+Capture errors include the service's safe diagnostic message. Detailed callback
+diagnostics belong in agent logs and are not returned verbatim by the service.
+
 ## State Stores
 
 Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,

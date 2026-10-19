@@ -81,13 +81,24 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 		expected   map[string]string
 	}{
 		{
-			name: "GitHub Copilot managed harness",
+			name: "Microsoft Copilot managed harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "legacy GitHub Copilot harness uses Microsoft feature",
 			definition: map[string]any{
 				"kind":    "prompt",
 				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
 			},
 			expected: map[string]string{
-				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
 				"x-model-endpoint": modelEndpoint,
 			},
 		},
@@ -113,11 +124,11 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			name: "managed prompt agent with skills",
 			definition: map[string]any{
 				"kind":    "prompt",
-				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 				"skills":  []any{map[string]any{"name": "skill", "version": "1"}},
 			},
 			expected: map[string]string{
-				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
 				"x-model-endpoint": modelEndpoint,
 			},
 		},
@@ -135,7 +146,7 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			name: "non-prompt agent with managed harness field",
 			definition: map[string]any{
 				"kind":    "hosted",
-				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 			},
 		},
 	}
@@ -159,7 +170,7 @@ func TestBuildPromptDeployDefinition(t *testing.T) {
 		"kind":         "prompt",
 		"model":        "old-model",
 		"instructions": "old instructions",
-		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		"skills":       []any{map[string]any{"name": "existing-skill", "version": "1"}},
 		"tools": []any{
 			map[string]any{

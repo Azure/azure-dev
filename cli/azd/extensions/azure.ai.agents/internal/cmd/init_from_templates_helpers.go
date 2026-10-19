@@ -150,14 +150,14 @@ func resolveInitHarness(harnessFlag, impliedHarness string) (string, error) {
 	switch harness {
 	case "", harnessNone:
 		return "", nil
-	case agent_api.ManagedAgentHarnessGitHubCopilot:
-		return agent_api.ManagedAgentHarnessGitHubCopilot, nil
+	case agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot:
+		return harness, nil
 	}
 
 	return "", exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		fmt.Sprintf("unknown --harness value %q", requested),
-		fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessGitHubCopilot, harnessNone),
+		fmt.Sprintf("supported values are: %s, %s", agent_api.ManagedAgentHarnessMicrosoftCopilot, harnessNone),
 	)
 }
 

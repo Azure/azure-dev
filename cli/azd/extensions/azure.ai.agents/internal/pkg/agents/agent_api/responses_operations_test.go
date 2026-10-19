@@ -70,7 +70,7 @@ func TestCreateConversationAt(t *testing.T) {
 	client, transport := newCaptureClient(http.StatusCreated, `{"id":"conv_123"}`)
 	endpoint := "https://test.example.com/api/projects/proj/agents/managed/endpoint/protocols/openai/conversations?api-version=v1"
 	id, err := client.CreateConversationAt(t.Context(), endpoint, map[string]string{
-		"Foundry-Features": "GitHubCopilot=V1Preview",
+		"Foundry-Features": "MicrosoftCopilot=V1Preview",
 	})
 	if err != nil {
 		t.Fatalf("CreateConversationAt: %v", err)
@@ -83,7 +83,7 @@ func TestCreateConversationAt(t *testing.T) {
 		request.URL.Query().Get("api-version") != "v1" {
 		t.Fatalf("url: %s", request.URL)
 	}
-	if request.Header.Get("Foundry-Features") != "GitHubCopilot=V1Preview" {
+	if request.Header.Get("Foundry-Features") != "MicrosoftCopilot=V1Preview" {
 		t.Fatalf("feature header missing")
 	}
 	if request.Method != http.MethodPost {
@@ -131,7 +131,7 @@ func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 
 	stream, _, err := client.CreateResponseStreamAt(
 		t.Context(), endpoint, []byte(`{"input":"hello"}`),
-		map[string]string{"Foundry-Features": "GitHubCopilot=V1Preview"})
+		map[string]string{"Foundry-Features": "MicrosoftCopilot=V1Preview"})
 	if err != nil {
 		t.Fatalf("CreateResponseStreamAt: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestCreateResponseStreamAtUsesExplicitEndpoint(t *testing.T) {
 	if request.URL.String() != endpoint {
 		t.Errorf("endpoint: got %q, want %q", request.URL.String(), endpoint)
 	}
-	if request.Header.Get("Foundry-Features") != "GitHubCopilot=V1Preview" {
+	if request.Header.Get("Foundry-Features") != "MicrosoftCopilot=V1Preview" {
 		t.Errorf("feature header: got %q", request.Header.Get("Foundry-Features"))
 	}
 }

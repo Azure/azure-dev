@@ -351,13 +351,13 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 			}
 			defer cancel()
 			var configCalled atomic.Bool
-			configContexts := make(chan context.Context, 1)
+			var configDeadline atomic.Pointer[time.Time]
 			project := &openAPIProjectServer{
 				helpersProjectServer: helpersProjectServer{project: &azdext.ProjectConfig{Path: root}},
 				onGet: func(rpcCtx context.Context) error {
 					configCalled.Store(true)
 					deadline, ok := rpcCtx.Deadline()
-					configContexts <- rpcCtx
+					configDeadline.Store(new(deadline))
 					assert.True(t, ok)
 					assert.LessOrEqual(t, time.Until(deadline), openAPIProbeTimeout)
 					if strings.HasPrefix(stage, "configuration") {
@@ -377,15 +377,7 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 				deadline, ok := request.Context().Deadline()
 				assert.True(t, ok)
 				if stage == "separate budgets" || stage == "HTTP" {
-					// gRPC reconstructs server deadlines from durations.
-					// Check lifecycle isolation, not timestamp ordering.
-					configCtx := <-configContexts
-					select {
-					case <-configCtx.Done():
-						assert.ErrorIs(t, configCtx.Err(), context.Canceled)
-					case <-time.After(openAPIProbeTimeout):
-						t.Fatal("configuration RPC context was not canceled")
-					}
+					assert.True(t, deadline.After(*configDeadline.Load()))
 				}
 				assert.LessOrEqual(t, time.Until(deadline), openAPIProbeTimeout)
 				require.NoError(t, request.Context().Err())

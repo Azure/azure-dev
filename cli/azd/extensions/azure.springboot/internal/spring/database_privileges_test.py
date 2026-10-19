@@ -101,6 +101,22 @@ class DatabasePrivilegeTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "must not have admin, DDL, TEMP"):
                         bootstrap.validate_runtime_privileges(self.connection)
 
+    def test_temporary_schema_lookalikes_do_not_hide_create_privileges(self):
+        from psycopg import sql
+
+        for depth in (0, 1, 2):
+            with self.subTest(depth=depth), self.connection.transaction(force_rollback=True):
+                target = self.initialize_roles(depth)
+                connection = self.connection
+                connection.execute("CREATE SCHEMA pgxtempyapp")
+                connection.execute(sql.SQL("GRANT CREATE ON SCHEMA pgxtempyapp TO {}").format(
+                    sql.Identifier(target)))
+                self.assertTrue(connection.execute(
+                    "SELECT has_schema_privilege(%s, 'pgxtempyapp', 'CREATE')", (target,),
+                ).fetchone()[0])
+                with self.assertRaisesRegex(RuntimeError, "must not have admin, DDL, TEMP"):
+                    bootstrap.validate_runtime_privileges(connection)
+
     def test_administrative_memberships(self):
         from psycopg import sql
 

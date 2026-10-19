@@ -117,7 +117,7 @@ def validate_runtime_privileges(connection):
         "bool_or(has_database_privilege(oid, current_database(), 'TEMP')), "
         "bool_or(EXISTS (SELECT 1 FROM pg_namespace "
         "WHERE has_schema_privilege(runtime_roles.oid, pg_namespace.oid, 'CREATE') "
-        "AND nspname NOT LIKE 'pg_temp_%%' AND nspname NOT LIKE 'pg_toast_temp_%%')), "
+        "AND nspname !~ '^pg_(toast_)?temp_[0-9]+$')), "
         "bool_or(EXISTS (SELECT 1 FROM pg_class WHERE relowner = runtime_roles.oid) "
         "OR EXISTS (SELECT 1 FROM pg_shdepend WHERE refclassid = 'pg_authid'::regclass "
         "AND refobjid = runtime_roles.oid AND deptype = 'o' "

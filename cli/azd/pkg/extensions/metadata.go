@@ -43,6 +43,17 @@ type Command struct {
 	Aliases []string `json:"aliases,omitempty"`
 	// Deprecated contains a deprecation notice if the command is deprecated
 	Deprecated string `json:"deprecated,omitempty"`
+	// Launch controls only how azd launches this command, not its descendants.
+	Launch *CommandLaunch `json:"launch,omitempty"`
+}
+
+// CommandLaunch configures how azd launches a command.
+type CommandLaunch struct {
+	// NoAzdEnvironment skips loading the selected azd environment, resolving its Key Vault
+	// references, and injecting its variables. Inherited parent-process environment variables
+	// and azd launch/protocol variables are still passed. This applies only to the marked
+	// command, not its descendants, and does not affect explicit Environment gRPC calls.
+	NoAzdEnvironment bool `json:"noAzdEnvironment,omitempty"`
 }
 
 // CommandExample represents an example usage of a command

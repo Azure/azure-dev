@@ -18,6 +18,19 @@
       "type": "boolean",
       "description": "Whether the routine is enabled."
     },
+    "authorization": {
+      "type": "object",
+      "description": "Dispatch authorization for the routine.",
+      "additionalProperties": false,
+      "required": ["identity"],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "enum": ["agent", "creator"],
+          "description": "Identity used to dispatch the routine. Defaults to agent on creation and cannot be changed afterward."
+        }
+      }
+    },
     "triggers": {
       "type": "object",
       "description": "Triggers keyed by a user-defined identifier (commonly 'default'). Each trigger selects a variant via its type (schedule, timer, github_issue, or custom).",

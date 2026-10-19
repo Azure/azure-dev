@@ -495,7 +495,7 @@ func newPromptCandidateTestServer(
 		values["host"] = AiAgentHost
 		values["project"] = "."
 		values["uses"] = []any{"foundry", "existing-skill"}
-		values["harness"] = map[string]any{"type": "github_copilot_preview"}
+		values["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 		values["env"] = map[string]any{"CUSTOM_SETTING": "${CUSTOM_SETTING}"}
 		values["hooks"] = map[string]any{"predeploy": map[string]any{"shell": "sh", "run": "echo ready"}}
 	}

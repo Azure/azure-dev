@@ -106,12 +106,15 @@ func TestAJSONFailureIsReadableByTheCallerThatAskedForJSON(t *testing.T) {
 	var doc struct {
 		Error struct {
 			Message string `json:"message"`
+			Code    string `json:"code"`
 		} `json:"error"`
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &doc),
 		"stdout under -o json has to parse as JSON: %q", out.String())
 	assert.Equal(t, "the model deployment was not found", doc.Error.Message,
 		"the reason has to survive into the document")
+	assert.Equal(t, unclassifiedErrorCode, doc.Error.Code,
+		"unclassified failures still need a stable machine-readable code")
 }
 
 // The human surface is unchanged: azd renders the error itself, and a second

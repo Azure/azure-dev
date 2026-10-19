@@ -345,7 +345,7 @@ func skillsShellNode(
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
 					"toolbox: is only available to an agent that names a harness",
-					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessGitHubCopilot+
+					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessMicrosoftCopilot+
 						" to the agent definition, or remove 'toolbox:' and put the "+
 						"skills in the agent project's skills/ folder",
 				)
@@ -512,7 +512,8 @@ func toolboxNode(
 			// Prefer the endpoint the sibling azure.ai.toolbox service published
 			// over one synthesized from the name, so the two extensions cannot
 			// disagree about where the toolbox lives.
-			mcpEndpoint, err := siblingToolboxEndpoint(ref.Name, g.projectEndpoint(), g.env)
+			serviceName := servicekey.SanitizeServiceName(ref.Name)
+			mcpEndpoint, err := siblingToolboxEndpoint(serviceName, g.projectEndpoint(), g.env)
 			if err != nil {
 				return err
 			}

@@ -25,6 +25,7 @@ func TestAIHelp(t *testing.T) {
 
 	walkAIHelp(t, func(t *testing.T, command *cobra.Command, path []string) {
 		text := executeAIHelp(t, path)
+		normalizedText := strings.Join(strings.Fields(text), " ")
 		require.NotContains(t, text, "\x1b")
 		require.Contains(t, text, "\nUsage\n  azd ai "+command.CommandPath())
 		require.Contains(t, text, "\nGlobal Flags\n")
@@ -37,11 +38,33 @@ func TestAIHelp(t *testing.T) {
 		if len(path) == 0 {
 			require.Contains(t, text, "\nEnvironments & Environment Variables\n")
 			require.Contains(t, text, ".azure/<environment>/.env")
+			require.Contains(t, text, "FOUNDRY_PROJECT_ENDPOINT")
 			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT")
 			require.Contains(t, text, "absent from .env")
 			require.Contains(t, text, "explicitly empty persisted value")
-			require.Contains(t, text, "including when no environment is")
-			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT can therefore win before global config")
+			require.Contains(t, normalizedText, "or no environment is available")
+			require.Contains(t, text, "successful empty canonical lookup")
+			require.Contains(
+				t,
+				normalizedText,
+				"A failed endpoint lookup stops the operation instead of choosing another project",
+			)
+			require.Contains(
+				t,
+				normalizedText,
+				"FOUNDRY_PROJECT_ENDPOINT first, then AZURE_AI_PROJECT_ENDPOINT as a legacy fallback",
+			)
+			require.Contains(t, text, "azd env set FOUNDRY_PROJECT_ENDPOINT")
+			require.Contains(
+				t,
+				normalizedText,
+				"--project-endpoint, --tenant-id, and --timeout are only supported by remote routine commands",
+			)
+			require.Contains(
+				t,
+				normalizedText,
+				"Local commands such as add, context, and version reject these flags",
+			)
 		} else {
 			require.NotContains(t, text, "\nEnvironments & Environment Variables\n")
 		}
@@ -51,6 +74,9 @@ func TestAIHelp(t *testing.T) {
 				require.NotRegexp(t, row, text)
 			} else {
 				require.Regexp(t, row, text)
+			}
+			if flag.Name == "tenant-id" {
+				require.Contains(t, normalizedText, flag.Usage)
 			}
 		}
 		command.LocalFlags().VisitAll(checkFlag)

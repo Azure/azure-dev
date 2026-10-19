@@ -91,5 +91,5 @@ func renderSimulationSettings(out io.Writer, run *eval_api.OpenAIEvalRun) {
 }
 
 func renderConversationResults(out io.Writer, run *eval_api.OpenAIEvalRun) {
-	renderReportedRunCounts(out, "CONVERSATION EVALUATION RESULTS", run.ReportedResultCounts())
+	renderReportedRunCounts(out, "CONVERSATION EVALUATION RESULTS", run.ReportedResultCounts(), run.ResultCounts)
 }

@@ -1,0 +1,12 @@
+name: connection-authoring-offline
+services:
+  foundry:
+    host: azure.ai.project
+    endpoint: https://example.test/api/projects/offline
+  existing:
+    host: azure.ai.connection
+    uses:
+      - foundry
+    name: SEARCH
+    category: CognitiveSearch
+    target: https://old.example.test

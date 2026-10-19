@@ -9,7 +9,33 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
+
+func TestRoutineAuthorizationJSONYAMLRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	rawJSON := `{"authorization":{"identity":"creator"}}`
+	var fromJSON Routine
+	require.NoError(t, json.Unmarshal([]byte(rawJSON), &fromJSON))
+	require.NotNil(t, fromJSON.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, fromJSON.Authorization.Identity)
+
+	jsonData, err := json.Marshal(fromJSON)
+	require.NoError(t, err)
+	assert.JSONEq(t, rawJSON, string(jsonData))
+
+	yamlData, err := yaml.Marshal(fromJSON)
+	require.NoError(t, err)
+	var fromYAML Routine
+	require.NoError(t, yaml.Unmarshal(yamlData, &fromYAML))
+	require.NotNil(t, fromYAML.Authorization)
+	assert.Equal(t, RoutineDispatchIdentityCreator, fromYAML.Authorization.Identity)
+
+	omittedAuthorization, err := json.Marshal(Routine{Name: "agent-default"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(omittedAuthorization), `"authorization"`)
+}
 
 func TestTriggerCLIToWire_AllEntriesPresent(t *testing.T) {
 	t.Parallel()

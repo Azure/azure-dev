@@ -33,7 +33,7 @@ const recoveryEvalConfig = `evals:
   - name: existing-traces
     source:
       type: traces
-      agent_name: support-agent
+      agentName: support-agent
     evaluators:
       - evaluator: builtin.task_completion
 `
@@ -285,8 +285,11 @@ func TestGenerationPartialJSONRedactsJobFailureMessage(t *testing.T) {
 			t.Cleanup(func() { exitProcess = priorExit })
 			reportFailuresAsJSON(cmd)
 			err := cmd.RunE(cmd, nil)
-			require.ErrorContains(t, err, tc.message, "the returned error remains unmodified")
-			assert.Equal(t, tc.message, failedJob.Error.Message)
+			require.ErrorContains(t, err, tc.safeMessage, "the returned error carries the redacted reason")
+			for _, sensitive := range []string{"fixture-user", "fixture-password", "fixture-signature", "fixture-fragment"} {
+				assert.NotContains(t, err.Error(), sensitive, "a human-readable failure is redacted too")
+			}
+			assert.Equal(t, tc.message, failedJob.Error.Message, "the service's own record is not rewritten")
 			assert.Equal(t, 1, exitCode)
 
 			var result map[string]generationResult
@@ -450,12 +453,12 @@ func TestEvaluatorRecollectionPreservesAuthoredCatalogMetadata(t *testing.T) {
 			require.NoError(t, err)
 			path := filepath.Join(dir, "azure.eval.yaml")
 			catalog := "evaluators:\n  - name: quality\n    source: ./evaluators/quality.json\n" +
-				"    display_name: Authored name # keep this comment\n"
+				"    displayName: Authored name # keep this comment\n"
 			switch existing {
 			case "authored values":
-				catalog += "    categories: [safety]\n    supported_evaluation_levels: [conversation]\n"
+				catalog += "    categories: [safety]\n    supportedEvaluationLevels: [conversation]\n"
 			case "explicit empty":
-				catalog += "    categories: []\n    supported_evaluation_levels: []\n"
+				catalog += "    categories: []\n    supportedEvaluationLevels: []\n"
 			}
 			require.NoError(t, os.WriteFile(path, []byte(catalog), 0o600))
 			artifact := filepath.Join(dir, "evaluators", "quality.json")

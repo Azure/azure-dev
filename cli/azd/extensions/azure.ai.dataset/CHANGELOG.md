@@ -1,5 +1,16 @@
 # Release History
 
+## 1.0.0-beta.2 (2026-10-12)
+
+### Bugs Fixed
+
+- [[#10151]](https://github.com/Azure/azure-dev/pull/10151) Fix `azd ai dataset download --output-file` rejecting a single uploaded file when its credential is scoped to the parent container.
+
+### Other Changes
+
+- [[#10277]](https://github.com/Azure/azure-dev/pull/10277) Explain in the help how `azd ai dataset` relates to `azd ai eval dataset`, and include the `azd` command prefix in help paths.
+- [[#10102]](https://github.com/Azure/azure-dev/pull/10102) Report a `dataset.published` usage event once a dataset version is written, when installed from the official registry; it carries no dataset names, paths or endpoints.
+
 ## 1.0.0-beta.1 (2026-09-17)
 
 First release of the Foundry datasets extension.

@@ -4,8 +4,12 @@
 package cmd
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -76,7 +80,7 @@ func newExtensionActionTestServer() *grpcserver.Server {
 		&v1beta.UnimplementedCopilotServiceServer{},
 		&azdext.UnimplementedProvisioningServiceServer{},
 		&azdext.UnimplementedValidationServiceServer{},
-		&v1beta.UnimplementedTelemetryServiceServer{},
+		&azdext.UnimplementedTelemetryServiceServer{},
 		&v1beta.UnimplementedCommandResultServiceServer{},
 	)
 }
@@ -142,4 +146,170 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 	require.Contains(t, captured.Env, "AZD_NO_PROMPT=true")
 	require.Contains(t, captured.Env, "AZD_CWD=work")
 	require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+}
+
+func TestExtensionAction_RunCommandLaunch(t *testing.T) {
+	originalArgs := os.Args
+	os.Args = []string{"azd", "--output=json"}
+	t.Cleanup(func() {
+		os.Args = originalArgs
+	})
+
+	configDir := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configDir)
+	t.Setenv("EXTENSION_TEST_PARENT", "parent-value")
+	t.Setenv("EXTENSION_TEST_AZD_ENV", "")
+	extensionPath := filepath.Join("extensions", "test-ext", "bin", "test-ext")
+	fullPath := filepath.Join(configDir, extensionPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+	require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+
+	metadataDir := filepath.Join(configDir, "extensions", "test-ext")
+	require.NoError(t, os.MkdirAll(metadataDir, 0o755))
+	metadata, err := json.Marshal(&extensions.ExtensionCommandMetadata{
+		ID: "test-ext",
+		Commands: []extensions.Command{
+			{
+				Name:   []string{"local"},
+				Launch: &extensions.CommandLaunch{NoAzdEnvironment: true},
+				Subcommands: []extensions.Command{{
+					Name: []string{"local", "child"},
+				}},
+			},
+			{
+				Name:    []string{"connection"},
+				Aliases: []string{"conn"},
+				Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
+				Subcommands: []extensions.Command{{
+					Name:    []string{"connection", "add"},
+					Aliases: []string{"create"},
+					Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
+				}, {
+					Name: []string{"connection", "list"},
+				}},
+			},
+			{
+				Name:    []string{"default"},
+				Aliases: []string{"normal"},
+				Subcommands: []extensions.Command{{
+					Name:    []string{"default", "local"},
+					Aliases: []string{"offline"},
+					Launch:  &extensions.CommandLaunch{NoAzdEnvironment: true},
+				}},
+			},
+			{Name: []string{"explicit-default"}, Launch: &extensions.CommandLaunch{NoAzdEnvironment: false}},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(metadataDir, "metadata.json"), metadata, 0o600))
+
+	mockCtx := mocks.NewMockContext(t.Context())
+	var captured exec.RunArgs
+	mockCtx.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+		captured = args
+		return true
+	}).Respond(exec.NewRunResult(0, "", ""))
+
+	extension := &extensions.Extension{
+		Id:           "test-ext",
+		Path:         extensionPath,
+		Version:      "1.0.0",
+		Capabilities: []extensions.CapabilityType{extensions.MetadataCapability},
+	}
+	action := &extensionAction{
+		console:          mockCtx.Console,
+		extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
+		extensionManager: newExtensionActionTestManager(t, mockCtx, extension),
+		azdServer:        newExtensionActionTestServer(),
+		globalOptions: &internal.GlobalCommandOptions{
+			EnvironmentName: "test",
+		},
+		cmd: &cobra.Command{
+			Annotations: map[string]string{"extension.id": extension.Id},
+		},
+	}
+
+	for _, tt := range []struct {
+		args             []string
+		noAzdEnvironment bool
+	}{
+		{[]string{"local"}, true},
+		{[]string{"connection"}, true},
+		{[]string{"conn"}, true},
+		{[]string{"connection", "add"}, true},
+		{[]string{"conn", "add"}, true},
+		{[]string{"connection", "create"}, true},
+		{[]string{"conn", "create"}, true},
+		{[]string{"default"}, false},
+		{[]string{"explicit-default"}, false},
+		{[]string{"local", "child"}, false},
+		{[]string{"connection", "list"}, false},
+		{[]string{"conn", "list"}, false},
+		{[]string{"unknown"}, false},
+		{[]string{"local", "--debug", "child"}, false},
+		{[]string{"conn", "--environment", "add", "list"}, false},
+		{[]string{"conn", "--debug=false", "create"}, true},
+		{[]string{"conn", "-elist", "create"}, true},
+		{[]string{"conn", "-ojson", "list"}, false},
+		{[]string{"normal", "--debug", "offline"}, true},
+		{[]string{"normal", "--environment=local", "offline"}, true},
+	} {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			for _, prefix := range [][]string{
+				{"--no-prompt", "-o", "json"},
+				{"--trace-log-file", "trace.json", "--no-prompt"},
+				{"--trace-log-url", "http://localhost:4318", "-ojson"},
+				{"--debug", "--cwd", "project", "--environment", "test"},
+				{"--help"},
+				{"--docs"},
+				{"--non-interactive"},
+			} {
+				t.Run(prefix[0], func(t *testing.T) {
+					environmentLoads := 0
+					secretResolutions := 0
+					action.kvService = &mockExecKeyVaultService{
+						secretFromKeyVaultRefFn: func(_ context.Context, ref, subscription string) (string, error) {
+							secretResolutions++
+							require.Equal(t, "akvs://vault/secret", ref)
+							require.Equal(t, "test-subscription", subscription)
+							return "resolved-value", nil
+						},
+					}
+					action.lazyEnv = lazy.NewLazy(func() (*environment.Environment, error) {
+						environmentLoads++
+						return environment.NewWithValues("test", map[string]string{
+							"EXTENSION_TEST_AZD_ENV": "azd-value",
+							"EXTENSION_TEST_KVREF":   "akvs://vault/secret",
+							"AZURE_SUBSCRIPTION_ID":  "test-subscription",
+						}), nil
+					})
+					action.args = append(slices.Clone(prefix), tt.args...)
+					action.args = append(action.args, "--file", "connection.yaml")
+					action.azdServer = newExtensionActionTestServer()
+					result, err := action.Run(t.Context())
+
+					require.NoError(t, err)
+					require.Nil(t, result)
+					if tt.noAzdEnvironment {
+						require.Zero(t, environmentLoads)
+						require.Zero(t, secretResolutions)
+						require.NotContains(t, captured.Env, "EXTENSION_TEST_KVREF=resolved-value")
+						require.NotContains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
+					} else {
+						require.Equal(t, 1, environmentLoads)
+						require.Equal(t, 1, secretResolutions)
+						require.Contains(t, captured.Env, "EXTENSION_TEST_KVREF=resolved-value")
+						require.Contains(t, captured.Env, "EXTENSION_TEST_AZD_ENV=azd-value")
+					}
+					require.Contains(t, captured.Env, "EXTENSION_TEST_PARENT=parent-value")
+					require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+					for _, key := range []string{"AZD_SERVER", "AZD_ACCESS_TOKEN"} {
+						require.True(t, slices.ContainsFunc(captured.Env, func(value string) bool {
+							return strings.HasPrefix(value, key+"=") && len(value) > len(key)+1
+						}), "%s must be passed to the extension", key)
+					}
+				})
+			}
+		})
+	}
 }

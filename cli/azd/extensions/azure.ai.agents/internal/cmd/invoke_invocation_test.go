@@ -106,13 +106,14 @@ func TestInvocationsRemotePersistsCurrentID(t *testing.T) {
 		for _, format := range []string{"default", outputRaw} {
 			t.Run(tt.name+"/"+format, func(t *testing.T) {
 				config := newInvokeUserConfigServer()
-				config.setJSON(t, invocationsConfigPath, map[string]savedInvocation{
-					agentKey: {InvocationID: "inv_previous"}, "other-agent": {InvocationID: "inv_other"},
-				})
-				config.setJSON(t, responsesConfigPath, map[string]savedResponse{
-					agentKey: {ResponseID: "resp_previous"},
-				})
 				client := newInvokeTestAzdClient(t, config)
+				saveAgentStateForTest(t, client, agentKey, agentStateRecord{
+					Invocation: &savedInvocation{InvocationID: "inv_previous"},
+					Response:   &savedResponse{ResponseID: "resp_previous"},
+				})
+				saveAgentStateForTest(t, client, "other-agent", agentStateRecord{
+					Invocation: &savedInvocation{InvocationID: "inv_other"},
+				})
 				var methods []string
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					methods = append(methods, r.Method)
@@ -165,14 +166,16 @@ func TestInvocationsRemotePersistsCurrentID(t *testing.T) {
 					assert.Contains(t, output, tt.body, "ID extraction must preserve the original response body")
 					assert.NotContains(t, output, "Invocation:   ")
 				}
-				var saved map[string]savedInvocation
-				config.getJSON(t, invocationsConfigPath, &saved)
-				assert.Equal(t, map[string]savedInvocation{
-					agentKey: {InvocationID: tt.wantID}, "other-agent": {InvocationID: "inv_other"},
-				}, saved)
-				var responses map[string]savedResponse
-				config.getJSON(t, responsesConfigPath, &responses)
-				assert.Equal(t, map[string]savedResponse{agentKey: {ResponseID: "resp_previous"}}, responses)
+				record := loadAgentStateForTest(t, client, agentKey)
+				require.NotNil(t, record)
+				require.NotNil(t, record.Invocation)
+				require.NotNil(t, record.Response)
+				assert.Equal(t, tt.wantID, record.Invocation.InvocationID)
+				assert.Equal(t, "resp_previous", record.Response.ResponseID)
+				other := loadAgentStateForTest(t, client, "other-agent")
+				require.NotNil(t, other)
+				require.NotNil(t, other.Invocation)
+				assert.Equal(t, "inv_other", other.Invocation.InvocationID)
 			})
 		}
 	}

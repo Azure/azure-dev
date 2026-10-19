@@ -72,12 +72,12 @@ func TestResolveTraceWindow_OffPresetIsRefused(t *testing.T) {
 	for _, days := range []int{0, -1, 3, 14, 365} {
 		_, err := resolveTraceWindow(noPromptCmd(t, true), days, true)
 		require.Error(t, err, days)
-		assert.Contains(t, err.Error(), "lookback_hours",
+		assert.Contains(t, err.Error(), "lookbackHours",
 			"the refusal has to name where any other window is set")
 	}
 }
 
-// Untouched, the week the spec writes as lookback_hours: 168.
+// Untouched, the week the spec writes as lookbackHours: 168.
 func TestResolveTraceWindow_DefaultsToAWeek(t *testing.T) {
 	got, err := resolveTraceWindow(noPromptCmd(t, true), defaultTraceWindowDays, false)
 	require.NoError(t, err)

@@ -83,9 +83,13 @@ func (a *runListAction) Run() error {
 	if err != nil || !ok {
 		return err
 	}
+	return a.list(ctx, ec, evalID)
+}
 
+func (a *runListAction) list(ctx context.Context, ec *evalContext, evalID string) error {
 	pageSize := pageSizeOr(a.flags.limit, a.flags.all, defaultPageSize)
 	var list *eval_api.OpenAIEvalRunList
+	var err error
 	if a.flags.all {
 		list, err = ec.evalClient.ListOpenAIEvalRuns(ctx, evalID, 0)
 	} else {
@@ -107,7 +111,11 @@ func (a *runListAction) Run() error {
 		if list != nil {
 			runs = make([]eval_api.OpenAIEvalRun, len(list.Data))
 			for i := range list.Data {
-				runs[i] = *runForJSON(&list.Data[i])
+				projected, err := runForJSON(&list.Data[i])
+				if err != nil {
+					return err
+				}
+				runs[i] = *projected
 			}
 			if list.HasMore {
 				cursor = list.LastID
@@ -243,7 +251,11 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 				return messages.GateOutlivedTheWait(display.ID, waitBudget)
 			}
 			if isJSON(a.cmd) {
-				return emitJSON(a.cmd.OutOrStdout(), runForJSON(run))
+				projected, err := runForJSON(run)
+				if err != nil {
+					return err
+				}
+				return emitJSON(a.cmd.OutOrStdout(), projected)
 			}
 			fmt.Fprint(a.cmd.OutOrStdout(), messages.WaitBudgetSpent(display.ID, waitBudget))
 			return nil
@@ -267,11 +279,15 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 	}
 
 	if isJSON(a.cmd) {
-		if err := emitJSON(a.cmd.OutOrStdout(), runForJSON(run)); err != nil {
+		projected, err := runForJSON(run)
+		if err != nil {
+			return err
+		}
+		if err := emitJSON(a.cmd.OutOrStdout(), projected); err != nil {
 			return err
 		}
 		if gateOnStatus {
-			if err := runCompleted(display); err != nil {
+			if err := runCompleted(display, nil); err != nil {
 				return err
 			}
 		}
@@ -283,7 +299,7 @@ func (a *runShowAction) show(ctx context.Context, ec *evalContext, evalID string
 		return err
 	}
 	if gateOnStatus {
-		if err := runCompleted(display); err != nil {
+		if err := runCompleted(display, nil); err != nil {
 			return err
 		}
 	}
@@ -403,7 +419,11 @@ func (a *runCancelAction) Run() error {
 		return messages.CancellingRun(runID, err)
 	}
 	if isJSON(a.cmd) {
-		return emitJSON(a.cmd.OutOrStdout(), runForJSON(canceled))
+		projected, err := runForJSON(canceled)
+		if err != nil {
+			return err
+		}
+		return emitJSON(a.cmd.OutOrStdout(), projected)
 	}
 	status := canceled.Status
 	if status == "" {
@@ -577,22 +597,12 @@ func sampleCount(counts *eval_api.EvalRunResultCounts) string {
 	return strconv.Itoa(counts.Total)
 }
 
-// runPassRate is the same scored pass rate the gate uses, so a row a reader
+// runPassRate is the same run-level pass rate the gate uses, so a row a reader
 // gates on cannot disagree with the gate.
-//
-// The rate is followed by the rows it was measured over whenever that is fewer
-// than the run's samples. Without it the comparison view reads a run of two
-// passes and one errored row as SAMPLES 3, PASS RATE 100.0%, which is the one
-// place the scored denominator was not stated and so the one place a partly
-// errored run looked perfect.
 func runPassRate(counts *eval_api.EvalRunResultCounts) string {
-	rate, scored, ok := scoredPassRate(counts)
+	rate, _, ok := runPassRateValue(counts)
 	if !ok {
 		return ""
 	}
-	out := fmt.Sprintf("%.1f%%", rate*100)
-	if counts.Total > scored {
-		out += fmt.Sprintf(" (%d scored)", scored)
-	}
-	return out
+	return fmt.Sprintf("%.1f%%", rate*100)
 }

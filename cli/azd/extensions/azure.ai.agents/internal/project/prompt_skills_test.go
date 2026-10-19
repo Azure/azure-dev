@@ -20,10 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testPromptHarness returns a minimal harness block. Each caller gets its own
+// testMicrosoftCopilotHarness returns a minimal harness block. Each caller gets its own
 // value because the deploy graph writes skills back onto the agent.
-func testPromptHarness() *agent_yaml.PromptHarness {
-	return agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot)
+func testMicrosoftCopilotHarness() *agent_yaml.PromptHarness {
+	return agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot)
 }
 
 // fakeToolboxBuilder records calls and returns a fixed MCP url.
@@ -89,6 +89,42 @@ func TestToolboxNode_RejectsCrossProjectEndpoint(t *testing.T) {
 	})
 	if err := node.Resolve(context.Background()); err == nil {
 		t.Fatal("expected a toolbox published to another project to fail the deploy")
+	}
+}
+
+func TestToolboxNode_UsesSanitizedServiceKey(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://example.test/api/projects/current"
+	const mcpEndpoint = projectEndpoint + "/toolboxes/my-tools/mcp"
+	for _, sameProject := range []bool{true, false} {
+		t.Run(map[bool]string{true: "same project", false: "different project"}[sameProject], func(t *testing.T) {
+			t.Parallel()
+			markerProject := projectEndpoint
+			if !sameProject {
+				markerProject = "https://example.test/api/projects/other"
+			}
+			g := &promptGraph{
+				managed:  &agent_yaml.PromptAgent{Model: "m", Instructions: "i"},
+				bindings: map[string]any{},
+				env: map[string]string{
+					"FOUNDRY_PROJECT_ENDPOINT":               projectEndpoint,
+					envkey.ToolboxMCPEndpoint("MyTools"):     mcpEndpoint,
+					envkey.ToolboxProjectEndpoint("MyTools"): markerProject,
+				},
+			}
+			builder := &fakeToolboxBuilder{}
+			node := toolboxNode(g, &agent_yaml.ToolboxReference{Name: "My Tools"},
+				func() (toolboxBuilder, error) { return builder, nil })
+			err := node.Resolve(t.Context())
+			if !sameProject {
+				require.ErrorContains(t, err, "different Foundry project")
+				require.Zero(t, builder.resolveCalls)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, mcpEndpoint, builder.lastRef.MCPEndpoint)
+			require.Equal(t, "My Tools", builder.lastRef.Name)
+		})
 	}
 }
 
@@ -352,7 +388,7 @@ func TestSkillsHarnessNode_NoneReturnsNil(t *testing.T) {
 // TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool verifies resolved skills
 // are stored as versioned top-level references for request mapping.
 func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testMicrosoftCopilotHarness()}
 	managed.Name = "agent"
 	g := &promptGraph{
 		managed:  managed,
@@ -394,7 +430,7 @@ func TestSkillsHarnessNode_PinsVersionsAndAttachesNoTool(t *testing.T) {
 // the service returning 500 for a reference with no version: azd always sends
 // the version the skill service published, whether or not SKILL.md pinned one.
 func TestSkillsHarnessNode_PinsVersionEvenWhenUnpinned(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testMicrosoftCopilotHarness()}
 	g := &promptGraph{
 		managed:  managed,
 		bindings: map[string]any{},
@@ -418,7 +454,7 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 	managed := &agent_yaml.PromptAgent{
 		Model:        "m",
 		Instructions: "i",
-		Harness:      testPromptHarness(),
+		Harness:      testMicrosoftCopilotHarness(),
 		ResolvedSkills: []agent_yaml.HarnessSkillRef{
 			{Name: "skill-a", Version: "7"},
 		},
@@ -443,7 +479,7 @@ func TestSkillsHarnessNode_ResolveIsIdempotent(t *testing.T) {
 }
 
 func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testMicrosoftCopilotHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}}
 
 	skills := []skillBundle{{Dir: "empty", Meta: skillMeta{Name: "empty", Description: "d"}}}
@@ -463,7 +499,7 @@ func TestSkillsHarnessNode_RejectsEmptyInstructions(t *testing.T) {
 // azure.ai.skill service, so nothing ever created the skill. The deploy must
 // fail with the azure.yaml entry to add rather than silently drop the skill.
 func TestSkillsHarnessNode_MissingMarkerFails(t *testing.T) {
-	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testPromptHarness()}
+	managed := &agent_yaml.PromptAgent{Model: "m", Instructions: "i", Harness: testMicrosoftCopilotHarness()}
 	g := &promptGraph{managed: managed, bindings: map[string]any{}, env: map[string]string{}}
 
 	skills := []skillBundle{{Dir: "skill-a", Meta: skillMeta{

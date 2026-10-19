@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azure.ai.routines/internal/exterrors"
+	"azure.ai.routines/internal/pkg/routines"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -28,6 +29,9 @@ func TestParseRoutineServiceConfig_ServiceLevel(t *testing.T) {
 	props, err := structpb.NewStruct(map[string]any{
 		"description": "nightly summary",
 		"enabled":     true,
+		"authorization": map[string]any{
+			"identity": "creator",
+		},
 		"triggers": map[string]any{
 			"default": map[string]any{"type": "recurring", "cronExpression": "0 9 * * *"},
 		},
@@ -44,11 +48,29 @@ func TestParseRoutineServiceConfig_ServiceLevel(t *testing.T) {
 	assert.Equal(t, "nightly summary", body.Description)
 	require.NotNil(t, body.Enabled)
 	assert.True(t, *body.Enabled)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 	require.Contains(t, body.Triggers, "default")
 	assert.Equal(t, "recurring", body.Triggers["default"].Type)
 	assert.Equal(t, "0 9 * * *", body.Triggers["default"].CronExpression)
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "summarizer", body.Action.AgentName)
+}
+
+func TestParseRoutineServiceConfig_InvalidDispatchIdentity(t *testing.T) {
+	t.Parallel()
+
+	_, err := parseRoutineServiceConfig(&azdext.ServiceConfig{
+		Name: "nightly",
+		Host: aiRoutineHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"authorization": map[string]any{"identity": "service"},
+		}),
+	}, "")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, exterrors.CodeInvalidRoutineManifest, localErr.Code)
+	assert.Contains(t, localErr.Message, "authorization.identity")
 }
 
 // TestParseRoutineServiceConfig_ConfigFallback verifies routines written before
@@ -92,6 +114,8 @@ func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 			"  default:\n"+
 			"    type: schedule\n"+
 			"    cronExpression: \"0 2 * * *\"\n"+
+			"authorization:\n"+
+			"  identity: creator\n"+
 			"action:\n"+
 			"  type: invoke_agent_responses_api\n"+
 			"  agentName: summarizer\n"+
@@ -111,6 +135,8 @@ func TestParseRoutineServiceConfig_FileRef(t *testing.T) {
 	}, root)
 	require.NoError(t, err)
 	assert.Equal(t, "referenced routine", body.Description)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 	assert.Equal(t, "0 2 * * *", body.Triggers["default"].CronExpression)
 	require.NotNil(t, body.Action)
 	assert.Equal(t, "summarizer", body.Action.AgentName)
@@ -127,12 +153,16 @@ func TestParseRoutineServiceConfig_FileRefOverlay(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(
 		filepath.Join(root, "routine.yaml"),
-		[]byte("description: referenced routine\nenabled: true\n"),
+		[]byte(
+			"description: referenced routine\nenabled: true\n"+
+				"authorization:\n  identity: agent\n",
+		),
 		0o600,
 	))
 	props, err := structpb.NewStruct(map[string]any{
-		"$ref":        "./routine.yaml",
-		"description": "inline override",
+		"$ref":          "./routine.yaml",
+		"description":   "inline override",
+		"authorization": map[string]any{"identity": "creator"},
 	})
 	require.NoError(t, err)
 
@@ -145,6 +175,8 @@ func TestParseRoutineServiceConfig_FileRefOverlay(t *testing.T) {
 	assert.Equal(t, "inline override", body.Description)
 	require.NotNil(t, body.Enabled)
 	assert.True(t, *body.Enabled)
+	require.NotNil(t, body.Authorization)
+	assert.Equal(t, routines.RoutineDispatchIdentityCreator, body.Authorization.Identity)
 }
 
 func TestParseRoutineServiceConfig_RejectsSnakeCaseInline(t *testing.T) {
@@ -407,14 +439,16 @@ func TestRoutineEnvironmentValuesEmptyDeclaredIsolates(t *testing.T) {
 // TestRoutineServiceTargetDeployPropagatesAccessToken covers gRPC auth.
 func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	const accessToken = "test-extension-token"
+	const endpoint = "https://test.services.ai.azure.com/api/projects/test"
 
 	t.Setenv("AZD_ACCESS_TOKEN", accessToken)
-	stubAzdProjectSources(t, azdProjectSources{
-		EnvValue: "https://test.services.ai.azure.com/api/projects/test",
-	}, nil)
+	t.Setenv(foundryProjectEndpointEnvVar, "")
+	t.Setenv(legacyProjectEndpointEnvVar, "")
 
 	server := &routineAuthMetadataServer{
-		environmentAuth: make(chan string, 2),
+		projectEndpoint: endpoint,
+		environmentAuth: make(chan string, 5),
+		environmentKeys: make(chan string, 3),
 		accountAuth:     make(chan string, 1),
 	}
 	azdClient := newRoutineAuthAzdClient(t, server)
@@ -436,8 +470,15 @@ func TestRoutineServiceTargetDeployPropagatesAccessToken(t *testing.T) {
 	)
 
 	require.ErrorContains(t, err, "resolving user access tenant")
-	assert.Equal(t, accessToken, <-server.environmentAuth)
-	assert.Equal(t, accessToken, <-server.environmentAuth)
+	require.Len(t, server.environmentAuth, 4)
+	for range len(server.environmentAuth) {
+		assert.Equal(t, accessToken, <-server.environmentAuth)
+	}
+	keys := make([]string, 0, len(server.environmentKeys))
+	for range len(server.environmentKeys) {
+		keys = append(keys, <-server.environmentKeys)
+	}
+	assert.Equal(t, []string{foundryProjectEndpointEnvVar, "AZURE_SUBSCRIPTION_ID"}, keys)
 	assert.Equal(t, accessToken, <-server.accountAuth)
 }
 
@@ -558,7 +599,9 @@ func (s *stubRoutineAccount) LookupTenant(
 type routineAuthMetadataServer struct {
 	azdext.UnimplementedAccountServiceServer
 	azdext.UnimplementedEnvironmentServiceServer
+	projectEndpoint string
 	environmentAuth chan string
+	environmentKeys chan string
 	accountAuth     chan string
 }
 
@@ -574,10 +617,18 @@ func (s *routineAuthMetadataServer) GetCurrent(
 
 func (s *routineAuthMetadataServer) GetValue(
 	ctx context.Context,
-	_ *azdext.GetEnvRequest,
+	request *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
 	s.environmentAuth <- incomingAuthorization(ctx)
-	return &azdext.KeyValueResponse{Value: "subscription-id"}, nil
+	s.environmentKeys <- request.GetKey()
+	value := "subscription-id"
+	switch request.GetKey() {
+	case foundryProjectEndpointEnvVar:
+		value = s.projectEndpoint
+	case legacyProjectEndpointEnvVar:
+		value = ""
+	}
+	return &azdext.KeyValueResponse{Key: request.GetKey(), Value: value}, nil
 }
 
 func (s *routineAuthMetadataServer) LookupTenant(
@@ -612,6 +663,7 @@ func newRoutineAuthAzdClient(
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
+	t.Setenv("AZD_SERVER", listener.Addr().String())
 
 	go func() { _ = grpcServer.Serve(listener) }()
 

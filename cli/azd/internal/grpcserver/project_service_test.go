@@ -603,6 +603,44 @@ func Test_ProjectService_SetConfigSection(t *testing.T) {
 		require.Equal(t, "admin", credentials["username"])
 		require.Equal(t, "secret123", credentials["password"])
 	})
+
+	t.Run("SetConfigSection_PreservesServiceEnvironmentTemplates", func(t *testing.T) {
+		services := map[string]any{
+			"search.api": map[string]any{
+				"host": "azure.ai.connection",
+				"env":  map[string]any{"API_KEY": "${API_KEY}"},
+			},
+			"worker": map[string]any{
+				"host":     "containerapp",
+				"language": "python",
+			},
+		}
+		section, err := structpb.NewStruct(services)
+		require.NoError(t, err)
+
+		_, err = service.SetConfigSection(
+			*mockContext.Context,
+			&azdext.SetProjectConfigSectionRequest{
+				Path:    "services",
+				Section: section,
+			},
+		)
+		require.NoError(t, err)
+
+		cfg, err := project.LoadConfig(*mockContext.Context, azdContext.ProjectPath())
+		require.NoError(t, err)
+		persistedServices, found := cfg.GetMap("services")
+		require.True(t, found)
+		connection, ok := persistedServices["search.api"].(map[string]any)
+		require.True(t, ok)
+		env, ok := connection["env"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "${API_KEY}", env["API_KEY"])
+		worker, ok := persistedServices["worker"].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "containerapp", worker["host"])
+		require.Equal(t, "python", worker["language"])
+	})
 }
 
 func Test_ProjectService_SetConfigValue(t *testing.T) {

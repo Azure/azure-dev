@@ -1,0 +1,307 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package eval_api
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestJobErrorReadsTheReasonWhereverTheServiceSentIt(t *testing.T) {
+	for _, tc := range []struct {
+		name, body    string
+		code, message string
+		reason        string
+	}{
+		{"message", `{"code":"Init","message":"deployment not found"}`,
+			"Init", "deployment not found", "deployment not found"},
+		{"code only", `{"code":"Throttled"}`, "Throttled", "", ""},
+		{"numeric code is left to the service JSON", `{"code":429,"message":"slow down"}`, "", "slow down", "slow down"},
+		{"details array", `{"code":"x","message":"","details":[{"code":"d","message":"first"},{"message":"second"}]}`,
+			"x", "", "first"},
+		{"azure innererror", `{"code":"x","innererror":{"code":"i","message":"inner reason"}}`, "x", "", "inner reason"},
+		{"snake case inner_error", `{"inner_error":{"message":"snake reason"}}`, "", "", "snake reason"},
+		{"openai error wrapper", `{"message":"","error":{"message":"wrapped reason"}}`, "", "", "wrapped reason"},
+		{"message wins over nested", `{"message":"top","innererror":{"message":"deep"}}`, "", "top", "top"},
+		{"message is an object", `{"code":"c","message":{"value":"x","message":"object reason"}}`,
+			"c", "object reason", "object reason"},
+		{"bare string", `"it simply failed"`, "", "it simply failed", "it simply failed"},
+		{"array of strings", `["one","","two"]`, "", "one; two", "one; two"},
+		{"null", `null`, "", "", ""},
+		{"empty object", `{}`, "", "", ""},
+		{"boolean ignored", `true`, "", "", ""},
+		{"whitespace only message", `{"message":"   ","details":[{"message":"real"}]}`, "", "   ", "real"},
+		{"member names match case-insensitively", `{"Code":"E","Message":"pascal reason"}`,
+			"E", "pascal reason", "pascal reason"},
+		{"camel case innerError", `{"Code":"E","innerError":{"Message":"camel reason"}}`, "E", "", "camel reason"},
+		{"upper case DETAILS", `{"DETAILS":[{"MESSAGE":"upper reason"}]}`, "", "", "upper reason"},
+		{
+			"too deep to follow",
+			`{"innererror":{"innererror":{"innererror":{"innererror":{"innererror":{"message":"lost"}}}}}}`,
+			"", "", "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var decoded JobError
+			require.NoError(t, json.Unmarshal([]byte(tc.body), &decoded))
+			assert.Equal(t, tc.code, decoded.Code)
+			assert.Equal(t, tc.message, decoded.Message)
+			assert.Equal(t, tc.reason, decoded.Reason())
+		})
+	}
+}
+
+func TestJobErrorReasonIsNilSafe(t *testing.T) {
+	var none *JobError
+	assert.Empty(t, none.Reason())
+	assert.Equal(t, "plain", (&JobError{Message: " plain "}).Reason())
+}
+
+// A run whose error does not have the documented shape must still be a run. It
+// failed the whole response before, which hid the run behind a parse error.
+func TestRunWithAnUnconventionalErrorStillDecodes(t *testing.T) {
+	for name, errorBody := range map[string]string{
+		"bare string":        `"the model deployment was not found"`,
+		"message as object":  `{"message":{"message":"the model deployment was not found"}}`,
+		"nested in details":  `{"message":"","details":[{"message":"the model deployment was not found"}]}`,
+		"nested innererror":  `{"code":"E","innererror":{"message":"the model deployment was not found"}}`,
+		"openai style error": `{"error":{"message":"the model deployment was not found"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var run OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"run_1","status":"failed","error":`+errorBody+`}`), &run))
+			assert.Equal(t, "run_1", run.ID)
+			assert.Equal(t, "the model deployment was not found", run.Failure())
+		})
+	}
+}
+
+// Nested detail is read, not rewritten: a service object that carried it is
+// emitted back with its own members and no member the service did not send.
+func TestRunJSONKeepsTheServicesErrorMembers(t *testing.T) {
+	const body = `{"id":"run_1","status":"failed","error":{"code":"E","message":"",` +
+		`"details":[{"code":"d","message":"reason"}],"future":9007199254740993}}`
+	var run OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(body), &run))
+	require.Equal(t, "reason", run.Failure())
+
+	out, err := json.Marshal(&run)
+	require.NoError(t, err)
+	assert.JSONEq(t, body, string(out))
+	assert.True(t, strings.Contains(string(out), "9007199254740993"), "numeric precision is preserved")
+}
+
+// An error in the conventional object shape keeps emitting exactly what the
+// service sent, including text with surrounding spaces, member names in another
+// case, and a numeric code (which is not re-typed), none of which are trimmed
+// or rewritten on the way through.
+func TestRunJSONDoesNotRewriteAConventionalError(t *testing.T) {
+	for _, errorBody := range []string{
+		`{"code":" E ","message":"  padded  "}`,
+		`{"code":429,"message":"numeric code"}`,
+		`{"Code":"E","Message":"Pascal case"}`,
+		`{"code":"E","message":"","details":[{"message":"nested"}]}`,
+	} {
+		t.Run(errorBody, func(t *testing.T) {
+			body := `{"id":"run_1","status":"failed","error":` + errorBody + `}`
+			var run OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(body), &run))
+			out, err := json.Marshal(&run)
+			require.NoError(t, err)
+			assert.JSONEq(t, body, string(out))
+		})
+	}
+}
+
+// Shapes that used to fail decoding outright are read for their text and are
+// emitted as the conventional {code, message} object. Pinned so the change in
+// what -o json shows for them is a decision rather than an accident.
+func TestRunJSONNormalizesAnErrorThatCouldNotDecodeBefore(t *testing.T) {
+	for name, tc := range map[string]struct{ errorBody, want string }{
+		"bare string":       {`"it failed"`, `{"message":"it failed"}`},
+		"array of strings":  {`["a","b"]`, `{"message":"a; b"}`},
+		"message is object": {`{"code":"E","message":{"message":"obj"}}`, `{"code":"E","message":"obj"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var run OpenAIEvalRun
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"run_1","status":"failed","error":`+tc.errorBody+`}`), &run))
+			out, err := json.Marshal(&run)
+			require.NoError(t, err)
+			assert.JSONEq(t, `{"id":"run_1","status":"failed","error":`+tc.want+`}`, string(out))
+		})
+	}
+}
+
+func TestGenerationJobFailureNamesANestedReason(t *testing.T) {
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"j","status":"failed","error":{"code":"x","details":[{"message":"quota exhausted"}]}}`), &job))
+	failure := &JobFailedError{Job: &job, Status: JobStatusFailed}
+	assert.Contains(t, failure.Error(), "quota exhausted")
+
+	empty := &JobFailedError{Job: &GenerationJob{Status: "failed"}, Status: JobStatusFailed}
+	assert.Contains(t, empty.Error(), "failed", "a failure with no reason still says something")
+	assert.NotContains(t, empty.Error(), ": ")
+}
+
+// A reason the service quotes can carry a credential in a URL; the polled-job
+// error is returned to the terminal and CI logs as-is, so it is redacted here.
+func TestGenerationJobFailureDoesNotDiscloseACredentialInTheReason(t *testing.T) {
+	//nolint:gosec // Synthetic URL credentials verify non-disclosure; this fixture contains no real secret.
+	for name, body := range map[string]string{
+		"top level message": `{"message":"could not read https://acct.blob.core.windows.net/c/f.jsonl?sv=1&sig=SECRETSIG"}`,
+		"nested detail":     `{"details":[{"message":"fetch https://user:hunter2@host.example/x failed"}]}`,
+		"bare string":       `"see https://acct.blob.core.windows.net/c?sig=SECRETSIG"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var job GenerationJob
+			require.NoError(t, json.Unmarshal([]byte(`{"id":"j","status":"failed","error":`+body+`}`), &job))
+			text := (&JobFailedError{Job: &job, Status: JobStatusFailed}).Error()
+			assert.NotContains(t, text, "SECRETSIG")
+			assert.NotContains(t, text, "hunter2")
+			assert.NotContains(t, text, "sig=")
+		})
+	}
+}
+
+func TestJobErrorKeepsTheDetailsWithTheirCodeAndTarget(t *testing.T) {
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(`{"code":"validation_failed","message":"Evaluation validation failed.",`+
+		`"details":[`+
+		`{"code":"model_not_found","message":" Model 'm' was not found. ","target":"run.data_source.model"},`+
+		`{"message":"no target"},`+
+		`{"code":"OnlyACode"},`+
+		`"a bare string",`+
+		`{"message":{"message":"object message"},"target":7},`+
+		`{},null,42,true]}`), &decoded))
+
+	assert.Equal(t, "Evaluation validation failed.", decoded.Reason(), "the message is still the headline")
+	assert.Equal(t, []ErrorDetail{
+		{Code: "model_not_found", Message: "Model 'm' was not found.", Target: "run.data_source.model"},
+		{Message: "no target"},
+		{Code: "OnlyACode"},
+		{Message: "a bare string"},
+		{Message: "object message"},
+		{Message: "42"},
+	}, decoded.Details())
+
+	var none *JobError
+	assert.Empty(t, none.Details())
+	assert.Empty(t, (&JobError{Message: "m"}).Details())
+}
+
+func TestJobErrorDetailsAreBoundedAndCopied(t *testing.T) {
+	var body strings.Builder
+	body.WriteString(`{"message":"m","details":[`)
+	for i := range 3 * maxCollectedDetails {
+		if i > 0 {
+			body.WriteString(",")
+		}
+		fmt.Fprintf(&body, `{"message":"detail %d"}`, i)
+	}
+	body.WriteString(`]}`)
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(body.String()), &decoded))
+	got := decoded.Details()
+	require.Len(t, got, maxCollectedDetails)
+	assert.Equal(t, 2*maxCollectedDetails, decoded.OmittedDetails())
+
+	got[0].Message = "changed"
+	assert.Equal(t, "detail 0", decoded.Details()[0].Message, "a caller cannot rewrite what the error holds")
+}
+
+func TestJobErrorWithoutAMessageUsesOnlyTheFirstDetailAsItsReason(t *testing.T) {
+	var decoded JobError
+	require.NoError(t, json.Unmarshal([]byte(`{"details":[
+		{"message":"first cause"},{"message":"second cause"},{"message":"third cause"}]}`), &decoded))
+
+	assert.Equal(t, "first cause", decoded.Reason())
+	assert.Equal(t, []ErrorDetail{
+		{Message: "first cause"},
+		{Message: "second cause"},
+		{Message: "third cause"},
+	}, decoded.Details())
+}
+
+// Reading the details must not change what -o json emits for an error that has
+// both a message and details.
+func TestRunJSONKeepsTheDetailsOfAnErrorWithAMessage(t *testing.T) {
+	const body = `{"id":"run_1","status":"failed","error":{"code":"validation_failed",` +
+		`"message":"Evaluation validation failed: model resource is not found.",` +
+		`"details":[{"code":"model_not_found","message":"Model 'm' was not found.","target":"t"}]}}`
+	var run OpenAIEvalRun
+	require.NoError(t, json.Unmarshal([]byte(body), &run))
+	require.Len(t, run.Error.Details(), 1)
+	out, err := json.Marshal(&run)
+	require.NoError(t, err)
+	assert.JSONEq(t, body, string(out))
+}
+
+// Keys of a map the service keyed by user data are case-sensitive: `Env` and
+// `env` are two entries, and folding them as one spelling of a modeled field would
+// drop or overwrite one. The result must not depend on map iteration order.
+func TestRunJSONKeepsCaseSensitiveUserDataKeys(t *testing.T) {
+	const response = `{"id":"run_case","status":"completed",` +
+		`"metadata":{"Env":"a","env":"b","ENV":"c"}}`
+	for range 50 {
+		var run OpenAIEvalRun
+		require.NoError(t, json.Unmarshal([]byte(response), &run))
+		raw, err := json.Marshal(&run)
+		require.NoError(t, err)
+		var document struct {
+			Metadata map[string]string `json:"metadata"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &document))
+		assert.Equal(t, map[string]string{"Env": "a", "env": "b", "ENV": "c"}, document.Metadata)
+	}
+}
+
+func TestOutputItemJSONKeepsCaseSensitiveDatasetColumns(t *testing.T) {
+	const response = `{"id":"item_case","status":"pass","datasource_item":{"ID":1,"id":2}}`
+	for range 50 {
+		var item OutputItem
+		require.NoError(t, json.Unmarshal([]byte(response), &item))
+		raw, err := json.Marshal(&item)
+		require.NoError(t, err)
+		var document struct {
+			Row map[string]json.Number `json:"datasource_item"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		decoder.UseNumber()
+		require.NoError(t, decoder.Decode(&document))
+		assert.Equal(t, map[string]json.Number{"ID": "1", "id": "2"}, document.Row)
+	}
+}
+
+func TestJobErrorDropsRepeatedDetailsBeforeCappingThem(t *testing.T) {
+	var repeats []string
+	for range 80 {
+		repeats = append(repeats, `{"message":"The request is invalid."}`)
+	}
+	raw := `{"message":"The request is invalid.","details":[` + strings.Join(repeats, ",") +
+		`,{"message":"Model 'gpt-9' was not found.","target":"model"}]}`
+	var jobError JobError
+	require.NoError(t, json.Unmarshal([]byte(raw), &jobError))
+
+	details := jobError.Details()
+	require.Len(t, details, 2, "the repeated entry once, then the entry that names the cause")
+	assert.Equal(t, "Model 'gpt-9' was not found.", details[1].Message)
+	assert.Zero(t, jobError.OmittedDetails())
+}
+
+func TestAPolledJobFailureIsOneBoundedLine(t *testing.T) {
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"j","status":"failed","error":{"message":"first line\nsecond line `+strings.Repeat("x", 600)+`"}}`), &job))
+
+	text := (&JobFailedError{Job: &job, Status: "failed"}).Error()
+	assert.NotContains(t, text, "\n")
+	assert.Contains(t, text, "first line second line")
+	assert.Less(t, len([]rune(text)), 400)
+}

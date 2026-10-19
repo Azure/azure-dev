@@ -274,17 +274,125 @@ func LoadConfig(ctx context.Context, projectFilePath string) (config.Config, err
 }
 
 func SaveConfig(ctx context.Context, config config.Config, projectFilePath string) error {
-	projectBytes, err := yaml.Marshal(config.Raw())
+	projectConfig, err := parseRawConfig(ctx, config.Raw())
 	if err != nil {
-		return fmt.Errorf("marshalling project yaml: %w", err)
+		return err
+	}
+	return saveRawConfig(projectConfig, config.Raw(), projectFilePath)
+}
+
+func parseRawConfig(ctx context.Context, raw map[string]any) (*ProjectConfig, error) {
+	projectBytes, err := yaml.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
 	projectConfig, err := Parse(ctx, string(projectBytes))
 	if err != nil {
-		return fmt.Errorf("parsing project yaml: %w", err)
+		return nil, fmt.Errorf("parsing project yaml: %w", err)
 	}
 
-	return Save(ctx, projectConfig, projectFilePath)
+	return projectConfig, nil
+}
+
+func saveRawConfig(projectConfig *ProjectConfig, raw map[string]any, path string) error {
+	normalizeConfigPaths(raw, projectConfig)
+	projectBytes, err := yaml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
+	}
+	return saveProjectConfigBytes(projectConfig, projectBytes, path)
+}
+
+func normalizeConfigPaths(raw map[string]any, parsed *ProjectConfig) {
+	normalizePath := func(object map[string]any, key, value string) {
+		if _, exists := object[key]; exists {
+			object[key] = filepath.ToSlash(value)
+		}
+	}
+	normalizeInfra := func(object map[string]any, options provisioning.Options) {
+		if infra, ok := object["infra"].(map[string]any); ok {
+			normalizePath(infra, "path", options.Path)
+		}
+	}
+	normalizeServices := func(object map[string]any, services map[string]*ServiceConfig) {
+		rawServices, _ := object["services"].(map[string]any)
+		for name, service := range services {
+			if rawService, ok := rawServices[name].(map[string]any); ok {
+				normalizeInfra(rawService, service.Infra)
+				normalizePath(rawService, "project", service.RelativePath)
+				normalizePath(rawService, "dist", service.OutputPath)
+			}
+		}
+	}
+	normalizeInfra(raw, parsed.Infra)
+	normalizeServices(raw, parsed.Services)
+	layers, _ := raw["layers"].([]any)
+	for i, layer := range parsed.Layers {
+		if i >= len(layers) {
+			break
+		}
+		rawLayer, ok := layers[i].(map[string]any)
+		if !ok {
+			continue
+		}
+		normalizeServices(rawLayer, layer.Services)
+		infra, _ := rawLayer["infra"].([]any)
+		for j, options := range layer.Infra {
+			if j >= len(infra) {
+				break
+			}
+			if object, ok := infra[j].(map[string]any); ok {
+				normalizePath(object, "path", options.Path)
+			}
+		}
+	}
+}
+
+// SaveService saves one service, preserving other raw fields.
+// It parses the current file and uses Save's service validation.
+func SaveService(ctx context.Context, projectConfig *ProjectConfig, name, path string) error {
+	if err := projectConfig.Validate(); err != nil {
+		return fmt.Errorf("file failed validation, before saving: %w", err)
+	}
+	service, exists := projectConfig.Services[name]
+	if !exists || service == nil {
+		return fmt.Errorf("service %q not found", name)
+	}
+	raw, err := LoadConfig(ctx, path)
+	if err != nil {
+		return err
+	}
+	current, err := parseRawConfig(ctx, raw.Raw())
+	if err != nil {
+		return err
+	}
+	if current.Services == nil {
+		current.Services = map[string]*ServiceConfig{}
+	}
+	current.Services[name] = service
+	if err := current.Validate(); err != nil {
+		return fmt.Errorf("file failed validation, before saving: %w", err)
+	}
+	wire, err := yaml.Marshal(service)
+	if err != nil {
+		return fmt.Errorf("marshalling service yaml: %w", err)
+	}
+	var replacement map[string]any
+	if err := yaml.Unmarshal(wire, &replacement); err != nil {
+		return fmt.Errorf("parsing service yaml: %w", err)
+	}
+	services, ok := raw.Raw()["services"].(map[string]any)
+	if !ok {
+		services = map[string]any{}
+		raw.Raw()["services"] = services
+	}
+	services[name] = replacement
+	if err := saveRawConfig(current, raw.Raw(), path); err != nil {
+		return err
+	}
+	projectConfig.Path = current.Path
+	return nil
 }
 
 // Saves the current instance back to the azure.yaml file
@@ -336,6 +444,10 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		return fmt.Errorf("marshalling project yaml: %w", err)
 	}
 
+	return saveProjectConfigBytes(projectConfig, projectBytes, projectFilePath)
+}
+
+func saveProjectConfigBytes(projectConfig *ProjectConfig, projectBytes []byte, projectFilePath string) error {
 	version := "v1.0"
 	if projectConfig.Format() == ProjectFormatLayersV2 {
 		version = "alpha"
@@ -347,7 +459,7 @@ func Save(ctx context.Context, projectConfig *ProjectConfig, projectFilePath str
 		"# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/%s/azure.yaml.json",
 		version)
 	projectFileContents := bytes.NewBufferString(annotation + "\n\n")
-	_, err = projectFileContents.Write(projectBytes)
+	_, err := projectFileContents.Write(projectBytes)
 	if err != nil {
 		return fmt.Errorf("preparing new project file contents: %w", err)
 	}

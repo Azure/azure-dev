@@ -33,8 +33,8 @@ var databaseProviders = map[ResourceKind]databaseProvider{
 
 var containerAppName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$`)
 
-//go:embed template/infra/*.bicep template/.azd-spring/database.ps1
-//go:embed template/.azd-spring/database.py template/.azd-spring/requirements.txt
+//go:embed template/infra/*.bicep template/.azd-spring/prepare-database-password.ps1
+//go:embed template/.azd-spring/bootstrap-postgresql-managed-identity.py template/.azd-spring/requirements.txt
 var deploymentTemplate embed.FS
 
 // Plan holds generated assets ready for a no-overwrite project write.
@@ -139,14 +139,18 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 					"as an application compile/runtime dependency; initialization does not modify the POM")
 			}
 			hooks["preprovision"] = map[string]any{
-				"shell": "pwsh", "run": "python .azd-spring/database.py prepare", "interactive": false,
+				"shell":       "pwsh",
+				"run":         "python .azd-spring/bootstrap-postgresql-managed-identity.py prepare",
+				"interactive": false,
 			}
 			hooks["postprovision"] = map[string]any{
-				"shell": "pwsh", "run": "python .azd-spring/database.py bootstrap", "interactive": false,
+				"shell":       "pwsh",
+				"run":         "python .azd-spring/bootstrap-postgresql-managed-identity.py bootstrap",
+				"interactive": false,
 			}
 		} else {
 			hooks["preprovision"] = map[string]any{
-				"shell": "pwsh", "run": ".azd-spring/database.ps1", "interactive": false,
+				"shell": "pwsh", "run": ".azd-spring/prepare-database-password.ps1", "interactive": false,
 			}
 		}
 		parameters["databaseEngine"] = map[string]any{"value": string(requirement.Kind)}
@@ -256,7 +260,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			return nil
 		}
 		normalizedPath := strings.TrimPrefix(file, "template/")
-		if normalizedPath == ".azd-spring/database.ps1" {
+		if normalizedPath == ".azd-spring/prepare-database-password.ps1" {
 			if settings["engine"] == "none" || settings["auth"] != "password" {
 				return nil
 			}

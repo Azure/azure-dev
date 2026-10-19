@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$hook = Join-Path $PSScriptRoot "template/.azd-spring/database.ps1"
+$hook = Join-Path $PSScriptRoot "template/.azd-spring/prepare-database-password.ps1"
 $pendingProcesses = [System.Collections.Generic.List[object]]::new()
 $startedProcesses = [System.Collections.Generic.List[object]]::new()
 

@@ -12,7 +12,9 @@ from unittest.mock import MagicMock, patch
 
 
 spec = importlib.util.spec_from_file_location(
-    "bootstrap", Path(__file__).parent / "template" / ".azd-spring" / "database.py")
+    "bootstrap",
+    Path(__file__).parent / "template" / ".azd-spring" / "bootstrap-postgresql-managed-identity.py",
+)
 bootstrap = importlib.util.module_from_spec(spec)
 with patch.object(sys, "dont_write_bytecode", True):
     spec.loader.exec_module(bootstrap)

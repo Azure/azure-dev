@@ -1510,8 +1510,8 @@ func TestGeneratePreservesVerifiedPasswordBindings(t *testing.T) {
 			if tt.kind == PostgreSQL {
 				require.Contains(t, binding, "sslrootcert="+url.QueryEscape("/etc/ssl/certs/ca-certificates.crt"))
 			}
-			require.Contains(t, plan.Files, ".azd-spring/database.ps1")
-			require.NotContains(t, plan.Files, ".azd-spring/database.py")
+			require.Contains(t, plan.Files, ".azd-spring/prepare-database-password.ps1")
+			require.NotContains(t, plan.Files, ".azd-spring/bootstrap-postgresql-managed-identity.py")
 		})
 	}
 }

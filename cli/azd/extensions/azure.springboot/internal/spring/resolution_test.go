@@ -392,7 +392,7 @@ func TestEmbeddedRuntimeBindings(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, string(plan.Files[".azd-spring/application-azd.properties"]),
 				"spring.datasource.url="+tt.jdbc+"\n")
-			require.NotContains(t, plan.Files, ".azd-spring/database.ps1")
+			require.NotContains(t, plan.Files, ".azd-spring/prepare-database-password.ps1")
 		})
 	}
 }

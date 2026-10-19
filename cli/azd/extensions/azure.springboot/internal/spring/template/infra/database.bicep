@@ -49,7 +49,7 @@ resource pgDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08
 
 // Temporary public access for PostgreSQL managed-identity bootstrap. The local HTTPS egress IP
 // may differ from the TCP 5432 egress IP, so the bootstrap cannot use an exact client allowlist.
-// The postprovision .azd-spring/database.py hook removes this rule on success or failure.
+// The postprovision bootstrap-postgresql-managed-identity.py hook removes this rule on success or failure.
 resource pgFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (engine == 'postgresql' && managedIdentity) {
   parent: postgres
   name: 'bootstrap-local-ip'

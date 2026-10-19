@@ -18,8 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
@@ -365,7 +365,7 @@ func (d *StackDeployments) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
+) ([]*armdeployments.DeploymentOperation, error) {
 	deployment, err := d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil && !errors.Is(err, ErrDeploymentNotFound) {
 		return nil, err
@@ -383,7 +383,7 @@ func (d *StackDeployments) ListResourceGroupDeploymentOperations(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-) ([]*armresources.DeploymentOperation, error) {
+) ([]*armdeployments.DeploymentOperation, error) {
 	// The requested deployment name may be an inner deployment which will not be found in the deployment stacks.
 	// If this is the case continue on checking if there is a stack deployment
 	// If a deployment stack is found then use the deployment id of the stack
@@ -411,7 +411,7 @@ func (d *StackDeployments) WhatIfDeployToSubscription(
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (*armresources.WhatIfOperationResult, error) {
+) (*armdeployments.WhatIfOperationResult, error) {
 	return nil, ErrPreviewNotSupported
 }
 
@@ -422,7 +422,7 @@ func (d *StackDeployments) WhatIfDeployToResourceGroup(
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (*armresources.WhatIfOperationResult, error) {
+) (*armdeployments.WhatIfOperationResult, error) {
 	return nil, ErrPreviewNotSupported
 }
 
@@ -430,7 +430,7 @@ func (d *StackDeployments) ListSubscriptionDeploymentResources(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
-) ([]*armresources.ResourceReference, error) {
+) ([]*armdeployments.ResourceReference, error) {
 	deployment, err := d.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
 	if err != nil {
 		return nil, err
@@ -443,7 +443,7 @@ func (d *StackDeployments) ListResourceGroupDeploymentResources(
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
-) ([]*armresources.ResourceReference, error) {
+) ([]*armdeployments.ResourceReference, error) {
 	deployment, err := d.GetResourceGroupDeployment(ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return nil, err
@@ -716,9 +716,9 @@ func (d *StackDeployments) createClient(ctx context.Context, subscriptionId stri
 
 // Converts from an ARM Extended Deployment to Azd Generic deployment
 func (d *StackDeployments) convertFromStackDeployment(deployment *armdeploymentstacks.DeploymentStack) *ResourceDeployment {
-	resources := []*armresources.ResourceReference{}
+	resources := []*armdeployments.ResourceReference{}
 	for _, resource := range deployment.Properties.Resources {
-		resources = append(resources, &armresources.ResourceReference{ID: resource.ID})
+		resources = append(resources, &armdeployments.ResourceReference{ID: resource.ID})
 	}
 
 	deploymentId := convert.ToValueWithDefault(deployment.Properties.DeploymentID, "")
@@ -735,7 +735,7 @@ func (d *StackDeployments) convertFromStackDeployment(deployment *armdeployments
 		TemplateHash:      deployment.Tags[azure.TagKeyAzdDeploymentTemplateHashName],
 		Outputs:           deployment.Properties.Outputs,
 		Resources:         resources,
-		Dependencies:      []*armresources.Dependency{},
+		Dependencies:      []*armdeployments.Dependency{},
 
 		PortalUrl: fmt.Sprintf("%s/%s/%s",
 			d.cloud.PortalUrlBase,

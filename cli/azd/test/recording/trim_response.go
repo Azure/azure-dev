@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
@@ -33,14 +33,14 @@ func TrimSubscriptionsDeployment(i *cassette.Interaction, variables map[string]s
 	if !subscriptionDeploymentUrl.Match([]byte(url.Path)) {
 		return nil
 	}
-	var res armresources.DeploymentListResult
+	var res armdeployments.DeploymentListResult
 	err = json.Unmarshal([]byte(i.Response.Body), &res)
 	if err != nil {
 		return err
 	}
 
 	// Filter to the subscriptions matching the current environment
-	filtered := []*armresources.DeploymentExtended{}
+	filtered := []*armdeployments.DeploymentExtended{}
 	for _, deployment := range res.Value {
 		if deployment.Tags != nil {
 			envTag := deployment.Tags[azure.TagKeyAzdEnvName]

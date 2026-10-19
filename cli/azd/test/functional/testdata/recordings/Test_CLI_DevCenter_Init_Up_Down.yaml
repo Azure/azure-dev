@@ -4604,7 +4604,7 @@ interactions:
                 - azsdk-go-armresources.Client/v1.1.1 (go1.21.6; Windows_NT),azdev/0.0.0-dev.0 (Go go1.21.6; windows/amd64)
             X-Ms-Correlation-Request-Id:
                 - 1722edc87f18d41245d84ec3fb288193
-        url: https://management.azure.com:443/subscriptions/2cd617ea-1866-46b1-90e3-fffb087ebf9b/resourceGroups/project-1-azdtest-wb1885c/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27helloworld%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/2cd617ea-1866-46b1-90e3-fffb087ebf9b/resourcegroups/project-1-azdtest-wb1885c/resources?%24filter=tagName%20eq%20%27azd-service-name%27%20and%20tagValue%20eq%20%27helloworld%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0

@@ -7,7 +7,7 @@ import (
 	"context"
 
 	azure_armmsi "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	azd_armmsi "github.com/azure/azure-dev/cli/azd/pkg/armmsi"
 	azd_github "github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 )

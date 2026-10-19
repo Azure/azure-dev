@@ -26,7 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -148,7 +148,7 @@ func GenericQuotaSuggestion() string {
 }
 
 // QuotaSuggestionForARMError returns guidance for an ARM quota error.
-func QuotaSuggestionForARMError(err *armresources.ErrorResponse) string {
+func QuotaSuggestionForARMError(err *armdeployments.ErrorResponse) string {
 	if !armErrorResponseContainsCode(err, insufficientQuotaCode) {
 		return ""
 	}
@@ -172,7 +172,7 @@ func quotaSuggestionForResponse(responseErr *azcore.ResponseError) string {
 	return ""
 }
 
-func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.ErrorResponse {
+func responseErrorPayload(responseErr *azcore.ResponseError) *armdeployments.ErrorResponse {
 	if responseErr.RawResponse == nil || responseErr.RawResponse.Body == nil {
 		return nil
 	}
@@ -186,13 +186,13 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 	}
 
 	var envelope struct {
-		Error *armresources.ErrorResponse `json:"error"`
+		Error *armdeployments.ErrorResponse `json:"error"`
 	}
 	if json.Unmarshal(body, &envelope) == nil && envelope.Error != nil {
 		return envelope.Error
 	}
 
-	var payload armresources.ErrorResponse
+	var payload armdeployments.ErrorResponse
 	if json.Unmarshal(body, &payload) == nil && payload.Code != nil {
 		return &payload
 	}
@@ -200,7 +200,7 @@ func responseErrorPayload(responseErr *azcore.ResponseError) *armresources.Error
 	return nil
 }
 
-func armErrorResponseContainsCode(err *armresources.ErrorResponse, code string) bool {
+func armErrorResponseContainsCode(err *armdeployments.ErrorResponse, code string) bool {
 	if err == nil {
 		return false
 	}
@@ -216,7 +216,7 @@ func armErrorResponseContainsCode(err *armresources.ErrorResponse, code string) 
 }
 
 func armErrorResponseContainsCognitiveServicesQuota(
-	err *armresources.ErrorResponse,
+	err *armdeployments.ErrorResponse,
 	inheritedTarget string,
 ) bool {
 	if err == nil {

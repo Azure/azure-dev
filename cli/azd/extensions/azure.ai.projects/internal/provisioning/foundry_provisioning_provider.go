@@ -26,7 +26,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeployments"
+	resources "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources/v4"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -1159,12 +1160,16 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, err
 	}
 
-	dep := armresources.Deployment{
+	parameters, err := deploymentParameters(src.parameters)
+	if err != nil {
+		return nil, err
+	}
+	dep := armdeployments.Deployment{
 		Location: new(p.location),
-		Properties: &armresources.DeploymentProperties{
+		Properties: &armdeployments.DeploymentProperties{
 			Template:   src.armTemplate,
-			Parameters: src.parameters,
-			Mode:       new(armresources.DeploymentModeIncremental),
+			Parameters: parameters,
+			Mode:       new(armdeployments.DeploymentModeIncremental),
 		},
 		Tags: map[string]*string{
 			"azd-env-name":                  new(p.envName),
@@ -1432,17 +1437,21 @@ func (p *FoundryProvisioningProvider) Preview(
 		return nil, err
 	}
 
+	parameters, err := deploymentParameters(src.parameters)
+	if err != nil {
+		return nil, err
+	}
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	whatIf := armresources.DeploymentWhatIf{
+	whatIf := armdeployments.DeploymentWhatIf{
 		Location: new(p.location),
-		Properties: &armresources.DeploymentWhatIfProperties{
+		Properties: &armdeployments.DeploymentWhatIfProperties{
 			Template:   src.armTemplate,
-			Parameters: src.parameters,
-			Mode:       new(armresources.DeploymentModeIncremental),
+			Parameters: parameters,
+			Mode:       new(armdeployments.DeploymentModeIncremental),
 		},
 	}
 
@@ -1569,7 +1578,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return nil, err
 		}
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := resources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2091,11 +2100,11 @@ var existingProjectOutputNames = []string{
 
 // deploymentsClient builds the ARM DeploymentsClient on demand, ensuring the
 // credential is initialized first.
-func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*armresources.DeploymentsClient, error) {
+func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*armdeployments.DeploymentsClient, error) {
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armdeployments.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2283,7 +2292,7 @@ func pollWithProgress[T any](
 }
 
 // deploymentOutputs returns the Outputs map from a possibly-nil properties.
-func deploymentOutputs(p *armresources.DeploymentPropertiesExtended) any {
+func deploymentOutputs(p *armdeployments.DeploymentPropertiesExtended) any {
 	if p == nil {
 		return nil
 	}
@@ -2291,7 +2300,7 @@ func deploymentOutputs(p *armresources.DeploymentPropertiesExtended) any {
 }
 
 func ownedLayerResourceGroupID(
-	properties *armresources.DeploymentPropertiesExtended,
+	properties *armdeployments.DeploymentPropertiesExtended,
 	subscriptionID, resourceGroup string,
 ) string {
 	wantedID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroup)
@@ -2318,7 +2327,7 @@ func resourceGroupIDMatches(resourceID, subscriptionID, resourceGroup string) bo
 func resolveLayerResourceGroupOwnership(
 	currentID, subscriptionID, resourceGroup string,
 	resourceGroupExisted bool,
-	properties *armresources.DeploymentPropertiesExtended,
+	properties *armdeployments.DeploymentPropertiesExtended,
 ) string {
 	if resourceGroupIDMatches(currentID, subscriptionID, resourceGroup) {
 		return currentID
@@ -2340,7 +2349,7 @@ func (p *FoundryProvisioningProvider) lookupResourceGroupState(
 	if p.resourceGroupState != nil {
 		return p.resourceGroupState(ctx)
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := resources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return nil, false, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2385,7 +2394,7 @@ func (p *FoundryProvisioningProvider) verifyLayerResourceGroupAzureOwnership(ctx
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := resources.NewClientFactory(p.subID, p.credential, nil)
 	if err != nil {
 		return exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2494,7 +2503,7 @@ func parseFoundryInfraConfig(rawYAML []byte) (foundryInfraConfig, error) {
 }
 
 // deploymentResources returns OutputResources from a possibly-nil properties.
-func deploymentResources(p *armresources.DeploymentPropertiesExtended) []*armresources.ResourceReference {
+func deploymentResources(p *armdeployments.DeploymentPropertiesExtended) []*armdeployments.ResourceReference {
 	if p == nil {
 		return nil
 	}
@@ -2574,7 +2583,7 @@ func encodeParamValue(v any) string {
 }
 
 // armResourcesToProto converts ARM output resources to the azdext shape.
-func armResourcesToProto(in []*armresources.ResourceReference) []*azdext.ProvisioningResource {
+func armResourcesToProto(in []*armdeployments.ResourceReference) []*azdext.ProvisioningResource {
 	out := make([]*azdext.ProvisioningResource, 0, len(in))
 	for _, r := range in {
 		if r == nil || r.ID == nil {

@@ -94,7 +94,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/?api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -234,7 +234,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/validate?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/validate?api-version=2025-04-01
         method: POST
       response:
         proto: HTTP/2.0
@@ -307,7 +307,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621?api-version=2025-04-01
         method: PUT
       response:
         proto: HTTP/2.0
@@ -320,7 +320,7 @@ interactions:
         body: '{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621","name":"azdtest-d347996-1775837621","type":"Microsoft.Resources/deployments","location":"eastus2","tags":{"azd-env-name":"azdtest-d347996","azd-layer-name":"","azd-provision-param-hash":"0ffcc945a2e1004fc9480b9ecd204c426089e78ba2134b934cc18c0699bbfb22"},"properties":{"templateHash":"1493506139227848856","parameters":{"environmentName":{"type":"String","value":"azdtest-d347996"},"location":{"type":"String","value":"eastus2"},"deleteAfterTime":{"type":"String","value":"2026-04-10T17:14:10Z"}},"mode":"Incremental","provisioningState":"Accepted","timestamp":"2026-04-10T16:14:10.6838594Z","duration":"PT0.000201S","correlationId":"265ca9910b65c520c857eac24ae4e3d9","providers":[{"namespace":"Microsoft.Resources","resourceTypes":[{"resourceType":"resourceGroups","locations":["eastus2"]},{"resourceType":"deployments","locations":[null]}]}],"dependencies":[{"dependsOn":[{"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996","resourceType":"Microsoft.Resources/resourceGroups","resourceName":"rg-azdtest-d347996"}],"id":"/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996/providers/Microsoft.Resources/deployments/resources","resourceType":"Microsoft.Resources/deployments","resourceName":"resources"}]}}'
         headers:
             Azure-Asyncoperation:
-                - https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/operationStatuses/08584257692347860841?api-version=2021-04-01&t=639114344522463617&c=MIIIJzCCBw-gAwIBAgIRAJhyRRrlpkgJ-rgYNECp-U0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjAzMDMxNzU0MDVaFw0yNjA4MjkyMzU0MDVaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz7FgDX3CWGPuhRsqe_-dqN_tinmqcNBG2rXtsmK0KuneCT8_lvxM6-WxMaqmt9jK2vftDS-bxNfmxQbZWPN8jY69MDItDW0bxXvDDYwsiuVW7jdwHU7N9viLCvHbpb7oNb1DcaoOw4P7eUvHqy5Pz-wGor-l9va-TwKPurQnV6YxXR06zTNBegrkF-T9vvnqvNg_wmn2l0N0X5bvqG9CiUKRJp_xzLISm4arcIKp5Fq2278P22SeDEe18l2IUd0wZzMAj_kasSMDz5T1C6L88u3glf7oS0haOuwkrqwETWZJdg-SA5tJp1hzygRvdgeB2ZGTUPseNZxCKJH2iwh78QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQU-Cip5KOo-5SrESdXN05Qo3P5jXAwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS80OS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQBCijaSWPynXawZidUczIONLwrF3nqzljlfNAIIYNDzrTINGT-k5vkTmsaDBUSiruPENdcaDdKmS6JVUi5eTHK94ysi7cjZJDhXcFTIG5Kghif78_mZOZuI9ScRbjk3IEzwfzvbFbSqQJwNSrGNd999Qih1avodzdChfKqEnHbQGH9leHig6jlbj5YoZirZDw-9JpiNzRRd1W9H1BpJYOQLkbWpbByEtoMucgX88mhtdtwqvzlVY2zceVE5naCe7u6qUW2SwLPKDDoCyshW3nYHgB3pEKuMyeXWbfDp45BpEkY1bs0i4iL2SAsfBeJDGv4RR5kDRiMXJ0GvTwcHgywl&s=k_T3LJ9MPBDNgcRXl7HMWeUxbJhHNU45amE1JUSGE9wawjk-I-5fh5JKVw-XRMWKyWGFqiPQCp6fkC2zHhD1iIMtM0hrEcNy9NRFM5ZNKniaJMTvaG6BGp2849ddWtdN2SwnUjRsVWC8OQeUAfgfVfM73a8fax1uvhM_RxeTB-6XNZtWUBkJSTT8NziPzJbxHkN4xyjme7aTCCvfrf11820EojtwE7ZlOspokurXQ9dwyAN61oZKamHFv3X0slXd7R6pWNw4u1RXspXho97i8S95BYuw4KWVjECayvyxvfpp6MRPpdyljE2497A_2jR0lcZJQ8AEJtNjTK4sd8ISGg&h=z1KM6uXG5qrcv6a8YUN3n55kiyTigzR297rV9nep2RM
+                - https://management.azure.com/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/operationStatuses/08584257692347860841?api-version=2025-04-01&t=639114344522463617&c=MIIIJzCCBw-gAwIBAgIRAJhyRRrlpkgJ-rgYNECp-U0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjAzMDMxNzU0MDVaFw0yNjA4MjkyMzU0MDVaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz7FgDX3CWGPuhRsqe_-dqN_tinmqcNBG2rXtsmK0KuneCT8_lvxM6-WxMaqmt9jK2vftDS-bxNfmxQbZWPN8jY69MDItDW0bxXvDDYwsiuVW7jdwHU7N9viLCvHbpb7oNb1DcaoOw4P7eUvHqy5Pz-wGor-l9va-TwKPurQnV6YxXR06zTNBegrkF-T9vvnqvNg_wmn2l0N0X5bvqG9CiUKRJp_xzLISm4arcIKp5Fq2278P22SeDEe18l2IUd0wZzMAj_kasSMDz5T1C6L88u3glf7oS0haOuwkrqwETWZJdg-SA5tJp1hzygRvdgeB2ZGTUPseNZxCKJH2iwh78QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQU-Cip5KOo-5SrESdXN05Qo3P5jXAwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS80OS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQBCijaSWPynXawZidUczIONLwrF3nqzljlfNAIIYNDzrTINGT-k5vkTmsaDBUSiruPENdcaDdKmS6JVUi5eTHK94ysi7cjZJDhXcFTIG5Kghif78_mZOZuI9ScRbjk3IEzwfzvbFbSqQJwNSrGNd999Qih1avodzdChfKqEnHbQGH9leHig6jlbj5YoZirZDw-9JpiNzRRd1W9H1BpJYOQLkbWpbByEtoMucgX88mhtdtwqvzlVY2zceVE5naCe7u6qUW2SwLPKDDoCyshW3nYHgB3pEKuMyeXWbfDp45BpEkY1bs0i4iL2SAsfBeJDGv4RR5kDRiMXJ0GvTwcHgywl&s=k_T3LJ9MPBDNgcRXl7HMWeUxbJhHNU45amE1JUSGE9wawjk-I-5fh5JKVw-XRMWKyWGFqiPQCp6fkC2zHhD1iIMtM0hrEcNy9NRFM5ZNKniaJMTvaG6BGp2849ddWtdN2SwnUjRsVWC8OQeUAfgfVfM73a8fax1uvhM_RxeTB-6XNZtWUBkJSTT8NziPzJbxHkN4xyjme7aTCCvfrf11820EojtwE7ZlOspokurXQ9dwyAN61oZKamHFv3X0slXd7R6pWNw4u1RXspXho97i8S95BYuw4KWVjECayvyxvfpp6MRPpdyljE2497A_2jR0lcZJQ8AEJtNjTK4sd8ISGg&h=z1KM6uXG5qrcv6a8YUN3n55kiyTigzR297rV9nep2RM
             Cache-Control:
                 - no-cache
             Content-Length:
@@ -378,7 +378,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/operationStatuses/08584257692347860841?api-version=2021-04-01&t=639114344522463617&c=MIIIJzCCBw-gAwIBAgIRAJhyRRrlpkgJ-rgYNECp-U0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjAzMDMxNzU0MDVaFw0yNjA4MjkyMzU0MDVaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz7FgDX3CWGPuhRsqe_-dqN_tinmqcNBG2rXtsmK0KuneCT8_lvxM6-WxMaqmt9jK2vftDS-bxNfmxQbZWPN8jY69MDItDW0bxXvDDYwsiuVW7jdwHU7N9viLCvHbpb7oNb1DcaoOw4P7eUvHqy5Pz-wGor-l9va-TwKPurQnV6YxXR06zTNBegrkF-T9vvnqvNg_wmn2l0N0X5bvqG9CiUKRJp_xzLISm4arcIKp5Fq2278P22SeDEe18l2IUd0wZzMAj_kasSMDz5T1C6L88u3glf7oS0haOuwkrqwETWZJdg-SA5tJp1hzygRvdgeB2ZGTUPseNZxCKJH2iwh78QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQU-Cip5KOo-5SrESdXN05Qo3P5jXAwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS80OS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQBCijaSWPynXawZidUczIONLwrF3nqzljlfNAIIYNDzrTINGT-k5vkTmsaDBUSiruPENdcaDdKmS6JVUi5eTHK94ysi7cjZJDhXcFTIG5Kghif78_mZOZuI9ScRbjk3IEzwfzvbFbSqQJwNSrGNd999Qih1avodzdChfKqEnHbQGH9leHig6jlbj5YoZirZDw-9JpiNzRRd1W9H1BpJYOQLkbWpbByEtoMucgX88mhtdtwqvzlVY2zceVE5naCe7u6qUW2SwLPKDDoCyshW3nYHgB3pEKuMyeXWbfDp45BpEkY1bs0i4iL2SAsfBeJDGv4RR5kDRiMXJ0GvTwcHgywl&s=k_T3LJ9MPBDNgcRXl7HMWeUxbJhHNU45amE1JUSGE9wawjk-I-5fh5JKVw-XRMWKyWGFqiPQCp6fkC2zHhD1iIMtM0hrEcNy9NRFM5ZNKniaJMTvaG6BGp2849ddWtdN2SwnUjRsVWC8OQeUAfgfVfM73a8fax1uvhM_RxeTB-6XNZtWUBkJSTT8NziPzJbxHkN4xyjme7aTCCvfrf11820EojtwE7ZlOspokurXQ9dwyAN61oZKamHFv3X0slXd7R6pWNw4u1RXspXho97i8S95BYuw4KWVjECayvyxvfpp6MRPpdyljE2497A_2jR0lcZJQ8AEJtNjTK4sd8ISGg&h=z1KM6uXG5qrcv6a8YUN3n55kiyTigzR297rV9nep2RM
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621/operationStatuses/08584257692347860841?api-version=2025-04-01&t=639114344522463617&c=MIIIJzCCBw-gAwIBAgIRAJhyRRrlpkgJ-rgYNECp-U0wDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UEAxMrQ0NNRSBHMSBUTFMgUlNBIDIwNDggU0hBMjU2IDIwNDkgV0NVUyBDQSAwMTAeFw0yNjAzMDMxNzU0MDVaFw0yNjA4MjkyMzU0MDVaMEAxPjA8BgNVBAMTNWFzeW5jb3BlcmF0aW9uc2lnbmluZ2NlcnRpZmljYXRlLm1hbmFnZW1lbnQuYXp1cmUuY29tMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz7FgDX3CWGPuhRsqe_-dqN_tinmqcNBG2rXtsmK0KuneCT8_lvxM6-WxMaqmt9jK2vftDS-bxNfmxQbZWPN8jY69MDItDW0bxXvDDYwsiuVW7jdwHU7N9viLCvHbpb7oNb1DcaoOw4P7eUvHqy5Pz-wGor-l9va-TwKPurQnV6YxXR06zTNBegrkF-T9vvnqvNg_wmn2l0N0X5bvqG9CiUKRJp_xzLISm4arcIKp5Fq2278P22SeDEe18l2IUd0wZzMAj_kasSMDz5T1C6L88u3glf7oS0haOuwkrqwETWZJdg-SA5tJp1hzygRvdgeB2ZGTUPseNZxCKJH2iwh78QIDAQABo4IFJDCCBSAwgZ0GA1UdIASBlTCBkjAMBgorBgEEAYI3ewEBMGYGCisGAQQBgjd7AgIwWDBWBggrBgEFBQcCAjBKHkgAMwAzAGUAMAAxADkAMgAxAC0ANABkADYANAAtADQAZgA4AGMALQBhADAANQA1AC0ANQBiAGQAYQBmAGYAZAA1AGUAMwAzAGQwDAYKKwYBBAGCN3sDAjAMBgorBgEEAYI3ewQCMAwGA1UdEwEB_wQCMAAwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMA4GA1UdDwEB_wQEAwIFoDAdBgNVHQ4EFgQU-Cip5KOo-5SrESdXN05Qo3P5jXAwHwYDVR0jBBgwFoAUFNI34PbWfX7djbq6ZasElCXglh0wggH7BgNVHR8EggHyMIIB7jB7oHmgd4Z1aHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMH2ge6B5hndodHRwOi8vc2Vjb25kYXJ5LWNkbi5wa2kuY29yZS53aW5kb3dzLm5ldC93ZXN0Y2VudHJhbHVzL2NybHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS80OS9jdXJyZW50LmNybDBsoGqgaIZmaHR0cDovL2NybC5taWNyb3NvZnQuY29tL3dlc3RjZW50cmFsdXMvY3Jscy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIGBoH-gfYZ7aHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxLzQ5L2N1cnJlbnQuY3JsMIICAAYIKwYBBQUHAQEEggHyMIIB7jB-BggrBgEFBQcwAoZyaHR0cDovL3ByaW1hcnktY2RuLnBraS5jb3JlLndpbmRvd3MubmV0L3dlc3RjZW50cmFsdXMvY2FjZXJ0cy9jY21ld2VzdGNlbnRyYWx1c3BraS9jY21ld2VzdGNlbnRyYWx1c2ljYTAxL2NlcnQuY2VyMIGABggrBgEFBQcwAoZ0aHR0cDovL3NlY29uZGFyeS1jZG4ucGtpLmNvcmUud2luZG93cy5uZXQvd2VzdGNlbnRyYWx1cy9jYWNlcnRzL2NjbWV3ZXN0Y2VudHJhbHVzcGtpL2NjbWV3ZXN0Y2VudHJhbHVzaWNhMDEvY2VydC5jZXIwbwYIKwYBBQUHMAKGY2h0dHA6Ly9jcmwubWljcm9zb2Z0LmNvbS93ZXN0Y2VudHJhbHVzL2NhY2VydHMvY2NtZXdlc3RjZW50cmFsdXNwa2kvY2NtZXdlc3RjZW50cmFsdXNpY2EwMS9jZXJ0LmNlcjB4BggrBgEFBQcwAoZsaHR0cDovL2NjbWV3ZXN0Y2VudHJhbHVzcGtpLndlc3RjZW50cmFsdXMucGtpLmNvcmUud2luZG93cy5uZXQvY2VydGlmaWNhdGVBdXRob3JpdGllcy9jY21ld2VzdGNlbnRyYWx1c2ljYTAxMA0GCSqGSIb3DQEBCwUAA4IBAQBCijaSWPynXawZidUczIONLwrF3nqzljlfNAIIYNDzrTINGT-k5vkTmsaDBUSiruPENdcaDdKmS6JVUi5eTHK94ysi7cjZJDhXcFTIG5Kghif78_mZOZuI9ScRbjk3IEzwfzvbFbSqQJwNSrGNd999Qih1avodzdChfKqEnHbQGH9leHig6jlbj5YoZirZDw-9JpiNzRRd1W9H1BpJYOQLkbWpbByEtoMucgX88mhtdtwqvzlVY2zceVE5naCe7u6qUW2SwLPKDDoCyshW3nYHgB3pEKuMyeXWbfDp45BpEkY1bs0i4iL2SAsfBeJDGv4RR5kDRiMXJ0GvTwcHgywl&s=k_T3LJ9MPBDNgcRXl7HMWeUxbJhHNU45amE1JUSGE9wawjk-I-5fh5JKVw-XRMWKyWGFqiPQCp6fkC2zHhD1iIMtM0hrEcNy9NRFM5ZNKniaJMTvaG6BGp2849ddWtdN2SwnUjRsVWC8OQeUAfgfVfM73a8fax1uvhM_RxeTB-6XNZtWUBkJSTT8NziPzJbxHkN4xyjme7aTCCvfrf11820EojtwE7ZlOspokurXQ9dwyAN61oZKamHFv3X0slXd7R6pWNw4u1RXspXho97i8S95BYuw4KWVjECayvyxvfpp6MRPpdyljE2497A_2jR0lcZJQ8AEJtNjTK4sd8ISGg&h=z1KM6uXG5qrcv6a8YUN3n55kiyTigzR297rV9nep2RM
         method: GET
       response:
         proto: HTTP/2.0
@@ -445,7 +445,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621?api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/providers/Microsoft.Resources/deployments/azdtest-d347996-1775837621?api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -514,7 +514,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -583,7 +583,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -652,7 +652,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27api%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups/rg-azdtest-d347996/resources?%24filter=tagName%20eq%20%27azd-service-name%27%20and%20tagValue%20eq%20%27api%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -721,7 +721,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -790,7 +790,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27api%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups/rg-azdtest-d347996/resources?%24filter=tagName%20eq%20%27azd-service-name%27%20and%20tagValue%20eq%20%27api%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -1396,7 +1396,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 265ca9910b65c520c857eac24ae4e3d9
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -10505,7 +10505,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 10dfd0a870019edd7e768ff3a4be4548
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -10574,7 +10574,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 10dfd0a870019edd7e768ff3a4be4548
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27api%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups/rg-azdtest-d347996/resources?%24filter=tagName%20eq%20%27azd-service-name%27%20and%20tagValue%20eq%20%27api%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -10643,7 +10643,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 10dfd0a870019edd7e768ff3a4be4548
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -10712,7 +10712,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 10dfd0a870019edd7e768ff3a4be4548
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-d347996/resources?%24filter=tagName+eq+%27azd-service-name%27+and+tagValue+eq+%27api%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups/rg-azdtest-d347996/resources?%24filter=tagName%20eq%20%27azd-service-name%27%20and%20tagValue%20eq%20%27api%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -11285,7 +11285,7 @@ interactions:
                 - azsdk-go-armresources/v1.2.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/amd64)
             X-Ms-Correlation-Request-Id:
                 - 10dfd0a870019edd7e768ff3a4be4548
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName+eq+%27azd-env-name%27+and+tagValue+eq+%27azdtest-d347996%27&api-version=2021-04-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourcegroups?%24filter=tagName%20eq%20%27azd-env-name%27%20and%20tagValue%20eq%20%27azdtest-d347996%27&api-version=2025-04-01
         method: GET
       response:
         proto: HTTP/2.0

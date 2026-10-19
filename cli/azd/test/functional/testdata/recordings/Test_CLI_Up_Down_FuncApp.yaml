@@ -19646,7 +19646,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - e72c49b776517b822e434675ffdd7b31
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/sites/func-lvi65vsqwleik?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/sites/func-lvi65vsqwleik?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -19721,7 +19721,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - e72c49b776517b822e434675ffdd7b31
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/serverfarms/plan-lvi65vsqwleik?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/serverfarms/plan-lvi65vsqwleik?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -20004,7 +20004,7 @@ interactions:
                 - azsdk-go-armappservice/v2.3.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - e72c49b776517b822e434675ffdd7b31
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/sites/func-lvi65vsqwleik?api-version=2023-01-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-daa0f52/providers/Microsoft.Web/sites/func-lvi65vsqwleik?api-version=2025-05-01
         method: GET
       response:
         proto: HTTP/2.0

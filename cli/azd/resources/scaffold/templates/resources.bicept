@@ -1046,15 +1046,11 @@ module {{bicepName .Name}} 'br/public:avm/res/web/site:0.24.0' = {
   }
 }
 
-resource _functionInsights_{{bicepName .Name}} 'Microsoft.Insights/components@2020-02-02' existing = {
-  name: '${abbrs.insightsComponents}${resourceToken}'
-}
-
-resource _functionInsightsMetricsPublisher_{{bicepName .Name}} 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(_functionInsights_{{bicepName .Name}}.id, '{{.Name}}', '3913510d-42f4-4e42-8a64-420c390055eb')
-  scope: _functionInsights_{{bicepName .Name}}
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')
+module _functionInsightsMetricsPublisher_{{bicepName .Name}} 'modules/role-assignment.bicep' = {
+  name: 'function-metrics-{{functionAppName (bicepName .Name)}}'
+  params: {
+    resourceId: monitoring.outputs.applicationInsightsResourceId
+    roleDefinitionId: '3913510d-42f4-4e42-8a64-420c390055eb'
     principalId: {{bicepName .Name}}.outputs.systemAssignedMIPrincipalId!
     principalType: 'ServicePrincipal'
   }

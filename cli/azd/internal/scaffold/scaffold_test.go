@@ -5,6 +5,7 @@ package scaffold
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -369,7 +370,7 @@ func TestExecInfra(t *testing.T) {
 				source := string(bicep)
 				for _, service := range tt.spec.Services {
 					symbol := BicepName(service.Name)
-					for _, helper := range []string{"Plan", "Storage", "Insights", "InsightsMetricsPublisher"} {
+					for _, helper := range []string{"Plan", "Storage", "InsightsMetricsPublisher"} {
 						assert.Contains(t, source, "_function"+helper+"_"+symbol+" '")
 					}
 					assert.Contains(t, source, "module "+symbol+" 'br/public:avm/res/web/site:0.24.0'")
@@ -445,12 +446,8 @@ func TestExecInfra(t *testing.T) {
 				}
 				require.NoError(t, json.Unmarshal([]byte(resourceTemplate.Compiled), &compiled))
 				dependencies := make(map[string][]string, len(compiled.Resources))
-				metricsRole := ""
 				for _, resource := range compiled.Resources {
 					dependencies[resource.Name] = resource.DependsOn
-					if strings.Contains(resource.Name, "'3913510d-42f4-4e42-8a64-420c390055eb'") {
-						metricsRole = resource.Name
-					}
 				}
 				deployment := func(name string) string {
 					return "[resourceId('Microsoft.Resources/deployments', '" + name + "')]"
@@ -459,8 +456,8 @@ func TestExecInfra(t *testing.T) {
 				assert.Contains(t, dependencies["api-function-storage"], deployment("apiidentity"))
 				assert.Contains(t, dependencies["function-app-api"], deployment("api-function-storage"))
 				assert.Contains(t, dependencies["function-app-api"], deployment("monitoring"))
-				require.NotEmpty(t, metricsRole)
-				assert.Contains(t, dependencies[metricsRole], deployment("function-app-api"))
+				assert.Contains(t, dependencies["function-metrics-api"], deployment("function-app-api"))
+				assert.Contains(t, dependencies["function-metrics-api"], deployment("monitoring"))
 			}
 
 			lintErrs := strings.SplitSeq(res.LintErr, "\n")
@@ -479,6 +476,61 @@ func TestExecInfra(t *testing.T) {
 
 				assert.Failf(t, "found bicep lint error", "lint: %s", lintErr)
 			}
+		})
+	}
+}
+
+func TestFunctionAppInsightsRoleAssignment(t *testing.T) {
+	tmpl, err := Load()
+	require.NoError(t, err)
+
+	for _, existing := range []bool{false, true} {
+		name := "without existing resources"
+		if existing {
+			name = "with existing resources"
+		}
+		t.Run(name, func(t *testing.T) {
+			spec := InfraSpec{StorageAccount: &StorageAccount{Implicit: true}}
+			if existing {
+				spec.Existing = []ExistingResource{{
+					Name:             "existingStorage",
+					ResourceType:     "Microsoft.Storage/storageAccounts",
+					ApiVersion:       "2023-05-01",
+					ResourceIdEnvVar: "AZURE_RESOURCE_STORAGE_ID",
+				}}
+			}
+			for _, serviceName := range []string{"api", "worker"} {
+				spec.Services = append(spec.Services, ServiceSpec{
+					Name:            serviceName,
+					Host:            FunctionAppKind,
+					Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+					FunctionStorage: &FunctionStorage{},
+				})
+			}
+
+			files, err := ExecInfraFs(tmpl, spec)
+			require.NoError(t, err)
+			source, err := fs.ReadFile(files, "resources.bicep")
+			require.NoError(t, err)
+			for _, service := range spec.Services {
+				symbol := BicepName(service.Name)
+				assert.Contains(t, string(source),
+					"module _functionInsightsMetricsPublisher_"+symbol+" 'modules/role-assignment.bicep' = {\n"+
+						"  name: 'function-metrics-"+FunctionAppName(symbol)+"'\n"+
+						"  params: {\n"+
+						"    resourceId: monitoring.outputs.applicationInsightsResourceId\n"+
+						"    roleDefinitionId: '3913510d-42f4-4e42-8a64-420c390055eb'\n"+
+						"    principalId: "+symbol+".outputs.systemAssignedMIPrincipalId!\n"+
+						"    principalType: 'ServicePrincipal'\n"+
+						"  }\n}")
+			}
+			module, err := fs.ReadFile(files, "modules/role-assignment.bicep")
+			require.NoError(t, err)
+			assert.Contains(t, string(module), "name: guid(resourceId, principalId, fullRoleDefinitionId)")
+			assert.Contains(t, string(module), "loadTextContent('./role-assignment.json')")
+			roleTemplate, err := fs.ReadFile(files, "modules/role-assignment.json")
+			require.NoError(t, err)
+			assert.Contains(t, string(roleTemplate), `"principalId": "[parameters('principalId')]"`)
 		})
 	}
 }

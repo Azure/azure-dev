@@ -855,6 +855,31 @@ func jdbcURLHasLiteralPassword(value string) (bool, error) {
 		}
 		value = fallback
 	}
+	if strings.HasPrefix(value, "jdbc:${") {
+		driverStart := len("jdbc:")
+		match := placeholder.FindStringIndex(value[driverStart:])
+		if match == nil || match[0] != 0 {
+			return false, errors.New("JDBC URL driver cannot be safely inspected")
+		}
+		driverEnd := driverStart + match[1]
+		if driverEnd >= len(value) || value[driverEnd] != ':' {
+			return false, errors.New("JDBC URL driver cannot be safely inspected")
+		}
+		_, fallback, ok := runtimePlaceholder(value[driverStart:driverEnd])
+		if !ok {
+			return false, errors.New("JDBC URL driver cannot be safely inspected")
+		}
+		suffix := value[driverEnd:]
+		switch fallback {
+		case "mysql", "postgresql":
+			value = "jdbc:" + fallback + suffix
+		default:
+			if !strings.HasPrefix(suffix, "://") {
+				return false, nil
+			}
+			value = "jdbc:postgresql" + suffix
+		}
+	}
 	engine := ""
 	switch {
 	case strings.HasPrefix(value, "jdbc:mysql:"):

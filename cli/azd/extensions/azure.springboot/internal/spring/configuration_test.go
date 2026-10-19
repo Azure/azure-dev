@@ -101,6 +101,27 @@ func TestAnalyzeRejectsKnownDatasourceCredentials(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRejectsPlaceholderDriverJDBCCredentials(t *testing.T) {
+	const secret = "placeholder-driver-secret"
+	for _, engine := range []string{"mysql", "postgresql"} {
+		t.Run(engine, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			const file = "src/main/resources/application-unused.properties"
+			value := "jdbc:${DB_ENGINE:" + engine + "}://localhost/catalog?password=" + secret
+			writeFixture(t, directory, file, "spring.datasource.url="+value+"\n")
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, allDrivers())}, envLookup(nil))
+			require.ErrorContains(t, err, "literal JDBC credentials")
+			require.ErrorContains(t, err, file)
+			require.NotContains(t, err.Error(), secret)
+			require.NotContains(t, err.Error(), value)
+			require.Nil(t, application)
+		})
+	}
+}
+
 func TestKnownDatasourceCredentialReferences(t *testing.T) {
 	for _, tt := range []struct {
 		name  string

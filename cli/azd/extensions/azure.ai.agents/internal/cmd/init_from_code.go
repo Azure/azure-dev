@@ -191,11 +191,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 }
 
 func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.ProjectConfig, error) {
-	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
-
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {

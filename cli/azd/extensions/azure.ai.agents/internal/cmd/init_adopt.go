@@ -874,7 +874,10 @@ func runInitFromAzureYaml(
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName); err != nil {
+	endScaffolding := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)
+	err = scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName)
+	endScaffolding()
+	if err != nil {
 		return err
 	}
 
@@ -973,6 +976,7 @@ func scaffoldAzdTemplateProject(
 	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
 		return err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
 }
 

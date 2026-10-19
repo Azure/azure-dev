@@ -30,6 +30,13 @@ Steps are measured at existing business-function boundaries, not per function
 or filesystem operation. A selection that retries internally produces one timing
 including those retries. A skipped branch produces no timing.
 
+`project_scaffolding` covers core project initialization for both adopted templates
+and generated projects; delegation to another Init helper does not create a second
+sample. `location_selection` covers supported-region loading (including fallback),
+configured-location validation, any prompt, and environment persistence. Direct
+callers that already supply allowed locations receive one sample without loading
+the region catalog.
+
 The Init call into `azure.ai.projects` is timed as `project_authoring` or
 `model_deployment_authoring`. No internal or standalone project-command telemetry
 is added. The SDK preserves the trace context, so step rows correlate with Init

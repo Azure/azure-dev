@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -955,6 +956,7 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 		content  string
 		wantErr  string
 		wantRuns int
+		runErr   error
 	}{
 		{
 			name: "valid repository",
@@ -971,6 +973,13 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 			content: "services:\n  web:\n    host: containerapp\n",
 			wantErr: "does not declare an agent service",
 		},
+		{
+			name:     "workflow failure",
+			content:  "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n",
+			runErr:   errors.New("core init failed"),
+			wantErr:  "core init failed",
+			wantRuns: 1,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -979,16 +988,23 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 			require.NoError(t, os.WriteFile(
 				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
 			))
-			workflow := &testWorkflowServiceServer{runHook: func() {
-				require.NoError(t, os.Mkdir("project", 0o700))
-				require.NoError(t, os.WriteFile(
-					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
-				))
-			}}
+			workflow := &testWorkflowServiceServer{
+				runErr: tt.runErr,
+				runHook: func() {
+					if tt.runErr != nil {
+						return
+					}
+					require.NoError(t, os.Mkdir("project", 0o700))
+					require.NoError(t, os.WriteFile(
+						filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
+					))
+				},
+			}
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			ctx, timing := inittelemetry.NewContext(t.Context())
 
 			err := scaffoldAzdTemplateProject(
-				t.Context(), client, http.DefaultClient,
+				ctx, client, http.DefaultClient,
 				"project", templateDir, "dev",
 			)
 			if tt.wantErr != "" {
@@ -999,6 +1015,9 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 				require.DirExists(t, filepath.Join(root, "project"))
 			}
 			require.Equal(t, tt.wantRuns, workflow.runCalls)
+			recorder := &initTimingRecorder{}
+			timing.Flush(ctx, recorder)
+			require.Len(t, recordedStepDurations(t, recorder, inittelemetry.ProjectScaffolding), tt.wantRuns)
 		})
 	}
 }

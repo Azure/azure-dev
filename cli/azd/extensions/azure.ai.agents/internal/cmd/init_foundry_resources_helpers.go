@@ -1565,14 +1565,28 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
 	allowedLocations, err := supportedRegionsForInit(ctx)
 	if err != nil {
 		return err
 	}
-	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
 }
 
 func ensureLocationWithAllowedLocations(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	allowedLocations []string,
+) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func resolveLocationWithAllowedLocations(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
@@ -1658,8 +1672,6 @@ func promptLocationForInit(
 	azureContext *azdext.AzureContext,
 	allowedLocations []string,
 ) (string, error) {
-	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
-
 	locationResponse, err := azdClient.Prompt().PromptLocation(ctx, &azdext.PromptLocationRequest{
 		AzureContext:     azureContext,
 		AllowedLocations: allowedLocations,

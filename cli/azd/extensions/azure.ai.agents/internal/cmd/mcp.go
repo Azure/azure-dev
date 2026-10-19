@@ -11,7 +11,7 @@ import (
 	"azureaiagent/internal/tools"
 
 	"github.com/fatih/color"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/v2/server"
 	"github.com/spf13/cobra"
 )
 

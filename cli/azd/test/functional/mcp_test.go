@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/v2/client"
+	"github.com/mark3labs/mcp-go/v2/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

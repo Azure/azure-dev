@@ -3,7 +3,7 @@
 
 package mcp
 
-import "github.com/mark3labs/mcp-go/client"
+import "github.com/mark3labs/mcp-go/v2/client"
 
 // McpConfig represents the overall MCP configuration structure
 type McpConfig struct {

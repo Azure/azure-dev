@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/v2/client"
+	"github.com/mark3labs/mcp-go/v2/mcp"
 )
 
 // ProxySamplingHandler is a proxy handler that forwards sampling requests to an MCP server.
@@ -31,6 +31,7 @@ func (p *ProxySamplingHandler) CreateMessage(
 	}
 
 	sessionContext := p.host.proxyServer.WithContext(ctx, p.host.session)
+	//nolint:staticcheck // Preserve client-provided sampling for supported legacy initialized sessions.
 	return p.host.proxyServer.RequestSampling(sessionContext, request)
 }
 

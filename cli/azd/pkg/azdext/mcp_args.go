@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/v2/mcp"
 )
 
 // ToolArgs wraps parsed MCP tool arguments for typed access.

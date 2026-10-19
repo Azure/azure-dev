@@ -5,12 +5,14 @@ package mcp
 
 import (
 	"context"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/v2/client"
+	"github.com/mark3labs/mcp-go/v2/mcp"
+	"github.com/mark3labs/mcp-go/v2/server"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -73,6 +75,34 @@ func TestNewMcpHost(t *testing.T) {
 				assert.Greater(t, len(host.servers), 0)
 			}
 		})
+	}
+}
+
+func TestMcpHostPreservesLegacyProtocol(t *testing.T) {
+	versions := make(chan string, 1)
+	hooks := &server.Hooks{
+		OnBeforeInitialize: []server.OnBeforeInitializeFunc{
+			func(_ context.Context, _ any, request *mcp.InitializeRequest) {
+				versions <- request.Params.ProtocolVersion
+			},
+		},
+	}
+	mcpServer := server.NewMCPServer("test", "1.0.0", server.WithHooks(hooks))
+	httpServer := httptest.NewServer(server.NewStreamableHTTPServer(mcpServer))
+	defer httpServer.Close()
+	host := NewMcpHost(WithServers(map[string]*ServerConfig{
+		"test": {Type: "http", Url: httpServer.URL + "/mcp"},
+	}))
+	defer func() { require.NoError(t, host.Stop()) }()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, host.Start(ctx))
+	require.Len(t, host.clients, 1)
+	select {
+	case version := <-versions:
+		require.Equal(t, mcp.LATEST_LEGACY_PROTOCOL_VERSION, version)
+	default:
+		t.Fatal("MCP host did not perform the required legacy initialization")
 	}
 }
 

@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/v2/mcp"
+	"github.com/mark3labs/mcp-go/v2/server"
 	"github.com/spf13/cobra"
 )
 
@@ -220,6 +220,7 @@ func newSamplingTool() server.ServerTool {
 			}
 
 			// Request sampling from the AI
+			//nolint:staticcheck // Demonstrate sampling for supported legacy initialized sessions.
 			samplingResult, err := serverFromCtx.RequestSampling(ctx, samplingRequest)
 			if err != nil {
 				return mcp.NewToolResultErrorFromErr("Error during sampling", err), nil

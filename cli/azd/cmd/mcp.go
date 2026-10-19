@@ -27,8 +27,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/drone/envsubst"
 	"github.com/fatih/color"
-	mmcp "github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	mmcp "github.com/mark3labs/mcp-go/v2/mcp"
+	"github.com/mark3labs/mcp-go/v2/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

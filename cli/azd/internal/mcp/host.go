@@ -9,10 +9,10 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/mark3labs/mcp-go/client"
-	"github.com/mark3labs/mcp-go/client/transport"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/mark3labs/mcp-go/v2/client"
+	"github.com/mark3labs/mcp-go/v2/client/transport"
+	"github.com/mark3labs/mcp-go/v2/mcp"
+	"github.com/mark3labs/mcp-go/v2/server"
 )
 
 // McpHost manages multiple MCP (Model Context Protocol) servers and their tools
@@ -114,7 +114,8 @@ func (h *McpHost) Start(ctx context.Context) error {
 		}
 
 		initRequest := mcp.InitializeRequest{}
-		initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+		// The proxy relies on sampling/elicitation in initialized sessions, not the new stateless protocol.
+		initRequest.Params.ProtocolVersion = mcp.LATEST_LEGACY_PROTOCOL_VERSION
 		initRequest.Params.ClientInfo = mcp.Implementation{
 			Name:    "Azure Developer CLI (azd)",
 			Version: "1.0.1",

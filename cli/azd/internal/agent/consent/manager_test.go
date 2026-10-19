@@ -10,7 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/v2/mcp"
 	"github.com/stretchr/testify/require"
 )
 

@@ -4,6 +4,8 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/v2/mcp"
@@ -11,6 +13,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type samplingHandlerFunc func(context.Context, mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error)
+
+func (f samplingHandlerFunc) CreateMessage(
+	ctx context.Context, request mcp.CreateMessageRequest,
+) (*mcp.CreateMessageResult, error) {
+	return f(ctx, request)
+}
+
+func TestProxySamplingHandlerLegacyInitializedSession(t *testing.T) {
+	request := mcp.CreateMessageRequest{CreateMessageParams: mcp.CreateMessageParams{MaxTokens: 500}}
+	expected := &mcp.CreateMessageResult{Model: "test-model"}
+	session := server.NewInProcessSession("test", samplingHandlerFunc(
+		func(_ context.Context, actual mcp.CreateMessageRequest) (*mcp.CreateMessageResult, error) {
+			require.Equal(t, request, actual)
+			return expected, nil
+		}))
+	proxyServer := server.NewMCPServer("test", "1.0.0")
+	ctx := proxyServer.WithContext(t.Context(), session)
+	initialize := json.RawMessage(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+		"protocolVersion":"2026-07-28","capabilities":{"sampling":{}},
+		"clientInfo":{"name":"test","version":"1.0.0"}}}`)
+	response := proxyServer.HandleMessage(ctx, initialize)
+	encoded, err := json.Marshal(response)
+	require.NoError(t, err)
+	var initialized struct {
+		Error *json.RawMessage `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &initialized))
+	require.Nil(t, initialized.Error)
+	require.Equal(t, mcp.LATEST_LEGACY_PROTOCOL_VERSION, session.ProtocolVersion())
+	host := NewMcpHost()
+	host.SetProxyServer(proxyServer)
+	host.SetSession(session)
+	result, err := (&ProxySamplingHandler{host: host}).CreateMessage(ctx, request)
+	require.NoError(t, err)
+	require.Same(t, expected, result)
+}
 
 func TestNewProxySamplingHandler(t *testing.T) {
 	handler := NewProxySamplingHandler()

@@ -220,6 +220,7 @@ func newSamplingTool() server.ServerTool {
 			}
 
 			// Request sampling from the AI
+			//nolint:staticcheck // Demonstrate sampling for supported legacy initialized sessions.
 			samplingResult, err := serverFromCtx.RequestSampling(ctx, samplingRequest)
 			if err != nil {
 				return mcp.NewToolResultErrorFromErr("Error during sampling", err), nil

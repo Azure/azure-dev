@@ -114,7 +114,8 @@ func (h *McpHost) Start(ctx context.Context) error {
 		}
 
 		initRequest := mcp.InitializeRequest{}
-		initRequest.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
+		// The proxy relies on sampling/elicitation in initialized sessions, not the new stateless protocol.
+		initRequest.Params.ProtocolVersion = mcp.LATEST_LEGACY_PROTOCOL_VERSION
 		initRequest.Params.ClientInfo = mcp.Implementation{
 			Name:    "Azure Developer CLI (azd)",
 			Version: "1.0.1",

@@ -31,6 +31,7 @@ func (p *ProxySamplingHandler) CreateMessage(
 	}
 
 	sessionContext := p.host.proxyServer.WithContext(ctx, p.host.session)
+	//nolint:staticcheck // Preserve client-provided sampling for supported legacy initialized sessions.
 	return p.host.proxyServer.RequestSampling(sessionContext, request)
 }
 

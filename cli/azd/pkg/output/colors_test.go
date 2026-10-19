@@ -103,6 +103,9 @@ func TestWithMarkdown(t *testing.T) {
 	out := WithMarkdown("# Hello\n\nSome **bold** text.")
 	require.NotEmpty(t, out)
 	require.Contains(t, strings.ToLower(out), "hello")
+	if !isTTY() {
+		require.NotContains(t, out, "\x1b[")
+	}
 }
 
 func TestWithHyperlink_NonTerminal(t *testing.T) {

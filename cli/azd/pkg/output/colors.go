@@ -9,9 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/glamour/v2"
+	"charm.land/glamour/v2/styles"
 	"github.com/azure/azure-dev/cli/azd/internal/terminal"
-	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/x/term"
 	"github.com/fatih/color"
+	"github.com/muesli/termenv"
 	"github.com/nathan-fiscaletti/consolesize-go"
 )
 
@@ -65,10 +68,17 @@ func WithBackticks(s string) string {
 func WithMarkdown(markdownText string) string {
 	// Get dynamic console width with fallback to 120
 	consoleWidth := getConsoleWidth()
+	style := styles.NoTTYStyle
+	if term.IsTerminal(os.Stdout.Fd()) {
+		style = styles.LightStyle
+		if termenv.HasDarkBackground() {
+			style = styles.DarkStyle
+		}
+	}
 
 	// Create a custom glamour renderer with auto-style detection
 	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStandardStyle(style),
 		glamour.WithWordWrap(consoleWidth), // Use dynamic console width
 	)
 	if err != nil {

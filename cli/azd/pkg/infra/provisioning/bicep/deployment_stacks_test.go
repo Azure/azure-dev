@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armdeploymentstacks/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -410,12 +410,12 @@ func TestResolveDeploymentStacksMap_RoundTripsIntoSDKTypes(t *testing.T) {
 
 	require.NotNil(t, roundTrip.ActionOnUnmanage)
 	require.NotNil(t, roundTrip.ActionOnUnmanage.Resources)
-	require.Equal(t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDelete, *roundTrip.ActionOnUnmanage.Resources)
+	require.Equal(t, armdeploymentstacks.UnmanageActionResourceModeDelete, *roundTrip.ActionOnUnmanage.Resources)
 	require.NotNil(t, roundTrip.ActionOnUnmanage.ResourceGroups)
-	require.Equal(t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach, *roundTrip.ActionOnUnmanage.ResourceGroups)
+	require.Equal(t, armdeploymentstacks.UnmanageActionResourceGroupModeDetach, *roundTrip.ActionOnUnmanage.ResourceGroups)
 	require.NotNil(t, roundTrip.ActionOnUnmanage.ManagementGroups)
 	require.Equal(
-		t, armdeploymentstacks.DeploymentStacksDeleteDetachEnumDetach, *roundTrip.ActionOnUnmanage.ManagementGroups)
+		t, armdeploymentstacks.UnmanageActionManagementGroupModeDetach, *roundTrip.ActionOnUnmanage.ManagementGroups)
 
 	require.NotNil(t, roundTrip.DenySettings)
 	require.NotNil(t, roundTrip.DenySettings.Mode)

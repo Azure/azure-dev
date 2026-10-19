@@ -67,15 +67,30 @@ type GitHubUrlInfo struct {
 
 const AiFineTuningHost = "azure.ai.finetune"
 
-func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
-	flags := &initFlags{
-		rootFlagsDefinition: rootFlags,
-	}
+func newInitCommand(rootFlags *azdext.ExtensionContext) *cobra.Command {
+	flags := &initFlags{}
 
 	cmd := &cobra.Command{
 		Use:   "init [-t <fine tuning job template>] [-p <foundry project arm id>]",
 		Short: fmt.Sprintf("Initialize a new AI Fine-tuning project. %s", color.YellowString("(Preview)")),
 		Args:  cobra.NoArgs,
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			flags.rootFlagsDefinition = rootFlagsDefinition{Debug: rootFlags.Debug, NoPrompt: rootFlags.NoPrompt}
+			if cmd.Flags().Changed("environment") && rootFlags.Environment == "" {
+				return fmt.Errorf("--environment/-e must not be empty")
+			}
+			if cmd.Flags().Changed("env-name") {
+				if flags.env == "" {
+					return fmt.Errorf("--env-name/-n must not be empty")
+				}
+				if cmd.Flags().Changed("environment") && flags.env != rootFlags.Environment {
+					return fmt.Errorf("--env-name/-n conflicts with --environment/-e; specify only one environment")
+				}
+			} else {
+				flags.env = rootFlags.Environment
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 
@@ -107,8 +122,8 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 			}
 
 			console := input.NewConsole(
-				false, // noPrompt
-				true,  // isTerminal
+				flags.NoPrompt,
+				true, // isTerminal
 				input.Writers{Output: os.Stdout},
 				input.ConsoleHandles{
 					Stderr: os.Stderr,
@@ -155,7 +170,8 @@ func newInitCommand(rootFlags rootFlagsDefinition) *cobra.Command {
 	cmd.Flags().StringVarP(&flags.jobId, "from-job", "j", "",
 		"Clone configuration from an existing job ID")
 
-	cmd.Flags().StringVarP(&flags.env, "environment", "n", "", "The name of the azd environment to use.")
+	cmd.Flags().StringVarP(&flags.env, "env-name", "n", "", "Legacy alias for --environment.")
+	_ = cmd.Flags().MarkHidden("env-name")
 
 	return cmd
 }

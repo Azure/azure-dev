@@ -174,7 +174,6 @@ func newOperationSubmitCommand() *cobra.Command {
 func newOperationShowCommand() *cobra.Command {
 	var jobID string
 	var logs bool
-	var output string
 	requiredFlag := "id"
 
 	cmd := &cobra.Command{
@@ -184,6 +183,10 @@ func newOperationShowCommand() *cobra.Command {
 			return validateRequiredFlags(map[string]string{"id": jobID})
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			output, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return fmt.Errorf("getting output format: %w", err)
+			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -275,7 +278,9 @@ func newOperationShowCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&jobID, "id", "i", "", "Job ID (required)")
 	cmd.Flags().BoolVar(&logs, "logs", false, "Include recent training logs")
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json, yaml")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", Default: "table", AllowedValues: []string{"table", "json", "yaml"},
+	})
 	_ = cmd.MarkFlagRequired(requiredFlag)
 
 	return cmd
@@ -285,11 +290,14 @@ func newOperationShowCommand() *cobra.Command {
 func newOperationListCommand() *cobra.Command {
 	var limit int
 	var after string
-	var output string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List fine-tuning jobs.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			output, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return fmt.Errorf("getting output format: %w", err)
+			}
 			ctx := azdext.WithAccessToken(cmd.Context())
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
@@ -342,7 +350,9 @@ func newOperationListCommand() *cobra.Command {
 
 	cmd.Flags().IntVarP(&limit, "top", "t", 10, "Number of jobs to return")
 	cmd.Flags().StringVar(&after, "after", "", "Pagination cursor")
-	cmd.Flags().StringVarP(&output, "output", "o", "table", "Output format: table, json")
+	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", Default: "table", AllowedValues: []string{"table", "json"},
+	})
 	return cmd
 }
 

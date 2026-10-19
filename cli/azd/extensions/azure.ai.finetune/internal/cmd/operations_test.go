@@ -101,7 +101,6 @@ func TestNewOperationShowCommand_Flags(t *testing.T) {
 		defaultValue string
 	}{
 		{"id", "i", ""},
-		{"output", "o", "table"},
 	}
 
 	for _, flag := range expectedFlags {
@@ -142,11 +141,7 @@ func TestNewOperationListCommand_Flags(t *testing.T) {
 	require.NotNil(t, afterFlag)
 	require.Equal(t, "", afterFlag.DefValue)
 
-	// output flag
-	outputFlag := cmd.Flags().Lookup("output")
-	require.NotNil(t, outputFlag)
-	require.Equal(t, "o", outputFlag.Shorthand)
-	require.Equal(t, "table", outputFlag.DefValue)
+	require.Nil(t, cmd.Flags().Lookup("output"), "output must be inherited from the SDK root")
 }
 
 func TestNewOperationPauseCommand(t *testing.T) {

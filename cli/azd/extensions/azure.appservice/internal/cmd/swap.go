@@ -27,7 +27,7 @@ type swapFlags struct {
 	dst     string
 }
 
-func newSwapCommand(rootFlags rootFlagsDefinition) *cobra.Command {
+func newSwapCommand(rootFlags *azdext.ExtensionContext) *cobra.Command {
 	flags := &swapFlags{}
 
 	cmd := &cobra.Command{
@@ -40,7 +40,9 @@ or between a slot and the production environment.
 
 Use "production" to refer to the main app (production slot).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSwap(cmd.Context(), flags, rootFlags)
+			return runSwap(cmd.Context(), flags, rootFlagsDefinition{
+				Debug: rootFlags.Debug, NoPrompt: rootFlags.NoPrompt,
+			})
 		},
 	}
 

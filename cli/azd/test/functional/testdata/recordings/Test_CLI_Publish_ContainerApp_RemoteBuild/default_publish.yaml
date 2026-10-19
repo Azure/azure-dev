@@ -13304,7 +13304,7 @@ interactions:
                 - azsdk-go-armcontainerregistry/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 160328da-cf2c-7cbb-a974-541e64237982
-        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/providers/Microsoft.ContainerRegistry/registries?api-version=2023-07-01
+        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/providers/Microsoft.ContainerRegistry/registries?api-version=2025-11-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -13378,7 +13378,7 @@ interactions:
                 - azsdk-go-armcontainerregistry/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - cb597fd7-e86e-4400-875a-08187335795d
-        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/listBuildSourceUploadUrl?api-version=2019-06-01-preview
+        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/listBuildSourceUploadUrl?api-version=2025-03-01-preview
         method: POST
       response:
         proto: HTTP/2.0
@@ -13529,7 +13529,7 @@ interactions:
                 - azsdk-go-armcontainerregistry/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 160328da-cf2c-7cbb-a974-541e64237982
-        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/scheduleRun?api-version=2019-06-01-preview
+        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/scheduleRun?api-version=2025-03-01-preview
         method: POST
       response:
         proto: HTTP/2.0
@@ -13602,7 +13602,7 @@ interactions:
                 - azsdk-go-armcontainerregistry/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 160328da-cf2c-7cbb-a974-541e64237982
-        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/runs/ch1/listLogSasUrl?api-version=2019-06-01-preview
+        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/runs/ch1/listLogSasUrl?api-version=2025-03-01-preview
         method: POST
       response:
         proto: HTTP/2.0
@@ -20485,7 +20485,7 @@ interactions:
                 - azsdk-go-armcontainerregistry/v1.2.0 (go1.26.4; linux),azdev/0.0.0-dev.0 (Go go1.26.4; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 160328da-cf2c-7cbb-a974-541e64237982
-        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/runs/ch1?api-version=2019-06-01-preview
+        url: https://management.azure.com:443/subscriptions/3819cb9d-0f7c-4284-9e93-220e7fb2367a/resourceGroups/rg-azdtest-l263e7e/providers/Microsoft.ContainerRegistry/registries/acruirymcfp3mbak/runs/ch1?api-version=2025-03-01-preview
         method: GET
       response:
         proto: HTTP/2.0

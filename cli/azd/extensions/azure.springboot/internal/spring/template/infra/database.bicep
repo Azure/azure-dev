@@ -48,6 +48,8 @@ resource pgDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
+// Temporary local access for PostgreSQL managed-identity bootstrap.
+// The postprovision .azd-spring/database.py hook removes this rule on success or failure.
 resource pgFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (engine == 'postgresql' && managedIdentity) {
   parent: postgres
   name: 'bootstrap-local-ip'

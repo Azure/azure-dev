@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // ServiceStatus represents the current state of a service deployment
@@ -145,7 +145,7 @@ func newDeploymentModel(serviceNames []string, cancel context.CancelFunc, prompt
 	tabNames = append(tabNames, serviceNames...)
 
 	// Create viewport with default key mappings
-	vp := viewport.New(120, 25)
+	vp := viewport.New(viewport.WithWidth(120), viewport.WithHeight(25))
 
 	return deploymentModel{
 		services:     services,
@@ -191,7 +191,7 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activePrompt.height = msg.Height
 			return m, nil
 
-		case tea.KeyMsg:
+		case tea.KeyPressMsg:
 			updatedPrompt, cmd := m.activePrompt.Update(msg)
 			m.activePrompt = &updatedPrompt
 
@@ -236,13 +236,13 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update viewport size when in logs view
 		if m.viewMode == viewLogs {
 			headerHeight := 7 // title + instructions + tabs + spacing
-			m.viewport.Width = msg.Width - 4
-			m.viewport.Height = msg.Height - headerHeight
+			m.viewport.SetWidth(msg.Width - 4)
+			m.viewport.SetHeight(msg.Height - headerHeight)
 			m.updateViewportContent()
 		}
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
@@ -260,8 +260,8 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Update viewport size based on current terminal size
 				if m.ready {
 					headerHeight := 7
-					m.viewport.Width = m.width - 4
-					m.viewport.Height = m.height - headerHeight
+					m.viewport.SetWidth(m.width - 4)
+					m.viewport.SetHeight(m.height - headerHeight)
 				}
 				m.updateViewportContent()
 			}
@@ -392,7 +392,13 @@ func (m deploymentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m deploymentModel) View() string {
+func (m deploymentModel) View() tea.View {
+	view := tea.NewView(m.renderView())
+	view.AltScreen = true
+	return view
+}
+
+func (m deploymentModel) renderView() string {
 	if m.err != nil {
 		return statusFailedStyle.Render(fmt.Sprintf("Error: %v\n", m.err))
 	}

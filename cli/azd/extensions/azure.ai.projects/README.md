@@ -75,6 +75,12 @@ produce an error rather than being overwritten. `azd ai project deployment add`
 also seeds or updates this environment list. Ejected infrastructure retains
 user-owned deployment parameters.
 
+Provisioning also initializes a missing or blank
+`AZURE_AI_MODEL_DEPLOYMENT_NAME` from the first effective deployment, including
+in a newly created environment. Existing runtime defaults are preserved,
+including names of reused deployments; an empty deployment list does not
+initialize a runtime default.
+
 Adopting an existing project reconciles the active environment's effective
 deployment list with reuse and skip choices, including an explicit `[]` when no
 managed deployments remain. Ejecting infrastructure seeds the generated Bicep

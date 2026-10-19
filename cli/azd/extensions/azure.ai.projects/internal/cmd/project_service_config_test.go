@@ -224,7 +224,7 @@ func TestProjectLifecycleHandlerWritesDeployments(t *testing.T) {
 	envServer.mu.Lock()
 	defer envServer.mu.Unlock()
 	assert.Equal(t, "dev", envServer.envNameSet)
-	assert.Equal(t, projectDeploymentsEnvKey, envServer.key)
+	assert.Equal(t, "gpt-4.1-mini", envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 	assert.Equal(
 		t,
 		`[{\"name\":\"gpt-4.1-mini\",`+
@@ -232,7 +232,7 @@ func TestProjectLifecycleHandlerWritesDeployments(t *testing.T) {
 			`\"format\":\"OpenAI\",\"version\":\"2025-04-14\"},`+
 			`\"sku\":{\"name\":\"GlobalStandard\",`+
 			`\"capacity\":10}}]`,
-		envServer.value,
+		envServer.values[projectDeploymentsEnvKey],
 	)
 }
 
@@ -297,7 +297,7 @@ func TestProjectLifecycleHandlerResolvesDeploymentRefs(t *testing.T) {
 
 	envServer.mu.Lock()
 	defer envServer.mu.Unlock()
-	assert.Contains(t, envServer.value, `\"name\":\"gpt-4o\"`)
+	assert.Contains(t, envServer.values[projectDeploymentsEnvKey], `\"name\":\"gpt-4o\"`)
 }
 
 func mustProjectProperties(
@@ -323,6 +323,7 @@ type recordingProjectEnvironmentServer struct {
 	models      []*azdext.PromptAiModelRequest
 	deployments []*azdext.PromptAiDeploymentRequest
 	failAt      int
+	failKey     string
 }
 
 func (s *recordingProjectEnvironmentServer) GetValues(
@@ -388,6 +389,9 @@ func (s *recordingProjectEnvironmentServer) SetValue(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if request.Key == s.failKey {
+		return nil, errors.New("environment write failed")
+	}
 	s.envNameSet = request.EnvName
 	s.key = request.Key
 	s.value = request.Value
@@ -477,7 +481,7 @@ func TestProjectLifecycleHandlerEjectedDoesNotPrompt(t *testing.T) {
 		}}},
 	}))
 	assert.Empty(t, server.models)
-	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+	assert.Contains(t, server.values[projectDeploymentsEnvKey], `\"name\":\"chat\"`)
 }
 
 func TestProjectLifecycleHandlerUnmarkedBicepDoesNotPrompt(t *testing.T) {
@@ -498,7 +502,7 @@ func TestProjectLifecycleHandlerUnmarkedBicepDoesNotPrompt(t *testing.T) {
 		}}},
 	}))
 	assert.Empty(t, server.models)
-	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+	assert.Contains(t, server.values[projectDeploymentsEnvKey], `\"name\":\"chat\"`)
 }
 
 func TestProjectLifecycleHandlerBicepparamDoesNotPrompt(t *testing.T) {
@@ -519,7 +523,7 @@ func TestProjectLifecycleHandlerBicepparamDoesNotPrompt(t *testing.T) {
 		}}},
 	}))
 	assert.Empty(t, server.models)
-	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+	assert.Contains(t, server.values[projectDeploymentsEnvKey], `\"name\":\"chat\"`)
 }
 
 func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
@@ -596,7 +600,7 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 					assert.Nil(t, request.Options.Capacity)
 					assert.Equal(t, float64(1), request.Quota.MinRemainingCapacity)
 				}
-				resolved, _, err := provisioning.DecodeProjectDeployments(server.value)
+				resolved, _, err := provisioning.DecodeProjectDeployments(server.values[projectDeploymentsEnvKey])
 				require.NoError(t, err)
 				require.Len(t, resolved, 2)
 				assert.Equal(t, "chat", resolved[0].Name)
@@ -604,17 +608,83 @@ func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 				assert.Equal(t, "env-model", resolved[0].Model.Name)
 				assert.Equal(t, "env-version", resolved[0].Model.Version)
 				assert.Equal(t, 3, resolved[0].Sku.Capacity)
+				assert.Equal(t, "chat", server.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 				require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
 				assert.Len(t, server.models, 2, "persisted environment must not prompt again")
 			} else {
 				assert.Empty(t, server.models)
 				if test.value == "" {
-					assert.Contains(t, server.value, `\"name\":\"yaml-model\"`)
-					assert.Contains(t, server.value, `\"capacity\":100`)
+					assert.Contains(t, server.values[projectDeploymentsEnvKey], `\"name\":\"yaml-model\"`)
+					assert.Contains(t, server.values[projectDeploymentsEnvKey], `\"capacity\":100`)
 				} else {
-					assert.Empty(t, server.key, "existing override must not be overwritten")
+					assert.Equal(t, test.value, server.values[projectDeploymentsEnvKey])
 				}
 			}
+		})
+	}
+}
+
+func TestProjectLifecycleHandlerSeedsRuntimeModelName(t *testing.T) {
+	const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+	const override = `[{"name":"env-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, test := range []struct {
+		name, override, current, want string
+		failKey                       string
+	}{
+		{name: "fresh environment", want: "yaml-chat"},
+		{name: "existing override", override: override, want: "env-chat"},
+		{name: "escaped override", override: strings.ReplaceAll(override, `"`, `\"`), want: "env-chat"},
+		{name: "blank default", override: override, current: " \t", want: "env-chat"},
+		{name: "explicit default", current: "custom-chat", want: "custom-chat"},
+		{name: "reused default", override: override, current: "reused-chat", want: "reused-chat"},
+		{name: "empty override", override: "[]"},
+		{name: "empty override preserves reuse", override: "[]", current: "reused-chat", want: "reused-chat"},
+		{name: "list write failure", failKey: projectDeploymentsEnvKey},
+		{name: "default write failure", failKey: key},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_NO_PROMPT", "true")
+			t.Setenv(key, "process-must-not-win")
+			server := &recordingProjectEnvironmentServer{
+				envName: "fresh-env", failKey: test.failKey,
+				values: map[string]string{projectDeploymentsEnvKey: test.override, key: test.current},
+			}
+			client := newProjectEnvironmentClient(t, server)
+			args := &azdext.ProjectEventArgs{Project: &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{"project": {
+					Host: aiProjectHost,
+					AdditionalProperties: mustProjectProperties(t, map[string]any{
+						"deployments": []any{map[string]any{
+							"name":  "yaml-chat",
+							"model": map[string]any{"name": "gpt-4.1", "format": "OpenAI", "version": "1"},
+							"sku":   map[string]any{"name": "Standard", "capacity": 1},
+						}},
+					}),
+				}},
+			}}
+			err := projectLifecycleHandler(t.Context(), client, args)
+			if test.failKey != "" {
+				require.ErrorContains(t, err, test.failKey)
+				assert.Equal(t, test.current, server.values[key])
+				if test.failKey == key {
+					server.failKey = ""
+					require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
+					assert.Equal(t, "yaml-chat", server.values[key])
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.want, server.values[key])
+			if test.want != test.current {
+				assert.Equal(t, "fresh-env", server.envNameSet)
+			}
+			if test.override != "" {
+				assert.Equal(t, test.override, server.values[projectDeploymentsEnvKey])
+			}
+			require.NoError(t, projectLifecycleHandler(t.Context(), client, args))
+			assert.Equal(t, test.want, server.values[key])
+			assert.Empty(t, server.models)
 		})
 	}
 }

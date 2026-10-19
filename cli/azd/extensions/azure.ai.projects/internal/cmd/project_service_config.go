@@ -95,10 +95,10 @@ func projectLifecycleHandler(
 	if err != nil {
 		return err
 	}
-	if _, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey]); err != nil {
+	if deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey]); err != nil {
 		return err
 	} else if present {
-		return nil
+		return seedProjectModelDeploymentName(ctx, azdClient, envName, values, deployments)
 	}
 	if len(cfg.Deployments) > 0 && !azdext.DetectInteractive().NoPrompt {
 		onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
@@ -141,6 +141,27 @@ func projectLifecycleHandler(
 		)
 	}
 
+	return seedProjectModelDeploymentName(ctx, azdClient, envName, values, cfg.Deployments)
+}
+
+func seedProjectModelDeploymentName(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	values map[string]string,
+	deployments []synthesis.Deployment,
+) error {
+	const key = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+	if strings.TrimSpace(values[key]) != "" || len(deployments) == 0 {
+		return nil
+	}
+	if _, err := azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName,
+		Key:     key,
+		Value:   deployments[0].Name,
+	}); err != nil {
+		return fmt.Errorf("setting %s in azd environment: %w", key, err)
+	}
 	return nil
 }
 

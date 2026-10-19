@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 
@@ -83,7 +83,7 @@ func sanitizeContainerRegistryListBuildSourceUploadUrl(i *cassette.Interaction) 
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.ContainerRegistry/registries") &&
 		strings.Contains(i.Request.URL, "/listBuildSourceUploadUrl") {
-		body := armcontainerregistry.SourceUploadDefinition{}
+		body := armcontainerregistrytasks.SourceUploadDefinition{}
 		err := json.Unmarshal([]byte(i.Response.Body), &body)
 		if err != nil {
 			return fmt.Errorf("unmarshalling Microsoft.ContainerRegistry/registries listBuildSourceUploadUrl: %w", err)
@@ -112,7 +112,7 @@ func sanitizeContainerRegistryListLogSasUrl(i *cassette.Interaction) error {
 		i.Request.Host == "management.azure.com" &&
 		strings.Contains(i.Request.URL, "/Microsoft.ContainerRegistry/registries") &&
 		strings.Contains(i.Request.URL, "/listLogSasUrl") {
-		body := armcontainerregistry.RunsClientGetLogSasURLResponse{}
+		body := armcontainerregistrytasks.RunsClientGetLogSasURLResponse{}
 		err := json.Unmarshal([]byte(i.Response.Body), &body)
 		if err != nil {
 			return fmt.Errorf("unmarshalling Microsoft.ContainerRegistry/registries listLogSasUrl: %w", err)

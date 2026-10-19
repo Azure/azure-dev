@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistrytasks"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerregistry"
@@ -290,27 +290,27 @@ func TestMapContainerPublishError_RemoteBuildRun(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		status armcontainerregistry.RunStatus
+		status armcontainerregistrytasks.RunStatus
 		code   string
 	}{
 		{
 			name:   "failed",
-			status: armcontainerregistry.RunStatusFailed,
+			status: armcontainerregistrytasks.RunStatusFailed,
 			code:   "container_publish_acr_run_failed",
 		},
 		{
 			name:   "error",
-			status: armcontainerregistry.RunStatusError,
+			status: armcontainerregistrytasks.RunStatusError,
 			code:   "container_publish_acr_run_error",
 		},
 		{
 			name:   "timeout",
-			status: armcontainerregistry.RunStatusTimeout,
+			status: armcontainerregistrytasks.RunStatusTimeout,
 			code:   "container_publish_acr_run_timeout",
 		},
 		{
 			name:   "canceled",
-			status: armcontainerregistry.RunStatusCanceled,
+			status: armcontainerregistrytasks.RunStatusCanceled,
 			code:   "container_publish_acr_run_canceled",
 		},
 	}
@@ -343,7 +343,7 @@ func TestMapContainerPublishError_PreservesUnclassifiedErrors(t *testing.T) {
 		{
 			name: "unknown remote build status",
 			err: fmt.Errorf("publish wrapper: %w", &containerregistry.RemoteBuildRunError{
-				Status: armcontainerregistry.RunStatusSucceeded,
+				Status: armcontainerregistrytasks.RunStatusSucceeded,
 			}),
 		},
 		{
@@ -373,7 +373,7 @@ func TestMapContainerPublishError_PreservesResponseError(t *testing.T) {
 
 	responseErr := &azcore.ResponseError{StatusCode: 500}
 	remoteBuildErr := &containerregistry.RemoteBuildRunError{
-		Status: armcontainerregistry.RunStatusFailed,
+		Status: armcontainerregistrytasks.RunStatusFailed,
 	}
 	err := errors.Join(responseErr, remoteBuildErr)
 
@@ -530,7 +530,7 @@ func TestMapContainerPublishError_PreservesPublishMappingPriority(t *testing.T) 
 	t.Parallel()
 
 	err := fmt.Errorf("publish failed: %w", &containerregistry.RemoteBuildRunError{
-		Status: armcontainerregistry.RunStatusFailed,
+		Status: armcontainerregistrytasks.RunStatusFailed,
 	})
 	mapped := mapContainerToolError(mapContainerPublishError(err))
 

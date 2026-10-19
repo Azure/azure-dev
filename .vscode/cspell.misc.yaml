@@ -16,6 +16,11 @@ ignorePaths:
 
     - eng # not required
 overrides:
+    - filename: docs/guides/releasing-azd.md
+      words:
+          - ESRP
+          - pkgs
+          - runbook
     - filename: docs/architecture/extension-framework.md
       words:
           - generateprojectclient

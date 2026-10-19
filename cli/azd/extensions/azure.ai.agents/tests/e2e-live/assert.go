@@ -7,10 +7,13 @@
 package e2elive
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
+	"strings"
 	"unicode"
 
 	"gopkg.in/yaml.v3"
@@ -103,7 +106,10 @@ func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func enableSampleMemorySnapshot(manifest []byte) ([]byte, error) {
+func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {
+	if err := validateSnapshotImageReference(image); err != nil {
+		return nil, err
+	}
 	var config map[string]any
 	if err := yaml.Unmarshal(manifest, &config); err != nil {
 		return nil, fmt.Errorf("parse sample manifest: %w", err)
@@ -129,16 +135,31 @@ func enableSampleMemorySnapshot(manifest []byte) ([]byte, error) {
 	if agentService == nil {
 		return nil, errors.New("sample manifest has no azure.ai.agent service")
 	}
+	dockerOptions := map[string]any{}
+	if value, exists := agentService["docker"]; exists {
+		var ok bool
+		dockerOptions, ok = value.(map[string]any)
+		if !ok {
+			return nil, errors.New("sample docker options must be a mapping")
+		}
+	}
+	dockerOptions["imagePassthrough"] = true
+	dockerOptions["remoteBuild"] = false
+	agentService["docker"] = dockerOptions
+	agentService["image"] = image
 	agentService["enableMemorySnapshot"] = true
 	return yaml.Marshal(config)
 }
 
-func validateSnapshotAgentVersion(data []byte) error {
+func validateSnapshotAgentVersion(data []byte, expectedImage string) error {
 	var version struct {
 		Status     string `json:"status"`
 		Definition struct {
-			Kind                 string `json:"kind"`
-			EnableMemorySnapshot *bool  `json:"enable_memory_snapshot"`
+			Kind                   string `json:"kind"`
+			EnableMemorySnapshot   *bool  `json:"enable_memory_snapshot"`
+			ContainerConfiguration struct {
+				Image string `json:"image"`
+			} `json:"container_configuration"`
 		} `json:"definition"`
 	}
 	if err := json.Unmarshal(data, &version); err != nil {
@@ -150,6 +171,107 @@ func validateSnapshotAgentVersion(data []byte) error {
 	if version.Definition.Kind != "hosted" || version.Definition.EnableMemorySnapshot == nil ||
 		!(*version.Definition.EnableMemorySnapshot) {
 		return errors.New("service did not confirm definition.enable_memory_snapshot=true for the deployed hosted agent")
+	}
+	image := version.Definition.ContainerConfiguration.Image
+	if err := validateSnapshotImageReference(image); err != nil {
+		return err
+	}
+	if image != expectedImage {
+		return errors.New("deployed snapshot image does not match the qualified input digest")
+	}
+	return nil
+}
+
+func validateSnapshotImageReference(image string) error {
+	name, digest, found := strings.Cut(image, "@sha256:")
+	if !found || len(digest) != 64 || strings.ContainsAny(image, " \t\r\n") || strings.Contains(name, "://") {
+		return errors.New("snapshot validation requires a fully qualified container image pinned with @sha256:<digest>")
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return errors.New("snapshot image digest must contain 64 hexadecimal characters")
+	}
+	parsed, err := url.Parse("https://" + name)
+	if err != nil || parsed.User != nil || parsed.Hostname() == "" || len(parsed.Path) < 2 ||
+		parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("snapshot image must be a fully qualified registry/repository reference without credentials")
+	}
+	return nil
+}
+
+func validateSnapshotImageArchitecture(inspection []byte) error {
+	var images []struct {
+		OS           string `json:"Os"`
+		Architecture string `json:"Architecture"`
+	}
+	if err := json.Unmarshal(inspection, &images); err != nil {
+		return fmt.Errorf("parse snapshot image inspection: %w", err)
+	}
+	if len(images) != 1 || images[0].OS != "linux" || images[0].Architecture != "amd64" {
+		return errors.New("snapshot qualification requires a Linux AMD64 container image")
+	}
+	return nil
+}
+
+func validateSnapshotImageRuntime(inspection, packages []byte) error {
+	if err := validateSnapshotImageArchitecture(inspection); err != nil {
+		return err
+	}
+	var versions map[string]string
+	if err := json.Unmarshal(packages, &versions); err != nil {
+		return fmt.Errorf("parse snapshot runtime package versions: %w", err)
+	}
+	for _, requirement := range []struct{ name, version string }{
+		{"azure-ai-agentserver-core", "2.3.0b1"},
+		{"azure-ai-agentserver-responses", "2.4.0b1"},
+	} {
+		if versions[requirement.name] != requirement.version {
+			return fmt.Errorf("snapshot image requires %s==%s; found %q",
+				requirement.name, requirement.version, versions[requirement.name])
+		}
+	}
+	return nil
+}
+
+func snapshotResponsesRequest(sessionID string) map[string]any {
+	return map[string]any{
+		"input":            "Hello, what is 2+2?",
+		"store":            false,
+		"stream":           false,
+		"agent_session_id": sessionID,
+	}
+}
+
+func validateSnapshotResponse(data []byte) error {
+	var response struct {
+		Status string `json:"status"`
+		Output []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return fmt.Errorf("parse stateless Responses result: %w", err)
+	}
+	if response.Status != "completed" {
+		return fmt.Errorf("stateless Responses request did not complete: %q", response.Status)
+	}
+	var answer strings.Builder
+	for _, output := range response.Output {
+		if output.Type != "message" {
+			continue
+		}
+		for _, content := range output.Content {
+			if content.Type == "output_text" {
+				answer.WriteString(content.Text)
+				answer.WriteByte('\n')
+			}
+		}
+	}
+	if !responseHasExpectedAnswer(answer.String()) {
+		return errors.New("stateless Responses output does not contain the expected answer")
 	}
 	return nil
 }

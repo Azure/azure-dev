@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -75,13 +76,21 @@ func TestTier2Live(t *testing.T) {
 	if os.Getenv(liveEnvVar) != "1" {
 		t.Skipf("set %s=1 to run the live Tier 2 golden-path test", liveEnvVar)
 	}
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		if os.Getenv("E2E_DEPLOY_MODES") != "container" || envTrue("E2E_SKIP_DEPLOY") {
+			t.Fatal("snapshot qualification requires E2E_DEPLOY_MODES=container and deployment enabled")
+		}
+		if err := validateSnapshotImageReference(os.Getenv("E2E_SNAPSHOT_IMAGE")); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	for _, mode := range deployModesFromEnv() {
 		t.Run(mode, func(t *testing.T) {
 			r := newRunner(t, mode)
 			budget := runTimeout
 			if envTrue("E2E_MEMORY_SNAPSHOT") {
-				budget = 90 * time.Minute
+				budget = 120 * time.Minute
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), budget)
 			defer cancel()
@@ -150,6 +159,18 @@ func newRunner(t *testing.T, mode string) *runner {
 	}
 	if tok := ghToken(); tok != "" {
 		env = append(env, "GH_TOKEN="+tok, "GITHUB_TOKEN="+tok)
+	}
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		dockerConfig := filepath.Join(testDir, ".docker")
+		if err := os.MkdirAll(dockerConfig, 0o700); err != nil {
+			t.Fatalf("create isolated Docker configuration: %v", err)
+		}
+		env = append(env, "DOCKER_CONFIG="+dockerConfig)
+		t.Cleanup(func() {
+			if err := os.RemoveAll(dockerConfig); err != nil {
+				t.Errorf("remove Docker credentials: %v", err)
+			}
+		})
 	}
 
 	r := &runner{
@@ -226,6 +247,12 @@ func setupGitHubConfigDir(t *testing.T, configDir string) {
 // this is the fast way to iterate on the provision/down path (issue #8839)
 // without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		if err := r.checkSnapshotImage(ctx); err != nil {
+			r.t.Errorf("snapshot image prerequisite: %v", err)
+			return
+		}
+	}
 	if err := r.phaseInitWithTokenCheck(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
@@ -649,7 +676,7 @@ func (r *runner) phaseDeploy(ctx context.Context) error {
 		if showCode != 0 {
 			return fmt.Errorf("could not inspect snapshot agent version (exit %d)", showCode)
 		}
-		if err := validateSnapshotAgentVersion([]byte(out)); err != nil {
+		if err := validateSnapshotAgentVersion([]byte(out), os.Getenv("E2E_SNAPSHOT_IMAGE")); err != nil {
 			return err
 		}
 		r.t.Log("service confirmed an active hosted agent version with enable_memory_snapshot=true")
@@ -667,36 +694,87 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	manifest, err = enableSampleMemorySnapshot(manifest)
+	manifest, err = enableSampleMemorySnapshot(manifest, os.Getenv("E2E_SNAPSHOT_IMAGE"))
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
 		return err
 	}
-	const inspectDependencies = `import json, pathlib, sys, tomllib
-root = pathlib.Path(sys.argv[1])
-names = {"agent-framework-foundry-hosting", "azure-ai-agentserver-core", "azure-ai-agentserver-responses"}
-for path in root.rglob("uv.lock"):
-    lock = tomllib.loads(path.read_text())
-    for package in lock.get("package", []):
-        if package["name"] in names:
-            print(json.dumps({"lockfile": str(path.relative_to(root)), "package": package["name"], "version": package["version"]}))
-`
-	out, code := r.runQuiet(ctx, r.projectDir, monitorTimeout, "python3", "-c", inspectDependencies, r.projectDir)
+	return nil
+}
+
+func (r *runner) checkSnapshotImage(ctx context.Context) error {
+	image := os.Getenv("E2E_SNAPSHOT_IMAGE")
+	registry, _, _ := strings.Cut(image, "/")
+	if strings.Contains(registry, ".azurecr.") {
+		registryName, _, _ := strings.Cut(registry, ".")
+		if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "az", "acr", "login", "--name", registryName); code != 0 {
+			return fmt.Errorf("snapshot registry login failed (exit %d): %s", code, truncate(out, 2000))
+		}
+	}
+	if out, code := r.runQuiet(ctx, r.testDir, 10*time.Minute,
+		"docker", "pull", "--platform", "linux/amd64", image); code != 0 {
+		return fmt.Errorf("snapshot image pull failed (exit %d): %s", code, truncate(out, 2000))
+	}
+	inspection, code := r.runQuiet(ctx, r.testDir, monitorTimeout, "docker", "image", "inspect", image)
 	if code != 0 {
-		return fmt.Errorf("inspect sample lock files failed (exit %d): %s", code, truncate(strings.TrimSpace(out), 2000))
+		return fmt.Errorf("snapshot image inspection failed (exit %d)", code)
 	}
-	if strings.TrimSpace(out) == "" {
-		r.t.Log("sample has no locked AgentServer SDK versions; runtime compatibility must be verified by deployment")
-	} else {
-		r.t.Logf("unmodified sample SDK lockfile versions:\n%s", out)
+	if err := validateSnapshotImageArchitecture([]byte(inspection)); err != nil {
+		return err
 	}
+	const inspectPackages = `import importlib.metadata as metadata, json, sys
+assert sys.version_info >= (3, 10), "snapshot image requires Python 3.10 or later"
+names = ["azure-ai-agentserver-core", "azure-ai-agentserver-responses"]
+print(json.dumps({name: metadata.version(name) for name in names}))`
+	packages, code := r.runQuiet(ctx, r.testDir, invokeTimeout,
+		"docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "python",
+		image, "-c", inspectPackages)
+	if code != 0 {
+		return fmt.Errorf("snapshot image SDK inspection failed (exit %d): %s", code, truncate(packages, 2000))
+	}
+	if err := validateSnapshotImageRuntime([]byte(inspection), []byte(packages)); err != nil {
+		return err
+	}
+	if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout,
+		"docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", "python",
+		image, "-m", "pip", "check"); code != 0 {
+		return fmt.Errorf("snapshot image dependency check failed (exit %d): %s", code, truncate(out, 2000))
+	}
+	r.t.Logf("qualified Linux AMD64 image %s; runtime packages: %s", image, strings.TrimSpace(packages))
+	return nil
+}
+
+func (r *runner) invokeSnapshotResponses(ctx context.Context) error {
+	endpoint := r.azdEnvValues(ctx)["FOUNDRY_PROJECT_ENDPOINT"]
+	if endpoint == "" {
+		return errors.New("FOUNDRY_PROJECT_ENDPOINT is missing from the deployed sample environment")
+	}
+	sessionID := "snapshot-" + rand.Text()
+	request, err := json.Marshal(snapshotResponsesRequest(sessionID))
+	if err != nil {
+		return err
+	}
+	endpoint = strings.TrimRight(endpoint, "/") + "/agents/" + r.agentName +
+		"/endpoint/protocols/openai/responses?api-version=v1"
+	out, code := r.runQuiet(ctx, r.projectDir, invokeTimeout, "az", "rest", "--method", "post",
+		"--resource", "https://ai.azure.com", "--url", endpoint, "--body", string(request), "--output", "json")
+	if code != 0 {
+		return fmt.Errorf("stateless snapshot invocation failed (exit %d): %s", code, truncate(out, 2000))
+	}
+	if err := validateSnapshotResponse([]byte(out)); err != nil {
+		return err
+	}
+	r.t.Logf("stateless Responses invocation completed for session %s with store=false and the expected answer", sessionID)
 	return nil
 }
 
 // phaseInvoke calls the deployed agent and verifies it answers "2+2" with 4.
 func (r *runner) phaseInvoke(ctx context.Context) error {
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		return r.invokeSnapshotResponses(ctx)
+	}
 	wait := 30 * time.Second
 	if r.mode == "container" {
 		wait = 60 * time.Second

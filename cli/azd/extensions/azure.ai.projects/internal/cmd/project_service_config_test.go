@@ -480,6 +480,48 @@ func TestProjectLifecycleHandlerEjectedDoesNotPrompt(t *testing.T) {
 	assert.Contains(t, server.value, `\"name\":\"chat\"`)
 }
 
+func TestProjectLifecycleHandlerUnmarkedBicepDoesNotPrompt(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
+	infra := filepath.Join(root, "infra")
+	require.NoError(t, os.Mkdir(infra, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicep"), []byte("// user authored"), 0600))
+	server := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, server)
+	require.NoError(t, projectLifecycleHandler(t.Context(), client, &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{"project": {
+			Host: aiProjectHost,
+			AdditionalProperties: mustProjectProperties(t, map[string]any{"deployments": []any{
+				map[string]any{"name": "chat"},
+			}}),
+		}}},
+	}))
+	assert.Empty(t, server.models)
+	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+}
+
+func TestProjectLifecycleHandlerBicepparamDoesNotPrompt(t *testing.T) {
+	t.Setenv("AZD_NO_PROMPT", "false")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0600))
+	infra := filepath.Join(root, "infra")
+	require.NoError(t, os.Mkdir(infra, 0750))
+	require.NoError(t, os.WriteFile(filepath.Join(infra, "main.bicepparam"), []byte("// user authored"), 0600))
+	server := &recordingProjectEnvironmentServer{envName: "dev"}
+	client := newProjectEnvironmentClient(t, server)
+	require.NoError(t, projectLifecycleHandler(t.Context(), client, &azdext.ProjectEventArgs{
+		Project: &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{"project": {
+			Host: aiProjectHost,
+			AdditionalProperties: mustProjectProperties(t, map[string]any{"deployments": []any{
+				map[string]any{"name": "chat"},
+			}}),
+		}}},
+	}))
+	assert.Empty(t, server.models)
+	assert.Contains(t, server.value, `\"name\":\"chat\"`)
+}
+
 func TestProjectLifecycleHandlerDeploymentPrecedence(t *testing.T) {
 	const override = `[{"name":"env-only","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
 		`"sku":{"name":"Standard","capacity":1}}]`

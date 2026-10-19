@@ -6,7 +6,11 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -97,11 +101,11 @@ func projectLifecycleHandler(
 		return nil
 	}
 	if len(cfg.Deployments) > 0 && !azdext.DetectInteractive().NoPrompt {
-		ejected, err := findEjectedFoundryProjectInfrastructure(args.Project)
+		onDisk, err := projectOnDiskFoundryTemplatePresent(args.Project)
 		if err != nil {
 			return err
 		}
-		if ejected == nil {
+		if !onDisk {
 			location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
 			if location == "" {
 				location = values["AZURE_LOCATION"]
@@ -215,4 +219,51 @@ func encodeProjectDeployments(
 	deployments []synthesis.Deployment,
 ) (string, error) {
 	return provisioning.EncodeProjectDeployments(deployments)
+}
+
+// projectOnDiskFoundryTemplatePresent mirrors the provider's onDiskTemplatePresent
+// check: any configured <module>.bicep or <module>.bicepparam means on-disk
+// parameters win over AI_PROJECT_DEPLOYMENTS, so interactive model selection
+// must be skipped for unmarked user-authored templates as well as ejections.
+func projectOnDiskFoundryTemplatePresent(project *azdext.ProjectConfig) (bool, error) {
+	if project == nil || project.GetPath() == "" {
+		return false, nil
+	}
+	declaration, err := readProjectInfraDeclaration(project)
+	if err != nil {
+		return false, err
+	}
+
+	path := "infra"
+	module := "main"
+	if declaration.layerCount > 0 {
+		if declaration.foundryLayer == nil {
+			return false, nil
+		}
+		if declaration.foundryLayer.path != "" {
+			path = declaration.foundryLayer.path
+		}
+		if declaration.foundryLayer.module != "" {
+			module = normalizeProjectInfraEjectModule(declaration.foundryLayer.module)
+		}
+	} else {
+		if declaration.rootModule != "" {
+			module = normalizeProjectInfraEjectModule(declaration.rootModule)
+		}
+		if _, infraPath := projectInfraConfig(project); strings.TrimSpace(infraPath) != "" {
+			path = strings.TrimSpace(infraPath)
+		}
+	}
+
+	infraDir := filepath.Join(project.GetPath(), filepath.FromSlash(path))
+	for _, name := range []string{module + ".bicepparam", module + ".bicep"} {
+		info, err := os.Stat(filepath.Join(infraDir, name))
+		if err == nil && !info.IsDir() {
+			return true, nil
+		}
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, fmt.Errorf("inspect on-disk infrastructure %q: %w", filepath.Join(infraDir, name), err)
+		}
+	}
+	return false, nil
 }

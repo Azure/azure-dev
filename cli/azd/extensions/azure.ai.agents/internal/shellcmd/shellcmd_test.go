@@ -27,7 +27,7 @@ func TestCdPOSIXRoundTrip(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o755))
+			require.NoError(t, os.Mkdir(dir, 0o750))
 			script := Cd(name).Render(POSIX) + " && pwd -P"
 			cmd := exec.CommandContext(t.Context(), sh, "-c", script)
 			cmd.Dir = root
@@ -50,7 +50,7 @@ func TestCdPowerShellRoundTrip(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o755))
+			require.NoError(t, os.Mkdir(dir, 0o750))
 			script := Cd(name).Render(PowerShell) + "; (Get-Location).ProviderPath"
 			cmd := exec.CommandContext(t.Context(), pwsh, "-NoProfile", "-Command", script)
 			cmd.Dir = root
@@ -68,7 +68,7 @@ func TestGoQuoteIsNotShellSafe(t *testing.T) {
 	}
 	root := t.TempDir()
 	name := "my-$USER"
-	require.NoError(t, os.Mkdir(filepath.Join(root, name), 0o755))
+	require.NoError(t, os.Mkdir(filepath.Join(root, name), 0o750))
 	t.Setenv("USER", "someone")
 	cmd := exec.CommandContext(t.Context(), sh, "-c", fmt.Sprintf("cd %q", name))
 	cmd.Dir = root
@@ -167,7 +167,7 @@ func TestPowerShellSplatAndCommaRoundTrip(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o755))
+			require.NoError(t, os.Mkdir(dir, 0o750))
 
 			unquoted := "cd " + name + "; (Get-Location).ProviderPath"
 			bad := exec.CommandContext(t.Context(), pwsh, "-NoProfile", "-Command", unquoted)

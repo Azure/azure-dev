@@ -78,7 +78,7 @@ builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 
 ### Memory snapshot sample validation
 
-Queue the same pipeline on the implementation PR's commit with
+Queue the same pipeline on the CI PR's commit with
 `memorySnapshot=true`, `templateURL` set to the chosen sample's `azure.yaml`,
 and `location` plus `serviceConnection` pointing at a private-preview-enabled
 region and subscription. Start with `deployModes=code` for one bounded sample
@@ -89,9 +89,11 @@ The driver enables `enableMemorySnapshot: true` only in its isolated sample
 copy. It logs the selected SDK versions from any `uv.lock` files without changing
 dependencies. A successful run requires the deployed version to be `active` with
 `definition.enable_memory_snapshot=true`, followed by two successful invocations
-using new sessions. Python 3.11 or later is required on the CI agent to inspect
-TOML lock files. Samples without those lock files rely on the actual deployment
-and invocation result for compatibility evidence.
+using new sessions. Snapshot CI selects Python 3.13 and checks standard-library
+TOML support before running Azure tasks. Local runs require Python 3.11 or
+later. Lock-file inspection failures include the exit code and bounded diagnostic
+output. Samples without those lock files rely on the actual deployment and
+invocation result for compatibility evidence.
 
 The current recommended Python sample locks older AgentServer packages. Do not
 silently upgrade it during an as-is compatibility run: missing-hook failures

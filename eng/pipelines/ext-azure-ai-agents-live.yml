@@ -125,6 +125,14 @@ extends:
             steps:
               - checkout: self
 
+              - ${{ if eq(parameters.memorySnapshot, true) }}:
+                  - task: UsePythonVersion@0
+                    displayName: Select Python for snapshot sample inspection
+                    inputs:
+                      versionSpec: '3.13'
+                  - bash: python3 -c "import sys, tomllib; print(sys.version); print(sys.executable)"
+                    displayName: Verify snapshot inspection interpreter
+
               - template: /eng/pipelines/templates/steps/setup-go.yml
 
               # Live build — NO `-tags=record`, so the CLI/extension talk to real

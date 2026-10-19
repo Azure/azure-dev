@@ -685,7 +685,7 @@ for path in root.rglob("uv.lock"):
 `
 	out, code := r.runQuiet(ctx, r.projectDir, monitorTimeout, "python3", "-c", inspectDependencies, r.projectDir)
 	if code != 0 {
-		return errors.New("inspect sample lockfiles failed; snapshot CI requires Python 3.11 or later")
+		return fmt.Errorf("inspect sample lock files failed (exit %d): %s", code, truncate(strings.TrimSpace(out), 2000))
 	}
 	if strings.TrimSpace(out) == "" {
 		r.t.Log("sample has no locked AgentServer SDK versions; runtime compatibility must be verified by deployment")

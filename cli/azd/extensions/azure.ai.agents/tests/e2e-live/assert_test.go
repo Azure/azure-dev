@@ -172,6 +172,15 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 			Name    string `yaml:"name"`
 			Default any    `yaml:"default"`
 		} `yaml:"parameters"`
+		Extends struct {
+			Parameters struct {
+				Stages []struct {
+					Jobs []struct {
+						Steps []map[string]yaml.Node `yaml:"steps"`
+					} `yaml:"jobs"`
+				} `yaml:"stages"`
+			} `yaml:"parameters"`
+		} `yaml:"extends"`
 	}
 	require.NoError(t, yaml.Unmarshal(data, &pipeline))
 	defaults := map[string]any{}
@@ -182,4 +191,30 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 	require.Equal(t, "", defaults["templateURL"])
 	require.Equal(t, "eastus2", defaults["location"])
 	require.Equal(t, "both", defaults["deployModes"])
+	require.Len(t, pipeline.Extends.Parameters.Stages, 1)
+	require.Len(t, pipeline.Extends.Parameters.Stages[0].Jobs, 1)
+	var pythonSetupLine, firstAzureTaskLine int
+	for _, step := range pipeline.Extends.Parameters.Stages[0].Jobs[0].Steps {
+		if task, exists := step["task"]; exists && task.Value == "AzureCLI@2" && firstAzureTaskLine == 0 {
+			firstAzureTaskLine = task.Line
+		}
+		if setup, exists := step["${{ if eq(parameters.memorySnapshot, true) }}"]; exists && setup.Kind == yaml.SequenceNode {
+			var setupSteps []struct {
+				Task   string `yaml:"task"`
+				Bash   string `yaml:"bash"`
+				Inputs struct {
+					VersionSpec string `yaml:"versionSpec"`
+				} `yaml:"inputs"`
+			}
+			require.NoError(t, setup.Decode(&setupSteps))
+			require.Len(t, setupSteps, 2)
+			require.Equal(t, "UsePythonVersion@0", setupSteps[0].Task)
+			require.Equal(t, "3.13", setupSteps[0].Inputs.VersionSpec)
+			require.Contains(t, setupSteps[1].Bash, "import sys, tomllib")
+			pythonSetupLine = setup.Line
+		}
+	}
+	require.Positive(t, pythonSetupLine)
+	require.Positive(t, firstAzureTaskLine)
+	require.Less(t, pythonSetupLine, firstAzureTaskLine)
 }

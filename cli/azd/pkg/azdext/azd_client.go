@@ -306,7 +306,9 @@ func (c *AzdClient) Account() AccountServiceClient {
 	return c.accountClient
 }
 
-// AccountBeta returns the preview account service client, including current principal lookup.
+// AccountBeta returns the beta account service client.
+//
+// Deprecated: use Account, including GetCurrentPrincipal in azd 1.36.0 or later.
 func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
 	return v1beta.NewAccountServiceClient(c.connection)
 }
@@ -348,13 +350,13 @@ func (c *AzdClient) Validation() ValidationServiceClient {
 }
 
 // Telemetry returns the telemetry service client used to report extension
-// usage events. See extensions/microsoft.azd.demo/internal/cmd/telemetry.go
-// for a worked example.
+// usage events using the stable v1 contract in azd 1.36.0 or later.
+// Earlier SDKs returned a beta client; callers must migrate beta request types to v1.
 //
 // A fresh client is returned on each call rather than caching it on the
 // AzdClient struct. Service target providers can deploy services concurrently,
 // so an unsynchronized lazily-written cache field could race on first use. The
 // generated client wrapper is cheap and shares the existing connection.
-func (c *AzdClient) Telemetry() v1beta.TelemetryServiceClient {
-	return v1beta.NewTelemetryServiceClient(c.connection)
+func (c *AzdClient) Telemetry() TelemetryServiceClient {
+	return NewTelemetryServiceClient(c.connection)
 }

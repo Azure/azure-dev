@@ -469,7 +469,7 @@ func (r *HarnessSkillRef) UnmarshalJSON(data []byte) error {
 // capabilities are configured through top-level skills and tools.
 type PromptHarness struct {
 	// Type is the harness discriminator, e.g.
-	// agent_api.ManagedAgentHarnessGitHubCopilot ("github_copilot_preview").
+	// agent_api.ManagedAgentHarnessMicrosoftCopilot ("microsoft_copilot_preview").
 	// It is passed through verbatim: azd keeps no allowlist of harness names, so
 	// a harness the service gains later needs no change here.
 	Type string `json:"type" yaml:"type"`

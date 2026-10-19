@@ -61,7 +61,7 @@ func ReadAuthoredConfig(evalDir string) (*AuthoredConfig, error) {
 	return authoredFromDocument(doc), nil
 }
 
-// ReadAuthoredDataset reads only the named dataset's name and local file for
+// ReadAuthoredDataset reads only the named dataset's name, local file and version for
 // authoring preflight. Local includes use the normal resolver, including
 // ref-only entries when the name is not written here. Unrelated named entries
 // are not resolved, and unknown fields are not strictly decoded or rewritten.
@@ -118,7 +118,19 @@ func ReadAuthoredDataset(location, name string) (*DatasetDecl, error) {
 		if value := resolved["file"]; value != nil && !ok {
 			return nil, messages.ParsingEvalConfig(path, fmt.Errorf("dataset %q file must be a string", name))
 		}
-		return &DatasetDecl{Name: name, File: ResolveSource(EvalDirOf(path), file)}, nil
+		versionNode := nodeUnder(item, "version")
+		if versionNode == nil {
+			versionNode = new(yaml.Node)
+			if err := versionNode.Encode(resolved["version"]); err != nil {
+				return nil, messages.ParsingEvalConfig(path, err)
+			}
+		}
+		// Decode the authored scalar directly so an inline numeric pin keeps its spelling.
+		var version string
+		if err := versionNode.Decode(&version); err != nil {
+			return nil, messages.ParsingEvalConfig(path, fmt.Errorf("dataset %q version: %w", name, err))
+		}
+		return &DatasetDecl{Name: name, File: ResolveSource(EvalDirOf(path), file), Version: version}, nil
 	}
 	return nil, firstErr
 }

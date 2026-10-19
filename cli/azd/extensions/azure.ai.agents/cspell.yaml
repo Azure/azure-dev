@@ -3,6 +3,9 @@ overrides:
   - filename: ["internal/helpformat/*.go", "internal/cmd/root.go"]
     words:
       - helpformat
+  - filename: ["internal/cmd/testdata/TestAgentHelp-root.snap"]
+    words:
+      - vdev
 words:
   # Connection commands
   - tavily
@@ -23,6 +26,8 @@ words:
   - orgid
   - pcma
   - pcmu
+  - PSTN
+  - pstn
   - webrtc
   # Azure region names
   - australiaeast

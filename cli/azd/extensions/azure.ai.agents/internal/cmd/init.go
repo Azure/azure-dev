@@ -90,7 +90,7 @@ type initFlags struct {
 	// azure.yaml (no code/image, template/language selection, or ACR).
 	kind string
 	// harness, when set, names the execution harness written to the scaffolded
-	// prompt agent definition (only "github_copilot_preview" is supported today). A
+	// prompt agent definition ("microsoft_copilot_preview" or its legacy alias). A
 	// harness is what makes a prompt agent a "managed" agent; there is no
 	// separate --kind for it. Ignored for hosted agents.
 	harness string
@@ -677,6 +677,10 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
 		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
 		Long: `Initialize a new prompt, hosted, or voice agent project.
+
+Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
+service to the current project. Use --template / -t to adopt an azure.yaml
+project document as the project manifest.
 
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
@@ -1316,7 +1320,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'github_copilot_preview' (GitHub Copilot Brain+Hand).")
+		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
+			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
 	_ = cmd.Flags().MarkHidden("harness")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
@@ -1492,7 +1497,7 @@ func validateInitKindHarness(requestedKind agentKindChoice, rawKind, harness str
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--harness is only valid with --kind prompt",
-			fmt.Sprintf("use --kind prompt --harness %s", agent_api.ManagedAgentHarnessGitHubCopilot),
+			fmt.Sprintf("use --kind prompt --harness %s", agent_api.ManagedAgentHarnessMicrosoftCopilot),
 		)
 	}
 	if rawKind != "" && !isPromptVoice &&

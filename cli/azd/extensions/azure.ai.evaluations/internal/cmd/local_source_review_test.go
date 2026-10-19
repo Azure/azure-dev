@@ -134,7 +134,7 @@ func TestExplicitLocalPublishedTypesReachCreateAndRun(t *testing.T) {
 					assert.JSONEq(t, string(expected), string(actual))
 					assert.Equal(t, mapping, request.TestingCriteria[0].DataMapping)
 				} else {
-					require.Len(t, recorded, 3)
+					require.Len(t, recorded, 2, "localRunValidator already reads the stored schema")
 					assert.Contains(t, string(posted.body), `"count":9007199254740993`)
 					var request eval_api.CreateOpenAIEvalRunRequest
 					require.NoError(t, json.Unmarshal(posted.body, &request))

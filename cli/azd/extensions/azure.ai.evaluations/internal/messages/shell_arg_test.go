@@ -28,6 +28,14 @@ func TestShellArgRefusesToInlineWhatItCannotMakeLiteral(t *testing.T) {
 		`a\b`,
 		"a^b",
 		`C:\Users\Me\quality`,
+		"smart\u2018quote",
+		"smart\u2019quote",
+		"smart\u201aquote",
+		"smart\u201bquote",
+		"smart\u201cquote",
+		"smart\u201dquote",
+		"smart\u201equote",
+		"smart\u201fquote",
 	} {
 		assert.Equal(t, "VALUE_NEEDS_QUOTING", ShellArg(v),
 			"%q expands or breaks the quoting, so it must not be inlined", v)

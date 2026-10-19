@@ -299,7 +299,7 @@ func TestResolvePromptAgentGraph_DefersHarnessCapabilities(t *testing.T) {
 		return agent
 	}
 
-	for _, harness := range []string{agent_api.ManagedAgentHarnessGitHubCopilot, ""} {
+	for _, harness := range []string{agent_api.ManagedAgentHarnessMicrosoftCopilot, ""} {
 		agent := newAgent(harness, nil)
 		if err := validateGraph(agent); err != nil {
 			t.Errorf("harness %q should accept guardrails: %v", harness, err)
@@ -311,7 +311,7 @@ func TestResolvePromptAgentGraph_DefersHarnessCapabilities(t *testing.T) {
 		"work_iq_preview", "bing_grounding", "some_future_tool",
 	} {
 		if err := validateGraph(newAgent(
-			agent_api.ManagedAgentHarnessGitHubCopilot,
+			agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			[]any{map[string]any{"type": toolType}},
 		)); err != nil {
 			t.Errorf("harness tool %q should be left to service validation: %v", toolType, err)

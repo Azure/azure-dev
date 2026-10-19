@@ -8,6 +8,8 @@ Architecture of the gRPC-based extension system in azd.
 
 Extensions are external processes that communicate with azd via gRPC. They allow third parties and first-party teams to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
 
+The extension framework itself is **generally available (GA)** and considered stable. See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions, registries, or specific capabilities may still carry their own experimental or pre-release status independent of the framework's GA status.
+
 ## Architecture
 
 ```text
@@ -47,6 +49,13 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
+For that command only (not its descendants), azd skips loading the selected
+environment, resolving its Key Vault references, and injecting its variables
+before starting the extension. Inherited parent-process environment variables
+and azd launch/protocol variables are still passed. Explicit Environment gRPC
+calls are unaffected.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project
@@ -85,7 +94,8 @@ Extensions can access these azd services via gRPC:
 - **Environment** — Read/write environment values and secrets
 - **User Config** — Read user-level azd configuration
 - **Deployment** — Access deployment information
-- **Account**. List subscriptions and resolve access tenants. The `v1beta` client also retrieves the current principal's resource-tenant object ID and type for role assignments. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Account**. List subscriptions and resolve access tenants. Since azd 1.36.0, stable `Account().GetCurrentPrincipal` retrieves the current principal's resource-tenant object ID and type for role assignments. The equivalent beta API is deprecated. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Telemetry**. Since azd 1.36.0, stable `Telemetry().ReportUsage` records eligible extension usage events. Its deprecated beta wire route remains available to released binaries. See [contract graduation and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
@@ -111,6 +121,26 @@ Extensions use two structured error types:
 Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC auth → fallback
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
+
+### Service configuration persistence
+
+The existing `ProjectService.AddService` RPC replaces one complete service;
+service-specific setters change only their selected field or section. The host
+holds the existing mutation lock during each operation and preserves dispatcher
+and cache behavior. Setters reload raw configuration, validate a typed view,
+normalize known path fields, and atomically save the raw mapping. AddService
+serializes only the replacement service into the freshly loaded raw project.
+It parses that file snapshot and validates the merged structure using the
+existing typed-save rules. Path normalization and schema selection use the same
+snapshot rather than cached project data.
+Untouched fields, including explicit `env: {}` or `infra: {}`, large integers,
+and literal templates, do not round-trip through protobuf or typed YAML.
+
+Service names are literal keys, including dots. Paths within services retain
+their existing dot-notation meaning. Multi-RPC edits are not transactions;
+there is no compare-and-swap precondition. Caller-provided protobuf numbers
+retain their existing precision limits. Prefer targeted setters over resending
+unknown configuration.
 
 ### Project service save acknowledgment
 

@@ -79,6 +79,7 @@ func TestEnsureEvalAsksTheSameMemoReservationDid(t *testing.T) {
 		"EnsureEval has to go through the memo rather than hashing again")
 	assert.Contains(t, source, "decided, err := r.decide(ctx, group)",
 		"and evalDigests is what reads it")
-	assert.Equal(t, 1, strings.Count(source, "project.FingerprintKey(\"eval\", group.Name))"),
+	assert.Equal(t, 1, strings.Count(source,
+		"project.FingerprintKey(\"eval\", group.Name), idKey(\"eval\", group.Name), r.scope)"),
 		"one read of the baseline, or a transient failure flips the decision")
 }

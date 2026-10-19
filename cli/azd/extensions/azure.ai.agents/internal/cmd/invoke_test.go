@@ -6,7 +6,6 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -63,40 +62,26 @@ func (s *invokeUserConfigServer) Set(
 	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *invokeUserConfigServer) setJSON(t *testing.T, path string, value any) {
-	t.Helper()
-
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("marshal user config value: %v", err)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.values[path] = data
-}
-
-func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
-	t.Helper()
-
-	s.mu.Lock()
-	data, found := s.values[path]
-	s.mu.Unlock()
-	if !found {
-		t.Fatalf("user config path %q was not saved", path)
-	}
-	if err := json.Unmarshal(data, value); err != nil {
-		t.Fatalf("unmarshal user config path %q: %v", path, err)
-	}
-}
-
 func newInvokeTestAzdClient(
 	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+	return newInvokeTestAzdClientWithProject(t, userConfigServer, nil, environmentServers...)
+}
+
+func newInvokeTestAzdClientWithProject(
+	t *testing.T,
+	userConfigServer azdext.UserConfigServiceServer,
+	projectServer azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if projectServer != nil {
+		azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	}
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
 	}
@@ -119,8 +104,10 @@ func newInvokeTestAzdClient(
 	if err != nil {
 		t.Fatalf("NewAzdClient: %v", err)
 	}
+	agentStateStoreRootOverrides.Store(azdClient, t.TempDir())
 
 	t.Cleanup(func() {
+		agentStateStoreRootOverrides.Delete(azdClient)
 		azdClient.Close()
 	})
 
@@ -2019,7 +2006,7 @@ func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{SessionID: "cached-session"})
 
 	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
 	rc := &remoteContext{
@@ -2059,7 +2046,7 @@ func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{SessionID: "cached-session"})
 
 	action := &InvokeAction{flags: &invokeFlags{version: "3", newSession: true}}
 	rc := &remoteContext{
@@ -2249,6 +2236,7 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 			projectPath := t.TempDir()
 			configDir := filepath.Join(projectPath, ".azure", "test")
 			if err := os.MkdirAll(configDir, 0o700); err != nil {
@@ -2437,31 +2425,6 @@ func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
 	}
 }
 
-func TestVersionedConversationLookupDoesNotUseLegacyAgentName(t *testing.T) {
-	t.Parallel()
-
-	userConfig := newInvokeUserConfigServer()
-	azdClient := newInvokeTestAzdClient(t, userConfig)
-	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
-	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("conversations"), map[string]string{"hello": "legacy-conversation"})
-
-	rc := &remoteContext{name: "hello", version: "3"}
-	got, err := getContextValueWithFallback(
-		t.Context(),
-		azdClient,
-		"conversations",
-		versionedKey,
-		rc.legacyKeys(),
-	)
-	if err != nil {
-		t.Fatalf("getContextValueWithFallback: %v", err)
-	}
-	if got != "" {
-		t.Errorf("conversation = %q, want empty because versioned lookup must not use legacy fallback", got)
-	}
-}
-
 func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 	t.Parallel()
 
@@ -2489,29 +2452,9 @@ func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 		t.Fatalf("conversation = %q, want existing-conversation", got)
 	}
 
-	userConfig.mu.Lock()
-	defer userConfig.mu.Unlock()
-
-	var conversations map[string]string
-	if err := json.Unmarshal(userConfig.values[configPath("conversations")], &conversations); err != nil {
-		t.Fatalf("unmarshal persisted conversations: %v", err)
-	}
-	if got := conversations[versionedKey]; got != "existing-conversation" {
+	record := loadAgentStateForTest(t, azdClient, versionedKey)
+	if got := record.ConversationID; got != "existing-conversation" {
 		t.Fatalf("persisted conversation = %q, want existing-conversation", got)
-	}
-}
-
-func TestRemoteContextLegacyKeysSkippedForExplicitVersion(t *testing.T) {
-	t.Parallel()
-
-	rc := &remoteContext{name: "hello", version: "3"}
-	if got := rc.legacyKeys(); len(got) != 0 {
-		t.Errorf("legacyKeys = %v, want none for explicit version", got)
-	}
-
-	rc.version = ""
-	if got := rc.legacyKeys(); len(got) != 1 || got[0] != "hello" {
-		t.Errorf("legacyKeys = %v, want [hello]", got)
 	}
 }
 

@@ -15,6 +15,7 @@ Usage
   azd ai agent [command]
 
 Available Commands
+  add          : Add a file-backed Agent service to the current azd project.
   code         : Manage agent source code. (Preview)
   connection   : Manage connection service dependencies for an agent.
   delete       : Delete a prompt, hosted, or voice agent.
@@ -49,6 +50,9 @@ Examples
   Initialize and deploy an agent project
     azd ai agent init
     azd up
+
+  Add a file-backed Agent service to the current project
+    azd ai agent add support-agent --file ./agents/support.yaml
 
   Send a message to a deployed prompt or hosted agent
     azd ai agent invoke "Hello"

@@ -51,7 +51,7 @@ func TestPromptAgentPoliciesReachRaiConfig(t *testing.T) {
 	t.Parallel()
 	for _, harness := range []*agent_yaml.PromptHarness{
 		nil,
-		{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 	} {
 		managed := agent_yaml.PromptAgent{
 			AgentDefinition: agent_yaml.AgentDefinition{Name: "rai-agent", Kind: agent_yaml.AgentKindPrompt},
@@ -68,7 +68,7 @@ func TestPromptAgentPoliciesReachRaiConfig(t *testing.T) {
 func TestPromptCreateErrorAddsPolicySuggestion(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{
-		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
 	}
 	err := promptCreateError(errors.New("BadRequest"), &managed)
@@ -80,7 +80,7 @@ func TestPromptCreateErrorAddsPolicySuggestion(t *testing.T) {
 func TestPromptCreateErrorAddsPolicySuggestionToServiceError(t *testing.T) {
 	t.Parallel()
 	managed := agent_yaml.PromptAgent{
-		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessGitHubCopilot},
+		Harness:  &agent_yaml.PromptHarness{Type: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		Policies: []agent_yaml.Policy{{Type: agent_yaml.PolicyTypeRai, RaiPolicyName: raiPolicyID}},
 	}
 	err := promptCreateError(&azcore.ResponseError{

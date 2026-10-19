@@ -241,6 +241,7 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fields.ExtensionId.String(extension.Id),
 		fields.ExtensionVersion.String(extension.Version))
 
+	noAzdEnvironment := a.noAzdEnvironmentForCommand(extension)
 	allEnv := []string{}
 	allEnv = append(allEnv, os.Environ()...)
 
@@ -256,20 +257,24 @@ func (a *extensionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		allEnv = append(allEnv, fmt.Sprintf("COLUMNS=%d", width))
 	}
 
-	env, err := a.lazyEnv.GetValue()
-	if err == nil && env != nil {
-		// Resolve Key Vault secret references only in azd-managed environment
-		// variables (akvs:// and @Microsoft.KeyVault formats). System env vars
-		// from os.Environ() are NOT processed — only the azd environment's
-		// variables may contain KV references.
-		azdEnvVars := env.Environ()
-		subId := env.Getenv("AZURE_SUBSCRIPTION_ID")
-		azdEnvVars, kvErr := kv.ResolveSecretEnvironment(ctx, a.kvService, azdEnvVars, subId)
-		if kvErr != nil {
-			log.Printf("warning: %v", kvErr)
-		}
+	if !noAzdEnvironment {
+		env, err := a.lazyEnv.GetValue()
+		if err == nil && env != nil {
+			// Resolve Key Vault references only in azd-managed variables.
+			azdEnvVars := env.Environ()
+			subId := env.Getenv("AZURE_SUBSCRIPTION_ID")
+			azdEnvVars, kvErr := kv.ResolveSecretEnvironment(
+				ctx,
+				a.kvService,
+				azdEnvVars,
+				subId,
+			)
+			if kvErr != nil {
+				log.Printf("warning: %v", kvErr)
+			}
 
-		allEnv = append(allEnv, azdEnvVars...)
+			allEnv = append(allEnv, azdEnvVars...)
+		}
 	}
 
 	serverInfo, err := a.azdServer.Start()
@@ -599,6 +604,22 @@ func markExtensionRunCanceled(invokeErr error, extension *extensions.Extension) 
 		ExtensionVersion: extension.Version,
 		Err:              errors.Join(invokeErr, context.Canceled),
 	}
+}
+
+func (a *extensionAction) noAzdEnvironmentForCommand(extension *extensions.Extension) bool {
+	if !extension.HasCapability(extensions.MetadataCapability) ||
+		!a.extensionManager.MetadataExists(extension.Id) {
+		return false
+	}
+
+	metadata, err := a.extensionManager.LoadMetadata(extension.Id)
+	if err != nil {
+		log.Printf("failed to load command metadata for extension %s: %v", extension.Id, err)
+		return false
+	}
+
+	command := extensions.ResolveCommand(metadata, a.args)
+	return command != nil && command.Launch != nil && command.Launch.NoAzdEnvironment
 }
 
 // updateCheckOutcome holds the result of an async update check

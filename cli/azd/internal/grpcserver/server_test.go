@@ -225,19 +225,20 @@ func Test_Server_Start(t *testing.T) {
 			"PromptService",
 			"ProvisioningService",
 			"ServiceTargetService",
+			"TelemetryService",
 			"UserConfigService",
 			"ValidationService",
 			"WorkflowService",
 		}
 
 		services := server.grpcServer.GetServiceInfo()
-		require.Len(t, services, 3*len(serviceNames)+7)
+		require.Len(t, services, 3*len(serviceNames)+5)
 		for _, serviceName := range serviceNames {
 			require.Contains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
 		}
-		for _, serviceName := range []string{"ComposeService", "CopilotService", "TelemetryService"} {
+		for _, serviceName := range []string{"ComposeService", "CopilotService"} {
 			require.NotContains(t, services, "azd.extensions.v1."+serviceName)
 			require.Contains(t, services, "azd.extensions.v1beta."+serviceName)
 			require.Contains(t, services, "azdext."+serviceName)
@@ -365,7 +366,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		resp, err := client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
+		resp, err := client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
 			EventName:  "deploy.completed",
 			Attributes: map[string]string{"deploy.mode": "code"},
 		})
@@ -387,7 +388,9 @@ func Test_Server_Start(t *testing.T) {
 		}()
 
 		ctx := azdext.WithAccessToken(t.Context(), accessToken)
+		//nolint:staticcheck // Verify the deprecated beta SDK still reaches the stable implementation.
 		client := v1beta.NewTelemetryServiceClient(connection)
+		//nolint:staticcheck // Preserve beta request and response coverage for existing binaries.
 		resp, err := client.ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName:  "deploy.completed",
 			Attributes: map[string]string{"deploy.mode": "code"},
@@ -437,7 +440,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		_, err = client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
 			Attributes: map[string]string{"deploy.mode": "code"},
 		})
 		st, ok := status.FromError(err)
@@ -455,7 +458,7 @@ func Test_Server_Start(t *testing.T) {
 		client, err := azdext.NewAzdClient(azdext.WithAddress(serverInfo.Address))
 		require.NoError(t, err)
 
-		_, err = client.Telemetry().ReportUsage(ctx, &v1beta.ReportUsageRequest{
+		_, err = client.Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{
 			EventName: "deploy.completed",
 		})
 		st, ok := status.FromError(err)
@@ -469,11 +472,65 @@ func Test_Server_Start(t *testing.T) {
 
 		_, err = client.Telemetry().ReportUsage(
 			t.Context(),
-			&v1beta.ReportUsageRequest{EventName: "deploy.completed"},
+			&azdext.ReportUsageRequest{EventName: "deploy.completed"},
 		)
 		st, ok := status.FromError(err)
 		require.True(t, ok)
 		require.Equal(t, codes.Unauthenticated, st.Code())
+	})
+
+	t.Run("TelemetryRoutesShareBehaviorAndBudget", func(t *testing.T) {
+		ctx, command := testTracerProvider.Tracer("test").Start(t.Context(), "cmd.telemetry.graduation")
+		defer command.End()
+		accessToken, err := GenerateExtensionTokenWithContext(ctx, reportingExtension, serverInfo)
+		require.NoError(t, err)
+		connection, err := grpc.NewClient(
+			serverInfo.Address, grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, connection.Close()) })
+		ctx = azdext.WithAccessToken(ctx, accessToken)
+		service, ok := server.telemetryService.(*telemetryService)
+		require.True(t, ok)
+		remaining := maxUsageEventsPerInvocation - int(service.recorded.Load())
+		routes := []string{
+			"/azd.extensions.v1.TelemetryService/ReportUsage",
+			"/azd.extensions.v1beta.TelemetryService/ReportUsage",
+			"/azdext.TelemetryService/ReportUsage",
+		}
+		for i := range remaining + len(routes) {
+			//nolint:staticcheck // Send and receive the deprecated beta wire shape on every route.
+			response := &v1beta.ReportUsageResponse{}
+			//nolint:staticcheck // Verify beta payloads share the stable service's invocation budget.
+			require.NoError(t, connection.Invoke(
+				ctx, routes[i%len(routes)],
+				&v1beta.ReportUsageRequest{
+					EventName: "graduation.test", Attributes: map[string]string{"mode": "stable"},
+				}, response,
+			))
+			require.Equal(t, i < remaining, response.Accepted)
+		}
+		spans := usageSpansIn(command.SpanContext().TraceID())
+		require.Len(t, spans, remaining)
+		for _, span := range spans {
+			attributes := attributesOf(span)
+			require.Equal(t, reportingExtension.Id, attributes[fields.ExtensionId.Key].AsString())
+			require.Equal(t, "graduation.test", attributes[fields.ExtensionEvent.Key].AsString())
+			require.Equal(t, "stable", attributes["ext.mode"].AsString())
+		}
+		for _, route := range routes {
+			//nolint:staticcheck // Deprecated beta clients retain request validation.
+			err := connection.Invoke(
+				ctx, route, &v1beta.ReportUsageRequest{}, &v1beta.ReportUsageResponse{},
+			)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+			//nolint:staticcheck // Deprecated beta clients retain authentication enforcement.
+			err = connection.Invoke(
+				t.Context(), route,
+				&v1beta.ReportUsageRequest{EventName: "graduation.test"}, &v1beta.ReportUsageResponse{},
+			)
+			require.Equal(t, codes.Unauthenticated, status.Code(err))
+		}
 	})
 }
 
@@ -498,7 +555,7 @@ func Test_Server_StreamInterceptor(t *testing.T) {
 		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		v1beta.UnimplementedTelemetryServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
 	)
 
@@ -979,7 +1036,7 @@ func newTestServer(
 		v1beta.UnimplementedCopilotServiceServer{},
 		azdext.UnimplementedProvisioningServiceServer{},
 		azdext.UnimplementedValidationServiceServer{},
-		v1beta.UnimplementedTelemetryServiceServer{},
+		azdext.UnimplementedTelemetryServiceServer{},
 		v1beta.UnimplementedCommandResultServiceServer{},
 	).WithOptions(options...)
 }

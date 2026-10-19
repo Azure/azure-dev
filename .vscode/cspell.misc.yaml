@@ -108,6 +108,16 @@ overrides:
           - Chdir
           - exterrors
           - userinfo
+    - filename: .github/skills/azd-code-reviewer/reviewers.md
+      words:
+          - followable
+          - footguns
+          - godoc
+          - Goroutine
+          - unsanitized
+    - filename: .github/workflows/update-instructions-from-pr-reviews.md
+      words:
+          - toolsets
     - filename: .github/skills/azd-grpc-contracts/**/*.md
       words:
           - azdext
@@ -147,6 +157,10 @@ overrides:
           - stdlib
           - unhashed
           - vsrpc
+    - filename: docs/guides/creating-an-extension.md
+      words:
+          - GOARCH
+          - GOEXPERIMENT
     - filename: docs/reference/**/*.md
       words:
           - apphost

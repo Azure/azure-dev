@@ -45,6 +45,13 @@
         "metadata": {
           "type": "object",
           "description": "Free-form metadata key-value pairs.",
+          "properties": {
+            "tags": {
+              "type": ["string", "array"],
+              "items": { "type": "string" },
+              "description": "Agent tags. Lists are stored as a JSON array string in Foundry metadata.tags; string values are preserved."
+            }
+          },
           "additionalProperties": true
         }
       }

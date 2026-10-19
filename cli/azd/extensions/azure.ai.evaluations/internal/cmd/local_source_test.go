@@ -202,13 +202,12 @@ func TestExplicitLocalRunUsesInlineRowsWithoutRegistryIdentity(t *testing.T) {
 	}}
 	require.NoError(t, action.start(t.Context(), ec, gate{}))
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 3)
+	require.Len(t, recorded, 2)
 	assert.Equal(t, http.MethodGet, recorded[0].method)
-	assert.Equal(t, http.MethodGet, recorded[1].method)
-	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[1].path)
-	assert.Equal(t, http.MethodPost, recorded[2].method)
+	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[0].path)
+	assert.Equal(t, http.MethodPost, recorded[1].method)
 	var submitted eval_api.CreateOpenAIEvalRunRequest
-	require.NoError(t, json.Unmarshal(recorded[2].body, &submitted))
+	require.NoError(t, json.Unmarshal(recorded[1].body, &submitted))
 	assert.Equal(t, map[string]string{metaEvalName: "local-quality"}, submitted.Metadata)
 	require.NotNil(t, submitted.DataSource)
 	assert.Equal(t, eval_api.EvalRunDataSourceTypeJSONL, submitted.DataSource.Type)
@@ -221,7 +220,7 @@ func TestExplicitLocalRunUsesInlineRowsWithoutRegistryIdentity(t *testing.T) {
 	assert.Equal(t, map[string]any{
 		"eval_id": "eval_local", "run_id": "evalrun_local", "eval_name": "local-quality", "status": "queued",
 	}, handoff)
-	assert.NotContains(t, string(recorded[2].body), "local rows.jsonl")
+	assert.NotContains(t, string(recorded[1].body), "local rows.jsonl")
 }
 
 func TestExplicitLocalCapsAndTargets(t *testing.T) {
@@ -246,12 +245,12 @@ func TestExplicitLocalCapsAndTargets(t *testing.T) {
 				_, err := startLocalSource(t, ec, dir, "local-quality", flags)
 				require.NoError(t, err)
 				recorded := recordedIdentityRequests(requests)
-				require.Len(t, recorded, 3)
+				require.Len(t, recorded, 2)
 				assert.Equal(t, http.MethodGet, recorded[0].method)
-				assert.Equal(t, http.MethodGet, recorded[1].method)
-				assert.Equal(t, http.MethodPost, recorded[2].method)
+				assert.Equal(t, "/openai/v1/evals/eval_local", recorded[0].path)
+				assert.Equal(t, http.MethodPost, recorded[1].method)
 				var submitted eval_api.CreateOpenAIEvalRunRequest
-				require.NoError(t, json.Unmarshal(recorded[2].body, &submitted))
+				require.NoError(t, json.Unmarshal(recorded[1].body, &submitted))
 				require.NotNil(t, submitted.DataSource)
 				require.NotNil(t, submitted.DataSource.Source)
 				want := 1
@@ -396,7 +395,7 @@ func TestExplicitLocalIDRerunUsesSnapshotNotFile(t *testing.T) {
 	_, err := startLocalSource(t, ec, dir, "local-quality", nil)
 	require.NoError(t, err)
 	first := recordedIdentityRequests(requests)
-	require.Len(t, first, 3)
+	require.Len(t, first, 2)
 	require.NoError(t, os.Remove(filepath.Join(dir, "local rows.jsonl")))
 	out, err := startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)
@@ -405,7 +404,7 @@ func TestExplicitLocalIDRerunUsesSnapshotNotFile(t *testing.T) {
 	assert.Equal(t, "/openai/v1/evals/eval_local/runs", recorded[0].path)
 	assert.Equal(t, "/openai/v1/evals/eval_local", recorded[1].path)
 	var before, after eval_api.CreateOpenAIEvalRunRequest
-	require.NoError(t, json.Unmarshal(first[2].body, &before))
+	require.NoError(t, json.Unmarshal(first[1].body, &before))
 	require.NoError(t, json.Unmarshal(recorded[2].body, &after))
 	assert.Equal(t, before.DataSource, after.DataSource)
 	assert.NotContains(t, after.Metadata, metaDataset)
@@ -422,8 +421,8 @@ func TestExplicitLocalNumbersRetainPrecision(t *testing.T) {
 	_, err := startLocalSource(t, ec, dir, "local-quality", nil)
 	require.NoError(t, err)
 	recorded := recordedIdentityRequests(requests)
-	require.Len(t, recorded, 3)
-	assert.Contains(t, string(recorded[2].body), `"id":9007199254740993`)
+	require.Len(t, recorded, 2)
+	assert.Contains(t, string(recorded[1].body), `"id":9007199254740993`)
 	require.NoError(t, os.Remove(filepath.Join(dir, "local rows.jsonl")))
 	_, err = startLocalSource(t, ec, dir, "eval_local", nil)
 	require.NoError(t, err)

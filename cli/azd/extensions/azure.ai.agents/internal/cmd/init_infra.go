@@ -80,13 +80,13 @@ type infraLayer struct {
 	effectiveProvider string
 }
 
-type infraEjectAcrMode string
+type infraEjectAcrMode = envkeys.AcrMode
 
 const (
-	infraEjectAcrNone             infraEjectAcrMode = infraEjectAcrMode(envkeys.AcrNone)
-	infraEjectAcrCreate           infraEjectAcrMode = infraEjectAcrMode(envkeys.AcrCreate)
-	infraEjectAcrReuseConnect     infraEjectAcrMode = infraEjectAcrMode(envkeys.AcrReuseConnect)
-	infraEjectAcrAlreadyConnected infraEjectAcrMode = infraEjectAcrMode(envkeys.AcrAlreadyConnected)
+	infraEjectAcrNone             = envkeys.AcrNone
+	infraEjectAcrCreate           = envkeys.AcrCreate
+	infraEjectAcrReuseConnect     = envkeys.AcrReuseConnect
+	infraEjectAcrAlreadyConnected = envkeys.AcrAlreadyConnected
 )
 
 // validateStandaloneEjectArgs refuses init-driving inputs that the
@@ -2244,17 +2244,12 @@ func resolveInfraEjectAcrMode(params map[string]any, values map[string]string) (
 	if !includeAcr || strings.EqualFold(strings.TrimSpace(values[envkeys.AgentSkipAcr.Name()]), "true") {
 		return infraEjectAcrNone, nil
 	}
-	mode := infraEjectAcrMode(strings.TrimSpace(values[envkeys.FoundryAcrMode.Name()]))
-	if mode != "" {
-		switch mode {
-		case infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected:
-		default:
-			return "", exterrors.Validation(
-				exterrors.CodeInvalidParameter,
-				fmt.Sprintf("AZD_FOUNDRY_ACR_MODE has unsupported value %q", mode),
-				"re-run `azd ai agent init` to select the container registry behavior",
-			)
-		}
+	mode, err := envkeys.ParseAcrMode(strings.TrimSpace(values[envkeys.FoundryAcrMode.Name()]))
+	if err != nil {
+		return "", exterrors.Validation(
+			exterrors.CodeInvalidParameter, err.Error(),
+			"re-run `azd ai agent init` to select the container registry behavior",
+		)
 	}
 	endpoint := strings.TrimSpace(values[envkeys.ContainerRegistryEndpoint.Name()])
 	resourceID := strings.TrimSpace(values[envkeys.ContainerRegistryResourceID.Name()])

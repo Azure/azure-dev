@@ -25,13 +25,13 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-type projectEjectAcrMode string
+type projectEjectAcrMode = envkeys.AcrMode
 
 const (
-	projectEjectAcrNone             projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrNone)
-	projectEjectAcrCreate           projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrCreate)
-	projectEjectAcrReuseConnect     projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrReuseConnect)
-	projectEjectAcrAlreadyConnected projectEjectAcrMode = projectEjectAcrMode(envkeys.AcrAlreadyConnected)
+	projectEjectAcrNone             = envkeys.AcrNone
+	projectEjectAcrCreate           = envkeys.AcrCreate
+	projectEjectAcrReuseConnect     = envkeys.AcrReuseConnect
+	projectEjectAcrAlreadyConnected = envkeys.AcrAlreadyConnected
 )
 
 type ejectedFoundryProjectInfrastructure struct {
@@ -700,18 +700,13 @@ func resolveProjectEjectAcrMode(
 		return projectEjectAcrNone, nil
 	}
 
-	mode := projectEjectAcrMode(strings.TrimSpace(
+	mode, err := envkeys.ParseAcrMode(strings.TrimSpace(
 		values[envkeys.FoundryAcrMode.Name()],
 	))
-	switch mode {
-	case "":
-	case projectEjectAcrNone, projectEjectAcrCreate,
-		projectEjectAcrReuseConnect, projectEjectAcrAlreadyConnected:
-	default:
+	if err != nil {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("AZD_FOUNDRY_ACR_MODE has unsupported value %q",
-				mode),
+			err.Error(),
 			"select a supported container registry mode and retry",
 		)
 	}

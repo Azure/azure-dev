@@ -5,12 +5,7 @@ package envkeys
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"slices"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -27,8 +22,8 @@ type EnvServiceStore struct {
 	EnvName string
 }
 
-// Get returns present=true on every successful RPC, including empty values.
-// GetValue cannot distinguish an absent key from an explicitly empty value.
+// Get reports presence on a successful RPC, even for empty values.
+// GetValue cannot distinguish missing keys from explicit empties.
 func (s EnvServiceStore) Get(ctx context.Context, key string) (string, bool, error) {
 	resp, err := s.Client.GetValue(ctx, &azdext.GetEnvRequest{EnvName: s.EnvName, Key: key})
 	if err != nil {
@@ -47,23 +42,13 @@ func (s EnvServiceStore) Set(ctx context.Context, key, value string) error {
 }
 
 // Input is a user-owned key with read-only typed access.
-// Init may record an explicit user choice through the underlying environment service.
+// Init records explicit choices through existing environment helpers.
 type Input struct{ name string }
 
 // Output is an extension-owned string value.
 type Output struct{ name string }
 
-// Enum is an extension-owned decision restricted to registered values.
-type Enum[T ~string] struct {
-	name    string
-	allowed []T
-}
-
-// JSON is an extension-owned structured value with strict decoding and optional validation.
-type JSON[T any] struct {
-	name     string
-	validate func(T) error
-}
+type acrModeKey struct{ name string }
 
 // Name returns the environment key.
 func (k Input) Name() string { return k.name }
@@ -87,82 +72,30 @@ func (k Output) Set(ctx context.Context, s Store, value string) error {
 }
 
 // Name returns the environment key.
-func (k Enum[T]) Name() string { return k.name }
+func (k acrModeKey) Name() string { return k.name }
 
-// Get reads and validates a decision. An empty value is treated as unset.
-func (k Enum[T]) Get(ctx context.Context, s Store) (T, bool, error) {
+// Get validates a decision, leaving an empty value unset.
+func (k acrModeKey) Get(ctx context.Context, s Store) (AcrMode, bool, error) {
 	raw, present, err := s.Get(ctx, k.name)
 	if err != nil || !present || raw == "" {
 		return "", present, err
 	}
-	value := T(raw)
-	if err := k.check(value); err != nil {
-		return "", true, err
-	}
-	return value, true, nil
+	value, err := ParseAcrMode(raw)
+	return value, true, err
 }
 
 // Set validates and writes a decision.
-func (k Enum[T]) Set(ctx context.Context, s Store, value T) error {
-	if err := k.check(value); err != nil {
+func (k acrModeKey) Set(ctx context.Context, s Store, value AcrMode) error {
+	if value == "" {
+		return fmt.Errorf("%s cannot be empty", k.name)
+	}
+	if _, err := ParseAcrMode(string(value)); err != nil {
 		return err
 	}
 	return s.Set(ctx, k.name, string(value))
 }
 
-func (k Enum[T]) check(value T) error {
-	if !slices.Contains(k.allowed, value) {
-		return fmt.Errorf("%s has unsupported value %q (allowed: %v)", k.name, value, k.allowed)
-	}
-	return nil
-}
-
-// Name returns the environment key.
-func (k JSON[T]) Name() string { return k.name }
-
-// Get rejects unknown fields, trailing data, and values rejected by the key's validator.
-func (k JSON[T]) Get(ctx context.Context, s Store) (T, bool, error) {
-	var zero T
-	raw, present, err := s.Get(ctx, k.name)
-	if err != nil || !present {
-		return zero, present, err
-	}
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.DisallowUnknownFields()
-	var value T
-	if err := dec.Decode(&value); err != nil {
-		return zero, true, fmt.Errorf("%s is not valid: %w", k.name, err)
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return zero, true, fmt.Errorf("%s has trailing data: %w", k.name, err)
-		}
-		return zero, true, fmt.Errorf("%s has trailing data", k.name)
-	}
-	if k.validate != nil {
-		if err := k.validate(value); err != nil {
-			return zero, true, fmt.Errorf("%s is not valid: %w", k.name, err)
-		}
-	}
-	return value, true, nil
-}
-
-// Set validates and encodes a structured value before writing it.
-func (k JSON[T]) Set(ctx context.Context, s Store, value T) error {
-	if k.validate != nil {
-		if err := k.validate(value); err != nil {
-			return fmt.Errorf("%s is not valid: %w", k.name, err)
-		}
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("encode %s: %w", k.name, err)
-	}
-	return s.Set(ctx, k.name, string(data))
-}
-
-// AcrMode records how a Foundry project obtains its container registry.
+// AcrMode records how the project obtains its registry.
 type AcrMode string
 
 const (
@@ -176,32 +109,28 @@ const (
 	AcrNone AcrMode = "none"
 )
 
-var (
-	// ContainerRegistryResourceID identifies the registry selected by the user.
-	ContainerRegistryResourceID = Input{name: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}
-	// ContainerRegistryEndpoint holds the provisioned or selected registry's login server.
-	ContainerRegistryEndpoint = Output{name: "AZURE_CONTAINER_REGISTRY_ENDPOINT"}
-	// FoundryAcrMode records the registry provisioning and ownership decision.
-	FoundryAcrMode = Enum[AcrMode]{
-		name:    "AZD_FOUNDRY_ACR_MODE",
-		allowed: []AcrMode{AcrCreate, AcrReuseConnect, AcrAlreadyConnected, AcrNone},
-	}
-	// ProjectAcrConnectionName holds the registry connection name in the Foundry project.
-	ProjectAcrConnectionName = Output{name: "AZURE_AI_PROJECT_ACR_CONNECTION_NAME"}
-	// FoundryAcrPullAssigned records whether pull access was assigned, as "true" or "false".
-	FoundryAcrPullAssigned = Output{name: "AZD_FOUNDRY_ACR_PULL_ASSIGNED"}
-	// AgentSkipAcr is the user or CI flag that skips registry provisioning.
-	AgentSkipAcr = Input{name: "AZD_AGENT_SKIP_ACR"}
-)
-
-// AllKeys returns the registered keys for documentation and inventory.
-func AllKeys() []interface{ Name() string } {
-	return []interface{ Name() string }{
-		ContainerRegistryResourceID,
-		ContainerRegistryEndpoint,
-		FoundryAcrMode,
-		ProjectAcrConnectionName,
-		FoundryAcrPullAssigned,
-		AgentSkipAcr,
+// ParseAcrMode validates a mode without choosing a default.
+// An empty value remains unset for the caller to resolve.
+func ParseAcrMode(raw string) (AcrMode, error) {
+	switch mode := AcrMode(raw); mode {
+	case "", AcrCreate, AcrReuseConnect, AcrAlreadyConnected, AcrNone:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("%s has unsupported value %q", FoundryAcrMode.Name(), raw)
 	}
 }
+
+var (
+	// ContainerRegistryResourceID is the user-selected registry.
+	ContainerRegistryResourceID = Input{name: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"}
+	// ContainerRegistryEndpoint holds the registry login server.
+	ContainerRegistryEndpoint = Output{name: "AZURE_CONTAINER_REGISTRY_ENDPOINT"}
+	// FoundryAcrMode records the provisioning and ownership decision.
+	FoundryAcrMode = acrModeKey{name: "AZD_FOUNDRY_ACR_MODE"}
+	// ProjectAcrConnectionName is the project's registry connection.
+	ProjectAcrConnectionName = Output{name: "AZURE_AI_PROJECT_ACR_CONNECTION_NAME"}
+	// FoundryAcrPullAssigned stores pull access as "true" or "false".
+	FoundryAcrPullAssigned = Output{name: "AZD_FOUNDRY_ACR_PULL_ASSIGNED"}
+	// AgentSkipAcr is the user or CI registry skip flag.
+	AgentSkipAcr = Input{name: "AZD_AGENT_SKIP_ACR"}
+)

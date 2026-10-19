@@ -6,7 +6,6 @@ package envkeys
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -26,72 +25,7 @@ func (m mapStore) Set(_ context.Context, key, value string) error {
 	return nil
 }
 
-type testEntry struct {
-	Name string `json:"name"`
-}
-
-func testJSONKey() JSON[[]testEntry] {
-	return JSON[[]testEntry]{
-		name: "TEST_JSON",
-		validate: func(entries []testEntry) error {
-			for i, entry := range entries {
-				if entry.Name == "" {
-					return fmt.Errorf("entry %d needs name", i)
-				}
-			}
-			return nil
-		},
-	}
-}
-
-func TestStrictJSON(t *testing.T) {
-	key := testJSONKey()
-	for _, raw := range []string{
-		`[{}]`,
-		`[{"name":"a","extra":1}]`,
-		`[] []`,
-		`[] true`,
-		`[] trailing`,
-		`[] }`,
-		``,
-		`{`,
-	} {
-		t.Run(raw, func(t *testing.T) {
-			_, present, err := key.Get(t.Context(), mapStore{key.Name(): raw})
-			require.True(t, present)
-			require.ErrorContains(t, err, key.Name())
-		})
-	}
-	for _, raw := range []string{`[]`, `[{"name":"a"}]`, "[] \n\t"} {
-		t.Run("valid/"+raw, func(t *testing.T) {
-			_, present, err := key.Get(t.Context(), mapStore{key.Name(): raw})
-			require.NoError(t, err)
-			require.True(t, present)
-		})
-	}
-	value, present, err := key.Get(t.Context(), mapStore{})
-	require.NoError(t, err)
-	require.False(t, present)
-	require.Nil(t, value)
-}
-
-func TestJSONSet(t *testing.T) {
-	key := testJSONKey()
-	store := mapStore{}
-	entries := []testEntry{{Name: "a"}}
-	require.NoError(t, key.Set(t.Context(), store, entries))
-	value, present, err := key.Get(t.Context(), store)
-	require.NoError(t, err)
-	require.True(t, present)
-	require.Equal(t, entries, value)
-	require.Error(t, key.Set(t.Context(), store, []testEntry{{}}))
-	require.Equal(t, `[{"name":"a"}]`, store[key.Name()])
-
-	unencodable := JSON[chan int]{name: "TEST_CHANNEL"}
-	require.ErrorContains(t, unencodable.Set(t.Context(), store, make(chan int)), "encode TEST_CHANNEL")
-}
-
-func TestEnum(t *testing.T) {
+func TestAcrMode(t *testing.T) {
 	for _, mode := range []AcrMode{AcrCreate, AcrReuseConnect, AcrAlreadyConnected, AcrNone} {
 		t.Run(string(mode), func(t *testing.T) {
 			store := mapStore{}
@@ -120,6 +54,18 @@ func TestEnum(t *testing.T) {
 		require.Equal(t, expectedPresent, present)
 	}
 	require.Error(t, FoundryAcrMode.Set(t.Context(), mapStore{}, ""))
+}
+
+func TestParseAcrMode(t *testing.T) {
+	for _, raw := range []string{"", "create", "reuse-connect", "already-connected", "none"} {
+		mode, err := ParseAcrMode(raw)
+		require.NoError(t, err)
+		require.Equal(t, AcrMode(raw), mode)
+	}
+	for _, raw := range []string{"invalid", "CREATE", " create "} {
+		_, err := ParseAcrMode(raw)
+		require.ErrorContains(t, err, "AZD_FOUNDRY_ACR_MODE")
+	}
 }
 
 func TestInputAndOutput(t *testing.T) {

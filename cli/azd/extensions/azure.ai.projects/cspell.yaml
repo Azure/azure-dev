@@ -1,6 +1,5 @@
 import: ../../.vscode/cspell.yaml
 words:
-  - envkey
   - envkeys
   - alnum
   - exterrors

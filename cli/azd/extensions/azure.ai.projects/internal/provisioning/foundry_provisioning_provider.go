@@ -515,9 +515,15 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 	} else if p.existingAcrMode == "" {
 		p.existingAcrMode = p.inferExistingProjectAcrMode()
 	}
-	switch p.existingAcrMode {
-	case string(envkeys.AcrNone), string(envkeys.AcrCreate):
-	case string(envkeys.AcrReuseConnect), string(envkeys.AcrAlreadyConnected):
+	mode, err := envkeys.ParseAcrMode(p.existingAcrMode)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig, err.Error(),
+			"re-run `azd ai agent init` to select the container registry behavior",
+		)
+	}
+	switch mode {
+	case envkeys.AcrReuseConnect, envkeys.AcrAlreadyConnected:
 		if p.existingAcrEndpoint == "" || p.existingAcrResourceID == "" {
 			return exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
@@ -525,12 +531,6 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 				"re-run `azd ai agent init` to select the container registry",
 			)
 		}
-	default:
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("AZD_FOUNDRY_ACR_MODE has unsupported value %q", p.existingAcrMode),
-			"re-run `azd ai agent init` to select the container registry behavior",
-		)
 	}
 	if p.existingAcrMode == string(envkeys.AcrAlreadyConnected) && p.existingAcrConnectionName == "" {
 		return exterrors.Validation(

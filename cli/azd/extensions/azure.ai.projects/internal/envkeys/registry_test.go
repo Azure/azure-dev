@@ -13,7 +13,14 @@ import (
 
 func TestRegistry(t *testing.T) {
 	var names []string
-	for _, key := range AllKeys() {
+	seen := map[string]bool{}
+	for _, key := range []interface{ Name() string }{
+		ContainerRegistryResourceID, ContainerRegistryEndpoint,
+		FoundryAcrMode, ProjectAcrConnectionName,
+		FoundryAcrPullAssigned, AgentSkipAcr,
+	} {
+		require.False(t, seen[key.Name()], "duplicate key %s", key.Name())
+		seen[key.Name()] = true
 		names = append(names, key.Name())
 		t.Log(key.Name())
 	}

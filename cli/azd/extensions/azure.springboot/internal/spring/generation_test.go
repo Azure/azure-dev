@@ -247,6 +247,16 @@ func TestDestinationOwnership(t *testing.T) {
 	}
 }
 
+func TestGeneratedDockerfilePreparesMavenWrapper(t *testing.T) {
+	docker, err := dockerfile(&Application{
+		JavaVersion: 17, JarName: "inventory.jar", BuildDirectory: "target",
+		MavenWrapper: true,
+	})
+	require.NoError(t, err)
+	require.Contains(t, docker, `sed -i 's/\r$//' mvnw`)
+	require.Contains(t, docker, "MAVEN_CONFIG= ./mvnw -B -Dmaven.test.skip=true package")
+}
+
 func TestDestinationDockerInputs(t *testing.T) {
 	for _, tt := range []struct {
 		name       string

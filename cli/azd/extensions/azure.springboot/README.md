@@ -136,7 +136,8 @@ Development Compose files are left alone.
 
 **Development defaults:** password authentication uses generated administrator
 credentials. Database public endpoints allow only ACA-reported outbound IPv4
-addresses, plus the explicit bootstrap IP for PostgreSQL managed identity.
+addresses. PostgreSQL managed identity temporarily allows all public IPv4 addresses
+while the local postprovision hook performs administrator bootstrap.
 Local SQL access in password mode requires an explicitly added firewall rule.
 JDBC connections require TLS. This is restricted public access, not private
 connectivity or an application-exclusive network boundary.
@@ -183,7 +184,6 @@ not edit the POM. Set these values in the selected azd environment before provis
 python -m pip install -r .azd-spring/requirements.txt
 azd env set SPRING_DATABASE_ADMIN_OID "<Entra administrator user object ID>"
 azd env set SPRING_DATABASE_ADMIN_NAME "<administrator user principal name>"
-azd env set SPRING_DATABASE_BOOTSTRAP_IP "<bootstrap public IPv4>"
 azd env set SPRING_DATABASE_BOOTSTRAP_SQL "<path to reviewed application SQL>"
 ```
 
@@ -225,10 +225,12 @@ invalidates cached grants, including after a failed recovery attempt.
 Principal mapping and privilege checks still run. Changed SQL executes again:
 make it an intentional, repeatable migration, not a destructive sample reset.
 
-The hook deletes only its `bootstrap-local-ip` firewall rule after SQL setup, on
-success or failure, and reports cleanup failures without recording success.
+The hook deletes only its temporary full-IPv4 `bootstrap-local-ip` firewall rule
+after SQL setup, on success or failure, and reports cleanup failures without
+recording success.
 ACA rules remain. The next `azd provision` recreates temporary bootstrap access.
-Provisioning interrupted before the hook runs can leave the rule; remove it explicitly.
+Provisioning interrupted before the hook runs can leave broad public access; remove
+the rule explicitly.
 RBAC propagation may still delay registry access.
 MySQL/managed identity needs separate server-identity/Graph
 configuration and live validation; it is explicitly rejected.

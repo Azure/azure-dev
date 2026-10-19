@@ -25,7 +25,6 @@ def prerequisite_environment(root):
         "AZURE_SUBSCRIPTION_ID": "example-subscription",
         "SPRING_DATABASE_ADMIN_OID": "00000000-0000-0000-0000-000000000001",
         "SPRING_DATABASE_ADMIN_NAME": "admin@example.invalid",
-        "SPRING_DATABASE_BOOTSTRAP_IP": "203.0.113.10",
         "SPRING_DATABASE_BOOTSTRAP_SQL": str(script),
     }
 
@@ -103,8 +102,6 @@ class BootstrapTests(unittest.TestCase):
                 bootstrap.prepare(settings, env)
                 with self.assertRaisesRegex(RuntimeError, "Remove SPRING_DATABASE_PASSWORD"):
                     bootstrap.prepare(settings, env | {"SPRING_DATABASE_PASSWORD": "unused"})
-                with self.assertRaisesRegex(RuntimeError, "must not be 0.0.0.0"):
-                    bootstrap.prepare(settings, env | {"SPRING_DATABASE_BOOTSTRAP_IP": "0.0.0.0"})
                 Path(env["SPRING_DATABASE_BOOTSTRAP_SQL"]).write_text("", encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "reviewed schema"):
                     bootstrap.prepare(settings, env)

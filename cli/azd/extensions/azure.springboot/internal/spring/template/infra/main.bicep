@@ -14,7 +14,6 @@ param databaseAuth string
 param databasePassword string = ''
 param administratorObjectId string = ''
 param administratorName string = ''
-param bootstrapIp string = ''
 param appImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 param environmentBindings bool
 param jdbcOptions string = ''
@@ -40,7 +39,6 @@ module database 'database.bicep' = if (databaseEngine != 'none') {
     password: databasePassword
     administratorObjectId: administratorObjectId
     administratorName: administratorName
-    bootstrapIp: bootstrapIp
   }
 }
 

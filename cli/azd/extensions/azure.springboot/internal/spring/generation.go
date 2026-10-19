@@ -91,7 +91,6 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"databasePassword":      "${SPRING_DATABASE_PASSWORD=}",
 		"administratorObjectId": "${SPRING_DATABASE_ADMIN_OID=}",
 		"administratorName":     "${SPRING_DATABASE_ADMIN_NAME=}",
-		"bootstrapIp":           "${SPRING_DATABASE_BOOTSTRAP_IP=}",
 		"appImage": "${SERVICE_" + strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_")) +
 			"_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}",
 	} {

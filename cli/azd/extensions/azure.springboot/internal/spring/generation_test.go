@@ -413,12 +413,14 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 			database := string(plan.Files["infra/database.bicep"])
 			require.Contains(t, database, "if (engine == 'postgresql' && managedIdentity)")
 			require.Contains(t, database, "name: 'bootstrap-local-ip'")
-			require.Contains(t, database, "startIpAddress: bootstrapIp")
-			require.Contains(t, database, "endIpAddress: bootstrapIp")
+			require.Contains(t, database, "startIpAddress: '0.0.0.0'")
+			require.Contains(t, database, "endIpAddress: '255.255.255.255'")
+			require.NotContains(t, main, "bootstrapIp")
+			require.NotContains(t, string(plan.Files["infra/main.parameters.json"]), "SPRING_DATABASE_BOOTSTRAP_IP")
+			require.NotContains(t, access, "startIpAddress: '0.0.0.0'")
+			require.NotContains(t, access, "255.255.255.255")
 			for name, content := range infrastructure {
 				require.NotContains(t, string(content), "development-public-access", name)
-				require.NotContains(t, string(content), "255.255.255.255", name)
-				require.NotContains(t, string(content), "startIpAddress: '0.0.0.0'", name)
 			}
 			config, err := project.Parse(t.Context(), string(plan.Files["azure.yaml"]))
 			require.NoError(t, err)

@@ -6,7 +6,6 @@ param authentication string
 param password string
 param administratorObjectId string
 param administratorName string
-param bootstrapIp string
 
 var token = uniqueString(resourceGroup().id)
 var managedIdentity = authentication == 'managedIdentity'
@@ -48,14 +47,15 @@ resource pgDatabase 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2024-08
   properties: { charset: 'UTF8', collation: 'en_US.utf8' }
 }
 
-// Temporary local access for PostgreSQL managed-identity bootstrap.
+// Temporary public access for PostgreSQL managed-identity bootstrap. The local HTTPS egress IP
+// may differ from the TCP 5432 egress IP, so the bootstrap cannot use an exact client allowlist.
 // The postprovision .azd-spring/database.py hook removes this rule on success or failure.
 resource pgFirewall 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2024-08-01' = if (engine == 'postgresql' && managedIdentity) {
   parent: postgres
   name: 'bootstrap-local-ip'
   properties: {
-    startIpAddress: bootstrapIp
-    endIpAddress: bootstrapIp
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '255.255.255.255'
   }
 }
 

@@ -13,7 +13,6 @@ not additional requirements imposed by managed-identity authentication.
 import argparse
 import hashlib
 import importlib.util
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -135,9 +134,6 @@ def prepare(settings, env):
         raise RuntimeError("Unsupported database/authentication combination")
     uuid.UUID(required(env, "SPRING_DATABASE_ADMIN_OID"))
     required(env, "SPRING_DATABASE_ADMIN_NAME")
-    address = ipaddress.IPv4Address(required(env, "SPRING_DATABASE_BOOTSTRAP_IP"))
-    if address.is_unspecified:
-        raise RuntimeError("Bootstrap firewall IP must not be 0.0.0.0")
     bootstrap_sql(env)
     for package in ("psycopg", "certifi"):
         if importlib.util.find_spec(package) is None:

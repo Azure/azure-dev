@@ -467,7 +467,7 @@ module serviceBusNamespace 'br/public:avm/res/service-bus/namespace:0.11.2' = {
 {{- range .Services}}
 
 module {{bicepName .Name}}Identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
-  name: '{{bicepName .Name}}identity'
+  name: '{{if isFunctionApp .Host}}{{functionAppName (bicepName .Name)}}{{else}}{{bicepName .Name}}{{end}}identity'
   params: {
     name: '${abbrs.managedIdentityUserAssignedIdentities}{{bicepName .Name}}-${resourceToken}'
     location: location

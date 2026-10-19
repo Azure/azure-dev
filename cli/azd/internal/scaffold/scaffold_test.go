@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -477,6 +479,47 @@ func TestExecInfra(t *testing.T) {
 				assert.Failf(t, "found bicep lint error", "lint: %s", lintErr)
 			}
 		})
+	}
+}
+
+func TestServiceIdentityDeploymentName(t *testing.T) {
+	tmpl, err := Load()
+	require.NoError(t, err)
+
+	identityDeployment := regexp.MustCompile(
+		`(?m)^module (\w+)Identity '[^']+' = \{\n  name: '([^']+)'`)
+	for _, host := range []HostKind{FunctionAppKind, AppServiceKind, ContainerAppKind} {
+		for _, length := range []int{3, 41, 56, 57, 63} {
+			t.Run(string(host)+"/"+strconv.Itoa(length), func(t *testing.T) {
+				name := strings.Repeat("a", length)
+				spec := InfraSpec{
+					StorageAccount: &StorageAccount{Implicit: true},
+					Services: []ServiceSpec{{
+						Name:            name,
+						Host:            host,
+						Runtime:         &RuntimeInfo{Type: "python", Version: "3.12"},
+						FunctionStorage: &FunctionStorage{},
+					}},
+				}
+				files, err := ExecInfraFs(tmpl, spec)
+				require.NoError(t, err)
+				source, err := fs.ReadFile(files, "resources.bicep")
+				require.NoError(t, err)
+
+				matches := identityDeployment.FindAllStringSubmatch(string(source), -1)
+				require.Len(t, matches, 1)
+				assert.Equal(t, BicepName(name), matches[0][1])
+				deploymentName := matches[0][2]
+				if host == FunctionAppKind {
+					assert.Equal(t, FunctionAppName(BicepName(name))+"identity", deploymentName)
+					assert.LessOrEqual(t, len(deploymentName), 64)
+				} else {
+					assert.Equal(t, BicepName(name)+"identity", deploymentName)
+				}
+				assert.Contains(t, string(source),
+					"name: '${abbrs.managedIdentityUserAssignedIdentities}"+BicepName(name)+"-${resourceToken}'")
+			})
+		}
 	}
 }
 

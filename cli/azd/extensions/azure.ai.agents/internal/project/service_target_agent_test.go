@@ -4503,7 +4503,17 @@ func TestEndpoints_PromptRepairsLegacyEndpointFromDeployedDefinition(t *testing.
 		want       string
 	}{
 		{
-			name: "harnessed endpoint is repaired",
+			name: "Microsoft Copilot endpoint is repaired",
+			definition: map[string]any{
+				"kind": "prompt",
+				"harness": map[string]any{
+					"type": agent_api.ManagedAgentHarnessMicrosoftCopilot,
+				},
+			},
+			want: projectEndpoint + "/agents/deployed-agent/endpoint/protocols/openai/responses?api-version=v1",
+		},
+		{
+			name: "legacy GitHub Copilot backend response is preserved",
 			definition: map[string]any{
 				"kind": "prompt",
 				"harness": map[string]any{
@@ -4555,6 +4565,13 @@ func TestEndpoints_PromptRepairsLegacyEndpointFromDeployedDefinition(t *testing.
 			require.NoError(t, err)
 			require.Equal(t, []string{test.want}, got)
 			require.EqualValues(t, 1, versionLookups.Load())
+			if test.name == "legacy GitHub Copilot backend response is preserved" {
+				definition, ok := test.definition.(map[string]any)
+				require.True(t, ok)
+				harness, ok := definition["harness"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "github_copilot_preview", harness["type"])
+			}
 		})
 	}
 }

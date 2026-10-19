@@ -17,7 +17,7 @@ const projectsExtensionContextPath = "extensions.ai-projects.context"
 
 // projectContextConfigPath is the legacy UserConfig path used by the removed
 // `azd ai agent project set` command. Read as a fallback only.
-const projectContextConfigPath = configPathPrefix + ".project.context"
+const projectContextConfigPath = "extensions.ai-agents.project.context"
 
 // projectContextState is the JSON shape stored at both
 // projectsExtensionContextPath and projectContextConfigPath.

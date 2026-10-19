@@ -160,7 +160,7 @@ func TestVoiceInvocationGuidanceDoesNotClassifyManagedPrompt(t *testing.T) {
 			"kind": "prompt", "name": "managed-prompt", "model": "my-deployment", "instructions": "Be helpful.",
 		}
 		if withHarness {
-			fields["harness"] = map[string]any{"type": "github_copilot"}
+			fields["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 		}
 		props, err := structpb.NewStruct(fields)
 		require.NoError(t, err)

@@ -20,10 +20,10 @@ func TestValidateInitKindHarness(t *testing.T) {
 		wantErr string
 	}{
 		{name: "prompt harness", kind: AgentKindChoicePrompt, rawKind: "prompt",
-			harness: agent_api.ManagedAgentHarnessGitHubCopilot},
+			harness: agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		{name: "hosted rejects harness", kind: AgentKindChoiceHosted, rawKind: "hosted",
-			harness: agent_api.ManagedAgentHarnessGitHubCopilot, wantErr: "only valid with --kind prompt"},
-		{name: "missing kind rejects harness", harness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			harness: agent_api.ManagedAgentHarnessMicrosoftCopilot, wantErr: "only valid with --kind prompt"},
+		{name: "missing kind rejects harness", harness: agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			wantErr: "only valid with --kind prompt"},
 		{name: "managed is not a kind", kind: agentKindChoice("managed"), rawKind: "managed",
 			wantErr: "unknown --kind"},

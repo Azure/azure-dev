@@ -336,6 +336,29 @@ func (brokenInvocationReader) Read([]byte) (int, error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
+type openAPIProbeParentContext struct {
+	context.Context
+	configRegistered atomic.Bool
+	configCanceled   atomic.Bool
+}
+
+func (c *openAPIProbeParentContext) Value(any) any {
+	// Use AfterFunc instead of the embedded context's cancellation tree.
+	return nil
+}
+
+func (c *openAPIProbeParentContext) AfterFunc(f func()) func() bool {
+	stop := context.AfterFunc(c.Context, f)
+	// The first child owns the configuration timeout.
+	if !c.configRegistered.CompareAndSwap(false, true) {
+		return stop
+	}
+	return func() bool {
+		c.configCanceled.Store(true)
+		return stop()
+	}
+}
+
 func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 	require.Equal(t, 10*time.Second, openAPIProbeTimeout)
 	for _, stage := range []string{
@@ -350,14 +373,13 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 				ctx, cancel = context.WithTimeout(t.Context(), time.Second)
 			}
 			defer cancel()
+			parent := &openAPIProbeParentContext{Context: ctx}
 			var configCalled atomic.Bool
-			var configDeadline atomic.Pointer[time.Time]
 			project := &openAPIProjectServer{
 				helpersProjectServer: helpersProjectServer{project: &azdext.ProjectConfig{Path: root}},
 				onGet: func(rpcCtx context.Context) error {
 					configCalled.Store(true)
 					deadline, ok := rpcCtx.Deadline()
-					configDeadline.Store(new(deadline))
 					assert.True(t, ok)
 					assert.LessOrEqual(t, time.Until(deadline), openAPIProbeTimeout)
 					if strings.HasPrefix(stage, "configuration") {
@@ -377,7 +399,9 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 				deadline, ok := request.Context().Deadline()
 				assert.True(t, ok)
 				if stage == "separate budgets" || stage == "HTTP" {
-					assert.True(t, deadline.After(*configDeadline.Load()))
+					// Releasing the config budget must not cancel HTTP.
+					assert.True(t, parent.configRegistered.Load())
+					assert.True(t, parent.configCanceled.Load())
 				}
 				assert.LessOrEqual(t, time.Until(deadline), openAPIProbeTimeout)
 				require.NoError(t, request.Context().Err())
@@ -394,7 +418,7 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 				cancel()
 			}
 			_, _, err := fetchOpenAPISpec(
-				ctx, client, transport, "https://example.com", "agent", "remote", "", "", "sid", nil, false,
+				parent, client, transport, "https://example.com", "agent", "remote", "", "", "sid", nil, false,
 			)
 			if stage == "separate budgets" {
 				require.NoError(t, err)

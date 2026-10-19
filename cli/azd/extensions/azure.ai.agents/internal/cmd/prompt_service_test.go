@@ -64,7 +64,7 @@ func TestPromptDefinitionForServiceInline(t *testing.T) {
 			"model":        "gpt-5.6-terra",
 			"instructions": "You are a helpful AI assistant.",
 			"harness": map[string]any{
-				"type": "github_copilot_preview",
+				"type": "microsoft_copilot_preview",
 			},
 		}),
 	}
@@ -75,7 +75,7 @@ func TestPromptDefinitionForServiceInline(t *testing.T) {
 	assert.Equal(t, "renamed-agent", def.Name)
 	assert.Equal(t, "gpt-5.6-terra", def.Model)
 	require.NotNil(t, def.Harness)
-	assert.Equal(t, "github_copilot_preview", def.Harness.Type)
+	assert.Equal(t, "microsoft_copilot_preview", def.Harness.Type)
 }
 
 // TestPromptDefinitionForServiceHosted guards the dispatch: a hosted agent must
@@ -99,7 +99,7 @@ func TestPromptDefinitionForServiceHosted(t *testing.T) {
 // definition does not implicitly classify a service.
 func TestPromptDefinitionForServiceRequiresExplicitKind(t *testing.T) {
 	serviceDir := t.TempDir()
-	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: github_copilot_preview\n"
+	agentYaml := "kind: prompt\nname: legacy-agent\nmodel: gpt-4o\nharness:\n  type: microsoft_copilot_preview\n"
 	require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "agent.yaml"), []byte(agentYaml), 0600))
 
 	svc := &azdext.ServiceConfig{
@@ -139,7 +139,7 @@ func TestPromptDefinitionForServiceReturnsInvalidDefinitionError(t *testing.T) {
 		Host: AiAgentHost,
 		AdditionalProperties: mustStruct(t, map[string]any{
 			"kind":    "prompt",
-			"harness": "github_copilot_preview",
+			"harness": "microsoft_copilot_preview",
 		}),
 	}
 

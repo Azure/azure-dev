@@ -245,8 +245,8 @@ func optimizeDeployAgentHeaders(def map[string]any, projectEndpoint string) map[
 	}
 
 	var features []string
-	if harnessTypeFromMap(def) == agent_api.ManagedAgentHarnessGitHubCopilot {
-		features = append(features, agent_api.GitHubCopilotPreviewFeature)
+	if agent_api.IsCopilotHarness(harnessTypeFromMap(def)) {
+		features = append(features, agent_api.MicrosoftCopilotPreviewFeature)
 	}
 	if skills, ok := def["skills"].([]any); ok && len(skills) > 0 {
 		features = append(features, agent_api.SkillsPreviewFeature)

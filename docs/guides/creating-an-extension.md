@@ -146,6 +146,24 @@ multiple handlers and workflow steps are resolved.
 
 ## Detailed Reference
 
+Commands that do not need the selected azd environment can emit
+`"launch": {"noAzdEnvironment": true}` on their command metadata. These launch
+settings are per-command, not inherited; they skip loading the selected azd
+environment, resolving its Key Vault references, and injecting its variables.
+Inherited parent-process environment variables and azd launch/protocol variables
+are still passed, and explicit Environment gRPC calls are unaffected. Omitting
+`launch` or setting `noAzdEnvironment` to `false` preserves the default behavior. Require
+azd 1.37.0 or later when relying on this behavior. See
+[command launch settings](../../cli/azd/docs/extensions/extension-sdk-reference.md#command-launch-settings).
+
+Use `Project().AddService` for complete service creation or replacement.
+For updates, prefer service-specific setters for the fields your extension
+owns, leaving unknown fields host-side. The host preserves unrelated raw YAML,
+including empty mappings, literal templates, and large integers. Explicitly
+send an empty section when `env: {}` is required. A sequence of RPCs is not
+transactional. See
+[service configuration persistence](../architecture/extension-framework.md#service-configuration-persistence).
+
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional
 [save-failure acknowledgment](../architecture/extension-framework.md#project-service-save-acknowledgment),

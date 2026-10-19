@@ -141,7 +141,7 @@ name: new-agent
 model: gpt-4.1-mini
 instructions: Help the user.
 harness:
-  type: github_copilot_preview
+  type: microsoft_copilot_preview
 toolbox:
   name: new-tools
 `)
@@ -151,7 +151,7 @@ toolbox:
 		"model":        "gpt-4.1-mini",
 		"instructions": "Old instructions.",
 		"harness": map[string]any{
-			"type": "github_copilot_preview",
+			"type": "microsoft_copilot_preview",
 		},
 		"toolbox": map[string]any{
 			"name": "old-tools",
@@ -256,10 +256,10 @@ func TestPlanAgentServiceUsesToolboxResourceNames(t *testing.T) {
 				content := "kind: " + kind + "\nname: agent\n"
 				properties := map[string]any{"kind": kind, "name": "agent"}
 				if kind == "prompt" {
-					content += "model: gpt-4.1-mini\ninstructions: Help.\nharness:\n  type: github_copilot_preview\n"
+					content += "model: gpt-4.1-mini\ninstructions: Help.\nharness:\n  type: microsoft_copilot_preview\n"
 					properties["model"] = "gpt-4.1-mini"
 					properties["instructions"] = "Help."
-					properties["harness"] = map[string]any{"type": "github_copilot_preview"}
+					properties["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 				} else {
 					content += "codeConfiguration:\n  runtime: python_3_13\n  entryPoint: app.py\n"
 					properties["codeConfiguration"] = map[string]any{
@@ -472,7 +472,7 @@ codeConfiguration:
 		},
 		{
 			name:       "singular Toolbox preserves resource name in diagnostics",
-			definition: promptDefinition("harness:\n  type: github_copilot_preview\ntoolbox:\n  name: Missing Tools\n"),
+			definition: promptDefinition("harness:\n  type: microsoft_copilot_preview\ntoolbox:\n  name: Missing Tools\n"),
 			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
 			wantError:  `toolbox reference "Missing Tools" does not match`,
 		},

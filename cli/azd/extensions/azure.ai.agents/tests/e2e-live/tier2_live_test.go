@@ -79,7 +79,11 @@ func TestTier2Live(t *testing.T) {
 	for _, mode := range deployModesFromEnv() {
 		t.Run(mode, func(t *testing.T) {
 			r := newRunner(t, mode)
-			ctx, cancel := context.WithTimeout(t.Context(), runTimeout)
+			budget := runTimeout
+			if envTrue("E2E_MEMORY_SNAPSHOT") {
+				budget = 90 * time.Minute
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), budget)
 			defer cancel()
 			r.run(ctx)
 		})
@@ -226,6 +230,16 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("init: %v", err)
 		return
 	}
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		if envTrue("E2E_SKIP_DEPLOY") {
+			r.t.Error("snapshot validation requires deployment; unset E2E_SKIP_DEPLOY")
+			return
+		}
+		if err := r.prepareSnapshotSample(ctx); err != nil {
+			r.t.Errorf("snapshot sample configuration: %v", err)
+			return
+		}
+	}
 	if err := r.phaseProvision(ctx); err != nil {
 		r.t.Errorf("provision: %v", err)
 		return
@@ -240,6 +254,12 @@ func (r *runner) run(ctx context.Context) {
 		if err := r.phaseInvoke(ctx); err != nil {
 			r.t.Errorf("invoke: %v", err)
 			return
+		}
+		if envTrue("E2E_MEMORY_SNAPSHOT") {
+			if err := r.phaseInvoke(ctx); err != nil {
+				r.t.Errorf("snapshot second new-session invoke: %v", err)
+				return
+			}
 		}
 	}
 	if err := r.phaseDown(ctx); err != nil {
@@ -284,6 +304,10 @@ func (r *runner) phaseInit(ctx context.Context) error {
 	// when a manifest is provided, so it must be chosen via newInitCommand's
 	// --deploy-mode flag (init.go). r.mode is exactly "container" or "code".
 	args := []string{"ai", "agent", "init", "--agent-name", r.agentName, "--deploy-mode", r.mode}
+	if templateURL := os.Getenv("E2E_TEMPLATE_URL"); templateURL != "" {
+		args = append(args, "--template", templateURL)
+		r.t.Log("using explicit E2E_TEMPLATE_URL sample instead of the recommended picker entry")
+	}
 	//nolint:gosec // azd is a trusted fixed binary; args are test-controlled.
 	cmd := exec.CommandContext(ictx, "azd", args...)
 	cmd.Dir = r.testDir
@@ -611,9 +635,62 @@ func (r *runner) phaseProvision(ctx context.Context) error {
 
 // phaseDeploy runs `azd deploy`.
 func (r *runner) phaseDeploy(ctx context.Context) error {
-	_, code := r.runAzd(ctx, r.projectDir, deployTimeout, "deploy", "--no-prompt")
+	budget := deployTimeout
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		budget = 50 * time.Minute
+	}
+	_, code := r.runAzd(ctx, r.projectDir, budget, "deploy", "--no-prompt")
 	if code != 0 {
 		return fmt.Errorf("azd deploy failed (exit %d)", code)
+	}
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		out, showCode := r.runQuiet(ctx, r.projectDir, monitorTimeout,
+			"azd", "ai", "agent", "show", r.findServiceName(), "--output", "json")
+		if showCode != 0 {
+			return fmt.Errorf("could not inspect snapshot agent version (exit %d)", showCode)
+		}
+		if err := validateSnapshotAgentVersion([]byte(out)); err != nil {
+			return err
+		}
+		r.t.Log("service confirmed an active hosted agent version with enable_memory_snapshot=true")
+	}
+	return nil
+}
+
+func (r *runner) prepareSnapshotSample(ctx context.Context) error {
+	r.projectDir = r.findProjectDir()
+	if r.projectDir == "" {
+		return errors.New("no project directory with azure.yaml found")
+	}
+	manifestPath := filepath.Join(r.projectDir, "azure.yaml")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+	manifest, err = enableSampleMemorySnapshot(manifest)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
+		return err
+	}
+	const inspectDependencies = `import json, pathlib, sys, tomllib
+root = pathlib.Path(sys.argv[1])
+names = {"agent-framework-foundry-hosting", "azure-ai-agentserver-core", "azure-ai-agentserver-responses"}
+for path in root.rglob("uv.lock"):
+    lock = tomllib.loads(path.read_text())
+    for package in lock.get("package", []):
+        if package["name"] in names:
+            print(json.dumps({"lockfile": str(path.relative_to(root)), "package": package["name"], "version": package["version"]}))
+`
+	out, code := r.runQuiet(ctx, r.projectDir, monitorTimeout, "python3", "-c", inspectDependencies, r.projectDir)
+	if code != 0 {
+		return errors.New("inspect sample lockfiles failed; snapshot CI requires Python 3.11 or later")
+	}
+	if strings.TrimSpace(out) == "" {
+		r.t.Log("sample has no locked AgentServer SDK versions; runtime compatibility must be verified by deployment")
+	} else {
+		r.t.Logf("unmodified sample SDK lockfile versions:\n%s", out)
 	}
 	return nil
 }

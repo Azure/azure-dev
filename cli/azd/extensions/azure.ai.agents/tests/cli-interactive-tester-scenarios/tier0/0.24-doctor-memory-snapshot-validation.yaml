@@ -1,0 +1,31 @@
+# Tier 0 (offline) - reject a non-boolean snapshot opt-in without remote checks.
+name: "doctor-memory-snapshot-validation"
+command: "azd ai agent doctor --local-only"
+cwd: "~/working/azd-agents-doctor-snapshot-{instance}"
+tags: ["tier:0", "cmd:doctor", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-doctor-snapshot-{instance}"
+    cwd: "~/working"
+    name: "reset isolated working dir"
+  - run: "mkdir -p ~/working/azd-agents-doctor-snapshot-{instance} && printf 'name: doctor-snapshot\nservices:\n  snapshot-agent:\n    host: azure.ai.agent\n    project: .\n    kind: hosted\n    name: snapshot-agent\n    enableMemorySnapshot: \"true\"\n' > ~/working/azd-agents-doctor-snapshot-{instance}/azure.yaml"
+    cwd: "~/working"
+    name: "seed invalid snapshot configuration"
+  - run: "azd env new doctor-snapshot-{instance} --no-prompt"
+    cwd: "~/working/azd-agents-doctor-snapshot-{instance}"
+    name: "select isolated local environment"
+  - run: "azd env set FOUNDRY_PROJECT_ENDPOINT https://snapshot.example.com/api/projects/placeholder"
+    cwd: "~/working/azd-agents-doctor-snapshot-{instance}"
+    name: "set syntactically valid placeholder project endpoint"
+
+goals:
+  - "Wait for doctor --local-only to report the invalid configuration without prompting."
+  - "Confirm local.agent-yaml-valid fails with an explanation that enableMemorySnapshot must be a boolean, not a string."
+  - "Confirm remediation tells the user to correct the agent definition in azure.yaml."
+  - "Confirm no remote checks run and no Azure resources are created."
+  - "Confirm the command exits with code 1 instead of accepting or silently dropping the invalid setting."
+  - "Take a screenshot of the report."
+  - "Report a finding if the string-valued setting is accepted, the property name is missing from the error, or the command attempts remote validation."

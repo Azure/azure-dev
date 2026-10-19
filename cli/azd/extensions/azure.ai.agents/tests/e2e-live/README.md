@@ -76,6 +76,31 @@ builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 - **Manual:** queue the pipeline and pick `deployModes` = `both` / `code` /
   `container`.
 
+### Memory snapshot sample validation
+
+Queue the same pipeline on the implementation PR's commit with
+`memorySnapshot=true`, `templateURL` set to the chosen sample's `azure.yaml`,
+and `location` plus `serviceConnection` pointing at a private-preview-enabled
+region and subscription. Start with `deployModes=code` for one bounded sample
+run; use `both` to validate both deployment paths. The default remains off,
+including scheduled and ordinary PR-comment runs.
+
+The driver enables `enableMemorySnapshot: true` only in its isolated sample
+copy. It logs the selected SDK versions from any `uv.lock` files without changing
+dependencies. A successful run requires the deployed version to be `active` with
+`definition.enable_memory_snapshot=true`, followed by two successful invocations
+using new sessions. Python 3.11 or later is required on the CI agent to inspect
+TOML lock files. Samples without those lock files rely on the actual deployment
+and invocation result for compatibility evidence.
+
+The current recommended Python sample locks older AgentServer packages. Do not
+silently upgrade it during an as-is compatibility run: missing-hook failures
+are useful results. Validate an explicitly updated sample separately. Record
+the sample revision, dependency versions, extension commit, region, and result.
+A subscription/region validation failure does not establish SDK compatibility.
+These checks cover snapshot-enabled deployment and new-session invocations,
+not idle replacement, filesystem durability, or a measured cold-start speedup.
+
 Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
 
 ### One-time admin setup
@@ -126,6 +151,8 @@ safe to include in a normal `go test ./...`.
 | -------------------------- | ------------------------------ | ----------------------------------------------------------- |
 | `AZURE_AI_AGENTS_E2E_LIVE` | —                              | **Required** `=1` gate; unset → the test is skipped         |
 | `E2E_DEPLOY_MODES`         | `both`                         | `both` / `code` / `container`                               |
+| `E2E_TEMPLATE_URL`         | -                              | Explicit sample `azure.yaml` URL instead of the recommended picker entry |
+| `E2E_MEMORY_SNAPSHOT`      | `false`                        | Enable snapshot opt-in and deployed-version checks in the isolated sample; requires private-preview access |
 | `E2E_SKIP_DEPLOY`          | —                              | `true` → run only init → provision → down (fast down/#8839 check) |
 | `E2E_CREATE_PROJECT`       | `false`                        | `true` → always create a fresh Foundry project              |
 | `E2E_PROJECT`              | —                              | Name of an existing Foundry project to select instead       |

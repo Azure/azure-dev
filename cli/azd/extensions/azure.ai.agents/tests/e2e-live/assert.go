@@ -7,8 +7,13 @@
 package e2elive
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
 	"regexp"
 	"unicode"
+
+	"gopkg.in/yaml.v3"
 )
 
 // spelledFourRe matches the spelled-out word "four" as a standalone word
@@ -96,4 +101,55 @@ func hasStandaloneFour(text string) bool {
 // \w class (Unicode letters, digits, and underscore).
 func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func enableSampleMemorySnapshot(manifest []byte) ([]byte, error) {
+	var config map[string]any
+	if err := yaml.Unmarshal(manifest, &config); err != nil {
+		return nil, fmt.Errorf("parse sample manifest: %w", err)
+	}
+	services, ok := config["services"].(map[string]any)
+	if !ok {
+		return nil, errors.New("sample manifest must contain services")
+	}
+	var agentService map[string]any
+	for _, value := range services {
+		service, ok := value.(map[string]any)
+		if !ok || service["host"] != "azure.ai.agent" {
+			continue
+		}
+		if agentService != nil {
+			return nil, errors.New("snapshot sample validation requires exactly one agent service")
+		}
+		if kind, exists := service["kind"]; exists && kind != "hosted" {
+			return nil, errors.New("snapshot sample validation requires a hosted agent")
+		}
+		agentService = service
+	}
+	if agentService == nil {
+		return nil, errors.New("sample manifest has no azure.ai.agent service")
+	}
+	agentService["enableMemorySnapshot"] = true
+	return yaml.Marshal(config)
+}
+
+func validateSnapshotAgentVersion(data []byte) error {
+	var version struct {
+		Status     string `json:"status"`
+		Definition struct {
+			Kind                 string `json:"kind"`
+			EnableMemorySnapshot *bool  `json:"enable_memory_snapshot"`
+		} `json:"definition"`
+	}
+	if err := json.Unmarshal(data, &version); err != nil {
+		return fmt.Errorf("parse deployed agent version: %w", err)
+	}
+	if version.Status != "active" {
+		return fmt.Errorf("snapshot agent version is not active: %q", version.Status)
+	}
+	if version.Definition.Kind != "hosted" || version.Definition.EnableMemorySnapshot == nil ||
+		!(*version.Definition.EnableMemorySnapshot) {
+		return errors.New("service did not confirm definition.enable_memory_snapshot=true for the deployed hosted agent")
+	}
+	return nil
 }

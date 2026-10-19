@@ -952,6 +952,41 @@ func TestHostedAgentSchemaMemorySnapshot(t *testing.T) {
 	}
 }
 
+func TestMemorySnapshotValidationScenario(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(extensionRoot(t), "tests", "cli-interactive-tester-scenarios", "tier0",
+		"0.24-doctor-memory-snapshot-validation.yaml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var scenario struct {
+		Name    string   `yaml:"name"`
+		Command string   `yaml:"command"`
+		Cwd     string   `yaml:"cwd"`
+		Tags    []string `yaml:"tags"`
+		Goals   []string `yaml:"goals"`
+		Pre     []struct {
+			Run  string `yaml:"run"`
+			Cwd  string `yaml:"cwd"`
+			Name string `yaml:"name"`
+		} `yaml:"pre"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &scenario))
+	require.Equal(t, "doctor-memory-snapshot-validation", scenario.Name)
+	require.Equal(t, "azd ai agent doctor --local-only", scenario.Command)
+	require.Contains(t, scenario.Cwd, "-{instance}")
+	require.ElementsMatch(t, []string{"tier:0", "cmd:doctor", "negative-path", "parallel-safe"}, scenario.Tags)
+	require.NotEmpty(t, scenario.Goals)
+	for _, goal := range scenario.Goals {
+		require.NotEmpty(t, goal)
+	}
+	require.Len(t, scenario.Pre, 4)
+	for _, hook := range scenario.Pre {
+		require.NotEmpty(t, hook.Run)
+		require.NotEmpty(t, hook.Cwd)
+		require.NotEmpty(t, hook.Name)
+	}
+}
+
 func TestDocSchemaRegistryConnectionID(t *testing.T) {
 	t.Parallel()
 

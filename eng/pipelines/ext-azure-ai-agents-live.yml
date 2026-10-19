@@ -63,6 +63,18 @@ parameters:
     displayName: "Azure service connection (TME subscription)"
     type: string
     default: azure-sdk-tests
+  - name: templateURL
+    displayName: "Sample azure.yaml URL (empty uses the recommended sample)"
+    type: string
+    default: ""
+  - name: location
+    displayName: "Azure region (snapshot runs require preview enablement)"
+    type: string
+    default: eastus2
+  - name: memorySnapshot
+    displayName: "Validate the sample with memory snapshots (private preview)"
+    type: boolean
+    default: false
 
 extends:
   template: /eng/pipelines/templates/stages/1es-redirect.yml
@@ -84,7 +96,10 @@ extends:
             # is sized for the worst case so an ungraceful job timeout never
             # preempts the in-test teardown: 2x the per-mode 60 min runTimeout
             # (tier2_live_test.go) + per-run cleanup + build/setup steps.
-            timeoutInMinutes: 150
+            ${{ if eq(parameters.memorySnapshot, true) }}:
+              timeoutInMinutes: 210
+            ${{ else }}:
+              timeoutInMinutes: 150
             # The 1ES pipeline template (via 1es-redirect.yml) forbids the raw
             # PublishPipelineArtifact@1 task; artifacts must be declared as
             # job-level outputs using `output: pipelineArtifact`. `condition`
@@ -286,7 +301,10 @@ extends:
                 # (below) self-caps at 125 min — under this 130 min step budget —
                 # so the test process exits before ADO force-kills the step, and
                 # the per-mode 60 min runTimeout drives the graceful azd teardown.
-                timeoutInMinutes: 130
+                ${{ if eq(parameters.memorySnapshot, true) }}:
+                  timeoutInMinutes: 190
+                ${{ else }}:
+                  timeoutInMinutes: 130
                 inputs:
                   azureSubscription: ${{ parameters.serviceConnection }}
                   keepAzSessionActive: true
@@ -313,14 +331,23 @@ extends:
                     # test cache (a live test must always re-run); -timeout self-
                     # caps the process under this step's budget so the per-mode
                     # teardown (t.Cleanup) runs before ADO force-kills the step.
-                    go test -run TestTier2Live -count=1 -timeout 125m -v ./tests/e2e-live/ 2>&1 \
+                    test_timeout=125m
+                    if [ "$E2E_MEMORY_SNAPSHOT" = "true" ]; then
+                      test_timeout=185m
+                    fi
+                    go test -run TestTier2Live -count=1 -timeout "$test_timeout" -v ./tests/e2e-live/ 2>&1 \
                       | tee "$(Build.ArtifactStagingDirectory)/logs/tier2.log"
                 env:
                   # Gate + mode selection consumed by tier2_live_test.go.
                   AZURE_AI_AGENTS_E2E_LIVE: "1"
                   E2E_DEPLOY_MODES: ${{ parameters.deployModes }}
                   E2E_CREATE_PROJECT: "true"
-                  E2E_LOCATION: eastus2
+                  E2E_LOCATION: ${{ parameters.location }}
+                  E2E_TEMPLATE_URL: ${{ parameters.templateURL }}
+                  ${{ if eq(parameters.memorySnapshot, true) }}:
+                    E2E_MEMORY_SNAPSHOT: "true"
+                  ${{ else }}:
+                    E2E_MEMORY_SNAPSHOT: "false"
                   E2E_USE_AZ_CLI_AUTH: "true"
                   AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_DIR: $(Pipeline.Workspace)/azure-ai-agents-template-cache
                   AZURE_AI_AGENTS_E2E_TEMPLATE_CACHE_WARNINGS_FILE: $(Agent.TempDirectory)/azure-ai-agents-cache-warnings-$(System.JobAttempt).log

@@ -282,6 +282,10 @@ code, **all** telemetry docs, and the coverage test in the same change — other
 public reference, and downstream Kusto/LENS consumers drift out of sync. Verify every claim against
 **actual code behavior**, not comments.
 
+When adding or reviewing extension telemetry, read the
+[attribute naming rules](docs/extensions/extension-telemetry.md#name-attributes-for-their-scope)
+before choosing or approving field names.
+
 **1. Code**
 
 - **Field** — define an **exported, package-level** `AttributeKey` var in

@@ -321,6 +321,8 @@ If there are no {domain}-specific concerns, contribute no findings.
 
 When applying the Observability Expert lens to telemetry field changes:
 
+- For new or renamed extension fields, apply the
+  [attribute naming rules](../../../cli/azd/docs/extensions/extension-telemetry.md#name-attributes-for-their-scope).
 - Verify every new or modified exported, package-level `fields.AttributeKey` sets non-empty
   `Classification` and `Purpose` metadata.
 - Compare each runtime key string with existing `AttributeKey` declarations. A telemetry key must be

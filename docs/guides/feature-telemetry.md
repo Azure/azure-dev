@@ -177,6 +177,9 @@ func (s *myService) ProcessItems(ctx context.Context, items []Item) error {
 
 ### For Extension Commands
 
+Before adding extension usage attributes, follow the
+[extension attribute naming rules](../../cli/azd/docs/extensions/extension-telemetry.md#name-attributes-for-their-scope).
+
 Extension commands automatically get `ext.run` events. To add structured error reporting:
 
 ```go

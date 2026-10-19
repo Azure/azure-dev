@@ -147,12 +147,22 @@ var DeployMode = fields.AttributeKey{
 }
 ```
 
-Declarations form a shared first-party field schema and are not exclusive to
-the extension that introduced them. Another first-party extension may reuse an
-existing key when its meaning, allowed values, classification, and purpose are
-identical. If any of those differ, declare a distinct key. Prefer feature-scoped
-key suffixes (for example, `agent.invoke.protocol`) over generic ones like
-`protocol`, since a different extension may use the latter for unrelated values.
+### Name attributes for their scope
+
+Declarations share one first-party schema keyed by the final `ext.*` name.
+Core prepends only `ext.`; `extension.id` and `extension.event` do not namespace
+declarations.
+
+Name new fields for their feature. For example, use
+`agent.init.step.duration_ms`, not `duration_ms`, for an agent Init step.
+Reuse an existing key only when its meaning, allowed values, classification,
+and purpose are identical; otherwise declare a distinct, scoped key.
+
+Existing generic keys such as `ext.source` and `ext.operation` are legacy
+exceptions, not precedent for new fields. Preserve them for compatibility;
+renaming them requires a separate downstream migration.
+
+### Validate declarations and usage
 
 The extension still sends the suffix:
 
@@ -197,7 +207,8 @@ go test ./extensions/telemetry
 The test scans production Go source under `extensions/`, verifies every final
 `ext.*` key has one valid declaration, and fails with the extension, file, and
 line for an undeclared key. It analyzes repository source only and does not run
-extensions. The extension CI workflow runs the same test.
+extensions. The extension CI workflow runs the same test. Naming scope and
+semantic compatibility still require review; this check does not enforce them.
 
 The inventory is not a runtime allowlist. Metadata changes do not require a new
 `azd` release, while released extensions continue to use the existing

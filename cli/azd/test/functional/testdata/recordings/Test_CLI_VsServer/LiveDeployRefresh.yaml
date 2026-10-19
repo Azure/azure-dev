@@ -1557,7 +1557,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.1.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 363085a3d15012fa7b889189fef36c0b
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/apiservice?api-version=2025-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/apiservice?api-version=2026-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -2042,7 +2042,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.1.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 363085a3d15012fa7b889189fef36c0b
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/webfrontend?api-version=2025-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/webfrontend?api-version=2026-07-01
         method: GET
       response:
         proto: HTTP/2.0
@@ -2527,7 +2527,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.1.0 (go1.26.1; linux),azdev/0.0.0-dev.0 (Go go1.26.1; linux/amd64)
             X-Ms-Correlation-Request-Id:
                 - 363085a3d15012fa7b889189fef36c0b
-        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/worker?api-version=2025-01-01
+        url: https://management.azure.com:443/subscriptions/4d042dc6-fe17-4698-a23f-ec6a8d1e98f4/resourceGroups/rg-azdtest-l1161bc/providers/Microsoft.App/containerApps/worker?api-version=2026-07-01
         method: GET
       response:
         proto: HTTP/2.0

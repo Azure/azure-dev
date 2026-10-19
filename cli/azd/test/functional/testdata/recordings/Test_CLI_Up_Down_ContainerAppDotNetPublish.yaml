@@ -10972,7 +10972,7 @@ interactions:
                 - azsdk-go-armappcontainers/v3.1.0 (go1.26.1; darwin),azdev/0.0.0-dev.0 (Go go1.26.1; darwin/arm64)
             X-Ms-Correlation-Request-Id:
                 - 50f9e0feaf23b730184b19c457b819ec
-        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-d995307/providers/Microsoft.App/containerApps/web?api-version=2025-01-01
+        url: https://management.azure.com:443/subscriptions/5ca082f3-38f2-4bb0-b0a4-c401184ae3a8/resourceGroups/rg-azdtest-d995307/providers/Microsoft.App/containerApps/web?api-version=2026-07-01
         method: GET
       response:
         proto: HTTP/2.0

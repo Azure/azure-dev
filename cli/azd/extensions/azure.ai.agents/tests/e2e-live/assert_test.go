@@ -106,6 +106,21 @@ func TestAgentResponseRegion(t *testing.T) {
 	}
 }
 
+func TestSnapshotDependencyCommands(t *testing.T) {
+	commands := snapshotDependencyCommands()
+	require.Len(t, commands, 2)
+	require.Equal(t, "add", commands[0][0])
+	require.Contains(t, commands[0], "agent-framework-foundry-hosting==1.0.0b260821")
+	require.Contains(t, commands[0], "azure-ai-agentserver-core==2.3.0b1")
+	require.Contains(t, commands[0], "azure-ai-agentserver-responses==2.4.0b1")
+	require.Equal(t, "export", commands[1][0])
+	require.Contains(t, commands[1], "--locked")
+	for _, command := range commands {
+		require.NotContains(t, command, "--prerelease")
+		require.NotContains(t, command, "--frozen")
+	}
+}
+
 func TestSnapshotBuildDockerfile(t *testing.T) {
 	input := "FROM python:3.13-slim\nRUN uv sync --frozen --no-dev --no-install-project\nCMD [\"python\", \"main.py\"]\n"
 	data, err := snapshotBuildDockerfile([]byte(input))

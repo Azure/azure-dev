@@ -109,6 +109,15 @@ func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
+func snapshotDependencyCommands() [][]string {
+	return [][]string{
+		{"add", "--no-sync", "agent-framework-foundry-hosting==1.0.0b260821",
+			"azure-ai-agentserver-core==2.3.0b1", "azure-ai-agentserver-responses==2.4.0b1"},
+		{"export", "--locked", "--no-dev", "--no-emit-project", "--format", "requirements-txt",
+			"--output-file", "requirements.txt"},
+	}
+}
+
 func snapshotBuildDockerfile(data []byte) ([]byte, error) {
 	const install = "RUN uv sync --frozen --no-dev --no-install-project"
 	const index = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"

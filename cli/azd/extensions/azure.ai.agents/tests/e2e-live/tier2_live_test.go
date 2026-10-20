@@ -768,12 +768,7 @@ func (r *runner) prepareSnapshotBuild(ctx context.Context) (string, error) {
 		return "", err
 	}
 	sourceDir := filepath.Join(r.projectDir, project)
-	for _, args := range [][]string{
-		{"add", "--no-sync", "--prerelease", "allow", "agent-framework-foundry-hosting==1.0.0b260821",
-			"azure-ai-agentserver-core==2.3.0b1", "azure-ai-agentserver-responses==2.4.0b1"},
-		{"export", "--locked", "--no-dev", "--no-emit-project", "--format", "requirements-txt",
-			"--output-file", "requirements.txt"},
-	} {
+	for _, args := range snapshotDependencyCommands() {
 		if out, code := r.runQuiet(ctx, sourceDir, 10*time.Minute, "uv", args...); code != 0 {
 			return "", fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
 		}

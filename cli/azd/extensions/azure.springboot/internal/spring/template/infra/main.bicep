@@ -24,11 +24,18 @@ param embeddedDriver string = ''
 param foundryEnabled bool = false
 @allowed(['apiKey', 'managedIdentity'])
 param foundryAuthentication string = 'apiKey'
-param foundryDeploymentName string = ''
-param foundryModelName string = 'gpt-5.6-sol'
-param foundryModelVersion string = '2026-07-09'
-param foundryModelSku string = 'GlobalStandard'
-param foundryModelCapacity int = 1
+param foundryChatEnabled bool = false
+param foundryChatDeploymentName string = ''
+param foundryChatModelName string = 'gpt-5.6-sol'
+param foundryChatModelVersion string = '2026-07-09'
+param foundryChatModelSku string = 'GlobalStandard'
+param foundryChatModelCapacity int = 1
+param foundryEmbeddingEnabled bool = false
+param foundryEmbeddingDeploymentName string = ''
+param foundryEmbeddingModelName string = 'text-embedding-3-small'
+param foundryEmbeddingModelVersion string = '1'
+param foundryEmbeddingModelSku string = 'GlobalStandard'
+param foundryEmbeddingModelCapacity int = 1
 
 resource group 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${environmentName}'
@@ -71,11 +78,18 @@ module foundry 'foundry.bicep' = if (foundryEnabled) {
   scope: group
   params: {
     location: location
-    deploymentName: foundryDeploymentName
-    modelName: foundryModelName
-    modelVersion: foundryModelVersion
-    modelSku: foundryModelSku
-    modelCapacity: foundryModelCapacity
+    chatEnabled: foundryChatEnabled
+    chatDeploymentName: foundryChatDeploymentName
+    chatModelName: foundryChatModelName
+    chatModelVersion: foundryChatModelVersion
+    chatModelSku: foundryChatModelSku
+    chatModelCapacity: foundryChatModelCapacity
+    embeddingEnabled: foundryEmbeddingEnabled
+    embeddingDeploymentName: foundryEmbeddingDeploymentName
+    embeddingModelName: foundryEmbeddingModelName
+    embeddingModelVersion: foundryEmbeddingModelVersion
+    embeddingModelSku: foundryEmbeddingModelSku
+    embeddingModelCapacity: foundryEmbeddingModelCapacity
     outboundIps: bootstrap.outputs.outboundIps
     authentication: foundryAuthentication
     applicationPrincipalId: bootstrap.outputs.principalId
@@ -120,7 +134,10 @@ module application 'application.bicep' = {
     foundryEnabled: foundryEnabled
     foundryAuthentication: foundryAuthentication
     foundryAccountName: foundryEnabled ? foundry!.outputs.accountName : ''
-    foundryDeploymentName: foundryDeploymentName
+    foundryChatEnabled: foundryChatEnabled
+    foundryChatDeploymentName: foundryChatDeploymentName
+    foundryEmbeddingEnabled: foundryEmbeddingEnabled
+    foundryEmbeddingDeploymentName: foundryEmbeddingDeploymentName
   }
   dependsOn: [access]
 }
@@ -135,4 +152,5 @@ output SPRING_DATABASE_HOST string = databaseEngine != 'none' ? database!.output
 output SPRING_DATABASE_NAME string = databaseName
 output SPRING_DATABASE_SERVER_NAME string = databaseEngine != 'none' ? database!.outputs.serverName : ''
 output SPRING_FOUNDRY_ACCOUNT_NAME string = foundryEnabled ? foundry!.outputs.accountName : ''
-output SPRING_FOUNDRY_DEPLOYMENT_NAME string = foundryDeploymentName
+output SPRING_FOUNDRY_CHAT_DEPLOYMENT_NAME string = foundryChatDeploymentName
+output SPRING_FOUNDRY_EMBEDDING_DEPLOYMENT_NAME string = foundryEmbeddingDeploymentName

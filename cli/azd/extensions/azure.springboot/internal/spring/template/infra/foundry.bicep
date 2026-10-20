@@ -1,9 +1,16 @@
 param location string
-param deploymentName string
-param modelName string
-param modelVersion string
-param modelSku string
-param modelCapacity int
+param chatEnabled bool
+param chatDeploymentName string
+param chatModelName string
+param chatModelVersion string
+param chatModelSku string
+param chatModelCapacity int
+param embeddingEnabled bool
+param embeddingDeploymentName string
+param embeddingModelName string
+param embeddingModelVersion string
+param embeddingModelSku string
+param embeddingModelCapacity int
 param outboundIps array
 @allowed(['apiKey', 'managedIdentity'])
 param authentication string
@@ -34,18 +41,35 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
-resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = {
+resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (chatEnabled) {
   parent: account
-  name: deploymentName
+  name: chatDeploymentName
   sku: {
-    name: modelSku
-    capacity: modelCapacity
+    name: chatModelSku
+    capacity: chatModelCapacity
   }
   properties: {
     model: {
       format: 'OpenAI'
-      name: modelName
-      version: modelVersion
+      name: chatModelName
+      version: chatModelVersion
+    }
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
+  }
+}
+
+resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (embeddingEnabled) {
+  parent: account
+  name: embeddingDeploymentName
+  sku: {
+    name: embeddingModelSku
+    capacity: embeddingModelCapacity
+  }
+  properties: {
+    model: {
+      format: 'OpenAI'
+      name: embeddingModelName
+      version: embeddingModelVersion
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }

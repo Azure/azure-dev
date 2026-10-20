@@ -22,7 +22,10 @@ param foundryEnabled bool = false
 @allowed(['apiKey', 'managedIdentity'])
 param foundryAuthentication string = 'apiKey'
 param foundryAccountName string = ''
-param foundryDeploymentName string = ''
+param foundryChatEnabled bool = false
+param foundryChatDeploymentName string = ''
+param foundryEmbeddingEnabled bool = false
+param foundryEmbeddingDeploymentName string = ''
 
 var prefix = engine == 'mysql' ? 'MYSQL' : 'POSTGRES'
 var usesPassword = engine != 'none' && authentication == 'password'
@@ -71,21 +74,47 @@ resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if
 var foundryEndpoint = foundryEnabled ? 'https://${foundryAccountName}.openai.azure.com/' : ''
 var foundryApiKey = foundryUsesApiKey ? foundry!.listKeys().key1 : ''
 var foundrySecret = foundryUsesApiKey ? [{ name: 'foundry-api-key', value: foundryApiKey }] : []
+var foundrySpringModelEnvironment = concat(
+  foundryChatEnabled
+    ? [
+        {
+          name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME'
+          value: foundryChatDeploymentName
+        }
+      ]
+    : [],
+  foundryEmbeddingEnabled
+    ? [
+        {
+          name: 'SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME'
+          value: foundryEmbeddingDeploymentName
+        }
+      ]
+    : []
+)
+var foundryGeneratedModelEnvironment = concat(
+  foundryChatEnabled
+    ? [{ name: 'AZURE_OPENAI_CHAT_DEPLOYMENT_NAME', value: foundryChatDeploymentName }]
+    : [],
+  foundryEmbeddingEnabled
+    ? [{ name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME', value: foundryEmbeddingDeploymentName }]
+    : []
+)
 var foundryEnvironment = foundryEnabled
   ? environmentBindings
       ? concat(
           [
             { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
             { name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }
-            { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME', value: foundryDeploymentName }
           ],
+          foundrySpringModelEnvironment,
           foundryUsesApiKey ? [{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }] : []
         )
       : concat(
           [
             { name: 'AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
-            { name: 'AZURE_OPENAI_DEPLOYMENT_NAME', value: foundryDeploymentName }
           ],
+          foundryGeneratedModelEnvironment,
           foundryUsesApiKey ? [{ name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
         )
   : []

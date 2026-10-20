@@ -46,6 +46,7 @@ type Binding struct {
 	JDBCOptions    string
 	Driver         string
 	Embedded       *EmbeddedBinding
+	Foundry        *FoundryRequirement
 	Evidence       []Evidence
 }
 
@@ -254,12 +255,12 @@ func AnalyzeProject(
 	}
 	if foundry != nil {
 		result.Resources = append(result.Resources, Resource{
-			ID: "foundry:primary", Kind: Foundry, Name: foundry.DeploymentName, Disposition: Provisioned,
+			ID: "foundry:primary", Kind: Foundry, Name: "azure-openai", Disposition: Provisioned,
 		})
 		result.Bindings = append(result.Bindings, Binding{
 			ID: "app/foundry:primary", ApplicationID: "app", ResourceID: "foundry:primary",
 			PropertyPrefix: "spring.ai.azure.openai", Authentication: foundry.Authentication,
-			Evidence: deploymentEvidence(foundry.Evidence),
+			Foundry: foundry, Evidence: deploymentEvidence(foundry.Evidence),
 		})
 	}
 	return result, nil
@@ -333,16 +334,17 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 			if binding.ID != application.ID+"/foundry:primary" || binding.ResourceID != "foundry:primary" ||
 				resource.Kind != Foundry || resource.Disposition != Provisioned ||
 				binding.Authentication != "apiKey" && binding.Authentication != "managedIdentity" ||
-				binding.Embedded != nil ||
-				!modelDeploymentName.MatchString(resource.Name) {
+				binding.Embedded != nil || binding.Foundry == nil ||
+				binding.Foundry.Authentication != binding.Authentication ||
+				!validFoundryDeploymentNames(binding.Foundry) {
 				return nil, errors.New("the Foundry binding is invalid")
 			}
 			if application.Foundry != nil {
 				return nil, errors.New("multiple Foundry bindings are not supported")
 			}
-			application.Foundry = &FoundryRequirement{
-				DeploymentName: resource.Name, Authentication: binding.Authentication, Evidence: binding.Evidence,
-			}
+			foundry := *binding.Foundry
+			foundry.Evidence = binding.Evidence
+			application.Foundry = &foundry
 		default:
 			return nil, errors.New("the binding property namespace is not supported")
 		}
@@ -351,4 +353,20 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 		return nil, errors.New("the deployment graph contains an unbound resource")
 	}
 	return &application, nil
+}
+
+func validFoundryDeploymentNames(foundry *FoundryRequirement) bool {
+	if foundry.ChatDeploymentName == "" && foundry.EmbeddingDeploymentName == "" {
+		return false
+	}
+	if foundry.ChatDeploymentName != "" && !modelDeploymentName.MatchString(foundry.ChatDeploymentName) {
+		return false
+	}
+	if foundry.EmbeddingDeploymentName != "" &&
+		!modelDeploymentName.MatchString(foundry.EmbeddingDeploymentName) {
+		return false
+	}
+	return foundry.ChatDeploymentName == "" ||
+		foundry.EmbeddingDeploymentName == "" ||
+		foundry.ChatDeploymentName != foundry.EmbeddingDeploymentName
 }

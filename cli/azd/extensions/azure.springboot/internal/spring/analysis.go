@@ -48,9 +48,10 @@ type Requirement struct {
 
 // FoundryRequirement describes an Azure OpenAI-compatible model deployment.
 type FoundryRequirement struct {
-	DeploymentName string
-	Authentication string
-	Evidence       []Evidence
+	ChatDeploymentName      string
+	EmbeddingDeploymentName string
+	Authentication          string
+	Evidence                []Evidence
 }
 
 // Application is the resolved, credential-free input to deployment planning.
@@ -78,8 +79,10 @@ var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 var modelDeploymentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
 
 const (
-	defaultFoundryModelName    = "gpt-5.6-sol"
-	defaultFoundryModelVersion = "2026-07-09"
+	defaultFoundryChatModelName         = "gpt-5.6-sol"
+	defaultFoundryChatModelVersion      = "2026-07-09"
+	defaultFoundryEmbeddingModelName    = "text-embedding-3-small"
+	defaultFoundryEmbeddingModelVersion = "1"
 )
 
 var customDatasource = regexp.MustCompile(
@@ -249,18 +252,36 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 
 func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 	const (
-		chatModelProperty   = "spring.ai.model.chat"
-		endpointProperty    = "spring.ai.azure.openai.endpoint"
-		apiKeyProperty      = "spring.ai.azure.openai.api-key"
-		publicKeyProperty   = "spring.ai.azure.openai.openai-api-key"
-		deploymentProperty  = "spring.ai.azure.openai.chat.options.deployment-name"
-		azureOpenAIProvider = "azure-openai"
+		chatModelProperty           = "spring.ai.model.chat"
+		embeddingModelProperty      = "spring.ai.model.embedding"
+		endpointProperty            = "spring.ai.azure.openai.endpoint"
+		apiKeyProperty              = "spring.ai.azure.openai.api-key"
+		publicKeyProperty           = "spring.ai.azure.openai.openai-api-key"
+		chatDeploymentProperty      = "spring.ai.azure.openai.chat.options.deployment-name"
+		embeddingDeploymentProperty = "spring.ai.azure.openai.embedding.options.deployment-name"
+		azureOpenAIProvider         = "azure-openai"
 	)
-	properties := []string{endpointProperty, apiKeyProperty, deploymentProperty}
+	properties := []string{
+		endpointProperty,
+		apiKeyProperty,
+		chatDeploymentProperty,
+		embeddingDeploymentProperty,
+	}
 	active := slices.ContainsFunc(properties, func(key string) bool {
 		value, present := c.raw(key)
 		return present && strings.TrimSpace(value.text) != ""
 	})
+	chatModel, chatModelPresent, err := resolvedProvider(c, chatModelProperty)
+	if err != nil {
+		return nil, err
+	}
+	embeddingModel, embeddingModelPresent, err := resolvedProvider(c, embeddingModelProperty)
+	if err != nil {
+		return nil, err
+	}
+	active = active ||
+		chatModelPresent && strings.EqualFold(chatModel, azureOpenAIProvider) ||
+		embeddingModelPresent && strings.EqualFold(embeddingModel, azureOpenAIProvider)
 	if !active {
 		return nil, nil
 	}
@@ -268,16 +289,27 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 		return nil, unsupportedConfiguration(
 			"Azure OpenAI configuration requires org.springframework.ai:spring-ai-starter-model-azure-openai")
 	}
-	if _, present := c.raw(chatModelProperty); present {
-		chatModel, err := c.resolve(chatModelProperty)
-		if err != nil {
-			return nil, err
-		}
-		if !strings.EqualFold(strings.TrimSpace(chatModel), azureOpenAIProvider) {
-			return nil, unsupportedConfiguration(
-				"%s must be absent or %s; other chat providers and non-chat Azure OpenAI usage are not yet supported",
-				chatModelProperty, azureOpenAIProvider)
-		}
+	chatConfigured := configuredProperty(c, chatDeploymentProperty)
+	embeddingConfigured := configuredProperty(c, embeddingDeploymentProperty)
+	if chatConfigured && chatModelPresent && !strings.EqualFold(chatModel, azureOpenAIProvider) {
+		return nil, unsupportedConfiguration(
+			"%s cannot configure Azure OpenAI while %s selects %s",
+			chatDeploymentProperty, chatModelProperty, chatModel)
+	}
+	if embeddingConfigured && embeddingModelPresent && !strings.EqualFold(embeddingModel, azureOpenAIProvider) {
+		return nil, unsupportedConfiguration(
+			"%s cannot configure Azure OpenAI while %s selects %s",
+			embeddingDeploymentProperty, embeddingModelProperty, embeddingModel)
+	}
+	chatEnabled := chatConfigured || chatModelPresent && strings.EqualFold(chatModel, azureOpenAIProvider)
+	embeddingEnabled := embeddingConfigured ||
+		embeddingModelPresent && strings.EqualFold(embeddingModel, azureOpenAIProvider)
+	if !chatEnabled && !embeddingEnabled && !chatModelPresent {
+		// Preserve chat as the legacy default when only shared Azure OpenAI properties are configured.
+		chatEnabled = true
+	}
+	if !chatEnabled && !embeddingEnabled {
+		return nil, nil
 	}
 	if _, present := c.raw(publicKeyProperty); present {
 		value, err := c.resolve(publicKeyProperty)
@@ -307,8 +339,65 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 			}
 		}
 	}
-	deploymentName := defaultFoundryModelName
-	if deployment, present := c.raw(deploymentProperty); present {
+	chatDeploymentName, err := foundryDeploymentName(c, chatDeploymentProperty, defaultFoundryChatModelName, chatEnabled)
+	if err != nil {
+		return nil, err
+	}
+	embeddingDeploymentName, err := foundryDeploymentName(
+		c, embeddingDeploymentProperty, defaultFoundryEmbeddingModelName, embeddingEnabled)
+	if err != nil {
+		return nil, err
+	}
+	if chatDeploymentName != "" && chatDeploymentName == embeddingDeploymentName {
+		return nil, invalidConfiguration(
+			"%s and %s must use different deployment names",
+			chatDeploymentProperty, embeddingDeploymentProperty)
+	}
+	authentication := "managedIdentity"
+	if apiKey, present := c.raw(apiKeyProperty); present && strings.TrimSpace(apiKey.text) != "" {
+		authentication = "apiKey"
+	}
+	var evidence []Evidence
+	for _, key := range append(properties, chatModelProperty, embeddingModelProperty) {
+		if value, present := c.raw(key); present {
+			item := Evidence{Property: value.key, Source: value.source}
+			if !slices.Contains(evidence, item) {
+				evidence = append(evidence, item)
+			}
+		}
+	}
+	return &FoundryRequirement{
+		ChatDeploymentName:      chatDeploymentName,
+		EmbeddingDeploymentName: embeddingDeploymentName,
+		Authentication:          authentication,
+		Evidence:                evidence,
+	}, nil
+}
+
+func resolvedProvider(c *configuration, property string) (string, bool, error) {
+	if _, present := c.raw(property); !present {
+		return "", false, nil
+	}
+	value, err := c.resolve(property)
+	if err != nil {
+		return "", true, err
+	}
+	return strings.TrimSpace(value), true, nil
+}
+
+func configuredProperty(c *configuration, property string) bool {
+	value, present := c.raw(property)
+	return present && strings.TrimSpace(value.text) != ""
+}
+
+func foundryDeploymentName(
+	c *configuration, property string, defaultName string, enabled bool,
+) (string, error) {
+	if !enabled {
+		return "", nil
+	}
+	deploymentName := defaultName
+	if deployment, present := c.raw(property); present {
 		value := strings.TrimSpace(deployment.text)
 		if _, fallback, placeholderOnly := runtimePlaceholder(value); placeholderOnly {
 			if strings.TrimSpace(fallback) != "" {
@@ -319,26 +408,11 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 		}
 	}
 	if !modelDeploymentName.MatchString(deploymentName) {
-		return nil, invalidConfiguration(
+		return "", invalidConfiguration(
 			"%s must contain 2-64 letters, numbers, periods, underscores, or hyphens",
-			deploymentProperty)
+			property)
 	}
-	authentication := "managedIdentity"
-	if apiKey, present := c.raw(apiKeyProperty); present && strings.TrimSpace(apiKey.text) != "" {
-		authentication = "apiKey"
-	}
-	var evidence []Evidence
-	for _, key := range properties {
-		if value, present := c.raw(key); present {
-			item := Evidence{Property: value.key, Source: value.source}
-			if !slices.Contains(evidence, item) {
-				evidence = append(evidence, item)
-			}
-		}
-	}
-	return &FoundryRequirement{
-		DeploymentName: deploymentName, Authentication: authentication, Evidence: evidence,
-	}, nil
+	return deploymentName, nil
 }
 
 func validateResourceLayout(m *model, projectDirectory string) error {

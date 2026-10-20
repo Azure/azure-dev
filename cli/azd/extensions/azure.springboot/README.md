@@ -1,7 +1,7 @@
 # Spring Boot (Beta)
 
 Beta extension for `azd spring init`. It infers a Spring Boot application's
-active database and supported Spring AI Azure OpenAI chat binding, then generates
+active database and supported Spring AI Azure OpenAI chat or embedding binding, then generates
 an azd project without requiring an existing `azure.yaml`.
 It is not yet published to the extension registry.
 
@@ -56,8 +56,10 @@ Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
-The Spring AI Azure OpenAI starter plus active standard endpoint, API-key, or
-deployment-name configuration establishes a Foundry chat binding.
+The Spring AI Azure OpenAI starter plus active standard endpoint, API-key, and
+modality configuration establishes a Foundry binding. Chat remains the legacy
+default when only shared Azure OpenAI properties are configured. Embeddings require
+an explicit Azure OpenAI embedding selector or deployment-name property.
 An active non-empty API-key property selects API-key authentication. If the
 property is absent or empty, Spring AI uses `DefaultAzureCredential`, and the
 extension selects managed identity.
@@ -83,14 +85,15 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 | MySQL JDBC URL | Azure Database for MySQL server and the inferred database |
 | PostgreSQL JDBC URL | Azure Database for PostgreSQL server and the inferred database |
 
-A Foundry chat binding provisions one `AIServices` account and one account-level
-OpenAI model deployment. It does not require a Foundry project, Search, Storage,
-or an embedding deployment. The default model is `gpt-5.6-sol` version
-`2026-07-09` with a `GlobalStandard` deployment. Azure upgrades it when the
-current version expires.
+A Foundry binding provisions one `AIServices` account and an account-level model
+deployment for each detected modality. It does not require a Foundry project,
+Search, or Storage. Chat defaults to `gpt-5.6-sol` version `2026-07-09`.
+Embeddings default to `text-embedding-3-small` version `1`. Both use
+`GlobalStandard`, and Azure upgrades them when the current version expires.
 
-Foundry chat detection requires `spring.ai.model.chat` to be absent or
-`azure-openai`. Other chat providers and non-chat Azure OpenAI usage are rejected.
+Foundry modality detection honors `spring.ai.model.chat` and
+`spring.ai.model.embedding`. An explicitly configured Azure OpenAI deployment is
+rejected when its corresponding selector chooses another provider.
 `spring.ai.azure.openai.openai-api-key` must resolve empty because a non-empty
 value selects public OpenAI instead of the provisioned Azure account. Generated
 runtime bindings keep this property empty.
@@ -109,7 +112,7 @@ File-based embedded databases require a persistence policy and are not adopted.
 - `azure.yaml`, with one explicitly authored service and database hooks only when needed.
 - `infra/`, copied from one extension-owned, parameterized Bicep template for
   embedded, MySQL/password, PostgreSQL/password, PostgreSQL/managed identity,
-  and optional Foundry chat resources.
+  and optional Foundry chat or embedding resources.
 - `.azd-spring/`, containing database hooks when needed and, without an
   application-owned Dockerfile, generated container assets and Spring overrides.
 

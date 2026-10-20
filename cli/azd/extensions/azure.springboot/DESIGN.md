@@ -115,10 +115,11 @@ flowchart TD
 The implementation supports one single-module Maven Spring Boot HTTP application
 with executable JAR packaging and Java 17+, using supported in-memory storage or
 at most one external MySQL/PostgreSQL datasource, plus one Spring AI Azure OpenAI
-chat binding. External databases support password authentication; PostgreSQL also
-supports managed identity. Foundry supports API-key or managed-identity authentication
-and one pinned model configuration. Multiple applications, multiple bindings of either
-kind, shared-resource deployment, MySQL managed identity, model selection,
+binding containing chat, embeddings, or both. External databases support password
+authentication; PostgreSQL also supports managed identity. Foundry supports API-key
+or managed-identity authentication and one pinned deployment per detected modality.
+Multiple applications, multiple Foundry accounts, shared-resource deployment,
+MySQL managed identity, model selection,
 Gradle, and non-web/HTTPS-only hosting remain unsupported. These limits do not
 restrict the intended model above.
 
@@ -154,18 +155,19 @@ as the database administrator; the deployed application uses its non-admin manag
 identity. This example shows lifecycle dependencies, not every parallel operation
 within `azd up`; other database modes omit or replace the bootstrap steps.
 
-## Appendix: Foundry chat binding
+## Appendix: Foundry model bindings
 
-The first Foundry scenario targets a single Spring AI Azure OpenAI chat binding.
+Foundry support targets Spring AI Azure OpenAI chat and embedding bindings.
 The acceptance application and reviewed generated output live in the independent
 `azure-dev-spring-extension-tests` repository.
 
 - Detect `spring-ai-starter-model-azure-openai` and the standard endpoint,
-  API-key, and deployment-name properties. Model Foundry separately from datasource
-  bindings so an application may use both.
-- Require `spring.ai.model.chat` to be absent or `azure-openai`. Reject other
-  chat providers and non-chat Azure OpenAI usage instead of provisioning an
-  unused chat deployment.
+  API-key, selectors, and modality deployment-name properties. Model Foundry
+  separately from datasource bindings so an application may use both.
+- Preserve chat as the legacy default when only shared Azure OpenAI properties
+  are configured. Require explicit selector or deployment-name evidence for
+  embeddings. Reject modality properties that cannot take effect because their
+  selector chooses another provider.
 - Reject a non-empty or unresolved `spring.ai.azure.openai.openai-api-key`;
   Spring AI gives it precedence and connects to public OpenAI. Pin the
   deployment-owned value empty so Azure API-key injection cannot activate it.
@@ -174,11 +176,12 @@ The acceptance application and reviewed generated output live in the independent
   `DefaultAzureCredential` with the Container App managed identity.
 - Provision a `Microsoft.CognitiveServices/accounts` resource with kind
   `AIServices`, `allowProjectManagement` enabled, and one account-level
-  `accounts/deployments` model deployment. A Foundry project is not required for
-  direct Azure OpenAI-compatible inference.
-- Parameterize the model name, version, SKU, and deployment name. The default
-  is `gpt-5.6-sol` version `2026-07-09`; Azure upgrades it when the current
-  version expires.
+  `accounts/deployments` resource per detected modality. A Foundry project is
+  not required for direct Azure OpenAI-compatible inference.
+- Parameterize each deployment's model name, version, SKU, and deployment name.
+  Chat defaults to `gpt-5.6-sol` version `2026-07-09`; embeddings default to
+  `text-embedding-3-small` version `1`. Azure upgrades each deployment when its
+  current version expires.
 - Enable local authentication for the key-based Spring AI application. Obtain the
   key only within Bicep and inject it directly as a Container Apps secret; do not
   persist it in azd environment values, generated files, outputs, logs, or errors.
@@ -206,5 +209,5 @@ flowchart TD
     Hosting --> IPs[Read Container App outbound IPs]
     IPs --> Foundry[Create network-restricted Foundry account and model deployment]
     Foundry --> Deploy[Deploy application with key secret or managed identity]
-    Deploy --> Verify[Call the chat endpoint and require a nonempty response]
+    Deploy --> Verify[Call the configured model endpoint and validate its response]
 ```

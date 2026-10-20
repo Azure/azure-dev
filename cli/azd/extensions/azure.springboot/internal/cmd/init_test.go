@@ -252,8 +252,8 @@ func TestInitFoundryDescription(t *testing.T) {
 			command.SetArgs([]string{"init", "--yes", "--no-prompt"})
 			require.NoError(t, command.ExecuteContext(t.Context()))
 			require.Contains(t, output.String(),
-				"Foundry: AIServices account and gpt-5.6-sol model deployment ("+
-					tt.authentication+" authentication).")
+				"Foundry: AIServices account ("+tt.authentication+" authentication).")
+			require.Contains(t, output.String(), "Foundry chat deployment: gpt-5.6-sol.")
 			require.Contains(t, output.String(),
 				"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
 			require.NotContains(t, output.String(), "AZURE_OPENAI_API_KEY")

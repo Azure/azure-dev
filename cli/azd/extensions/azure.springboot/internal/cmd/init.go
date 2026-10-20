@@ -137,9 +137,15 @@ Existing deployment files are not overwritten.`,
 				if application.Foundry.Authentication == "managedIdentity" {
 					authentication = "managed identity"
 				}
-				fmt.Fprintf(cmd.OutOrStdout(),
-					"Foundry: AIServices account and %s model deployment (%s authentication).\n",
-					application.Foundry.DeploymentName, authentication)
+				fmt.Fprintf(cmd.OutOrStdout(), "Foundry: AIServices account (%s authentication).\n", authentication)
+				if application.Foundry.ChatDeploymentName != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "Foundry chat deployment: %s.\n",
+						application.Foundry.ChatDeploymentName)
+				}
+				if application.Foundry.EmbeddingDeploymentName != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "Foundry embedding deployment: %s.\n",
+						application.Foundry.EmbeddingDeploymentName)
+				}
 				fmt.Fprintln(cmd.OutOrStdout(),
 					"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
 			}

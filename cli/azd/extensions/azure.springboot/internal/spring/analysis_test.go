@@ -119,7 +119,8 @@ func TestAnalyzeFoundryBinding(t *testing.T) {
 			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
 			require.NoError(t, err)
 			require.NotNil(t, application.Foundry)
-			require.Equal(t, tt.wantDeployment, application.Foundry.DeploymentName)
+			require.Equal(t, tt.wantDeployment, application.Foundry.ChatDeploymentName)
+			require.Empty(t, application.Foundry.EmbeddingDeploymentName)
 			require.Equal(t, "apiKey", application.Foundry.Authentication)
 			require.Len(t, application.Foundry.Evidence, 3)
 			require.Empty(t, application.Requirements)
@@ -140,9 +141,58 @@ func TestAnalyzeFoundryManagedIdentityBinding(t *testing.T) {
 	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
 	require.NoError(t, err)
 	require.NotNil(t, application.Foundry)
-	require.Equal(t, "gpt-5.6-sol", application.Foundry.DeploymentName)
+	require.Equal(t, "gpt-5.6-sol", application.Foundry.ChatDeploymentName)
 	require.Equal(t, "managedIdentity", application.Foundry.Authentication)
 	require.Len(t, application.Foundry.Evidence, 2)
+}
+
+func TestAnalyzeFoundryEmbeddingBinding(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		deployment     string
+		wantDeployment string
+	}{
+		{"default deployment", "${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME}", "text-embedding-3-small"},
+		{"deployment fallback", "${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME:embeddings}", "embeddings"},
+		{"literal deployment", "embeddings", "embeddings"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.ai.model.embedding=azure-openai\n"+
+					"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n"+
+					"spring.ai.azure.openai.embedding.options.deployment-name="+tt.deployment+"\n")
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+			require.NoError(t, err)
+			require.NotNil(t, application.Foundry)
+			require.Empty(t, application.Foundry.ChatDeploymentName)
+			require.Equal(t, tt.wantDeployment, application.Foundry.EmbeddingDeploymentName)
+			require.Equal(t, "apiKey", application.Foundry.Authentication)
+		})
+	}
+}
+
+func TestAnalyzeFoundryChatAndEmbeddingBinding(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=chat\n"+
+			"spring.ai.azure.openai.embedding.options.deployment-name=embeddings\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.NoError(t, err)
+	require.NotNil(t, application.Foundry)
+	require.Equal(t, "chat", application.Foundry.ChatDeploymentName)
+	require.Equal(t, "embeddings", application.Foundry.EmbeddingDeploymentName)
+	require.Equal(t, "managedIdentity", application.Foundry.Authentication)
 }
 
 func TestAnalyzeFoundryHonorsChatModelSelector(t *testing.T) {
@@ -158,7 +208,8 @@ func TestAnalyzeFoundryHonorsChatModelSelector(t *testing.T) {
 				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
 
 			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
-			require.ErrorContains(t, err, "spring.ai.model.chat must be absent or azure-openai")
+			require.ErrorContains(t, err,
+				"spring.ai.azure.openai.chat.options.deployment-name cannot configure Azure OpenAI")
 			require.Nil(t, application)
 		})
 	}
@@ -177,6 +228,21 @@ func TestAnalyzeFoundryAcceptsAzureChatModelSelector(t *testing.T) {
 	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
 	require.NoError(t, err)
 	require.NotNil(t, application.Foundry)
+}
+
+func TestAnalyzeFoundryRejectsConflictingEmbeddingModelSelector(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.model.embedding=none\n"+
+			"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.embedding.options.deployment-name=embeddings\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.ErrorContains(t, err, "spring.ai.azure.openai.embedding.options.deployment-name cannot configure")
+	require.Nil(t, application)
 }
 
 func TestAnalyzeFoundryRejectsPublicOpenAIKey(t *testing.T) {

@@ -61,7 +61,9 @@ func shellQuoteCdPath(path string) string {
 // when the path needs quoting. All init flows share these commands.
 func CdSuggestions(folder string) []Suggestion {
 	posixPath := shellQuoteCdPath(folder)
-	if posixPath == folder {
+	driveQualified := len(folder) >= 2 && folder[1] == ':' &&
+		((folder[0] >= 'A' && folder[0] <= 'Z') || (folder[0] >= 'a' && folder[0] <= 'z'))
+	if posixPath == folder && !driveQualified && !strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b") {
 		return []Suggestion{{
 			Command:     "cd " + folder,
 			Description: "enter your new project folder",
@@ -75,7 +77,13 @@ func CdSuggestions(folder string) []Suggestion {
 		},
 		{
 			Command: "Set-Location -LiteralPath '" +
-				strings.ReplaceAll(folder, "'", "''") + "'",
+				strings.NewReplacer(
+					"'", "''",
+					"\u2018", "\u2018\u2018",
+					"\u2019", "\u2019\u2019",
+					"\u201a", "\u201a\u201a",
+					"\u201b", "\u201b\u201b",
+				).Replace(folder) + "'",
 			Description: "PowerShell: enter your project folder (choose one)",
 		},
 	}

@@ -601,6 +601,8 @@ For paths requiring shell-specific quoting, the block labels alternatives for
 POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
 shell, then continue with the remaining steps. If cmd.exe cannot safely express
 the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+Drive-qualified paths also show these alternatives so cmd.exe switches drives.
+PowerShell alternatives preserve both straight and smart apostrophes literally.
 
 ## Migrating Legacy Agent Configuration
 

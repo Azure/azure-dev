@@ -321,7 +321,10 @@ func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
 
 func TestCdSuggestionsShellAlternatives(t *testing.T) {
 	t.Parallel()
-	for _, folder := range []string{"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "@agent", "my,agent"} {
+	for _, folder := range []string{
+		"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "@agent", "my,agent",
+		"D:/agents/demo", "d:/agents/demo", "D:agents/demo",
+	} {
 		t.Run(folder, func(t *testing.T) {
 			t.Parallel()
 			out := ResolveAfterInit(&State{CreatedFolderDisplay: folder}, nil)
@@ -336,6 +339,22 @@ func TestCdSuggestionsShellAlternatives(t *testing.T) {
 				assert.Less(t, out[i].Priority, out[3].Priority)
 			}
 		})
+	}
+}
+
+func TestCdSuggestionsPowerShellSmartQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u2018", "\u2019", "\u201a", "\u201b"} {
+		for _, suffix := range []string{"s Agent", "sAgent"} {
+			folder := "Bob" + quote + suffix
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "Set-Location -LiteralPath 'Bob"+quote+quote+suffix+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+			})
+		}
 	}
 }
 

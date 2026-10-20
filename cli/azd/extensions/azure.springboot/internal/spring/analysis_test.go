@@ -223,6 +223,41 @@ func TestAnalyzeFoundryRejectsPublicOpenAIKey(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAndGeneratePinsPublicOpenAIKeyEmpty(t *testing.T) {
+	for _, existingDockerfile := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing Dockerfile %t", existingDockerfile), func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n"+
+					"spring.ai.azure.openai.openai-api-key=${AZURE_OPENAI_API_KEY:}\n"+
+					"spring.ai.azure.openai.chat.options.deployment-name=chat\n")
+			if existingDockerfile {
+				writeFixture(t, directory, "Dockerfile", "FROM eclipse-temurin:21-jre\n")
+			}
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+			require.NoError(t, err)
+			plan, err := Generate(t.Context(), application)
+			require.NoError(t, err)
+
+			if existingDockerfile {
+				require.NotContains(t, plan.Files, ".azd-spring/application-azd.properties")
+				template := string(plan.Files["infra/application.bicep"])
+				require.Contains(t, template, "{ name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }")
+				require.Contains(t, template,
+					"{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }")
+				return
+			}
+			binding := string(plan.Files[".azd-spring/application-azd.properties"])
+			require.Contains(t, binding, "spring.ai.azure.openai.openai-api-key=\n")
+		})
+	}
+}
+
 func TestAnalyzeFoundryRejectsLiteralEndpoint(t *testing.T) {
 	const endpoint = "https://example.openai.azure.com/"
 	directory := t.TempDir()

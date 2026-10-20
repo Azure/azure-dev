@@ -92,7 +92,8 @@ current version expires.
 Foundry chat detection requires `spring.ai.model.chat` to be absent or
 `azure-openai`. Other chat providers and non-chat Azure OpenAI usage are rejected.
 `spring.ai.azure.openai.openai-api-key` must resolve empty because a non-empty
-value selects public OpenAI instead of the provisioned Azure account.
+value selects public OpenAI instead of the provisioned Azure account. Generated
+runtime bindings keep this property empty.
 
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
 The current deployment supports HTTP web applications. Explicit non-web mode and

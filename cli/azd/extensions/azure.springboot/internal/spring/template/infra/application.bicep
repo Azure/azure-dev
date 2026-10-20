@@ -76,9 +76,10 @@ var foundryEnvironment = foundryEnabled
       ? concat(
           [
             { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
-            { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENT_NAME', value: foundryDeploymentName }
+            { name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }
+            { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME', value: foundryDeploymentName }
           ],
-          foundryUsesApiKey ? [{ name: 'SPRING_AI_AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
+          foundryUsesApiKey ? [{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }] : []
         )
       : concat(
           [

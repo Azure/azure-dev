@@ -220,12 +220,16 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	require.Contains(t, applicationTemplate, "foundry!.listKeys().key1")
 	require.Contains(t, applicationTemplate, "secretRef: 'foundry-api-key'")
 	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_ENDPOINT")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_APIKEY")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME")
 	require.Contains(t, applicationTemplate, "AZURE_OPENAI_ENDPOINT")
 	require.NotContains(t, string(plan.Files["infra/main.parameters.json"]), "foundry-api-key")
 	require.NotContains(t, string(plan.Files["infra/application.parameters.json"]), "AZURE_OPENAI_API_KEY")
 	binding := string(plan.Files[".azd-spring/application-azd.properties"])
 	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
 	require.Contains(t, binding, "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}")
+	require.Contains(t, binding, "spring.ai.azure.openai.openai-api-key=\n")
 	require.Contains(t, binding,
 		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}")
 }
@@ -260,8 +264,35 @@ func TestGenerateFoundryManagedIdentityInfrastructure(t *testing.T) {
 	binding := string(plan.Files[".azd-spring/application-azd.properties"])
 	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
 	require.NotContains(t, binding, "spring.ai.azure.openai.api-key")
+	require.Contains(t, binding, "spring.ai.azure.openai.openai-api-key=\n")
 	require.Contains(t, binding,
 		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}")
+}
+
+func TestGenerateFoundryUsesSpringEnvironmentNamesWithExistingDockerfile(t *testing.T) {
+	application := &Application{
+		Name: "foundry-chat", JavaVersion: 21, Port: 8080, Dockerfile: "Dockerfile",
+		Foundry: &FoundryRequirement{
+			DeploymentName: "chat", Authentication: "apiKey",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	require.NotContains(t, plan.Files, ".azd-spring/application-azd.properties")
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/application.parameters.json"], &parameters))
+	require.Equal(t, true, parameters.Parameters["environmentBindings"].Value)
+
+	template := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, template, "{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }")
+	require.Contains(t, template, "{ name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }")
+	require.Contains(t, template,
+		"{ name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME', value: foundryDeploymentName }")
 }
 
 func TestGenerateRejectsInvalidExternalDrivers(t *testing.T) {

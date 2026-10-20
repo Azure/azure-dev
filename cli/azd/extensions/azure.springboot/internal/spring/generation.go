@@ -204,6 +204,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		if application.Foundry.Authentication == "apiKey" {
 			binding.WriteString("spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
 		}
+		binding.WriteString("spring.ai.azure.openai.openai-api-key=\n")
 		binding.WriteString(
 			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n")
 	}

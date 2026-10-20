@@ -167,7 +167,8 @@ The acceptance application and reviewed generated output live in the independent
   chat providers and non-chat Azure OpenAI usage instead of provisioning an
   unused chat deployment.
 - Reject a non-empty or unresolved `spring.ai.azure.openai.openai-api-key`;
-  Spring AI gives it precedence and connects to public OpenAI.
+  Spring AI gives it precedence and connects to public OpenAI. Pin the
+  deployment-owned value empty so Azure API-key injection cannot activate it.
 - Select API-key authentication when the active API-key property is non-empty.
   When it is absent or empty, follow Spring AI 1.0.0 semantics and use
   `DefaultAzureCredential` with the Container App managed identity.

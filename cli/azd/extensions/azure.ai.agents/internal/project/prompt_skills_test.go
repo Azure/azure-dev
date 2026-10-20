@@ -978,6 +978,163 @@ func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *
 		require.ErrorContains(t, err, `MCP tool "research-tools" declares server_url`)
 		require.Len(t, managed.Tools, 1)
 	})
+
+	t.Run("rejects cross-project toolbox URL with same toolbox name", func(t *testing.T) {
+		t.Parallel()
+		managed := &agent_yaml.PromptAgent{
+			Tools: []any{
+				map[string]any{
+					"type":         "mcp",
+					"server_label": "research-tools",
+					"server_url": "https://other.services.ai.azure.com/api/projects/other/" +
+						"toolboxes/research-tools/versions/1/mcp?api-version=v1",
+				},
+			},
+		}
+		err := reconcileMcpTool(managed, "research-tools", urlV1, "research-tools-mcp")
+		require.ErrorContains(t, err, `MCP tool "research-tools" declares server_url`)
+		require.Len(t, managed.Tools, 1)
+	})
+}
+
+func TestFoundryToolboxBuilder_RejectsNonFoundryEndpointHost(t *testing.T) {
+	t.Parallel()
+
+	armCalled := false
+	builder := &foundryToolboxBuilder{
+		subscriptionID: "sub-1",
+		resourceGroup:  "rg-1",
+		accountName:    "acct",
+		projectName:    "proj",
+		explicitConns:  map[string]struct{}{},
+		pipeline: runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				armCalled = true
+				return nil, errors.New("unexpected ARM request")
+			}),
+		}),
+	}
+
+	for _, badURL := range []string{
+		"https://untrusted.example/api/projects/proj/toolboxes/tools/versions/1/mcp?api-version=v1",
+		"https://untrusted.example/toolboxes/tools/versions/1/mcp",
+		"http://acct.services.ai.azure.com/api/projects/proj/toolboxes/tools/versions/1/mcp?api-version=v1",
+		"https://acct.services.ai.azure.com/toolboxes/tools/versions/1/mcp?api-version=v1",
+	} {
+		_, err := builder.ResolveToolbox(t.Context(), toolboxRef{
+			Name:        "tools",
+			MCPEndpoint: badURL,
+		})
+		require.Error(t, err, badURL)
+		require.False(t, armCalled, "must not contact ARM for non-Foundry endpoint %q", badURL)
+	}
+}
+
+func TestToolboxNode_TwoServicesTargetingDifferentVersionsDisambiguateLabelsAndPreserveOptions(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const urlV1 = projectEndpoint + "/toolboxes/research-tools/versions/1/mcp?api-version=v1"
+	const urlV2 = projectEndpoint + "/toolboxes/research-tools/versions/2/mcp?api-version=v1"
+
+	managed := &agent_yaml.PromptAgent{
+		Model:        "gpt-4.1-mini",
+		Instructions: "Help.",
+		Harness:      testMicrosoftCopilotHarness(),
+		Tools: []any{
+			map[string]any{
+				"type":             "mcp",
+				"server_label":     "tools-v1",
+				"require_approval": "never",
+			},
+		},
+		Toolboxes: []agent_yaml.ToolboxReference{
+			{Name: "tools-v1"},
+			{Name: "tools-v2"},
+		},
+	}
+	g := &promptGraph{
+		managed:  managed,
+		bindings: map[string]any{},
+		env: map[string]string{
+			"FOUNDRY_PROJECT_ENDPOINT":                projectEndpoint,
+			envkey.ToolboxMCPEndpoint("tools-v1"):     urlV1,
+			envkey.ToolboxProjectEndpoint("tools-v1"): projectEndpoint,
+			envkey.ToolboxMCPEndpoint("tools-v2"):     urlV2,
+			envkey.ToolboxProjectEndpoint("tools-v2"): projectEndpoint,
+		},
+		projectServices: map[string]*azdext.ServiceConfig{
+			"tools-v1": {Name: "tools-v1", Host: foundryToolboxHost},
+			"tools-v2": {Name: "tools-v2", Host: foundryToolboxHost},
+		},
+		agentService: &azdext.ServiceConfig{
+			Name: "agent",
+			Host: foundryAgentHost,
+			Uses: []string{"ai-project", "tools-v1", "tools-v2"},
+		},
+	}
+
+	stored := map[string]*toolboxConnectionBody{}
+	node := toolboxNode(g, managed.Toolboxes, func() (toolboxBuilder, error) {
+		return &foundryToolboxBuilder{
+			subscriptionID: "sub-1",
+			resourceGroup:  "rg-1",
+			accountName:    "acct",
+			projectName:    "proj",
+			explicitConns:  map[string]struct{}{},
+			pipeline: runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+					connName := parts[len(parts)-1]
+					if req.Method == http.MethodGet {
+						existing := stored[connName]
+						if existing == nil {
+							return &http.Response{
+								StatusCode: http.StatusNotFound,
+								Request:    req,
+								Body:       io.NopCloser(strings.NewReader(`{}`)),
+							}, nil
+						}
+						raw, _ := json.Marshal(existing)
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Request:    req,
+							Body:       io.NopCloser(bytes.NewReader(raw)),
+						}, nil
+					}
+					var body toolboxConnectionBody
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+						return nil, err
+					}
+					stored[connName] = &body
+					raw, _ := json.Marshal(body)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Request:    req,
+						Body:       io.NopCloser(bytes.NewReader(raw)),
+					}, nil
+				}),
+			}),
+		}, nil
+	})
+	require.NoError(t, node.Validate())
+	require.NoError(t, node.Resolve(t.Context()))
+
+	require.Len(t, managed.Tools, 2)
+	require.Equal(t, map[string]any{
+		"type":                  "mcp",
+		"server_label":          "tools-v1",
+		"server_url":            urlV1,
+		"project_connection_id": "research-tools-mcp",
+		"require_approval":      "never",
+	}, managed.Tools[0])
+	require.Equal(t, map[string]any{
+		"type":                  "mcp",
+		"server_label":          "tools-v2",
+		"server_url":            urlV2,
+		"project_connection_id": "research-tools-v2-mcp",
+		"require_approval":      "always",
+	}, managed.Tools[1])
 }
 
 func TestFoundryToolboxBuilder_RejectsIncompatibleOrExplicitConnection(t *testing.T) {

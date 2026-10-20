@@ -302,14 +302,23 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, project
 }
 
 func reconcileMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, projectConnectionID string) error {
+	return reconcileMcpToolWithClaimed(managed, serverLabel, "", mcpURL, projectConnectionID, nil)
+}
+
+func reconcileMcpToolWithClaimed(
+	managed *agent_yaml.PromptAgent,
+	serverLabel, serviceName, mcpURL, projectConnectionID string,
+	claimed map[int]struct{},
+) error {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
 		return nil
 	}
 	serverLabel = strings.TrimSpace(serverLabel)
+	serviceName = strings.TrimSpace(serviceName)
 	mcpURL = strings.TrimSpace(mcpURL)
 	projectConnectionID = strings.TrimSpace(projectConnectionID)
 
-	for _, raw := range managed.Tools {
+	for i, raw := range managed.Tools {
 		tool, ok := raw.(map[string]any)
 		if !ok {
 			continue
@@ -323,28 +332,35 @@ func reconcileMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, proj
 		existingLabel = strings.TrimSpace(existingLabel)
 
 		sameURL := existingURL == mcpURL
-		sameLabel := existingLabel != "" && existingLabel == serverLabel
+		if !sameURL && claimed != nil {
+			if _, alreadyClaimed := claimed[i]; alreadyClaimed {
+				continue
+			}
+		}
+
+		sameLabel := existingLabel != "" &&
+			(existingLabel == serverLabel || (serviceName != "" && existingLabel == serviceName))
 		if !sameURL && !sameLabel {
 			continue
 		}
 
-		if sameLabel && existingURL != "" && !sameURL && !isSameToolboxMCPEndpoint(existingURL, serverLabel) {
+		if sameLabel && existingURL != "" && !sameURL && !isSameToolboxMCPEndpoint(existingURL, mcpURL) {
 			return exterrors.Validation(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf(
 					"MCP tool %q declares server_url %q, which conflicts with toolbox %q endpoint %q",
-					serverLabel, existingURL, serverLabel, mcpURL,
+					existingLabel, existingURL, serverLabel, mcpURL,
 				),
 				fmt.Sprintf(
 					"remove server_url from the %q MCP tool entry to use the deployed toolbox endpoint, "+
 						"or give the custom MCP tool a distinct server_label",
-					serverLabel,
+					existingLabel,
 				),
 			)
 		}
 
 		urlChanged := existingURL != "" && existingURL != mcpURL
-		if existingLabel == "" && serverLabel != "" {
+		if serverLabel != "" {
 			tool["server_label"] = serverLabel
 		}
 		tool["server_url"] = mcpURL
@@ -356,6 +372,9 @@ func reconcileMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, proj
 			if !has || strings.TrimSpace(fmt.Sprintf("%v", existingConn)) == "" || urlChanged {
 				tool["project_connection_id"] = projectConnectionID
 			}
+		}
+		if claimed != nil {
+			claimed[i] = struct{}{}
 		}
 		return nil
 	}
@@ -369,12 +388,23 @@ func reconcileMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, proj
 		mcpTool["project_connection_id"] = projectConnectionID
 	}
 	managed.Tools = append(managed.Tools, mcpTool)
+	if claimed != nil {
+		claimed[len(managed.Tools)-1] = struct{}{}
+	}
 	return nil
 }
 
-func isSameToolboxMCPEndpoint(rawURL, toolboxName string) bool {
-	parsedName, _, err := parseToolboxMCPEndpoint(rawURL)
-	return err == nil && strings.EqualFold(parsedName, strings.TrimSpace(toolboxName))
+func isSameToolboxMCPEndpoint(existingURL, newURL string) bool {
+	existingName, _, err1 := parseToolboxMCPEndpoint(existingURL)
+	newName, _, err2 := parseToolboxMCPEndpoint(newURL)
+	if err1 != nil || err2 != nil || !strings.EqualFold(existingName, newName) {
+		return false
+	}
+	existingHost, existingProject := foundryProjectIdentity(existingURL)
+	newHost, newProject := foundryProjectIdentity(newURL)
+	return existingHost != "" && existingProject != "" &&
+		strings.EqualFold(existingHost, newHost) &&
+		strings.EqualFold(existingProject, newProject)
 }
 
 // skillsShellNode builds the skills graph node for a *harness-less* prompt
@@ -572,6 +602,12 @@ func toolboxNode(
 			if err != nil {
 				return err
 			}
+			type resolvedToolboxItem struct {
+				serviceName string
+				attachment  toolboxAttachment
+			}
+			var items []resolvedToolboxItem
+			urlsByLabel := map[string]map[string]struct{}{}
 			seen := make(map[string]struct{}, len(refs))
 			for _, ref := range refs {
 				serviceName := strings.TrimSpace(ref.Name)
@@ -590,13 +626,36 @@ func toolboxNode(
 				if err != nil {
 					return err
 				}
-
-				g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
-				label := strings.TrimSpace(attachment.ServerLabel)
-				if label == "" {
-					label = serviceName
+				items = append(items, resolvedToolboxItem{
+					serviceName: serviceName,
+					attachment:  attachment,
+				})
+				baseLabel := strings.TrimSpace(attachment.ServerLabel)
+				if baseLabel == "" {
+					baseLabel = serviceName
 				}
-				if err := reconcileMcpTool(g.managed, label, attachment.McpURL, attachment.ProjectConnectionID); err != nil {
+				labelKey := strings.ToLower(baseLabel)
+				if urlsByLabel[labelKey] == nil {
+					urlsByLabel[labelKey] = map[string]struct{}{}
+				}
+				urlsByLabel[labelKey][strings.TrimSpace(attachment.McpURL)] = struct{}{}
+			}
+
+			claimed := make(map[int]struct{}, len(items))
+			for _, item := range items {
+				g.bindings[toolboxMcpURLBindingKey] = item.attachment.McpURL
+				label := strings.TrimSpace(item.attachment.ServerLabel)
+				if label == "" || len(urlsByLabel[strings.ToLower(label)]) > 1 {
+					label = item.serviceName
+				}
+				if err := reconcileMcpToolWithClaimed(
+					g.managed,
+					label,
+					item.serviceName,
+					item.attachment.McpURL,
+					item.attachment.ProjectConnectionID,
+					claimed,
+				); err != nil {
 					return err
 				}
 			}
@@ -783,8 +842,14 @@ func siblingToolboxEndpoint(name, projectEndpoint string, env map[string]string)
 //
 //	https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<name>/versions/<version>/mcp?api-version=v1
 func parseToolboxMCPEndpoint(mcpURL string) (string, string, error) {
+	if err := validateAuthenticatedPromptEndpoint(mcpURL); err != nil {
+		return "", "", fmt.Errorf("endpoint must be an HTTPS Foundry project URL (*.services.ai.azure.com)")
+	}
+	if _, project := foundryProjectIdentity(mcpURL); strings.TrimSpace(project) == "" {
+		return "", "", fmt.Errorf("endpoint path must include /api/projects/<project>")
+	}
 	u, err := url.Parse(strings.TrimSpace(mcpURL))
-	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
+	if err != nil {
 		return "", "", fmt.Errorf("endpoint must be a valid HTTPS URL")
 	}
 	escapedPath := u.EscapedPath()

@@ -1,5 +1,17 @@
 # Release History
 
+## 1.37.0 (2026-10-19)
+
+### Features Added
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
+
+### Bugs Fixed
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension service edits rewriting unrelated `azure.yaml` settings, including empty mappings, large integers, and environment templates.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension selection prompts mixing terminal UI into JSON output instead of using the injected stderr writer.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension command metadata, canonical paths, and flag resolution when using parent or child aliases and global flags.
+
 ## 1.36.0 (2026-10-14)
 
 ### Features Added

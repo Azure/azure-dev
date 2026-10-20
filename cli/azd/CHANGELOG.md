@@ -6,6 +6,7 @@
 
 - [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
 - [[#10628]](https://github.com/Azure/azure-dev/pull/10628) Add stable v1 deployment-preview gRPC contracts and SDK APIs while preserving existing beta compatibility.
+- [[#10362]](https://github.com/Azure/azure-dev/pull/10362) Add beta `azd env unset`.
 
 ### Bugs Fixed
 

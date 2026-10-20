@@ -27,6 +27,38 @@ import (
 // See https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
 const a2aVersionHeader = "A2A-Version"
 
+// a2aJSONRPCVersion identifies the JSON-RPC envelope, not the A2A dialect.
+const a2aJSONRPCVersion = "2.0"
+
+// a2aJSONRPCRequest is the shared envelope around dialect-specific parameters.
+type a2aJSONRPCRequest struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      string `json:"id"`
+	Method  string `json:"method"`
+	Params  any    `json:"params"`
+}
+
+// a2aTextRequestBuilder constructs one dialect's complete plain-message request.
+// IDs are supplied by the caller so builders are pure and independently testable.
+type a2aTextRequestBuilder func(text, requestID, messageID string) a2aJSONRPCRequest
+
+// a2aRequestBuilderForVersion is the single supported-dialect selection point for
+// request construction and version validation. It never guesses from file input.
+func a2aRequestBuilderForVersion(version string) (a2aTextRequestBuilder, error) {
+	switch version {
+	case "0.3":
+		return buildA2A03TextRequest, nil
+	case "1.0":
+		return buildA2A10TextRequest, nil
+	default:
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid --a2a-version %q: supported versions are 0.3 and 1.0", version),
+			"use --a2a-version 0.3 or --a2a-version 1.0",
+		)
+	}
+}
+
 // validateInvokeA2AVersionFlags validates explicit dialect selection. An empty
 // protocol is unresolved, so route-specific checks must wait for resolution.
 func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentProtocol) error {
@@ -102,6 +134,97 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 		return nil, "", fmt.Errorf("failed to marshal A2A request: %w", err)
 	}
 	return payload, label, nil
+}
+
+// a2a03MessageSendParams is the public A2A 0.3 message/send parameter shape.
+// See https://a2a-protocol.org/v0.3.0/specification/#711-messagesendparams-object.
+type a2a03MessageSendParams struct {
+	Message       a2a03Message                  `json:"message"`
+	Configuration a2a03MessageSendConfiguration `json:"configuration"`
+}
+
+type a2a03Message struct {
+	Kind      string          `json:"kind"`
+	MessageID string          `json:"messageId"`
+	Role      string          `json:"role"`
+	Parts     []a2a03TextPart `json:"parts"`
+}
+
+type a2a03TextPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+type a2a03MessageSendConfiguration struct {
+	AcceptedOutputModes []string `json:"acceptedOutputModes"`
+	Blocking            bool     `json:"blocking"`
+}
+
+// buildA2A03TextRequest constructs the complete 0.3 body without inheriting or
+// patching another dialect's defaults. Required message/part discriminators and
+// blocking output are explicit. File input never passes through this builder.
+func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+	return a2aJSONRPCRequest{
+		JSONRPC: a2aJSONRPCVersion,
+		ID:      requestID,
+		Method:  "message/send",
+		Params: a2a03MessageSendParams{
+			Message: a2a03Message{
+				Kind:      "message",
+				MessageID: messageID,
+				Role:      "user",
+				Parts:     []a2a03TextPart{{Kind: "text", Text: text}},
+			},
+			Configuration: a2a03MessageSendConfiguration{
+				AcceptedOutputModes: []string{"text"},
+				Blocking:            true,
+			},
+		},
+	}
+}
+
+// a2a10SendMessageRequest is the public A2A 1.0 SendMessage parameter shape.
+// See https://a2a-protocol.org/v1.0.0/specification/#9-json-rpc-protocol-binding.
+type a2a10SendMessageRequest struct {
+	Message       a2a10Message                  `json:"message"`
+	Configuration a2a10MessageSendConfiguration `json:"configuration"`
+}
+
+type a2a10Message struct {
+	MessageID string          `json:"messageId"`
+	Role      string          `json:"role"`
+	Parts     []a2a10TextPart `json:"parts"`
+}
+
+type a2a10TextPart struct {
+	Text string `json:"text"`
+}
+
+type a2a10MessageSendConfiguration struct {
+	AcceptedOutputModes []string `json:"acceptedOutputModes"`
+	// False requests synchronous completion and must not be omitted from JSON.
+	ReturnImmediately bool `json:"returnImmediately"`
+}
+
+// buildA2A10TextRequest constructs the complete 1.0 body independently of 0.3.
+// File input never passes through this builder.
+func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
+	return a2aJSONRPCRequest{
+		JSONRPC: a2aJSONRPCVersion,
+		ID:      requestID,
+		Method:  "SendMessage",
+		Params: a2a10SendMessageRequest{
+			Message: a2a10Message{
+				MessageID: messageID,
+				Role:      "ROLE_USER",
+				Parts:     []a2a10TextPart{{Text: text}},
+			},
+			Configuration: a2a10MessageSendConfiguration{
+				AcceptedOutputModes: []string{"text"},
+				ReturnImmediately:   false,
+			},
+		},
+	}
 }
 
 // a2aLocal reports that this CLI does not yet support local A2A invocation.

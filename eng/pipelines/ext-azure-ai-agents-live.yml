@@ -30,6 +30,8 @@
 
 trigger: none
 pr:
+  drafts: false
+  autoCancel: true
   branches:
     include:
       - main

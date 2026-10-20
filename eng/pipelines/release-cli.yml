@@ -30,6 +30,11 @@ trigger:
       - cli/azd/cmd/testdata/TestFigSpec.ts
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - cli/azd/go.mod

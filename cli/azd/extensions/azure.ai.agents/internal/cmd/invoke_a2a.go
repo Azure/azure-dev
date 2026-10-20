@@ -176,7 +176,7 @@ func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 				Parts:     []a2a03TextPart{{Kind: "text", Text: text}},
 			},
 			Configuration: a2a03MessageSendConfiguration{
-				AcceptedOutputModes: []string{"text"},
+				AcceptedOutputModes: []string{"text/plain"},
 				Blocking:            true,
 			},
 		},
@@ -220,7 +220,7 @@ func buildA2A10TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 				Parts:     []a2a10TextPart{{Text: text}},
 			},
 			Configuration: a2a10MessageSendConfiguration{
-				AcceptedOutputModes: []string{"text"},
+				AcceptedOutputModes: []string{"text/plain"},
 				ReturnImmediately:   false,
 			},
 		},

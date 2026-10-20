@@ -9,7 +9,7 @@
       "parts": [{"text": "Hello!"}]
     },
     "configuration": {
-      "acceptedOutputModes": ["text"],
+      "acceptedOutputModes": ["text/plain"],
       "returnImmediately": false
     }
   }

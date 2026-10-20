@@ -10,7 +10,7 @@
       "parts": [{"kind": "text", "text": "Hello!"}]
     },
     "configuration": {
-      "acceptedOutputModes": ["text"],
+      "acceptedOutputModes": ["text/plain"],
       "blocking": true
     }
   }

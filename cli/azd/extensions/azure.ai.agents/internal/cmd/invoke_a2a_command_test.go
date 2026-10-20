@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -61,12 +62,22 @@ func TestA2ARemoteSelectedDialect(t *testing.T) {
 						Message struct {
 							Role string `json:"role"`
 						} `json:"message"`
+						Configuration struct {
+							AcceptedOutputModes []string `json:"acceptedOutputModes"`
+						} `json:"configuration"`
 					} `json:"params"`
 				}
 				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
 				assert.Equal(t, method, request.Method)
 				assert.Equal(t, role, request.Params.Message.Role)
 				w.Header().Set("Content-Type", "application/json")
+				// A normal text-only agent offers text/plain, not the part kind
+				// "text". Enforce negotiation instead of accepting any client value.
+				if !slices.Contains(request.Params.Configuration.AcceptedOutputModes, "text/plain") {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","error":{"code":-32602,`+
+						`"message":"No acceptable output media type; this agent offers text/plain"}}`)
+					return
+				}
 				if wireVersion == "1.0" {
 					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"message":{"parts":[{"text":"dialect-ok"}]}}}`)
 				} else {

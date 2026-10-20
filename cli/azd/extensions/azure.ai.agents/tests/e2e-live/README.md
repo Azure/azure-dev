@@ -96,8 +96,12 @@ Before running:
   integration at `1.0.0b260821`, and regenerates the lock file and requirements
   with uv `0.11.7`, matching that sample's Dockerfile tooling.
   CI uses the repository's authenticated Azure Artifacts Python feed rather
-  than direct PyPI access. The isolated Dockerfile uses the credential-free
-  public feed address; no feed token is passed as an image build argument.
+  than direct PyPI access. The isolated Dockerfile uses a digest-pinned MCR
+  Python 3.13 Linux AMD64 base instead of direct GHCR or Docker Hub pulls.
+  BuildKit supplies `UV_DEFAULT_INDEX` through a temporary secret mount for
+  uv installation and dependency restore; feed tokens are not build arguments
+  and are not persisted in image layers. Local automatic builds must set
+  `UV_DEFAULT_INDEX` to the approved feed as well.
 3. Leave `snapshotImage` empty to build and push the sample into its provisioned
   ACR. CI builds Linux AMD64 and records the published digest before agent
   deployment. Alternatively, supply a prebuilt image using an immutable

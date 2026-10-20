@@ -729,6 +729,9 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 }
 
 func (r *runner) prepareSnapshotBuild(ctx context.Context) (string, error) {
+	if strings.TrimSpace(os.Getenv("UV_DEFAULT_INDEX")) == "" {
+		return "", errors.New("snapshot image builds require the approved feed in UV_DEFAULT_INDEX")
+	}
 	r.projectDir = r.findProjectDir()
 	if r.projectDir == "" {
 		return "", errors.New("no project directory with azure.yaml found")
@@ -789,7 +792,7 @@ func (r *runner) buildSnapshotImage(ctx context.Context, sourceDir string) error
 	}
 	image := registry + "/snapshot-validation/" + r.agentName + ":qualification"
 	if out, code := r.runQuiet(ctx, sourceDir, 25*time.Minute, "docker", "build", "--platform", "linux/amd64",
-		"--tag", image, "."); code != 0 {
+		"--secret", "id=python_index,env=UV_DEFAULT_INDEX", "--tag", image, "."); code != 0 {
 		return fmt.Errorf("snapshot sample image build failed (exit %d): %s", code, tail(out, 6000))
 	}
 	if out, code := r.runQuiet(ctx, sourceDir, 15*time.Minute, "docker", "push", image); code != 0 {

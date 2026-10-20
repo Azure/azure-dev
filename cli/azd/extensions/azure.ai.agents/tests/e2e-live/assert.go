@@ -120,12 +120,24 @@ func snapshotDependencyCommands() [][]string {
 
 func snapshotBuildDockerfile(data []byte) ([]byte, error) {
 	const install = "RUN uv sync --frozen --no-dev --no-install-project"
-	const index = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"
-	if strings.Count(string(data), install) != 1 {
-		return nil, errors.New("snapshot baseline requires the supported uv dependency installation instruction")
+	const base = "mcr.microsoft.com/devcontainers/python@sha256:" +
+		"2858fb53653b285965a9f808b0e8942ed46f13356a07433380aaa2d83c34ac4b"
+	const mountInstruction = "RUN --mount=type=secret,id=python_index,required=true "
+	dockerfile := string(data)
+	for _, replacement := range [][2]string{
+		{"FROM ghcr.io/astral-sh/uv:0.11.7 AS uv", ""},
+		{"FROM python:3.13-slim", "FROM " + base},
+		{"COPY --from=uv /uv /uvx /bin/", mountInstruction + "PIP_INDEX_URL=\"$(cat /run/secrets/python_index)\" " +
+			"python -m pip install --no-cache-dir uv==0.11.7"},
+		{install, mountInstruction + "UV_NO_CACHE=1 UV_DEFAULT_INDEX=\"$(cat /run/secrets/python_index)\" " +
+			"uv sync --frozen --no-dev --no-install-project"},
+	} {
+		if strings.Count(dockerfile, replacement[0]) != 1 {
+			return nil, errors.New("snapshot baseline requires the supported Dockerfile build instructions")
+		}
+		dockerfile = strings.Replace(dockerfile, replacement[0], replacement[1], 1)
 	}
-	return []byte(strings.Replace(string(data), install, "RUN UV_DEFAULT_INDEX="+index+
-		" uv sync --frozen --no-dev --no-install-project", 1)), nil
+	return []byte(dockerfile), nil
 }
 
 func snapshotBuildProject(manifest []byte) (string, error) {

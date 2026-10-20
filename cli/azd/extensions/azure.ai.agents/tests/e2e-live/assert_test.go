@@ -122,12 +122,24 @@ func TestSnapshotDependencyCommands(t *testing.T) {
 }
 
 func TestSnapshotBuildDockerfile(t *testing.T) {
-	input := "FROM python:3.13-slim\nRUN uv sync --frozen --no-dev --no-install-project\nCMD [\"python\", \"main.py\"]\n"
+	input := "FROM ghcr.io/astral-sh/uv:0.11.7 AS uv\nFROM python:3.13-slim\n" +
+		"COPY --from=uv /uv /uvx /bin/\nRUN uv sync --frozen --no-dev --no-install-project\n" +
+		"CMD [\"/app/user_agent/.venv/bin/python\", \"main.py\"]\n"
 	data, err := snapshotBuildDockerfile([]byte(input))
 	require.NoError(t, err)
-	require.Contains(t, string(data), "RUN UV_DEFAULT_INDEX=https://pkgs.dev.azure.com/azure-sdk/public/")
+	require.Contains(t, string(data), "FROM mcr.microsoft.com/devcontainers/python@sha256:")
+	require.Contains(t, string(data), "python -m pip install --no-cache-dir uv==0.11.7")
+	require.Contains(t, string(data), " uv==0.11.7")
+	require.NotContains(t, string(data), "ghcr.io")
+	require.NotContains(t, string(data), "FROM python:")
+	require.NotContains(t, string(data), "COPY --from=uv")
+	require.Equal(t, 2, strings.Count(string(data), "--mount=type=secret,id=python_index,required=true"))
+	require.Contains(t, string(data), "UV_NO_CACHE=1")
+	require.Contains(t, string(data), "UV_DEFAULT_INDEX=\"$(cat /run/secrets/python_index)\"")
 	require.Contains(t, string(data), " uv sync --frozen --no-dev --no-install-project")
-	require.Contains(t, string(data), "CMD [\"python\", \"main.py\"]")
+	require.Contains(t, string(data), "CMD [\"/app/user_agent/.venv/bin/python\", \"main.py\"]")
+	require.NotContains(t, string(data), "ARG ")
+	require.NotContains(t, string(data), "ENV ")
 	require.NotContains(t, string(data), "@pkgs")
 	_, err = snapshotBuildDockerfile([]byte("FROM python:3.13-slim"))
 	require.Error(t, err)

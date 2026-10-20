@@ -59,12 +59,16 @@ func ResolvePromptAgentModel(
 	if !slices.Contains(declared, model) {
 		return model, nil
 	}
-	if len(declared) > 1 {
+	missing := slices.DeleteFunc(slices.Clone(declared), func(name string) bool {
+		return slices.Contains(selected, name)
+	})
+	if len(missing) > 1 {
 		return "", exterrors.Dependency(
 			exterrors.CodeModelDeploymentNotFound,
 			fmt.Sprintf(
-				"model deployment %q is not created in this environment, and the project declares %d deployments",
-				model, len(declared),
+				"model deployment %q is not created in this environment, and neither are %s, "+
+					"so its replacement cannot be inferred",
+				model, strings.Join(slices.DeleteFunc(missing, func(name string) bool { return name == model }), ", "),
 			),
 			"set the agent's model to the deployment to use, then run `azd deploy` again",
 		)
@@ -80,24 +84,12 @@ func ResolvePromptAgentModel(
 	return fallback, nil
 }
 
-// environmentDeploymentNames decodes AI_PROJECT_DEPLOYMENTS. The second result
-// is false when the value is unset or unreadable, which leaves the model as is.
+// environmentDeploymentNames lists the names in AI_PROJECT_DEPLOYMENTS. The
+// second result is false when the value is unset or unreadable, which leaves
+// the model as is.
 func environmentDeploymentNames(value string) ([]string, bool) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil, false
-	}
-	if !json.Valid([]byte(value)) {
-		var unescaped string
-		if err := json.Unmarshal([]byte(`"`+value+`"`), &unescaped); err != nil {
-			return nil, false
-		}
-		value = unescaped
-	}
-	var deployments []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal([]byte(value), &deployments); err != nil {
+	deployments, present, err := DecodeProjectDeploymentsEnv(value)
+	if !present || err != nil {
 		return nil, false
 	}
 	names := make([]string, 0, len(deployments))
@@ -105,6 +97,41 @@ func environmentDeploymentNames(value string) ([]string, bool) {
 		names = append(names, strings.TrimSpace(deployment.Name))
 	}
 	return names, true
+}
+
+// DecodeProjectDeploymentsEnv decodes AI_PROJECT_DEPLOYMENTS, which holds JSON
+// or environment-escaped JSON. The bool is false when the value is blank.
+func DecodeProjectDeploymentsEnv(value string) ([]Deployment, bool, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, false, nil
+	}
+	if !json.Valid([]byte(value)) {
+		var unescaped string
+		if err := json.Unmarshal([]byte(`"`+value+`"`), &unescaped); err != nil {
+			return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: %w", err)
+		}
+		value = unescaped
+	}
+	var deployments []Deployment
+	if err := json.Unmarshal([]byte(value), &deployments); err != nil {
+		return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: %w", err)
+	}
+	return deployments, true, nil
+}
+
+// EncodeProjectDeploymentsEnv encodes deployments the way the Projects
+// extension stores AI_PROJECT_DEPLOYMENTS.
+func EncodeProjectDeploymentsEnv(deployments []Deployment) (string, error) {
+	if deployments == nil {
+		deployments = []Deployment{}
+	}
+	data, err := json.Marshal(deployments)
+	if err != nil {
+		return "", fmt.Errorf("encoding AI_PROJECT_DEPLOYMENTS: %w", err)
+	}
+	escaped := strings.ReplaceAll(string(data), "\\", "\\\\")
+	return strings.ReplaceAll(escaped, "\"", "\\\""), nil
 }
 
 // usedProjectDeploymentNames lists the deployment names declared in azure.yaml

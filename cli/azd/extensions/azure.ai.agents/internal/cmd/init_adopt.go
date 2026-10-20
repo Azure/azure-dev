@@ -1620,6 +1620,11 @@ func configureAdoptedExistingDeployment(
 			err,
 		)
 	}
+	if err := replaceAdoptedTemplateDeployment(
+		ctx, azdClient, envName, selected.Name, flags.noPrompt,
+	); err != nil {
+		return err
+	}
 	if err := updatePendingModelDeploymentSignal(
 		ctx,
 		azdClient,

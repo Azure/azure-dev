@@ -64,14 +64,24 @@ func TestResolvePromptAgentModel(t *testing.T) {
 			want: "existing-41",
 		},
 		{
-			name:     "multiple declared deployments cannot be inferred",
+			name:     "one of several declared deployments replaced falls back",
+			model:    "template-chat",
+			declared: []string{"template-chat", "template-embed"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         `[{"name":"template-embed"}]`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "existing-41",
+		},
+		{
+			name:     "several missing declared deployments are ambiguous",
 			model:    "template-chat",
 			declared: []string{"template-chat", "template-embed"},
 			env: map[string]string{
 				"AI_PROJECT_DEPLOYMENTS":         "[]",
 				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
 			},
-			wantErrText: "declares 2 deployments",
+			wantErrText: "cannot be inferred",
 		},
 		{
 			name:        "skipped deployment without default",

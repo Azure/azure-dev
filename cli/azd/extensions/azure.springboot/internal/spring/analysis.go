@@ -25,6 +25,8 @@ const (
 	MySQL ResourceKind = "mysql"
 	// PostgreSQL identifies a PostgreSQL database.
 	PostgreSQL ResourceKind = "postgresql"
+	// Foundry identifies a Microsoft Foundry model endpoint.
+	Foundry ResourceKind = "foundry"
 )
 
 // Evidence identifies the property and source establishing a requirement, without its value.
@@ -44,6 +46,12 @@ type Requirement struct {
 	Trace          []Evidence
 }
 
+// FoundryRequirement describes an Azure OpenAI-compatible model deployment.
+type FoundryRequirement struct {
+	DeploymentName string
+	Evidence       []Evidence
+}
+
 // Application is the resolved, credential-free input to deployment planning.
 type Application struct {
 	ID                     string
@@ -56,6 +64,7 @@ type Application struct {
 	Profiles               []string
 	Embedded               *EmbeddedBinding
 	Requirements           []Requirement
+	Foundry                *FoundryRequirement
 	MavenWrapper           bool
 	ExternalConfigurations []string
 	IdentityExtensions     bool
@@ -65,6 +74,7 @@ type Application struct {
 }
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
+var modelDeploymentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
 var customDatasource = regexp.MustCompile(
 	`(?s)@(?:org\.springframework\.context\.annotation\.)?Bean\b(?:\s*\([^()]*\))?` +
 		`(?:[^{};@]|@[\w.$]+(?:\s*\([^()]*\))?)*?\b(?:DataSource|ConnectionFactory|HikariDataSource|` +
@@ -223,7 +233,70 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if requirement != nil {
 		a.Requirements = []Requirement{*requirement}
 	}
+	a.Foundry, err = detectFoundry(m, c)
+	if err != nil {
+		return nil, err
+	}
 	return a, nil
+}
+
+func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
+	const (
+		endpointProperty   = "spring.ai.azure.openai.endpoint"
+		apiKeyProperty     = "spring.ai.azure.openai.api-key"
+		deploymentProperty = "spring.ai.azure.openai.chat.options.deployment-name"
+		defaultDeployment  = "gpt-5.4-nano"
+	)
+	properties := []string{endpointProperty, apiKeyProperty, deploymentProperty}
+	active := slices.ContainsFunc(properties, func(key string) bool {
+		value, present := c.raw(key)
+		return present && strings.TrimSpace(value.text) != ""
+	})
+	if !active {
+		return nil, nil
+	}
+	if !m.hasDependency("org.springframework.ai", "spring-ai-starter-model-azure-openai") {
+		return nil, unsupportedConfiguration(
+			"Azure OpenAI configuration requires org.springframework.ai:spring-ai-starter-model-azure-openai")
+	}
+	if endpoint, present := c.raw(endpointProperty); present {
+		value := strings.TrimSpace(endpoint.text)
+		if value != "" {
+			_, fallback, placeholderOnly := runtimePlaceholder(value)
+			if !placeholderOnly || fallback != "" {
+				return nil, unsupportedConfiguration(
+					"%s in %s must be empty or a runtime placeholder without a default; "+
+						"deployment provisions the Foundry endpoint",
+					endpoint.key, endpoint.source)
+			}
+		}
+	}
+	deploymentName := defaultDeployment
+	if deployment, present := c.raw(deploymentProperty); present {
+		value := strings.TrimSpace(deployment.text)
+		if _, fallback, placeholderOnly := runtimePlaceholder(value); placeholderOnly {
+			if strings.TrimSpace(fallback) != "" {
+				deploymentName = strings.TrimSpace(fallback)
+			}
+		} else if value != "" {
+			deploymentName = value
+		}
+	}
+	if !modelDeploymentName.MatchString(deploymentName) {
+		return nil, invalidConfiguration(
+			"%s must contain 2-64 letters, numbers, periods, underscores, or hyphens",
+			deploymentProperty)
+	}
+	var evidence []Evidence
+	for _, key := range properties {
+		if value, present := c.raw(key); present {
+			item := Evidence{Property: value.key, Source: value.source}
+			if !slices.Contains(evidence, item) {
+				evidence = append(evidence, item)
+			}
+		}
+	}
+	return &FoundryRequirement{DeploymentName: deploymentName, Evidence: evidence}, nil
 }
 
 func validateResourceLayout(m *model, projectDirectory string) error {

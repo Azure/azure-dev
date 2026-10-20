@@ -96,6 +96,79 @@ func envLookup(values map[string]string) LookupEnv {
 	}
 }
 
+func TestAnalyzeFoundryBinding(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		deployment     string
+		wantDeployment string
+	}{
+		{"runtime deployment", "${AZURE_OPENAI_DEPLOYMENT_NAME}", "gpt-5.4-nano"},
+		{"deployment fallback", "${AZURE_OPENAI_DEPLOYMENT_NAME:chat}", "chat"},
+		{"literal deployment", "chat", "chat"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n"+
+					"spring.ai.azure.openai.chat.options.deployment-name="+tt.deployment+"\n")
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+			require.NoError(t, err)
+			require.NotNil(t, application.Foundry)
+			require.Equal(t, tt.wantDeployment, application.Foundry.DeploymentName)
+			require.Len(t, application.Foundry.Evidence, 3)
+			require.Empty(t, application.Requirements)
+			require.Nil(t, application.Embedded)
+		})
+	}
+}
+
+func TestAnalyzeFoundryRejectsLiteralEndpoint(t *testing.T) {
+	const endpoint = "https://example.openai.azure.com/"
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.azure.openai.endpoint="+endpoint+"\n"+
+			"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.ErrorContains(t, err, "must be empty or a runtime placeholder")
+	require.NotContains(t, err.Error(), endpoint)
+	require.Nil(t, application)
+}
+
+func TestAnalyzeFoundryRequiresStarter(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n")
+
+	application, err := Analyze(t.Context(), directory,
+		staticResolver{model: effectiveModel(t, directory, "")}, envLookup(nil))
+	require.ErrorContains(t, err, "spring-ai-starter-model-azure-openai")
+	require.Nil(t, application)
+}
+
+func TestAnalyzeIgnoresInactiveFoundryBinding(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application-unused.properties",
+		"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.NoError(t, err)
+	require.Nil(t, application.Foundry)
+}
+
 func TestAnalyzeActiveDatasource(t *testing.T) {
 	tests := []struct {
 		name      string

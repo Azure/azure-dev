@@ -201,6 +201,9 @@ func AnalyzeProject(
 	if application.Embedded != nil {
 		supportedEvidence = append(supportedEvidence, application.Embedded.Evidence...)
 	}
+	if application.Foundry != nil {
+		supportedEvidence = append(supportedEvidence, application.Foundry.Evidence...)
+	}
 	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
 		for _, reference := range application.InputReferences[canonical(key)] {
 			if slices.ContainsFunc(supportedEvidence, func(e Evidence) bool {
@@ -225,8 +228,8 @@ func AnalyzeProject(
 				"configure other settings in the application")
 		}
 	}
-	requirements, embedded := application.Requirements, application.Embedded
-	application.Requirements, application.Embedded = nil, nil
+	requirements, embedded, foundry := application.Requirements, application.Embedded, application.Foundry
+	application.Requirements, application.Embedded, application.Foundry = nil, nil, nil
 	application.InputEvidence, application.InputReferences = nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
@@ -249,6 +252,16 @@ func AnalyzeProject(
 			PropertyPrefix: "spring.datasource", Embedded: embedded, Evidence: deploymentEvidence(embedded.Evidence),
 		})
 	}
+	if foundry != nil {
+		result.Resources = append(result.Resources, Resource{
+			ID: "foundry:primary", Kind: Foundry, Name: foundry.DeploymentName, Disposition: Provisioned,
+		})
+		result.Bindings = append(result.Bindings, Binding{
+			ID: "app/foundry:primary", ApplicationID: "app", ResourceID: "foundry:primary",
+			PropertyPrefix: "spring.ai.azure.openai", Authentication: "apiKey",
+			Evidence: deploymentEvidence(foundry.Evidence),
+		})
+	}
 	return result, nil
 }
 
@@ -267,37 +280,74 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 	if len(a.Decisions) != 0 || len(a.Diagnostics) != 0 {
 		return nil, errors.New("deployment configuration has unresolved decisions or blocking diagnostics")
 	}
-	if len(a.Applications) != 1 || len(a.Bindings) > 1 || len(a.Resources) != len(a.Bindings) {
-		return nil, errors.New("the deployment template supports one application and at most one datasource")
+	if len(a.Applications) != 1 || len(a.Bindings) > 2 || len(a.Resources) != len(a.Bindings) {
+		return nil, errors.New(
+			"the deployment template supports one application, at most one datasource, and at most one Foundry binding")
 	}
 	application := a.Applications[0]
-	application.Requirements, application.Embedded = nil, nil
+	application.Requirements, application.Embedded, application.Foundry = nil, nil, nil
+	resources := make(map[string]Resource, len(a.Resources))
+	for _, resource := range a.Resources {
+		if _, exists := resources[resource.ID]; exists {
+			return nil, errors.New("the deployment graph contains duplicate resource identities")
+		}
+		resources[resource.ID] = resource
+	}
+	bindingIDs := make(map[string]bool, len(a.Bindings))
 	for _, binding := range a.Bindings {
-		if binding.ApplicationID != application.ID || binding.PropertyPrefix != "spring.datasource" ||
-			binding.ID != application.ID+"/datasource:primary" || binding.ResourceID != "datasource:primary" {
-			return nil, errors.New("the datasource binding does not match the supported application")
+		if bindingIDs[binding.ID] {
+			return nil, errors.New("the deployment graph contains duplicate binding identities")
 		}
-		resource := a.Resources[0]
-		if resource.ID != binding.ResourceID {
-			return nil, errors.New("the datasource resource reference is invalid")
+		bindingIDs[binding.ID] = true
+		if binding.ApplicationID != application.ID {
+			return nil, errors.New("the binding does not match the supported application")
 		}
-		switch resource.Disposition {
-		case ApplicationLocal:
-			if binding.Embedded == nil || resource.Kind != ResourceKind(binding.Embedded.Engine) {
-				return nil, errors.New("the embedded datasource binding is invalid")
+		resource, present := resources[binding.ResourceID]
+		if !present {
+			return nil, errors.New("the binding resource reference is invalid")
+		}
+		delete(resources, binding.ResourceID)
+		switch binding.PropertyPrefix {
+		case "spring.datasource":
+			if binding.ID != application.ID+"/datasource:primary" || binding.ResourceID != "datasource:primary" {
+				return nil, errors.New("the datasource binding does not match the supported application")
 			}
-			application.Embedded = binding.Embedded
-		case Provisioned:
-			if binding.Embedded != nil {
-				return nil, errors.New("a provisioned datasource cannot have an embedded binding")
+			switch resource.Disposition {
+			case ApplicationLocal:
+				if binding.Embedded == nil || resource.Kind != ResourceKind(binding.Embedded.Engine) {
+					return nil, errors.New("the embedded datasource binding is invalid")
+				}
+				application.Embedded = binding.Embedded
+			case Provisioned:
+				if binding.Embedded != nil || resource.Kind != MySQL && resource.Kind != PostgreSQL {
+					return nil, errors.New("a provisioned datasource binding is invalid")
+				}
+				application.Requirements = []Requirement{{
+					Kind: resource.Kind, Name: resource.Name, Authentication: binding.Authentication,
+					JDBCOptions: binding.JDBCOptions, Driver: binding.Driver, Trace: binding.Evidence,
+				}}
+			default:
+				return nil, errors.New("the datasource has no supported deployment disposition")
 			}
-			application.Requirements = []Requirement{{
-				Kind: resource.Kind, Name: resource.Name, Authentication: binding.Authentication,
-				JDBCOptions: binding.JDBCOptions, Driver: binding.Driver, Trace: binding.Evidence,
-			}}
+		case "spring.ai.azure.openai":
+			if binding.ID != application.ID+"/foundry:primary" || binding.ResourceID != "foundry:primary" ||
+				resource.Kind != Foundry || resource.Disposition != Provisioned ||
+				binding.Authentication != "apiKey" || binding.Embedded != nil ||
+				!modelDeploymentName.MatchString(resource.Name) {
+				return nil, errors.New("the Foundry binding is invalid")
+			}
+			if application.Foundry != nil {
+				return nil, errors.New("multiple Foundry bindings are not supported")
+			}
+			application.Foundry = &FoundryRequirement{
+				DeploymentName: resource.Name, Evidence: binding.Evidence,
+			}
 		default:
-			return nil, errors.New("the datasource has no supported deployment disposition")
+			return nil, errors.New("the binding property namespace is not supported")
 		}
+	}
+	if len(resources) != 0 {
+		return nil, errors.New("the deployment graph contains an unbound resource")
 	}
 	return &application, nil
 }

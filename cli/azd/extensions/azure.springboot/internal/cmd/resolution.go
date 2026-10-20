@@ -147,12 +147,12 @@ func resolveDeployment(
 				var targets []string
 				for _, repair := range diagnostic.Repairs {
 					if repairedCredentials[repairTarget{repair.File, repair.Property}] {
-						return nil, fmt.Errorf("datasource credential property %s in %s requires repair again; "+
+						return nil, fmt.Errorf("credential property %s in %s requires repair again; "+
 							"review the application configuration", repair.Property, repair.File)
 					}
 					targets = append(targets, repair.Property+" in "+repair.File)
 				}
-				question := "Replace datasource password defaults with runtime-only placeholders?\n  " +
+				question := "Replace credential defaults with runtime-only placeholders?\n  " +
 					strings.Join(targets, "\n  ")
 				if err := confirm(ctx, getPrompts, question); err != nil {
 					return nil, err

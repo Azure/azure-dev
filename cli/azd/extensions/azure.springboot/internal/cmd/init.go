@@ -36,17 +36,19 @@ func newInitCommandWithServices(
 azure.yaml, Container Apps Bicep, and deployment-only container/configuration files.
 Application configuration supplies defaults. Use --profiles to select deployment
 profiles. Missing datasource URL or server port inputs use targeted prompts.
-Interactive initialization can offer to replace packaged datasource password
-defaults in properties files with runtime-only placeholders.
+Interactive initialization can offer to replace packaged datasource password or
+Azure OpenAI API-key defaults in properties files with runtime-only placeholders.
 Ambient Spring environment variables are not deployment inputs. Questions are
 asked only for unresolved decisions; --yes does not supply missing choices.
 Embedded databases do not create a cloud database.
 
 Maven inspection executes project-controlled code. Generated SQL infrastructure
 uses an extension-owned template with public database access restricted to reported
-Container Apps outbound IPs. PostgreSQL managed identity temporarily allows public
-bootstrap access and requires Azure Identity Extensions in
-the app and an explicit administrator-run schema/grant script before provisioning.
+Container Apps outbound IPs. Foundry chat bindings use the same outbound-IP
+restriction and inject the account key only through a Container Apps secret.
+PostgreSQL managed identity temporarily allows public bootstrap access and requires
+Azure Identity Extensions in the app and an explicit administrator-run schema/grant
+script before provisioning.
 This command does not provision Azure resources or create an azd environment.
 Existing deployment files are not overwritten.`,
 		Args: cobra.NoArgs,
@@ -129,6 +131,13 @@ Existing deployment files are not overwritten.`,
 					fmt.Fprintln(cmd.OutOrStdout(),
 						"Required: Entra administrator and reviewed SQL schema/grant script.")
 				}
+			}
+			if application.Foundry != nil {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"Foundry: AIServices account and %s model deployment (API-key authentication).\n",
+					application.Foundry.DeploymentName)
+				fmt.Fprintln(cmd.OutOrStdout(),
+					"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Files:")
 			for _, name := range sortedFiles(plan) {

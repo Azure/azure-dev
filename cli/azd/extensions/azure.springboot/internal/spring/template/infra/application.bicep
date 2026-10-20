@@ -18,6 +18,9 @@ param driver string = ''
 param embeddedUrl string = ''
 param embeddedUrlConfigured bool
 param embeddedDriver string = ''
+param foundryEnabled bool = false
+param foundryAccountName string = ''
+param foundryDeploymentName string = ''
 
 var prefix = engine == 'mysql' ? 'MYSQL' : 'POSTGRES'
 var usesPassword = engine != 'none' && authentication == 'password'
@@ -59,6 +62,25 @@ var embeddedSpringEnv = concat(
   empty(embeddedDriver) ? [] : [{ name: 'SPRING_DATASOURCE_DRIVER_CLASS_NAME', value: embeddedDriver }]
 )
 var deploymentSpringEnv = engine != 'none' ? externalSpringEnv : embeddedSpringEnv
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (foundryEnabled) {
+  name: foundryAccountName
+}
+var foundryEndpoint = foundryEnabled ? 'https://${foundryAccountName}.openai.azure.com/' : ''
+var foundryApiKey = foundryEnabled ? foundry!.listKeys().key1 : ''
+var foundrySecret = foundryEnabled ? [{ name: 'foundry-api-key', value: foundryApiKey }] : []
+var foundryEnvironment = foundryEnabled
+  ? environmentBindings
+    ? [
+        { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+        { name: 'SPRING_AI_AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }
+        { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENT_NAME', value: foundryDeploymentName }
+      ]
+    : [
+        { name: 'AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+        { name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }
+        { name: 'AZURE_OPENAI_DEPLOYMENT_NAME', value: foundryDeploymentName }
+      ]
+  : []
 var placeholder = appImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
@@ -72,7 +94,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: placeholder ? 80 : port, transport: 'auto' }
       registries: [{ server: registryEndpoint, identity: 'system' }]
-      secrets: usesPassword ? [{ name: 'database-password', value: password }] : []
+      secrets: concat(usesPassword ? [{ name: 'database-password', value: password }] : [], foundrySecret)
     }
     template: {
       containers: [
@@ -95,7 +117,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
                     { name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/app/.azd-spring/application.properties' }
                   ],
                   databaseEnv
-                )
+                ),
+            foundryEnvironment
           )
           probes: placeholder
             ? []

@@ -409,11 +409,21 @@ func validateDuplicateCredentialProperties(data, file string) error {
 			continue
 		}
 		key := canonical(keys[0])
-		if key != canonical("spring.datasource.password") && key != canonical("spring.datasource.url") {
+		if !slices.Contains([]string{
+			canonical("spring.datasource.password"),
+			canonical("spring.datasource.url"),
+			canonical("spring.ai.azure.openai.api-key"),
+		}, key) {
 			continue
 		}
 		counts[key]++
 		if counts[key] > 1 {
+			if key == canonical("spring.ai.azure.openai.api-key") {
+				return unsupportedConfiguration(
+					"duplicate Azure OpenAI credential property %s in %s is not supported; "+
+						"keep one runtime-safe value",
+					keys[0], file)
+			}
 			return unsupportedConfiguration(
 				"duplicate datasource credential property %s in %s is not supported; keep one runtime-safe value",
 				keys[0], file)
@@ -537,7 +547,7 @@ func applicationConfigurationExtension(name string) (string, bool) {
 func validateKnownCredentialDocument(doc document) error {
 	if password, ok := doc.values[canonical("spring.datasource.password")]; ok &&
 		hasLiteralCredential(password.text) {
-		repair, repairable := datasourcePasswordRepair(password)
+		repair, repairable := credentialPropertyRepair(password, "${SPRING_DATASOURCE_PASSWORD}")
 		if !repairable {
 			return unsupportedConfiguration(
 				"literal datasource credentials in %s are not supported; "+
@@ -550,6 +560,24 @@ func validateKnownCredentialDocument(doc document) error {
 				"literal datasource credentials in %s are not supported; "+
 					"replace %s with a runtime placeholder without a default",
 				password.source, password.key),
+			Repairs: []CredentialRepair{repair},
+		}
+	}
+	if apiKey, ok := doc.values[canonical("spring.ai.azure.openai.api-key")]; ok &&
+		hasLiteralCredential(apiKey.text) {
+		repair, repairable := credentialPropertyRepair(apiKey, "${AZURE_OPENAI_API_KEY}")
+		if !repairable {
+			return unsupportedConfiguration(
+				"literal Azure OpenAI API keys in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				apiKey.source, apiKey.key)
+		}
+		return &Diagnostic{
+			Kind: "unsupported",
+			Message: fmt.Sprintf(
+				"literal Azure OpenAI API keys in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				apiKey.source, apiKey.key),
 			Repairs: []CredentialRepair{repair},
 		}
 	}
@@ -571,19 +599,19 @@ func validateKnownCredentialDocument(doc document) error {
 	return nil
 }
 
-func datasourcePasswordRepair(password property) (CredentialRepair, bool) {
-	if path.Ext(password.source) != ".properties" {
+func credentialPropertyRepair(value property, defaultReplacement string) (CredentialRepair, bool) {
+	if path.Ext(value.source) != ".properties" {
 		return CredentialRepair{}, false
 	}
-	replacement := "${SPRING_DATASOURCE_PASSWORD}"
-	if name, fallback, ok := runtimePlaceholder(password.text); ok {
+	replacement := defaultReplacement
+	if name, fallback, ok := runtimePlaceholder(value.text); ok {
 		if fallback == "" {
 			return CredentialRepair{}, false
 		}
 		replacement = "${" + name + "}"
 	}
 	return CredentialRepair{
-		File: password.source, Property: password.key, Replacement: replacement, original: password.text,
+		File: value.source, Property: value.key, Replacement: replacement, original: value.text,
 	}, true
 }
 
@@ -596,14 +624,14 @@ func credentialRepairDiagnostic(repairs []CredentialRepair) error {
 	return &Diagnostic{
 		Kind: "unsupported",
 		Message: fmt.Sprintf(
-			"literal datasource credentials in %s are not supported; "+
+			"literal credentials in %s are not supported; "+
 				"replace each with a runtime placeholder without a default",
 			strings.Join(targets, ", ")),
 		Repairs: repairs,
 	}
 }
 
-// ApplyCredentialRepairs removes confirmed literal datasource password values from properties files.
+// ApplyCredentialRepairs replaces confirmed literal credential values in properties files.
 func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []CredentialRepair) error {
 	return applyCredentialRepairs(ctx, directory, repairs, defaultCredentialRepairFileOps())
 }

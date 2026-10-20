@@ -1,5 +1,6 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - aifoundry
   - azdadmin
   - azuredocs
   - dbcp
@@ -8,8 +9,10 @@ words:
   - hsqldb
   - jndi
   - magiconair
+  - nevenc
   - passwordless
   - Petclinic
+  - reprovisioning
   - springboot
   - sslmode
   - sslrootcert

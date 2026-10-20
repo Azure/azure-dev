@@ -88,6 +88,12 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"environmentBindings": application.Dockerfile != "",
 		"jdbcOptions":         "", "driver": "",
 		"embeddedUrl": "", "embeddedUrlConfigured": false, "embeddedDriver": "",
+		"foundryEnabled":        false,
+		"foundryDeploymentName": "",
+		"foundryModelName":      "gpt-5.4-nano",
+		"foundryModelVersion":   "2026-03-17",
+		"foundryModelSku":       "GlobalStandard",
+		"foundryModelCapacity":  1,
 		"databasePassword":      "${SPRING_DATABASE_PASSWORD=}",
 		"administratorObjectId": "${SPRING_DATABASE_ADMIN_OID=}",
 		"administratorName":     "${SPRING_DATABASE_ADMIN_NAME=}",
@@ -182,6 +188,17 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			fmt.Fprintf(&binding, "spring.datasource.password=${%s_PASSWORD}\n", p)
 		}
 	}
+	if application.Foundry != nil {
+		if !modelDeploymentName.MatchString(application.Foundry.DeploymentName) {
+			return nil, errors.New("Foundry deployment name is invalid")
+		}
+		parameters["foundryEnabled"] = map[string]any{"value": true}
+		parameters["foundryDeploymentName"] = map[string]any{"value": application.Foundry.DeploymentName}
+		binding.WriteString("spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n")
+		binding.WriteString("spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+		binding.WriteString(
+			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n")
+	}
 	if len(hooks) > 0 {
 		config["hooks"] = hooks
 	}
@@ -200,6 +217,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	for _, key := range []string{
 		"location", "serviceName", "port", "profiles", "appImage", "databaseName",
 		"environmentBindings", "jdbcOptions", "driver", "embeddedUrl", "embeddedUrlConfigured", "embeddedDriver",
+		"foundryEnabled", "foundryDeploymentName",
 	} {
 		applicationParameters[key] = parameters[key]
 	}
@@ -214,6 +232,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"environmentId":    "${SPRING_CONTAINER_APP_ENVIRONMENT_ID}",
 		"registryEndpoint": "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
 		"host":             "${SPRING_DATABASE_HOST=}", "username": username,
+		"foundryAccountName": "${SPRING_FOUNDRY_ACCOUNT_NAME=}",
 	} {
 		applicationParameters[key] = map[string]any{"value": value}
 	}

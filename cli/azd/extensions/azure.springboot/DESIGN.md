@@ -114,9 +114,11 @@ flowchart TD
 
 The implementation supports one single-module Maven Spring Boot HTTP application
 with executable JAR packaging and Java 17+, using supported in-memory storage or
-at most one external MySQL/PostgreSQL datasource. External databases support password
-authentication; PostgreSQL also supports managed identity. Multiple applications,
-multiple datasource bindings, shared-resource deployment, MySQL managed identity,
+at most one external MySQL/PostgreSQL datasource, plus one Spring AI Azure OpenAI
+chat binding. External databases support password authentication; PostgreSQL also
+supports managed identity. Foundry currently uses API-key authentication and one
+pinned model configuration. Multiple applications, multiple bindings of either
+kind, shared-resource deployment, MySQL or Foundry managed identity, model selection,
 Gradle, and non-web/HTTPS-only hosting remain unsupported. These limits do not
 restrict the intended model above.
 
@@ -151,3 +153,45 @@ flowchart TD
 as the database administrator; the deployed application uses its non-admin managed
 identity. This example shows lifecycle dependencies, not every parallel operation
 within `azd up`; other database modes omit or replace the bootstrap steps.
+
+## Appendix: Planned Foundry chat binding
+
+The first Foundry scenario targets a single Spring AI Azure OpenAI chat binding.
+The acceptance application is a sanitized, attributed fixture under
+`testdata/foundry-chat`; live tests copy it before running `azd spring init`.
+
+- Detect `spring-ai-starter-model-azure-openai` and the standard endpoint,
+  API-key, and deployment-name properties. Model Foundry separately from datasource
+  bindings so an application may use both.
+- Provision a `Microsoft.CognitiveServices/accounts` resource with kind
+  `AIServices`, `allowProjectManagement` enabled, and one account-level
+  `accounts/deployments` model deployment. A Foundry project is not required for
+  direct Azure OpenAI-compatible inference.
+- Parameterize the model name, version, SKU, and deployment name. The initial
+  acceptance path uses `gpt-5.4-nano` version `2026-03-17`.
+- Enable local authentication for the key-based Spring AI application. Obtain the
+  key only within Bicep and inject it directly as a Container Apps secret; do not
+  persist it in azd environment values, generated files, outputs, logs, or errors.
+- Apply datasource-password credential rules to the API-key property: inspect
+  active and inactive packaged configuration plus copied external configuration,
+  allow only empty or runtime-placeholder values, and reject literals without
+  disclosure. Any repair remains explicit, interactive, and revalidated.
+- Keep public network access enabled but set the account network ACL default to
+  deny. Allow only the Container App outbound IP addresses, matching the database
+  firewall model. Reprovisioning refreshes this allowlist; stable NAT or private
+  networking remains deferred.
+- Bind the OpenAI-compatible `*.openai.azure.com` endpoint, account key, and model
+  deployment through deployment-owned Spring configuration without modifying
+  application source.
+
+```mermaid
+flowchart TD
+    Init[azd spring init] --> Analyze[Resolve Spring AI Foundry binding]
+    Analyze --> Files[Generate deployment files]
+    Files --> Up[azd up]
+    Up --> Hosting[Create hosting and bootstrap Container App]
+    Hosting --> IPs[Read Container App outbound IPs]
+    IPs --> Foundry[Create network-restricted Foundry account and model deployment]
+    Foundry --> Deploy[Deploy application with runtime-only secret binding]
+    Deploy --> Verify[Call the chat endpoint and require a nonempty response]
+```

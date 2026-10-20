@@ -54,7 +54,10 @@ func TestInitPreflight(t *testing.T) {
 	}
 }
 
-type fixtureResolver struct{ calls int }
+type fixtureResolver struct {
+	calls        int
+	dependencies string
+}
 
 func (r *fixtureResolver) Resolve(_ context.Context, directory string) (*spring.ModelData, error) {
 	r.calls++
@@ -71,7 +74,8 @@ func (r *fixtureResolver) Resolve(_ context.Context, directory string) (*spring.
 <dependency><groupId>com.h2database</groupId><artifactId>h2</artifactId></dependency>
 <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId></dependency>
 <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
-</dependencies></project>`, escaped.String())}, nil
+%s
+</dependencies></project>`, escaped.String(), r.dependencies)}, nil
 }
 
 type fakePrompter struct {
@@ -222,6 +226,27 @@ func TestInitDatabaseNetworkDescription(t *testing.T) {
 			require.NotContains(t, init.Long, "broad development")
 		})
 	}
+}
+
+func TestInitFoundryDescription(t *testing.T) {
+	command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("resolved --yes invocation must not open a prompt channel")
+		return nil, errors.New("unavailable")
+	})
+	resolver.dependencies = `<dependency><groupId>org.springframework.ai</groupId>` +
+		`<artifactId>spring-ai-starter-model-azure-openai</artifactId></dependency>`
+	require.NoError(t, os.WriteFile(filepath.Join("src", "main", "resources", "application.properties"), []byte(
+		"spring.datasource.url=jdbc:h2:mem:catalog\n"+
+			"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n"), 0o600))
+	command.SetArgs([]string{"init", "--yes", "--no-prompt"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Contains(t, output.String(),
+		"Foundry: AIServices account and gpt-5.4-nano model deployment (API-key authentication).")
+	require.Contains(t, output.String(),
+		"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
+	require.NotContains(t, output.String(), "AZURE_OPENAI_API_KEY")
 }
 
 func TestInitMissingPromptChannel(t *testing.T) {
@@ -437,6 +462,33 @@ func TestInitRepairsDatasourcePasswordInteractively(t *testing.T) {
 	data, err := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
 	require.NoError(t, err)
 	require.Contains(t, string(data), "spring.datasource.password=${MYSQL_PASSWORD}\n")
+	require.NotContains(t, string(data), secret)
+}
+
+func TestInitRepairsAzureOpenAIKeyInteractively(t *testing.T) {
+	const secret = "local-foundry-key-must-not-be-disclosed"
+	prompts := &fakePrompter{}
+	command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		return prompts, nil
+	})
+	resolver.dependencies = `<dependency><groupId>org.springframework.ai</groupId>` +
+		`<artifactId>spring-ai-starter-model-azure-openai</artifactId></dependency>`
+	file := filepath.Join("src", "main", "resources", "application.properties")
+	require.NoError(t, os.WriteFile(file, []byte(
+		"spring.datasource.url=jdbc:h2:mem:catalog\n"+
+			"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.api-key="+secret+"\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n"), 0o600))
+	command.SetArgs([]string{"init", "--yes"})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Equal(t, 1, resolver.calls)
+	require.Len(t, prompts.confirmations, 1)
+	require.Contains(t, prompts.confirmations[0], "spring.ai.azure.openai.api-key")
+	require.NotContains(t, prompts.confirmations[0], secret)
+	require.NotContains(t, output.String(), secret)
+	data, err := fs.ReadFile(os.DirFS("."), filepath.ToSlash(file))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}")
 	require.NotContains(t, string(data), secret)
 }
 

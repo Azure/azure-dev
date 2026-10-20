@@ -1,7 +1,8 @@
 # Spring Boot (Beta)
 
 Beta extension for `azd spring init`. It infers a Spring Boot application's
-active database and generates an azd project without requiring an existing `azure.yaml`.
+active database and supported Spring AI Azure OpenAI chat binding, then generates
+an azd project without requiring an existing `azure.yaml`.
 It is not yet published to the extension registry.
 
 See [DESIGN.md](DESIGN.md) for the resource model and configuration-resolution contract.
@@ -55,6 +56,8 @@ Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
+The Spring AI Azure OpenAI starter plus active standard endpoint, API-key, or
+deployment-name configuration establishes a Foundry chat binding.
 Resolved explicit JDBC driver classes are pinned with deployment URLs; omitted
 drivers retain Spring's automatic selection. Driver availability uses Maven's
 resolved runtime dependency graph, including transitive dependencies.
@@ -77,6 +80,11 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 | MySQL JDBC URL | Azure Database for MySQL server and the inferred database |
 | PostgreSQL JDBC URL | Azure Database for PostgreSQL server and the inferred database |
 
+A Foundry chat binding provisions one `AIServices` account and one account-level
+OpenAI model deployment. It does not require a Foundry project, Search, Storage,
+or an embedding deployment. The initial model is `gpt-5.4-nano` version
+`2026-03-17` with a `GlobalStandard` deployment.
+
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
 The current deployment supports HTTP web applications. Explicit non-web mode and
 HTTPS-only application servers require different hosting contracts and are rejected.
@@ -90,14 +98,15 @@ File-based embedded databases require a persistence policy and are not adopted.
 
 - `azure.yaml`, with one explicitly authored service and database hooks only when needed.
 - `infra/`, copied from one extension-owned, parameterized Bicep template for
-  embedded, MySQL/password, PostgreSQL/password, and PostgreSQL/managed identity.
+  embedded, MySQL/password, PostgreSQL/password, PostgreSQL/managed identity,
+  and optional Foundry chat resources.
 - `.azd-spring/`, containing database hooks when needed and, without an
   application-owned Dockerfile, generated container assets and Spring overrides.
 
 When the application has a root `Dockerfile`, initialization preserves and uses
 it instead of generating Docker assets. Deployment-owned Spring profiles, port,
-and datasource bindings are supplied through Container Apps environment variables,
-including a secret reference for password authentication. The extension does not
+datasource, and Foundry bindings are supplied through Container Apps environment
+variables, including secret references for password or API-key authentication. The extension does not
 validate or rewrite the Dockerfile; it remains responsible for producing a runnable
 HTTP image and including any application-owned external configuration it needs.
 Without a root Dockerfile, the container builds through Maven
@@ -128,6 +137,10 @@ credential values are never displayed. This source repair is unavailable with
 remain explicit application fixes.
 This targeted validation does not scan arbitrary properties, application code, or
 other packaged resources; review those before building or publishing an image.
+Initialization also rejects literal `spring.ai.azure.openai.api-key` values in
+the same packaged and retained external configuration scope. Interactive Java
+properties repair follows the datasource-password confirmation and non-disclosure
+rules.
 Existing `azure.yaml`, `azure.yml`, `infra/`, or `.azd-spring/` files are not
 adopted or overwritten. Root Dockerfiles and `.dockerignore` files are preserved.
 Generated Dockerfile-specific ignore rules exclude exact development artifacts
@@ -145,6 +158,10 @@ ACA addresses can change; run `azd provision` to refresh the allowlist. Incremen
 deployment does not remove obsolete rules, including any legacy
 `development-public-access` rule from an older template; remove those explicitly.
 There is no VNet integration, private endpoint, or fixed-egress configuration.
+Foundry keeps public network access enabled with a default-deny network ACL that
+allows only the same ACA-reported outbound addresses. Its account key is resolved
+inside Bicep and injected directly into a Container Apps secret; it is not stored
+in generated files or azd environment values.
 Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
@@ -256,6 +273,9 @@ connections to verify rejected changes were not committed, then remove their fix
 
 Documented decision fixtures are in
 [`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).
+The sanitized Foundry chat acceptance fixture is in
+[`testdata/foundry-chat`](testdata/foundry-chat/README.md); live tests must copy it
+before initialization.
 
 The extension imports a published azd Go module for the SDK/Maven tooling, but
 does not call core project serialization or infrastructure composition APIs.

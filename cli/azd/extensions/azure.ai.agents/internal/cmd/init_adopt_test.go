@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -497,12 +499,42 @@ func TestPrintPromptInitNextSteps(t *testing.T) {
 		printPromptInitNextSteps("prompt-agent")
 	})
 
-	require.Contains(t, stdout, `cd "prompt-agent"`)
+	require.Contains(t, stdout, "  cd prompt-agent\n")
 	require.Contains(t, stdout, "azd up")
 	require.Contains(t, stdout, "azd deploy")
 	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
 	require.NotContains(t, stdout, "azd ai agent run")
 	require.NotContains(t, stdout, "--local")
+}
+
+// Prompt-only adoption into a pre-existing target must print a cd line that a
+// POSIX shell treats literally (no $VAR / $(...) expansion, no `\t` escapes).
+func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, tt := range []struct {
+		dir  string
+		want string
+	}{
+		{"my-$USER", "cd 'my-$USER'"},
+		{"my-$(whoami)", "cd 'my-$(whoami)'"},
+		{"it's", `cd 'it'\''s'`},
+		{"tab\there", "cd 'tab\there'"},
+	} {
+		t.Run(tt.dir, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.ContainsAny(tt.dir, "\t") {
+				t.Skip("tab is not valid in Windows file names")
+			}
+			require.NoError(t, os.Mkdir(tt.dir, 0o700))
+			display := folderDisplayForSubdir(tt.dir)
+			require.Equal(t, tt.dir, display)
+
+			stdout := withCapturedStdout(t, func() {
+				printPromptInitNextSteps(display)
+			})
+			require.Contains(t, stdout, "  "+tt.want+"\n")
+			require.NotContains(t, stdout, `cd "`)
+		})
+	}
 }
 
 func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {

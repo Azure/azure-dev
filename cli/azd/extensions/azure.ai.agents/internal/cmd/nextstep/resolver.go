@@ -59,6 +59,12 @@ func shellQuoteCdPath(path string) string {
 	return path
 }
 
+// CdCommand renders a copyable POSIX `cd` line for dir. Every init next-step
+// surface uses it so a pre-existing target such as `my-$USER` stays literal.
+func CdCommand(dir string) string {
+	return "cd " + shellQuoteCdPath(dir)
+}
+
 // ResolveAfterInit produces the Next: block printed at the end of a
 // successful `azd ai agent init`. Pure function over *State.
 //
@@ -159,7 +165,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	// navigate before running any subsequent commands.
 	if state.CreatedFolderDisplay != "" {
 		out = append(out, Suggestion{
-			Command:     fmt.Sprintf("cd %s", shellQuoteCdPath(state.CreatedFolderDisplay)),
+			Command:     CdCommand(state.CreatedFolderDisplay),
 			Description: "enter your new project folder",
 			Priority:    0,
 		})

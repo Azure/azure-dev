@@ -126,7 +126,15 @@ Queue the live pipeline at the CI branch's commit with these explicit inputs:
 | `deployModes` | `container`; `code` and `both` are rejected for this qualification |
 | `snapshotImage` | Optional immutable image reference; empty automatically builds the selected sample |
 | `templateURL` | The provisioning manifest for that sample, pinned to a source revision |
-| `serviceConnection`, `location` | Confirmed preview-approved subscription and region |
+| `subscriptionId` | Required explicit preview-approved subscription ID for snapshot runs |
+| `serviceConnection` | Authentication identity with existing access to the target subscription |
+| `location` | Confirmed preview-approved region |
+
+The service connection's default subscription is not proof of preview approval.
+The pipeline selects `subscriptionId`, verifies the active context before init,
+and binds registry access and cleanup to that same subscription. An inaccessible
+or mismatched target fails before resource creation; it never falls back to the
+connection's default. Ordinary runs may omit `subscriptionId` to keep that default.
 
 For an existing image, checks run before creating a project. For automatic
 builds, CI resolves dependencies and regenerates the lock file and requirements
@@ -172,8 +180,9 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
    `eng/pipelines/ext-azure-ai-agents-live.yml`, named `ext-azure-ai-agents-live`
    (the name used by `/azp run`).
 2. **Service connection** — the `serviceConnection` parameter (default
-   `azure-sdk-tests`) must map to the shared **TME test subscription** via OIDC /
-   workload-identity federation. The federated identity needs enough RBAC to
+  `azure-sdk-tests`) authenticates via OIDC / workload-identity federation.
+  Its identity must already have access to the selected `subscriptionId`;
+  the parameter does not grant additional access. The identity needs enough RBAC to
    create Foundry projects and deploy models (Contributor + Azure AI Developer +
    Cognitive Services Contributor, or equivalent).
 3. **GitHub auth** — clones of the starter template use the azure-sdk org secret

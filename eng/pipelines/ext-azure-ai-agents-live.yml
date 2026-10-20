@@ -22,7 +22,7 @@
 # Required ADO setup (one-time, admin) — see tests/e2e-live/README.md:
 #   - Register this YAML as a pipeline named `ext-azure-ai-agents-live`.
 #   - Service connection (parameter `serviceConnection`, default `azure-sdk-tests`)
-#     must map to the shared TME test subscription with Contributor + the RBAC
+#     must authorize the selected test subscription with Contributor + the RBAC
 #     needed to create Foundry projects and deploy models.
 #   - GitHub clones of the starter template authenticate with the azure-sdk org
 #     secret `azuresdk-github-pat` (already provided by the Azure SDK ADO
@@ -60,9 +60,13 @@ parameters:
       - code
       - container
   - name: serviceConnection
-    displayName: "Azure service connection (TME subscription)"
+    displayName: "Azure service connection (authentication identity)"
     type: string
     default: azure-sdk-tests
+  - name: subscriptionId
+    displayName: "Target subscription ID (empty uses the service connection default)"
+    type: string
+    default: ""
   - name: templateURL
     displayName: "Sample azure.yaml URL (empty uses the recommended sample)"
     type: string
@@ -343,6 +347,13 @@ extends:
                   workingDirectory: cli/azd/extensions/azure.ai.agents
                   inlineScript: |
                     set -euo pipefail
+                    if [ "$E2E_MEMORY_SNAPSHOT" = "true" ] && [ -z "$E2E_TARGET_SUBSCRIPTION" ]; then
+                      echo "ERROR: snapshot validation requires an explicit preview-approved subscriptionId." >&2
+                      exit 1
+                    fi
+                    if [ -n "$E2E_TARGET_SUBSCRIPTION" ]; then
+                      az account set --subscription "$E2E_TARGET_SUBSCRIPTION"
+                    fi
                     azd config set auth.useAzCliAuth true
                     # Assign first (not `export X=$(...)`, which hides command
                     # substitution failures from set -e), then verify non-empty.
@@ -350,6 +361,10 @@ extends:
                     E2E_TENANT="$(az account show --query tenantId -o tsv)"
                     if [ -z "$E2E_SUBSCRIPTION" ] || [ -z "$E2E_TENANT" ]; then
                       echo "ERROR: failed to resolve subscription/tenant from az account show" >&2
+                      exit 1
+                    fi
+                    if [ -n "$E2E_TARGET_SUBSCRIPTION" ] && [ "${E2E_SUBSCRIPTION,,}" != "${E2E_TARGET_SUBSCRIPTION,,}" ]; then
+                      echo "ERROR: Azure CLI subscription does not match the requested subscriptionId." >&2
                       exit 1
                     fi
                     export E2E_SUBSCRIPTION E2E_TENANT
@@ -370,6 +385,7 @@ extends:
                   # Gate + mode selection consumed by tier2_live_test.go.
                   AZURE_AI_AGENTS_E2E_LIVE: "1"
                   E2E_DEPLOY_MODES: ${{ parameters.deployModes }}
+                  E2E_TARGET_SUBSCRIPTION: ${{ parameters.subscriptionId }}
                   E2E_CREATE_PROJECT: "true"
                   E2E_LOCATION: ${{ parameters.location }}
                   E2E_TEMPLATE_URL: ${{ parameters.templateURL }}
@@ -421,6 +437,8 @@ extends:
                 condition: always()
                 continueOnError: true
                 displayName: Cleanup leaked Azure resources
+                env:
+                  E2E_TARGET_SUBSCRIPTION: ${{ parameters.subscriptionId }}
                 inputs:
                   azureSubscription: ${{ parameters.serviceConnection }}
                   keepAzSessionActive: true
@@ -428,6 +446,12 @@ extends:
                   scriptType: bash
                   scriptLocation: inlineScript
                   inlineScript: |
+                    if [ -n "$E2E_TARGET_SUBSCRIPTION" ]; then
+                      az account set --subscription "$E2E_TARGET_SUBSCRIPTION" || exit 1
+                    fi
+                    AZURE_SUBSCRIPTION_ID="$(az account show --query id -o tsv)" || exit 1
+                    [ -n "$AZURE_SUBSCRIPTION_ID" ] || exit 1
+                    export AZURE_SUBSCRIPTION_ID
                     azd config set auth.useAzCliAuth true
                     echo "Best-effort teardown of any leaked resources..."
                     # RFC 3339 UTC instant for the EngSys DeleteAfter cleanup tag.
@@ -452,7 +476,7 @@ extends:
                           name=${name%/}
                           rg="rg-$name"
                           echo "Tagging $rg (env=$name) with DeleteAfter=$delete_after"
-                          az group update --name "$rg" \
+                          az group update --subscription "$AZURE_SUBSCRIPTION_ID" --name "$rg" \
                             --set "tags.DeleteAfter=$delete_after" --output none || true
                         done
                         azd down --force --purge --no-prompt

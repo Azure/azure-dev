@@ -162,6 +162,9 @@ func newRunner(t *testing.T, mode string) *runner {
 	if tenant := os.Getenv("E2E_TENANT"); tenant != "" {
 		env = append(env, "AZURE_TENANT_ID="+tenant)
 	}
+	if subscription := os.Getenv("E2E_SUBSCRIPTION"); subscription != "" {
+		env = append(env, "AZURE_SUBSCRIPTION_ID="+subscription)
+	}
 	if tok := ghToken(); tok != "" {
 		env = append(env, "GH_TOKEN="+tok, "GITHUB_TOKEN="+tok)
 	}
@@ -787,7 +790,8 @@ func (r *runner) buildSnapshotImage(ctx context.Context, sourceDir string) error
 		return errors.New("provision did not return a valid AZURE_CONTAINER_REGISTRY_ENDPOINT")
 	}
 	registryName, _, _ := strings.Cut(registry, ".")
-	if out, code := r.runQuiet(ctx, r.projectDir, invokeTimeout, "az", "acr", "login", "--name", registryName); code != 0 {
+	loginArgs := snapshotRegistryLoginArgs(registryName, os.Getenv("E2E_SUBSCRIPTION"))
+	if out, code := r.runQuiet(ctx, r.projectDir, invokeTimeout, "az", loginArgs...); code != 0 {
 		return fmt.Errorf("snapshot build registry login failed (exit %d): %s", code, truncate(out, 2000))
 	}
 	image := registry + "/snapshot-validation/" + r.agentName + ":qualification"
@@ -816,7 +820,8 @@ func (r *runner) checkSnapshotImage(ctx context.Context) error {
 	registry, _, _ := strings.Cut(image, "/")
 	if strings.Contains(registry, ".azurecr.") {
 		registryName, _, _ := strings.Cut(registry, ".")
-		if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "az", "acr", "login", "--name", registryName); code != 0 {
+		loginArgs := snapshotRegistryLoginArgs(registryName, os.Getenv("E2E_SUBSCRIPTION"))
+		if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "az", loginArgs...); code != 0 {
 			return fmt.Errorf("snapshot registry login failed (exit %d): %s", code, truncate(out, 2000))
 		}
 	}

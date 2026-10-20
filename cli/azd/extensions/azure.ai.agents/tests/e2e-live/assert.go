@@ -300,6 +300,14 @@ func snapshotImagePython(inspection []byte) (string, error) {
 	return "python", nil
 }
 
+func snapshotRegistryLoginArgs(registry, subscription string) []string {
+	args := []string{"acr", "login", "--name", registry}
+	if subscription != "" {
+		args = append(args, "--subscription", subscription)
+	}
+	return args
+}
+
 func snapshotImageDependencyCheckArgs(image, python string, hasPip bool) []string {
 	checker, checkerArgs := python, []string{"-m", "pip", "check"}
 	if !hasPip {

@@ -317,10 +317,35 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 	require.Equal(t, "eastus2", defaults["location"])
 	require.Equal(t, "both", defaults["deployModes"])
 	require.Equal(t, "", defaults["snapshotImage"])
+	require.Equal(t, "", defaults["subscriptionId"])
 	require.Len(t, pipeline.Extends.Parameters.Stages, 1)
 	require.Len(t, pipeline.Extends.Parameters.Stages[0].Jobs, 1)
 	var prerequisiteLine, firstAzureTaskLine int
+	var subscriptionBoundSteps int
 	for _, step := range pipeline.Extends.Parameters.Stages[0].Jobs[0].Steps {
+		if displayName, exists := step["displayName"]; exists &&
+			(displayName.Value == "Run Tier 2 live golden path" || displayName.Value == "Cleanup leaked Azure resources") {
+			var inputs struct {
+				InlineScript string `yaml:"inlineScript"`
+			}
+			var env map[string]yaml.Node
+			inputsNode, envNode := step["inputs"], step["env"]
+			require.NoError(t, inputsNode.Decode(&inputs))
+			require.NoError(t, envNode.Decode(&env))
+			require.Equal(t, "${{ parameters.subscriptionId }}", env["E2E_TARGET_SUBSCRIPTION"].Value)
+			selectSubscription := strings.Index(inputs.InlineScript, `az account set --subscription "$E2E_TARGET_SUBSCRIPTION"`)
+			require.NotEqual(t, -1, selectSubscription)
+			if displayName.Value == "Run Tier 2 live golden path" {
+				require.Contains(t, inputs.InlineScript, "requires an explicit preview-approved subscriptionId")
+				require.Contains(t, inputs.InlineScript, "does not match the requested subscriptionId")
+				readSubscription := strings.Index(inputs.InlineScript, `E2E_SUBSCRIPTION="$(az account show`)
+				require.Greater(t, readSubscription, selectSubscription)
+			} else {
+				require.Contains(t, inputs.InlineScript, `export AZURE_SUBSCRIPTION_ID`)
+				require.Contains(t, inputs.InlineScript, `az group update --subscription "$AZURE_SUBSCRIPTION_ID"`)
+			}
+			subscriptionBoundSteps++
+		}
 		if task, exists := step["task"]; exists && task.Value == "AzureCLI@2" && firstAzureTaskLine == 0 {
 			firstAzureTaskLine = task.Line
 		}
@@ -350,6 +375,7 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 	require.Positive(t, prerequisiteLine)
 	require.Positive(t, firstAzureTaskLine)
 	require.Less(t, prerequisiteLine, firstAzureTaskLine)
+	require.Equal(t, 2, subscriptionBoundSteps)
 }
 
 func TestSnapshotImagePython(t *testing.T) {
@@ -365,6 +391,12 @@ func TestSnapshotImagePython(t *testing.T) {
 	}
 	_, err := snapshotImagePython([]byte(`[]`))
 	require.Error(t, err)
+}
+
+func TestSnapshotRegistryLoginArgs(t *testing.T) {
+	require.Equal(t, []string{"acr", "login", "--name", "registry"}, snapshotRegistryLoginArgs("registry", ""))
+	require.Equal(t, []string{"acr", "login", "--name", "registry", "--subscription", "approved-subscription"},
+		snapshotRegistryLoginArgs("registry", "approved-subscription"))
 }
 
 func TestSnapshotImageDependencyCheckArgs(t *testing.T) {

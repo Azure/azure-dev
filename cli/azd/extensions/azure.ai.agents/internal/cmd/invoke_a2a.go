@@ -22,13 +22,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// a2aJSONRPCVersion is the JSON-RPC protocol version A2A rides on.
-const a2aJSONRPCVersion = "2.0"
-
-// a2aVersionHeader is the A2A protocol version header (§3.2). Sending it makes
-// the request's protocol version explicit; if the server does not support it,
-// the A2A spec has the agent return VersionNotSupportedError rather than
-// silently applying a compatibility default.
+// a2aVersionHeader selects the public A2A wire dialect, not the Foundry API or
+// agent deployment version. Unsupported dialects produce VersionNotSupportedError.
+// See https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
 const a2aVersionHeader = "A2A-Version"
 
 // validateInvokeA2AVersionFlags validates explicit dialect selection. An empty
@@ -57,14 +53,8 @@ func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentP
 }
 
 func validateA2AVersion(version string) error {
-	if version != "0.3" && version != "1.0" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("invalid --a2a-version %q: supported versions are 0.3 and 1.0", version),
-			"use --a2a-version 0.3 or --a2a-version 1.0",
-		)
-	}
-	return nil
+	_, err := a2aRequestBuilderForVersion(version)
+	return err
 }
 
 // a2aProtocolVersion returns the effective dialect, independently of the deployed
@@ -87,15 +77,14 @@ func (a *InvokeAction) a2aProtocolVersion() string {
 // analogue of the invocations protocol's opaque body pass-through). Otherwise
 // the plain message is wrapped in a JSON-RPC 2.0 request for the selected
 // dialect, with a single user text part and synchronous output configuration.
-//
-// NOTE: The A2A request envelope is centralized here so it can be adjusted in
-// one place if the Foundry A2A contract differs from the vanilla A2A spec.
+// This method owns input handling and serialization; each public dialect's
+// complete body is constructed independently by its selected builder.
 func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {
 		return nil, "", err
 	}
-	version := a.a2aProtocolVersion()
-	if err := validateA2AVersion(version); err != nil {
+	buildRequest, err := a2aRequestBuilderForVersion(a.a2aProtocolVersion())
+	if err != nil {
 		return nil, "", err
 	}
 	body, label, err := a.resolveBody()
@@ -107,34 +96,7 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 		return body, label, nil
 	}
 
-	method, role := "SendMessage", "ROLE_USER"
-	part := map[string]any{"text": string(body)}
-	configuration := map[string]any{
-		"returnImmediately":   false,
-		"acceptedOutputModes": []string{"text"},
-	}
-	if version == "0.3" {
-		method, role = "message/send", "user"
-		part["kind"] = "text"
-		configuration = map[string]any{"blocking": true, "acceptedOutputModes": []string{"text"}}
-	}
-	message := map[string]any{
-		"role":      role,
-		"messageId": uuid.NewString(),
-		"parts":     []map[string]any{part},
-	}
-	if version == "0.3" {
-		message["kind"] = "message"
-	}
-	request := map[string]any{
-		"jsonrpc": a2aJSONRPCVersion,
-		"id":      uuid.NewString(),
-		"method":  method,
-		"params": map[string]any{
-			"message":       message,
-			"configuration": configuration,
-		},
-	}
+	request := buildRequest(string(body), uuid.NewString(), uuid.NewString())
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal A2A request: %w", err)
@@ -142,10 +104,8 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 	return payload, label, nil
 }
 
-// a2aLocal reports that A2A is not supported for local invocation. A2A is a
-// remote agent-to-agent protocol; a locally running agent (azd ai agent run)
-// does not expose an A2A surface, so we fail fast with actionable guidance
-// rather than guessing a local route.
+// a2aLocal reports that this CLI does not yet support local A2A invocation.
+// A2A applications can run locally, but azd currently targets Foundry only.
 func (a *InvokeAction) a2aLocal(_ context.Context) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,

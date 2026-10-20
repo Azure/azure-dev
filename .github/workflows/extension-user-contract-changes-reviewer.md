@@ -5,10 +5,9 @@ description: Review pull requests with installed expert skills
 intent: Ensure each first-party azd extension command, parameter, configuration, or schema change receives a dedicated inline review thread and an approved experiences spec reference before merge.
 on:
   pull_request:
-    types: [ready_for_review, synchronize]
+    types: [opened, ready_for_review, synchronize]
     paths:
       - "cli/azd/extensions/**"
-    forks: ["*"]
   roles: all
 permissions:
   contents: read
@@ -52,7 +51,7 @@ evals:
   - id: one_comment_per_finding
     question: Does the agent output contain exactly one inline review comment for each distinct user contract finding?
   - id: changed_line_anchor
-    question: Is every review comment anchored to a changed line that evidences its user contract finding?
+    question: Is every review comment anchored to a changed RIGHT-side line or a deleted LEFT-side line that evidences its user contract finding?
   - id: spec_request_when_missing
     question: When a finding's review thread does not contain a previously supplied experiences spec PR link, does its comment ask for one?
   - id: no_repeat_spec_request
@@ -110,9 +109,10 @@ the pull request. Use only read-only repository and GitHub access for investigat
 
 ## Inline review comment format
 
-Create exactly one `create_pull_request_review_comment` output for each remaining distinct contract finding. Anchor
-each comment to a changed line on the right side of the diff that directly evidences the finding. Never create a
-general pull request comment. Use this structure:
+Create exactly one `create_pull_request_review_comment` output for each remaining distinct contract finding. For
+additions and modifications, anchor the comment to a changed line on the right side of the diff. For deletion-only
+contract changes, override the default by setting `side: LEFT` and use the deleted base-file line that directly
+evidences the finding. Never create a general pull request comment. Use this structure:
 
 ```markdown
 <!-- extension-user-contract-changes-reviewer -->
@@ -127,9 +127,10 @@ Expert skill: `<skill-name>`.
 <spec status>
 ```
 
-Each output must contain only one root-cause finding. Supply the changed file and line through the inline review
-comment's location fields rather than repeating the path in the body. If one root cause appears in authored and
-generated files, anchor the comment to the authored source and mention any concrete downstream impact in the body.
+Each output must contain only one root-cause finding. Supply the changed file, line, and side through the inline review
+comment's location fields rather than repeating the path in the body. Omit `side` or use `RIGHT` for additions and
+modifications; use `LEFT` for deletion-only findings. If one root cause appears in authored and generated files,
+anchor the comment to the authored source and mention any concrete downstream impact in the body.
 
 When no qualifying approved experiences spec PR link was previously supplied in that finding's thread, set
 `<spec status>` to:

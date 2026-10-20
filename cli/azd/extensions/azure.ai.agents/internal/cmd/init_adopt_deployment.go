@@ -132,8 +132,7 @@ func planAdoptedDeploymentReplacement(
 					"--model-deployment %q cannot tell which template deployment it replaces (%s)",
 					existing, strings.Join(names, ", "),
 				),
-				"run `azd ai agent init` without --no-prompt to choose, "+
-					"or set "+projectDeploymentsEnvKey+" for this environment with `azd env set`",
+				"run `azd ai agent init` without --no-prompt to choose",
 			)
 		}
 		replaced, err = choose(existing, names)

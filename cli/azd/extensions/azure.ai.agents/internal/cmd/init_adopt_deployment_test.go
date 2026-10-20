@@ -160,6 +160,7 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
 		require.Contains(t, err.Error(), "template-chat, template-embed")
+		require.Equal(t, "run `azd ai agent init` without --no-prompt to choose", localErr.Suggestion)
 	})
 
 	t.Run("existing environment list keeps other entries", func(t *testing.T) {

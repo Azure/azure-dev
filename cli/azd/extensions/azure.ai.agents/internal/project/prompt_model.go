@@ -24,7 +24,8 @@ import (
 // the chosen default in AZURE_AI_MODEL_DEPLOYMENT_NAME; azure.yaml keeps the
 // template's deployments. A model that names a declared deployment missing
 // from that list was replaced by an existing deployment (or skipped), so the
-// environment default is used instead.
+// environment default is used instead. On-disk infrastructure owns its
+// deployment inputs, so only model expansion applies in that case.
 func ResolvePromptAgentModel(
 	model string,
 	agentService *azdext.ServiceConfig,
@@ -48,6 +49,14 @@ func ResolvePromptAgentModel(
 		)
 	}
 	model = strings.TrimSpace(expanded)
+
+	onDisk, err := promptModelInfrastructureOnDisk(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	if onDisk {
+		return model, nil
+	}
 
 	selected, ok, err := environmentDeploymentNames(env["AI_PROJECT_DEPLOYMENTS"])
 	if err != nil {

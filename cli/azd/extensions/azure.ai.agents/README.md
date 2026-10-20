@@ -420,6 +420,12 @@ default, an ambiguous replacement, or malformed `AI_PROJECT_DEPLOYMENTS` returns
 silently using the template model. Model-resolution failures do not block
 `azd ai agent show` or `azd ai agent delete`.
 
+For on-disk Bicep or Terraform infrastructure, deployment parameters are
+authoritative, not `AI_PROJECT_DEPLOYMENTS`. Deploy and invoke expand the
+agent's authored model without inferring replacements from that environment
+list. Set the agent's model explicitly or use
+`${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

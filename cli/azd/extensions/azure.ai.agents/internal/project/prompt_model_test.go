@@ -189,3 +189,121 @@ func TestResolvePromptAgentModelExpandsReferencedDeclarations(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "existing", got)
 }
+
+func TestResolvePromptAgentModelWithOnDiskInfrastructure(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		config string
+		path   string
+		files  map[string]string
+		onDisk bool
+	}{
+		{
+			name: "root Bicep", path: "infra", onDisk: true,
+			files: map[string]string{
+				"main.bicep": "",
+				"main.parameters.json": `{"parameters":{"deployments":` +
+					`{"value":[{"name":"chat"},{"name":"embeddings"}]}}}`,
+			},
+		},
+		{
+			name: "custom Bicep parameters", path: "custom",
+			config: "infra:\n  path: custom\n  module: models\n", onDisk: true,
+			files: map[string]string{"models.bicepparam": ""},
+		},
+		{
+			name: "root Terraform", path: "infra",
+			config: "infra:\n  provider: terraform\n", onDisk: true,
+			files: map[string]string{"main.tf": ""},
+		},
+		{
+			name: "Foundry layer", path: "infra/foundry",
+			config: "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+				"      path: infra/foundry\n      module: models\n",
+			files: map[string]string{"models.bicep": ""}, onDisk: true,
+		},
+		{
+			name: "legacy Terraform layer", path: "infra/foundry",
+			config: "infra:\n  layers:\n    - name: foundry\n      provider: terraform\n" +
+				"      path: infra/foundry\n",
+			files: map[string]string{
+				"main.tf": "resource \"azapi_resource\" \"foundry_account\" {}\n" +
+					"resource \"azapi_resource\" \"project\" {}\n",
+				"main.tfvars.json": `{"deployments":[{"name":"chat"},{"name":"embeddings"}]}`,
+			}, onDisk: true,
+		},
+		{
+			name: "ejected Terraform layer", path: "infra/foundry",
+			config: "infra:\n  layers:\n    - name: foundry\n      provider: terraform\n" +
+				"      path: infra/foundry\n",
+			files: map[string]string{
+				".azd-foundry": "terraform-v1\n", "main.tf": "",
+			}, onDisk: true,
+		},
+		{
+			name: "unrelated Bicep layer", path: "infra/app",
+			config: "infra:\n  layers:\n    - name: app\n      provider: bicep\n      path: infra/app\n",
+			files:  map[string]string{"main.bicep": ""},
+		},
+		{
+			name: "unrelated Terraform layer", path: "infra/app",
+			config: "infra:\n  layers:\n    - name: app\n      provider: terraform\n      path: infra/app\n",
+			files:  map[string]string{"main.tf": ""},
+		},
+		{
+			name: "embedded Foundry", path: "infra",
+			config: "infra:\n  provider: microsoft.foundry\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(test.config), 0600))
+			dir := filepath.Join(root, filepath.FromSlash(test.path))
+			require.NoError(t, os.MkdirAll(dir, 0700))
+			for name, content := range test.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0600))
+			}
+			for _, declarations := range [][]string{{"chat"}, {"chat", "embeddings"}} {
+				agent, services := promptModelServices(t, declarations...)
+				env := map[string]string{
+					"AI_PROJECT_DEPLOYMENTS":         "[]",
+					"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+					"CHAT":                           "chat",
+				}
+				got, err := ResolvePromptAgentModel("${CHAT}", agent, services, root, env)
+				if test.onDisk {
+					require.NoError(t, err)
+					require.Equal(t, "chat", got)
+					got, err = ResolvePromptAgentModel(
+						"${AZURE_AI_MODEL_DEPLOYMENT_NAME}", agent, services, root, env,
+					)
+					require.NoError(t, err)
+					require.Equal(t, "unrelated-default", got)
+				} else if len(declarations) == 1 {
+					require.NoError(t, err)
+					require.Equal(t, "unrelated-default", got)
+				} else {
+					require.ErrorContains(t, err, "cannot be inferred")
+				}
+			}
+
+		})
+	}
+}
+
+func TestResolvePromptAgentModelInfrastructureErrors(t *testing.T) {
+	for _, directory := range []bool{false, true} {
+		root := t.TempDir()
+		path := filepath.Join(root, "azure.yaml")
+		if directory {
+			require.NoError(t, os.Mkdir(path, 0700))
+		} else {
+			require.NoError(t, os.WriteFile(path, []byte("infra: ["), 0600))
+		}
+		agent, services := promptModelServices(t, "chat")
+		_, err := ResolvePromptAgentModel("chat", agent, services, root, map[string]string{
+			"AI_PROJECT_DEPLOYMENTS": "[]",
+		})
+		require.ErrorContains(t, err, "infrastructure configuration")
+	}
+}

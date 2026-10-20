@@ -5,12 +5,17 @@
 ### Features Added
 
 - [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
+- [[#10628]](https://github.com/Azure/azure-dev/pull/10628) Add stable v1 deployment-preview gRPC contracts and SDK APIs while preserving existing beta compatibility.
 
 ### Bugs Fixed
 
 - [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension service edits rewriting unrelated `azure.yaml` settings, including empty mappings, large integers, and environment templates.
 - [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension selection prompts mixing terminal UI into JSON output instead of using the injected stderr writer.
 - [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension command metadata, canonical paths, and flag resolution when using parent or child aliases and global flags.
+
+### Other Changes
+
+- [[#10572]](https://github.com/Azure/azure-dev/pull/10572) Update Go dependencies across core and first-party extensions, including gRPC v1.84.0 and OpenTelemetry v1.47.0.
 
 ## 1.36.0 (2026-10-14)
 

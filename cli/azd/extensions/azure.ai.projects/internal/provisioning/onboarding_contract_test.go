@@ -79,7 +79,7 @@ func byoContractProvider(t *testing.T) *FoundryProvisioningProvider {
 	return &FoundryProvisioningProvider{
 		synthResult: result, armTemplate: armTemplate, projectPath: t.TempDir(),
 		envName: "contract", subID: "foundry-sub", rgName: "foundry-rg", location: "eastus",
-		foundryName: "contract-project", principalID: "operator", credential: byoCredentialContract{},
+		foundryName: "contract-project", credential: byoCredentialContract{},
 		tenantID:     "tenant",
 		byoLifecycle: byoLifecycleContract{},
 	}

@@ -90,7 +90,7 @@ func TestBYOSelectedOperationsFollowEffectiveOnDiskInputs(t *testing.T) {
 			}
 			assert.True(t, models)
 			assert.True(t, connections)
-			assert.True(t, developer)
+			assert.False(t, developer, "the standard template no longer performs a developer grant")
 			return nil, nil
 		}),
 		Prepare: byoPrepareContract(func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (

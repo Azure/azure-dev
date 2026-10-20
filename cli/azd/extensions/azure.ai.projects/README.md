@@ -191,9 +191,9 @@ must have the same owning tenant; same-tenant cross-subscription references are
 not rejected merely for using different subscriptions.
 
 Permission checks include the selected standard-template model deployments,
-project connections and target-scope nested deployments, the future project's
-registry grant, and the existing optional developer Cognitive Services User
-assignment with its actual recipient and principal type. A future project
+registry connections and target-scope nested deployments, and the future
+project's registry grant. Developer access retains the agent predeploy lifecycle,
+not an additional provision-time grant. A future project
 principal remains unknown during conditional-delegation checks.
 
 **This onboarding path is not production-ready.** Supported source-bound network

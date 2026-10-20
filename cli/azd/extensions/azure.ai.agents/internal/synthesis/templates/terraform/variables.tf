@@ -93,4 +93,3 @@ variable "container_registry_abac" {
   type        = bool
   default     = false
 }
-

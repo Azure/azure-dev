@@ -193,7 +193,7 @@ func byoParameterValue(source *templateSource, key string) any {
 }
 
 func byoDeploymentSelection(source *templateSource) (onboarding.DeploymentSelection, error) {
-	selection := onboarding.DeploymentSelection{PrincipalType: "User"}
+	selection := onboarding.DeploymentSelection{}
 	if raw := byoParameterValue(source, "deployments"); raw != nil {
 		data, err := json.Marshal(raw)
 		if err != nil {
@@ -204,17 +204,6 @@ func byoDeploymentSelection(source *templateSource) (onboarding.DeploymentSelect
 			return selection, fmt.Errorf("P09: effective deployments must be an array: %w", err)
 		}
 		selection.Models = len(models) > 0
-	}
-	for key, out := range map[string]*string{
-		"principalId": &selection.PrincipalID, "principalType": &selection.PrincipalType,
-	} {
-		if raw := byoParameterValue(source, key); raw != nil {
-			text, ok := raw.(string)
-			if !ok {
-				return selection, fmt.Errorf("P09: effective %s must be a string", key)
-			}
-			*out = text
-		}
 	}
 	for _, key := range []string{"enableNetworkIsolation", "createAgentSubnet", "useManagedEgress"} {
 		if raw := byoParameterValue(source, key); raw != nil {

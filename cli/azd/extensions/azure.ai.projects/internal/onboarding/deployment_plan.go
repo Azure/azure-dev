@@ -3,16 +3,11 @@
 
 package onboarding
 
-import (
-	"fmt"
-	"slices"
-)
+import "slices"
 
 // DeploymentSelection contains effective selections from the standard Foundry template.
 type DeploymentSelection struct {
 	Models         bool
-	PrincipalID    string
-	PrincipalType  string
 	NetworkChanges bool
 }
 
@@ -39,18 +34,6 @@ func WithDeploymentOperations(plan Plan, selected DeploymentSelection) (Plan, er
 		for _, action := range []string{"write", "read", "operations/read"} {
 			add(Operation{CheckID: "P09", Scope: scope, Action: "Microsoft.Resources/deployments/" + action})
 		}
-	}
-	if selected.PrincipalID != "" {
-		switch selected.PrincipalType {
-		case "User", "Group", "ServicePrincipal", "ForeignGroup", "Device":
-		default:
-			return plan, fmt.Errorf("P09: effective developer principalType must identify a supported Entra principal")
-		}
-		add(Operation{
-			CheckID: "P09", Action: roleAssignmentWrite, Scope: parent,
-			RoleID:      "a97b65f3-24c7-4388-baec-2e87135dc908",
-			PrincipalID: selected.PrincipalID, PrincipalType: selected.PrincipalType,
-		})
 	}
 	return plan, nil
 }

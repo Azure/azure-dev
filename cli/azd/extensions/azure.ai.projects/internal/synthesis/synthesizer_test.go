@@ -488,14 +488,8 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			connections := resultConnections(t, res)
-			if tt.wantConnectionNames != nil {
-				gotNames := make([]string, len(connections))
-				for i, c := range connections {
-					gotNames[i] = c.Name
-				}
-				assert.Equal(t, tt.wantConnectionNames, gotNames)
-			}
+			assert.NotContains(t, res.Parameters, "connections")
+			assert.NotContains(t, res.Parameters, "connectionCredentials")
 		})
 	}
 }
@@ -1043,7 +1037,6 @@ func TestTerraformModule_AgentHosting(t *testing.T) {
 	assert.Contains(t, text, `scenario                   = "agent"`)
 	assert.Contains(t, text, "subnetArmId                = var.agent_hosting.agentSubnetResourceId")
 	assert.Contains(t, text, "workloadIdentityResourceId")
-
 }
 
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {

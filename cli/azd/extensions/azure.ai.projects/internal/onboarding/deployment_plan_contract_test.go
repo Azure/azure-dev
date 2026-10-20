@@ -15,15 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const contractDeveloperID = "00000000-0000-0000-0000-000000000044"
-
-func selectedDeploymentContract(t *testing.T, models bool, principalType string) Plan {
+func selectedDeploymentContract(t *testing.T, models bool) Plan {
 	t.Helper()
 	plan, err := BuildPlan(contractPlanInput())
 	require.NoError(t, err)
 	plan.Hosting.Parent = "/subscriptions/foundry-sub/resourceGroups/existing-foundry"
 	plan, err = WithDeploymentOperations(plan, DeploymentSelection{
-		Models: models, PrincipalID: contractDeveloperID, PrincipalType: principalType,
+		Models: models,
 	})
 	require.NoError(t, err)
 	return plan
@@ -31,7 +29,7 @@ func selectedDeploymentContract(t *testing.T, models bool, principalType string)
 
 func TestSelectedStandardTemplateScopesAndRecipients(t *testing.T) {
 	for _, models := range []bool{false, true} {
-		plan := selectedDeploymentContract(t, models, "User")
+		plan := selectedDeploymentContract(t, models)
 		has := func(action, scope string) bool {
 			return slices.ContainsFunc(plan.Operations, func(op Operation) bool { return op.Action == action && op.Scope == scope })
 		}
@@ -42,15 +40,11 @@ func TestSelectedStandardTemplateScopesAndRecipients(t *testing.T) {
 			assert.False(t, has("Microsoft.Resources/deployments/"+action, plan.Registry.Parent),
 				"BYO uses the journaled registry SDK grant, not a nested deployment in the supplied registry RG")
 		}
-		index := slices.IndexFunc(plan.Operations, func(op Operation) bool { return op.RoleID == cognitiveUserRoleID })
-		require.NotEqual(t, -1, index)
-		assert.Equal(t, contractDeveloperID, plan.Operations[index].PrincipalID)
-		assert.Equal(t, "User", plan.Operations[index].PrincipalType)
-		assert.Equal(t, plan.Hosting.Parent, plan.Operations[index].Scope)
+		assert.False(t, slices.ContainsFunc(plan.Operations, func(op Operation) bool {
+			return op.Action == roleAssignmentWrite
+		}), "developer grants belong to agent predeploy, not the standard provisioning template")
 	}
 }
-
-const cognitiveUserRoleID = "a97b65f3-24c7-4388-baec-2e87135dc908"
 
 func selectedOperationAuthorizer(t *testing.T, scope, excluded, condition string) *scopedAuthorizer {
 	t.Helper()
@@ -75,12 +69,11 @@ func selectedOperationAuthorizer(t *testing.T, scope, excluded, condition string
 }
 
 func TestMissingSelectedStandardTemplateActionStopsPreparation(t *testing.T) {
-	plan := selectedDeploymentContract(t, true, "User")
+	plan := selectedDeploymentContract(t, true)
 	for _, selected := range []struct{ action, scope string }{
 		{"Microsoft.CognitiveServices/accounts/projects/connections/write", plan.Hosting.Parent},
 		{"Microsoft.CognitiveServices/accounts/deployments/write", plan.Hosting.Parent},
 		{"Microsoft.Resources/deployments/write", plan.Hosting.Parent},
-		{roleAssignmentWrite, plan.Hosting.Parent},
 	} {
 		t.Run(selected.action+"/"+selected.scope, func(t *testing.T) {
 			index := slices.IndexFunc(plan.Operations, func(op Operation) bool {
@@ -108,29 +101,6 @@ func TestMissingSelectedStandardTemplateActionStopsPreparation(t *testing.T) {
 				return nil
 			})
 			require.Error(t, err)
-		})
-	}
-}
-
-func TestDeveloperDelegationUsesActualRoleRecipientAndType(t *testing.T) {
-	const attribute = "@Request[Microsoft.Authorization/roleAssignments:"
-	condition := attribute + "RoleDefinitionId] GuidEquals {'" + cognitiveUserRoleID + "'} AND " +
-		attribute + "PrincipalId] GuidEquals {'" + contractDeveloperID + "'} AND " +
-		attribute + "PrincipalType] StringEquals 'User'"
-	for _, principalType := range []string{"User", "ServicePrincipal"} {
-		t.Run(principalType, func(t *testing.T) {
-			plan := selectedDeploymentContract(t, false, principalType)
-			index := slices.IndexFunc(plan.Operations, func(op Operation) bool { return op.RoleID == cognitiveUserRoleID })
-			require.NotEqual(t, -1, index)
-			op := plan.Operations[index]
-			auth := selectedOperationAuthorizer(t, op.Scope, "", condition)
-			status, reason, err := auth.evaluate(t.Context(), callerIdentity{objectID: "operator"}, op)
-			require.NoError(t, err)
-			want := Pass
-			if principalType != "User" {
-				want = Fail
-			}
-			assert.Equal(t, want, status, reason)
 		})
 	}
 }

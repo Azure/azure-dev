@@ -105,6 +105,16 @@ func isSystemAcrConnection(resource map[string]any) bool {
 			"'2023-07-01').loginServer]"
 		clientID = "[parameters('foundryProjectPrincipalId')]"
 		resourceID = "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+	case "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), " +
+		"format('{0}-conn', variables('effectiveName')))]":
+		target = "[if(variables('reuseRegistry'), reference(extensionResourceId(" +
+			"format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('registryResourceId'), '/')[2], " +
+			"split(parameters('registryResourceId'), '/')[4]), 'Microsoft.ContainerRegistry/registries', " +
+			"last(split(parameters('registryResourceId'), '/'))), '2023-07-01').loginServer, " +
+			"reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), " +
+			"'2023-07-01').loginServer)]"
+		clientID = "[parameters('foundryProjectPrincipalId')]"
+		resourceID = "[variables('effectiveRegistryId')]"
 	case "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), " +
 		"format('{0}-conn', parameters('acrName')))]":
 		target = "[parameters('acrEndpoint')]"

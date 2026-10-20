@@ -1085,7 +1085,7 @@ func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
 
 func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
 	if hasNativeA2A(definition) {
-		fmt.Fprintln(writer, "\nNative A2A 1.0 configured; init does not generate an A2A application.")
+		fmt.Fprintln(writer, "\nA2A hosted agent (1.0) configured; init does not generate an A2A server.")
 		fmt.Fprintln(writer, "Your application must serve POST /invocations/a2a, "+
 			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
 	}
@@ -1184,7 +1184,7 @@ func promptProtocols(
 		versionOf[p.Name] = p.Version
 		label := p.Name
 		if p.Name == "a2a" {
-			label = "a2a — Native A2A 1.0"
+			label = "a2a — A2A hosted agent (1.0)"
 		}
 		choices = append(choices, &azdext.MultiSelectChoice{
 			Value:    p.Name,

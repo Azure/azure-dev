@@ -563,18 +563,18 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
-## Initializing a native A2A agent
+## Initializing an A2A hosted agent
 
-For an application that implements native A2A 1.0, use the existing-code init flow.
-In the protocol multi-select, select `a2a — Native A2A 1.0` and deselect `responses`
-if your application does not implement Responses. Responses remains selected by
-default; all other choices, including native A2A, start unselected. There is no
-additional version prompt or native A2A 0.3 choice.
+For an application that implements A2A 1.0, use the existing-code init flow.
+In the protocol multi-select, select `a2a — A2A hosted agent (1.0)` and deselect
+`responses` if your application does not implement Responses. Responses remains
+selected by default; all other choices, including A2A, start unselected. There is
+no additional version prompt or A2A 0.3 implementation choice.
 
 For non-interactive initialization from your source directory:
 
 ```bash
-azd ai agent init --src . --agent-name my-native-agent --protocol a2a \
+azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \
   --deploy-mode code --runtime python_3_13 --entry-point app.py \
   --dep-resolution remote_build --no-prompt
 ```
@@ -586,10 +586,10 @@ service (without automatically adding Responses):
 <!-- azd:doc-example partial -->
 ```yaml
 services:
-  my-native-agent:
+  my-a2a-agent:
     host: azure.ai.agent
     kind: hosted
-    name: my-native-agent
+    name: my-a2a-agent
     protocols:
       - protocol: a2a
         version: 1.0.0
@@ -600,18 +600,23 @@ services:
 You can select additional protocols that your application implements; init composes
 those endpoint protocols without replacing existing authorization schemes or version
 selectors. Adopting a sample/project manifest preserves its protocol declarations
-rather than changing them to native A2A.
+rather than changing them to A2A.
 
-Init writes configuration only; it does **not** create an A2A application. Your
+The service's `protocols` list declares application capabilities and implementation
+versions. In contrast, `agentEndpoint.protocols` enables public endpoints; enabling
+`a2a` there does not declare that the application implements A2A.
+
+Init writes configuration only; it does **not** generate an A2A server. Your
 application must serve:
 
 - `POST /invocations/a2a`
 - `GET /invocations/a2a/.well-known/agent-card.json`
 - `GET /readiness`
 
-Native A2A requires subscription onboarding/service support. Init does not enable
-that service feature, and successful initialization does not confirm onboarding.
-The [native init scaffold scenario](tests/cli-interactive-tester-scenarios/tier1/1.11-init-native-a2a.yaml)
+A2A hosted agents require service onboarding and support in the selected region.
+Init does not enable that service feature, and successful initialization does not
+confirm onboarding or region availability.
+The [A2A hosted agent init scaffold scenario](tests/cli-interactive-tester-scenarios/tier1/1.11-init-native-a2a.yaml)
 checks the local configuration separately from live deployment and invocation.
 For invocation file input, continue to specify `--a2a-version` explicitly;
 init does not inspect request bodies.
@@ -644,8 +649,20 @@ agent versions. See the pinned [A2A 1.0 versioning specification](https://a2a-pr
 and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
 
 For plain messages, azd composes both the version-specific JSON-RPC body and
-the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
-default when `--a2a-version` is omitted:
+the `A2A-Version` header. For an A2A hosted agent, the selected service's A2A
+implementation version `1.0.x` normalizes to public version `1.0` when
+`--a2a-version` is omitted. Public `agentEndpoint.protocols` enablement is not
+an application implementation declaration and does not drive this inference.
+An explicit `--a2a-version` overrides inference when compatible with the
+implementation. An A2A `0.3`-only implementation returns an error; a separate
+Responses implementation permits translation selection, subject to service
+support. Future implementation versions are not assumed compatible.
+
+Without an A2A implementation declaration, `1.0` is a convenience default for
+translation because azd controls both the body and header. This also applies to
+standalone `--agent-endpoint` invocation without a local definition. Foundry
+selects passthrough or translation; passthrough requires service enablement.
+For example, when using the translation convenience default:
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"
@@ -661,7 +678,7 @@ waiting for a terminal state or an input/authentication request.
 
 **File input requires an explicit version.** When using `--input-file` (`-f`)
 with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
-native A2A agent YAML declares a version. No heuristic infers the version
+A2A hosted agent YAML declares a version. No heuristic infers the version
 from agent configuration or the request body.
 
 The file must contain a complete public JSON-RPC request for the selected A2A
@@ -731,6 +748,14 @@ artifacts over generic status messages such as “Done.” Other Tasks prefer st
 messages so prompts, progress, and failure details remain visible, falling back to
 artifacts when no status text is present. History is the final text fallback.
 Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
+
+Azd saves server-returned Foundry session IDs when available, including for A2A.
+Responses also saves conversation IDs. For A2A hosted agents, a saved session ID
+or request-body context ID does not guarantee the same process, in-memory state,
+or successful task retrieval; routing and affinity are service-controlled. With a
+process-local task store, `GetTask` may return `TaskNotFound` without affinity.
+A successful message exchange does not establish that the full session/task
+lifecycle works.
 
 ## Invoke latency diagnostics
 
@@ -1462,6 +1487,10 @@ conditional writes with ETags, and pagination. Editing state does not resume or
 stop agent work.
 
 ## Session carry-over across deploys
+
+Session carry-over describes CLI-side bookkeeping for saved Foundry session IDs.
+For A2A hosted agents, carrying over an ID does not guarantee process affinity,
+in-memory state, or `GetTask` support; routing remains service-controlled.
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
 sessions are bound to the version they were created on. By default, the first

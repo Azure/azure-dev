@@ -761,7 +761,7 @@ func TestNativeA2AInitInteractive(t *testing.T) {
 				for i, expected := range []struct{ value, label string }{
 					{"responses", "responses"}, {"invocations", "invocations"},
 					{"invocations_ws", "invocations_ws"}, {"activity", "activity"},
-					{"a2a", "a2a — Native A2A 1.0"},
+					{"a2a", "a2a — A2A hosted agent (1.0)"},
 				} {
 					require.Equal(t, expected.value, choices[i].Value)
 					require.Equal(t, expected.label, choices[i].Label)
@@ -833,7 +833,8 @@ func TestComposeLocalAgentEndpoint(t *testing.T) {
 			require.Equal(t, want, definition.AgentEndpoint.Protocols)
 			var writer bytes.Buffer
 			printNativeA2AGuidance(&writer, definition)
-			require.Contains(t, writer.String(), "does not generate an A2A application")
+			require.Contains(t, writer.String(),
+				"A2A hosted agent (1.0) configured; init does not generate an A2A server.")
 			for _, route := range []string{
 				"POST /invocations/a2a", "GET /invocations/a2a/.well-known/agent-card.json", "GET /readiness",
 			} {

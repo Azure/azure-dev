@@ -360,7 +360,7 @@ func reconcileMcpToolWithClaimed(
 		}
 
 		urlChanged := existingURL != "" && existingURL != mcpURL
-		if serverLabel != "" {
+		if existingLabel == "" && serverLabel != "" {
 			tool["server_label"] = serverLabel
 		}
 		tool["server_url"] = mcpURL

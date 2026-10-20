@@ -995,6 +995,31 @@ func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *
 		require.ErrorContains(t, err, `MCP tool "research-tools" declares server_url`)
 		require.Len(t, managed.Tools, 1)
 	})
+
+	t.Run("preserves user-authored server_label and toolChoice on exact URL match", func(t *testing.T) {
+		t.Parallel()
+		managed := &agent_yaml.PromptAgent{
+			Model:        "gpt-4.1-mini",
+			Instructions: "Help.",
+			ToolChoice:   map[string]any{"type": "mcp", "server_label": "search"},
+			Tools: []any{
+				map[string]any{
+					"type":             "mcp",
+					"server_label":     "search",
+					"server_url":       urlV1,
+					"require_approval": "never",
+				},
+			},
+		}
+		require.NoError(t, reconcileMcpTool(managed, "research-tools", urlV1, "research-tools-mcp"))
+		require.Len(t, managed.Tools, 1)
+		tool := managed.Tools[0].(map[string]any)
+		require.Equal(t, "search", tool["server_label"])
+		require.Equal(t, urlV1, tool["server_url"])
+		require.Equal(t, "research-tools-mcp", tool["project_connection_id"])
+		require.Equal(t, "never", tool["require_approval"])
+		require.Equal(t, map[string]any{"type": "mcp", "server_label": "search"}, managed.ToolChoice)
+	})
 }
 
 func TestFoundryToolboxBuilder_RejectsNonFoundryEndpointHost(t *testing.T) {

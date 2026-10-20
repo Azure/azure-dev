@@ -52,7 +52,6 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 				"conversationEngine": map[string]any{
 					"type": "hosted_agent", "name": "voice-target", "version": "deployed",
 				},
-				"greeting": map[string]any{"text": "Hello"},
 			},
 			false,
 			false,

@@ -2912,8 +2912,7 @@ func (p *BicepProvider) setProvisionValidationOutcome(
 // has Microsoft.Authorization/roleAssignments/write permission when the template contains
 // role assignments. The PermissionsService is resolved lazily via the service locator so it
 // is only instantiated when actually needed.
-// A missing permission is critical only when a snapshot assignment explicitly targets
-// the subscription scope checked here; other scopes remain advisory.
+// Every missing-permission finding from this subscription check is a critical warning.
 //
 // For B2B/guest users, the principal's object ID differs between the home tenant and the
 // resource tenant. This check resolves the principal ID in the resource tenant context
@@ -2960,38 +2959,23 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if !hasPermission.HasPermission {
-		subscriptionScope := "/subscriptions/" + subscriptionId
-		isCritical := slices.ContainsFunc(valCtx.SnapshotResources, func(resource armTemplateResource) bool {
-			return strings.EqualFold(resource.Type, "Microsoft.Authorization/roleAssignments") &&
-				strings.EqualFold(strings.TrimRight(resource.Scope, "/"), subscriptionScope)
-		})
-		scopeMessage := output.WithWarningFormat("Deployment will likely fail.")
-		suggestion := fmt.Sprintf(
-			"Ensure you have the 'Role Based Access Control Administrator', "+
-				"'User Access Administrator', 'Owner', or a custom role "+
-				"with '%s' assigned to your account.",
-			requiredActions[0],
-		)
-		if !isCritical {
-			scopeMessage = "Role assignment scopes were not verified. " +
-				"Permissions may be granted at a different scope."
-			suggestion = fmt.Sprintf(
-				"Verify that your account has '%s' at the scopes of the role assignments.",
-				requiredActions[0],
-			)
-		}
 		return []ProvisionValidationCheckResult{{
 			Severity:     ProvisionValidationCheckWarning,
-			IsCritical:   isCritical,
+			IsCritical:   true,
 			DiagnosticID: "role_assignment_missing",
 			Message: fmt.Sprintf(
 				"Missing role assignment permissions\n%s\n%s %s\n%s %s\n%s %s",
-				scopeMessage,
+				output.WithWarningFormat("Deployment will likely fail."),
 				output.WithGrayFormat("Principal ID:"), principalId,
 				output.WithGrayFormat("Subscription:"), subscriptionId,
 				output.WithGrayFormat("Required permission:"), requiredActions[0],
 			),
-			Suggestion: suggestion,
+			Suggestion: fmt.Sprintf(
+				"Ensure you have the 'Role Based Access Control Administrator', "+
+					"'User Access Administrator', 'Owner', or a custom role "+
+					"with '%s' assigned to your account.",
+				requiredActions[0],
+			),
 		}}, nil
 	}
 

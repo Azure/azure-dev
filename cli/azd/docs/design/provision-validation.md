@@ -129,7 +129,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 | Check | What It Does | Severity |
 |---|---|---|
-| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and checks `roleAssignments/write` permission on the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical only when a snapshot assignment explicitly targets that subscription scope; otherwise regular warning |
+| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and checks `roleAssignments/write` permission on the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical warning |
 | Conditional role assignment permissions | Warns when all roles granting the required permission have ABAC conditions. Diagnostic: `role_assignment_conditional`. | Warning |
 | Reserved resource names | Checks predicted resource names against Azure's reserved-word restrictions. Diagnostic: `reserved_resource_name`. | Warning |
 | AI model availability | Checks whether the requested model, SKU, and version exist in the deployment location's catalog. Diagnostic: `ai_model_not_found`. | Warning |
@@ -139,7 +139,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 Results are displayed using the `ProvisionValidationReport` UX component (`pkg/output/ux/provision_validation_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors.
 
-Regular warnings use `(!) Warning:`. The built-in missing-role-permission warning uses a bold yellow `(!) Critical warning:` heading only when a snapshot role assignment explicitly targets the subscription scope checked by the permission lookup. Cross-subscription, resource-group, resource-level, unresolved, and absent scopes remain regular warnings because permissions at those actual scopes were not verified. A finding for an unverified scope does not assert likely deployment failure. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Extension findings remain regular warnings.
+Regular warnings use `(!) Warning:`. Every built-in missing-role-permission finding from the existing subscription check uses a bold yellow `(!) Critical warning:` heading, regardless of the snapshot assignment scope. There is no verified/unverified scope split and no new scope-specific permission lookup. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Conditional-permission and extension findings remain regular warnings.
 
 Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation: `2 critical warnings found.` when all warnings are critical, `2 warnings found (1 critical).` for mixed warnings, or `2 warnings found.` for regular-only warnings. A single finding uses `1 critical warning found.` or `1 warning found.`.
 

@@ -34,7 +34,7 @@ The validation framework is pluggable — new checks can be added via `AddCheck(
 **UX behavior:**
 
 - No issues → proceed silently
-- Warnings only → display indented warning details, separated suggestions, and a per-report total, then prompt to continue. Regular warnings default to **Yes**. A built-in missing-role-permission warning is **critical** and defaults to **No** only when a snapshot assignment explicitly targets the subscription scope actually checked; unverified scopes remain regular warnings. In no-prompt mode, critical warnings fail with exit code 1 (`canceled_by_no_prompt`). Exhausted piped input without a valid response also fails critical confirmation (`error`). Users can explicitly continue interactively; an interactive No retains exit code 0 (`canceled_by_user`). In parallel layers, cancellation cannot hide a real failure in another layer.
+- Warnings only → display indented warning details, separated suggestions, and a per-report total, then prompt to continue. Regular warnings default to **Yes**. Every built-in missing-role-permission finding from the existing subscription check is **critical** and defaults to **No**, without a verified/unverified assignment-scope split. In no-prompt mode, critical warnings fail with exit code 1 (`canceled_by_no_prompt`). Exhausted piped input without a valid response also fails critical confirmation (`error`). Users can explicitly continue interactively; an interactive No retains exit code 0 (`canceled_by_user`). In parallel layers, cancellation cannot hide a real failure in another layer.
 - Errors → display and cancel
 
 Validation cancellation stops project post-provision handlers and layer post-hooks before they can run.

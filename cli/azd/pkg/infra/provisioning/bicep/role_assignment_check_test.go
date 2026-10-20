@@ -125,12 +125,7 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(),
-				&validationContext{
-					Props: resourcesProperties{HasRoleAssignments: true},
-					SnapshotResources: []armTemplateResource{{
-						Type: "Microsoft.Authorization/roleAssignments", Scope: "/subscriptions/SUBSCRIPTION_ID",
-					}},
-				})
+				&validationContext{Props: resourcesProperties{HasRoleAssignments: true}})
 			require.NoError(t, err)
 			require.Len(t, results, 1)
 			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
@@ -183,9 +178,9 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
 		{
-			name: "cross-subscription automation", crossSubscription: true, noPrompt: true,
-			wantDefault: true, wantSummary: "1 warning found.",
-			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+			name: "cross-subscription automation", critical: true, crossSubscription: true, noPrompt: true,
+			wantError: true, wantSummary: "1 critical warning found.",
+			wantOutcome: provisionValidationOutcomeCanceledNoPrompt,
 		},
 		{
 			name: "mixed automation", critical: true, regular: true, noPrompt: true,
@@ -258,7 +253,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			resources := make([]armTemplateResource, 0, 2)
-			if tt.critical || tt.crossSubscription {
+			if tt.critical {
 				scope := "/subscriptions/SUBSCRIPTION_ID"
 				if tt.crossSubscription {
 					scope = "/subscriptions/other-subscription"
@@ -345,12 +340,11 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 
 func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 	tests := []struct {
-		name     string
-		scopes   []string
-		critical bool
+		name   string
+		scopes []string
 	}{
-		{name: "checked subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}, critical: true},
-		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}, critical: true},
+		{name: "deployment subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}},
+		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}},
 		{name: "cross subscription", scopes: []string{"/subscriptions/other-subscription"}},
 		{name: "resource group", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"}},
 		{name: "resource", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"}},
@@ -358,9 +352,8 @@ func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 		{name: "unresolved", scopes: []string{"[subscription().id]"}},
 		{name: "no snapshot"},
 		{
-			name:     "checked and unchecked assignments",
-			scopes:   []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
-			critical: true,
+			name:   "multiple scopes",
+			scopes: []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
 		},
 	}
 	for _, tt := range tests {
@@ -377,11 +370,9 @@ func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(), valCtx)
 			require.NoError(t, err)
 			require.Len(t, results, 1)
-			require.Equal(t, tt.critical, results[0].IsCritical)
-			if !tt.critical {
-				require.NotContains(t, results[0].Message, "Deployment will likely fail")
-				require.Contains(t, results[0].Message, "scopes were not verified")
-			}
+			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
+			require.True(t, results[0].IsCritical)
+			require.Contains(t, results[0].Message, "Deployment will likely fail")
 		})
 	}
 }

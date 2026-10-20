@@ -116,18 +116,22 @@ func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
 	if version == "0.3" {
 		method, role = "message/send", "user"
 		part["kind"] = "text"
-		configuration = map[string]any{"blocking": true}
+		configuration = map[string]any{"blocking": true, "acceptedOutputModes": []string{"text"}}
+	}
+	message := map[string]any{
+		"role":      role,
+		"messageId": uuid.NewString(),
+		"parts":     []map[string]any{part},
+	}
+	if version == "0.3" {
+		message["kind"] = "message"
 	}
 	request := map[string]any{
 		"jsonrpc": a2aJSONRPCVersion,
 		"id":      uuid.NewString(),
 		"method":  method,
 		"params": map[string]any{
-			"message": map[string]any{
-				"role":      role,
-				"messageId": uuid.NewString(),
-				"parts":     []map[string]any{part},
-			},
+			"message":       message,
 			"configuration": configuration,
 		},
 	}

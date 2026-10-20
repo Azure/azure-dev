@@ -133,9 +133,13 @@ Existing deployment files are not overwritten.`,
 				}
 			}
 			if application.Foundry != nil {
+				authentication := "API-key"
+				if application.Foundry.Authentication == "managedIdentity" {
+					authentication = "managed identity"
+				}
 				fmt.Fprintf(cmd.OutOrStdout(),
-					"Foundry: AIServices account and %s model deployment (API-key authentication).\n",
-					application.Foundry.DeploymentName)
+					"Foundry: AIServices account and %s model deployment (%s authentication).\n",
+					application.Foundry.DeploymentName, authentication)
 				fmt.Fprintln(cmd.OutOrStdout(),
 					"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
 			}

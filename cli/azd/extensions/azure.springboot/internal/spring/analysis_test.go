@@ -120,11 +120,29 @@ func TestAnalyzeFoundryBinding(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, application.Foundry)
 			require.Equal(t, tt.wantDeployment, application.Foundry.DeploymentName)
+			require.Equal(t, "apiKey", application.Foundry.Authentication)
 			require.Len(t, application.Foundry.Evidence, 3)
 			require.Empty(t, application.Requirements)
 			require.Nil(t, application.Embedded)
 		})
 	}
+}
+
+func TestAnalyzeFoundryManagedIdentityBinding(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.NoError(t, err)
+	require.NotNil(t, application.Foundry)
+	require.Equal(t, "gpt-5.4-nano", application.Foundry.DeploymentName)
+	require.Equal(t, "managedIdentity", application.Foundry.Authentication)
+	require.Len(t, application.Foundry.Evidence, 2)
 }
 
 func TestAnalyzeFoundryRejectsLiteralEndpoint(t *testing.T) {

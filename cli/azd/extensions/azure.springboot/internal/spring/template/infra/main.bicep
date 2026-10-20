@@ -22,6 +22,8 @@ param embeddedUrl string = ''
 param embeddedUrlConfigured bool
 param embeddedDriver string = ''
 param foundryEnabled bool = false
+@allowed(['apiKey', 'managedIdentity'])
+param foundryAuthentication string = 'apiKey'
 param foundryDeploymentName string = ''
 param foundryModelName string = 'gpt-5.4-nano'
 param foundryModelVersion string = '2026-03-17'
@@ -75,6 +77,8 @@ module foundry 'foundry.bicep' = if (foundryEnabled) {
     modelSku: foundryModelSku
     modelCapacity: foundryModelCapacity
     outboundIps: bootstrap.outputs.outboundIps
+    authentication: foundryAuthentication
+    applicationPrincipalId: bootstrap.outputs.principalId
   }
 }
 
@@ -114,6 +118,7 @@ module application 'application.bicep' = {
     embeddedUrlConfigured: embeddedUrlConfigured
     embeddedDriver: embeddedDriver
     foundryEnabled: foundryEnabled
+    foundryAuthentication: foundryAuthentication
     foundryAccountName: foundryEnabled ? foundry!.outputs.accountName : ''
     foundryDeploymentName: foundryDeploymentName
   }

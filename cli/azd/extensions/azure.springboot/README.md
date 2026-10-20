@@ -58,6 +58,9 @@ in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
 The Spring AI Azure OpenAI starter plus active standard endpoint, API-key, or
 deployment-name configuration establishes a Foundry chat binding.
+An active non-empty API-key property selects API-key authentication. If the
+property is absent or empty, Spring AI uses `DefaultAzureCredential`, and the
+extension selects managed identity.
 Resolved explicit JDBC driver classes are pinned with deployment URLs; omitted
 drivers retain Spring's automatic selection. Driver availability uses Maven's
 resolved runtime dependency graph, including transitive dependencies.
@@ -159,9 +162,11 @@ deployment does not remove obsolete rules, including any legacy
 `development-public-access` rule from an older template; remove those explicitly.
 There is no VNet integration, private endpoint, or fixed-egress configuration.
 Foundry keeps public network access enabled with a default-deny network ACL that
-allows only the same ACA-reported outbound addresses. Its account key is resolved
-inside Bicep and injected directly into a Container Apps secret; it is not stored
-in generated files or azd environment values.
+allows only the same ACA-reported outbound addresses. API-key mode resolves the
+account key inside Bicep and injects it directly into a Container Apps secret;
+the key is not stored in generated files or azd environment values. Managed
+identity mode disables local authentication, grants the Container App identity
+`Cognitive Services OpenAI User`, and creates no Foundry secret.
 Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.

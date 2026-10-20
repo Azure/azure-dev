@@ -89,6 +89,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"jdbcOptions":         "", "driver": "",
 		"embeddedUrl": "", "embeddedUrlConfigured": false, "embeddedDriver": "",
 		"foundryEnabled":        false,
+		"foundryAuthentication": "apiKey",
 		"foundryDeploymentName": "",
 		"foundryModelName":      "gpt-5.4-nano",
 		"foundryModelVersion":   "2026-03-17",
@@ -192,10 +193,17 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		if !modelDeploymentName.MatchString(application.Foundry.DeploymentName) {
 			return nil, errors.New("Foundry deployment name is invalid")
 		}
+		if application.Foundry.Authentication != "apiKey" &&
+			application.Foundry.Authentication != "managedIdentity" {
+			return nil, errors.New("Foundry authentication must be apiKey or managedIdentity")
+		}
 		parameters["foundryEnabled"] = map[string]any{"value": true}
+		parameters["foundryAuthentication"] = map[string]any{"value": application.Foundry.Authentication}
 		parameters["foundryDeploymentName"] = map[string]any{"value": application.Foundry.DeploymentName}
 		binding.WriteString("spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n")
-		binding.WriteString("spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+		if application.Foundry.Authentication == "apiKey" {
+			binding.WriteString("spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+		}
 		binding.WriteString(
 			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n")
 	}
@@ -217,7 +225,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	for _, key := range []string{
 		"location", "serviceName", "port", "profiles", "appImage", "databaseName",
 		"environmentBindings", "jdbcOptions", "driver", "embeddedUrl", "embeddedUrlConfigured", "embeddedDriver",
-		"foundryEnabled", "foundryDeploymentName",
+		"foundryEnabled", "foundryAuthentication", "foundryDeploymentName",
 	} {
 		applicationParameters[key] = parameters[key]
 	}

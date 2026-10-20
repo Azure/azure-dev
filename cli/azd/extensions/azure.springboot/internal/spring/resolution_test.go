@@ -165,6 +165,27 @@ func TestResolutionFoundryBinding(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, application.Foundry)
 	require.Equal(t, "gpt-5.4-nano", application.Foundry.DeploymentName)
+	require.Equal(t, "apiKey", application.Foundry.Authentication)
+}
+
+func TestResolutionFoundryManagedIdentityBinding(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n")
+	resolver := staticResolver{model: effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))}
+
+	result, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{})
+	require.NoError(t, err)
+	require.Len(t, result.Bindings, 1)
+	require.Equal(t, "managedIdentity", result.Bindings[0].Authentication)
+
+	application, err := result.ResolvedApplication()
+	require.NoError(t, err)
+	require.NotNil(t, application.Foundry)
+	require.Equal(t, "managedIdentity", application.Foundry.Authentication)
 }
 
 func TestResolutionSupportsDatasourceAndFoundry(t *testing.T) {

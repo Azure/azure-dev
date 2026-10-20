@@ -5,8 +5,15 @@ param modelVersion string
 param modelSku string
 param modelCapacity int
 param outboundIps array
+@allowed(['apiKey', 'managedIdentity'])
+param authentication string
+param applicationPrincipalId string
 
 var accountName = 'aifoundry${uniqueString(resourceGroup().id)}'
+var openAIUserRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+)
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
@@ -17,7 +24,7 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   properties: {
     allowProjectManagement: true
     customSubDomainName: accountName
-    disableLocalAuth: false
+    disableLocalAuth: authentication == 'managedIdentity'
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       defaultAction: 'Deny'
@@ -41,6 +48,16 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01
       version: modelVersion
     }
     versionUpgradeOption: 'NoAutoUpgrade'
+  }
+}
+
+resource openAIUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (authentication == 'managedIdentity') {
+  name: guid(account.id, applicationPrincipalId, openAIUserRoleId)
+  scope: account
+  properties: {
+    principalId: applicationPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: openAIUserRoleId
   }
 }
 

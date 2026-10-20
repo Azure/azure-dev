@@ -49,6 +49,7 @@ type Requirement struct {
 // FoundryRequirement describes an Azure OpenAI-compatible model deployment.
 type FoundryRequirement struct {
 	DeploymentName string
+	Authentication string
 	Evidence       []Evidence
 }
 
@@ -287,6 +288,10 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 			"%s must contain 2-64 letters, numbers, periods, underscores, or hyphens",
 			deploymentProperty)
 	}
+	authentication := "managedIdentity"
+	if apiKey, present := c.raw(apiKeyProperty); present && strings.TrimSpace(apiKey.text) != "" {
+		authentication = "apiKey"
+	}
 	var evidence []Evidence
 	for _, key := range properties {
 		if value, present := c.raw(key); present {
@@ -296,7 +301,9 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 			}
 		}
 	}
-	return &FoundryRequirement{DeploymentName: deploymentName, Evidence: evidence}, nil
+	return &FoundryRequirement{
+		DeploymentName: deploymentName, Authentication: authentication, Evidence: evidence,
+	}, nil
 }
 
 func validateResourceLayout(m *model, projectDirectory string) error {

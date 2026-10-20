@@ -19,6 +19,8 @@ param embeddedUrl string = ''
 param embeddedUrlConfigured bool
 param embeddedDriver string = ''
 param foundryEnabled bool = false
+@allowed(['apiKey', 'managedIdentity'])
+param foundryAuthentication string = 'apiKey'
 param foundryAccountName string = ''
 param foundryDeploymentName string = ''
 
@@ -62,24 +64,29 @@ var embeddedSpringEnv = concat(
   empty(embeddedDriver) ? [] : [{ name: 'SPRING_DATASOURCE_DRIVER_CLASS_NAME', value: embeddedDriver }]
 )
 var deploymentSpringEnv = engine != 'none' ? externalSpringEnv : embeddedSpringEnv
-resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (foundryEnabled) {
+var foundryUsesApiKey = foundryEnabled && foundryAuthentication == 'apiKey'
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (foundryUsesApiKey) {
   name: foundryAccountName
 }
 var foundryEndpoint = foundryEnabled ? 'https://${foundryAccountName}.openai.azure.com/' : ''
-var foundryApiKey = foundryEnabled ? foundry!.listKeys().key1 : ''
-var foundrySecret = foundryEnabled ? [{ name: 'foundry-api-key', value: foundryApiKey }] : []
+var foundryApiKey = foundryUsesApiKey ? foundry!.listKeys().key1 : ''
+var foundrySecret = foundryUsesApiKey ? [{ name: 'foundry-api-key', value: foundryApiKey }] : []
 var foundryEnvironment = foundryEnabled
   ? environmentBindings
-    ? [
-        { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
-        { name: 'SPRING_AI_AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }
-        { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENT_NAME', value: foundryDeploymentName }
-      ]
-    : [
-        { name: 'AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
-        { name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }
-        { name: 'AZURE_OPENAI_DEPLOYMENT_NAME', value: foundryDeploymentName }
-      ]
+      ? concat(
+          [
+            { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+            { name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENT_NAME', value: foundryDeploymentName }
+          ],
+          foundryUsesApiKey ? [{ name: 'SPRING_AI_AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
+        )
+      : concat(
+          [
+            { name: 'AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+            { name: 'AZURE_OPENAI_DEPLOYMENT_NAME', value: foundryDeploymentName }
+          ],
+          foundryUsesApiKey ? [{ name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
+        )
   : []
 var placeholder = appImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 

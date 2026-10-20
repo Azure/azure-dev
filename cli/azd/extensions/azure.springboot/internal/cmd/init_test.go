@@ -229,24 +229,36 @@ func TestInitDatabaseNetworkDescription(t *testing.T) {
 }
 
 func TestInitFoundryDescription(t *testing.T) {
-	command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
-		t.Fatal("resolved --yes invocation must not open a prompt channel")
-		return nil, errors.New("unavailable")
-	})
-	resolver.dependencies = `<dependency><groupId>org.springframework.ai</groupId>` +
-		`<artifactId>spring-ai-starter-model-azure-openai</artifactId></dependency>`
-	require.NoError(t, os.WriteFile(filepath.Join("src", "main", "resources", "application.properties"), []byte(
-		"spring.datasource.url=jdbc:h2:mem:catalog\n"+
-			"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
-			"spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n"+
-			"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n"), 0o600))
-	command.SetArgs([]string{"init", "--yes", "--no-prompt"})
-	require.NoError(t, command.ExecuteContext(t.Context()))
-	require.Contains(t, output.String(),
-		"Foundry: AIServices account and gpt-5.4-nano model deployment (API-key authentication).")
-	require.Contains(t, output.String(),
-		"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
-	require.NotContains(t, output.String(), "AZURE_OPENAI_API_KEY")
+	for _, tt := range []struct {
+		name, apiKey, authentication string
+	}{
+		{"API key", "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n", "API-key"},
+		{"managed identity", "", "managed identity"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			command, resolver, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+				t.Fatal("resolved --yes invocation must not open a prompt channel")
+				return nil, errors.New("unavailable")
+			})
+			resolver.dependencies = `<dependency><groupId>org.springframework.ai</groupId>` +
+				`<artifactId>spring-ai-starter-model-azure-openai</artifactId></dependency>`
+			require.NoError(t, os.WriteFile(
+				filepath.Join("src", "main", "resources", "application.properties"),
+				[]byte("spring.datasource.url=jdbc:h2:mem:catalog\n"+
+					"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					tt.apiKey+
+					"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}\n"),
+				0o600))
+			command.SetArgs([]string{"init", "--yes", "--no-prompt"})
+			require.NoError(t, command.ExecuteContext(t.Context()))
+			require.Contains(t, output.String(),
+				"Foundry: AIServices account and gpt-5.4-nano model deployment ("+
+					tt.authentication+" authentication).")
+			require.Contains(t, output.String(),
+				"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
+			require.NotContains(t, output.String(), "AZURE_OPENAI_API_KEY")
+		})
+	}
 }
 
 func TestInitMissingPromptChannel(t *testing.T) {

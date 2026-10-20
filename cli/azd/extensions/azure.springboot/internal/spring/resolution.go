@@ -258,7 +258,7 @@ func AnalyzeProject(
 		})
 		result.Bindings = append(result.Bindings, Binding{
 			ID: "app/foundry:primary", ApplicationID: "app", ResourceID: "foundry:primary",
-			PropertyPrefix: "spring.ai.azure.openai", Authentication: "apiKey",
+			PropertyPrefix: "spring.ai.azure.openai", Authentication: foundry.Authentication,
 			Evidence: deploymentEvidence(foundry.Evidence),
 		})
 	}
@@ -332,7 +332,8 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 		case "spring.ai.azure.openai":
 			if binding.ID != application.ID+"/foundry:primary" || binding.ResourceID != "foundry:primary" ||
 				resource.Kind != Foundry || resource.Disposition != Provisioned ||
-				binding.Authentication != "apiKey" || binding.Embedded != nil ||
+				binding.Authentication != "apiKey" && binding.Authentication != "managedIdentity" ||
+				binding.Embedded != nil ||
 				!modelDeploymentName.MatchString(resource.Name) {
 				return nil, errors.New("the Foundry binding is invalid")
 			}
@@ -340,7 +341,7 @@ func (a *Analysis) ResolvedApplication() (*Application, error) {
 				return nil, errors.New("multiple Foundry bindings are not supported")
 			}
 			application.Foundry = &FoundryRequirement{
-				DeploymentName: resource.Name, Evidence: binding.Evidence,
+				DeploymentName: resource.Name, Authentication: binding.Authentication, Evidence: binding.Evidence,
 			}
 		default:
 			return nil, errors.New("the binding property namespace is not supported")

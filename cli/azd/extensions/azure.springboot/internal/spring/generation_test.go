@@ -178,7 +178,9 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	application := &Application{
 		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
 		BuildDirectory: "target",
-		Foundry:        &FoundryRequirement{DeploymentName: "gpt-5.4-nano"},
+		Foundry: &FoundryRequirement{
+			DeploymentName: "gpt-5.4-nano", Authentication: "apiKey",
+		},
 	}
 	plan, err := Generate(t.Context(), application)
 	require.NoError(t, err)
@@ -190,6 +192,7 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
 	require.Equal(t, true, parameters.Parameters["foundryEnabled"].Value)
+	require.Equal(t, "apiKey", parameters.Parameters["foundryAuthentication"].Value)
 	require.Equal(t, "gpt-5.4-nano", parameters.Parameters["foundryDeploymentName"].Value)
 	require.Equal(t, "gpt-5.4-nano", parameters.Parameters["foundryModelName"].Value)
 	require.Equal(t, "2026-03-17", parameters.Parameters["foundryModelVersion"].Value)
@@ -201,14 +204,17 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	require.Contains(t, foundry, "kind: 'AIServices'")
 	require.Contains(t, foundry, "identity: { type: 'SystemAssigned' }")
 	require.Contains(t, foundry, "allowProjectManagement: true")
-	require.Contains(t, foundry, "disableLocalAuth: false")
+	require.Contains(t, foundry, "disableLocalAuth: authentication == 'managedIdentity'")
 	require.Contains(t, foundry, "defaultAction: 'Deny'")
 	require.Contains(t, foundry, "for ip in union(outboundIps, [])")
 	require.Contains(t, foundry, "Microsoft.CognitiveServices/accounts/deployments@2025-06-01")
+	require.Contains(t, foundry, "Microsoft.Authorization/roleAssignments@2022-04-01")
+	require.Contains(t, foundry, "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd")
 	require.NotContains(t, foundry, "accounts/projects")
 
 	main := string(plan.Files["infra/main.bicep"])
 	require.Contains(t, main, "outboundIps: bootstrap.outputs.outboundIps")
+	require.Contains(t, main, "applicationPrincipalId: bootstrap.outputs.principalId")
 	require.Contains(t, main, "output SPRING_FOUNDRY_ACCOUNT_NAME")
 	applicationTemplate := string(plan.Files["infra/application.bicep"])
 	require.Contains(t, applicationTemplate, "foundry!.listKeys().key1")
@@ -220,6 +226,40 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	binding := string(plan.Files[".azd-spring/application-azd.properties"])
 	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
 	require.Contains(t, binding, "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}")
+	require.Contains(t, binding,
+		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}")
+}
+
+func TestGenerateFoundryManagedIdentityInfrastructure(t *testing.T) {
+	application := &Application{
+		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
+		BuildDirectory: "target",
+		Foundry: &FoundryRequirement{
+			DeploymentName: "gpt-5.4-nano", Authentication: "managedIdentity",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	require.Equal(t, "managedIdentity", parameters.Parameters["foundryAuthentication"].Value)
+
+	foundry := string(plan.Files["infra/foundry.bicep"])
+	require.Contains(t, foundry, "disableLocalAuth: authentication == 'managedIdentity'")
+	require.Contains(t, foundry, "principalId: applicationPrincipalId")
+	require.Contains(t, foundry, "roleDefinitionId: openAIUserRoleId")
+	applicationTemplate := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, applicationTemplate,
+		"var foundryUsesApiKey = foundryEnabled && foundryAuthentication == 'apiKey'")
+	require.Contains(t, applicationTemplate, "foundryUsesApiKey ? foundry!.listKeys().key1 : ''")
+	binding := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
+	require.NotContains(t, binding, "spring.ai.azure.openai.api-key")
 	require.Contains(t, binding,
 		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_DEPLOYMENT_NAME}")
 }

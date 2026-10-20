@@ -53,14 +53,16 @@ resource "azurerm_resource_group" "this" {
 # azapi is used so allowProjectManagement can be set (not exposed by
 # azurerm_cognitive_account).
 resource "azapi_resource" "foundry_account" {
-  type      = "Microsoft.CognitiveServices/accounts@2025-06-01"
-  name      = local.foundry_account_name
-  location  = azurerm_resource_group.this.location
-  parent_id = azurerm_resource_group.this.id
-  tags      = var.tags
+  type                      = "Microsoft.CognitiveServices/accounts@2026-07-15-preview"
+  name                      = local.foundry_account_name
+  location                  = azurerm_resource_group.this.location
+  parent_id                 = azurerm_resource_group.this.id
+  tags                      = var.tags
+  schema_validation_enabled = false
 
   identity {
-    type = "SystemAssigned"
+    type         = var.agent_hosting.enabled ? "SystemAssigned, UserAssigned" : "SystemAssigned"
+    identity_ids = var.agent_hosting.enabled ? [var.agent_hosting.hostingManagementIdentityResourceId] : []
   }
 
   body = {
@@ -68,7 +70,7 @@ resource "azapi_resource" "foundry_account" {
     sku = {
       name = "S0"
     }
-    properties = {
+    properties = merge({
       allowProjectManagement = true
       customSubDomainName    = local.foundry_account_name
       publicNetworkAccess    = "Enabled"
@@ -78,7 +80,21 @@ resource "azapi_resource" "foundry_account" {
         virtualNetworkRules = []
         ipRules             = []
       }
-    }
+      }, var.agent_hosting.enabled ? {
+      networkInjections = [{
+        scenario                   = "agent"
+        subnetArmId                = var.agent_hosting.agentSubnetResourceId
+        useMicrosoftManagedNetwork = false
+      }]
+      agentHostingConfigurations = [{
+        hostingType                         = var.agent_hosting.hostingType
+        name                                = var.agent_hosting.name
+        clusterResourceId                   = var.agent_hosting.clusterResourceId
+        hostingManagementIdentityResourceId = var.agent_hosting.hostingManagementIdentityResourceId
+        storageAccountResourceId            = var.agent_hosting.storageAccountResourceId
+        workloadIdentityResourceId          = var.agent_hosting.workloadIdentityResourceId
+      }]
+    } : {})
   }
 }
 

@@ -159,6 +159,38 @@ resources on the existing project. If managed deployments are already
 declared, endpoint-only setup stops before clearing the project ID.
 Use the full project resource ID before adding managed deployments.
 
+### Host agents on a customer-owned AKS cluster
+
+For a newly created Foundry account, set `agentHosting` on the `azure.ai.project`
+service:
+
+```yaml
+infra:
+  provider: microsoft.foundry
+
+services:
+  my-project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AZURE_AKS_CLUSTER_ID}
+      agentSubnetResourceId: ${AZURE_AGENT_SUBNET_ID}
+      hostingManagementIdentityResourceId: ${AZURE_HOSTING_MANAGEMENT_IDENTITY_ID}
+      storageAccountResourceId: ${AZURE_HOSTED_AGENTS_STORAGE_ID}
+      workloadIdentityResourceId: ${AZURE_HOSTED_AGENTS_WORKLOAD_IDENTITY_ID}
+```
+
+The referenced cluster, agent subnet, storage account, and two user-assigned managed
+identities must already exist. The storage account must be in the same
+subscription and region as the AKS cluster, and its data-plane endpoint must be
+reachable from the workload network. The hosting management identity is
+attached to the Foundry account automatically.
+
+Foundry agent hosting configuration is fixed when the account is created. It
+cannot be added to an existing account or changed after creation, so
+`agentHosting` cannot be used together with `endpoint`.
+
 To reconcile deployments or a pending container registry on an existing project, set the project's full ARM resource ID in the active azd environment:
 
 ```sh

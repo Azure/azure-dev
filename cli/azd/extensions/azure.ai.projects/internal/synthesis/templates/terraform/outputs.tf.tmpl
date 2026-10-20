@@ -33,11 +33,11 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
 
 {{ if .IncludeAcr }}
 output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {
-  value = azurerm_container_registry.this.login_server
+  value = local.registry_endpoint
 }
 
 output "AZURE_CONTAINER_REGISTRY_RESOURCE_ID" {
-  value = azurerm_container_registry.this.id
+  value = local.registry_id
 }
 
 output "AZURE_AI_PROJECT_ACR_CONNECTION_NAME" {

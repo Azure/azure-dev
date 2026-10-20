@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.46.1.21595",
-      "templateHash": "15636754457042111674"
+      "version": "0.45.15.27210",
+      "templateHash": "7655734734411208191"
     }
   },
   "definitions": {
@@ -54,6 +54,42 @@
       "metadata": {
         "description": "Shape of a single model deployment."
       }
+    },
+    "agentHostingType": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "bool"
+        },
+        "hostingType": {
+          "type": "string",
+          "allowedValues": [
+            "",
+            "ManagedCluster"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "clusterResourceId": {
+          "type": "string"
+        },
+        "agentSubnetResourceId": {
+          "type": "string"
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string"
+        },
+        "storageAccountResourceId": {
+          "type": "string"
+        },
+        "workloadIdentityResourceId": {
+          "type": "string"
+        }
+      },
+      "metadata": {
+        "description": "Customer-owned AKS configuration for hosting Foundry agents."
+      }
     }
   },
   "parameters": {
@@ -85,6 +121,27 @@
         "description": "Optional salt to vary resource names across re-provisions."
       }
     },
+    "byoAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Internally prepared BYO account name; empty preserves standard naming."
+      }
+    },
+    "byoOwner": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Internal ownership marker for the BYO Foundry account, not for a supplied resource group."
+      }
+    },
+    "byoRegistryAccessReady": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Internal second-stage gate after the actual project identity registry grant is prepared."
+      }
+    },
     "foundryProjectName": {
       "type": "string",
       "minLength": 3,
@@ -105,6 +162,36 @@
       "defaultValue": false,
       "metadata": {
         "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
+      }
+    },
+    "containerRegistryResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Prepared or reused registry ID. Empty preserves standard registry creation."
+      }
+    },
+    "containerRegistryABAC": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Prepared registry uses repository ABAC authorization."
+      }
+    },
+    "agentHosting": {
+      "$ref": "#/definitions/agentHostingType",
+      "defaultValue": {
+        "enabled": false,
+        "hostingType": "",
+        "name": "",
+        "clusterResourceId": "",
+        "agentSubnetResourceId": "",
+        "hostingManagementIdentityResourceId": "",
+        "storageAccountResourceId": "",
+        "workloadIdentityResourceId": ""
+      },
+      "metadata": {
+        "description": "Customer-owned AKS configuration for hosting Foundry agents."
       }
     },
     "enableNetworkIsolation": {
@@ -220,6 +307,15 @@
           "resourceTokenSalt": {
             "value": "[parameters('resourceTokenSalt')]"
           },
+          "byoAccountName": {
+            "value": "[parameters('byoAccountName')]"
+          },
+          "byoOwner": {
+            "value": "[parameters('byoOwner')]"
+          },
+          "byoRegistryAccessReady": {
+            "value": "[parameters('byoRegistryAccessReady')]"
+          },
           "foundryProjectName": {
             "value": "[parameters('foundryProjectName')]"
           },
@@ -228,6 +324,15 @@
           },
           "includeAcr": {
             "value": "[parameters('includeAcr')]"
+          },
+          "containerRegistryResourceId": {
+            "value": "[parameters('containerRegistryResourceId')]"
+          },
+          "containerRegistryABAC": {
+            "value": "[parameters('containerRegistryABAC')]"
+          },
+          "agentHosting": {
+            "value": "[parameters('agentHosting')]"
           },
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
@@ -273,8 +378,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.46.1.21595",
-              "templateHash": "3335809564156191875"
+              "version": "0.45.15.27210",
+              "templateHash": "14149756940660562467"
             }
           },
           "definitions": {
@@ -322,6 +427,42 @@
               "metadata": {
                 "description": "Shape of a single model deployment."
               }
+            },
+            "agentHostingType": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "bool"
+                },
+                "hostingType": {
+                  "type": "string",
+                  "allowedValues": [
+                    "",
+                    "ManagedCluster"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "clusterResourceId": {
+                  "type": "string"
+                },
+                "agentSubnetResourceId": {
+                  "type": "string"
+                },
+                "hostingManagementIdentityResourceId": {
+                  "type": "string"
+                },
+                "storageAccountResourceId": {
+                  "type": "string"
+                },
+                "workloadIdentityResourceId": {
+                  "type": "string"
+                }
+              },
+              "metadata": {
+                "description": "Customer-owned AKS configuration for hosting Foundry agents."
+              }
             }
           },
           "parameters": {
@@ -346,6 +487,18 @@
                 "description": "Optional salt to vary resource names across re-provisions."
               }
             },
+            "byoAccountName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "byoOwner": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "byoRegistryAccessReady": {
+              "type": "bool",
+              "defaultValue": false
+            },
             "foundryProjectName": {
               "type": "string",
               "minLength": 3,
@@ -366,6 +519,30 @@
               "defaultValue": false,
               "metadata": {
                 "description": "Include an Azure Container Registry. Set true when any agent uses docker:."
+              }
+            },
+            "containerRegistryResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "containerRegistryABAC": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "agentHosting": {
+              "$ref": "#/definitions/agentHostingType",
+              "defaultValue": {
+                "enabled": false,
+                "hostingType": "",
+                "name": "",
+                "clusterResourceId": "",
+                "agentSubnetResourceId": "",
+                "hostingManagementIdentityResourceId": "",
+                "storageAccountResourceId": "",
+                "workloadIdentityResourceId": ""
+              },
+              "metadata": {
+                "description": "Customer-owned AKS configuration for hosting Foundry agents."
               }
             },
             "enableNetworkIsolation": {
@@ -460,12 +637,13 @@
             },
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
-            "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
+            "foundryAccountName": "[if(empty(parameters('byoAccountName')), format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken')), parameters('byoAccountName'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
-            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]",
+            "accountNetworkInjections": "[if(parameters('agentHosting').enabled, createArray(createObject('scenario', 'Agent', 'subnetArmId', parameters('agentHosting').agentSubnetResourceId, 'useMicrosoftManagedNetwork', false())), variables('agentNetworkInjections'))]"
           },
           "resources": {
             "foundryAccount::modelDeployments": {
@@ -476,7 +654,7 @@
                 "batchSize": 1
               },
               "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
               "properties": {
                 "model": "[parameters('deployments')[copyIndex()].model]"
@@ -488,7 +666,7 @@
             },
             "foundryAccount::project": {
               "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
               "location": "[parameters('location')]",
               "identity": {
@@ -505,17 +683,15 @@
             },
             "foundryAccount": {
               "type": "Microsoft.CognitiveServices/accounts",
-              "apiVersion": "2025-06-01",
+              "apiVersion": "2026-07-15-preview",
               "name": "[variables('foundryAccountName')]",
               "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
+              "tags": "[if(empty(parameters('byoOwner')), parameters('tags'), union(parameters('tags'), createObject('azd-byoaks-owner', parameters('byoOwner'))))]",
               "sku": {
                 "name": "S0"
               },
               "kind": "AIServices",
-              "identity": {
-                "type": "SystemAssigned"
-              },
+              "identity": "[if(parameters('agentHosting').enabled, createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('agentHosting').hostingManagementIdentityResourceId), createObject())), createObject('type', 'SystemAssigned'))]",
               "properties": {
                 "allowProjectManagement": true,
                 "customSubDomainName": "[variables('foundryAccountName')]",
@@ -527,7 +703,8 @@
                   "virtualNetworkRules": [],
                   "ipRules": []
                 },
-                "networkInjections": "[variables('agentNetworkInjections')]"
+                "networkInjections": "[variables('accountNetworkInjections')]",
+                "agentHostingConfigurations": "[if(parameters('agentHosting').enabled, createArray(createObject('hostingType', parameters('agentHosting').hostingType, 'name', parameters('agentHosting').name, 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', parameters('agentHosting').hostingManagementIdentityResourceId, 'storageAccountResourceId', parameters('agentHosting').storageAccountResourceId, 'workloadIdentityResourceId', parameters('agentHosting').workloadIdentityResourceId)), null())]"
               },
               "dependsOn": [
                 "network"
@@ -586,8 +763,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "10967961645819739964"
+                      "version": "0.45.15.27210",
+                      "templateHash": "18361164219559996781"
                     }
                   },
                   "parameters": {
@@ -680,8 +857,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.46.1.21595",
-                              "templateHash": "10528013059105939935"
+                              "version": "0.45.15.27210",
+                              "templateHash": "11947348622491745192"
                             }
                           },
                           "parameters": {
@@ -765,8 +942,8 @@
                           "metadata": {
                             "_generator": {
                               "name": "bicep",
-                              "version": "0.46.1.21595",
-                              "templateHash": "10528013059105939935"
+                              "version": "0.45.15.27210",
+                              "templateHash": "11947348622491745192"
                             }
                           },
                           "parameters": {
@@ -862,7 +1039,7 @@
               }
             },
             "acr": {
-              "condition": "[parameters('includeAcr')]",
+              "condition": "[and(parameters('includeAcr'), or(empty(parameters('byoOwner')), parameters('byoRegistryAccessReady')))]",
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
               "name": "acr",
@@ -888,10 +1065,19 @@
                     "value": "[parameters('foundryProjectName')]"
                   },
                   "foundryProjectPrincipalId": {
-                    "value": "[reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId]"
+                    "value": "[reference('foundryAccount::project', '2026-07-15-preview', 'full').identity.principalId]"
                   },
                   "enableNetworkIsolation": {
                     "value": "[parameters('enableNetworkIsolation')]"
+                  },
+                  "registryResourceId": {
+                    "value": "[parameters('containerRegistryResourceId')]"
+                  },
+                  "registryABAC": {
+                    "value": "[parameters('containerRegistryABAC')]"
+                  },
+                  "roleAssignmentManagedExternally": {
+                    "value": "[not(empty(parameters('byoOwner')))]"
                   }
                 },
                 "template": {
@@ -900,8 +1086,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "16746221481092115316"
+                      "version": "0.45.15.27210",
+                      "templateHash": "16376901900513273500"
                     }
                   },
                   "parameters": {
@@ -950,35 +1136,61 @@
                       "metadata": {
                         "description": "When true, the registry disables public network access to stay inside the isolation boundary."
                       }
+                    },
+                    "registryResourceId": {
+                      "type": "string",
+                      "defaultValue": "",
+                      "metadata": {
+                        "description": "Prepared registry to reuse without rewriting its configuration."
+                      }
+                    },
+                    "registryABAC": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "Use Container Registry Repository Reader for repository ABAC registries."
+                      }
+                    },
+                    "roleAssignmentManagedExternally": {
+                      "type": "bool",
+                      "defaultValue": false,
+                      "metadata": {
+                        "description": "The BYO lifecycle journals the real project identity grant before finalizing its connection."
+                      }
                     }
                   },
                   "variables": {
-                    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')]"
+                    "acrPullRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', if(parameters('registryABAC'), 'b93aa761-3e63-49ed-ac28-beffa264f7ac', '7f951dda-4ed3-4680-a7ca-43fe172d538d'))]",
+                    "reuseRegistry": "[not(empty(parameters('registryResourceId')))]",
+                    "effectiveRegistryId": "[if(variables('reuseRegistry'), parameters('registryResourceId'), resourceId('Microsoft.ContainerRegistry/registries', parameters('name')))]",
+                    "effectiveName": "[if(variables('reuseRegistry'), last(split(parameters('registryResourceId'), '/')), parameters('name'))]"
                   },
                   "resources": [
                     {
                       "type": "Microsoft.CognitiveServices/accounts/projects/connections",
                       "apiVersion": "2025-04-01-preview",
-                      "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), format('{0}-conn', parameters('name')))]",
+                      "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), format('{0}-conn', variables('effectiveName')))]",
                       "properties": {
                         "category": "ContainerRegistry",
-                        "target": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]",
+                        "target": "[if(variables('reuseRegistry'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('registryResourceId'), '/')[2], split(parameters('registryResourceId'), '/')[4]), 'Microsoft.ContainerRegistry/registries', last(split(parameters('registryResourceId'), '/'))), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer)]",
                         "authType": "ManagedIdentity",
                         "credentials": {
                           "clientId": "[parameters('foundryProjectPrincipalId')]",
-                          "resourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+                          "resourceId": "[variables('effectiveRegistryId')]"
                         },
                         "isSharedToAll": true,
                         "metadata": {
-                          "ResourceId": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+                          "ResourceId": "[variables('effectiveRegistryId')]"
                         }
                       },
                       "dependsOn": [
                         "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId')))]",
+                        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('registryResourceId'), '/')[2], split(parameters('registryResourceId'), '/')[4]), 'Microsoft.Resources/deployments', 'prepared-registry-project-access')]",
                         "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
                       ]
                     },
                     {
+                      "condition": "[not(variables('reuseRegistry'))]",
                       "type": "Microsoft.ContainerRegistry/registries",
                       "apiVersion": "2023-07-01",
                       "name": "[parameters('name')]",
@@ -997,6 +1209,7 @@
                       }
                     },
                     {
+                      "condition": "[and(not(variables('reuseRegistry')), not(parameters('roleAssignmentManagedExternally')))]",
                       "type": "Microsoft.Authorization/roleAssignments",
                       "apiVersion": "2022-04-01",
                       "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
@@ -1009,20 +1222,89 @@
                       "dependsOn": [
                         "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
                       ]
+                    },
+                    {
+                      "condition": "[and(variables('reuseRegistry'), not(parameters('roleAssignmentManagedExternally')))]",
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "prepared-registry-project-access",
+                      "subscriptionId": "[split(parameters('registryResourceId'), '/')[2]]",
+                      "resourceGroup": "[split(parameters('registryResourceId'), '/')[4]]",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "registryName": {
+                            "value": "[variables('effectiveName')]"
+                          },
+                          "principalId": {
+                            "value": "[parameters('foundryProjectPrincipalId')]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[subscriptionResourceId(split(parameters('registryResourceId'), '/')[2], 'Microsoft.Authorization/roleDefinitions', if(parameters('registryABAC'), 'b93aa761-3e63-49ed-ac28-beffa264f7ac', '7f951dda-4ed3-4680-a7ca-43fe172d538d'))]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.45.15.27210",
+                              "templateHash": "6635580091381777705"
+                            }
+                          },
+                          "parameters": {
+                            "registryName": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "Name of the Azure Container Registry."
+                              }
+                            },
+                            "principalId": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "Principal receiving AcrPull on the registry."
+                              }
+                            },
+                            "roleDefinitionId": {
+                              "type": "string",
+                              "metadata": {
+                                "description": "AcrPull role definition resource ID."
+                              }
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName'))]",
+                              "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('registryName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      }
                     }
                   ],
                   "outputs": {
                     "loginServer": {
                       "type": "string",
-                      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]"
+                      "value": "[if(variables('reuseRegistry'), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('registryResourceId'), '/')[2], split(parameters('registryResourceId'), '/')[4]), 'Microsoft.ContainerRegistry/registries', last(split(parameters('registryResourceId'), '/'))), '2023-07-01').loginServer, reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer)]"
                     },
                     "resourceId": {
                       "type": "string",
-                      "value": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
+                      "value": "[variables('effectiveRegistryId')]"
                     },
                     "connectionName": {
                       "type": "string",
-                      "value": "[format('{0}-conn', parameters('name'))]"
+                      "value": "[format('{0}-conn', variables('effectiveName'))]"
                     }
                   }
                 }
@@ -1071,8 +1353,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.46.1.21595",
-                      "templateHash": "2415286770463307805"
+                      "version": "0.45.15.27210",
+                      "templateHash": "7461045817315422644"
                     }
                   },
                   "parameters": {
@@ -1291,15 +1573,15 @@
             },
             "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
               "type": "string",
-              "value": "[if(parameters('includeAcr'), reference('acr').outputs.loginServer.value, '')]"
+              "value": "[if(and(parameters('includeAcr'), or(empty(parameters('byoOwner')), parameters('byoRegistryAccessReady'))), reference('acr').outputs.loginServer.value, '')]"
             },
             "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": {
               "type": "string",
-              "value": "[if(parameters('includeAcr'), reference('acr').outputs.resourceId.value, '')]"
+              "value": "[if(and(parameters('includeAcr'), or(empty(parameters('byoOwner')), parameters('byoRegistryAccessReady'))), reference('acr').outputs.resourceId.value, '')]"
             },
             "AZURE_AI_PROJECT_ACR_CONNECTION_NAME": {
               "type": "string",
-              "value": "[if(parameters('includeAcr'), reference('acr').outputs.connectionName.value, '')]"
+              "value": "[if(and(parameters('includeAcr'), or(empty(parameters('byoOwner')), parameters('byoRegistryAccessReady'))), reference('acr').outputs.connectionName.value, '')]"
             },
             "AZURE_FOUNDRY_NETWORK_MODE": {
               "type": "string",

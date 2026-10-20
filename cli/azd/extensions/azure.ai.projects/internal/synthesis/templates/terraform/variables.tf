@@ -57,3 +57,40 @@ variable "deployments" {
   }))
   default = []
 }
+
+variable "agent_hosting" {
+  description = "Customer-owned AKS configuration for hosting Foundry agents."
+  type = object({
+    enabled                             = bool
+    hostingType                         = string
+    name                                = string
+    clusterResourceId                   = string
+    agentSubnetResourceId               = string
+    hostingManagementIdentityResourceId = string
+    storageAccountResourceId            = string
+    workloadIdentityResourceId          = string
+  })
+  default = {
+    enabled                             = false
+    hostingType                         = ""
+    name                                = ""
+    clusterResourceId                   = ""
+    agentSubnetResourceId               = ""
+    hostingManagementIdentityResourceId = ""
+    storageAccountResourceId            = ""
+    workloadIdentityResourceId          = ""
+  }
+}
+
+variable "container_registry_resource_id" {
+  description = "Prepared or reused registry ID. Empty preserves standard registry creation."
+  type        = string
+  default     = ""
+}
+
+variable "container_registry_abac" {
+  description = "Prepared registry uses repository ABAC authorization."
+  type        = bool
+  default     = false
+}
+

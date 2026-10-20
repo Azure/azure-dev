@@ -593,6 +593,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		}
 	}
 	if provider == project.TerraformProviderName {
+		if res.Hosting != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"BYO-AKS simplified onboarding requires the microsoft.foundry provisioning provider",
+				"use embedded provisioning or Bicep eject; Terraform cannot run the mandatory preparation lifecycle",
+			)
+		}
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
 		// it for a network: service would silently drop the config and provision a
@@ -2326,11 +2333,14 @@ func writeTfvarsFile(
 		doc["foundry_project_name"] = "${AZURE_AI_PROJECT_NAME=}"
 	}
 
-	// Model deployments are the only synthesizer-derived values
+	// Synthesizer-derived deployment and hosting values are
 	// written to tfvars. The Terraform provider resolves ${VAR} references
 	// across the generated file at provision time.
 	if v, ok := params["deployments"]; ok {
 		doc["deployments"] = v
+	}
+	if v, ok := params["agentHosting"]; ok {
+		doc["agent_hosting"] = v
 	}
 	filename := module + ".tfvars.json"
 	return writeJSONArtifact(infraDir, artifactRoot, filename, doc)

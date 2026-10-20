@@ -20,6 +20,9 @@
         ]
       }
     },
+    "agentHosting": {
+      "$ref": "#/definitions/AgentHosting"
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
@@ -65,6 +68,41 @@
     }
   },
   "definitions": {
+    "AgentHosting": {
+      "type": "object",
+      "description": "Customer-owned AKS configuration for a new Foundry account. azd checks evidence before preparing dependencies and two internally managed identities. Unverified mandatory evidence blocks provision.",
+      "additionalProperties": false,
+      "required": [
+        "clusterResourceId"
+      ],
+      "properties": {
+        "hostingType": {
+          "type": "string",
+          "enum": ["ManagedCluster"],
+          "description": "Hosting infrastructure type. Defaults to ManagedCluster."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique hosting configuration name within the Foundry account. Defaults to aks."
+        },
+        "clusterResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the customer-owned AKS managed cluster."
+        },
+        "agentSubnetResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full ARM resource ID of the subnet injected into the Foundry agent runtime."
+        },
+        "storageAccountResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional full ARM storage account ID. Omit to plan an owned account; explicit empty or null values are invalid."
+        }
+      }
+    },
     "Deployment": {
       "type": "object",
       "required": ["name", "model", "sku"],

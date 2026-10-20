@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.44.1.10279",
-      "templateHash": "3454889030173445970"
+      "version": "0.45.15.27210",
+      "templateHash": "17339994318434269025"
     }
   },
   "definitions": {
@@ -171,8 +171,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "6653243440604077646"
+              "version": "0.45.15.27210",
+              "templateHash": "1803179974152492129"
             }
           },
           "parameters": {
@@ -300,8 +300,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "6653243440604077646"
+              "version": "0.45.15.27210",
+              "templateHash": "1803179974152492129"
             }
           },
           "parameters": {
@@ -433,8 +433,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "18160641037633062167"
+              "version": "0.45.15.27210",
+              "templateHash": "12160573238035530538"
             }
           },
           "definitions": {

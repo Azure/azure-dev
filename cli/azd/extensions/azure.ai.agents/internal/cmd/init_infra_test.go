@@ -2089,6 +2089,61 @@ services:
 		"dns.resourceGroup selects reference mode")
 }
 
+func TestEjectInfra_PreservesAgentHostingVarRefs(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${AGENT_SUBNET_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+`)
+
+	withCapturedStdout(t, func() {
+		require.NoError(t, ejectInfra(dir, "bicep"))
+	})
+
+	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec
+	require.NoError(t, err)
+	var bicepDoc struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &bicepDoc))
+	hosting, ok := bicepDoc.Parameters["agentHosting"].Value.(map[string]any)
+	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
+	assert.Equal(t, true, hosting["enabled"])
+	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
+	assert.Equal(t, "${AGENT_SUBNET_ID}", hosting["agentSubnetResourceId"])
+	assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
+	assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
+	assert.Empty(t, hosting["workloadIdentityResourceId"])
+
+	terraformDir := t.TempDir()
+	mustWriteFile(t, filepath.Join(terraformDir, "azure.yaml"), `name: my-project
+services:
+  my-foundry:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${AGENT_SUBNET_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+`)
+	withCapturedStdout(t, func() {
+		err := ejectInfra(terraformDir, "terraform")
+		require.ErrorContains(t, err, "requires the microsoft.foundry provisioning provider")
+	})
+	_, err = os.Stat(filepath.Join(terraformDir, "infra"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 // TestEjectInfra_Bicep_NetworkParamsComplete_Byo ejects a BYO-egress service
 // (agentSubnet + peSubnet, both with prefixes) and asserts the complete network
 // parameter set lands in main.parameters.json. This is the Bicep eject path's
@@ -3361,8 +3416,11 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	// outputs.tf must reference the registry resources (not empty strings).
 	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec // G304: test path from t.TempDir()
 	require.NoError(t, err)
-	assert.Contains(t, string(outputs), "azurerm_container_registry.this.login_server",
+	assert.Contains(t, string(outputs), "local.registry_endpoint",
 		"docker fixture => ACR outputs reference the registry")
+	registry, err := os.ReadFile(filepath.Join(dir, "infra", "container-registry.tf")) //nolint:gosec
+	require.NoError(t, err)
+	assert.Contains(t, string(registry), "azurerm_container_registry.this[0].login_server")
 }
 
 func TestEjectInfra_Terraform_StampsProviderInAzureYaml(t *testing.T) {

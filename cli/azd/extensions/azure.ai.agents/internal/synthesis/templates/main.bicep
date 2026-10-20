@@ -30,6 +30,18 @@ type deploymentType = {
   }
 }
 
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  agentSubnetResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -46,6 +58,15 @@ param tags object = {}
 @description('Optional salt to vary resource names across re-provisions.')
 param resourceTokenSalt string = ''
 
+@description('Internally prepared BYO account name; empty preserves standard naming.')
+param byoAccountName string = ''
+
+@description('Internal ownership marker for the BYO Foundry account, not for a supplied resource group.')
+param byoOwner string = ''
+
+@description('Internal second-stage gate after the actual project identity registry grant is prepared.')
+param byoRegistryAccessReady bool = false
+
 @description('Foundry project name. 3-32 alphanumeric/hyphen chars.')
 @minLength(3)
 @maxLength(32)
@@ -56,6 +77,24 @@ param deployments deploymentsType = []
 
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
+
+@description('Prepared or reused registry ID. Empty preserves standard registry creation.')
+param containerRegistryResourceId string = ''
+
+@description('Prepared registry uses repository ABAC authorization.')
+param containerRegistryABAC bool = false
+
+@description('Customer-owned AKS configuration for hosting Foundry agents.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  agentSubnetResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -111,9 +150,15 @@ module resources 'modules/resources.bicep' = {
     location: location
     tags: tags
     resourceTokenSalt: resourceTokenSalt
+    byoAccountName: byoAccountName
+    byoOwner: byoOwner
+    byoRegistryAccessReady: byoRegistryAccessReady
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
+    containerRegistryResourceId: containerRegistryResourceId
+    containerRegistryABAC: containerRegistryABAC
+    agentHosting: agentHosting
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

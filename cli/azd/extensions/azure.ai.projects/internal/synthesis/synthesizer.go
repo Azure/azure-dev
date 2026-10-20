@@ -40,6 +40,8 @@ var (
 
 // Input is the synthesizer's view of azure.yaml.
 type Input struct {
+	// PreparedHosting contains internally owned dependencies, never public YAML.
+	PreparedHosting *PreparedHosting
 	// RawAzureYAML is the full bytes of azure.yaml.
 	RawAzureYAML []byte
 
@@ -75,6 +77,8 @@ type Input struct {
 // main.bicep, and pass Parameters when invoking the resulting ARM
 // deployment.
 type Result struct {
+	// Hosting is resolved compact input; dependencies may not yet exist.
+	Hosting *AgentHostingInput
 	// Parameters maps bicep param names to plain Go values. Callers wrap
 	// these in ARM's {"value": ...} envelope when serializing.
 	Parameters map[string]any
@@ -134,11 +138,38 @@ type serviceBlock struct {
 // projectService is the subset of a host: azure.ai.project service body the synthesizer reads.
 // Unknown fields are intentionally ignored: they are reconciled in deploy-time service targets.
 type projectService struct {
-	Host        string        `yaml:"host"`
-	Endpoint    string        `yaml:"endpoint,omitempty"`
-	Deployments []Deployment  `yaml:"deployments,omitempty"`
-	Agents      []agentBlock  `yaml:"agents,omitempty"`
-	Network     *networkBlock `yaml:"network,omitempty"`
+	Host         string             `yaml:"host"`
+	Endpoint     string             `yaml:"endpoint,omitempty"`
+	Deployments  []Deployment       `yaml:"deployments,omitempty"`
+	Agents       []agentBlock       `yaml:"agents,omitempty"`
+	Network      *networkBlock      `yaml:"network,omitempty"`
+	AgentHosting *agentHostingBlock `yaml:"agentHosting,omitempty"`
+}
+
+// agentHostingBlock configures the customer-owned AKS cluster used to host
+// Foundry agents. The service currently supports exactly one immutable
+// managed-cluster configuration per newly created Foundry account.
+type agentHostingBlock struct {
+	HostingType              string `yaml:"hostingType"`
+	Name                     string `yaml:"name"`
+	ClusterResourceID        string `yaml:"clusterResourceId"`
+	AgentSubnetResourceID    string `yaml:"agentSubnetResourceId"`
+	StorageAccountResourceID string `yaml:"storageAccountResourceId"`
+	present                  map[string]bool
+}
+
+// agentHostingParameter is passed to Bicep and Terraform. Enabled keeps the
+// zero-value path explicit so templates can preserve today's account shape
+// when agentHosting is absent.
+type agentHostingParameter struct {
+	Enabled                             bool   `json:"enabled"`
+	HostingType                         string `json:"hostingType"`
+	Name                                string `json:"name"`
+	ClusterResourceID                   string `json:"clusterResourceId"`
+	AgentSubnetResourceID               string `json:"agentSubnetResourceId"`
+	HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
+	StorageAccountResourceID            string `json:"storageAccountResourceId"`
+	WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
 }
 
 // networkBlock mirrors the network: sub-tree on the service body.
@@ -230,22 +261,51 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone {
+	agentHosting, err := synthesizeAgentHosting(
+		svc.AgentHosting,
+		in.ServiceName,
+		in.Env,
+		!in.PreserveVarRefs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var hostingInput *AgentHostingInput
+	if agentHosting.Enabled {
+		hostingInput = &AgentHostingInput{
+			HostingType: agentHosting.HostingType, Name: agentHosting.Name,
+			ClusterResourceID:        agentHosting.ClusterResourceID,
+			AgentSubnetResourceID:    agentHosting.AgentSubnetResourceID,
+			StorageAccountResourceID: agentHosting.StorageAccountResourceID,
+		}
+		// A BYO registry is required even in project-only templates. Preparation
+		// supplies the one registry used by both the project and the kubelet.
+		includeAcr = true
+	}
+	if includeAcr && netMode != NetworkModeNone && hostingInput == nil {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
 	}
 
 	params := map[string]any{
-		"deployments": deployments,
-		"includeAcr":  includeAcr,
+		"deployments":  deployments,
+		"includeAcr":   includeAcr,
+		"agentHosting": agentHosting,
 	}
 	maps.Copy(params, netParams)
 
-	return &Result{
+	result := &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
-	}, nil
+		Hosting:     hostingInput,
+	}
+	if in.PreparedHosting != nil {
+		if err := ApplyPreparedHosting(result, *in.PreparedHosting); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 // SynthesizeExistingProject derives parameters for editable infrastructure that
@@ -271,6 +331,13 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 	}
 	if strings.TrimSpace(svc.Endpoint) == "" {
 		return nil, errors.New("synthesis: existing Foundry project endpoint is empty")
+	}
+	if svc.AgentHosting != nil {
+		return nil, fmt.Errorf(
+			"services.%s.agentHosting: only valid when azd creates a new Foundry account; "+
+				"agent hosting configurations cannot be added to an existing account",
+			in.ServiceName,
+		)
 	}
 
 	includeAcr, err := deriveIncludeAcr(
@@ -737,6 +804,146 @@ var guidPattern = regexp.MustCompile(
 
 // rgNamePattern matches a valid Azure resource group name.
 var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
+
+const managedClusterHostingType = "ManagedCluster"
+
+var agentHostingResourceIDPatterns = map[string]*regexp.Regexp{
+	"clusterResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ContainerService/managedClusters/[^/]+$`,
+	),
+	"agentSubnetResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`,
+	),
+	"hostingManagementIdentityResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
+	),
+	"storageAccountResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Storage/storageAccounts/[^/]+$`,
+	),
+	"workloadIdentityResourceId": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
+	),
+}
+
+func synthesizeAgentHosting(
+	hosting *agentHostingBlock,
+	svcName string,
+	env map[string]string,
+	resolve bool,
+) (agentHostingParameter, error) {
+	if hosting == nil {
+		return agentHostingParameter{}, nil
+	}
+
+	fieldPath := func(field string) string {
+		return fmt.Sprintf("services.%s.agentHosting.%s", svcName, field)
+	}
+	hostingTypeValue := hosting.HostingType
+	if !hosting.present["hostingType"] && hostingTypeValue == "" {
+		hostingTypeValue = managedClusterHostingType
+	}
+	hostingType, err := resolveAgentHostingValue(
+		hostingTypeValue,
+		fieldPath("hostingType"),
+		env,
+		resolve,
+		nil,
+	)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	if hostingType != managedClusterHostingType {
+		return agentHostingParameter{}, fmt.Errorf(
+			"%s: %q is not supported; expected %q",
+			fieldPath("hostingType"),
+			hostingType,
+			managedClusterHostingType,
+		)
+	}
+
+	nameValue := hosting.Name
+	if !hosting.present["name"] && nameValue == "" {
+		nameValue = "aks"
+	}
+	name, err := resolveAgentHostingValue(nameValue, fieldPath("name"), env, resolve, nil)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	clusterID, err := resolveAgentHostingValue(
+		hosting.ClusterResourceID,
+		fieldPath("clusterResourceId"),
+		env,
+		resolve,
+		agentHostingResourceIDPatterns["clusterResourceId"],
+	)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	agentSubnetID, err := resolveOptionalHostingValue(
+		hosting.AgentSubnetResourceID,
+		hosting.present["agentSubnetResourceId"],
+		fieldPath("agentSubnetResourceId"),
+		env,
+		resolve,
+		agentHostingResourceIDPatterns["agentSubnetResourceId"],
+	)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	storageID, err := resolveOptionalHostingValue(
+		hosting.StorageAccountResourceID,
+		hosting.present["storageAccountResourceId"],
+		fieldPath("storageAccountResourceId"),
+		env,
+		resolve,
+		agentHostingResourceIDPatterns["storageAccountResourceId"],
+	)
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+
+	return agentHostingParameter{
+		Enabled:                  true,
+		HostingType:              managedClusterHostingType,
+		Name:                     name,
+		ClusterResourceID:        clusterID,
+		AgentSubnetResourceID:    agentSubnetID,
+		StorageAccountResourceID: storageID,
+	}, nil
+}
+
+func resolveAgentHostingValue(
+	value string,
+	fieldPath string,
+	env map[string]string,
+	resolve bool,
+	resourceIDPattern *regexp.Regexp,
+) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%s: required", fieldPath)
+	}
+	if err := ValidateEnvReferences(value); err != nil {
+		return "", fmt.Errorf("%s: %w", fieldPath, err)
+	}
+	if resolve {
+		resolved, err := resolveVars(value, env)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", fieldPath, err)
+		}
+		value = strings.TrimSpace(resolved)
+		if value == "" {
+			return "", fmt.Errorf("%s: required", fieldPath)
+		}
+	}
+	if resourceIDPattern != nil &&
+		(resolve || !containsVarRef(value)) &&
+		!resourceIDPattern.MatchString(value) {
+		return "", fmt.Errorf("%s: %q is not a well-formed resource ID for the required Azure resource type",
+			fieldPath, value)
+	}
+	return value, nil
+}
 
 // synthesizeNetwork validates the network: block and returns the bicep
 // parameter set plus the telemetry mode. When net is nil the returned

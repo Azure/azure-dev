@@ -69,6 +69,38 @@ func TestSchema_NetworkStructuralInvariants(t *testing.T) {
 	assert.Contains(t, sub.Properties, "prefix", "subnet must expose prefix (create vs reference)")
 }
 
+func TestSchema_AgentHostingStructuralInvariants(t *testing.T) {
+	raw, err := os.ReadFile(schemaPath)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skipf("project schema not found at %s; skipping cross-extension schema invariant test", schemaPath)
+	}
+	require.NoError(t, err)
+
+	var doc struct {
+		Properties  map[string]json.RawMessage `json:"properties"`
+		Definitions struct {
+			AgentHosting struct {
+				Required             []string                   `json:"required"`
+				Properties           map[string]json.RawMessage `json:"properties"`
+				AdditionalProperties bool                       `json:"additionalProperties"`
+			} `json:"AgentHosting"`
+		} `json:"definitions"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc), "schema must be valid JSON")
+
+	assert.Contains(t, doc.Properties, "agentHosting")
+	hosting := doc.Definitions.AgentHosting
+	assert.False(t, hosting.AdditionalProperties)
+	assert.ElementsMatch(t, []string{
+		"clusterResourceId",
+	}, hosting.Required)
+	assert.NotContains(t, hosting.Properties, "hostingManagementIdentityResourceId")
+	assert.NotContains(t, hosting.Properties, "workloadIdentityResourceId")
+	for _, field := range hosting.Required {
+		assert.Contains(t, hosting.Properties, field)
+	}
+}
+
 func assertNetworkRejectsAgentSubnetWithIsolationMode(t *testing.T, allOf []json.RawMessage) {
 	t.Helper()
 
@@ -103,12 +135,14 @@ func TestARMTemplate_MatchesBicepBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	out := filepath.Join(t.TempDir(), "main.arm.json")
+	//nolint:gosec // bicep comes from PATH or the Azure CLI
 	cmd := exec.CommandContext(t.Context(), bicep, "build",
 		filepath.Join(templatesDir, "main.bicep"), "--outfile", out)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "bicep build failed: %s", stderr.String())
 
+	//nolint:gosec // test-owned temporary output path
 	rebuilt, err := os.ReadFile(out)
 	require.NoError(t, err)
 
@@ -134,12 +168,14 @@ func TestExistingProjectARMTemplate_MatchesBicepBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	out := filepath.Join(t.TempDir(), "existing-project.arm.json")
+	//nolint:gosec // bicep comes from PATH or the Azure CLI
 	cmd := exec.CommandContext(t.Context(), bicep, "build",
 		filepath.Join(templatesDir, "existing-project.bicep"), "--outfile", out)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	require.NoErrorf(t, cmd.Run(), "bicep build failed: %s", stderr.String())
 
+	//nolint:gosec // test-owned temporary output path
 	rebuilt, err := os.ReadFile(out)
 	require.NoError(t, err)
 

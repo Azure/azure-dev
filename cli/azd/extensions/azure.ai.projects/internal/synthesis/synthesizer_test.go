@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -487,8 +488,168 @@ services:
 			require.True(t, ok, "includeAcr param should be bool")
 			assert.Equal(t, tt.wantIncludeAcr, includeAcr)
 
-			assert.NotContains(t, res.Parameters, "connections")
-			assert.NotContains(t, res.Parameters, "connectionCredentials")
+			connections := resultConnections(t, res)
+			if tt.wantConnectionNames != nil {
+				gotNames := make([]string, len(connections))
+				for i, c := range connections {
+					gotNames[i] = c.Name
+				}
+				assert.Equal(t, tt.wantConnectionNames, gotNames)
+			}
+		})
+	}
+}
+
+func TestSynthesize_AgentHosting(t *testing.T) {
+	t.Parallel()
+
+	const (
+		clusterID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks"
+		subnetID  = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/agents"
+		storageID = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents"
+	)
+	raw := []byte(`
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${SUBNET_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+`)
+
+	result, err := Synthesize(Input{
+		RawAzureYAML: raw,
+		ServiceName:  "project",
+		Env: map[string]string{
+			"AKS_ID":     clusterID,
+			"SUBNET_ID":  subnetID,
+			"STORAGE_ID": storageID,
+		},
+	})
+	require.NoError(t, err)
+
+	hosting, ok := result.Parameters["agentHosting"].(agentHostingParameter)
+	require.True(t, ok, "agentHosting should be agentHostingParameter, got %T", result.Parameters["agentHosting"])
+	assert.Equal(t, agentHostingParameter{
+		Enabled:                  true,
+		HostingType:              managedClusterHostingType,
+		Name:                     "primary",
+		ClusterResourceID:        clusterID,
+		AgentSubnetResourceID:    subnetID,
+		StorageAccountResourceID: storageID,
+	}, hosting)
+}
+
+func TestSynthesize_AgentHostingPreservesReferencesForEject(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: ${AKS_ID}
+      agentSubnetResourceId: ${SUBNET_ID}
+      storageAccountResourceId: ${STORAGE_ID}
+`)
+	result, err := Synthesize(Input{
+		RawAzureYAML:    raw,
+		ServiceName:     "project",
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err)
+
+	hosting := result.Parameters["agentHosting"].(agentHostingParameter)
+	assert.Equal(t, "${AKS_ID}", hosting.ClusterResourceID)
+	assert.Equal(t, "${SUBNET_ID}", hosting.AgentSubnetResourceID)
+	assert.Empty(t, hosting.HostingManagementIdentityResourceID)
+	assert.Equal(t, "${STORAGE_ID}", hosting.StorageAccountResourceID)
+	assert.Empty(t, hosting.WorkloadIdentityResourceID)
+}
+
+func TestSynthesize_AgentHostingValidation(t *testing.T) {
+	t.Parallel()
+
+	valid := `
+services:
+  project:
+    host: azure.ai.project
+    agentHosting:
+      hostingType: ManagedCluster
+      name: primary
+      clusterResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks
+      agentSubnetResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/agents
+      storageAccountResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents
+`
+	tests := []struct {
+		name       string
+		yaml       string
+		synthesize func(Input) (*Result, error)
+		want       string
+	}{
+		{
+			name:       "unsupported hosting type",
+			yaml:       strings.Replace(valid, "ManagedCluster", "Other", 1),
+			synthesize: Synthesize,
+			want:       `hostingType: "Other" is not supported`,
+		},
+		{
+			name:       "wrong cluster resource type",
+			yaml:       strings.Replace(valid, "Microsoft.ContainerService/managedClusters", "Microsoft.Storage/storageAccounts", 1),
+			synthesize: Synthesize,
+			want:       "clusterResourceId",
+		},
+		{
+			name:       "wrong agent subnet resource type",
+			yaml:       strings.Replace(valid, "Microsoft.Network/virtualNetworks/vnet/subnets", "Microsoft.Storage/storageAccounts", 1),
+			synthesize: Synthesize,
+			want:       "agentSubnetResourceId",
+		},
+		{
+			name: "explicit empty agent subnet",
+			yaml: strings.Replace(
+				valid,
+				"      agentSubnetResourceId: /subscriptions/sub/resourceGroups/rg/providers/"+
+					"Microsoft.Network/virtualNetworks/vnet/subnets/agents\n",
+				"      agentSubnetResourceId: \"\"\n",
+				1,
+			),
+			synthesize: Synthesize,
+			want:       "agentSubnetResourceId: required",
+		},
+		{
+			name: "existing project",
+			yaml: strings.Replace(
+				valid,
+				"host: azure.ai.project",
+				"host: azure.ai.project\n    endpoint: https://acct.services.ai.azure.com/api/projects/project",
+				1,
+			),
+			synthesize: SynthesizeExistingProject,
+			want:       "cannot be added to an existing account",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := tt.synthesize(Input{
+				RawAzureYAML: []byte(tt.yaml),
+				ServiceName:  "project",
+				Env: map[string]string{
+					"MANAGER_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.ManagedIdentity/userAssignedIdentities/manager",
+					"WORKLOAD_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.ManagedIdentity/userAssignedIdentities/workload",
+				},
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
 }
@@ -862,6 +1023,29 @@ func TestTerraformModule_DerivesNamesWhenEmpty(t *testing.T) {
 	assert.NotContains(t, string(main), `developer_cognitive_services_user`)
 }
 
+func TestTerraformModule_AgentHosting(t *testing.T) {
+	fs := TerraformTemplatesFS()
+
+	variables, err := fs.ReadFile("templates/terraform/variables.tf")
+	require.NoError(t, err)
+	assert.Contains(t, string(variables), `variable "agent_hosting"`)
+	assert.Contains(t, string(variables), "hostingManagementIdentityResourceId")
+	assert.Contains(t, string(variables), "agentSubnetResourceId")
+
+	main, err := fs.ReadFile("templates/terraform/main.tf")
+	require.NoError(t, err)
+	text := string(main)
+	assert.Contains(t, text, "Microsoft.CognitiveServices/accounts@2026-07-15-preview")
+	assert.Contains(t, text, "schema_validation_enabled = false")
+	assert.Contains(t, text, `identity_ids = var.agent_hosting.enabled`)
+	assert.Contains(t, text, "agentHostingConfigurations")
+	assert.Contains(t, text, "networkInjections")
+	assert.Contains(t, text, `scenario                   = "agent"`)
+	assert.Contains(t, text, "subnetArmId                = var.agent_hosting.agentSubnetResourceId")
+	assert.Contains(t, text, "workloadIdentityResourceId")
+
+}
+
 func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	data, err := ARMTemplate()
 	require.NoError(t, err)
@@ -888,6 +1072,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.Contains(t, params, "resourceGroupName")
 	assert.NotContains(t, params, "principalId")
 	assert.NotContains(t, params, "principalType")
+	assert.Contains(t, params, "agentHosting")
 
 	assert.NotContains(t, params, "connections")
 	assert.NotContains(t, params, "connectionCredentials")
@@ -915,6 +1100,10 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.NotContains(t, text, "developerCognitiveServicesUser")
 	assert.NotContains(t, text, "a97b65f3-24c7-4388-baec-2e87135dc908")
 	assert.Contains(t, text, "acrPullRoleId", "ACR pull assignment must remain")
+	assert.Contains(t, text, `"apiVersion": "2026-07-15-preview"`)
+	assert.Contains(t, text, `"agentHostingConfigurations": "[if(parameters('agentHosting').enabled`)
+	assert.Contains(t, text, "'userAssignedIdentities', createObject(format('{0}', "+
+		"parameters('agentHosting').hostingManagementIdentityResourceId)")
 	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
 	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
 	assert.Contains(t, text, wantDisable,
@@ -930,8 +1119,12 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"byo egress must inject the agent subnet (useMicrosoftManagedNetwork=false)")
 	assert.Contains(t, text, "'useMicrosoftManagedNetwork', true()",
 		"managed egress must use the Microsoft-managed network (useMicrosoftManagedNetwork=true)")
-	assert.Contains(t, text, `"networkInjections": "[variables('agentNetworkInjections')]"`,
+	assert.Contains(t, text, `"networkInjections": "[variables('accountNetworkInjections')]"`,
 		"account must carry the computed networkInjections")
+	assert.Contains(t, text,
+		"createObject('scenario', 'Agent', 'subnetArmId', parameters('agentHosting').agentSubnetResourceId, "+
+			"'useMicrosoftManagedNetwork', false())",
+		"agent hosting must inject the configured subnet using the service-required Agent scenario")
 
 	// isolationMode must be wired to the V2 managed network child resource
 	// (regression guard: it was previously a no-op echoed only to output).

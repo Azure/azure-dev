@@ -31,17 +31,30 @@ param foundryProjectPrincipalId string
 @description('When true, the registry disables public network access to stay inside the isolation boundary.')
 param enableNetworkIsolation bool = false
 
+@description('Prepared registry to reuse without rewriting its configuration.')
+param registryResourceId string = ''
+
+@description('Use Container Registry Repository Reader for repository ABAC registries.')
+param registryABAC bool = false
+
+@description('The BYO lifecycle journals the real project identity grant before finalizing its connection.')
+param roleAssignmentManagedExternally bool = false
+
 // Variables
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
 var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
-  '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+  registryABAC ? 'b93aa761-3e63-49ed-ac28-beffa264f7ac' : '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
+var reuseRegistry = !empty(registryResourceId)
+var effectiveRegistryId = reuseRegistry ? registryResourceId : registry!.id
+var effectiveEndpoint = reuseRegistry ? existingRegistry!.properties.loginServer : registry!.properties.loginServer
+var effectiveName = reuseRegistry ? last(split(registryResourceId, '/')) : name
 
 // Resources
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = if (!reuseRegistry) {
   name: name
   location: location
   tags: tags
@@ -62,15 +75,34 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
 }
 
+resource existingRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = if (reuseRegistry) {
+  scope: resourceGroup(split(registryResourceId, '/')[2], split(registryResourceId, '/')[4])
+  name: last(split(registryResourceId, '/'))
+}
+
 // Grant the Foundry project's managed identity AcrPull on this registry so the
 // hosted agent can pull images using the project identity.
-resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!reuseRegistry && !roleAssignmentManagedExternally) {
   name: guid(registry.id, foundryProjectPrincipalId, acrPullRoleId)
   scope: registry
   properties: {
     principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
+  }
+}
+
+module preparedRegistryAccess 'acr-pull-role-assignment.bicep' = if (reuseRegistry && !roleAssignmentManagedExternally) {
+  name: 'prepared-registry-project-access'
+  scope: resourceGroup(split(registryResourceId, '/')[2], split(registryResourceId, '/')[4])
+  params: {
+    registryName: effectiveName
+    principalId: foundryProjectPrincipalId
+    roleDefinitionId: subscriptionResourceId(
+      split(registryResourceId, '/')[2],
+      'Microsoft.Authorization/roleDefinitions',
+      registryABAC ? 'b93aa761-3e63-49ed-ac28-beffa264f7ac' : '7f951dda-4ed3-4680-a7ca-43fe172d538d'
+    )
   }
 }
 
@@ -85,24 +117,25 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 
     // Project-scoped connection so Foundry can resolve the registry by name.
     resource acrConnection 'connections' = {
-      name: '${name}-conn'
+      name: '${effectiveName}-conn'
       properties: {
         category: 'ContainerRegistry'
-        target: registry.properties.loginServer
+        target: effectiveEndpoint
         authType: 'ManagedIdentity'
         // RegistryIdentity auth requires both the identity client id (the
         // project principal) and the registry resource id.
         credentials: {
           clientId: foundryProjectPrincipalId
-          resourceId: registry.id
+          resourceId: effectiveRegistryId
         }
         isSharedToAll: true
         metadata: {
-          ResourceId: registry.id
+          ResourceId: effectiveRegistryId
         }
       }
       dependsOn: [
         foundryAcrPull
+        preparedRegistryAccess
       ]
     }
   }
@@ -110,6 +143,6 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 
 // Outputs
 
-output loginServer string = registry.properties.loginServer
-output resourceId string = registry.id
+output loginServer string = effectiveEndpoint
+output resourceId string = effectiveRegistryId
 output connectionName string = foundryAccount::project::acrConnection.name

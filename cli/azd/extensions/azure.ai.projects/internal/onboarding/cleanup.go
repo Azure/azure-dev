@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -159,7 +160,10 @@ func (l *ownedLifecycle) cleanupResource(
 	if step == "R06Subnet" {
 		return l.cleanupSubnet(ctx, state, record)
 	}
-	versions := map[string]string{"R02": "2024-01-01", "R03": registryAPIVersion, "R04": "2024-11-30", "R05": "2024-11-30"}
+	if step == "R03" {
+		return l.cleanupRegistry(ctx, state, record)
+	}
+	versions := map[string]string{"R02": "2024-01-01", "R04": "2024-11-30", "R05": "2024-11-30"}
 	version := versions[step]
 	if version == "" {
 		return fmt.Errorf("resource type has no supported scoped delete contract")
@@ -228,6 +232,47 @@ func (l *ownedLifecycle) cleanupResource(
 	}
 	record.Deleted = true
 	state.Resources[step] = record
+	return l.journal.Save(ctx, *state)
+}
+
+func (l *ownedLifecycle) cleanupRegistry(ctx context.Context, state *PreparationState, record OwnedResource) error {
+	id, err := ParseID(record.ID, "Microsoft.ContainerRegistry/registries")
+	if err != nil {
+		return err
+	}
+	client, err := armcontainerregistry.NewRegistriesClient(id.SubscriptionID, l.credential, l.options)
+	if err != nil {
+		return err
+	}
+	observed, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if !responseNotFound(err) {
+		if err != nil {
+			return err
+		}
+		if err := confirmOwned(*state, "R03", authString(observed.ID), observed.Tags); err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		poller, err := client.BeginDelete(ctx, id.ResourceGroupName, id.Name, nil)
+		if err != nil && !responseNotFound(err) {
+			return err
+		}
+		if err == nil {
+			if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+				return err
+			}
+		}
+		if _, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil); !responseNotFound(err) {
+			if err != nil {
+				return fmt.Errorf("verify registry deletion: %w", err)
+			}
+			return fmt.Errorf("owned registry deletion is not confirmed")
+		}
+	}
+	record.Deleted = true
+	state.Resources["R03"] = record
 	return l.journal.Save(ctx, *state)
 }
 

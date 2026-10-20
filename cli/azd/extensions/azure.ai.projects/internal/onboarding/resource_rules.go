@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
@@ -404,14 +405,14 @@ func storageResourceChecks(account armstorage.Account) Report {
 	return Report{typeCheck, security}
 }
 
-func registryResourceCheck(registry registryResource) (bool, Check) {
+func registryResourceCheck(registry armcontainerregistry.Registry) (bool, Check) {
 	c := resourceCheck("C01", resourceValue(registry.ID),
 		"ready registry; login endpoint; known access configuration and RBAC/ABAC mode")
 	p := registry.Properties
 	if p == nil {
 		return false, c
 	}
-	mode := resourceValue(registry.AuthorizationMode)
+	mode := resourceValue(p.RoleAssignmentMode)
 	abac := mode == "AbacRepositoryPermissions"
 	knownMode := mode == "LegacyRegistryPermissions" || abac
 	state, endpoint := resourceValue(p.ProvisioningState), resourceValue(p.LoginServer)

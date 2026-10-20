@@ -81,6 +81,9 @@ func (p *ownedPreparer) Prepare(ctx context.Context, plan Plan, facts Facts) (Pr
 	if err != nil {
 		return result, err
 	}
+	if state.Registry.Verified && state.Registry.ABAC != facts.RegistryABAC {
+		return result, fmt.Errorf("R03: registry authorization mode differs from the prepared binding")
+	}
 	result.ResourceGroupTags, err = p.prepareGroup(ctx, plan, &state)
 	if err != nil {
 		return result, err
@@ -295,30 +298,38 @@ func (p *ownedPreparer) prepareStorage(ctx context.Context, plan Plan, state *Pr
 func (p *ownedPreparer) prepareRegistry(
 	ctx context.Context, plan Plan, state *PreparationState, expectedABAC bool,
 ) (string, bool, error) {
-	client, err := newRegistryARMClient(p.credential, p.options)
+	id, err := ParseID(plan.Registry.ID, "Microsoft.ContainerRegistry/registries")
 	if err != nil {
 		return "", false, err
 	}
-	response, err := client.get(ctx, plan.Registry.ID)
+	client, err := armcontainerregistry.NewRegistriesClient(id.SubscriptionID, p.credential, p.options)
+	if err != nil {
+		return "", false, err
+	}
+	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if !plan.Registry.Supplied && responseNotFound(err) {
 		if err := p.resourceIntent(ctx, state, "R03", plan.Registry.ID); err != nil {
 			return "", false, err
 		}
-		mode := "LegacyRegistryPermissions"
+		mode := armcontainerregistry.RoleAssignmentModeLegacyRegistryPermissions
 		if expectedABAC {
-			mode = "AbacRepositoryPermissions"
+			mode = armcontainerregistry.RoleAssignmentModeAbacRepositoryPermissions
 		}
-		createErr := client.create(ctx, plan.Registry.ID, registryCreateRequest{
-			Location: plan.Location, Tags: ownerTags(plan.Owner),
+		poller, createErr := client.BeginCreate(ctx, id.ResourceGroupName, id.Name, armcontainerregistry.Registry{
+			Location: new(plan.Location), Tags: ownerTags(plan.Owner),
 			SKU: &armcontainerregistry.SKU{Name: new(armcontainerregistry.SKUNamePremium)},
-			Properties: &registryCreateProperties{
-				RoleAssignmentMode: mode, PublicNetworkAccess: "Enabled",
+			Properties: &armcontainerregistry.RegistryProperties{
+				RoleAssignmentMode: new(mode), PublicNetworkAccess: new(armcontainerregistry.PublicNetworkAccessEnabled),
+				AdminUserEnabled: new(false), AnonymousPullEnabled: new(false),
 			},
-		})
+		}, nil)
 		if createErr != nil {
 			return "", false, fmt.Errorf("R03: create registry: %w", createErr)
 		}
-		response, err = client.get(ctx, plan.Registry.ID)
+		if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+			return "", false, fmt.Errorf("R03: wait for registry creation; retain the ownership journal: %w", err)
+		}
+		response, err = client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	}
 	if err != nil {
 		return "", false, fmt.Errorf("R03: read registry: %w", err)
@@ -333,24 +344,35 @@ func (p *ownedPreparer) prepareRegistry(
 	}
 	props := response.Properties
 	if props.ProvisioningState == nil || *props.ProvisioningState != armcontainerregistry.ProvisioningStateSucceeded ||
-		response.AuthorizationMode == nil || props.LoginServer == nil || *props.LoginServer == "" {
+		props.RoleAssignmentMode == nil || props.LoginServer == nil || *props.LoginServer == "" {
 		return "", false, fmt.Errorf("R03: registry readiness, endpoint or authorization mode is unverified")
 	}
-	mode := *response.AuthorizationMode
-	if mode != "LegacyRegistryPermissions" && mode != "AbacRepositoryPermissions" {
+	mode := *props.RoleAssignmentMode
+	if mode != armcontainerregistry.RoleAssignmentModeLegacyRegistryPermissions &&
+		mode != armcontainerregistry.RoleAssignmentModeAbacRepositoryPermissions {
 		return "", false, fmt.Errorf("R03: registry authorization mode is unsupported")
 	}
-	abac := mode == "AbacRepositoryPermissions"
+	abac := mode == armcontainerregistry.RoleAssignmentModeAbacRepositoryPermissions
 	if abac != expectedABAC {
 		return "", false, fmt.Errorf("R03: registry authorization mode changed since preflight; rerun preflight")
 	}
 	if strings.ContainsAny(*props.LoginServer, "/:@?#") {
 		return "", false, fmt.Errorf("R03: registry login endpoint is not a supported hostname")
 	}
+	if state.Registry != nil && (!strings.EqualFold(state.Registry.ID, plan.Registry.ID) ||
+		state.Registry.Verified && (state.Registry.ABAC != abac ||
+			!strings.EqualFold(state.Registry.Endpoint, *props.LoginServer))) {
+		return "", false, fmt.Errorf("R03: registry endpoint or authorization mode differs from the prepared binding")
+	}
+	state.Registry = &RegistryBinding{
+		ID: plan.Registry.ID, Endpoint: *props.LoginServer, ABAC: abac, Verified: true,
+	}
 	if !plan.Registry.Supplied {
 		if err := p.resourceComplete(ctx, state, "R03", plan.Registry.ID); err != nil {
 			return "", false, err
 		}
+	} else if err := p.journal.Save(ctx, *state); err != nil {
+		return "", false, fmt.Errorf("R03: persist reused registry binding: %w", err)
 	}
 	return *props.LoginServer, abac, nil
 }

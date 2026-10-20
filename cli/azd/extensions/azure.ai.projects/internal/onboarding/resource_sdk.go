@@ -16,15 +16,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
-// ResourceEvidence provides optional authoritative read-only evidence. A nil provider never implies success.
-// Admission must implement a service-confirmed contract, not infer approval from ARM readability or RP registration.
+// ResourceEvidence provides supported read-only workload-path evidence. A nil provider never implies success.
 type ResourceEvidence struct {
-	Admission func(context.Context, Plan) (Check, error)
-	Network   NetworkEvidenceProvider
+	Network NetworkEvidenceProvider
 }
 
 type sdkResourceChecker struct {
@@ -38,7 +37,7 @@ func NewResourceChecker(credential azcore.TokenCredential, options *arm.ClientOp
 	return NewResourceCheckerWithEvidence(credential, options, ResourceEvidence{})
 }
 
-// NewResourceCheckerWithEvidence adds existing-workload network and authoritative admission evidence.
+// NewResourceCheckerWithEvidence adds existing-workload network evidence.
 // Providers must not create probe resources, mutate AKS, or read the future hosting/workload identities.
 func NewResourceCheckerWithEvidence(
 	credential azcore.TokenCredential, options *arm.ClientOptions, evidence ResourceEvidence,
@@ -198,25 +197,6 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	report = append(report, input)
 	facts := Facts{TenantID: tenant}
-	admission := resourceCheck("I02", "/subscriptions/"+plan.SubscriptionID,
-		"authoritative preview admission for target subscription and region "+plan.Location)
-	admission.Observed = "private-preview subscription/region admission has no confirmed read-only service contract"
-	admission.Missing = "service-recognized preview eligibility evidence"
-	admission.Remediation = "obtain service-confirmed subscription/region admission evidence; ARM access is not approval"
-	if c.evidence.Admission != nil {
-		provided, err := c.evidence.Admission(ctx, plan)
-		if err != nil {
-			admission.Cause = err
-		} else if provided.Status == Pass || provided.Status == Fail || provided.Status == Unverified {
-			admission.Status, admission.Observed = provided.Status, provided.Observed
-			admission.Missing, admission.Remediation = provided.Missing, provided.Remediation
-			admission.Cause = provided.Cause
-			if admission.Status == Pass && admission.Observed == "" {
-				admission = resourceResult(admission, Unverified, "admission provider returned no supporting evidence")
-			}
-		}
-	}
-	report = append(report, admission)
 	planCheck := resourceCheck("I03", plan.AgentSubnet.ID, "resolved supported creation/reuse and companion topology")
 	if plan.NetworkChanges {
 		planCheck.Observed = "selected companion network mutation/recovery lifecycle is not implemented"
@@ -369,19 +349,19 @@ func (c *sdkResourceChecker) readStorage(ctx context.Context, resource Resource)
 }
 
 func (c *sdkResourceChecker) readRegistry(ctx context.Context, resource Resource) (bool, Report) {
-	_, err := existingResourceID(resource.ID, "Microsoft.ContainerRegistry/registries")
+	id, err := existingResourceID(resource.ID, "Microsoft.ContainerRegistry/registries")
 	if err != nil {
 		return false, Report{resourceCheck("C01", resource.ID, "valid supplied registry ID")}
 	}
-	client, err := newRegistryARMClient(c.credential, c.options)
+	client, err := armcontainerregistry.NewRegistriesClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		return false, Report{readFailure("C01", resource.ID, "Microsoft.ContainerRegistry/registries/read", err)}
 	}
-	response, err := client.get(ctx, resource.ID)
+	response, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
 		return false, Report{readFailure("C01", resource.ID, "Microsoft.ContainerRegistry/registries/read", err)}
 	}
-	abac, check := registryResourceCheck(response)
+	abac, check := registryResourceCheck(response.Registry)
 	state := ""
 	if response.Properties != nil {
 		state = resourceValue(response.Properties.ProvisioningState)

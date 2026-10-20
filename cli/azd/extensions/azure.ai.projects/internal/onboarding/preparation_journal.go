@@ -35,8 +35,17 @@ type PreparationState struct {
 	Resources       map[string]OwnedResource   `json:"resources"`
 	Assignments     map[string]OwnedAssignment `json:"assignments"`
 	Foundry         *FoundryState              `json:"foundry,omitempty"`
+	Registry        *RegistryBinding           `json:"registry,omitempty"`
 	CleanupStarted  bool                       `json:"cleanupStarted,omitempty"`
 	CleanupComplete bool                       `json:"cleanupComplete,omitempty"`
+}
+
+// RegistryBinding retains the selected registry across preparation and Foundry retries without claiming ownership.
+type RegistryBinding struct {
+	ID       string `json:"id"`
+	Endpoint string `json:"endpoint,omitempty"`
+	ABAC     bool   `json:"abac"`
+	Verified bool   `json:"verified"`
 }
 
 // OwnedResource records an exact intended resource ID and its confirmed creation result.
@@ -104,6 +113,10 @@ func (p *ownedPreparer) beginState(ctx context.Context, plan Plan) (PreparationS
 	if state.CleanupStarted && !state.CleanupComplete {
 		return state, fmt.Errorf("owned-resource cleanup is incomplete; resume azd down before provisioning again")
 	}
+	if !state.CleanupComplete && state.Registry != nil &&
+		!strings.EqualFold(state.Registry.ID, plan.Registry.ID) {
+		return state, fmt.Errorf("R03: registry differs from the recorded preparation binding")
+	}
 	if state.CleanupComplete {
 		for step := range state.Resources {
 			if step != "R01" {
@@ -112,6 +125,10 @@ func (p *ownedPreparer) beginState(ctx context.Context, plan Plan) (PreparationS
 		}
 		state.Assignments = map[string]OwnedAssignment{}
 		state.Network = nil
+		state.Registry = nil
+	}
+	if state.Registry == nil {
+		state.Registry = &RegistryBinding{ID: plan.Registry.ID}
 	}
 	state.SubscriptionID, state.ResourceGroup, state.Location = plan.SubscriptionID, plan.ResourceGroup, plan.Location
 	state.CleanupStarted, state.CleanupComplete = false, false

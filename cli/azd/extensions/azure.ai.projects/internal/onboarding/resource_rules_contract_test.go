@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/stretchr/testify/require"
@@ -389,9 +390,9 @@ func TestResourceRuleContractStorage(t *testing.T) {
 	}
 }
 
-func newResourceRuleContractRegistry(t *testing.T) registryResource {
+func newResourceRuleContractRegistry(t *testing.T) armcontainerregistry.Registry {
 	t.Helper()
-	var registry registryResource
+	var registry armcontainerregistry.Registry
 	resourceRuleContractJSON(t, &registry, `{
 		"id":"registry",
 		"properties":{
@@ -427,13 +428,13 @@ func TestResourceRuleContractRegistry(t *testing.T) {
 	t.Run("absent mode is not proof of ordinary RBAC", func(t *testing.T) {
 		registry := newResourceRuleContractRegistry(t)
 		require.NotNil(t, registry.Properties)
-		registry.AuthorizationMode = nil
+		registry.Properties.RoleAssignmentMode = nil
 		_, check := registryResourceCheck(registry)
 		require.Equal(t, Unverified, check.Status)
 	})
 	for _, state := range []string{"Pending", "Rejected", "Disconnected"} {
 		t.Run("private-only connection "+state, func(t *testing.T) {
-			var registry registryResource
+			var registry armcontainerregistry.Registry
 			raw := `{
 				"id":"registry",
 				"properties":{

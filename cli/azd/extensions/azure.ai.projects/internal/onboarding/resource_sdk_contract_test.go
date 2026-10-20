@@ -6,6 +6,7 @@ package onboarding
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -116,6 +117,66 @@ func TestResourceSDKReadsAgentPoolChildrenAndLocationSKUs(t *testing.T) {
 	assert.Equal(t, "actual-child", *pools[0].Name)
 	require.Len(t, skus, 1)
 	assert.True(t, clusterRead && poolRead && skuRead)
+}
+
+func TestResourceSDKI02OnlyChecksReferencedResourcesAndOwningTenants(t *testing.T) {
+	for _, supplied := range []bool{false, true} {
+		t.Run(fmt.Sprintf("storage-and-registry-supplied=%t", supplied), func(t *testing.T) {
+			input := contractPlanInput()
+			if !supplied {
+				input.StorageID, input.RegistryID = "", ""
+			}
+			plan, err := BuildPlan(input)
+			require.NoError(t, err)
+			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodGet, request.Method)
+				path := strings.ToLower(request.URL.Path)
+				require.NotContains(t, path, "/register")
+				require.NotContains(t, path, "/userassignedidentities/")
+				var body any
+				switch {
+				case strings.Count(path, "/") == 2 && strings.HasPrefix(path, "/subscriptions/"):
+					body = map[string]any{"tenantId": "owning-tenant"}
+				case strings.EqualFold(request.URL.Path, plan.Cluster.ID):
+					body = map[string]any{"id": plan.Cluster.ID, "location": plan.Location,
+						"properties": map[string]any{"provisioningState": "Succeeded"}}
+				case supplied && strings.EqualFold(request.URL.Path, plan.Storage.ID):
+					body = storageContractBody(plan.Storage.ID)
+				case supplied && strings.EqualFold(request.URL.Path, plan.Registry.ID):
+					body = map[string]any{"id": plan.Registry.ID, "properties": map[string]any{
+						"provisioningState": "Succeeded", "roleAssignmentMode": "LegacyRegistryPermissions",
+						"loginServer": "registry.azurecr.io", "publicNetworkAccess": "Enabled",
+					}}
+				case strings.Contains(path, "/subnets/"):
+					body = map[string]any{"id": request.URL.Path, "properties": map[string]any{
+						"provisioningState": "Succeeded", "addressPrefix": "10.20.0.0/27",
+					}}
+				case strings.HasSuffix(path, "/agentpools"), strings.HasSuffix(path, "/skus"):
+					body = map[string]any{"value": []any{}}
+				default:
+					return contractARMResponse(request, 404, `{"error":{"code":"ResourceNotFound"}}`), nil
+				}
+				raw, err := json.Marshal(body)
+				require.NoError(t, err)
+				return contractARMResponse(request, 200, string(raw)), nil
+			})
+			_, report, _ := NewResourceChecker(contractCredential{}, options).Check(t.Context(), plan)
+			var inputs Report
+			var networkUnknown bool
+			for _, check := range report {
+				if check.ID == "I02" {
+					inputs = append(inputs, check)
+					assert.Equal(t, Pass, check.Status, check.Observed)
+				}
+				if check.ID == "N01" && check.Status == Unverified {
+					networkUnknown = true
+				}
+			}
+			require.NotEmpty(t, inputs)
+			require.NoError(t, inputs.Err(), "resource evidence must not require subscription/region preview admission")
+			require.True(t, networkUnknown, "removing admission must not relax source-bound network evidence")
+		})
+	}
 }
 
 type networkEvidenceContract func(context.Context, NetworkRequest) (NetworkEvidence, error)

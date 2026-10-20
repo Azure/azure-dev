@@ -104,7 +104,7 @@ func byoContractPipeline(events *[]string, status onboarding.Status, prepare byo
 		Resources: byoResourceContract(func(context.Context, onboarding.Plan) (onboarding.Facts, onboarding.Report, error) {
 			*events = append(*events, "resources")
 			return onboarding.Facts{}, onboarding.Report{
-				{ID: "I02", Status: status, Mandatory: true, Missing: "authoritative admission evidence"},
+				{ID: "I02", Status: status, Mandatory: true, Missing: "referenced resource evidence"},
 			}, nil
 		}),
 		Access: byoAccessContract(func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Report, error) {

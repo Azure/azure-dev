@@ -374,7 +374,7 @@ func (c *sdkResourceChecker) networkChecks(
 }
 
 // VerifyPreparedNetwork rechecks actual Blob, companion and registry HTTPS paths.
-// No admission, RBAC readback or operator connectivity is substituted for path evidence.
+// No RBAC readback or operator connectivity is substituted for path evidence.
 func (c *sdkResourceChecker) VerifyPreparedNetwork(
 	ctx context.Context, plan Plan, prepared Prepared,
 ) (Report, error) {

@@ -139,7 +139,8 @@ func validateFoundrySpec(plan Plan, spec FoundrySpec) error {
 
 func sameFoundrySpec(a, b FoundrySpec) bool {
 	return strings.EqualFold(a.AccountID, b.AccountID) && strings.EqualFold(a.ProjectID, b.ProjectID) &&
-		strings.EqualFold(a.Location, b.Location)
+		strings.EqualFold(a.Location, b.Location) && strings.EqualFold(a.RegistryID, b.RegistryID) &&
+		a.RegistryABAC == b.RegistryABAC
 }
 
 func (l *ownedLifecycle) Check(ctx context.Context, plan Plan, spec FoundrySpec) (Report, error) {
@@ -159,6 +160,11 @@ func (l *ownedLifecycle) Check(ctx context.Context, plan Plan, spec FoundrySpec)
 	}
 	if state.CleanupStarted && !state.CleanupComplete {
 		return fail(fmt.Errorf("owned cleanup is incomplete; resume azd down before provisioning"))
+	}
+	if !state.CleanupComplete && state.Registry != nil &&
+		(!strings.EqualFold(state.Registry.ID, spec.RegistryID) ||
+			state.Registry.Verified && state.Registry.ABAC != spec.RegistryABAC) {
+		return fail(fmt.Errorf("registry differs from the recorded preparation binding"))
 	}
 	if state.Foundry != nil {
 		if !state.CleanupComplete && !sameFoundrySpec(state.Foundry.Spec, spec) {
@@ -219,6 +225,11 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	if state.Owner == "" || (state.CleanupStarted && !state.CleanupComplete) {
 		return fmt.Errorf("Foundry attempt requires completed preparation and no pending cleanup")
 	}
+	if !state.CleanupComplete && state.Registry != nil &&
+		(!strings.EqualFold(state.Registry.ID, spec.RegistryID) ||
+			state.Registry.Verified && state.Registry.ABAC != spec.RegistryABAC) {
+		return fmt.Errorf("Foundry attempt registry does not match the prepared binding")
+	}
 	if state.Foundry == nil || state.CleanupComplete {
 		state.Foundry = &FoundryState{Spec: spec}
 	} else if state.Foundry.AccountDeleted {
@@ -227,7 +238,6 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	if !sameFoundrySpec(state.Foundry.Spec, spec) {
 		return fmt.Errorf("Foundry attempt does not match the journaled selections")
 	}
-	state.Foundry.Spec.RegistryID, state.Foundry.Spec.RegistryABAC = spec.RegistryID, spec.RegistryABAC
 	for _, name := range spec.ModelNames {
 		if !slices.ContainsFunc(state.Foundry.Spec.ModelNames, func(old string) bool { return strings.EqualFold(old, name) }) {
 			state.Foundry.Spec.ModelNames = append(state.Foundry.Spec.ModelNames, name)

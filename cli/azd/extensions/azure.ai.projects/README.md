@@ -196,12 +196,14 @@ registry grant, and the existing optional developer Cognitive Services User
 assignment with its actual recipient and principal type. A future project
 principal remains unknown during conditional-delegation checks.
 
-**This onboarding path is not production-ready.** An authoritative read-only
-private-preview admission contract and supported source-bound network evidence
-are not available in the production adapters. ARM readability, deployment
+**This onboarding path is not production-ready.** Supported source-bound network
+evidence is not available in the production adapters. ARM readability, deployment
 validation, role assignment readback, and local connectivity are not substitutes
-for those gates. Provision therefore reports these missing contracts rather than
-claiming a successful onboarding. Terraform eject is unavailable for this path
+for required workload-path evidence. Provision reports missing network evidence
+rather than claiming a successful onboarding. Referenced-resource checks cover
+ID, type, existence, readiness and owning-tenant consistency, not private-preview
+subscription or region admission. The planned target resource group need not
+exist during preflight. Terraform eject is unavailable for this path
 because it cannot run the required extension preparation lifecycle.
 
 When no agent subnet is supplied, the bounded default topology plans an unused
@@ -217,6 +219,8 @@ private-network mutations require administrator preparation.
 After all preflight gates pass, preparation creates or resumes only its journaled,
 owner-tagged dependencies and exact scoped grants. Missing Storage and registry
 resources are created with safe defaults; supplied resources are not rewritten.
+Retries retain the journaled registry ID, endpoint, and authorization mode across
+preparation, the Foundry project grant, and the registry connection.
 Actual Storage, companion-subnet, and registry paths require post-creation network
 evidence before deployment. Registry checks cover source-bound DNS, TCP 443, and
 TLS to its login server and all enabled dedicated data endpoints; this does not

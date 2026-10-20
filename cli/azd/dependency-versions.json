@@ -78,6 +78,13 @@
       "issue": "https://github.com/Azure/azure-dev/issues/9297"
     },
     {
+      "module": "extensions/azure.ai.projects",
+      "dependency": "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry",
+      "version": "v1.3.0-beta.3",
+      "reason": "BYO AKS typed RoleAssignmentMode contract; matches the Agents SDK pending shared core alignment.",
+      "issue": "https://github.com/Azure/azure-dev/issues/9297"
+    },
+    {
       "module": "extensions/azure.ai.skills",
       "dependency": "github.com/Azure/azure-sdk-for-go/sdk/azcore",
       "version": "v1.21.0",

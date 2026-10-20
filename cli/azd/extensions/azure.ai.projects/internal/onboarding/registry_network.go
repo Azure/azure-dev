@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 )
 
 func registryNetworkEndpoint(host string) string {
@@ -24,15 +26,16 @@ func registryNetworkEndpoint(host string) string {
 func (c *sdkResourceChecker) registryNetworkChecks(ctx context.Context, id string, sources []string) Report {
 	base := resourceCheck("R06", id, "AKS workload DNS/TCP 443/TLS to registry login and enabled dedicated data endpoints")
 	base.Observed = "registry network reachability only; image-pull authorization and propagation are separate"
-	if _, err := existingResourceID(id, "Microsoft.ContainerRegistry/registries"); err != nil {
+	resource, err := existingResourceID(id, "Microsoft.ContainerRegistry/registries")
+	if err != nil {
 		base.Cause, base.Missing = err, "complete prepared registry ARM ID"
 		return Report{base}
 	}
-	client, err := newRegistryARMClient(c.credential, c.options)
+	client, err := armcontainerregistry.NewRegistriesClient(resource.SubscriptionID, c.credential, c.options)
 	if err != nil {
 		return Report{readFailure("R06", id, "Microsoft.ContainerRegistry/registries/read", err)}
 	}
-	registry, err := client.get(ctx, id)
+	registry, err := client.Get(ctx, resource.ResourceGroupName, resource.Name, nil)
 	if err != nil {
 		return Report{readFailure("R06", id, "Microsoft.ContainerRegistry/registries/read", err)}
 	}

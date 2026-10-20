@@ -39,7 +39,7 @@ func TestPreparedRegistryRequiresEveryActualEndpointAndTLS(t *testing.T) {
 			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
 				require.Equal(t, http.MethodGet, request.Method)
 				require.Equal(t, plan.Registry.ID, request.URL.Path)
-				require.Equal(t, registryAPIVersion, request.URL.Query().Get("api-version"))
+				require.Equal(t, "2025-03-01-preview", request.URL.Query().Get("api-version"))
 				hosts := `["customer.westus.data.azurecr.io","customer.eastus.data.azurecr.io"]`
 				if scenario == "missing dedicated endpoints" {
 					hosts = "[]"

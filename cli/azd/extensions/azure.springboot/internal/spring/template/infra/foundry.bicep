@@ -21,6 +21,30 @@ var openAIUserRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 )
+var deployments = concat(
+  chatEnabled
+    ? [
+        {
+          name: chatDeploymentName
+          modelName: chatModelName
+          modelVersion: chatModelVersion
+          sku: chatModelSku
+          capacity: chatModelCapacity
+        }
+      ]
+    : [],
+  embeddingEnabled
+    ? [
+        {
+          name: embeddingDeploymentName
+          modelName: embeddingModelName
+          modelVersion: embeddingModelVersion
+          sku: embeddingModelSku
+          capacity: embeddingModelCapacity
+        }
+      ]
+    : []
+)
 
 resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   name: accountName
@@ -41,39 +65,25 @@ resource account 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
   }
 }
 
-resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (chatEnabled) {
-  parent: account
-  name: chatDeploymentName
-  sku: {
-    name: chatModelSku
-    capacity: chatModelCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: chatModelName
-      version: chatModelVersion
+@batchSize(1)
+resource modelDeployments 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = [
+  for deployment in deployments: {
+    parent: account
+    name: deployment.name
+    sku: {
+      name: deployment.sku
+      capacity: deployment.capacity
     }
-    versionUpgradeOption: 'OnceCurrentVersionExpired'
-  }
-}
-
-resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01' = if (embeddingEnabled) {
-  parent: account
-  name: embeddingDeploymentName
-  sku: {
-    name: embeddingModelSku
-    capacity: embeddingModelCapacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: embeddingModelName
-      version: embeddingModelVersion
+    properties: {
+      model: {
+        format: 'OpenAI'
+        name: deployment.modelName
+        version: deployment.modelVersion
+      }
+      versionUpgradeOption: 'OnceCurrentVersionExpired'
     }
-    versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
-}
+]
 
 resource openAIUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (authentication == 'managedIdentity') {
   name: guid(account.id, applicationPrincipalId, openAIUserRoleId)

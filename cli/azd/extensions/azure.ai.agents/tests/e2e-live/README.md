@@ -92,8 +92,8 @@ Before running:
 2. Select a basic stateless Python Responses sample with a Dockerfile,
   `pyproject.toml`, and `uv.lock`. The pinned Agent Framework Responses
   `01-basic` baseline is supported for automatic builds. CI updates only its
-  isolated copy to the package versions below, pins the compatible hosting
-  integration to `1.0.0b261015`, and regenerates the lock file and requirements
+  isolated copy to the package versions below, retains the baseline hosting
+  integration at `1.0.0b260821`, and regenerates the lock file and requirements
   with uv `0.11.7`, matching that sample's Dockerfile tooling.
   CI uses the repository's authenticated Azure Artifacts Python feed rather
   than direct PyPI access. The isolated Dockerfile uses the credential-free
@@ -125,8 +125,9 @@ Queue the live pipeline at the CI branch's commit with these explicit inputs:
 | `serviceConnection`, `location` | Confirmed preview-approved subscription and region |
 
 For an existing image, checks run before creating a project. For automatic
-builds, CI provisions the sample project and registry first, builds and publishes
-the image, then performs the same checks before creating the agent version.
+builds, CI resolves dependencies and regenerates the lock file and requirements
+before provisioning the sample project and registry. It then builds and publishes
+the image and performs the same checks before creating the agent version.
 The driver verifies Linux AMD64, Python 3.10+, and the exact Python SDK versions
 using the image's actual Python startup command, including a `.venv` interpreter.
 Dependency consistency is checked with `python -m pip check`, or `uv pip check`

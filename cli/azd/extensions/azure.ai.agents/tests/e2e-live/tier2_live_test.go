@@ -263,13 +263,22 @@ func (r *runner) run(ctx context.Context) {
 		r.t.Errorf("init: %v", err)
 		return
 	}
+	var snapshotSourceDir string
+	if envTrue("E2E_MEMORY_SNAPSHOT") && r.snapshotImage == "" {
+		var err error
+		snapshotSourceDir, err = r.prepareSnapshotBuild(ctx)
+		if err != nil {
+			r.t.Errorf("snapshot sample dependencies: %v", err)
+			return
+		}
+	}
 	if err := r.phaseProvision(ctx); err != nil {
 		r.t.Errorf("provision: %v", err)
 		return
 	}
 	if envTrue("E2E_MEMORY_SNAPSHOT") {
 		if r.snapshotImage == "" {
-			if err := r.buildSnapshotImage(ctx); err != nil {
+			if err := r.buildSnapshotImage(ctx, snapshotSourceDir); err != nil {
 				r.t.Errorf("snapshot image build: %v", err)
 				return
 			}
@@ -719,53 +728,61 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 	return updateSnapshotSampleManifest(root, r.snapshotImage)
 }
 
-func (r *runner) buildSnapshotImage(ctx context.Context) error {
+func (r *runner) prepareSnapshotBuild(ctx context.Context) (string, error) {
+	r.projectDir = r.findProjectDir()
+	if r.projectDir == "" {
+		return "", errors.New("no project directory with azure.yaml found")
+	}
 	root, err := os.OpenRoot(r.projectDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer root.Close()
 	manifest, err := root.ReadFile("azure.yaml")
 	if err != nil {
-		return err
+		return "", err
 	}
 	project, err := snapshotBuildProject(manifest)
 	if err != nil {
-		return err
+		return "", err
 	}
 	source, err := root.OpenRoot(project)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer source.Close()
 	for _, name := range []string{"Dockerfile", "pyproject.toml", "uv.lock"} {
 		if _, err := source.ReadFile(name); err != nil {
-			return fmt.Errorf("snapshot sample build requires %s: %w", name, err)
+			return "", fmt.Errorf("snapshot sample build requires %s: %w", name, err)
 		}
 	}
 	dockerfile, err := source.ReadFile("Dockerfile")
 	if err != nil {
-		return err
+		return "", err
 	}
 	dockerfile, err = snapshotBuildDockerfile(dockerfile)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := source.WriteFile("Dockerfile", dockerfile, 0o600); err != nil {
-		return err
+		return "", err
 	}
 	sourceDir := filepath.Join(r.projectDir, project)
 	for _, args := range [][]string{
-		{"add", "--no-sync", "--prerelease", "allow", "agent-framework-foundry-hosting==1.0.0b261015",
+		{"add", "--no-sync", "--prerelease", "allow", "agent-framework-foundry-hosting==1.0.0b260821",
 			"azure-ai-agentserver-core==2.3.0b1", "azure-ai-agentserver-responses==2.4.0b1"},
 		{"export", "--locked", "--no-dev", "--no-emit-project", "--format", "requirements-txt",
 			"--output-file", "requirements.txt"},
 	} {
 		if out, code := r.runQuiet(ctx, sourceDir, 10*time.Minute, "uv", args...); code != 0 {
-			return fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
+			return "", fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
 		}
 	}
 	r.t.Log("isolated sample dependencies updated to the platform guide versions; lock file and requirements regenerated")
+	return sourceDir, nil
+}
+
+func (r *runner) buildSnapshotImage(ctx context.Context, sourceDir string) error {
 	registry := strings.TrimPrefix(r.azdEnvValues(ctx)["AZURE_CONTAINER_REGISTRY_ENDPOINT"], "https://")
 	registry = strings.TrimRight(registry, "/")
 	if registry == "" || strings.ContainsAny(registry, "/@?# \t\r\n") {

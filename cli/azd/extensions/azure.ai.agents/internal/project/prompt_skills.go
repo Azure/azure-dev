@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,8 +23,10 @@ import (
 	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
 	"github.com/braydonk/yaml"
 )
 
@@ -297,9 +298,17 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 // it is set as the tool's project_connection_id. The managed definition is
 // mutated in place.
 func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, projectConnectionID string) {
+	_ = reconcileMcpTool(managed, serverLabel, mcpURL, projectConnectionID)
+}
+
+func reconcileMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, projectConnectionID string) error {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
-		return
+		return nil
 	}
+	serverLabel = strings.TrimSpace(serverLabel)
+	mcpURL = strings.TrimSpace(mcpURL)
+	projectConnectionID = strings.TrimSpace(projectConnectionID)
+
 	for _, raw := range managed.Tools {
 		tool, ok := raw.(map[string]any)
 		if !ok {
@@ -312,22 +321,43 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, project
 		existingLabel, _ := tool["server_label"].(string)
 		existingURL = strings.TrimSpace(existingURL)
 		existingLabel = strings.TrimSpace(existingLabel)
-		if existingURL == mcpURL || (existingLabel != "" && existingLabel == serverLabel && existingURL == "") {
-			if existingLabel == "" && strings.TrimSpace(serverLabel) != "" {
-				tool["server_label"] = serverLabel
-			}
-			tool["server_url"] = mcpURL
-			if _, hasApproval := tool["require_approval"]; !hasApproval {
-				tool["require_approval"] = "always"
-			}
-			if strings.TrimSpace(projectConnectionID) != "" {
-				if existingConn, has := tool["project_connection_id"]; !has ||
-					strings.TrimSpace(fmt.Sprintf("%v", existingConn)) == "" {
-					tool["project_connection_id"] = projectConnectionID
-				}
-			}
-			return
+
+		sameURL := existingURL == mcpURL
+		sameLabel := existingLabel != "" && existingLabel == serverLabel
+		if !sameURL && !sameLabel {
+			continue
 		}
+
+		if sameLabel && existingURL != "" && !sameURL && !isSameToolboxMCPEndpoint(existingURL, serverLabel) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf(
+					"MCP tool %q declares server_url %q, which conflicts with toolbox %q endpoint %q",
+					serverLabel, existingURL, serverLabel, mcpURL,
+				),
+				fmt.Sprintf(
+					"remove server_url from the %q MCP tool entry to use the deployed toolbox endpoint, "+
+						"or give the custom MCP tool a distinct server_label",
+					serverLabel,
+				),
+			)
+		}
+
+		urlChanged := existingURL != "" && existingURL != mcpURL
+		if existingLabel == "" && serverLabel != "" {
+			tool["server_label"] = serverLabel
+		}
+		tool["server_url"] = mcpURL
+		if _, hasApproval := tool["require_approval"]; !hasApproval {
+			tool["require_approval"] = "always"
+		}
+		if projectConnectionID != "" {
+			existingConn, has := tool["project_connection_id"]
+			if !has || strings.TrimSpace(fmt.Sprintf("%v", existingConn)) == "" || urlChanged {
+				tool["project_connection_id"] = projectConnectionID
+			}
+		}
+		return nil
 	}
 	mcpTool := map[string]any{
 		"type":             "mcp",
@@ -335,10 +365,16 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, project
 		"server_url":       mcpURL,
 		"require_approval": "always",
 	}
-	if strings.TrimSpace(projectConnectionID) != "" {
+	if projectConnectionID != "" {
 		mcpTool["project_connection_id"] = projectConnectionID
 	}
 	managed.Tools = append(managed.Tools, mcpTool)
+	return nil
+}
+
+func isSameToolboxMCPEndpoint(rawURL, toolboxName string) bool {
+	parsedName, _, err := parseToolboxMCPEndpoint(rawURL)
+	return err == nil && strings.EqualFold(parsedName, strings.TrimSpace(toolboxName))
 }
 
 // skillsShellNode builds the skills graph node for a *harness-less* prompt
@@ -560,7 +596,9 @@ func toolboxNode(
 				if label == "" {
 					label = serviceName
 				}
-				injectMcpTool(g.managed, label, attachment.McpURL, attachment.ProjectConnectionID)
+				if err := reconcileMcpTool(g.managed, label, attachment.McpURL, attachment.ProjectConnectionID); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
@@ -828,9 +866,6 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 	ctx context.Context,
 	toolboxName, toolboxVersion, mcpURL string,
 ) (string, error) {
-	connectionName := toolboxName + "-mcp"
-	_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
-
 	desired := toolboxConnectionProperties{
 		Category: toolboxMCPConnectionCategory,
 		AuthType: toolboxMCPConnectionAuthType,
@@ -843,18 +878,26 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 		},
 	}
 
-	existing, found, err := b.getConnection(ctx, connectionName)
-	if err != nil {
-		return "", err
+	candidates := []string{
+		toolboxName + "-mcp",
+		fmt.Sprintf("%s-v%s-mcp", toolboxName, toolboxVersion),
 	}
-	if found {
-		exactMatch, canUpdate := classifyExistingToolboxConnection(
-			existing, mcpURL, toolboxName, toolboxVersion, isExplicit,
-		)
-		if exactMatch {
-			return connectionName, nil
+	for i, connectionName := range candidates {
+		_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
+		existing, found, err := b.getConnection(ctx, connectionName)
+		if err != nil {
+			return "", err
 		}
-		if !canUpdate {
+		if found {
+			if isMatchingToolboxConnection(existing, mcpURL, toolboxName, toolboxVersion) {
+				return connectionName, nil
+			}
+			// If the base <toolbox>-mcp connection is bound to another version of
+			// this same toolbox, preserve it for existing agents/versions and fall
+			// back to the version-scoped connection name.
+			if i == 0 && !isExplicit && isOtherVersionToolboxConnection(existing, mcpURL, toolboxName) {
+				continue
+			}
 			return "", exterrors.Validation(
 				exterrors.CodeInvalidConnection,
 				fmt.Sprintf(
@@ -867,62 +910,85 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 				),
 			)
 		}
-	} else if isExplicit {
-		return "", exterrors.Dependency(
-			exterrors.CodeFoundryDependencyNotReady,
-			fmt.Sprintf(
-				"connection %q is explicitly declared in azure.yaml and cannot be overwritten for toolbox %q",
-				connectionName, toolboxName,
-			),
-			fmt.Sprintf(
-				"rename the azure.ai.connection service %q or deploy a compatible UserEntraToken connection for %q first",
-				connectionName, toolboxName,
-			),
-		)
+		if isExplicit {
+			return "", exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf(
+					"connection %q is explicitly declared in azure.yaml and cannot be overwritten for toolbox %q",
+					connectionName, toolboxName,
+				),
+				fmt.Sprintf(
+					"rename the azure.ai.connection service %q or deploy a compatible UserEntraToken connection for %q first",
+					connectionName, toolboxName,
+				),
+			)
+		}
+
+		if err := b.putConnection(ctx, connectionName, desired); err != nil {
+			return "", err
+		}
+		return connectionName, nil
 	}
 
-	if err := b.putConnection(ctx, connectionName, desired); err != nil {
-		return "", err
-	}
-	return connectionName, nil
+	return "", exterrors.Internal(
+		exterrors.CodeConnectionCreationFail,
+		fmt.Sprintf("failed to resolve a connection name for toolbox %q", toolboxName),
+	)
 }
 
-func classifyExistingToolboxConnection(
+func isMatchingToolboxConnection(
 	existing *toolboxConnectionProperties,
 	mcpURL, toolboxName, toolboxVersion string,
-	isExplicit bool,
-) (exactMatch bool, canUpdate bool) {
-	if existing == nil {
-		return false, false
+) bool {
+	if !hasToolboxMCPConnectionAuth(existing) {
+		return false
 	}
-	if !strings.EqualFold(strings.TrimSpace(existing.Category), toolboxMCPConnectionCategory) ||
-		!strings.EqualFold(strings.TrimSpace(existing.AuthType), toolboxMCPConnectionAuthType) {
-		return false, false
-	}
-	if aud := strings.TrimRight(strings.TrimSpace(existing.Audience), "/"); aud != "" &&
-		!strings.EqualFold(aud, toolboxMCPConnectionAudience) {
-		return false, false
+	if strings.TrimSpace(existing.Target) != strings.TrimSpace(mcpURL) {
+		return false
 	}
 	metaType := strings.TrimSpace(existing.Metadata["type"])
 	metaName := strings.TrimSpace(existing.Metadata["toolboxName"])
 	metaVersion := strings.TrimSpace(existing.Metadata["toolboxVersion"])
+	if (metaType != "" && metaType != toolboxMCPMetadataType) ||
+		(metaName != "" && metaName != toolboxName) ||
+		(metaVersion != "" && metaVersion != toolboxVersion) {
+		return false
+	}
+	return true
+}
 
+func isOtherVersionToolboxConnection(
+	existing *toolboxConnectionProperties,
+	mcpURL, toolboxName string,
+) bool {
+	if !hasToolboxMCPConnectionAuth(existing) {
+		return false
+	}
 	if strings.TrimSpace(existing.Target) == strings.TrimSpace(mcpURL) {
-		if (metaType != "" && metaType != toolboxMCPMetadataType) ||
-			(metaName != "" && metaName != toolboxName) ||
-			(metaVersion != "" && metaVersion != toolboxVersion) {
-			return false, false
-		}
-		if !isExplicit && (metaType != toolboxMCPMetadataType || metaName != toolboxName || metaVersion != toolboxVersion) {
-			return false, true
-		}
-		return true, false
+		return false
 	}
+	metaType := strings.TrimSpace(existing.Metadata["type"])
+	metaName := strings.TrimSpace(existing.Metadata["toolboxName"])
+	if metaType == toolboxMCPMetadataType && metaName == toolboxName {
+		return true
+	}
+	if metaType == "" && metaName == "" {
+		parsedName, _, err := parseToolboxMCPEndpoint(existing.Target)
+		return err == nil && parsedName == toolboxName
+	}
+	return false
+}
 
-	if !isExplicit && metaType == toolboxMCPMetadataType && metaName == toolboxName {
-		return false, true
+func hasToolboxMCPConnectionAuth(existing *toolboxConnectionProperties) bool {
+	if existing == nil {
+		return false
 	}
-	return false, false
+	if !strings.EqualFold(strings.TrimSpace(existing.Category), toolboxMCPConnectionCategory) ||
+		!strings.EqualFold(strings.TrimSpace(existing.AuthType), toolboxMCPConnectionAuthType) {
+		return false
+	}
+	aud := strings.TrimRight(strings.TrimSpace(existing.Audience), "/")
+	return aud == "" || strings.EqualFold(aud, toolboxMCPConnectionAudience)
 }
 
 func (b *foundryToolboxBuilder) getConnection(
@@ -971,9 +1037,12 @@ func (b *foundryToolboxBuilder) putConnection(
 	if err != nil {
 		return fmt.Errorf("creating put-connection request for %q: %w", connectionName, err)
 	}
-	req.Raw().Header.Set("Content-Type", "application/json")
-	req.Raw().Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	req.Raw().ContentLength = int64(len(bodyBytes))
+	if err := req.SetBody(
+		streaming.NopCloser(bytes.NewReader(bodyBytes)),
+		"application/json",
+	); err != nil {
+		return fmt.Errorf("setting put-connection request body for %q: %w", connectionName, err)
+	}
 
 	resp, err := b.pipeline.Do(req)
 	if err != nil {
@@ -1000,6 +1069,48 @@ func foundryAccountAndProject(projectEndpoint string) (string, string) {
 	return account, strings.TrimSpace(project)
 }
 
+func resolveToolboxProjectARMTarget(
+	g *promptGraph,
+	settings *PromptAgentSettings,
+) (subscriptionID, resourceGroup, accountName, projectName string, err error) {
+	subscriptionID = strings.TrimSpace(settings.SubscriptionID)
+	resourceGroup = strings.TrimSpace(settings.ResourceGroup)
+	accountName, projectName = foundryAccountAndProject(settings.ProjectEndpoint)
+
+	if g != nil && g.env != nil {
+		if acct := strings.TrimSpace(g.env["AZURE_AI_ACCOUNT_NAME"]); acct != "" {
+			accountName = acct
+		}
+		if proj := strings.TrimSpace(g.env["AZURE_AI_PROJECT_NAME"]); proj != "" {
+			projectName = proj
+		}
+		if projectID := strings.TrimSpace(g.env["AZURE_AI_PROJECT_ID"]); projectID != "" {
+			parsed, parseErr := arm.ParseResourceID(projectID)
+			if parseErr != nil || parsed.Parent == nil ||
+				!strings.EqualFold(parsed.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
+				return "", "", "", "", exterrors.Validation(
+					exterrors.CodeInvalidAiProjectId,
+					fmt.Sprintf("AZURE_AI_PROJECT_ID is not a valid Foundry project resource ID: %q", projectID),
+					"set AZURE_AI_PROJECT_ID to a Microsoft.CognitiveServices/accounts/projects resource ID",
+				)
+			}
+			subscriptionID = strings.TrimSpace(parsed.SubscriptionID)
+			resourceGroup = strings.TrimSpace(parsed.ResourceGroupName)
+			accountName = strings.TrimSpace(parsed.Parent.Name)
+			projectName = strings.TrimSpace(parsed.Name)
+		}
+	}
+
+	if subscriptionID == "" || resourceGroup == "" || accountName == "" || projectName == "" {
+		return "", "", "", "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"Foundry project subscription, resource group, account, and project are required to configure toolbox connections",
+			"run `azd provision` to populate the Foundry project environment values",
+		)
+	}
+	return subscriptionID, resourceGroup, accountName, projectName, nil
+}
+
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
 func newFoundryToolboxBuilder(
 	g *promptGraph,
@@ -1013,15 +1124,9 @@ func newFoundryToolboxBuilder(
 			"run `azd up` to provision a Foundry project, or remove the 'toolboxes:' block from the agent definition",
 		)
 	}
-	accountName, projectName := foundryAccountAndProject(settings.ProjectEndpoint)
-	if strings.TrimSpace(settings.SubscriptionID) == "" ||
-		strings.TrimSpace(settings.ResourceGroup) == "" ||
-		accountName == "" || projectName == "" {
-		return nil, exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			"Foundry project subscription, resource group, account, and project are required to configure toolbox connections",
-			"run `azd provision` to populate the Foundry project environment values",
-		)
+	subscriptionID, resourceGroup, accountName, projectName, err := resolveToolboxProjectARMTarget(g, settings)
+	if err != nil {
+		return nil, err
 	}
 	if credential == nil {
 		return nil, exterrors.Auth(
@@ -1033,10 +1138,13 @@ func newFoundryToolboxBuilder(
 
 	explicitConns := map[string]struct{}{}
 	if g != nil && g.projectServices != nil {
-		if identities, err := foundryConnectionServiceIdentities(g.projectServices, g.projectRoot); err == nil {
-			for _, id := range identities {
-				explicitConns[strings.ToLower(strings.TrimSpace(id.ServiceKey))] = struct{}{}
-				explicitConns[strings.ToLower(strings.TrimSpace(id.ResourceName))] = struct{}{}
+		identities, err := foundryConnectionServiceIdentities(g.projectServices, g.projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range identities {
+			if name := strings.ToLower(strings.TrimSpace(id.ResourceName)); name != "" {
+				explicitConns[name] = struct{}{}
 			}
 		}
 	}
@@ -1058,8 +1166,8 @@ func newFoundryToolboxBuilder(
 	)
 
 	return &foundryToolboxBuilder{
-		subscriptionID: strings.TrimSpace(settings.SubscriptionID),
-		resourceGroup:  strings.TrimSpace(settings.ResourceGroup),
+		subscriptionID: subscriptionID,
+		resourceGroup:  resourceGroup,
 		accountName:    accountName,
 		projectName:    projectName,
 		pipeline:       pipeline,

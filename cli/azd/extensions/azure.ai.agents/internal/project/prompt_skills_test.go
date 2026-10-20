@@ -15,11 +15,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/envkey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -707,21 +709,24 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 	const mcpURLv1 = projectEndpoint + "/toolboxes/research-tools/versions/1/mcp?api-version=v1"
 	const mcpURLv2 = projectEndpoint + "/toolboxes/research-tools/versions/2/mcp?api-version=v1"
 
-	var stored *toolboxConnectionBody
+	stored := map[string]*toolboxConnectionBody{}
 	var getCalls, putCalls int
 	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+			connName := parts[len(parts)-1]
 			switch req.Method {
 			case http.MethodGet:
 				getCalls++
-				if stored == nil {
+				existing := stored[connName]
+				if existing == nil {
 					return &http.Response{
 						StatusCode: http.StatusNotFound,
 						Request:    req,
 						Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"NotFound"}}`)),
 					}, nil
 				}
-				raw, _ := json.Marshal(stored)
+				raw, _ := json.Marshal(existing)
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Request:    req,
@@ -733,8 +738,8 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 					return nil, err
 				}
-				stored = &body
-				raw, _ := json.Marshal(stored)
+				stored[connName] = &body
+				raw, _ := json.Marshal(body)
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Request:    req,
@@ -767,16 +772,16 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 	require.Equal(t, "research-tools", att1.ServerLabel)
 	require.Equal(t, mcpURLv1, att1.McpURL)
 	require.Equal(t, "research-tools-mcp", att1.ProjectConnectionID)
-	require.NotNil(t, stored)
-	require.Equal(t, "RemoteTool", stored.Properties.Category)
-	require.Equal(t, "UserEntraToken", stored.Properties.AuthType)
-	require.Equal(t, "https://ai.azure.com", stored.Properties.Audience)
-	require.Equal(t, mcpURLv1, stored.Properties.Target)
+	require.NotNil(t, stored["research-tools-mcp"])
+	require.Equal(t, "RemoteTool", stored["research-tools-mcp"].Properties.Category)
+	require.Equal(t, "UserEntraToken", stored["research-tools-mcp"].Properties.AuthType)
+	require.Equal(t, "https://ai.azure.com", stored["research-tools-mcp"].Properties.Audience)
+	require.Equal(t, mcpURLv1, stored["research-tools-mcp"].Properties.Target)
 	require.Equal(t, map[string]string{
 		"type":           "toolbox_MCP",
 		"toolboxName":    "research-tools",
 		"toolboxVersion": "1",
-	}, stored.Properties.Metadata)
+	}, stored["research-tools-mcp"].Properties.Metadata)
 
 	// 2. Second deploy of same version: 200 OK with exact match -> reuses without PUT.
 	att2, err := builder.ResolveToolbox(t.Context(), toolboxRef{
@@ -788,18 +793,191 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 	require.Equal(t, 1, putCalls, "compatible connection must be reused without redundant PUT")
 	require.Equal(t, att1, att2)
 
-	// 3. Toolbox updated to v2: 200 OK with matching toolbox_MCP metadata -> updates target and version in place.
+	// 3. Toolbox updated to v2: preserves research-tools-mcp (still pointing to v1)
+	// and creates version-scoped research-tools-v2-mcp.
 	att3, err := builder.ResolveToolbox(t.Context(), toolboxRef{
 		Name:        "research-tools",
 		MCPEndpoint: mcpURLv2,
 	})
 	require.NoError(t, err)
-	require.Equal(t, 3, getCalls)
+	require.Equal(t, 4, getCalls)
 	require.Equal(t, 2, putCalls)
 	require.Equal(t, mcpURLv2, att3.McpURL)
-	require.Equal(t, "research-tools-mcp", att3.ProjectConnectionID)
-	require.Equal(t, mcpURLv2, stored.Properties.Target)
-	require.Equal(t, "2", stored.Properties.Metadata["toolboxVersion"])
+	require.Equal(t, "research-tools-v2-mcp", att3.ProjectConnectionID)
+	require.Equal(t, mcpURLv1, stored["research-tools-mcp"].Properties.Target, "v1 connection must remain intact")
+	require.NotNil(t, stored["research-tools-v2-mcp"])
+	require.Equal(t, mcpURLv2, stored["research-tools-v2-mcp"].Properties.Target)
+	require.Equal(t, "2", stored["research-tools-v2-mcp"].Properties.Metadata["toolboxVersion"])
+}
+
+func TestFoundryToolboxBuilder_PutConnectionReplaysBodyOnRetry(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const mcpURL = projectEndpoint + "/toolboxes/research-tools/versions/1/mcp?api-version=v1"
+
+	putAttempts := 0
+	var secondPutBody toolboxConnectionBody
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+		Retry: policy.RetryOptions{
+			MaxRetries: 1,
+			RetryDelay: time.Millisecond,
+		},
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.Method == http.MethodGet {
+				return &http.Response{
+					StatusCode: http.StatusNotFound,
+					Request:    req,
+					Body:       io.NopCloser(strings.NewReader(`{}`)),
+				}, nil
+			}
+			putAttempts++
+			rawBytes, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.NotEmpty(t, rawBytes, "PUT body must be non-empty on attempt %d", putAttempts)
+			if putAttempts == 1 {
+				return &http.Response{
+					StatusCode: http.StatusServiceUnavailable,
+					Request:    req,
+					Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"ServiceUnavailable"}}`)),
+				}, nil
+			}
+			require.NoError(t, json.Unmarshal(rawBytes, &secondPutBody))
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Request:    req,
+				Body:       io.NopCloser(bytes.NewReader(rawBytes)),
+			}, nil
+		}),
+	})
+
+	builder := &foundryToolboxBuilder{
+		subscriptionID: "sub-1",
+		resourceGroup:  "rg-1",
+		accountName:    "acct",
+		projectName:    "proj",
+		pipeline:       pipeline,
+		explicitConns:  map[string]struct{}{},
+	}
+
+	att, err := builder.ResolveToolbox(t.Context(), toolboxRef{
+		Name:        "research-tools",
+		MCPEndpoint: mcpURL,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, putAttempts)
+	require.Equal(t, "research-tools-mcp", att.ProjectConnectionID)
+	require.Equal(t, mcpURL, secondPutBody.Properties.Target)
+}
+
+type fakeTokenCredential struct{}
+
+func (fakeTokenCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+func TestNewFoundryToolboxBuilder_ResolvesAccountFromProjectResourceIDAndChecksOwnership(t *testing.T) {
+	t.Parallel()
+
+	const customSubdomainEndpoint = "https://custom-subdomain.services.ai.azure.com/api/projects/my-proj"
+	const projectResourceID = "/subscriptions/sub-from-id/resourceGroups/rg-from-id/" +
+		"providers/Microsoft.CognitiveServices/accounts/arm-account-name/projects/arm-project-name"
+
+	t.Run("prefers AZURE_AI_PROJECT_ID over custom subdomain and uses ResourceName for ownership", func(t *testing.T) {
+		t.Parallel()
+		g := &promptGraph{
+			env: map[string]string{
+				"AZURE_AI_PROJECT_ID": projectResourceID,
+			},
+			projectServices: map[string]*azdext.ServiceConfig{
+				// Service key is "research-tools-mcp", but its ARM ResourceName is "other-conn":
+				// it must NOT block "research-tools-mcp".
+				"research-tools-mcp": promptConnectionService(t, "research-tools-mcp", "other-conn"),
+			},
+		}
+		settings := &PromptAgentSettings{
+			SubscriptionID:  "sub-fallback",
+			ResourceGroup:   "rg-fallback",
+			ProjectEndpoint: customSubdomainEndpoint,
+		}
+		rawBuilder, err := newFoundryToolboxBuilder(g, settings, fakeTokenCredential{})
+		require.NoError(t, err)
+		builder := rawBuilder.(*foundryToolboxBuilder)
+		require.Equal(t, "sub-from-id", builder.subscriptionID)
+		require.Equal(t, "rg-from-id", builder.resourceGroup)
+		require.Equal(t, "arm-account-name", builder.accountName)
+		require.Equal(t, "arm-project-name", builder.projectName)
+		require.NotContains(t, builder.explicitConns, "research-tools-mcp")
+		require.Contains(t, builder.explicitConns, "other-conn")
+	})
+
+	t.Run("propagates connection $ref resolution errors", func(t *testing.T) {
+		t.Parallel()
+		g := &promptGraph{
+			projectRoot: t.TempDir(),
+			projectServices: map[string]*azdext.ServiceConfig{
+				"broken-conn": {
+					Name:                 "broken-conn",
+					Host:                 foundryConnectionHost,
+					AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./missing-connection.yaml"}),
+				},
+			},
+		}
+		settings := &PromptAgentSettings{
+			SubscriptionID:  "sub-1",
+			ResourceGroup:   "rg-1",
+			ProjectEndpoint: customSubdomainEndpoint,
+		}
+		_, err := newFoundryToolboxBuilder(g, settings, fakeTokenCredential{})
+		require.Error(t, err)
+	})
+}
+
+func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const urlV1 = projectEndpoint + "/toolboxes/research-tools/versions/1/mcp?api-version=v1"
+	const urlV2 = projectEndpoint + "/toolboxes/research-tools/versions/2/mcp?api-version=v1"
+
+	t.Run("updates prior toolbox version URL and connection in place while preserving options", func(t *testing.T) {
+		t.Parallel()
+		managed := &agent_yaml.PromptAgent{
+			Tools: []any{
+				map[string]any{
+					"type":                  "mcp",
+					"server_label":          "research-tools",
+					"server_url":            urlV1,
+					"project_connection_id": "research-tools-mcp",
+					"require_approval":      "never",
+					"allowed_tools":         []string{"web_search"},
+				},
+			},
+		}
+		require.NoError(t, reconcileMcpTool(managed, "research-tools", urlV2, "research-tools-v2-mcp"))
+		require.Len(t, managed.Tools, 1)
+		tool := managed.Tools[0].(map[string]any)
+		require.Equal(t, urlV2, tool["server_url"])
+		require.Equal(t, "research-tools-v2-mcp", tool["project_connection_id"])
+		require.Equal(t, "never", tool["require_approval"])
+		require.Equal(t, []string{"web_search"}, tool["allowed_tools"])
+	})
+
+	t.Run("rejects conflicting non-toolbox URL with same server_label", func(t *testing.T) {
+		t.Parallel()
+		managed := &agent_yaml.PromptAgent{
+			Tools: []any{
+				map[string]any{
+					"type":         "mcp",
+					"server_label": "research-tools",
+					"server_url":   "https://external.example.com/mcp",
+				},
+			},
+		}
+		err := reconcileMcpTool(managed, "research-tools", urlV1, "research-tools-mcp")
+		require.ErrorContains(t, err, `MCP tool "research-tools" declares server_url`)
+		require.Len(t, managed.Tools, 1)
+	})
 }
 
 func TestFoundryToolboxBuilder_RejectsIncompatibleOrExplicitConnection(t *testing.T) {

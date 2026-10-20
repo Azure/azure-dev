@@ -159,13 +159,13 @@ func newPromptGraph(
 		return nil, err
 	}
 	if managed.HarnessType() != "" {
-		// An explicit toolbox: reference is a separate feature from skills: it
-		// attaches an existing shared toolbox as an mcp tool. Skills are never
+		// Explicit toolboxes: references are a separate feature from skills: they
+		// attach existing shared toolboxes as mcp tools. Skills are never
 		// routed through a toolbox of azd's making — the harness already has a
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
-		if node := toolboxNode(g, managed.Toolbox, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(settings)
+		if node := toolboxNode(g, managed.Toolboxes, func() (toolboxBuilder, error) {
+			return newFoundryToolboxBuilder(g, settings, credential)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
@@ -173,7 +173,7 @@ func newPromptGraph(
 			g.nodes = append(g.nodes, *node)
 		}
 	} else {
-		if node := skillsShellNode(g, skills, managed.Toolbox); node != nil {
+		if node := skillsShellNode(g, skills, managed.Toolboxes); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
 	}

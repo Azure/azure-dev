@@ -4,8 +4,13 @@
 package project
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,9 +19,13 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
+	"azureaiagent/internal/pkg/azure"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/servicekey"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/braydonk/yaml"
 )
 
@@ -67,9 +76,11 @@ type toolboxRef struct {
 }
 
 // toolboxAttachment is the result of registering or resolving a toolbox: the
-// MCP URL the agent connects to and, when configured, the project connection
-// name or ID used to authenticate to that endpoint.
+// MCP URL the agent connects to, the resolved toolbox resource name used as the
+// MCP server label, and the project connection name or ID used to authenticate
+// to that endpoint.
 type toolboxAttachment struct {
+	ServerLabel         string
 	McpURL              string
 	ProjectConnectionID string
 }
@@ -280,10 +291,11 @@ func extractFrontmatter(content string) (frontmatterResult, error) {
 }
 
 // injectMcpTool ensures the agent's tools include an MCP tool for the given
-// toolbox label and MCP URL. An existing MCP tool with the same server_url is
-// left in place (not duplicated). When projectConnectionID is non-empty it is
-// set as the tool's project_connection_id. The managed definition is mutated
-// in place.
+// toolbox label and MCP URL. An existing MCP tool with the same server_url or
+// server_label is updated in place (preserving any user-authored approval or
+// option fields) rather than duplicated. When projectConnectionID is non-empty
+// it is set as the tool's project_connection_id. The managed definition is
+// mutated in place.
 func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, projectConnectionID string) {
 	if managed == nil || strings.TrimSpace(mcpURL) == "" {
 		return
@@ -296,11 +308,21 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, project
 		if fmt.Sprintf("%v", tool["type"]) != "mcp" {
 			continue
 		}
-		if fmt.Sprintf("%v", tool["server_url"]) == mcpURL {
-			// Already present — backfill the connection id if it was missing so
-			// a previously connection-less mcp tool starts authenticating.
+		existingURL, _ := tool["server_url"].(string)
+		existingLabel, _ := tool["server_label"].(string)
+		existingURL = strings.TrimSpace(existingURL)
+		existingLabel = strings.TrimSpace(existingLabel)
+		if existingURL == mcpURL || (existingLabel != "" && existingLabel == serverLabel && existingURL == "") {
+			if existingLabel == "" && strings.TrimSpace(serverLabel) != "" {
+				tool["server_label"] = serverLabel
+			}
+			tool["server_url"] = mcpURL
+			if _, hasApproval := tool["require_approval"]; !hasApproval {
+				tool["require_approval"] = "always"
+			}
 			if strings.TrimSpace(projectConnectionID) != "" {
-				if _, has := tool["project_connection_id"]; !has {
+				if existingConn, has := tool["project_connection_id"]; !has ||
+					strings.TrimSpace(fmt.Sprintf("%v", existingConn)) == "" {
 					tool["project_connection_id"] = projectConnectionID
 				}
 			}
@@ -329,9 +351,9 @@ func injectMcpTool(managed *agent_yaml.PromptAgent, serverLabel, mcpURL, project
 func skillsShellNode(
 	g *promptGraph,
 	skills []skillBundle,
-	ref *agent_yaml.ToolboxReference,
+	toolboxes []agent_yaml.ToolboxReference,
 ) *promptNode {
-	if len(skills) == 0 && ref == nil {
+	if len(skills) == 0 && len(toolboxes) == 0 {
 		return nil
 	}
 	return &promptNode{
@@ -341,12 +363,12 @@ func skillsShellNode(
 			// A toolbox is provisioned and reached through the harness sandbox.
 			// Without a harness there is nothing to reach it from, so accepting
 			// the reference would deploy an agent whose skills never run.
-			if ref != nil {
+			if len(toolboxes) > 0 {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
-					"toolbox: is only available to an agent that names a harness",
+					"toolboxes: is only available to an agent that names a harness",
 					"add a 'harness:' block with type "+agent_api.ManagedAgentHarnessMicrosoftCopilot+
-						" to the agent definition, or remove 'toolbox:' and put the "+
+						" to the agent definition, or remove 'toolboxes:' and put the "+
 						"skills in the agent project's skills/ folder",
 				)
 			}
@@ -476,68 +498,164 @@ func validateSkillBundleInstructions(skills []skillBundle) error {
 	return nil
 }
 
-// toolboxNode attaches an existing shared toolbox by reference, as an mcp tool.
+// toolboxNode attaches existing shared toolboxes by reference, as mcp tools.
 //
-// It is reachable only from an explicit `toolbox:` block in the agent definition. Skills
+// It is reachable only from an explicit `toolboxes:` block in the agent definition. Skills
 // no longer travel this path: every harnessed agent already gets a system
 // toolbox whose name, version, endpoint and lifecycle the service owns, so azd
 // creating a second toolbox of its own to carry skills both duplicated that and
 // left the skills invisible as skills.
 func toolboxNode(
 	g *promptGraph,
-	ref *agent_yaml.ToolboxReference,
+	refs []agent_yaml.ToolboxReference,
 	newBuilder func() (toolboxBuilder, error),
 ) *promptNode {
-	if ref == nil {
+	if len(refs) == 0 {
 		return nil
 	}
 	return &promptNode{
 		Kind: nodeToolbox,
-		ID:   ref.Name,
+		ID:   strings.TrimSpace(refs[0].Name),
 		Validate: func() error {
-			if strings.TrimSpace(ref.Name) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"toolbox reference is missing a name",
-					"set toolbox.name in the agent definition",
-				)
+			for _, ref := range refs {
+				if strings.TrimSpace(ref.Name) == "" {
+					return exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						"toolbox reference is missing a name",
+						"set each entry under 'toolboxes:' to a non-empty azure.ai.toolbox service name",
+					)
+				}
 			}
 			return nil
 		},
 		Resolve: func(ctx context.Context) error {
+			if err := validateToolboxDependencies(ctx, g, refs); err != nil {
+				return err
+			}
 			builder, err := newBuilder()
 			if err != nil {
 				return err
 			}
-			// Prefer the endpoint the sibling azure.ai.toolbox service published
-			// over one synthesized from the name, so the two extensions cannot
-			// disagree about where the toolbox lives.
-			serviceName := servicekey.SanitizeServiceName(ref.Name)
-			mcpEndpoint, err := siblingToolboxEndpoint(serviceName, g.projectEndpoint(), g.env)
-			if err != nil {
-				return err
-			}
-			attachment, err := builder.ResolveToolbox(ctx, toolboxRef{
-				Name:                ref.Name,
-				Version:             ref.Version,
-				ProjectConnectionID: ref.ProjectConnectionID,
-				MCPEndpoint:         mcpEndpoint,
-			})
-			if err != nil {
-				return err
-			}
+			seen := make(map[string]struct{}, len(refs))
+			for _, ref := range refs {
+				serviceName := strings.TrimSpace(ref.Name)
+				if _, ok := seen[serviceName]; ok {
+					continue
+				}
+				seen[serviceName] = struct{}{}
+				mcpEndpoint, err := siblingToolboxEndpoint(serviceName, g.projectEndpoint(), g.env)
+				if err != nil {
+					return err
+				}
+				attachment, err := builder.ResolveToolbox(ctx, toolboxRef{
+					Name:        serviceName,
+					MCPEndpoint: mcpEndpoint,
+				})
+				if err != nil {
+					return err
+				}
 
-			g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
-			injectMcpTool(g.managed, ref.Name, attachment.McpURL, attachment.ProjectConnectionID)
+				g.bindings[toolboxMcpURLBindingKey] = attachment.McpURL
+				label := strings.TrimSpace(attachment.ServerLabel)
+				if label == "" {
+					label = serviceName
+				}
+				injectMcpTool(g.managed, label, attachment.McpURL, attachment.ProjectConnectionID)
+			}
 			return nil
 		},
 	}
 }
 
-// foundryToolboxBuilder is the live toolboxBuilder backed by the Foundry
-// toolbox data-plane endpoints. It holds no skills client: skills are published
-// and pinned on the harness, never registered into a toolbox.
+func validateToolboxDependencies(
+	ctx context.Context,
+	g *promptGraph,
+	refs []agent_yaml.ToolboxReference,
+) error {
+	if g == nil || g.agentService == nil || g.projectServices == nil {
+		return nil
+	}
+	for _, ref := range refs {
+		name := strings.TrimSpace(ref.Name)
+		service, exists := g.projectServices[name]
+		if !exists {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("toolbox %q has no %s sibling service in azure.yaml", name, foundryToolboxHost),
+				fmt.Sprintf(
+					"add an %s service named %q, add it to the agent service's uses list, and run 'azd deploy --all'",
+					foundryToolboxHost, name,
+				),
+			)
+		}
+		if service.GetHost() != foundryToolboxHost {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf(
+					"toolbox reference %q resolves to service host %q instead of %q",
+					name, service.GetHost(), foundryToolboxHost,
+				),
+				fmt.Sprintf(
+					"change the %q service host to %q or remove it from the agent toolboxes",
+					name, foundryToolboxHost,
+				),
+			)
+		}
+		if !slices.Contains(g.agentService.GetUses(), name) {
+			return exterrors.Dependency(
+				exterrors.CodeFoundryDependencyNotReady,
+				fmt.Sprintf("toolbox service %q is not declared in agent service %q uses", name, g.agentService.GetName()),
+				fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", name),
+			)
+		}
+		if g.dependencyEnabled != nil {
+			enabled, err := g.dependencyEnabled(ctx, name)
+			if err != nil {
+				return err
+			}
+			if !enabled {
+				return exterrors.Dependency(
+					exterrors.CodeFoundryDependencyNotReady,
+					fmt.Sprintf("toolbox service %q is disabled by its deployment condition", name),
+					"enable the toolbox dependency and run 'azd deploy --all'",
+				)
+			}
+		}
+	}
+	return nil
+}
+
+const (
+	toolboxMCPConnectionCategory = "RemoteTool"
+	toolboxMCPConnectionAuthType = "UserEntraToken"
+	toolboxMCPConnectionAudience = "https://ai.azure.com"
+	toolboxMCPMetadataType       = "toolbox_MCP"
+	armConnectionsAPIVersion     = "2025-04-01-preview"
+)
+
+type toolboxConnectionProperties struct {
+	Category string            `json:"category"`
+	AuthType string            `json:"authType"`
+	Audience string            `json:"audience,omitempty"`
+	Target   string            `json:"target"`
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+type toolboxConnectionBody struct {
+	Name       string                      `json:"name,omitempty"`
+	Properties toolboxConnectionProperties `json:"properties"`
+}
+
+// foundryToolboxBuilder is the live toolboxBuilder that resolves each toolbox's
+// deployed MCP endpoint and ensures a compatible UserEntraToken project
+// connection exists on the Foundry project.
 type foundryToolboxBuilder struct {
+	subscriptionID string
+	resourceGroup  string
+	accountName    string
+	projectName    string
+	pipeline       runtime.Pipeline
+	explicitConns  map[string]struct{}
 }
 
 // resolvedSkill is a skill bundle matched to the version that its sibling
@@ -622,28 +740,329 @@ func siblingToolboxEndpoint(name, projectEndpoint string, env map[string]string)
 	return endpoint, nil
 }
 
-// ResolveToolbox consumes the endpoint published by the sibling toolbox service.
-func (b *foundryToolboxBuilder) ResolveToolbox(_ context.Context, ref toolboxRef) (toolboxAttachment, error) {
-	if ref.MCPEndpoint == "" {
+// parseToolboxMCPEndpoint extracts the deployed toolbox resource name and version
+// from a Foundry toolbox MCP endpoint URL of the form:
+//
+//	https://<account>.services.ai.azure.com/api/projects/<project>/toolboxes/<name>/versions/<version>/mcp?api-version=v1
+func parseToolboxMCPEndpoint(mcpURL string) (string, string, error) {
+	u, err := url.Parse(strings.TrimSpace(mcpURL))
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.Hostname() == "" {
+		return "", "", fmt.Errorf("endpoint must be a valid HTTPS URL")
+	}
+	escapedPath := u.EscapedPath()
+	if escapedPath == "" {
+		escapedPath = u.Path
+	}
+	const segment = "/toolboxes/"
+	_, after, ok := strings.Cut(escapedPath, segment)
+	if !ok {
+		return "", "", fmt.Errorf("endpoint path must contain /toolboxes/<name>/versions/<version>/mcp")
+	}
+	rest := strings.Trim(after, "/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 4 || parts[1] != "versions" || parts[3] != "mcp" {
+		return "", "", fmt.Errorf("endpoint path must match /toolboxes/<name>/versions/<version>/mcp")
+	}
+	toolboxName, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("invalid toolbox name segment: %w", err)
+	}
+	toolboxVersion, err := url.PathUnescape(parts[2])
+	if err != nil {
+		return "", "", fmt.Errorf("invalid toolbox version segment: %w", err)
+	}
+	toolboxName = strings.TrimSpace(toolboxName)
+	toolboxVersion = strings.TrimSpace(toolboxVersion)
+	if toolboxName == "" || toolboxVersion == "" {
+		return "", "", fmt.Errorf("endpoint must include a non-empty toolbox name and version")
+	}
+	return toolboxName, toolboxVersion, nil
+}
+
+// ResolveToolbox consumes the endpoint published by the sibling toolbox service,
+// creates or reuses a UserEntraToken project connection for that toolbox MCP URL,
+// and returns the attachment to wire onto the agent's MCP tool.
+func (b *foundryToolboxBuilder) ResolveToolbox(ctx context.Context, ref toolboxRef) (toolboxAttachment, error) {
+	if strings.TrimSpace(ref.MCPEndpoint) == "" {
 		return toolboxAttachment{}, exterrors.Dependency(
 			exterrors.CodeFoundryDependencyNotReady,
 			fmt.Sprintf("toolbox %q has not been deployed by an azure.ai.toolbox service", ref.Name),
 			fmt.Sprintf("add %q to the agent service's uses list and run 'azd deploy --all'", ref.Name),
 		)
 	}
-	return toolboxAttachment{McpURL: ref.MCPEndpoint, ProjectConnectionID: ref.ProjectConnectionID}, nil
+	toolboxName, toolboxVersion, err := parseToolboxMCPEndpoint(ref.MCPEndpoint)
+	if err != nil {
+		return toolboxAttachment{}, exterrors.Validation(
+			exterrors.CodeInvalidToolbox,
+			fmt.Sprintf("toolbox %q published an invalid MCP endpoint %q: %s", ref.Name, ref.MCPEndpoint, err),
+			"redeploy the toolbox service with 'azd deploy --all' or check its configured endpoint",
+		)
+	}
+
+	connectionName, err := b.ensureToolboxConnection(ctx, toolboxName, toolboxVersion, ref.MCPEndpoint)
+	if err != nil {
+		return toolboxAttachment{}, err
+	}
+	return toolboxAttachment{
+		ServerLabel:         toolboxName,
+		McpURL:              ref.MCPEndpoint,
+		ProjectConnectionID: connectionName,
+	}, nil
+}
+
+func (b *foundryToolboxBuilder) connectionURL(connectionName string) string {
+	return fmt.Sprintf(
+		"https://management.azure.com/subscriptions/%s/resourceGroups/%s/"+
+			"providers/Microsoft.CognitiveServices/accounts/%s/projects/%s/"+
+			"connections/%s?api-version=%s",
+		url.PathEscape(b.subscriptionID),
+		url.PathEscape(b.resourceGroup),
+		url.PathEscape(b.accountName),
+		url.PathEscape(b.projectName),
+		url.PathEscape(connectionName),
+		armConnectionsAPIVersion,
+	)
+}
+
+func (b *foundryToolboxBuilder) ensureToolboxConnection(
+	ctx context.Context,
+	toolboxName, toolboxVersion, mcpURL string,
+) (string, error) {
+	connectionName := toolboxName + "-mcp"
+	_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
+
+	desired := toolboxConnectionProperties{
+		Category: toolboxMCPConnectionCategory,
+		AuthType: toolboxMCPConnectionAuthType,
+		Audience: toolboxMCPConnectionAudience,
+		Target:   mcpURL,
+		Metadata: map[string]string{
+			"type":           toolboxMCPMetadataType,
+			"toolboxName":    toolboxName,
+			"toolboxVersion": toolboxVersion,
+		},
+	}
+
+	existing, found, err := b.getConnection(ctx, connectionName)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		exactMatch, canUpdate := classifyExistingToolboxConnection(
+			existing, mcpURL, toolboxName, toolboxVersion, isExplicit,
+		)
+		if exactMatch {
+			return connectionName, nil
+		}
+		if !canUpdate {
+			return "", exterrors.Validation(
+				exterrors.CodeInvalidConnection,
+				fmt.Sprintf(
+					"project connection %q already exists with incompatible target or authentication settings for toolbox %q",
+					connectionName, toolboxName,
+				),
+				fmt.Sprintf(
+					"remove or rename the conflicting connection %q in the Foundry project (or azure.yaml), then retry 'azd deploy'",
+					connectionName,
+				),
+			)
+		}
+	} else if isExplicit {
+		return "", exterrors.Dependency(
+			exterrors.CodeFoundryDependencyNotReady,
+			fmt.Sprintf(
+				"connection %q is explicitly declared in azure.yaml and cannot be overwritten for toolbox %q",
+				connectionName, toolboxName,
+			),
+			fmt.Sprintf(
+				"rename the azure.ai.connection service %q or deploy a compatible UserEntraToken connection for %q first",
+				connectionName, toolboxName,
+			),
+		)
+	}
+
+	if err := b.putConnection(ctx, connectionName, desired); err != nil {
+		return "", err
+	}
+	return connectionName, nil
+}
+
+func classifyExistingToolboxConnection(
+	existing *toolboxConnectionProperties,
+	mcpURL, toolboxName, toolboxVersion string,
+	isExplicit bool,
+) (exactMatch bool, canUpdate bool) {
+	if existing == nil {
+		return false, false
+	}
+	if !strings.EqualFold(strings.TrimSpace(existing.Category), toolboxMCPConnectionCategory) ||
+		!strings.EqualFold(strings.TrimSpace(existing.AuthType), toolboxMCPConnectionAuthType) {
+		return false, false
+	}
+	if aud := strings.TrimRight(strings.TrimSpace(existing.Audience), "/"); aud != "" &&
+		!strings.EqualFold(aud, toolboxMCPConnectionAudience) {
+		return false, false
+	}
+	metaType := strings.TrimSpace(existing.Metadata["type"])
+	metaName := strings.TrimSpace(existing.Metadata["toolboxName"])
+	metaVersion := strings.TrimSpace(existing.Metadata["toolboxVersion"])
+
+	if strings.TrimSpace(existing.Target) == strings.TrimSpace(mcpURL) {
+		if (metaType != "" && metaType != toolboxMCPMetadataType) ||
+			(metaName != "" && metaName != toolboxName) ||
+			(metaVersion != "" && metaVersion != toolboxVersion) {
+			return false, false
+		}
+		if !isExplicit && (metaType != toolboxMCPMetadataType || metaName != toolboxName || metaVersion != toolboxVersion) {
+			return false, true
+		}
+		return true, false
+	}
+
+	if !isExplicit && metaType == toolboxMCPMetadataType && metaName == toolboxName {
+		return false, true
+	}
+	return false, false
+}
+
+func (b *foundryToolboxBuilder) getConnection(
+	ctx context.Context,
+	connectionName string,
+) (*toolboxConnectionProperties, bool, error) {
+	req, err := runtime.NewRequest(ctx, http.MethodGet, b.connectionURL(connectionName))
+	if err != nil {
+		return nil, false, fmt.Errorf("creating get-connection request for %q: %w", connectionName, err)
+	}
+	resp, err := b.pipeline.Do(req)
+	if err != nil {
+		return nil, false, exterrors.ServiceFromAzure(err, exterrors.OpEnsureToolboxConnection)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, false, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, false, exterrors.ServiceFromAzure(runtime.NewResponseError(resp), exterrors.OpEnsureToolboxConnection)
+	}
+
+	var body toolboxConnectionBody
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, false, fmt.Errorf("decoding connection %q response: %w", connectionName, err)
+	}
+	return &body.Properties, true, nil
+}
+
+func (b *foundryToolboxBuilder) putConnection(
+	ctx context.Context,
+	connectionName string,
+	props toolboxConnectionProperties,
+) error {
+	body := toolboxConnectionBody{
+		Name:       connectionName,
+		Properties: props,
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshaling connection %q body: %w", connectionName, err)
+	}
+
+	req, err := runtime.NewRequest(ctx, http.MethodPut, b.connectionURL(connectionName))
+	if err != nil {
+		return fmt.Errorf("creating put-connection request for %q: %w", connectionName, err)
+	}
+	req.Raw().Header.Set("Content-Type", "application/json")
+	req.Raw().Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	req.Raw().ContentLength = int64(len(bodyBytes))
+
+	resp, err := b.pipeline.Do(req)
+	if err != nil {
+		return exterrors.ServiceFromAzure(err, exterrors.OpEnsureToolboxConnection)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return exterrors.ServiceFromAzure(runtime.NewResponseError(resp), exterrors.OpEnsureToolboxConnection)
+	}
+	return nil
+}
+
+func foundryAccountAndProject(projectEndpoint string) (string, string) {
+	host, project := foundryProjectIdentity(projectEndpoint)
+	if host == "" || project == "" {
+		return "", ""
+	}
+	const suffix = ".services.ai.azure.com"
+	if !strings.HasSuffix(strings.ToLower(host), suffix) {
+		return "", ""
+	}
+	account := strings.TrimSpace(host[:len(host)-len(suffix)])
+	return account, strings.TrimSpace(project)
 }
 
 // newFoundryToolboxBuilder constructs the live builder from prompt settings.
 func newFoundryToolboxBuilder(
+	g *promptGraph,
 	settings *PromptAgentSettings,
+	credential azcore.TokenCredential,
 ) (toolboxBuilder, error) {
 	if settings == nil || strings.TrimSpace(settings.ProjectEndpoint) == "" {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"a Foundry project endpoint is required to resolve a toolbox",
-			"run `azd up` to provision a Foundry project, or remove the 'toolbox:' block from the agent definition",
+			"run `azd up` to provision a Foundry project, or remove the 'toolboxes:' block from the agent definition",
 		)
 	}
-	return &foundryToolboxBuilder{}, nil
+	accountName, projectName := foundryAccountAndProject(settings.ProjectEndpoint)
+	if strings.TrimSpace(settings.SubscriptionID) == "" ||
+		strings.TrimSpace(settings.ResourceGroup) == "" ||
+		accountName == "" || projectName == "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			"Foundry project subscription, resource group, account, and project are required to configure toolbox connections",
+			"run `azd provision` to populate the Foundry project environment values",
+		)
+	}
+	if credential == nil {
+		return nil, exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"an Azure credential is required to configure toolbox connections",
+			"run `azd auth login` to authenticate",
+		)
+	}
+
+	explicitConns := map[string]struct{}{}
+	if g != nil && g.projectServices != nil {
+		if identities, err := foundryConnectionServiceIdentities(g.projectServices, g.projectRoot); err == nil {
+			for _, id := range identities {
+				explicitConns[strings.ToLower(strings.TrimSpace(id.ServiceKey))] = struct{}{}
+				explicitConns[strings.ToLower(strings.TrimSpace(id.ResourceName))] = struct{}{}
+			}
+		}
+	}
+
+	armOpts := azure.NewArmClientOptions()
+	pipeline := runtime.NewPipeline(
+		"azure-ai-agents",
+		"v1.0.0",
+		runtime.PipelineOptions{
+			PerCall: []policy.Policy{
+				runtime.NewBearerTokenPolicy(
+					credential,
+					[]string{"https://management.azure.com/.default"},
+					nil,
+				),
+			},
+		},
+		&armOpts.ClientOptions,
+	)
+
+	return &foundryToolboxBuilder{
+		subscriptionID: strings.TrimSpace(settings.SubscriptionID),
+		resourceGroup:  strings.TrimSpace(settings.ResourceGroup),
+		accountName:    accountName,
+		projectName:    projectName,
+		pipeline:       pipeline,
+		explicitConns:  explicitConns,
+	}, nil
 }

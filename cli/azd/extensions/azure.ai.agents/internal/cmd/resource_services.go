@@ -95,8 +95,8 @@ func promptResourceServices(
 		}
 	}
 
-	if promptAgent.Toolbox != nil {
-		name := servicekey.SanitizeServiceName(promptAgent.Toolbox.Name)
+	for _, tb := range promptAgent.Toolboxes {
+		name := strings.TrimSpace(tb.Name)
 		if name != "" && serviceHasHost(ctx, azdClient, name, AiToolboxHost) {
 			resources.ExtraUses = append(resources.ExtraUses, name)
 		}

@@ -76,6 +76,12 @@ type Application struct {
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 var modelDeploymentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
+
+const (
+	defaultFoundryModelName    = "gpt-5.6-sol"
+	defaultFoundryModelVersion = "2026-07-09"
+)
+
 var customDatasource = regexp.MustCompile(
 	`(?s)@(?:org\.springframework\.context\.annotation\.)?Bean\b(?:\s*\([^()]*\))?` +
 		`(?:[^{};@]|@[\w.$]+(?:\s*\([^()]*\))?)*?\b(?:DataSource|ConnectionFactory|HikariDataSource|` +
@@ -243,10 +249,12 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 
 func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 	const (
-		endpointProperty   = "spring.ai.azure.openai.endpoint"
-		apiKeyProperty     = "spring.ai.azure.openai.api-key"
-		deploymentProperty = "spring.ai.azure.openai.chat.options.deployment-name"
-		defaultDeployment  = "gpt-5.4-nano"
+		chatModelProperty   = "spring.ai.model.chat"
+		endpointProperty    = "spring.ai.azure.openai.endpoint"
+		apiKeyProperty      = "spring.ai.azure.openai.api-key"
+		publicKeyProperty   = "spring.ai.azure.openai.openai-api-key"
+		deploymentProperty  = "spring.ai.azure.openai.chat.options.deployment-name"
+		azureOpenAIProvider = "azure-openai"
 	)
 	properties := []string{endpointProperty, apiKeyProperty, deploymentProperty}
 	active := slices.ContainsFunc(properties, func(key string) bool {
@@ -260,6 +268,33 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 		return nil, unsupportedConfiguration(
 			"Azure OpenAI configuration requires org.springframework.ai:spring-ai-starter-model-azure-openai")
 	}
+	if _, present := c.raw(chatModelProperty); present {
+		chatModel, err := c.resolve(chatModelProperty)
+		if err != nil {
+			return nil, err
+		}
+		if !strings.EqualFold(strings.TrimSpace(chatModel), azureOpenAIProvider) {
+			return nil, unsupportedConfiguration(
+				"%s must be absent or %s; other chat providers and non-chat Azure OpenAI usage are not yet supported",
+				chatModelProperty, azureOpenAIProvider)
+		}
+	}
+	if _, present := c.raw(publicKeyProperty); present {
+		value, err := c.resolve(publicKeyProperty)
+		if err != nil {
+			if _, missing := errors.AsType[*missingInput](err); missing {
+				return nil, unsupportedConfiguration(
+					"%s cannot be unresolved because a non-empty value selects public OpenAI instead of Azure OpenAI",
+					publicKeyProperty)
+			}
+			return nil, err
+		}
+		if strings.TrimSpace(value) != "" {
+			return nil, unsupportedConfiguration(
+				"%s selects public OpenAI instead of the provisioned Azure OpenAI account",
+				publicKeyProperty)
+		}
+	}
 	if endpoint, present := c.raw(endpointProperty); present {
 		value := strings.TrimSpace(endpoint.text)
 		if value != "" {
@@ -272,7 +307,7 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 			}
 		}
 	}
-	deploymentName := defaultDeployment
+	deploymentName := defaultFoundryModelName
 	if deployment, present := c.raw(deploymentProperty); present {
 		value := strings.TrimSpace(deployment.text)
 		if _, fallback, placeholderOnly := runtimePlaceholder(value); placeholderOnly {

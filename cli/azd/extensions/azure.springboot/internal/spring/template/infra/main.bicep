@@ -25,8 +25,8 @@ param foundryEnabled bool = false
 @allowed(['apiKey', 'managedIdentity'])
 param foundryAuthentication string = 'apiKey'
 param foundryDeploymentName string = ''
-param foundryModelName string = 'gpt-5.4-nano'
-param foundryModelVersion string = '2026-03-17'
+param foundryModelName string = 'gpt-5.6-sol'
+param foundryModelVersion string = '2026-07-09'
 param foundryModelSku string = 'GlobalStandard'
 param foundryModelCapacity int = 1
 

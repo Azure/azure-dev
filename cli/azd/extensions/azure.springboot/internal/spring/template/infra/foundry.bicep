@@ -47,7 +47,7 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-06-01
       name: modelName
       version: modelVersion
     }
-    versionUpgradeOption: 'NoAutoUpgrade'
+    versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
 }
 

@@ -163,6 +163,11 @@ The acceptance application and reviewed generated output live in the independent
 - Detect `spring-ai-starter-model-azure-openai` and the standard endpoint,
   API-key, and deployment-name properties. Model Foundry separately from datasource
   bindings so an application may use both.
+- Require `spring.ai.model.chat` to be absent or `azure-openai`. Reject other
+  chat providers and non-chat Azure OpenAI usage instead of provisioning an
+  unused chat deployment.
+- Reject a non-empty or unresolved `spring.ai.azure.openai.openai-api-key`;
+  Spring AI gives it precedence and connects to public OpenAI.
 - Select API-key authentication when the active API-key property is non-empty.
   When it is absent or empty, follow Spring AI 1.0.0 semantics and use
   `DefaultAzureCredential` with the Container App managed identity.
@@ -170,8 +175,9 @@ The acceptance application and reviewed generated output live in the independent
   `AIServices`, `allowProjectManagement` enabled, and one account-level
   `accounts/deployments` model deployment. A Foundry project is not required for
   direct Azure OpenAI-compatible inference.
-- Parameterize the model name, version, SKU, and deployment name. The initial
-  acceptance path uses `gpt-5.4-nano` version `2026-03-17`.
+- Parameterize the model name, version, SKU, and deployment name. The default
+  is `gpt-5.6-sol` version `2026-07-09`; Azure upgrades it when the current
+  version expires.
 - Enable local authentication for the key-based Spring AI application. Obtain the
   key only within Bicep and inject it directly as a Container Apps secret; do not
   persist it in azd environment values, generated files, outputs, logs, or errors.

@@ -153,7 +153,7 @@ func TestResolutionFoundryBinding(t *testing.T) {
 	require.Empty(t, result.Decisions)
 	require.Empty(t, result.Diagnostics)
 	require.Equal(t, []Resource{{
-		ID: "foundry:primary", Kind: Foundry, Name: "gpt-5.4-nano", Disposition: Provisioned,
+		ID: "foundry:primary", Kind: Foundry, Name: "gpt-5.6-sol", Disposition: Provisioned,
 	}}, result.Resources)
 	require.Len(t, result.Bindings, 1)
 	require.Equal(t, "app/foundry:primary", result.Bindings[0].ID)
@@ -164,7 +164,7 @@ func TestResolutionFoundryBinding(t *testing.T) {
 	application, err := result.ResolvedApplication()
 	require.NoError(t, err)
 	require.NotNil(t, application.Foundry)
-	require.Equal(t, "gpt-5.4-nano", application.Foundry.DeploymentName)
+	require.Equal(t, "gpt-5.6-sol", application.Foundry.DeploymentName)
 	require.Equal(t, "apiKey", application.Foundry.Authentication)
 }
 

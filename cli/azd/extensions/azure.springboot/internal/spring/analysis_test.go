@@ -102,7 +102,7 @@ func TestAnalyzeFoundryBinding(t *testing.T) {
 		deployment     string
 		wantDeployment string
 	}{
-		{"runtime deployment", "${AZURE_OPENAI_DEPLOYMENT_NAME}", "gpt-5.4-nano"},
+		{"runtime deployment", "${AZURE_OPENAI_DEPLOYMENT_NAME}", "gpt-5.6-sol"},
 		{"deployment fallback", "${AZURE_OPENAI_DEPLOYMENT_NAME:chat}", "chat"},
 		{"literal deployment", "chat", "chat"},
 	} {
@@ -140,9 +140,87 @@ func TestAnalyzeFoundryManagedIdentityBinding(t *testing.T) {
 	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
 	require.NoError(t, err)
 	require.NotNil(t, application.Foundry)
-	require.Equal(t, "gpt-5.4-nano", application.Foundry.DeploymentName)
+	require.Equal(t, "gpt-5.6-sol", application.Foundry.DeploymentName)
 	require.Equal(t, "managedIdentity", application.Foundry.Authentication)
 	require.Len(t, application.Foundry.Evidence, 2)
+}
+
+func TestAnalyzeFoundryHonorsChatModelSelector(t *testing.T) {
+	for _, selector := range []string{"none", "openai"} {
+		t.Run(selector, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.ai.model.chat="+selector+"\n"+
+					"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					"spring.ai.azure.openai.chat.options.deployment-name=chat\n")
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+			require.ErrorContains(t, err, "spring.ai.model.chat must be absent or azure-openai")
+			require.Nil(t, application)
+		})
+	}
+}
+
+func TestAnalyzeFoundryAcceptsAzureChatModelSelector(t *testing.T) {
+	directory := t.TempDir()
+	writeFixture(t, directory, "pom.xml", "<project/>")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.ai.model.chat=azure-openai\n"+
+			"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+			"spring.ai.azure.openai.chat.options.deployment-name=chat\n")
+	model := effectiveModel(t, directory,
+		dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+	application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+	require.NoError(t, err)
+	require.NotNil(t, application.Foundry)
+}
+
+func TestAnalyzeFoundryRejectsPublicOpenAIKey(t *testing.T) {
+	for _, tt := range []struct {
+		name, property string
+		env            map[string]string
+		errorText      string
+	}{
+		{
+			name: "resolved non-empty key", property: "${PUBLIC_OPENAI_KEY}",
+			env: map[string]string{"PUBLIC_OPENAI_KEY": "not-a-real-key"}, errorText: "selects public OpenAI",
+		},
+		{
+			name: "unresolved key", property: "${PUBLIC_OPENAI_KEY}",
+			errorText: "cannot be unresolved",
+		},
+		{
+			name: "empty fallback", property: "${PUBLIC_OPENAI_KEY:}",
+		},
+		{
+			name: "resolved empty key", property: "${PUBLIC_OPENAI_KEY}",
+			env: map[string]string{"PUBLIC_OPENAI_KEY": ""},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				"spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n"+
+					"spring.ai.azure.openai.openai-api-key="+tt.property+"\n"+
+					"spring.ai.azure.openai.chat.options.deployment-name=chat\n")
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(tt.env))
+			if tt.errorText != "" {
+				require.ErrorContains(t, err, tt.errorText)
+				require.Nil(t, application)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, application.Foundry)
+		})
+	}
 }
 
 func TestAnalyzeFoundryRejectsLiteralEndpoint(t *testing.T) {

@@ -179,7 +179,7 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
 		BuildDirectory: "target",
 		Foundry: &FoundryRequirement{
-			DeploymentName: "gpt-5.4-nano", Authentication: "apiKey",
+			DeploymentName: "gpt-5.6-sol", Authentication: "apiKey",
 		},
 	}
 	plan, err := Generate(t.Context(), application)
@@ -193,9 +193,9 @@ func TestGenerateFoundryInfrastructure(t *testing.T) {
 	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
 	require.Equal(t, true, parameters.Parameters["foundryEnabled"].Value)
 	require.Equal(t, "apiKey", parameters.Parameters["foundryAuthentication"].Value)
-	require.Equal(t, "gpt-5.4-nano", parameters.Parameters["foundryDeploymentName"].Value)
-	require.Equal(t, "gpt-5.4-nano", parameters.Parameters["foundryModelName"].Value)
-	require.Equal(t, "2026-03-17", parameters.Parameters["foundryModelVersion"].Value)
+	require.Equal(t, "gpt-5.6-sol", parameters.Parameters["foundryDeploymentName"].Value)
+	require.Equal(t, "gpt-5.6-sol", parameters.Parameters["foundryModelName"].Value)
+	require.Equal(t, "2026-07-09", parameters.Parameters["foundryModelVersion"].Value)
 	require.Equal(t, "GlobalStandard", parameters.Parameters["foundryModelSku"].Value)
 	require.Equal(t, float64(1), parameters.Parameters["foundryModelCapacity"].Value)
 
@@ -235,7 +235,7 @@ func TestGenerateFoundryManagedIdentityInfrastructure(t *testing.T) {
 		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
 		BuildDirectory: "target",
 		Foundry: &FoundryRequirement{
-			DeploymentName: "gpt-5.4-nano", Authentication: "managedIdentity",
+			DeploymentName: "gpt-5.6-sol", Authentication: "managedIdentity",
 		},
 	}
 	plan, err := Generate(t.Context(), application)

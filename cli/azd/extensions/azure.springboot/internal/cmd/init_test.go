@@ -252,7 +252,7 @@ func TestInitFoundryDescription(t *testing.T) {
 			command.SetArgs([]string{"init", "--yes", "--no-prompt"})
 			require.NoError(t, command.ExecuteContext(t.Context()))
 			require.Contains(t, output.String(),
-				"Foundry: AIServices account and gpt-5.4-nano model deployment ("+
+				"Foundry: AIServices account and gpt-5.6-sol model deployment ("+
 					tt.authentication+" authentication).")
 			require.Contains(t, output.String(),
 				"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")

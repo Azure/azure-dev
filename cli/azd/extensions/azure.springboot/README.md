@@ -85,8 +85,14 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 
 A Foundry chat binding provisions one `AIServices` account and one account-level
 OpenAI model deployment. It does not require a Foundry project, Search, Storage,
-or an embedding deployment. The initial model is `gpt-5.4-nano` version
-`2026-03-17` with a `GlobalStandard` deployment.
+or an embedding deployment. The default model is `gpt-5.6-sol` version
+`2026-07-09` with a `GlobalStandard` deployment. Azure upgrades it when the
+current version expires.
+
+Foundry chat detection requires `spring.ai.model.chat` to be absent or
+`azure-openai`. Other chat providers and non-chat Azure OpenAI usage are rejected.
+`spring.ai.azure.openai.openai-api-key` must resolve empty because a non-empty
+value selects public OpenAI instead of the provisioned Azure account.
 
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
 The current deployment supports HTTP web applications. Explicit non-web mode and

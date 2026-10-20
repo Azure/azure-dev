@@ -33,9 +33,11 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 			map[string]any{"text": "Hello!"},
 			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text"}}},
 		{"0.3", "0.3", "", "message/send", "user",
-			map[string]any{"kind": "text", "text": "Hello!"}, map[string]any{"blocking": true}},
+			map[string]any{"kind": "text", "text": "Hello!"},
+			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text"}}},
 		{"explicit wins", "0.3", "1.0", "message/send", "user",
-			map[string]any{"kind": "text", "text": "Hello!"}, map[string]any{"blocking": true}},
+			map[string]any{"kind": "text", "text": "Hello!"},
+			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -52,6 +54,7 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 				Method  string `json:"method"`
 				Params  struct {
 					Message struct {
+						Kind      string           `json:"kind"`
 						Role      string           `json:"role"`
 						MessageID string           `json:"messageId"`
 						Parts     []map[string]any `json:"parts"`
@@ -64,6 +67,11 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 			require.NotEmpty(t, req.ID)
 			require.Equal(t, tt.method, req.Method)
 			require.Equal(t, tt.role, req.Params.Message.Role)
+			if tt.role == "user" {
+				require.Equal(t, "message", req.Params.Message.Kind, "0.3 requires the message discriminator")
+			} else {
+				require.Empty(t, req.Params.Message.Kind)
+			}
 			require.NotEmpty(t, req.Params.Message.MessageID)
 			require.Equal(t, []map[string]any{tt.part}, req.Params.Message.Parts)
 			require.Equal(t, tt.configuration, req.Params.Configuration)

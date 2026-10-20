@@ -19,70 +19,45 @@ In CI, the on/off mode can be configured using environment variables with the fo
 
 ## Additive extension opt-ins
 
-Extension features can reuse `resources/alpha_features.yaml`, the existing
-`alpha.<feature-id>` user configuration, and `pkg/alpha` without changing core
-`FeatureManager.IsEnabled` behavior. A declaration can optionally set `envVar`
-to its canonical environment-variable name. Without it, additive evaluation
-uses the existing dot and underscore `AZD_ALPHA_ENABLE_<ID>` names. An explicit
-`envVar` is the only environment-variable name evaluated for that declaration.
-This support does not register or enable any new production feature.
+Extensions can ask the azd host whether a feature is enabled with
+`AzdClient.IsFeatureEnabled(ctx, id, envVar)`. It calls the beta
+`UserConfigService.IsFeatureEnabled` RPC. The host collects every source and
+returns true when any of them enables the feature:
 
-Foundry extension declarations use `AZD_FOUNDRY_EXT_ENABLE_<FEATURE>`:
-extension-specific suffixes start with `AGENTS_` or `MODELS_`, and a shared
+- User configuration `alpha.<id>` or `alpha.all` set to `on`
+  (case-insensitive). No other value enables.
+- The azd host process environment.
+- The dotenv values of the selected azd environment. `env_name` selects one;
+  empty means the default environment.
+- The `env` map of every service in `azure.yaml`, regardless of service host.
+
+Environment values use the [standard boolean parser](https://pkg.go.dev/strconv#ParseBool),
+and only its true values enable. A false, empty, or invalid value in one
+source never overrides a true value in another. When no project or no
+environment is selected, those sources are skipped without an error.
+Experimentation defaults are not used, and core `FeatureManager.IsEnabled`
+behavior is unchanged.
+
+The feature id does not need to be registered in
+`resources/alpha_features.yaml`. `envVar` optionally names the feature
+environment variable. When empty, the host uses the registered `envVar`
+declaration if one exists, or else the dot and underscore
+`AZD_ALPHA_ENABLE_<ID>` names. An explicit name is the only one checked.
+
+Foundry extension features use `AZD_FOUNDRY_EXT_ENABLE_<FEATURE>`.
+Extension-specific suffixes start with `AGENTS_` or `MODELS_`, and a shared
 feature uses one common name. There is no Foundry `ALL` environment toggle or
 implicit alias.
 
-`alpha.GetFeature(id)` retrieves a declaration from the registry and reports
-whether it exists. `Feature.IsEnabledWithSources(userConfig, envSources...)`
-is a pure, additive evaluator over caller-provided snapshots:
-
-- Environment values use the [standard boolean parser](https://pkg.go.dev/strconv#ParseBool);
-  only its true values enable.
-- User configuration enables with case-insensitive `on` at `alpha.<feature-id>`
-  or `alpha.all`. No other value contributes an opt-in.
-- A true signal in any source wins over false, off, empty, missing, or other
-  non-enabling values in every other source. Pass each service map separately;
-  do not merge them before evaluation.
-- Process environment and experimentation defaults are not read implicitly.
-  The existing core manager retains its environment false overrides and
-  experimentation defaults.
-
-An extension-side caller supplies the process environment, the selected azd
-environment's own dotenv values, global user configuration, and the `env` map
-from **every** service in the current `azure.yaml`, regardless of service host.
-The existing `Environment.GetValues` RPC returns the dotenv snapshot;
-`GetValue` and `LookupEnv` include process fallback and are not independent
-source reads. Use the existing User Config and Project APIs for the other
-snapshots. Propagate configuration, file, decoding, and transport errors;
-only intentionally non-enabling flag values are treated as no signal.
-
-After obtaining a registered `feature` and loading those snapshots:
-
 ```go
-envSources := []map[string]string{processEnv, dotenv}
-envSources = append(envSources, serviceEnvMaps...)
-enabled := feature.IsEnabledWithSources(userConfig, envSources...)
+enabled, err := azdClient.IsFeatureEnabled(ctx, "agents.example", "AZD_FOUNDRY_EXT_ENABLE_AGENTS_EXAMPLE")
 ```
 
-Tests can construct `alpha.Feature{Id: id, EnvVar: envName}` directly without
-adding a test-only entry to the production registry.
+Hosts without this beta method return `codes.Unimplemented`. Extensions should
+treat that as disabled or require a host version that includes it.
 
-### Host launch requirement
-
-The shared extension runner preserves true
-`AZD_FOUNDRY_EXT_ENABLE_<FEATURE>` process values when project dotenv values
-would otherwise replace them before extension startup. This applies to both
-direct commands and lifecycle `listen` processes. It does not change merging
-for ordinary variables, core Alpha flags, other `AZD_FOUNDRY_*` settings, or
-`AZD_AGENT_RESUME_SESSION_ON_DEPLOY`. It neither mutates the host environment
-nor caches project state.
-
-The guarantee requires a **host** containing this runner change, not just a
-new SDK in the extension binary. The release baseline is azd 1.37.0:
-an adopting extension must declare `requiredAzdVersion: ">=1.37.0"` if this
-change ships in that release, or the first containing version if shipped later.
-Older hosts cannot recover a machine opt-in already overwritten at launch.
-No additional gRPC service is required.
+Host code can use `alpha.GetFeature(id)` and the pure
+`Feature.IsEnabledWithSources(userConfig, envSources...)` evaluator directly.
 
 ## Alpha feature
 

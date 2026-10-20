@@ -416,6 +416,116 @@ func (x *UnsetUserConfigRequest) GetPath() string {
 	return ""
 }
 
+// Request message for IsFeatureEnabled
+type IsFeatureEnabledRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Feature id, as in alpha.<id>. It does not need to be registered.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional environment variable name for the feature.
+	// When empty, the registered name or AZD_ALPHA_ENABLE_<ID> is used.
+	EnvVar string `protobuf:"bytes,2,opt,name=env_var,json=envVar,proto3" json:"env_var,omitempty"`
+	// Optional azd environment name. When empty, the default environment is used.
+	EnvName       string `protobuf:"bytes,3,opt,name=env_name,json=envName,proto3" json:"env_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsFeatureEnabledRequest) Reset() {
+	*x = IsFeatureEnabledRequest{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsFeatureEnabledRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsFeatureEnabledRequest) ProtoMessage() {}
+
+func (x *IsFeatureEnabledRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsFeatureEnabledRequest.ProtoReflect.Descriptor instead.
+func (*IsFeatureEnabledRequest) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *IsFeatureEnabledRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *IsFeatureEnabledRequest) GetEnvVar() string {
+	if x != nil {
+		return x.EnvVar
+	}
+	return ""
+}
+
+func (x *IsFeatureEnabledRequest) GetEnvName() string {
+	if x != nil {
+		return x.EnvName
+	}
+	return ""
+}
+
+// Response message for IsFeatureEnabled
+type IsFeatureEnabledResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IsFeatureEnabledResponse) Reset() {
+	*x = IsFeatureEnabledResponse{}
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IsFeatureEnabledResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IsFeatureEnabledResponse) ProtoMessage() {}
+
+func (x *IsFeatureEnabledResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_azd_extensions_v1beta_user_config_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IsFeatureEnabledResponse.ProtoReflect.Descriptor instead.
+func (*IsFeatureEnabledResponse) Descriptor() ([]byte, []int) {
+	return file_azd_extensions_v1beta_user_config_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *IsFeatureEnabledResponse) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
 var File_azd_extensions_v1beta_user_config_proto protoreflect.FileDescriptor
 
 const file_azd_extensions_v1beta_user_config_proto_rawDesc = "" +
@@ -440,14 +550,21 @@ const file_azd_extensions_v1beta_user_config_proto_rawDesc = "" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\fR\x05value\",\n" +
 	"\x16UnsetUserConfigRequest\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path2\x98\x04\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"]\n" +
+	"\x17IsFeatureEnabledRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\aenv_var\x18\x02 \x01(\tR\x06envVar\x12\x19\n" +
+	"\benv_name\x18\x03 \x01(\tR\aenvName\"4\n" +
+	"\x18IsFeatureEnabledResponse\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled2\x8d\x05\n" +
 	"\x11UserConfigService\x12`\n" +
 	"\x03Get\x12+.azd.extensions.v1beta.GetUserConfigRequest\x1a,.azd.extensions.v1beta.GetUserConfigResponse\x12r\n" +
 	"\tGetString\x121.azd.extensions.v1beta.GetUserConfigStringRequest\x1a2.azd.extensions.v1beta.GetUserConfigStringResponse\x12u\n" +
 	"\n" +
 	"GetSection\x122.azd.extensions.v1beta.GetUserConfigSectionRequest\x1a3.azd.extensions.v1beta.GetUserConfigSectionResponse\x12X\n" +
 	"\x03Set\x12+.azd.extensions.v1beta.SetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12\\\n" +
-	"\x05Unset\x12-.azd.extensions.v1beta.UnsetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
+	"\x05Unset\x12-.azd.extensions.v1beta.UnsetUserConfigRequest\x1a$.azd.extensions.v1beta.EmptyResponse\x12s\n" +
+	"\x10IsFeatureEnabled\x12..azd.extensions.v1beta.IsFeatureEnabledRequest\x1a/.azd.extensions.v1beta.IsFeatureEnabledResponseBGZEgithub.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta;v1betab\x06proto3"
 
 var (
 	file_azd_extensions_v1beta_user_config_proto_rawDescOnce sync.Once
@@ -461,7 +578,7 @@ func file_azd_extensions_v1beta_user_config_proto_rawDescGZIP() []byte {
 	return file_azd_extensions_v1beta_user_config_proto_rawDescData
 }
 
-var file_azd_extensions_v1beta_user_config_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_azd_extensions_v1beta_user_config_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_azd_extensions_v1beta_user_config_proto_goTypes = []any{
 	(*GetUserConfigRequest)(nil),         // 0: azd.extensions.v1beta.GetUserConfigRequest
 	(*GetUserConfigResponse)(nil),        // 1: azd.extensions.v1beta.GetUserConfigResponse
@@ -471,24 +588,28 @@ var file_azd_extensions_v1beta_user_config_proto_goTypes = []any{
 	(*GetUserConfigSectionResponse)(nil), // 5: azd.extensions.v1beta.GetUserConfigSectionResponse
 	(*SetUserConfigRequest)(nil),         // 6: azd.extensions.v1beta.SetUserConfigRequest
 	(*UnsetUserConfigRequest)(nil),       // 7: azd.extensions.v1beta.UnsetUserConfigRequest
-	(*EmptyResponse)(nil),                // 8: azd.extensions.v1beta.EmptyResponse
+	(*IsFeatureEnabledRequest)(nil),      // 8: azd.extensions.v1beta.IsFeatureEnabledRequest
+	(*IsFeatureEnabledResponse)(nil),     // 9: azd.extensions.v1beta.IsFeatureEnabledResponse
+	(*EmptyResponse)(nil),                // 10: azd.extensions.v1beta.EmptyResponse
 }
 var file_azd_extensions_v1beta_user_config_proto_depIdxs = []int32{
-	0, // 0: azd.extensions.v1beta.UserConfigService.Get:input_type -> azd.extensions.v1beta.GetUserConfigRequest
-	2, // 1: azd.extensions.v1beta.UserConfigService.GetString:input_type -> azd.extensions.v1beta.GetUserConfigStringRequest
-	4, // 2: azd.extensions.v1beta.UserConfigService.GetSection:input_type -> azd.extensions.v1beta.GetUserConfigSectionRequest
-	6, // 3: azd.extensions.v1beta.UserConfigService.Set:input_type -> azd.extensions.v1beta.SetUserConfigRequest
-	7, // 4: azd.extensions.v1beta.UserConfigService.Unset:input_type -> azd.extensions.v1beta.UnsetUserConfigRequest
-	1, // 5: azd.extensions.v1beta.UserConfigService.Get:output_type -> azd.extensions.v1beta.GetUserConfigResponse
-	3, // 6: azd.extensions.v1beta.UserConfigService.GetString:output_type -> azd.extensions.v1beta.GetUserConfigStringResponse
-	5, // 7: azd.extensions.v1beta.UserConfigService.GetSection:output_type -> azd.extensions.v1beta.GetUserConfigSectionResponse
-	8, // 8: azd.extensions.v1beta.UserConfigService.Set:output_type -> azd.extensions.v1beta.EmptyResponse
-	8, // 9: azd.extensions.v1beta.UserConfigService.Unset:output_type -> azd.extensions.v1beta.EmptyResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: azd.extensions.v1beta.UserConfigService.Get:input_type -> azd.extensions.v1beta.GetUserConfigRequest
+	2,  // 1: azd.extensions.v1beta.UserConfigService.GetString:input_type -> azd.extensions.v1beta.GetUserConfigStringRequest
+	4,  // 2: azd.extensions.v1beta.UserConfigService.GetSection:input_type -> azd.extensions.v1beta.GetUserConfigSectionRequest
+	6,  // 3: azd.extensions.v1beta.UserConfigService.Set:input_type -> azd.extensions.v1beta.SetUserConfigRequest
+	7,  // 4: azd.extensions.v1beta.UserConfigService.Unset:input_type -> azd.extensions.v1beta.UnsetUserConfigRequest
+	8,  // 5: azd.extensions.v1beta.UserConfigService.IsFeatureEnabled:input_type -> azd.extensions.v1beta.IsFeatureEnabledRequest
+	1,  // 6: azd.extensions.v1beta.UserConfigService.Get:output_type -> azd.extensions.v1beta.GetUserConfigResponse
+	3,  // 7: azd.extensions.v1beta.UserConfigService.GetString:output_type -> azd.extensions.v1beta.GetUserConfigStringResponse
+	5,  // 8: azd.extensions.v1beta.UserConfigService.GetSection:output_type -> azd.extensions.v1beta.GetUserConfigSectionResponse
+	10, // 9: azd.extensions.v1beta.UserConfigService.Set:output_type -> azd.extensions.v1beta.EmptyResponse
+	10, // 10: azd.extensions.v1beta.UserConfigService.Unset:output_type -> azd.extensions.v1beta.EmptyResponse
+	9,  // 11: azd.extensions.v1beta.UserConfigService.IsFeatureEnabled:output_type -> azd.extensions.v1beta.IsFeatureEnabledResponse
+	6,  // [6:12] is the sub-list for method output_type
+	0,  // [0:6] is the sub-list for method input_type
+	0,  // [0:0] is the sub-list for extension type_name
+	0,  // [0:0] is the sub-list for extension extendee
+	0,  // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_azd_extensions_v1beta_user_config_proto_init() }
@@ -503,7 +624,7 @@ func file_azd_extensions_v1beta_user_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_azd_extensions_v1beta_user_config_proto_rawDesc), len(file_azd_extensions_v1beta_user_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

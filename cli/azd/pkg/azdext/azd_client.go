@@ -331,6 +331,25 @@ func (c *AzdClient) Copilot() v1beta.CopilotServiceClient {
 	return c.copilotClient
 }
 
+// IsFeatureEnabled asks the azd host whether a feature is enabled.
+// The host returns true when any source enables it: user config alpha.<id> or alpha.all set to on,
+// the host process environment, the default azd environment dotenv values, or the env map of any
+// azure.yaml service. A false value in one source never overrides true in another. Project and
+// environment sources are skipped when none is selected. The id does not need to be registered.
+// envVar optionally names the feature environment variable. When empty, the registered name or
+// AZD_ALPHA_ENABLE_<ID> is used. Hosts without this beta method return codes.Unimplemented.
+func (c *AzdClient) IsFeatureEnabled(ctx context.Context, id string, envVar string) (bool, error) {
+	response, err := v1beta.NewUserConfigServiceClient(c.connection).IsFeatureEnabled(
+		ctx,
+		&v1beta.IsFeatureEnabledRequest{Id: id, EnvVar: envVar},
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return response.GetEnabled(), nil
+}
+
 // Provisioning returns the provisioning service client.
 func (c *AzdClient) Provisioning() ProvisioningServiceClient {
 	if c.provisioningClient == nil {

@@ -56,10 +56,11 @@ before starting the extension. Inherited parent-process environment variables
 and azd launch/protocol variables are still passed. Explicit Environment gRPC
 calls are unaffected.
 
-Extension opt-ins can reuse the shared Alpha registry and its
-[additive snapshot evaluator](../../cli/azd/docs/alpha-features.md#additive-extension-opt-ins).
-That contract documents independent sources and the minimum host requirement
-for preserving positive process flags across direct and lifecycle launches.
+Extensions can check feature opt-ins with the beta
+[`UserConfigService.IsFeatureEnabled`](../../cli/azd/docs/alpha-features.md#additive-extension-opt-ins)
+RPC. The host reads user config, its own process environment, the azd
+environment dotenv values, and every `azure.yaml` service env map, and ORs
+them.
 
 ### Lifecycle follow-up contributions
 

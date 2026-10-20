@@ -23,6 +23,12 @@ service UserConfigService {
 
   // Unset removes a value at a given path
   rpc Unset (UnsetUserConfigRequest) returns (EmptyResponse);
+
+  // IsFeatureEnabled reports whether a feature is enabled in any source.
+  // The host checks alpha.<id> user config, its process environment,
+  // the azd environment dotenv values, and every azure.yaml service env.
+  // Missing project or environment sources are skipped.
+  rpc IsFeatureEnabled (IsFeatureEnabledRequest) returns (IsFeatureEnabledResponse);
 }
 
 // Request message for Get
@@ -67,4 +73,20 @@ message SetUserConfigRequest {
 // Request message for Unset
 message UnsetUserConfigRequest {
   string path = 1;
+}
+
+// Request message for IsFeatureEnabled
+message IsFeatureEnabledRequest {
+  // Feature id, as in alpha.<id>. It does not need to be registered.
+  string id = 1;
+  // Optional environment variable name for the feature.
+  // When empty, the registered name or AZD_ALPHA_ENABLE_<ID> is used.
+  string env_var = 2;
+  // Optional azd environment name. When empty, the default environment is used.
+  string env_name = 3;
+}
+
+// Response message for IsFeatureEnabled
+message IsFeatureEnabledResponse {
+  bool enabled = 1;
 }

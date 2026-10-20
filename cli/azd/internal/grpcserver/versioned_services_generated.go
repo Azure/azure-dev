@@ -552,6 +552,11 @@ type BetaUserConfigServiceUnsetOverride interface {
 	Unset(context.Context, *v1beta.UnsetUserConfigRequest) (*v1beta.EmptyResponse, error)
 }
 
+// BetaUserConfigServiceIsFeatureEnabledOverride overrides the beta UserConfigService.IsFeatureEnabled method before stable adaptation.
+type BetaUserConfigServiceIsFeatureEnabledOverride interface {
+	IsFeatureEnabled(context.Context, *v1beta.IsFeatureEnabledRequest) (*v1beta.IsFeatureEnabledResponse, error)
+}
+
 func validateBetaUserConfigServiceOverride(override any) error {
 	return validateBetaServiceOverride(
 		"UserConfigService",
@@ -562,6 +567,7 @@ func validateBetaUserConfigServiceOverride(override any) error {
 		reflect.TypeFor[BetaUserConfigServiceGetSectionOverride](),
 		reflect.TypeFor[BetaUserConfigServiceSetOverride](),
 		reflect.TypeFor[BetaUserConfigServiceUnsetOverride](),
+		reflect.TypeFor[BetaUserConfigServiceIsFeatureEnabledOverride](),
 	)
 }
 
@@ -2131,6 +2137,16 @@ func (a *betaUserConfigServiceAdapter) Unset(
 		new(v1beta.EmptyResponse),
 		"UserConfigService.Unset",
 	)
+}
+
+func (a *betaUserConfigServiceAdapter) IsFeatureEnabled(
+	ctx context.Context,
+	req *v1beta.IsFeatureEnabledRequest,
+) (*v1beta.IsFeatureEnabledResponse, error) {
+	if override, ok := findBetaOverride[BetaUserConfigServiceIsFeatureEnabledOverride](a.override); ok {
+		return override.IsFeatureEnabled(ctx, req)
+	}
+	return a.UnimplementedUserConfigServiceServer.IsFeatureEnabled(ctx, req)
 }
 
 type betaValidationServiceAdapter struct {

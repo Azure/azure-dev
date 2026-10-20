@@ -91,15 +91,7 @@ func (f Feature) IsEnabledWithSources(userConfig config.Config, envSources ...ma
 		}
 	}
 
-	envNames := []string{f.EnvVar}
-	if f.EnvVar == "" {
-		id := strings.ToUpper(f.Id)
-		envNames = []string{
-			"AZD_ALPHA_ENABLE_" + id,
-			"AZD_ALPHA_ENABLE_" + strings.ReplaceAll(id, ".", "_"),
-		}
-	}
-
+	envNames := f.EnvVarNames()
 	for _, source := range envSources {
 		for _, name := range envNames {
 			if enabled, err := strconv.ParseBool(source[name]); err == nil && enabled {
@@ -109,6 +101,21 @@ func (f Feature) IsEnabledWithSources(userConfig config.Config, envSources ...ma
 	}
 
 	return false
+}
+
+// EnvVarNames returns the environment variable names checked by [Feature.IsEnabledWithSources].
+// EnvVar, when set, is the only name. Otherwise the dot and underscore
+// forms of AZD_ALPHA_ENABLE_<ID> are used.
+func (f Feature) EnvVarNames() []string {
+	if f.EnvVar != "" {
+		return []string{f.EnvVar}
+	}
+
+	id := strings.ToUpper(f.Id)
+	return []string{
+		"AZD_ALPHA_ENABLE_" + id,
+		"AZD_ALPHA_ENABLE_" + strings.ReplaceAll(id, ".", "_"),
+	}
 }
 
 // GetEnableCommand provides a message for how to enable the alpha feature.

@@ -136,6 +136,15 @@ func (s *Server) registerServices() error {
 		}
 	}
 
+	if ucs, ok := s.userConfigService.(*userConfigService); ok {
+		if es, ok := s.environmentService.(*environmentService); ok {
+			custom := betaServiceOverrides[BetaUserConfigService]
+			betaServiceOverrides[BetaUserConfigService] = betaOverrideChain{
+				custom, &betaUserConfigServiceOverride{userConfig: ucs, environment: es},
+			}
+		}
+	}
+
 	legacyExtensionService := &betaExtensionServiceAdapter{
 		stable:   s.extensionService,
 		override: betaServiceOverrides[BetaExtensionService],

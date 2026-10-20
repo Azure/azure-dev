@@ -153,7 +153,7 @@ and the azd extension framework. They are not intended to be configured as gener
 | `AZD_CWD` | The working directory path used by the extension host when invoking azd. |
 | `AZD_SERVER` | The address (e.g., `localhost:12345`) of the azd extension server for gRPC communication. Injected and consumed by the extension framework; not typically set by users directly. |
 | `AZD_ACCESS_TOKEN` | A JWT used to authenticate gRPC calls to the azd extension server. Injected and consumed by the extension framework; not typically set by users directly. |
-| `AZD_FOUNDRY_EXT_ENABLE_<FEATURE>` | Canonical names for additive Foundry extension feature opt-ins declared in the Alpha registry. The extension runner preserves true process values against project dotenv overrides; other values do not enable. No `ALL` toggle is provided. No production feature adopts this mechanism yet. See [additive extension opt-ins](alpha-features.md#additive-extension-opt-ins) for sources and the minimum host requirement. |
+| `AZD_FOUNDRY_EXT_ENABLE_<FEATURE>` | Canonical names for additive Foundry extension feature opt-ins. Only true values enable. No `ALL` toggle is provided. No production feature adopts this mechanism yet. See [additive extension opt-ins](alpha-features.md#additive-extension-opt-ins) for the sources the host checks. |
 
 ## Alpha Features
 

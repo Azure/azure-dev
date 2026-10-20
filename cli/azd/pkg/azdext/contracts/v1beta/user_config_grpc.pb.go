@@ -22,11 +22,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UserConfigService_Get_FullMethodName        = "/azd.extensions.v1beta.UserConfigService/Get"
-	UserConfigService_GetString_FullMethodName  = "/azd.extensions.v1beta.UserConfigService/GetString"
-	UserConfigService_GetSection_FullMethodName = "/azd.extensions.v1beta.UserConfigService/GetSection"
-	UserConfigService_Set_FullMethodName        = "/azd.extensions.v1beta.UserConfigService/Set"
-	UserConfigService_Unset_FullMethodName      = "/azd.extensions.v1beta.UserConfigService/Unset"
+	UserConfigService_Get_FullMethodName              = "/azd.extensions.v1beta.UserConfigService/Get"
+	UserConfigService_GetString_FullMethodName        = "/azd.extensions.v1beta.UserConfigService/GetString"
+	UserConfigService_GetSection_FullMethodName       = "/azd.extensions.v1beta.UserConfigService/GetSection"
+	UserConfigService_Set_FullMethodName              = "/azd.extensions.v1beta.UserConfigService/Set"
+	UserConfigService_Unset_FullMethodName            = "/azd.extensions.v1beta.UserConfigService/Unset"
+	UserConfigService_IsFeatureEnabled_FullMethodName = "/azd.extensions.v1beta.UserConfigService/IsFeatureEnabled"
 )
 
 // UserConfigServiceClient is the client API for UserConfigService service.
@@ -43,6 +44,11 @@ type UserConfigServiceClient interface {
 	Set(ctx context.Context, in *SetUserConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 	// Unset removes a value at a given path
 	Unset(ctx context.Context, in *UnsetUserConfigRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	// IsFeatureEnabled reports whether a feature is enabled in any source.
+	// The host checks alpha.<id> user config, its process environment,
+	// the azd environment dotenv values, and every azure.yaml service env.
+	// Missing project or environment sources are skipped.
+	IsFeatureEnabled(ctx context.Context, in *IsFeatureEnabledRequest, opts ...grpc.CallOption) (*IsFeatureEnabledResponse, error)
 }
 
 type userConfigServiceClient struct {
@@ -103,6 +109,16 @@ func (c *userConfigServiceClient) Unset(ctx context.Context, in *UnsetUserConfig
 	return out, nil
 }
 
+func (c *userConfigServiceClient) IsFeatureEnabled(ctx context.Context, in *IsFeatureEnabledRequest, opts ...grpc.CallOption) (*IsFeatureEnabledResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IsFeatureEnabledResponse)
+	err := c.cc.Invoke(ctx, UserConfigService_IsFeatureEnabled_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UserConfigServiceServer is the server API for UserConfigService service.
 // All implementations must embed UnimplementedUserConfigServiceServer
 // for forward compatibility.
@@ -117,6 +133,11 @@ type UserConfigServiceServer interface {
 	Set(context.Context, *SetUserConfigRequest) (*EmptyResponse, error)
 	// Unset removes a value at a given path
 	Unset(context.Context, *UnsetUserConfigRequest) (*EmptyResponse, error)
+	// IsFeatureEnabled reports whether a feature is enabled in any source.
+	// The host checks alpha.<id> user config, its process environment,
+	// the azd environment dotenv values, and every azure.yaml service env.
+	// Missing project or environment sources are skipped.
+	IsFeatureEnabled(context.Context, *IsFeatureEnabledRequest) (*IsFeatureEnabledResponse, error)
 	mustEmbedUnimplementedUserConfigServiceServer()
 }
 
@@ -141,6 +162,9 @@ func (UnimplementedUserConfigServiceServer) Set(context.Context, *SetUserConfigR
 }
 func (UnimplementedUserConfigServiceServer) Unset(context.Context, *UnsetUserConfigRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Unset not implemented")
+}
+func (UnimplementedUserConfigServiceServer) IsFeatureEnabled(context.Context, *IsFeatureEnabledRequest) (*IsFeatureEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IsFeatureEnabled not implemented")
 }
 func (UnimplementedUserConfigServiceServer) mustEmbedUnimplementedUserConfigServiceServer() {}
 func (UnimplementedUserConfigServiceServer) testEmbeddedByValue()                           {}
@@ -253,6 +277,24 @@ func _UserConfigService_Unset_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UserConfigService_IsFeatureEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IsFeatureEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UserConfigServiceServer).IsFeatureEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UserConfigService_IsFeatureEnabled_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UserConfigServiceServer).IsFeatureEnabled(ctx, req.(*IsFeatureEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UserConfigService_ServiceDesc is the grpc.ServiceDesc for UserConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -279,6 +321,10 @@ var UserConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Unset",
 			Handler:    _UserConfigService_Unset_Handler,
+		},
+		{
+			MethodName: "IsFeatureEnabled",
+			Handler:    _UserConfigService_IsFeatureEnabled_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

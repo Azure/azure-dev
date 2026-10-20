@@ -179,3 +179,14 @@ func TestFeature_IsEnabledWithSources_NoAmbientState(t *testing.T) {
 	source[feature.EnvVar] = "false"
 	require.False(t, feature.IsEnabledWithSources(nil, source))
 }
+
+func TestFeature_EnvVarNames(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t,
+		[]string{"AZD_ALPHA_ENABLE_TEST.FEATURE", "AZD_ALPHA_ENABLE_TEST_FEATURE"},
+		Feature{Id: "test.feature"}.EnvVarNames())
+	require.Equal(t,
+		[]string{"AZD_TEST_EXT_ENABLE_FEATURE"},
+		Feature{Id: "test.feature", EnvVar: "AZD_TEST_EXT_ENABLE_FEATURE"}.EnvVarNames())
+}

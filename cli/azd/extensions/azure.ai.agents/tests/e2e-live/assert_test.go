@@ -367,6 +367,28 @@ func TestSnapshotImagePython(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSnapshotImageDependencyCheckArgs(t *testing.T) {
+	image := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
+	python := "/app/user_agent/.venv/bin/python"
+	for _, testCase := range []struct {
+		name    string
+		hasPip  bool
+		checker string
+		args    []string
+	}{
+		{"pip environment", true, python, []string{"-m", "pip", "check"}},
+		{"uv environment", false, "uv", []string{"pip", "check", "--python", python}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			expected := []string{"run", "--rm", "--network", "none", "--read-only",
+				"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m", "--env", "UV_NO_CACHE=1",
+				"--entrypoint", testCase.checker, image}
+			expected = append(expected, testCase.args...)
+			require.Equal(t, expected, snapshotImageDependencyCheckArgs(image, python, testCase.hasPip))
+		})
+	}
+}
+
 func TestSnapshotGuideImageRequirements(t *testing.T) {
 	validImage := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
 	require.NoError(t, validateSnapshotImageReference(validImage))

@@ -136,6 +136,8 @@ The driver verifies Linux AMD64, Python 3.10+, and the exact Python SDK versions
 using the image's actual Python startup command, including a `.venv` interpreter.
 Dependency consistency is checked with `python -m pip check`, or `uv pip check`
 for uv environments that do not include pip. Checks run with networking disabled.
+Dependency checks keep the root filesystem read-only and mount only `/tmp` as
+a 64 MiB, non-executable temporary memory filesystem for checker scratch files.
 Docker authentication uses an isolated configuration cleaned up after the run.
 Automatic builds use host Python 3.13 and pinned uv; they do not change existing
 user projects.

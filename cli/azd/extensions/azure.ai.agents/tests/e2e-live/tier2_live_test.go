@@ -857,13 +857,7 @@ print(json.dumps(versions))`
 	if err := json.Unmarshal([]byte(packages), &versions); err != nil {
 		return err
 	}
-	checker, checkerArgs := python, []string{"-m", "pip", "check"}
-	if versions["pip"] == "" {
-		checker, checkerArgs = "uv", []string{"pip", "check", "--python", python}
-	}
-	args := []string{"run", "--rm", "--network", "none", "--read-only", "--env", "UV_NO_CACHE=1",
-		"--entrypoint", checker, image}
-	args = append(args, checkerArgs...)
+	args := snapshotImageDependencyCheckArgs(image, python, versions["pip"] != "")
 	if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "docker", args...); code != 0 {
 		return fmt.Errorf("snapshot image dependency check failed (exit %d): %s", code, truncate(out, 2000))
 	}

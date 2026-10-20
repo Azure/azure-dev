@@ -300,6 +300,17 @@ func snapshotImagePython(inspection []byte) (string, error) {
 	return "python", nil
 }
 
+func snapshotImageDependencyCheckArgs(image, python string, hasPip bool) []string {
+	checker, checkerArgs := python, []string{"-m", "pip", "check"}
+	if !hasPip {
+		checker, checkerArgs = "uv", []string{"pip", "check", "--python", python}
+	}
+	args := []string{"run", "--rm", "--network", "none", "--read-only",
+		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m", "--env", "UV_NO_CACHE=1",
+		"--entrypoint", checker, image}
+	return append(args, checkerArgs...)
+}
+
 func validateSnapshotImageArchitecture(inspection []byte) error {
 	var images []struct {
 		OS           string `json:"Os"`

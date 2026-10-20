@@ -76,7 +76,7 @@ parameters:
     type: boolean
     default: false
   - name: snapshotImage
-    displayName: "Python snapshot-qualified Linux AMD64 image (registry/repository@sha256:digest)"
+    displayName: "Optional snapshot image digest (empty builds the selected Python sample)"
     type: string
     default: ""
 
@@ -130,17 +130,22 @@ extends:
               - checkout: self
 
               - ${{ if eq(parameters.memorySnapshot, true) }}:
+                  - task: UsePythonVersion@0
+                    displayName: Select Python for isolated snapshot sample build
+                    inputs:
+                      versionSpec: '3.13'
+                  - bash: python -m pip install --disable-pip-version-check uv==0.11.7
+                    displayName: Install sample dependency tooling
                   - bash: |
                       set -euo pipefail
-                      if [ "$SNAPSHOT_DEPLOY_MODE" != "container" ] || [ -z "$SNAPSHOT_IMAGE" ]; then
-                        echo "Snapshot qualification requires deployModes=container and a snapshotImage pinned by digest." >&2
+                      if [ "$SNAPSHOT_DEPLOY_MODE" != "container" ]; then
+                        echo "Snapshot qualification requires deployModes=container." >&2
                         exit 1
                       fi
                       docker version --format '{{.Server.Version}}'
                     displayName: Verify snapshot qualification prerequisites
                     env:
                       SNAPSHOT_DEPLOY_MODE: ${{ parameters.deployModes }}
-                      SNAPSHOT_IMAGE: ${{ parameters.snapshotImage }}
 
               - template: /eng/pipelines/templates/steps/setup-go.yml
 

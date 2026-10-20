@@ -106,6 +106,24 @@ func TestAgentResponseRegion(t *testing.T) {
 	}
 }
 
+func TestSnapshotBuildProject(t *testing.T) {
+	manifest := "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    language: python\n    project: src/agent\n"
+	project, err := snapshotBuildProject([]byte(manifest))
+	require.NoError(t, err)
+	require.Equal(t, "src/agent", project)
+	for _, invalid := range []string{
+		strings.ReplaceAll(manifest, "src/agent", "../outside"),
+		strings.ReplaceAll(manifest, "src/agent", "/outside"),
+		strings.ReplaceAll(manifest, "language: python", "language: dotnet"),
+		strings.ReplaceAll(manifest, "kind: hosted", "kind: prompt"),
+		manifest + "  second:\n    host: azure.ai.agent\n    kind: hosted\n    language: python\n    project: src/second\n",
+		"services: {}", "services: [",
+	} {
+		_, err := snapshotBuildProject([]byte(invalid))
+		require.Error(t, err)
+	}
+}
+
 func TestUpdateSnapshotSampleManifest(t *testing.T) {
 	image := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
 	original := []byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n")
@@ -263,21 +281,42 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 		}
 		if setup, exists := step["${{ if eq(parameters.memorySnapshot, true) }}"]; exists && setup.Kind == yaml.SequenceNode {
 			var setupSteps []struct {
-				Bash string            `yaml:"bash"`
-				Env  map[string]string `yaml:"env"`
+				Bash   string            `yaml:"bash"`
+				Task   string            `yaml:"task"`
+				Env    map[string]string `yaml:"env"`
+				Inputs struct {
+					VersionSpec string `yaml:"versionSpec"`
+				} `yaml:"inputs"`
 			}
 			require.NoError(t, setup.Decode(&setupSteps))
-			require.Len(t, setupSteps, 1)
-			require.Contains(t, setupSteps[0].Bash, "docker version")
-			require.Contains(t, setupSteps[0].Bash, "container")
-			require.Contains(t, setupSteps[0].Bash, "SNAPSHOT_IMAGE")
-			require.Equal(t, "${{ parameters.snapshotImage }}", setupSteps[0].Env["SNAPSHOT_IMAGE"])
+			require.Len(t, setupSteps, 3)
+			require.Equal(t, "UsePythonVersion@0", setupSteps[0].Task)
+			require.Equal(t, "3.13", setupSteps[0].Inputs.VersionSpec)
+			require.Contains(t, setupSteps[1].Bash, "uv==0.11.7")
+			require.Contains(t, setupSteps[2].Bash, "docker version")
+			require.Contains(t, setupSteps[2].Bash, "container")
+			require.NotContains(t, setupSteps[2].Bash, "-z")
 			prerequisiteLine = setup.Line
 		}
 	}
 	require.Positive(t, prerequisiteLine)
 	require.Positive(t, firstAzureTaskLine)
 	require.Less(t, prerequisiteLine, firstAzureTaskLine)
+}
+
+func TestSnapshotImagePython(t *testing.T) {
+	for _, testCase := range []struct{ inspection, expected string }{
+		{`[{"Config":{"Cmd":["/app/user_agent/.venv/bin/python","main.py"]}}]`, "/app/user_agent/.venv/bin/python"},
+		{`[{"Config":{"Entrypoint":["python3.13"],"Cmd":["main.py"]}}]`, "python3.13"},
+		{`[{"Config":{"Cmd":["python","main.py"]}}]`, "python"},
+		{`[{"Config":{"Cmd":["uv","run","main.py"]}}]`, "python"},
+	} {
+		command, err := snapshotImagePython([]byte(testCase.inspection))
+		require.NoError(t, err)
+		require.Equal(t, testCase.expected, command)
+	}
+	_, err := snapshotImagePython([]byte(`[]`))
+	require.Error(t, err)
 }
 
 func TestSnapshotGuideImageRequirements(t *testing.T) {

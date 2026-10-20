@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode"
@@ -105,6 +107,40 @@ func hasStandaloneFour(text string) bool {
 // \w class (Unicode letters, digits, and underscore).
 func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func snapshotBuildProject(manifest []byte) (string, error) {
+	var config struct {
+		Services map[string]struct {
+			Host     string `yaml:"host"`
+			Kind     string `yaml:"kind"`
+			Language string `yaml:"language"`
+			Project  string `yaml:"project"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(manifest, &config); err != nil {
+		return "", fmt.Errorf("parse snapshot build manifest: %w", err)
+	}
+	var project string
+	for _, service := range config.Services {
+		if service.Host != "azure.ai.agent" {
+			continue
+		}
+		if project != "" {
+			return "", errors.New("snapshot image build requires exactly one agent service")
+		}
+		if service.Kind != "hosted" || service.Language != "python" {
+			return "", errors.New("snapshot image build requires a hosted Python agent sample")
+		}
+		if !filepath.IsLocal(service.Project) {
+			return "", errors.New("snapshot build project must be a relative directory within the isolated sample")
+		}
+		project = service.Project
+	}
+	if project == "" {
+		return "", errors.New("no Python agent source project found for snapshot image build")
+	}
+	return project, nil
 }
 
 func updateSnapshotSampleManifest(root *os.Root, image string) error {
@@ -209,6 +245,28 @@ func validateSnapshotImageReference(image string) error {
 		return errors.New("snapshot image must be a fully qualified registry/repository reference without credentials")
 	}
 	return nil
+}
+
+func snapshotImagePython(inspection []byte) (string, error) {
+	var images []struct {
+		Config struct {
+			Entrypoint []string `json:"Entrypoint"`
+			Cmd        []string `json:"Cmd"`
+		} `json:"Config"`
+	}
+	if err := json.Unmarshal(inspection, &images); err != nil {
+		return "", fmt.Errorf("parse snapshot image interpreter: %w", err)
+	}
+	if len(images) != 1 {
+		return "", errors.New("expected exactly one snapshot image")
+	}
+	pythonName := regexp.MustCompile(`^python(?:3(?:\.[0-9]+)?)?$`)
+	for _, command := range [][]string{images[0].Config.Entrypoint, images[0].Config.Cmd} {
+		if len(command) > 0 && pythonName.MatchString(path.Base(command[0])) {
+			return command[0], nil
+		}
+	}
+	return "python", nil
 }
 
 func validateSnapshotImageArchitecture(inspection []byte) error {

@@ -89,11 +89,15 @@ Before running:
   Subscription approval does not establish regional availability. The previous
   `eastus2` run was rejected by the service gate; do not assume that region is
   approved merely because it remains the ordinary pipeline default.
-2. Build a basic stateless Responses sample, preferably the guide's `hello-world`
-  baseline, with the Python package versions below. Use the sample's dependency
-  tooling to update dependency inputs, lock files, and generated requirements
-  together. Run `python -m pip check` when building the image.
-3. Publish a Linux AMD64 image and record its immutable
+2. Select a basic stateless Python Responses sample with a Dockerfile,
+  `pyproject.toml`, and `uv.lock`. The pinned Agent Framework Responses
+  `01-basic` baseline is supported for automatic builds. CI updates only its
+  isolated copy to the package versions below, pins the compatible hosting
+  integration to `1.0.0b261015`, and regenerates the lock file and requirements
+  with uv `0.11.7`, matching that sample's Dockerfile tooling.
+3. Leave `snapshotImage` empty to build and push the sample into its provisioned
+  ACR. CI builds Linux AMD64 and records the published digest before agent
+  deployment. Alternatively, supply a prebuilt image using an immutable
   `registry/repository@sha256:<digest>` reference and matching sample source
   revision. Both the CI identity and the Foundry project must be able to pull
   the image. The test does not grant registry access or enable service flights.
@@ -113,22 +117,27 @@ Queue the live pipeline at the CI branch's commit with these explicit inputs:
 | --- | --- |
 | `memorySnapshot` | `true` |
 | `deployModes` | `container`; `code` and `both` are rejected for this qualification |
-| `snapshotImage` | Required immutable image reference built from the selected sample |
+| `snapshotImage` | Optional immutable image reference; empty automatically builds the selected sample |
 | `templateURL` | The provisioning manifest for that sample, pinned to a source revision |
 | `serviceConnection`, `location` | Confirmed preview-approved subscription and region |
 
-Before creating a project, the driver pulls the image, verifies Linux AMD64,
-checks Python 3.10+, checks the exact Python SDK versions inside the image, and
-runs `python -m pip check` with networking disabled. Docker authentication uses an
-isolated configuration that is cleaned up after the run. No host Python is
-required for these checks.
+For an existing image, checks run before creating a project. For automatic
+builds, CI provisions the sample project and registry first, builds and publishes
+the image, then performs the same checks before creating the agent version.
+The driver verifies Linux AMD64, Python 3.10+, and the exact Python SDK versions
+using the image's actual Python startup command, including a `.venv` interpreter.
+Dependency consistency is checked with `python -m pip check`, or `uv pip check`
+for uv environments that do not include pip. Checks run with networking disabled.
+Docker authentication uses an isolated configuration cleaned up after the run.
+Automatic builds use host Python 3.13 and pinned uv; they do not change existing
+user projects.
 
-Only the isolated manifest is changed: `enableMemorySnapshot: true`, the supplied
-image digest, and image passthrough settings. No sample dependencies or user
-projects are silently upgraded. The image, not the downloaded scaffold's old
-source or lock file, is the runtime under test. A result qualifies the supplied
-image/manifest/source-revision combination; it does not certify the unchanged
-catalog sample.
+The isolated manifest receives `enableMemorySnapshot: true`, the qualified image
+digest, and image passthrough settings. The image is the runtime under test.
+An automatic-build result qualifies the explicitly dependency-updated sample,
+not the unchanged catalog sample. A supplied-image result qualifies that
+image/manifest/source-revision combination. Neither mode silently upgrades an
+existing user project.
 
 Agent creation still uses `azd deploy` and the existing `v1` REST mapping so the
 azd opt-in is exercised. Success requires an active snapshot-enabled version
@@ -197,7 +206,7 @@ safe to include in a normal `go test ./...`.
 | `E2E_DEPLOY_MODES`         | `both`                         | `both` / `code` / `container`                               |
 | `E2E_TEMPLATE_URL`         | -                              | Explicit sample `azure.yaml` URL instead of the recommended picker entry |
 | `E2E_MEMORY_SNAPSHOT`      | `false`                        | Enable Python container snapshot qualification; requires explicit container mode and preview approval |
-| `E2E_SNAPSHOT_IMAGE`       | -                              | Required snapshot image pinned by digest; exact Python SDK versions and Linux AMD64 are checked |
+| `E2E_SNAPSHOT_IMAGE`       | -                              | Optional image digest; empty builds the isolated Python sample; SDK versions and Linux AMD64 are checked |
 | `E2E_SKIP_DEPLOY`          | —                              | `true` → run only init → provision → down (fast down/#8839 check) |
 | `E2E_CREATE_PROJECT`       | `false`                        | `true` → always create a fresh Foundry project              |
 | `E2E_PROJECT`              | —                              | Name of an existing Foundry project to select instead       |

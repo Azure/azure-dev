@@ -29,6 +29,16 @@ type destroyConfirmStubPromptServer struct {
 	lastMessage  string
 }
 
+type destroyConfirmEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (*destroyConfirmEnvironmentServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
 func (s *destroyConfirmStubPromptServer) Confirm(
 	_ context.Context, req *azdext.ConfirmRequest,
 ) (*azdext.ConfirmResponse, error) {
@@ -54,6 +64,7 @@ func newDestroyConfirmTestClient(
 
 	srv := grpc.NewServer()
 	azdext.RegisterPromptServiceServer(srv, promptSrv)
+	azdext.RegisterEnvironmentServiceServer(srv, &destroyConfirmEnvironmentServer{})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

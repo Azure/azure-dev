@@ -51,6 +51,7 @@ type Lifecycle interface {
 	Start(context.Context, Plan, FoundrySpec, string) error
 	Observe(context.Context, Plan) error
 	PrepareProjectAccess(context.Context, Plan) error
+	Cleanup(context.Context, Plan, bool, func(string)) error
 }
 
 type ownedLifecycle struct {
@@ -69,6 +70,25 @@ func PlannedFoundryAccount(plan Plan) Resource {
 	name := "ais-" + plan.Owner
 	parent := "/subscriptions/" + plan.SubscriptionID + "/resourceGroups/" + plan.ResourceGroup
 	return Resource{ID: parent + "/providers/Microsoft.CognitiveServices/accounts/" + name, Name: name, Parent: parent}
+}
+
+// CleanupPlan resolves only persisted target scope, independent of the current YAML or environment defaults.
+func CleanupPlan(state PreparationState) (Plan, error) {
+	if state.Version != preparationJournalVersion || state.Owner == "" ||
+		state.SubscriptionID == "" || state.ResourceGroup == "" || state.Location == "" {
+		return Plan{}, fmt.Errorf("legacy/unknown ownership journal lacks an authoritative cleanup target")
+	}
+	plan := Plan{
+		Owner: state.Owner, SubscriptionID: state.SubscriptionID, ResourceGroup: state.ResourceGroup, Location: state.Location,
+	}
+	if _, err := ParseID("/subscriptions/"+plan.SubscriptionID+"/resourceGroups/"+plan.ResourceGroup,
+		"Microsoft.Resources/resourceGroups"); err != nil {
+		return Plan{}, fmt.Errorf("persisted cleanup target is invalid: %w", err)
+	}
+	if err := validateCleanupLedger(plan, state); err != nil {
+		return Plan{}, err
+	}
+	return plan, nil
 }
 
 func (l *ownedLifecycle) load(ctx context.Context, plan Plan) (PreparationState, error) {

@@ -1566,6 +1566,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
+	if result, handled, err := p.destroyBYO(ctx, options, progress); handled {
+		return result, err
+	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
@@ -1816,6 +1819,10 @@ func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool,
 	if p.brownfieldEndpoint != "" {
 		target += " plus its Container Registry connection inside the existing Foundry project"
 	}
+	return p.confirmDestroyTarget(ctx, target)
+}
+
+func (p *FoundryProvisioningProvider) confirmDestroyTarget(ctx context.Context, target string) (bool, error) {
 	forceRequired := exterrors.Validation(
 		exterrors.CodeDestroyRequiresForce,
 		fmt.Sprintf("microsoft.foundry destroy will delete %s; no interactive prompt is available, "+

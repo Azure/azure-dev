@@ -34,6 +34,7 @@ type PreparationState struct {
 	Network         *SubnetPreparation         `json:"network,omitempty"`
 	Resources       map[string]OwnedResource   `json:"resources"`
 	Assignments     map[string]OwnedAssignment `json:"assignments"`
+	Foundry         *FoundryState              `json:"foundry,omitempty"`
 	CleanupStarted  bool                       `json:"cleanupStarted,omitempty"`
 	CleanupComplete bool                       `json:"cleanupComplete,omitempty"`
 }

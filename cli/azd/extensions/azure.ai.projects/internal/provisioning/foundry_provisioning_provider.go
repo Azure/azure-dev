@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -104,6 +105,12 @@ type FoundryProvisioningProvider struct {
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
+	byoPipeline      *onboarding.Pipeline
+	byoLifecycle     onboarding.Lifecycle
+	byoPlan          *onboarding.Plan
+	byoSpec          onboarding.FoundrySpec
+	byoDeploymentID  string
+	armClientOptions *arm.ClientOptions
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -1036,6 +1043,9 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 
 // setEnv persists a single key/value to the active azd environment.
 func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
+	if p.azdClient == nil {
+		return fmt.Errorf("persist %s: azd environment service is unavailable", key)
+	}
 	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1043,6 +1053,10 @@ func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value str
 	}); err != nil {
 		return fmt.Errorf("persist %s to azd environment %q: %w", key, p.envName, err)
 	}
+	if p.virtualEnv == nil {
+		p.virtualEnv = map[string]string{}
+	}
+	p.virtualEnv[key] = value
 	return nil
 }
 
@@ -1144,6 +1158,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 		}}, nil
 	}
 	progress("Preparing Foundry provisioning template...")
+	if err := p.prepareBYO(ctx, progress, false); err != nil {
+		return nil, err
+	}
 
 	// provision.network_mode telemetry: none | byo | managed. Lets us measure
 	// secured-agent adoption and the BYO-vs-managed split.
@@ -1172,6 +1189,10 @@ func (p *FoundryProvisioningProvider) Deploy(
 		},
 	}
 
+	if p.byoPlan != nil {
+		return p.deployBYO(ctx, progress, src, dep)
+	}
+
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1191,7 +1212,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.deploymentFailure(ctx, err)
 	}
 
 	resp, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
@@ -1201,7 +1222,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 				log.Printf("[debug] recover Foundry resource-group ownership after deployment failure: %v", ownershipErr)
 			}
 		}
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.deploymentFailure(ctx, err)
 	}
 
 	progress("Foundry deployment complete")
@@ -1307,6 +1328,38 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 		log.Printf("[debug] foundry provider: using on-disk template at %s", p.onDiskSource.sourcePath)
 		hostParameters := parametersDeclaredByTemplate(p.armParameters(), p.onDiskSource.armTemplate)
 		merged := mergeParameters(p.onDiskSource.parameters, hostParameters)
+		if p.synthResult != nil && p.synthResult.Hosting != nil {
+			if _, err := standardBYOTemplateHash(p.onDiskSource.armTemplate); err != nil {
+				return nil, err
+			}
+			parameters, ok := p.onDiskSource.armTemplate["parameters"].(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("BYO-AKS Bicep template has no prepared parameter contract")
+			}
+			for _, key := range []string{
+				"agentHosting", "includeAcr", "containerRegistryResourceId", "containerRegistryABAC",
+				"byoAccountName", "byoOwner", "byoRegistryAccessReady",
+			} {
+				if _, declared := parameters[key]; !declared {
+					return nil, fmt.Errorf("BYO-AKS Bicep template must declare prepared parameter %s; regenerate it", key)
+				}
+				if strings.HasPrefix(key, "byo") {
+					if _, explicit := p.onDiskSource.parameters[key]; explicit {
+						return nil, fmt.Errorf("BYO-AKS parameter %s is managed internally; remove the explicit value", key)
+					}
+					if value, present := hostParameters[key]; present {
+						merged[key] = value
+					} else {
+						delete(merged, key)
+					}
+				} else {
+					merged[key] = hostParameters[key]
+				}
+			}
+			if err := p.bindPreparedGroupTags(merged); err != nil {
+				return nil, err
+			}
+		}
 		return &templateSource{
 			mode:        p.onDiskSource.mode,
 			armTemplate: p.onDiskSource.armTemplate,
@@ -1426,6 +1479,16 @@ func (p *FoundryProvisioningProvider) Preview(
 		}, nil
 	}
 	progress("Computing deployment plan...")
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		if err := p.prepareBYO(ctx, progress, true); err != nil {
+			return nil, err
+		}
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{
+				Summary: "BYO-AKS read-only preparation plan; internal identities and dependencies are not created in preview.",
+			},
+		}, nil
+	}
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
@@ -1569,7 +1632,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return nil, err
 		}
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2095,7 +2158,7 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,

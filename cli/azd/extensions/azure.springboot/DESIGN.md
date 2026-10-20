@@ -118,8 +118,9 @@ at most one external MySQL/PostgreSQL datasource, plus one Spring AI Azure OpenA
 binding containing chat, embeddings, or both. External databases support password
 authentication; PostgreSQL also supports managed identity. Foundry supports API-key
 or managed-identity authentication and one pinned deployment per detected modality.
-Multiple applications, multiple Foundry accounts, shared-resource deployment,
-MySQL managed identity, model selection,
+Chat defaults to `gpt-5.6-sol` version `2026-07-09`; embeddings default to
+`text-embedding-3-small` version `1`. Multiple applications, multiple Foundry
+accounts, shared-resource deployment, MySQL managed identity, custom model selection,
 Gradle, and non-web/HTTPS-only hosting remain unsupported. These limits do not
 restrict the intended model above.
 

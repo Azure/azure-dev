@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"unicode"
@@ -104,6 +105,18 @@ func hasStandaloneFour(text string) bool {
 // \w class (Unicode letters, digits, and underscore).
 func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func updateSnapshotSampleManifest(root *os.Root, image string) error {
+	manifest, err := root.ReadFile("azure.yaml")
+	if err != nil {
+		return err
+	}
+	manifest, err = enableSampleMemorySnapshot(manifest, image)
+	if err != nil {
+		return err
+	}
+	return root.WriteFile("azure.yaml", manifest, 0o600)
 }
 
 func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {

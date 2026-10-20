@@ -106,6 +106,37 @@ func TestAgentResponseRegion(t *testing.T) {
 	}
 }
 
+func TestUpdateSnapshotSampleManifest(t *testing.T) {
+	image := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
+	original := []byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n")
+	t.Run("updates within project root", func(t *testing.T) {
+		root, err := os.OpenRoot(t.TempDir())
+		require.NoError(t, err)
+		defer root.Close()
+		require.NoError(t, root.WriteFile("azure.yaml", original, 0o600))
+		require.NoError(t, updateSnapshotSampleManifest(root, image))
+		data, err := root.ReadFile("azure.yaml")
+		require.NoError(t, err)
+		require.Contains(t, string(data), "enableMemorySnapshot: true")
+		require.Contains(t, string(data), image)
+	})
+	t.Run("rejects escaping manifest symlink", func(t *testing.T) {
+		outside := filepath.Join(t.TempDir(), "outside.yaml")
+		require.NoError(t, os.WriteFile(outside, original, 0o600))
+		projectDir := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(projectDir, "azure.yaml")); err != nil {
+			t.Skipf("symlink creation is unavailable: %v", err)
+		}
+		root, err := os.OpenRoot(projectDir)
+		require.NoError(t, err)
+		defer root.Close()
+		require.Error(t, updateSnapshotSampleManifest(root, image))
+		data, err := os.ReadFile(outside)
+		require.NoError(t, err)
+		require.Equal(t, original, data)
+	})
+}
+
 func TestEnableSampleMemorySnapshot(t *testing.T) {
 	image := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
 	for _, testCase := range []struct {

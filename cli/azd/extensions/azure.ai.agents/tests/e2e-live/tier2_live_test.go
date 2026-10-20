@@ -689,19 +689,12 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 	if r.projectDir == "" {
 		return errors.New("no project directory with azure.yaml found")
 	}
-	manifestPath := filepath.Join(r.projectDir, "azure.yaml")
-	manifest, err := os.ReadFile(manifestPath)
+	root, err := os.OpenRoot(r.projectDir)
 	if err != nil {
 		return err
 	}
-	manifest, err = enableSampleMemorySnapshot(manifest, os.Getenv("E2E_SNAPSHOT_IMAGE"))
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(manifestPath, manifest, 0o600); err != nil {
-		return err
-	}
-	return nil
+	defer root.Close()
+	return updateSnapshotSampleManifest(root, os.Getenv("E2E_SNAPSHOT_IMAGE"))
 }
 
 func (r *runner) checkSnapshotImage(ctx context.Context) error {

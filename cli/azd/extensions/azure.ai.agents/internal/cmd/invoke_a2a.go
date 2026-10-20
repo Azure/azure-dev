@@ -247,8 +247,8 @@ func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *use
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
-// request in the selected dialect. Memory is bound to the agent session, like the
-// invocations protocol.
+// request in the selected dialect. Foundry and the application control session
+// affinity and task persistence; the CLI does not guarantee cross-request memory.
 func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {
 		return err
@@ -280,8 +280,8 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 
 	if a.flags.newConversation {
 		fmt.Fprintln(os.Stderr,
-			"note: --new-conversation has no effect for the a2a protocol "+
-				"(memory is bound to the session; use --new-session to reset).")
+			"note: --new-conversation does not change A2A requests; "+
+				"to supply a contextId, use --input-file with an explicit --a2a-version.")
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -332,8 +332,8 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 
-	// Always capture session state from response headers (needed even in raw mode
-	// so subsequent invokes can reuse the session). Reads headers, not the body.
+	// Capture any server-returned session ID, including in raw mode. Whether
+	// subsequent requests reuse that session is service-controlled. Reads headers only.
 	sessionLabel := "Session:  "
 	if raw {
 		sessionLabel = ""

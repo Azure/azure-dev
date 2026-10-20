@@ -29,11 +29,16 @@ A2A Version:
 Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
 not a Foundry API version or the deployed agent version selected by --version.
 For plain messages, azd composes the body and A2A-Version header together.
-For an A2A hosted agent, azd uses the selected service's implementation
-version when available; otherwise 1.0 is a convenience default for translation.
-Foundry selects passthrough or translation; passthrough requires service enablement.
+For an A2A hosted agent, the selected service's A2A 1.0.x implementation
+version normalizes to public version 1.0. Public agentEndpoint.protocols
+configuration enables endpoints only; it does not declare the application's implementation.
+An explicit --a2a-version overrides inference when compatible with the implementation.
 An A2A 0.3-only implementation is unsupported; a separate Responses implementation
-permits translation selection, subject to service support.
+permits translation selection, subject to service support. Future implementation
+versions are not assumed compatible.
+Without an A2A implementation declaration (including standalone --agent-endpoint
+invokes without a local definition), 1.0 is a convenience default for translation.
+Foundry selects passthrough or translation; passthrough requires service enablement.
 With --input-file, --a2a-version is always required, even if the agent's YAML
 declares a version. File bytes are sent unchanged as a complete public JSON-RPC
 request. The caller must match the body to the selected header version;
@@ -48,11 +53,16 @@ instead of Foundry. This CLI does not support a2a with --local; this is a
 CLI limitation, not a restriction of the A2A protocol.
 
 Sessions & Identity
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Azd saves server-returned session IDs per agent when available, including for A2A.
+Responses also saves conversation IDs. Pass --new-session to discard the saved session.
+For A2A hosted agents, a saved Foundry session ID or request-body context ID
+does not guarantee the same process, in-memory state, or successful task retrieval.
+Affinity is service-controlled. With a process-local task store, GetTask may
+return TaskNotFound; this command does not guarantee the full session/task lifecycle.
 
-Use --version to invoke a specific deployed agent version. When provided,
-azd creates or reuses a hosted agent session backed by that version.
+Use --version to request a specific deployed agent version. When provided,
+azd creates or reuses a hosted agent session backed by that version. For A2A
+hosted agents, this CLI-side selection does not guarantee process affinity.
 
 For agents configured with header-based isolation, pass --user-identity
 on each invoke. Locally it is sent as the x-agent-user-id header; for
@@ -98,7 +108,7 @@ Usage
   azd ai agent invoke [name] [message] [flags]
 
 Flags
-      --a2a-version string        : A2A wire version: 0.3 or 1.0. Inferred for native agents, otherwise 1.0; always required with --input-file.
+      --a2a-version string        : Public A2A version: 0.3 or 1.0. Generated messages use 1.0 when omitted; required with --input-file.
       --agent-endpoint string     : Full endpoint URL of a deployed agent (run 'azd ai agent show' to see it). Invokes without requiring an azd project; protocol is derived from the URL.
       --call-id string            : Call ID header value (sent as x-agent-foundry-call-id for local invocations only; ignored for remote requests)
       --client-header stringArray : Custom x-client-* request header in "Name: Value" format (repeatable). The responses and invocations protocols forward the x-client-* header family to the agent; other header names are rejected and the flag is not supported with a2a.
@@ -141,7 +151,7 @@ Examples
   Invoke using public A2A 0.3
     azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
 
-  Use the A2A 1.0 convenience default for a plain message
+  Generate a plain-message request (implementation inference or the 1.0 default)
     azd ai agent invoke -p a2a "Hello!"
 
   Send a complete public JSON-RPC file unchanged (version is required)
@@ -165,7 +175,7 @@ Examples
   Start background work and return after its Response ID is received
     azd ai agent invoke --long-running --no-wait "Run the long task"
 
-  Start a new session (discard conversation history)
+  Start a new session (discard the saved session ID)
     azd ai agent invoke --new-session "Hello!"
 
   Invoke a specific deployed agent version

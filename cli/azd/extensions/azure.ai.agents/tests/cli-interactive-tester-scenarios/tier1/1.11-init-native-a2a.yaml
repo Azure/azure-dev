@@ -1,7 +1,7 @@
-# Tier 1 — native A2A configuration only; NOT a native application or execution test.
-# Subscription onboarding is pending. Authoring/Go unit validation only for this PR;
+# Tier 1 — A2A hosted agent configuration only; NOT an A2A server or execution test.
+# Service onboarding and region support are required. Authoring/Go unit validation only;
 # do not execute without separate approval. Never provision, deploy, invoke, or clean
-# up retained resources. The existing-code fixture is not a native A2A server.
+# up retained resources. The existing-code fixture is not an A2A server.
 name: "init-native-a2a"
 command: "azd ai agent init --deploy-mode code"
 cwd: "~/working/azd-agents-t1-native-a2a-{instance}"
@@ -21,11 +21,12 @@ goals:
   - "At 'How do you want to initialize your agent?', select 'Use the code in the current directory'."
   - "When prompted for the agent name, use exactly '{prefix}-t1-native-a2a-{instance}', replacing any pre-filled default. If asked for an azd environment name, use the same run-unique name."
   - "At 'Select the runtime for your agent', select 'Python 3.13'. At the entry-point prompt, accept 'app.py'. At 'How should dependencies be resolved?', select 'Remote build (dependencies installed on server during deployment)'."
-  - "At 'Which protocols does your agent support?', confirm the choices include 'responses', 'invocations', 'invocations_ws', 'activity', and 'a2a — Native A2A 1.0'. Set the final selection to only 'a2a — Native A2A 1.0'; leave every other choice unselected and continue."
-  - "There must be no A2A version prompt and no native A2A 0.3 choice."
+  - "At 'Which protocols does your agent support?', confirm the choices include 'responses', 'invocations', 'invocations_ws', 'activity', and 'a2a — A2A hosted agent (1.0)'. Responses must be selected by default and A2A unselected. Set the final selection to only 'a2a — A2A hosted agent (1.0)'; leave every other choice unselected and continue."
+  - "There must be no A2A version prompt and no A2A 0.3 implementation choice."
   - "If asked to select a Foundry project, select 'Create a new Foundry project'. If asked for its name, use exactly '{foundry_project_name}', replacing any default. This configures a future project only; do not create cloud resources."
   - "If a 'Select a tenant' prompt appears, select the tenant provided for this run; if none was provided, fail without answering. If asked for a subscription, select '{subscription}'. If asked for a location, select '{region}'."
   - "At 'How would you like to configure model(s) for your agent?', select 'Skip model configuration'."
   - "Wait for init to finish. Verify the hosted service in azure.yaml has protocols containing exactly a2a with version '1.0.0', and agentEndpoint.protocols containing exactly a2a. Responses must not be auto-added. Verify codeConfiguration and .agentignore are present."
-  - "Verify the output says init does not generate an A2A application and lists POST /invocations/a2a, GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness. It must not claim a subscription-level service feature was enabled or native execution was verified."
-  - "Verify the original fixture source files remain unchanged; they are not a native A2A server. Capture the completed output, then STOP. Do not provision, deploy, invoke, or delete retained resources."
+  - "Verify the output says 'A2A hosted agent (1.0) configured; init does not generate an A2A server.' and lists POST /invocations/a2a, GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness. Init must not claim service onboarding, region availability, execution, or the full session/task lifecycle was verified."
+  - "Interpret the generated YAML: the service protocols declare application capabilities, while agentEndpoint.protocols enables public endpoints only. This distinction need not be printed in the completed init output."
+  - "Verify the original fixture source files remain unchanged; they are not an A2A server. Capture the completed output, then STOP. Do not provision, deploy, invoke, or delete retained resources."

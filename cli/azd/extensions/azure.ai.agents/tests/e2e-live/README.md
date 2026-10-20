@@ -78,111 +78,52 @@ builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 
 ### Memory snapshot sample validation
 
-This opt-in validates Python Responses code deployments and container images.
-Both use the platform guide's SDK versions and snapshot lifecycle expectations;
-only container mode performs its immutable-image qualification. It does not
-cover .NET or every sample in the catalog. Ordinary and scheduled runs remain
-unchanged with `memorySnapshot=false`.
+This opt-in reuses the existing Python Responses **code deploy** flow. It does
+not create an ACR, build images, or grant roles. It uses the platform guide's
+SDK versions, but is not its container-image test. Ordinary code/container runs
+and scheduled runs remain unchanged with `memorySnapshot=false`.
 
-Before running:
+Queue the live pipeline at the intended commit with:
 
-1. Confirm subscription approval and the approved region with the preview owner.
-  Subscription approval does not establish regional availability. The previous
-  `eastus2` run was rejected by the service gate; do not assume that region is
-  approved merely because it remains the ordinary pipeline default.
-2. Select a basic stateless Python Responses sample with `pyproject.toml` and
-  `uv.lock`; container mode also requires a Dockerfile. The pinned Agent Framework Responses
-  `01-basic` baseline is supported for automatic builds. CI updates only its
-  isolated copy to the package versions below, retains the baseline hosting
-  integration at `1.0.0b260821`, and regenerates the lock file and requirements
-  with uv `0.11.7`, matching that sample's Dockerfile tooling.
-  CI uses the repository's authenticated Azure Artifacts Python feed rather
-  than direct PyPI access. In container mode, the isolated Dockerfile uses a digest-pinned MCR
-  Python 3.13 Linux AMD64 base instead of direct GHCR or Docker Hub pulls.
-  BuildKit supplies `UV_DEFAULT_INDEX` through a temporary secret mount for
-  uv installation and dependency restore; feed tokens are not build arguments
-  and are not persisted in image layers. Local automatic builds must set
-  `UV_DEFAULT_INDEX` to the approved feed as well.
-3. For `deployModes=code`, leave `snapshotImage` empty. The existing code ZIP
-  deployment path skips customer ACR provisioning and does not build or inspect
-  a Docker image. This is code-deploy validation, not the guide's container test.
-  For `deployModes=container`, leave `snapshotImage` empty to build and push the
-  sample into its provisioned ACR. CI builds Linux AMD64 and records the published digest before agent
-  deployment. Alternatively, supply a prebuilt image using an immutable
-  `registry/repository@sha256:<digest>` reference and matching sample source
-  revision. Both the CI identity and the Foundry project must be able to pull
-  the image. The test does not grant registry access or enable service flights.
-
-| Runtime | Core package | Responses package |
-| --- | --- | --- |
-| Python 3.10+ (automated baseline) | `azure-ai-agentserver-core==2.3.0b1` | `azure-ai-agentserver-responses==2.4.0b1` |
-| .NET 8 or .NET 10 (manual follow-up) | `Azure.AI.AgentServer.Core` `1.0.0-beta.30` | `Azure.AI.AgentServer.Responses` `1.0.0-beta.9` |
-
-Basic stateless samples use the SDK's default lifecycle endpoints; custom
-handlers are not required. Applications that own connections or other resources
-that cannot safely be cloned may need cleanup and restore handlers.
-
-Queue the live pipeline at the CI branch's commit with these explicit inputs:
-
-| Parameter | Snapshot qualification value |
+| Parameter | Snapshot validation value |
 | --- | --- |
 | `memorySnapshot` | `true` |
-| `deployModes` | `code` or `container`; `both` is rejected for snapshot runs |
-| `snapshotImage` | Empty for code; optional immutable image reference for container mode |
-| `templateURL` | The provisioning manifest for that sample, pinned to a source revision |
-| `subscriptionId` | Required explicit preview-approved subscription ID for snapshot runs |
-| `serviceConnection` | Authentication identity with existing access to the target subscription |
-| `location` | Confirmed preview-approved region |
+| `deployModes` | `code`; snapshot runs reject `container` and `both` |
+| `templateURL` | Pinned stateless Python Responses sample with `pyproject.toml` and `uv.lock` |
+| `subscriptionId` | Explicit preview-approved subscription ID |
+| `serviceConnection` | Identity with management and Foundry data access to the target |
+| `location` | Preview-approved region; subscription approval alone is insufficient |
 
-The service connection's default subscription is not proof of preview approval.
-The pipeline selects `subscriptionId`, verifies the active context before init,
-and binds registry access and cleanup to that same subscription. An inaccessible
-or mismatched target fails before resource creation; it never falls back to the
-connection's default. Ordinary runs may omit `subscriptionId` to keep that default.
+The pipeline verifies the requested subscription before init and binds azd and
+cleanup to it, without falling back to the connection's default. Ordinary runs
+may omit `subscriptionId` to retain that default.
 
-Code mode prepares the SDK dependencies before provisioning, preserves
-`codeConfiguration`, and only adds `enableMemorySnapshot: true` to the service.
-It reuses ordinary code deployment and verifies the active version's code
-configuration and snapshot opt-in. It does not inspect the managed runtime's
-installed packages, so source dependency pins are not runtime package evidence.
+Before provisioning, CI uses Python 3.13, uv `0.11.7`, and the authenticated Azure
+Artifacts feed to prepare only its isolated sample copy. The Agent Framework
+Responses `01-basic` sample retains hosting `1.0.0b260821` and receives these pins:
 
-In container mode, existing-image checks run before creating a project. For automatic
-builds, CI resolves dependencies and regenerates the lock file and requirements
-before provisioning the sample project and registry. It then builds and publishes
-the image and performs the same checks before creating the agent version.
-The driver verifies Linux AMD64, Python 3.10+, and the exact Python SDK versions
-using the image's actual Python startup command, including a `.venv` interpreter.
-Dependency consistency is checked with `python -m pip check`, or `uv pip check`
-for uv environments that do not include pip. Checks run with networking disabled.
-Dependency checks keep the root filesystem read-only and mount only `/tmp` as
-a 64 MiB, non-executable temporary memory filesystem for checker scratch files.
-Docker authentication uses an isolated configuration cleaned up after the run.
-Automatic builds use host Python 3.13 and pinned uv; they do not change existing
-user projects.
+```text
+azure-ai-agentserver-core==2.3.0b1
+azure-ai-agentserver-responses==2.4.0b1
+```
 
-Both modes set `enableMemorySnapshot: true`. Container mode additionally sets the qualified image
-digest and image passthrough settings. Its image is the runtime under test.
-An automatic-build result qualifies the explicitly dependency-updated sample,
-not the unchanged catalog sample. A supplied-image result qualifies that
-image/manifest/source-revision combination. Neither mode silently upgrades an
-existing user project.
+CI regenerates the lockfile and `requirements.txt`, preserves `codeConfiguration`,
+and sets `enableMemorySnapshot: true`. It requires init to have set
+`AZD_AGENT_SKIP_ACR=true` before creating resources. Local runs also need
+`UV_DEFAULT_INDEX` set to the approved feed. Existing user projects are unchanged.
 
-Agent creation still uses `azd deploy` and the existing `v1` REST mapping so the
-azd opt-in is exercised. Success requires an active snapshot-enabled version
-with code configuration in code mode or the exact qualified digest in container mode, followed by successful
-Responses requests in two distinct sessions with explicit `store:false`. The
-test uses authenticated `az rest` for those requests because the current
-`azd ai agent invoke --input-file` Responses path treats file contents as message
-text rather than accepting raw request fields. No new product CLI option is added.
+Success requires `azd deploy` to return an active hosted version with Python code
+configuration and the snapshot opt-in confirmed by the service, followed by two
+successful Responses requests in distinct sessions with `store:false`.
+Authenticated `az rest` sends those requests because `azd ai agent invoke
+--input-file` does not accept arbitrary raw Responses fields. Cleanup always runs.
 
-The guide's direct REST creation payload is an optional troubleshooting control,
-not a replacement for testing azd's deployment mapping. If application logs are
-needed, connect Application Insights before agent creation and check for
-`before-snapshot`. This bounded test does not prove idle replacement, filesystem
-durability, or measured cold-start speedup. Keep subscription/region rejections
-separate from SDK, image-access, activation, and invocation failures.
+Source dependency pins are not evidence of the managed runtime's installed
+packages. This test does not cover .NET, container-image qualification, idle
+replacement, filesystem durability, or cold-start performance. Application
+Insights and its optional `before-snapshot` check are not automated.
 
-Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
+Logs are published as `tier2-live-logs-<BuildId>-<JobAttempt>`.
 
 ### One-time admin setup
 
@@ -197,9 +138,9 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
   and invoking agents additionally needs Foundry User (formerly Azure AI User,
   role ID `53ca6127-db72-4b80-b1b0-d745d6d5456d`) or equivalent data permissions
   at a scope covering the test project. Contributor and the older Azure AI
-  Developer role do not provide these Foundry agent data actions. Container
-  mode also needs permission to assign the project's identity AcrPull on ACR;
-  code mode skips that registry requirement, not the agent data permissions.
+  Developer role do not provide these Foundry agent data actions. Ordinary
+  container runs also need permission to grant the project's identity AcrPull
+  on ACR; snapshot code validation does not require that registry permission.
 3. **GitHub auth** — clones of the starter template use the azure-sdk org secret
    `azuresdk-github-pat` (already provided by the Azure SDK ADO project) to avoid
    anonymous rate limits, so no extra secret setup is required.
@@ -239,13 +180,12 @@ safe to include in a normal `go test ./...`.
 | `AZURE_AI_AGENTS_E2E_LIVE` | —                              | **Required** `=1` gate; unset → the test is skipped         |
 | `E2E_DEPLOY_MODES`         | `both`                         | `both` / `code` / `container`                               |
 | `E2E_TEMPLATE_URL`         | -                              | Explicit sample `azure.yaml` URL instead of the recommended picker entry |
-| `E2E_MEMORY_SNAPSHOT`      | `false`                        | Enable Python container snapshot qualification; requires explicit container mode and preview approval |
-| `E2E_SNAPSHOT_IMAGE`       | -                              | Optional image digest; empty builds the isolated Python sample; SDK versions and Linux AMD64 are checked |
+| `E2E_MEMORY_SNAPSHOT`      | `false`                        | Enable Python code snapshot validation; requires explicit code mode and preview approval |
 | `E2E_SKIP_DEPLOY`          | —                              | `true` → run only init → provision → down (fast down/#8839 check) |
 | `E2E_CREATE_PROJECT`       | `false`                        | `true` → always create a fresh Foundry project              |
 | `E2E_PROJECT`              | —                              | Name of an existing Foundry project to select instead       |
 | `E2E_LOCATION`             | `eastus2`                      | Region for new projects (needs model quota)                 |
-| `E2E_SUBSCRIPTION`         | —                              | Subscription id (filters the picker)                        |
+| `E2E_SUBSCRIPTION`         | —                              | Target subscription id; filters the picker and pins azd's subscription context |
 | `E2E_TENANT`               | —                              | AAD tenant id (sets `AZURE_TENANT_ID` for azd)              |
 | `E2E_USE_AZ_CLI_AUTH`      | —                              | `true` → set `auth.useAzCliAuth` (CI; auto-on under ADO/GHA) |
 | `E2E_TESTDIR`              | `/tmp/e2e-tests/tier2-<mode>`  | Scratch dir for the scaffolded project                      |

@@ -78,17 +78,8 @@ func TestTier2Live(t *testing.T) {
 		t.Skipf("set %s=1 to run the live Tier 2 golden-path test", liveEnvVar)
 	}
 	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		mode := os.Getenv("E2E_DEPLOY_MODES")
-		if (mode != "container" && mode != "code") || envTrue("E2E_SKIP_DEPLOY") {
-			t.Fatal("snapshot validation requires E2E_DEPLOY_MODES=code or container and deployment enabled")
-		}
-		if image := os.Getenv("E2E_SNAPSHOT_IMAGE"); image != "" {
-			if mode == "code" {
-				t.Fatal("snapshot code deploy does not accept E2E_SNAPSHOT_IMAGE")
-			}
-			if err := validateSnapshotImageReference(image); err != nil {
-				t.Fatal(err)
-			}
+		if os.Getenv("E2E_DEPLOY_MODES") != "code" || envTrue("E2E_SKIP_DEPLOY") {
+			t.Fatal("snapshot validation requires E2E_DEPLOY_MODES=code and deployment enabled")
 		}
 	}
 
@@ -97,7 +88,7 @@ func TestTier2Live(t *testing.T) {
 			r := newRunner(t, mode)
 			budget := runTimeout
 			if envTrue("E2E_MEMORY_SNAPSHOT") {
-				budget = 120 * time.Minute
+				budget = 110 * time.Minute
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), budget)
 			defer cancel()
@@ -129,7 +120,6 @@ type runner struct {
 	subID             string
 	envName           string
 	c                 *console
-	snapshotImage     string
 	snapshotAgentName string
 }
 
@@ -172,26 +162,12 @@ func newRunner(t *testing.T, mode string) *runner {
 	if tok := ghToken(); tok != "" {
 		env = append(env, "GH_TOKEN="+tok, "GITHUB_TOKEN="+tok)
 	}
-	if envTrue("E2E_MEMORY_SNAPSHOT") && mode == "container" {
-		dockerConfig := filepath.Join(testDir, ".docker")
-		if err := os.MkdirAll(dockerConfig, 0o700); err != nil {
-			t.Fatalf("create isolated Docker configuration: %v", err)
-		}
-		env = append(env, "DOCKER_CONFIG="+dockerConfig)
-		t.Cleanup(func() {
-			if err := os.RemoveAll(dockerConfig); err != nil {
-				t.Errorf("remove Docker credentials: %v", err)
-			}
-		})
-	}
-
 	r := &runner{
-		t:             t,
-		mode:          mode,
-		testDir:       testDir,
-		agentName:     fmt.Sprintf("e2e-%s-%s", mode, shortHash(mode)),
-		env:           env,
-		snapshotImage: os.Getenv("E2E_SNAPSHOT_IMAGE"),
+		t:         t,
+		mode:      mode,
+		testDir:   testDir,
+		agentName: fmt.Sprintf("e2e-%s-%s", mode, shortHash(mode)),
+		env:       env,
 	}
 
 	// Cleanups run LIFO, so register the config-dir delete first and teardown
@@ -260,49 +236,23 @@ func setupGitHubConfigDir(t *testing.T, configDir string) {
 // this is the fast way to iterate on the provision/down path (issue #8839)
 // without paying for a full agent deploy.
 func (r *runner) run(ctx context.Context) {
-	if envTrue("E2E_MEMORY_SNAPSHOT") && r.snapshotImage != "" {
-		if err := r.checkSnapshotImage(ctx); err != nil {
-			r.t.Errorf("snapshot image prerequisite: %v", err)
-			return
-		}
-	}
 	if err := r.phaseInitWithTokenCheck(ctx); err != nil {
 		r.t.Errorf("init: %v", err)
 		return
 	}
-	var snapshotSourceDir string
-	if envTrue("E2E_MEMORY_SNAPSHOT") && r.snapshotImage == "" {
-		var err error
-		snapshotSourceDir, err = r.prepareSnapshotBuild(ctx)
-		if err != nil {
-			r.t.Errorf("snapshot sample dependencies: %v", err)
+	if envTrue("E2E_MEMORY_SNAPSHOT") {
+		if err := r.prepareSnapshotSample(ctx); err != nil {
+			r.t.Errorf("snapshot sample preparation: %v", err)
 			return
 		}
-	}
-	if envTrue("E2E_MEMORY_SNAPSHOT") && r.mode == "code" &&
-		!strings.EqualFold(r.azdEnvValues(ctx)["AZD_AGENT_SKIP_ACR"], "true") {
-		r.t.Error("snapshot code init did not disable ACR provisioning")
-		return
+		if !strings.EqualFold(r.azdEnvValues(ctx)["AZD_AGENT_SKIP_ACR"], "true") {
+			r.t.Error("snapshot code init did not disable ACR provisioning")
+			return
+		}
 	}
 	if err := r.phaseProvision(ctx); err != nil {
 		r.t.Errorf("provision: %v", err)
 		return
-	}
-	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		if r.mode == "container" && r.snapshotImage == "" {
-			if err := r.buildSnapshotImage(ctx, snapshotSourceDir); err != nil {
-				r.t.Errorf("snapshot image build: %v", err)
-				return
-			}
-			if err := r.checkSnapshotImage(ctx); err != nil {
-				r.t.Errorf("built snapshot image prerequisite: %v", err)
-				return
-			}
-		}
-		if err := r.prepareSnapshotSample(ctx); err != nil {
-			r.t.Errorf("snapshot sample configuration: %v", err)
-			return
-		}
 	}
 	if envTrue("E2E_SKIP_DEPLOY") {
 		r.t.Log("E2E_SKIP_DEPLOY=true: skipping deploy and invoke phases")
@@ -709,7 +659,7 @@ func (r *runner) phaseDeploy(ctx context.Context) error {
 		if showCode != 0 {
 			return fmt.Errorf("could not inspect snapshot agent version (exit %d)", showCode)
 		}
-		if err := validateSnapshotAgentVersion([]byte(out), r.snapshotImage); err != nil {
+		if err := validateSnapshotAgentVersion([]byte(out)); err != nil {
 			return err
 		}
 		var deployed struct {
@@ -728,6 +678,9 @@ func (r *runner) phaseDeploy(ctx context.Context) error {
 }
 
 func (r *runner) prepareSnapshotSample(ctx context.Context) error {
+	if strings.TrimSpace(os.Getenv("UV_DEFAULT_INDEX")) == "" {
+		return errors.New("snapshot dependency resolution requires the approved feed in UV_DEFAULT_INDEX")
+	}
 	r.projectDir = r.findProjectDir()
 	if r.projectDir == "" {
 		return errors.New("no project directory with azure.yaml found")
@@ -737,148 +690,32 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 		return err
 	}
 	defer root.Close()
-	return updateSnapshotSampleManifest(root, r.snapshotImage)
-}
-
-func (r *runner) prepareSnapshotBuild(ctx context.Context) (string, error) {
-	if strings.TrimSpace(os.Getenv("UV_DEFAULT_INDEX")) == "" {
-		return "", errors.New("snapshot image builds require the approved feed in UV_DEFAULT_INDEX")
-	}
-	r.projectDir = r.findProjectDir()
-	if r.projectDir == "" {
-		return "", errors.New("no project directory with azure.yaml found")
-	}
-	root, err := os.OpenRoot(r.projectDir)
-	if err != nil {
-		return "", err
-	}
-	defer root.Close()
 	manifest, err := root.ReadFile("azure.yaml")
 	if err != nil {
-		return "", err
+		return err
 	}
 	project, err := snapshotBuildProject(manifest)
 	if err != nil {
-		return "", err
+		return err
 	}
 	source, err := root.OpenRoot(project)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer source.Close()
 	for _, name := range []string{"pyproject.toml", "uv.lock"} {
 		if _, err := source.ReadFile(name); err != nil {
-			return "", fmt.Errorf("snapshot sample build requires %s: %w", name, err)
-		}
-	}
-	if r.mode == "container" {
-		dockerfile, err := source.ReadFile("Dockerfile")
-		if err != nil {
-			return "", err
-		}
-		dockerfile, err = snapshotBuildDockerfile(dockerfile)
-		if err != nil {
-			return "", err
-		}
-		if err := source.WriteFile("Dockerfile", dockerfile, 0o600); err != nil {
-			return "", err
+			return fmt.Errorf("snapshot sample requires %s: %w", name, err)
 		}
 	}
 	sourceDir := filepath.Join(r.projectDir, project)
 	for _, args := range snapshotDependencyCommands() {
 		if out, code := r.runQuiet(ctx, sourceDir, 10*time.Minute, "uv", args...); code != 0 {
-			return "", fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
+			return fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
 		}
 	}
 	r.t.Log("isolated sample dependencies updated to the platform guide versions; lock file and requirements regenerated")
-	return sourceDir, nil
-}
-
-func (r *runner) buildSnapshotImage(ctx context.Context, sourceDir string) error {
-	registry := strings.TrimPrefix(r.azdEnvValues(ctx)["AZURE_CONTAINER_REGISTRY_ENDPOINT"], "https://")
-	registry = strings.TrimRight(registry, "/")
-	if registry == "" || strings.ContainsAny(registry, "/@?# \t\r\n") {
-		return errors.New("provision did not return a valid AZURE_CONTAINER_REGISTRY_ENDPOINT")
-	}
-	registryName, _, _ := strings.Cut(registry, ".")
-	loginArgs := snapshotRegistryLoginArgs(registryName, os.Getenv("E2E_SUBSCRIPTION"))
-	if out, code := r.runQuiet(ctx, r.projectDir, invokeTimeout, "az", loginArgs...); code != 0 {
-		return fmt.Errorf("snapshot build registry login failed (exit %d): %s", code, truncate(out, 2000))
-	}
-	image := registry + "/snapshot-validation/" + r.agentName + ":qualification"
-	if out, code := r.runQuiet(ctx, sourceDir, 25*time.Minute, "docker", "build", "--platform", "linux/amd64",
-		"--secret", "id=python_index,env=UV_DEFAULT_INDEX", "--tag", image, "."); code != 0 {
-		return fmt.Errorf("snapshot sample image build failed (exit %d): %s", code, tail(out, 6000))
-	}
-	if out, code := r.runQuiet(ctx, sourceDir, 15*time.Minute, "docker", "push", image); code != 0 {
-		return fmt.Errorf("snapshot sample image push failed (exit %d): %s", code, tail(out, 3000))
-	}
-	digest, code := r.runQuiet(ctx, sourceDir, monitorTimeout,
-		"docker", "image", "inspect", "--format", "{{index .RepoDigests 0}}", image)
-	if code != 0 {
-		return fmt.Errorf("cannot resolve published snapshot image digest (exit %d)", code)
-	}
-	r.snapshotImage = strings.TrimSpace(digest)
-	if err := validateSnapshotImageReference(r.snapshotImage); err != nil {
-		return err
-	}
-	r.t.Logf("published guide-aligned sample image: %s", r.snapshotImage)
-	return nil
-}
-
-func (r *runner) checkSnapshotImage(ctx context.Context) error {
-	image := r.snapshotImage
-	registry, _, _ := strings.Cut(image, "/")
-	if strings.Contains(registry, ".azurecr.") {
-		registryName, _, _ := strings.Cut(registry, ".")
-		loginArgs := snapshotRegistryLoginArgs(registryName, os.Getenv("E2E_SUBSCRIPTION"))
-		if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "az", loginArgs...); code != 0 {
-			return fmt.Errorf("snapshot registry login failed (exit %d): %s", code, truncate(out, 2000))
-		}
-	}
-	if out, code := r.runQuiet(ctx, r.testDir, 10*time.Minute,
-		"docker", "pull", "--platform", "linux/amd64", image); code != 0 {
-		return fmt.Errorf("snapshot image pull failed (exit %d): %s", code, truncate(out, 2000))
-	}
-	inspection, code := r.runQuiet(ctx, r.testDir, monitorTimeout, "docker", "image", "inspect", image)
-	if code != 0 {
-		return fmt.Errorf("snapshot image inspection failed (exit %d)", code)
-	}
-	if err := validateSnapshotImageArchitecture([]byte(inspection)); err != nil {
-		return err
-	}
-	python, err := snapshotImagePython([]byte(inspection))
-	if err != nil {
-		return err
-	}
-	const inspectPackages = `import importlib.metadata as metadata, json, sys
-assert sys.version_info >= (3, 10), "snapshot image requires Python 3.10 or later"
-names = ["azure-ai-agentserver-core", "azure-ai-agentserver-responses"]
-versions = {name: metadata.version(name) for name in names}
-try:
-	versions["pip"] = metadata.version("pip")
-except metadata.PackageNotFoundError:
-	pass
-print(json.dumps(versions))`
-	packages, code := r.runQuiet(ctx, r.testDir, invokeTimeout,
-		"docker", "run", "--rm", "--network", "none", "--read-only", "--entrypoint", python,
-		image, "-c", inspectPackages)
-	if code != 0 {
-		return fmt.Errorf("snapshot image SDK inspection failed (exit %d): %s", code, truncate(packages, 2000))
-	}
-	if err := validateSnapshotImageRuntime([]byte(inspection), []byte(packages)); err != nil {
-		return err
-	}
-	var versions map[string]string
-	if err := json.Unmarshal([]byte(packages), &versions); err != nil {
-		return err
-	}
-	args := snapshotImageDependencyCheckArgs(image, python, versions["pip"] != "")
-	if out, code := r.runQuiet(ctx, r.testDir, invokeTimeout, "docker", args...); code != 0 {
-		return fmt.Errorf("snapshot image dependency check failed (exit %d): %s", code, truncate(out, 2000))
-	}
-	r.t.Logf("qualified Linux AMD64 image %s; runtime packages: %s", image, strings.TrimSpace(packages))
-	return nil
+	return updateSnapshotSampleManifest(root)
 }
 
 func (r *runner) invokeSnapshotResponses(ctx context.Context) error {

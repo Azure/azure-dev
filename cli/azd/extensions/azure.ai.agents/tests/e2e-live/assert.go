@@ -7,13 +7,10 @@
 package e2elive
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -118,28 +115,6 @@ func snapshotDependencyCommands() [][]string {
 	}
 }
 
-func snapshotBuildDockerfile(data []byte) ([]byte, error) {
-	const install = "RUN uv sync --frozen --no-dev --no-install-project"
-	const base = "mcr.microsoft.com/devcontainers/python@sha256:" +
-		"2858fb53653b285965a9f808b0e8942ed46f13356a07433380aaa2d83c34ac4b"
-	const mountInstruction = "RUN --mount=type=secret,id=python_index,required=true "
-	dockerfile := string(data)
-	for _, replacement := range [][2]string{
-		{"FROM ghcr.io/astral-sh/uv:0.11.7 AS uv", ""},
-		{"FROM python:3.13-slim", "FROM " + base},
-		{"COPY --from=uv /uv /uvx /bin/", mountInstruction + "PIP_INDEX_URL=\"$(cat /run/secrets/python_index)\" " +
-			"python -m pip install --no-cache-dir uv==0.11.7"},
-		{install, mountInstruction + "UV_NO_CACHE=1 UV_DEFAULT_INDEX=\"$(cat /run/secrets/python_index)\" " +
-			"uv sync --frozen --no-dev --no-install-project"},
-	} {
-		if strings.Count(dockerfile, replacement[0]) != 1 {
-			return nil, errors.New("snapshot baseline requires the supported Dockerfile build instructions")
-		}
-		dockerfile = strings.Replace(dockerfile, replacement[0], replacement[1], 1)
-	}
-	return []byte(dockerfile), nil
-}
-
 func snapshotBuildProject(manifest []byte) (string, error) {
 	var config struct {
 		Services map[string]struct {
@@ -150,7 +125,7 @@ func snapshotBuildProject(manifest []byte) (string, error) {
 		} `yaml:"services"`
 	}
 	if err := yaml.Unmarshal(manifest, &config); err != nil {
-		return "", fmt.Errorf("parse snapshot build manifest: %w", err)
+		return "", fmt.Errorf("parse snapshot source manifest: %w", err)
 	}
 	var project string
 	for _, service := range config.Services {
@@ -158,10 +133,10 @@ func snapshotBuildProject(manifest []byte) (string, error) {
 			continue
 		}
 		if project != "" {
-			return "", errors.New("snapshot image build requires exactly one agent service")
+			return "", errors.New("snapshot validation requires exactly one agent service")
 		}
-		if service.Kind != "hosted" || (service.Language != "python" && service.Language != "docker") {
-			return "", errors.New("snapshot image build requires a hosted Python agent sample")
+		if service.Kind != "hosted" || service.Language != "python" {
+			return "", errors.New("snapshot validation requires a hosted Python code sample")
 		}
 		if !filepath.IsLocal(service.Project) {
 			return "", errors.New("snapshot build project must be a relative directory within the isolated sample")
@@ -169,29 +144,24 @@ func snapshotBuildProject(manifest []byte) (string, error) {
 		project = service.Project
 	}
 	if project == "" {
-		return "", errors.New("no Python agent source project found for snapshot image build")
+		return "", errors.New("no Python agent source project found for snapshot validation")
 	}
 	return project, nil
 }
 
-func updateSnapshotSampleManifest(root *os.Root, image string) error {
+func updateSnapshotSampleManifest(root *os.Root) error {
 	manifest, err := root.ReadFile("azure.yaml")
 	if err != nil {
 		return err
 	}
-	manifest, err = enableSampleMemorySnapshot(manifest, image)
+	manifest, err = enableSampleMemorySnapshot(manifest)
 	if err != nil {
 		return err
 	}
 	return root.WriteFile("azure.yaml", manifest, 0o600)
 }
 
-func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {
-	if image != "" {
-		if err := validateSnapshotImageReference(image); err != nil {
-			return nil, err
-		}
-	}
+func enableSampleMemorySnapshot(manifest []byte) ([]byte, error) {
 	var config map[string]any
 	if err := yaml.Unmarshal(manifest, &config); err != nil {
 		return nil, fmt.Errorf("parse sample manifest: %w", err)
@@ -217,39 +187,20 @@ func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {
 	if agentService == nil {
 		return nil, errors.New("sample manifest has no azure.ai.agent service")
 	}
-	if image == "" {
-		if _, ok := agentService["codeConfiguration"].(map[string]any); !ok {
-			return nil, errors.New("snapshot code deploy requires codeConfiguration when no image is supplied")
-		}
-		agentService["enableMemorySnapshot"] = true
-		return yaml.Marshal(config)
+	if _, ok := agentService["codeConfiguration"].(map[string]any); !ok {
+		return nil, errors.New("snapshot code deploy requires codeConfiguration")
 	}
-	dockerOptions := map[string]any{}
-	if value, exists := agentService["docker"]; exists {
-		var ok bool
-		dockerOptions, ok = value.(map[string]any)
-		if !ok {
-			return nil, errors.New("sample docker options must be a mapping")
-		}
-	}
-	dockerOptions["imagePassthrough"] = true
-	dockerOptions["remoteBuild"] = false
-	agentService["docker"] = dockerOptions
-	agentService["image"] = image
 	agentService["enableMemorySnapshot"] = true
 	return yaml.Marshal(config)
 }
 
-func validateSnapshotAgentVersion(data []byte, expectedImage string) error {
+func validateSnapshotAgentVersion(data []byte) error {
 	var version struct {
 		Status     string `json:"status"`
 		Definition struct {
-			Kind                   string `json:"kind"`
-			EnableMemorySnapshot   *bool  `json:"enable_memory_snapshot"`
-			ContainerConfiguration struct {
-				Image string `json:"image"`
-			} `json:"container_configuration"`
-			CodeConfiguration *struct {
+			Kind                 string `json:"kind"`
+			EnableMemorySnapshot *bool  `json:"enable_memory_snapshot"`
+			CodeConfiguration    *struct {
 				Runtime string `json:"runtime"`
 			} `json:"code_configuration"`
 		} `json:"definition"`
@@ -264,110 +215,9 @@ func validateSnapshotAgentVersion(data []byte, expectedImage string) error {
 		!(*version.Definition.EnableMemorySnapshot) {
 		return errors.New("service did not confirm definition.enable_memory_snapshot=true for the deployed hosted agent")
 	}
-	if expectedImage == "" {
-		if version.Definition.CodeConfiguration == nil ||
-			!strings.HasPrefix(version.Definition.CodeConfiguration.Runtime, "python") {
-			return errors.New("service did not confirm a Python code_configuration for snapshot code deploy")
-		}
-		return nil
-	}
-	image := version.Definition.ContainerConfiguration.Image
-	if err := validateSnapshotImageReference(image); err != nil {
-		return err
-	}
-	if image != expectedImage {
-		return errors.New("deployed snapshot image does not match the qualified input digest")
-	}
-	return nil
-}
-
-func validateSnapshotImageReference(image string) error {
-	name, digest, found := strings.Cut(image, "@sha256:")
-	if !found || len(digest) != 64 || strings.ContainsAny(image, " \t\r\n") || strings.Contains(name, "://") {
-		return errors.New("snapshot validation requires a fully qualified container image pinned with @sha256:<digest>")
-	}
-	if _, err := hex.DecodeString(digest); err != nil {
-		return errors.New("snapshot image digest must contain 64 hexadecimal characters")
-	}
-	parsed, err := url.Parse("https://" + name)
-	if err != nil || parsed.User != nil || parsed.Hostname() == "" || len(parsed.Path) < 2 ||
-		parsed.RawQuery != "" || parsed.Fragment != "" {
-		return errors.New("snapshot image must be a fully qualified registry/repository reference without credentials")
-	}
-	return nil
-}
-
-func snapshotImagePython(inspection []byte) (string, error) {
-	var images []struct {
-		Config struct {
-			Entrypoint []string `json:"Entrypoint"`
-			Cmd        []string `json:"Cmd"`
-		} `json:"Config"`
-	}
-	if err := json.Unmarshal(inspection, &images); err != nil {
-		return "", fmt.Errorf("parse snapshot image interpreter: %w", err)
-	}
-	if len(images) != 1 {
-		return "", errors.New("expected exactly one snapshot image")
-	}
-	pythonName := regexp.MustCompile(`^python(?:3(?:\.[0-9]+)?)?$`)
-	for _, command := range [][]string{images[0].Config.Entrypoint, images[0].Config.Cmd} {
-		if len(command) > 0 && pythonName.MatchString(path.Base(command[0])) {
-			return command[0], nil
-		}
-	}
-	return "python", nil
-}
-
-func snapshotRegistryLoginArgs(registry, subscription string) []string {
-	args := []string{"acr", "login", "--name", registry}
-	if subscription != "" {
-		args = append(args, "--subscription", subscription)
-	}
-	return args
-}
-
-func snapshotImageDependencyCheckArgs(image, python string, hasPip bool) []string {
-	checker, checkerArgs := python, []string{"-m", "pip", "check"}
-	if !hasPip {
-		checker, checkerArgs = "uv", []string{"pip", "check", "--python", python}
-	}
-	args := []string{"run", "--rm", "--network", "none", "--read-only",
-		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=64m", "--env", "UV_NO_CACHE=1",
-		"--entrypoint", checker, image}
-	return append(args, checkerArgs...)
-}
-
-func validateSnapshotImageArchitecture(inspection []byte) error {
-	var images []struct {
-		OS           string `json:"Os"`
-		Architecture string `json:"Architecture"`
-	}
-	if err := json.Unmarshal(inspection, &images); err != nil {
-		return fmt.Errorf("parse snapshot image inspection: %w", err)
-	}
-	if len(images) != 1 || images[0].OS != "linux" || images[0].Architecture != "amd64" {
-		return errors.New("snapshot qualification requires a Linux AMD64 container image")
-	}
-	return nil
-}
-
-func validateSnapshotImageRuntime(inspection, packages []byte) error {
-	if err := validateSnapshotImageArchitecture(inspection); err != nil {
-		return err
-	}
-	var versions map[string]string
-	if err := json.Unmarshal(packages, &versions); err != nil {
-		return fmt.Errorf("parse snapshot runtime package versions: %w", err)
-	}
-	for _, requirement := range []struct{ name, version string }{
-		{"azure-ai-agentserver-core", "2.3.0b1"},
-		{"azure-ai-agentserver-responses", "2.4.0b1"},
-	} {
-		if versions[requirement.name] != requirement.version {
-			return fmt.Errorf("snapshot image requires %s==%s; found %q",
-				requirement.name, requirement.version, versions[requirement.name])
-		}
+	if version.Definition.CodeConfiguration == nil ||
+		!strings.HasPrefix(version.Definition.CodeConfiguration.Runtime, "python") {
+		return errors.New("service did not confirm a Python code_configuration for snapshot code deploy")
 	}
 	return nil
 }

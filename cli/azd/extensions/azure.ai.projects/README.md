@@ -95,6 +95,11 @@ managed deployments remain. Ejecting infrastructure seeds the generated Bicep
 or Terraform deployment parameters from that effective list. Subsequent edits
 to those parameter files remain authoritative.
 
+An explicit "Choose a different model" selection also updates
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`, even when the previous default still exists.
+With multiple alternative selections, the first becomes the runtime default.
+Other adoption choices retain the existing default-selection behavior.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just

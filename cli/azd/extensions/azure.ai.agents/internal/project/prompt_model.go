@@ -32,13 +32,14 @@ func ResolvePromptAgentModel(
 	projectRoot string,
 	env map[string]string,
 ) (string, error) {
-	expanded, err := ExpandEnv(strings.TrimSpace(model), func(name string) string {
+	lookup := func(name string) string {
 		if value, ok := env[name]; ok {
 			return value
 		}
 		value, _ := os.LookupEnv(name)
 		return value
-	})
+	}
+	expanded, err := ExpandEnv(strings.TrimSpace(model), lookup)
 	if err != nil {
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -48,11 +49,14 @@ func ResolvePromptAgentModel(
 	}
 	model = strings.TrimSpace(expanded)
 
-	selected, ok := environmentDeploymentNames(env["AI_PROJECT_DEPLOYMENTS"])
+	selected, ok, err := environmentDeploymentNames(env["AI_PROJECT_DEPLOYMENTS"])
+	if err != nil {
+		return "", err
+	}
 	if model == "" || !ok || slices.Contains(selected, model) {
 		return model, nil
 	}
-	declared, err := usedProjectDeploymentNames(agentService, services, projectRoot)
+	declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
 	if err != nil {
 		return "", err
 	}
@@ -85,18 +89,17 @@ func ResolvePromptAgentModel(
 }
 
 // environmentDeploymentNames lists the names in AI_PROJECT_DEPLOYMENTS. The
-// second result is false when the value is unset or unreadable, which leaves
-// the model as is.
-func environmentDeploymentNames(value string) ([]string, bool) {
+// second result is false only when the value is blank.
+func environmentDeploymentNames(value string) ([]string, bool, error) {
 	deployments, present, err := DecodeProjectDeploymentsEnv(value)
 	if !present || err != nil {
-		return nil, false
+		return nil, present, err
 	}
 	names := make([]string, 0, len(deployments))
 	for _, deployment := range deployments {
 		names = append(names, strings.TrimSpace(deployment.Name))
 	}
-	return names, true
+	return names, true, nil
 }
 
 // DecodeProjectDeploymentsEnv decodes AI_PROJECT_DEPLOYMENTS, which holds JSON
@@ -140,6 +143,7 @@ func usedProjectDeploymentNames(
 	agentService *azdext.ServiceConfig,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
+	lookup func(string) string,
 ) ([]string, error) {
 	var names []string
 	for _, use := range agentService.GetUses() {
@@ -158,6 +162,10 @@ func usedProjectDeploymentNames(
 		for _, item := range deployments {
 			entry, _ := item.(map[string]any)
 			name, _ := entry["name"].(string)
+			name, err = ExpandEnv(name, lookup)
+			if err != nil {
+				return nil, fmt.Errorf("expanding project deployment name: %w", err)
+			}
 			if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
 				names = append(names, name)
 			}

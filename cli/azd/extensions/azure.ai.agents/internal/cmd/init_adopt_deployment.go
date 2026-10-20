@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -70,10 +71,31 @@ func replaceAdoptedTemplateDeployment(
 	value, write, err := planAdoptedDeploymentReplacement(
 		declared, values[projectDeploymentsEnvKey], existing, noPrompt, choose,
 	)
-	if err != nil || !write {
+	if err != nil {
 		return err
 	}
-	return setEnvValue(ctx, azdClient, envName, projectDeploymentsEnvKey, value)
+	updates := []struct{ key, value string }{
+		{"AZURE_AI_MODEL_DEPLOYMENT_NAME", existing},
+	}
+	if write {
+		updates = append(updates, struct{ key, value string }{projectDeploymentsEnvKey, value})
+	}
+	for i, update := range updates {
+		if err := setEnvValue(ctx, azdClient, envName, update.key, update.value); err != nil {
+			rollbackCtx, cancel := context.WithTimeout(
+				context.WithoutCancel(ctx), projectWorkflowRollbackTimeout,
+			)
+			defer cancel()
+			restoreErrs := []error{err}
+			for j := i; j >= 0; j-- {
+				restoreErrs = append(restoreErrs, setEnvValue(
+					rollbackCtx, azdClient, envName, updates[j].key, values[updates[j].key],
+				))
+			}
+			return errors.Join(restoreErrs...)
+		}
+	}
+	return nil
 }
 
 // planAdoptedDeploymentReplacement returns the AI_PROJECT_DEPLOYMENTS value

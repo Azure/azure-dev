@@ -164,6 +164,7 @@ func reconcileAdoptedDeploymentChoices(
 	remaining := make([]synthesis.Deployment, 0, len(declared))
 	referenced := make([]synthesis.Deployment, 0, len(declared))
 	changed := false
+	explicitDefault := ""
 	for _, item := range declared {
 		expandedItem, matches, err := matchingLiveDeployments(
 			item, live, environmentValues,
@@ -247,6 +248,9 @@ func reconcileAdoptedDeploymentChoices(
 					remaining = append(remaining, alternative)
 				}
 				referenced = append(referenced, alternative)
+				if explicitDefault == "" {
+					explicitDefault = alternative.Name
+				}
 				changed = true
 				continue
 			default:
@@ -302,8 +306,8 @@ func reconcileAdoptedDeploymentChoices(
 			)
 		}
 	}
-	defaultName := ""
-	if len(referenced) > 0 {
+	defaultName := explicitDefault
+	if defaultName == "" && len(referenced) > 0 {
 		defaultName = selectReconciledDefault(originalDefault, live, referenced)
 	}
 	if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{

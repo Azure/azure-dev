@@ -1037,6 +1037,7 @@ type agentServiceResolutionOptions struct {
 	includeProtocolEndpoints       bool
 	matchDeployedAgentName         bool
 	rejectVoiceInvocation          bool
+	resolvePromptModel             bool
 	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
 	includeHostedKind              bool

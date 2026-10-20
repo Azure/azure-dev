@@ -569,6 +569,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(
 			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+			withPromptModelResolution(),
 		)
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {

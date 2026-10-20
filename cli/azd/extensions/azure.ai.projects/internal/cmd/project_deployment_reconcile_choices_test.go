@@ -68,16 +68,45 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 		SubscriptionId: "subscription", UserTenantId: "tenant", Location: "eastus",
 	}
 	for _, test := range []struct {
-		name        string
-		live        []liveProjectDeployment
-		selections  []int32
-		noPrompt    bool
-		wantLabels  []string
-		wantList    []string
-		wantDefault string
-		wantChanged bool
-		wantCatalog bool
+		name            string
+		live            []liveProjectDeployment
+		selections      []int32
+		noPrompt        bool
+		wantLabels      []string
+		wantList        []string
+		wantDefault     string
+		wantChanged     bool
+		wantCatalog     bool
+		originalDefault string
 	}{
+		{
+			name:            "explicit reuse replaces a live default",
+			live:            []liveProjectDeployment{matching, other},
+			selections:      []int32{2, 1},
+			originalDefault: matching.Name,
+			wantList:        []string{},
+			wantDefault:     other.Name,
+			wantChanged:     true,
+		},
+		{
+			name:            "explicit catalog choice replaces a live default",
+			live:            []liveProjectDeployment{other},
+			selections:      []int32{1, 1},
+			originalDefault: other.Name,
+			wantList:        []string{"template-chat:gpt-4.1"},
+			wantDefault:     "template-chat",
+			wantChanged:     true,
+			wantCatalog:     true,
+		},
+		{
+			name:            "ordinary reuse preserves a live default",
+			live:            []liveProjectDeployment{matching, other},
+			selections:      []int32{0},
+			originalDefault: other.Name,
+			wantList:        []string{},
+			wantDefault:     other.Name,
+			wantChanged:     true,
+		},
 		{
 			name:        "no match now prompts and keeps the template by default",
 			live:        []liveProjectDeployment{other},
@@ -135,7 +164,8 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			prompt := &sequencedAdoptionPrompt{selections: test.selections}
 			client, project, env, ai, _ := newSelfInitializingDeploymentClient(t, t.TempDir(), prompt)
 			project.services["project"] = map[string]any{"deployments": []any{deploymentMap(declared)}}
-			values := map[string]string{}
+			values := map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": test.originalDefault}
+			env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = test.originalDefault
 			defaultName, changed, restore, err := reconcileAdoptedDeploymentChoices(
 				t.Context(), client, "test", target,
 				[]synthesis.Deployment{declared}, test.live, values, test.noPrompt,
@@ -143,6 +173,7 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, test.wantChanged, changed)
 			assert.Equal(t, test.wantDefault, defaultName)
+			assert.Equal(t, test.wantDefault, env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 			assert.Empty(t, prompt.selections, "every scripted answer is consumed")
 			if test.noPrompt {
 				assert.Empty(t, prompt.requests)
@@ -168,6 +199,7 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 				assert.Equal(t, test.wantList, names)
 			}
 			require.NoError(t, restore())
+			assert.Equal(t, test.originalDefault, env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 		})
 	}
 }

@@ -6,7 +6,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -120,17 +119,15 @@ func resolvePromptAgentService(
 		return nil, false, mapErr
 	}
 
-	// Use the deployment deploy resolved for this environment, so requests that
-	// name the model match the deployed agent.
-	if proj != nil {
+	// Only invocation needs a model; status and cleanup do not.
+	if proj != nil && resolutionOptions.resolvePromptModel {
 		model, modelErr := project.ResolvePromptAgentModel(
 			agentDef.Model, svc, proj.GetServices(), projectPath, envValues,
 		)
 		if modelErr != nil {
-			log.Printf("resolving prompt agent model for %q: %v", svc.GetName(), modelErr)
-		} else {
-			agentDef.Model = model
+			return nil, false, modelErr
 		}
+		agentDef.Model = model
 	}
 
 	pctx := &promptServiceContext{
@@ -148,6 +145,12 @@ func resolvePromptAgentService(
 	}
 
 	return pctx, true, nil
+}
+
+func withPromptModelResolution() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.resolvePromptModel = true
+	}
 }
 
 // promptAgentNameForService returns the harness agent identity for a prompt

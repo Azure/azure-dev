@@ -5,6 +5,8 @@ package project
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -43,6 +45,29 @@ func TestResolvePromptAgentModel(t *testing.T) {
 		want        string
 		wantErrText string
 	}{
+		{
+			name:        "invalid environment list fails",
+			model:       "template-chat",
+			env:         map[string]string{"AI_PROJECT_DEPLOYMENTS": "{"},
+			wantErrText: "decoding AI_PROJECT_DEPLOYMENTS",
+		},
+		{
+			name:  "blank environment list is missing",
+			model: "template-chat",
+			env:   map[string]string{"AI_PROJECT_DEPLOYMENTS": "  "},
+			want:  "template-chat",
+		},
+		{
+			name:     "declaration references expand before comparison",
+			model:    "${CHAT}",
+			declared: []string{"${CHAT}", "template-chat"},
+			env: map[string]string{
+				"CHAT":                           "template-chat",
+				"AI_PROJECT_DEPLOYMENTS":         "[]",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "existing-41",
+		},
 		{
 			name:     "reused deployment falls back to environment default",
 			model:    "template-chat",
@@ -125,12 +150,16 @@ func TestResolvePromptAgentModel(t *testing.T) {
 			want:     "existing-41",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			agent, services := promptModelServices(t, tt.declared...)
 			got, err := ResolvePromptAgentModel(tt.model, agent, services, t.TempDir(), tt.env)
 			if tt.wantErrText != "" {
 				require.ErrorContains(t, err, tt.wantErrText)
+				if tt.wantErrText == "decoding AI_PROJECT_DEPLOYMENTS" {
+					return
+				}
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok)
 				require.Equal(t, exterrors.CodeModelDeploymentNotFound, localErr.Code)
@@ -140,4 +169,23 @@ func TestResolvePromptAgentModel(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestResolvePromptAgentModelExpandsReferencedDeclarations(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(
+		"deployments:\n  - name: ${CHAT}\n",
+	), 0600))
+	agent, services := promptModelServices(t)
+	props, err := structpb.NewStruct(map[string]any{"$ref": "./project.yaml"})
+	require.NoError(t, err)
+	services["ai-project"].AdditionalProperties = props
+	t.Setenv("CHAT", "process-chat")
+	got, err := ResolvePromptAgentModel("${CHAT}", agent, services, root, map[string]string{
+		"CHAT":                           "template-chat",
+		"AI_PROJECT_DEPLOYMENTS":         "[]",
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "existing", got)
 }

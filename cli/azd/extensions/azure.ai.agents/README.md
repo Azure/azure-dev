@@ -414,6 +414,12 @@ The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
 use the local service key from `azure.yaml`, which can differ from the deployed
 agent name shown in the endpoint.
 
+For adopted prompt agents, deploy and invoke resolve the template model against
+the active environment's deployment choices. A skipped model without a runtime
+default, an ambiguous replacement, or malformed `AI_PROJECT_DEPLOYMENTS` returns an error rather than
+silently using the template model. Model-resolution failures do not block
+`azd ai agent show` or `azd ai agent delete`.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

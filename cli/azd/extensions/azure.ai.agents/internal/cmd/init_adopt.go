@@ -1608,18 +1608,6 @@ func configureAdoptedExistingDeployment(
 			"verify the deployment name or omit --model-deployment",
 		)
 	}
-	if err := setEnvValue(
-		ctx,
-		azdClient,
-		envName,
-		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		selected.Name,
-	); err != nil {
-		return fmt.Errorf(
-			"storing AZURE_AI_MODEL_DEPLOYMENT_NAME: %w",
-			err,
-		)
-	}
 	if err := replaceAdoptedTemplateDeployment(
 		ctx, azdClient, envName, selected.Name, flags.noPrompt,
 	); err != nil {

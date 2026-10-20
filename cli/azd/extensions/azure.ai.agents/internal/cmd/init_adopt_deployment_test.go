@@ -4,7 +4,9 @@
 package cmd
 
 import (
+	"context"
 	"errors"
+	"maps"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -14,6 +16,81 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 )
+
+type adoptedReplacementEnvironment struct {
+	promptEnvironmentServer
+	failKey string
+	writes  int
+}
+
+func (s *adoptedReplacementEnvironment) SetValue(
+	_ context.Context, request *azdext.SetEnvRequest,
+) (*azdext.EmptyResponse, error) {
+	s.writes++
+	s.values[request.Key] = request.Value
+	if request.Key == s.failKey {
+		s.failKey = ""
+		return nil, errors.New("environment write failed")
+	}
+	return &azdext.EmptyResponse{}, nil
+}
+
+func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		failKey  string
+		multiple bool
+		wantErr  string
+	}{
+		{"conflict before writes", "", true, "cannot tell which"},
+		{"default write failure", "AZURE_AI_MODEL_DEPLOYMENT_NAME", false, "environment write failed"},
+		{"list write failure", projectDeploymentsEnvKey, false, "environment write failed"},
+		{"success", "", false, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			declared := []project.Deployment{adoptedTestDeployment("template-chat", "gpt-4o")}
+			if test.multiple {
+				declared = append(declared, adoptedTestDeployment("embedding", "text-embedding-3-small"))
+			}
+			list, err := project.EncodeProjectDeploymentsEnv(declared)
+			require.NoError(t, err)
+			raw := []any{}
+			for _, deployment := range declared {
+				raw = append(raw, map[string]any{"name": deployment.Name})
+			}
+			server := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {
+						Name: "project", Host: project.FoundryProjectHost,
+						AdditionalProperties: mustStruct(t, map[string]any{"deployments": raw}),
+					},
+				},
+			}}
+			env := &adoptedReplacementEnvironment{
+				promptEnvironmentServer: promptEnvironmentServer{values: map[string]string{
+					"AZURE_AI_MODEL_DEPLOYMENT_NAME": "old-default",
+					projectDeploymentsEnvKey:         list,
+				}},
+				failKey: test.failKey,
+			}
+			before := maps.Clone(env.values)
+			client := newHelpersTestAzdClient(t, server, &helpersPromptServer{}, env)
+			err = replaceAdoptedTemplateDeployment(t.Context(), client, "test", "existing", true)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				require.Equal(t, before, env.values)
+				if test.multiple {
+					require.Zero(t, env.writes)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "existing", env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+			require.Equal(t, "[]", env.values[projectDeploymentsEnvKey])
+		})
+	}
+}
 
 func adoptedTestDeployment(name, model string) project.Deployment {
 	return project.Deployment{

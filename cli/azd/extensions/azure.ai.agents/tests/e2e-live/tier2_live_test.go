@@ -78,10 +78,14 @@ func TestTier2Live(t *testing.T) {
 		t.Skipf("set %s=1 to run the live Tier 2 golden-path test", liveEnvVar)
 	}
 	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		if os.Getenv("E2E_DEPLOY_MODES") != "container" || envTrue("E2E_SKIP_DEPLOY") {
-			t.Fatal("snapshot qualification requires E2E_DEPLOY_MODES=container and deployment enabled")
+		mode := os.Getenv("E2E_DEPLOY_MODES")
+		if (mode != "container" && mode != "code") || envTrue("E2E_SKIP_DEPLOY") {
+			t.Fatal("snapshot validation requires E2E_DEPLOY_MODES=code or container and deployment enabled")
 		}
 		if image := os.Getenv("E2E_SNAPSHOT_IMAGE"); image != "" {
+			if mode == "code" {
+				t.Fatal("snapshot code deploy does not accept E2E_SNAPSHOT_IMAGE")
+			}
 			if err := validateSnapshotImageReference(image); err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +172,7 @@ func newRunner(t *testing.T, mode string) *runner {
 	if tok := ghToken(); tok != "" {
 		env = append(env, "GH_TOKEN="+tok, "GITHUB_TOKEN="+tok)
 	}
-	if envTrue("E2E_MEMORY_SNAPSHOT") {
+	if envTrue("E2E_MEMORY_SNAPSHOT") && mode == "container" {
 		dockerConfig := filepath.Join(testDir, ".docker")
 		if err := os.MkdirAll(dockerConfig, 0o700); err != nil {
 			t.Fatalf("create isolated Docker configuration: %v", err)
@@ -275,12 +279,17 @@ func (r *runner) run(ctx context.Context) {
 			return
 		}
 	}
+	if envTrue("E2E_MEMORY_SNAPSHOT") && r.mode == "code" &&
+		!strings.EqualFold(r.azdEnvValues(ctx)["AZD_AGENT_SKIP_ACR"], "true") {
+		r.t.Error("snapshot code init did not disable ACR provisioning")
+		return
+	}
 	if err := r.phaseProvision(ctx); err != nil {
 		r.t.Errorf("provision: %v", err)
 		return
 	}
 	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		if r.snapshotImage == "" {
+		if r.mode == "container" && r.snapshotImage == "" {
 			if err := r.buildSnapshotImage(ctx, snapshotSourceDir); err != nil {
 				r.t.Errorf("snapshot image build: %v", err)
 				return
@@ -757,21 +766,23 @@ func (r *runner) prepareSnapshotBuild(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer source.Close()
-	for _, name := range []string{"Dockerfile", "pyproject.toml", "uv.lock"} {
+	for _, name := range []string{"pyproject.toml", "uv.lock"} {
 		if _, err := source.ReadFile(name); err != nil {
 			return "", fmt.Errorf("snapshot sample build requires %s: %w", name, err)
 		}
 	}
-	dockerfile, err := source.ReadFile("Dockerfile")
-	if err != nil {
-		return "", err
-	}
-	dockerfile, err = snapshotBuildDockerfile(dockerfile)
-	if err != nil {
-		return "", err
-	}
-	if err := source.WriteFile("Dockerfile", dockerfile, 0o600); err != nil {
-		return "", err
+	if r.mode == "container" {
+		dockerfile, err := source.ReadFile("Dockerfile")
+		if err != nil {
+			return "", err
+		}
+		dockerfile, err = snapshotBuildDockerfile(dockerfile)
+		if err != nil {
+			return "", err
+		}
+		if err := source.WriteFile("Dockerfile", dockerfile, 0o600); err != nil {
+			return "", err
+		}
 	}
 	sourceDir := filepath.Join(r.projectDir, project)
 	for _, args := range snapshotDependencyCommands() {

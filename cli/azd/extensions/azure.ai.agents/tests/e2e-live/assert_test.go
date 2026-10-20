@@ -242,6 +242,28 @@ func TestEnableSampleMemorySnapshot(t *testing.T) {
 	}
 }
 
+func TestSnapshotCodeDeployment(t *testing.T) {
+	manifest := []byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n" +
+		"    language: python\n    codeConfiguration:\n      runtime: python_3.13\n      entryPoint: main.py\n")
+	updated, err := enableSampleMemorySnapshot(manifest, "")
+	require.NoError(t, err)
+	var before, after struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(manifest, &before))
+	require.NoError(t, yaml.Unmarshal(updated, &after))
+	before.Services["agent"]["enableMemorySnapshot"] = true
+	require.Equal(t, before, after)
+	_, err = enableSampleMemorySnapshot([]byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n"), "")
+	require.ErrorContains(t, err, "requires codeConfiguration")
+	version := []byte(`{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":true,` +
+		`"code_configuration":{"runtime":"python_3.13"}}}`)
+	require.NoError(t, validateSnapshotAgentVersion(version, ""))
+	require.ErrorContains(t, validateSnapshotAgentVersion([]byte(
+		`{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":true}}`), ""),
+		"code_configuration")
+}
+
 func TestValidateSnapshotAgentVersion(t *testing.T) {
 	image := "registry.azurecr.io/agent@sha256:" + strings.Repeat("a", 64)
 	for _, testCase := range []struct {
@@ -367,6 +389,7 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 			require.Contains(t, setupSteps[2].Bash, "uv==0.11.7")
 			require.Equal(t, "$(PIP_INDEX_URL)", setupSteps[2].Env["PIP_INDEX_URL"])
 			require.Contains(t, setupSteps[3].Bash, "docker version")
+			require.Contains(t, setupSteps[3].Bash, "code) ;;")
 			require.Contains(t, setupSteps[3].Bash, "container")
 			require.NotContains(t, setupSteps[3].Bash, "-z")
 			prerequisiteLine = setup.Line

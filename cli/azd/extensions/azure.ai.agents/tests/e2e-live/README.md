@@ -78,9 +78,10 @@ builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 
 ### Memory snapshot sample validation
 
-This opt-in follows the platform team's basic container-based end-to-end guide.
-The automated baseline currently qualifies **Python Responses images**, not .NET
-images or every sample in the catalog. Ordinary and scheduled runs remain
+This opt-in validates Python Responses code deployments and container images.
+Both use the platform guide's SDK versions and snapshot lifecycle expectations;
+only container mode performs its immutable-image qualification. It does not
+cover .NET or every sample in the catalog. Ordinary and scheduled runs remain
 unchanged with `memorySnapshot=false`.
 
 Before running:
@@ -89,21 +90,24 @@ Before running:
   Subscription approval does not establish regional availability. The previous
   `eastus2` run was rejected by the service gate; do not assume that region is
   approved merely because it remains the ordinary pipeline default.
-2. Select a basic stateless Python Responses sample with a Dockerfile,
-  `pyproject.toml`, and `uv.lock`. The pinned Agent Framework Responses
+2. Select a basic stateless Python Responses sample with `pyproject.toml` and
+  `uv.lock`; container mode also requires a Dockerfile. The pinned Agent Framework Responses
   `01-basic` baseline is supported for automatic builds. CI updates only its
   isolated copy to the package versions below, retains the baseline hosting
   integration at `1.0.0b260821`, and regenerates the lock file and requirements
   with uv `0.11.7`, matching that sample's Dockerfile tooling.
   CI uses the repository's authenticated Azure Artifacts Python feed rather
-  than direct PyPI access. The isolated Dockerfile uses a digest-pinned MCR
+  than direct PyPI access. In container mode, the isolated Dockerfile uses a digest-pinned MCR
   Python 3.13 Linux AMD64 base instead of direct GHCR or Docker Hub pulls.
   BuildKit supplies `UV_DEFAULT_INDEX` through a temporary secret mount for
   uv installation and dependency restore; feed tokens are not build arguments
   and are not persisted in image layers. Local automatic builds must set
   `UV_DEFAULT_INDEX` to the approved feed as well.
-3. Leave `snapshotImage` empty to build and push the sample into its provisioned
-  ACR. CI builds Linux AMD64 and records the published digest before agent
+3. For `deployModes=code`, leave `snapshotImage` empty. The existing code ZIP
+  deployment path skips customer ACR provisioning and does not build or inspect
+  a Docker image. This is code-deploy validation, not the guide's container test.
+  For `deployModes=container`, leave `snapshotImage` empty to build and push the
+  sample into its provisioned ACR. CI builds Linux AMD64 and records the published digest before agent
   deployment. Alternatively, supply a prebuilt image using an immutable
   `registry/repository@sha256:<digest>` reference and matching sample source
   revision. Both the CI identity and the Foundry project must be able to pull
@@ -123,8 +127,8 @@ Queue the live pipeline at the CI branch's commit with these explicit inputs:
 | Parameter | Snapshot qualification value |
 | --- | --- |
 | `memorySnapshot` | `true` |
-| `deployModes` | `container`; `code` and `both` are rejected for this qualification |
-| `snapshotImage` | Optional immutable image reference; empty automatically builds the selected sample |
+| `deployModes` | `code` or `container`; `both` is rejected for snapshot runs |
+| `snapshotImage` | Empty for code; optional immutable image reference for container mode |
 | `templateURL` | The provisioning manifest for that sample, pinned to a source revision |
 | `subscriptionId` | Required explicit preview-approved subscription ID for snapshot runs |
 | `serviceConnection` | Authentication identity with existing access to the target subscription |
@@ -136,7 +140,13 @@ and binds registry access and cleanup to that same subscription. An inaccessible
 or mismatched target fails before resource creation; it never falls back to the
 connection's default. Ordinary runs may omit `subscriptionId` to keep that default.
 
-For an existing image, checks run before creating a project. For automatic
+Code mode prepares the SDK dependencies before provisioning, preserves
+`codeConfiguration`, and only adds `enableMemorySnapshot: true` to the service.
+It reuses ordinary code deployment and verifies the active version's code
+configuration and snapshot opt-in. It does not inspect the managed runtime's
+installed packages, so source dependency pins are not runtime package evidence.
+
+In container mode, existing-image checks run before creating a project. For automatic
 builds, CI resolves dependencies and regenerates the lock file and requirements
 before provisioning the sample project and registry. It then builds and publishes
 the image and performs the same checks before creating the agent version.
@@ -150,8 +160,8 @@ Docker authentication uses an isolated configuration cleaned up after the run.
 Automatic builds use host Python 3.13 and pinned uv; they do not change existing
 user projects.
 
-The isolated manifest receives `enableMemorySnapshot: true`, the qualified image
-digest, and image passthrough settings. The image is the runtime under test.
+Both modes set `enableMemorySnapshot: true`. Container mode additionally sets the qualified image
+digest and image passthrough settings. Its image is the runtime under test.
 An automatic-build result qualifies the explicitly dependency-updated sample,
 not the unchanged catalog sample. A supplied-image result qualifies that
 image/manifest/source-revision combination. Neither mode silently upgrades an
@@ -159,7 +169,7 @@ existing user project.
 
 Agent creation still uses `azd deploy` and the existing `v1` REST mapping so the
 azd opt-in is exercised. Success requires an active snapshot-enabled version
-whose image exactly matches the qualified digest, followed by successful
+with code configuration in code mode or the exact qualified digest in container mode, followed by successful
 Responses requests in two distinct sessions with explicit `store:false`. The
 test uses authenticated `az rest` for those requests because the current
 `azd ai agent invoke --input-file` Responses path treats file contents as message

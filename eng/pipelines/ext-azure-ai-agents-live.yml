@@ -149,11 +149,11 @@ extends:
                       PIP_EXTRA_INDEX_URL: ""
                   - bash: |
                       set -euo pipefail
-                      if [ "$SNAPSHOT_DEPLOY_MODE" != "container" ]; then
-                        echo "Snapshot qualification requires deployModes=container." >&2
-                        exit 1
-                      fi
-                      docker version --format '{{.Server.Version}}'
+                      case "$SNAPSHOT_DEPLOY_MODE" in
+                        code) ;;
+                        container) docker version --format '{{.Server.Version}}' ;;
+                        *) echo "Snapshot validation requires deployModes=code or container." >&2; exit 1 ;;
+                      esac
                     displayName: Verify snapshot qualification prerequisites
                     env:
                       SNAPSHOT_DEPLOY_MODE: ${{ parameters.deployModes }}

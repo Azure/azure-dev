@@ -187,8 +187,10 @@ func updateSnapshotSampleManifest(root *os.Root, image string) error {
 }
 
 func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {
-	if err := validateSnapshotImageReference(image); err != nil {
-		return nil, err
+	if image != "" {
+		if err := validateSnapshotImageReference(image); err != nil {
+			return nil, err
+		}
 	}
 	var config map[string]any
 	if err := yaml.Unmarshal(manifest, &config); err != nil {
@@ -215,6 +217,13 @@ func enableSampleMemorySnapshot(manifest []byte, image string) ([]byte, error) {
 	if agentService == nil {
 		return nil, errors.New("sample manifest has no azure.ai.agent service")
 	}
+	if image == "" {
+		if _, ok := agentService["codeConfiguration"].(map[string]any); !ok {
+			return nil, errors.New("snapshot code deploy requires codeConfiguration when no image is supplied")
+		}
+		agentService["enableMemorySnapshot"] = true
+		return yaml.Marshal(config)
+	}
 	dockerOptions := map[string]any{}
 	if value, exists := agentService["docker"]; exists {
 		var ok bool
@@ -240,6 +249,9 @@ func validateSnapshotAgentVersion(data []byte, expectedImage string) error {
 			ContainerConfiguration struct {
 				Image string `json:"image"`
 			} `json:"container_configuration"`
+			CodeConfiguration *struct {
+				Runtime string `json:"runtime"`
+			} `json:"code_configuration"`
 		} `json:"definition"`
 	}
 	if err := json.Unmarshal(data, &version); err != nil {
@@ -251,6 +263,13 @@ func validateSnapshotAgentVersion(data []byte, expectedImage string) error {
 	if version.Definition.Kind != "hosted" || version.Definition.EnableMemorySnapshot == nil ||
 		!(*version.Definition.EnableMemorySnapshot) {
 		return errors.New("service did not confirm definition.enable_memory_snapshot=true for the deployed hosted agent")
+	}
+	if expectedImage == "" {
+		if version.Definition.CodeConfiguration == nil ||
+			!strings.HasPrefix(version.Definition.CodeConfiguration.Runtime, "python") {
+			return errors.New("service did not confirm a Python code_configuration for snapshot code deploy")
+		}
+		return nil
 	}
 	image := version.Definition.ContainerConfiguration.Image
 	if err := validateSnapshotImageReference(image); err != nil {

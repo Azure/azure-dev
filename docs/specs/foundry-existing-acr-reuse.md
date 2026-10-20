@@ -1,3 +1,5 @@
+<!-- cspell:ignore ABAC -->
+
 ## Summary
 
 Teams creating a new Microsoft Foundry project need to build and publish hosted-agent container

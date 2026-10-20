@@ -92,9 +92,18 @@ in Advanced Features above. Actual 1.37.0 release completion is tracked in the
 [second graduation audit](https://github.com/Azure/azure-dev/issues/10625).
 
 These are contract graduations, not a change to the overall Extensions feature stage
-or telemetry eligibility/privacy policy. Stable consumers must declare
-`requiredAzdVersion: ">=1.36.0"`. See
-[contract lifecycle and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
+or telemetry eligibility/privacy policy. The minimum azd runtime version for stable
+consumers depends on the capabilities they use:
+
+- Extension usage telemetry or current Azure principal: `requiredAzdVersion: ">=1.36.0"`.
+- Deployment preview: `requiredAzdVersion: ">=1.37.0"`.
+
+Extensions using multiple capabilities must meet the highest applicable minimum and
+retain any stricter existing requirement.
+
+`requiredAzdVersion` constrains the azd runtime version, not the Go SDK dependency.
+Pin the SDK separately to a published module release containing the stable APIs in use.
+See [contract lifecycle and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md).
 
 ---
 

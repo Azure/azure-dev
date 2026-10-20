@@ -134,8 +134,15 @@ extends:
                     displayName: Select Python for isolated snapshot sample build
                     inputs:
                       versionSpec: '3.13'
+                  - template: /eng/common/pipelines/templates/steps/python-auth-dev-feed.yml
+                    parameters:
+                      EnableTwineAuth: false
+                      DisableAdditionalIndexes: true
                   - bash: python -m pip install --disable-pip-version-check uv==0.11.7
                     displayName: Install sample dependency tooling
+                    env:
+                      PIP_INDEX_URL: $(PIP_INDEX_URL)
+                      PIP_EXTRA_INDEX_URL: ""
                   - bash: |
                       set -euo pipefail
                       if [ "$SNAPSHOT_DEPLOY_MODE" != "container" ]; then
@@ -369,6 +376,9 @@ extends:
                   E2E_SNAPSHOT_IMAGE: ${{ parameters.snapshotImage }}
                   ${{ if eq(parameters.memorySnapshot, true) }}:
                     E2E_MEMORY_SNAPSHOT: "true"
+                    PIP_INDEX_URL: $(PIP_INDEX_URL)
+                    UV_DEFAULT_INDEX: $(UV_DEFAULT_INDEX)
+                    UV_KEYRING_PROVIDER: disabled
                   ${{ else }}:
                     E2E_MEMORY_SNAPSHOT: "false"
                   E2E_USE_AZ_CLI_AUTH: "true"

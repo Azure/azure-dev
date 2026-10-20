@@ -95,6 +95,9 @@ Before running:
   isolated copy to the package versions below, pins the compatible hosting
   integration to `1.0.0b261015`, and regenerates the lock file and requirements
   with uv `0.11.7`, matching that sample's Dockerfile tooling.
+  CI uses the repository's authenticated Azure Artifacts Python feed rather
+  than direct PyPI access. The isolated Dockerfile uses the credential-free
+  public feed address; no feed token is passed as an image build argument.
 3. Leave `snapshotImage` empty to build and push the sample into its provisioned
   ACR. CI builds Linux AMD64 and records the published digest before agent
   deployment. Alternatively, supply a prebuilt image using an immutable

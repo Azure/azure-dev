@@ -109,6 +109,16 @@ func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
+func snapshotBuildDockerfile(data []byte) ([]byte, error) {
+	const install = "RUN uv sync --frozen --no-dev --no-install-project"
+	const index = "https://pkgs.dev.azure.com/azure-sdk/public/_packaging/azure-sdk-for-python/pypi/simple/"
+	if strings.Count(string(data), install) != 1 {
+		return nil, errors.New("snapshot baseline requires the supported uv dependency installation instruction")
+	}
+	return []byte(strings.Replace(string(data), install, "RUN UV_DEFAULT_INDEX="+index+
+		" uv sync --frozen --no-dev --no-install-project", 1)), nil
+}
+
 func snapshotBuildProject(manifest []byte) (string, error) {
 	var config struct {
 		Services map[string]struct {

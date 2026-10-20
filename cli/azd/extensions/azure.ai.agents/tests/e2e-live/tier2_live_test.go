@@ -743,6 +743,17 @@ func (r *runner) buildSnapshotImage(ctx context.Context) error {
 			return fmt.Errorf("snapshot sample build requires %s: %w", name, err)
 		}
 	}
+	dockerfile, err := source.ReadFile("Dockerfile")
+	if err != nil {
+		return err
+	}
+	dockerfile, err = snapshotBuildDockerfile(dockerfile)
+	if err != nil {
+		return err
+	}
+	if err := source.WriteFile("Dockerfile", dockerfile, 0o600); err != nil {
+		return err
+	}
 	sourceDir := filepath.Join(r.projectDir, project)
 	for _, args := range [][]string{
 		{"add", "--no-sync", "--prerelease", "allow", "agent-framework-foundry-hosting==1.0.0b261015",

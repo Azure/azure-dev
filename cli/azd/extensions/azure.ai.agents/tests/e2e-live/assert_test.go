@@ -106,6 +106,18 @@ func TestAgentResponseRegion(t *testing.T) {
 	}
 }
 
+func TestSnapshotBuildDockerfile(t *testing.T) {
+	input := "FROM python:3.13-slim\nRUN uv sync --frozen --no-dev --no-install-project\nCMD [\"python\", \"main.py\"]\n"
+	data, err := snapshotBuildDockerfile([]byte(input))
+	require.NoError(t, err)
+	require.Contains(t, string(data), "RUN UV_DEFAULT_INDEX=https://pkgs.dev.azure.com/azure-sdk/public/")
+	require.Contains(t, string(data), " uv sync --frozen --no-dev --no-install-project")
+	require.Contains(t, string(data), "CMD [\"python\", \"main.py\"]")
+	require.NotContains(t, string(data), "@pkgs")
+	_, err = snapshotBuildDockerfile([]byte("FROM python:3.13-slim"))
+	require.Error(t, err)
+}
+
 func TestSnapshotBuildProject(t *testing.T) {
 	manifest := "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    language: python\n    project: src/agent\n"
 	project, err := snapshotBuildProject([]byte(manifest))
@@ -281,21 +293,24 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 		}
 		if setup, exists := step["${{ if eq(parameters.memorySnapshot, true) }}"]; exists && setup.Kind == yaml.SequenceNode {
 			var setupSteps []struct {
-				Bash   string            `yaml:"bash"`
-				Task   string            `yaml:"task"`
-				Env    map[string]string `yaml:"env"`
-				Inputs struct {
+				Bash     string            `yaml:"bash"`
+				Task     string            `yaml:"task"`
+				Template string            `yaml:"template"`
+				Env      map[string]string `yaml:"env"`
+				Inputs   struct {
 					VersionSpec string `yaml:"versionSpec"`
 				} `yaml:"inputs"`
 			}
 			require.NoError(t, setup.Decode(&setupSteps))
-			require.Len(t, setupSteps, 3)
+			require.Len(t, setupSteps, 4)
 			require.Equal(t, "UsePythonVersion@0", setupSteps[0].Task)
 			require.Equal(t, "3.13", setupSteps[0].Inputs.VersionSpec)
-			require.Contains(t, setupSteps[1].Bash, "uv==0.11.7")
-			require.Contains(t, setupSteps[2].Bash, "docker version")
-			require.Contains(t, setupSteps[2].Bash, "container")
-			require.NotContains(t, setupSteps[2].Bash, "-z")
+			require.Equal(t, "/eng/common/pipelines/templates/steps/python-auth-dev-feed.yml", setupSteps[1].Template)
+			require.Contains(t, setupSteps[2].Bash, "uv==0.11.7")
+			require.Equal(t, "$(PIP_INDEX_URL)", setupSteps[2].Env["PIP_INDEX_URL"])
+			require.Contains(t, setupSteps[3].Bash, "docker version")
+			require.Contains(t, setupSteps[3].Bash, "container")
+			require.NotContains(t, setupSteps[3].Bash, "-z")
 			prerequisiteLine = setup.Line
 		}
 	}

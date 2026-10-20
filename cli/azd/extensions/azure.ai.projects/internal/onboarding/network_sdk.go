@@ -5,6 +5,7 @@ package onboarding
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
@@ -34,26 +35,38 @@ func (c *sdkResourceChecker) readNetworkSubnet(ctx context.Context, raw, checkID
 	if response.Properties == nil {
 		return &response.Subnet, report
 	}
-	if nsg := response.Properties.NetworkSecurityGroup; nsg != nil && nsg.ID != nil {
+	if nsg := response.Properties.NetworkSecurityGroup; nsg != nil && nsg.ID == nil && checkID == "N02" {
+		report = append(report, resourceCheck(checkID, raw, "associated NSG ARM resource ID"))
+	} else if nsg != nil && nsg.ID != nil {
 		id, err := existingResourceID(*nsg.ID, "Microsoft.Network/networkSecurityGroups")
 		if err == nil {
 			client, clientErr := armnetwork.NewSecurityGroupsClient(id.SubscriptionID, c.credential, c.options)
 			err = clientErr
 			if err == nil {
-				_, err = client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+				response, readErr := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+				err = readErr
+				if err == nil && checkID == "N02" {
+					report = append(report, staticSecurityGroup(response.SecurityGroup, *nsg.ID))
+				}
 			}
 		}
 		if err != nil {
 			report = append(report, readFailure(checkID, *nsg.ID, "Microsoft.Network/networkSecurityGroups/read", err))
 		}
 	}
-	if route := response.Properties.RouteTable; route != nil && route.ID != nil {
+	if route := response.Properties.RouteTable; route != nil && route.ID == nil && checkID == "N02" {
+		report = append(report, resourceCheck(checkID, raw, "associated route-table ARM resource ID"))
+	} else if route != nil && route.ID != nil {
 		id, err := existingResourceID(*route.ID, "Microsoft.Network/routeTables")
 		if err == nil {
 			client, clientErr := armnetwork.NewRouteTablesClient(id.SubscriptionID, c.credential, c.options)
 			err = clientErr
 			if err == nil {
-				_, err = client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+				response, readErr := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+				err = readErr
+				if err == nil && checkID == "N02" {
+					report = append(report, staticRouteTable(response.RouteTable, *route.ID))
+				}
 			}
 		}
 		if err != nil {
@@ -76,7 +89,19 @@ func (c *sdkResourceChecker) readParentNetwork(ctx context.Context, raw string) 
 	if err != nil {
 		return nil, Report{readFailure("N02", id.Parent.String(), "Microsoft.Network/virtualNetworks/read", err)}
 	}
-	return &response.VirtualNetwork, nil
+	state := ""
+	if response.Properties != nil {
+		state = resourceValue(response.Properties.ProvisioningState)
+	}
+	report := Report{staticNetworkReadiness(id.Parent.String(), resourceValue(response.ID), state)}
+	if response.Properties != nil && response.Properties.DhcpOptions != nil {
+		for _, server := range response.Properties.DhcpOptions.DNSServers {
+			check := resourceCheck("N02", id.Parent.String(), "valid ARM custom DNS server address")
+			_, parseErr := netip.ParseAddr(resourceValue(server))
+			report = append(report, resourceKnown(check, server != nil, parseErr == nil, "ARM custom DNS server configuration"))
+		}
+	}
+	return &response.VirtualNetwork, report
 }
 
 func (c *sdkResourceChecker) storagePrivateEndpoints(ctx context.Context, storage *armstorage.Account) Report {

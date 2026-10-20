@@ -196,8 +196,10 @@ project's registry grant. Developer access retains the agent predeploy lifecycle
 not an additional provision-time grant. A future project
 principal remains unknown during conditional-delegation checks.
 
-**This onboarding path is not production-ready.** Supported source-bound network
-evidence is not available in the production adapters. ARM readability, deployment
+**This onboarding path is not production-ready.** Supported source-bound N01/S03
+and registry-path evidence is not available in the production adapters. N02
+requires only applicable ARM-visible static configuration, not a live-path provider.
+ARM readability, deployment
 validation, role assignment readback, and local connectivity are not substitutes
 for required workload-path evidence. Provision reports missing network evidence
 rather than claiming a successful onboarding. Referenced-resource checks cover
@@ -208,12 +210,26 @@ because it cannot run the required extension preparation lifecycle.
 
 When no agent subnet is supplied, the bounded default topology plans an unused
 private IPv4 `/27` in the qualifying agent pool's existing VNet, in the target
-region. Its address inventory includes current subnets, AKS Pod/Service ranges,
-and known connected peering ranges. Gateway-transit and route-server topologies
-are not supported by this resolver. Preparation creates only that journaled
+region. For supplied and prepared Agent subnets, CIDR conflict checks cover AKS
+node/Pod/Service ranges, sibling subnets in the Agent subnet's VNet, and direct
+peering remote VNet address spaces. They do not discover or require address
+inventories behind VPN/gateway transit, ExpressRoute, or customer-managed
+routers, firewalls, or network virtual appliances. GatewaySubnet and
+RouteServerSubnet CIDRs still count as ordinary sibling-subnet ranges;
+gateway-transit flags alone do not block CIDR planning or recovery. Missing or
+invalid required in-scope metadata still blocks its check. N02 reads and validates
+applicable ARM delegation, peering state, route tables/routes and associations,
+NSGs/rules, Private Endpoint approval, Private DNS zones/links/records and Storage
+network settings. It does not require workload DNS/TCP probes or proof of hidden
+NVA, custom-DNS, VPN/ExpressRoute or on-premises internal policies and connectivity.
+N01's Storage service-tag and S03's Blob workload-path evidence remain independent.
+Preparation creates only that journaled
 subnet with the `Microsoft.App/environments` delegation; it does not rewrite
 existing subnets, routes, NSGs, peerings, AKS settings, or network policy.
-New paths still need source-bound verification after creation. Broader selected
+Preflight validates planned/new dependencies as a static plan and operator-authority
+decision. R06 polls and reads back created resources' ARM provisioning/readiness
+and exact selected configuration; this is per-resource creation-contract validation,
+not a second N02 execution. N02 is not rerun after preparation. Broader selected
 private-network mutations require administrator preparation.
 
 After all preflight gates pass, preparation creates or resumes only its journaled,
@@ -221,8 +237,9 @@ owner-tagged dependencies and exact scoped grants. Missing Storage and registry
 resources are created with safe defaults; supplied resources are not rewritten.
 Retries retain the journaled registry ID, endpoint, and authorization mode across
 preparation, the Foundry project grant, and the registry connection.
-Actual Storage, companion-subnet, and registry paths require post-creation network
-evidence before deployment. Registry checks cover source-bound DNS, TCP 443, and
+Actual Storage and registry paths retain their independent post-creation network
+evidence requirements before deployment; no N02 live-path evidence is required.
+Registry checks cover source-bound DNS, TCP 443, and
 TLS to its login server and all enabled dedicated data endpoints; this does not
 establish kubelet image-pull authorization or data-plane role propagation.
 Storage does not need to be dedicated to this workflow. Preserve the environment

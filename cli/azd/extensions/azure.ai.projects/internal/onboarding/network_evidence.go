@@ -27,19 +27,18 @@ type NetworkRequest struct {
 // NetworkEvidence is supplied by a supported existing execution context, not a laptop or a newly created probe.
 // Static NSG diagnostics and successful node probes alone are not existing-workload DNS/TCP evidence.
 type NetworkEvidence struct {
-	SourceSubnetIDs             []string
-	Destination                 string
-	Description                 string
-	ExistingWorkload            bool
-	DNSVerified                 bool
-	TCP443Verified              bool
-	TLSVerified                 bool
-	ConnectivityFailed          bool
-	EffectiveRoutesVerified     bool
-	EffectivePolicyVerified     bool
-	StorageServiceTagCoverage   bool
-	ConnectedAddressSpacesKnown bool
-	PrivateEndpointDNSVerified  bool
+	SourceSubnetIDs            []string
+	Destination                string
+	Description                string
+	ExistingWorkload           bool
+	DNSVerified                bool
+	TCP443Verified             bool
+	TLSVerified                bool
+	ConnectivityFailed         bool
+	EffectiveRoutesVerified    bool
+	EffectivePolicyVerified    bool
+	StorageServiceTagCoverage  bool
+	PrivateEndpointDNSVerified bool
 }
 
 // NetworkEvidenceProvider only reads evidence from supported existing workload contexts.
@@ -90,12 +89,6 @@ func networkEvidenceCheck(
 		if !evidence.ExistingWorkload || !evidence.DNSVerified || !evidence.TCP443Verified ||
 			private && !evidence.PrivateEndpointDNSVerified {
 			base.Missing = "existing AKS workload DNS/TCP 443 evidence and applicable private endpoint DNS"
-			return base
-		}
-	case "N02":
-		if !evidence.ExistingWorkload || !evidence.ConnectedAddressSpacesKnown || !evidence.DNSVerified ||
-			!evidence.TCP443Verified {
-			base.Missing = "all connected address spaces, effective routes and existing-workload DNS/TCP evidence"
 			return base
 		}
 	case "R06":
@@ -177,7 +170,7 @@ func delegatedSubnetCheck(
 			return resourceResult(c, Fail, "subnet must be a private IPv4 CIDR, /27 or larger, within parent VNet")
 		}
 		if slices.ContainsFunc(related, prefix.Overlaps) {
-			return resourceResult(c, Fail, "delegated subnet overlaps related node/Pod/Service/connected space")
+			return resourceResult(c, Fail, "delegated subnet overlaps AKS node/Pod/Service, sibling-subnet or direct-peering ranges")
 		}
 	}
 	delegated := slices.ContainsFunc(subnet.Properties.Delegations, func(d *armnetwork.Delegation) bool {
@@ -187,14 +180,19 @@ func delegatedSubnetCheck(
 	if !delegated {
 		return resourceResult(c, Fail, "subnet is not delegated to Microsoft.App/environments")
 	}
-	c.Observed = "CIDR containment/non-overlap and Microsoft.App/environments delegation verified"
-	c.Missing = "complete connected topology, route/NSG/upstream controls and actual DNS/TCP path"
-	return c
+	return resourceResult(c, Pass, "ARM CIDR containment/non-overlap and Microsoft.App/environments delegation verified")
 }
 
 func (c *sdkResourceChecker) networkChecks(
 	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
 	pools []*armcontainerservice.AgentPool, storage *armstorage.Account,
+) (Report, []string) {
+	return c.networkConfiguration(ctx, plan, cluster, pools, storage, true)
+}
+
+func (c *sdkResourceChecker) networkConfiguration(
+	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster,
+	pools []*armcontainerservice.AgentPool, storage *armstorage.Account, checkTopology bool,
 ) (Report, []string) {
 	var sources []string
 	var related []netip.Prefix
@@ -224,7 +222,11 @@ func (c *sdkResourceChecker) networkChecks(
 				}
 				continue
 			}
-			subnet, checks := c.readNetworkSubnet(ctx, subnetID, "N02")
+			checkID := "N01"
+			if checkTopology {
+				checkID = "N02"
+			}
+			subnet, checks := c.readNetworkSubnet(ctx, subnetID, checkID)
 			report = append(report, checks...)
 			if subnet != nil {
 				prefixes, err := subnetPrefixes(subnet)
@@ -297,13 +299,18 @@ func (c *sdkResourceChecker) networkChecks(
 		}
 		report = append(report, blob)
 	}
+	if !checkTopology {
+		return report, sources
+	}
+	report = append(report, c.staticStorageNetwork(ctx, storage)...)
 	if !plan.AgentSubnet.Supplied {
 		status := NotApplicable
 		observed := "no delegated subnet selected"
 		if plan.Network != nil {
-			observed = "new delegated subnet CIDR planned read-only; actual path is verified after R06 creation"
+			status = Pass
+			observed = "static subnet plan resolved read-only; selected write authority is evaluated by P09"
 		} else if plan.AgentSubnet.ID != "" || plan.AgentSubnet.Parent != "" {
-			status, observed = Unverified, "planned subnet topology must be resolved; new paths are verified at R06"
+			status, observed = Unverified, "planned subnet topology must be resolved before preparation"
 		}
 		report = append(report, resourceResult(resourceCheck("N02", plan.AgentSubnet.ID,
 			"selected supported companion topology"), status, observed))
@@ -316,74 +323,57 @@ func (c *sdkResourceChecker) networkChecks(
 	}
 	parent, checks := c.readParentNetwork(ctx, plan.AgentSubnet.ID)
 	report = append(report, checks...)
-	if parent != nil && parent.Properties != nil {
-		for _, sibling := range parent.Properties.Subnets {
-			if sibling == nil || strings.EqualFold(resourceValue(sibling.ID), plan.AgentSubnet.ID) {
-				continue
-			}
-			prefixes, err := subnetPrefixes(sibling)
-			if err != nil {
-				sourceMetadataKnown = false
-			} else {
-				related = append(related, prefixes...)
-			}
-		}
+	var inventoryErr error
+	if parent != nil && parent.Properties != nil && cluster != nil {
 		for _, peering := range parent.Properties.VirtualNetworkPeerings {
-			if peering == nil || peering.Properties == nil {
-				sourceMetadataKnown = false
-				continue
-			}
-			p := peering.Properties
-			if resourceValue(p.PeeringState) != "Connected" {
+			if peering != nil && peering.Properties != nil &&
+				resourceValue(peering.Properties.PeeringState) != "Connected" {
 				report = append(report, resourceResult(resourceCheck("N02", resourceValue(peering.ID),
 					"existing peering Connected"), Fail, "peering is not Connected"))
 			}
-			if p.RemoteAddressSpace == nil {
-				sourceMetadataKnown = false
-				continue
-			}
-			if resourceValue(p.PeeringSyncLevel) != "" && resourceValue(p.PeeringSyncLevel) != "FullyInSync" &&
-				(p.RemoteVirtualNetworkAddressSpace == nil || len(p.RemoteVirtualNetworkAddressSpace.AddressPrefixes) == 0) {
-				sourceMetadataKnown = false
-			}
-			for _, space := range []*armnetwork.AddressSpace{p.RemoteAddressSpace, p.RemoteVirtualNetworkAddressSpace} {
-				if space == nil {
-					continue
-				}
-				for _, raw := range space.AddressPrefixes {
-					prefix, err := netip.ParsePrefix(resourceValue(raw))
-					if err != nil || prefix != prefix.Masked() {
-						sourceMetadataKnown = false
-					} else {
-						related = append(related, prefix)
-					}
-				}
-			}
 		}
+		siblings := *parent
+		properties := *parent.Properties
+		properties.Subnets = slices.DeleteFunc(slices.Clone(properties.Subnets), func(sibling *armnetwork.Subnet) bool {
+			return sibling != nil && strings.EqualFold(resourceValue(sibling.ID), plan.AgentSubnet.ID)
+		})
+		siblings.Properties = &properties
+		var occupied []netip.Prefix
+		occupied, inventoryErr = networkOccupiedPrefixes(*cluster, &siblings)
+		related = append(related, occupied...)
+	} else {
+		inventoryErr = fmt.Errorf("AKS and Agent subnet VNet address inventory is unavailable")
 	}
 	topology := delegatedSubnetCheck(subnet, parent, related)
-	if topology.Status != Fail && sourceMetadataKnown {
-		topology = networkEvidenceCheck(ctx, c.evidence.Network, NetworkRequest{
-			CheckID: "N02", Scope: plan.AgentSubnet.ID, SourceSubnetIDs: sources, Destination: plan.AgentSubnet.ID,
-		}, topology, false)
+	if inventoryErr != nil {
+		sourceMetadataKnown = false
+		if topology.Status != Fail {
+			topology.Status = Unverified
+		}
+		topology.Cause = inventoryErr
+		topology.Missing = "AKS node/Pod/Service, sibling-subnet and direct-peering address evidence"
+	}
+	if !sourceMetadataKnown && topology.Status != Fail {
+		topology.Status = Unverified
+		topology.Missing = "AKS node/Pod/Service, sibling-subnet and direct-peering ARM metadata"
 	}
 	if !sourceMetadataKnown {
 		sources = nil
 	}
-	return append(report, topology), sources
+	report = append(report, topology)
+	return report, sources
 }
 
-// VerifyPreparedNetwork rechecks actual Blob, companion and registry HTTPS paths.
-// No RBAC readback or operator connectivity is substituted for path evidence.
+// VerifyPreparedNetwork verifies independent N01/S03 and registry paths, not N02.
+// Created network resources have their own ARM creation-contract readback in prepareNetwork.
 func (c *sdkResourceChecker) VerifyPreparedNetwork(
 	ctx context.Context, plan Plan, prepared Prepared,
 ) (Report, error) {
 	plan.Storage = Resource{ID: prepared.StorageID, Supplied: true}
-	plan.AgentSubnet = Resource{ID: prepared.AgentSubnetID, Supplied: true}
 	cluster, pools, _, report := c.readCluster(ctx, plan.Cluster)
 	storage, checks := c.readStorage(ctx, plan.Storage)
 	report = append(report, checks...)
-	paths, sources := c.networkChecks(ctx, plan, cluster, pools, storage)
+	paths, sources := c.networkConfiguration(ctx, plan, cluster, pools, storage, false)
 	report = append(report, paths...)
 	report = append(report, c.registryNetworkChecks(ctx, prepared.RegistryID, sources)...)
 	return report, report.Err()

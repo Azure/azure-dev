@@ -272,31 +272,15 @@ func TestNetworkPlanBoundaryRejectsUnknownConnectedAddressEvidence(t *testing.T)
 			},
 		},
 		{
-			name: "gateway transit",
+			name: "empty remote space",
 			mutate: func(v *armnetwork.VirtualNetwork, _ *armcontainerservice.ManagedCluster) {
-				v.Properties.VirtualNetworkPeerings[0].Properties.AllowGatewayTransit = new(true)
+				v.Properties.VirtualNetworkPeerings[0].Properties.RemoteAddressSpace = networkBoundaryAddressSpace()
 			},
 		},
 		{
-			name: "remote gateway",
+			name: "non-canonical remote space",
 			mutate: func(v *armnetwork.VirtualNetwork, _ *armcontainerservice.ManagedCluster) {
-				v.Properties.VirtualNetworkPeerings[0].Properties.UseRemoteGateways = new(true)
-			},
-		},
-		{
-			name: "local gateway",
-			mutate: func(v *armnetwork.VirtualNetwork, _ *armcontainerservice.ManagedCluster) {
-				v.Properties.Subnets = append(
-					v.Properties.Subnets, networkBoundarySubnet("GatewaySubnet", "10.2.1.0/27"),
-				)
-			},
-		},
-		{
-			name: "route server",
-			mutate: func(v *armnetwork.VirtualNetwork, _ *armcontainerservice.ManagedCluster) {
-				v.Properties.Subnets = append(
-					v.Properties.Subnets, networkBoundarySubnet("RouteServerSubnet", "10.2.1.0/27"),
-				)
+				v.Properties.VirtualNetworkPeerings[0].Properties.RemoteAddressSpace = networkBoundaryAddressSpace("10.7.0.1/16")
 			},
 		},
 	} {

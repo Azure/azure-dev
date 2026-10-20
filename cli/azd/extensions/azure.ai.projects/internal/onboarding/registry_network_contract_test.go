@@ -23,7 +23,7 @@ func registryPathEvidence(request NetworkRequest) NetworkEvidence {
 		Description: "offline source-bound path evidence", ExistingWorkload: true,
 		DNSVerified: true, TCP443Verified: true, TLSVerified: true,
 		EffectiveRoutesVerified: true, EffectivePolicyVerified: true, StorageServiceTagCoverage: true,
-		ConnectedAddressSpacesKnown: true, PrivateEndpointDNSVerified: true,
+		PrivateEndpointDNSVerified: true,
 	}
 }
 

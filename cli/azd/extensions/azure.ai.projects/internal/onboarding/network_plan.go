@@ -18,7 +18,7 @@ import (
 )
 
 // ResolveDefaultNetwork selects an unused private /27 in the qualifying pool's existing VNet.
-// Explicit subnet choices are preserved. Unsupported/opaque topology evidence remains a blocking error.
+// Explicit subnet choices are preserved. Required AKS, sibling-subnet and direct-peering metadata must be readable.
 func ResolveDefaultNetwork(
 	ctx context.Context, plan Plan, credential azcore.TokenCredential, options *arm.ClientOptions, journal Journal,
 ) (Plan, error) {
@@ -128,7 +128,7 @@ func ResolveDefaultNetwork(
 		}
 		prefix, _ := netip.ParsePrefix(resume.AddressPrefix)
 		if slices.ContainsFunc(occupied, prefix.Overlaps) {
-			return plan, fmt.Errorf("I03: recorded default subnet now overlaps AKS or connected address space")
+			return plan, fmt.Errorf("I03: recorded default subnet now overlaps AKS, sibling-subnet or direct-peering ranges")
 		}
 	}
 	plan.AgentSubnet = Resource{ID: subnetID, Parent: source.Parent.String(), Name: name}
@@ -188,10 +188,6 @@ func networkParentPrefixes(parent *armnetwork.VirtualNetwork) ([]netip.Prefix, e
 	}
 	var occupied []netip.Prefix
 	for _, subnet := range parent.Properties.Subnets {
-		if subnet != nil && (strings.EqualFold(resourceValue(subnet.Name), "GatewaySubnet") ||
-			strings.EqualFold(resourceValue(subnet.Name), "RouteServerSubnet")) {
-			return nil, fmt.Errorf("default topology does not support gateway or route-server address discovery")
-		}
 		prefixes, err := subnetPrefixes(subnet)
 		if err != nil {
 			return nil, fmt.Errorf("existing subnet prefix is unknown: %w", err)
@@ -217,14 +213,11 @@ func networkParentPrefixes(parent *armnetwork.VirtualNetwork) ([]netip.Prefix, e
 			}
 			for _, raw := range space.AddressPrefixes {
 				prefix, err := netip.ParsePrefix(resourceValue(raw))
-				if err != nil {
-					return nil, fmt.Errorf("connected peering prefix is invalid: %w", err)
+				if err != nil || prefix != prefix.Masked() {
+					return nil, fmt.Errorf("direct-peering prefix %q is invalid or not canonical", resourceValue(raw))
 				}
 				occupied = append(occupied, prefix)
 			}
-		}
-		if resourceBool(peering.Properties.AllowGatewayTransit) || resourceBool(peering.Properties.UseRemoteGateways) {
-			return nil, fmt.Errorf("default topology does not support gateway-transit address spaces")
 		}
 	}
 	return occupied, nil
@@ -271,7 +264,7 @@ func validateDefaultPrefix(parent armnetwork.VirtualNetwork, n SubnetPreparation
 		return fmt.Errorf("R06: current VNet address evidence is incomplete: %w", err)
 	}
 	if slices.ContainsFunc(occupied, prefix.Overlaps) {
-		return fmt.Errorf("R06: planned subnet overlaps a current subnet or connected network")
+		return fmt.Errorf("R06: planned subnet overlaps a current subnet or direct-peering VNet")
 	}
 	return nil
 }
@@ -341,5 +334,5 @@ func allocateAgentPrefix(parent *armnetwork.VirtualNetwork, occupied []netip.Pre
 			address = netip.AddrFrom4(bytes)
 		}
 	}
-	return netip.Prefix{}, fmt.Errorf("no unused private IPv4 /27 fits the known VNet and connected address spaces")
+	return netip.Prefix{}, fmt.Errorf("no unused private IPv4 /27 fits the AKS, sibling-subnet and direct-peering inventory")
 }

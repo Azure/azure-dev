@@ -563,29 +563,62 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Invoking agents over A2A
 
-Use `--protocol a2a` to invoke a deployed agent through the A2A translation
-endpoint. For a plain message, `--a2a-version` selects the request format:
-`1.0` (the default) or `0.3`.
+Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
+agent using public A2A version `1.0` or `0.3`:
 
 ```bash
-# Plain message translated using A2A 1.0 by default
-azd ai agent invoke --protocol a2a "Hello!"
+# Explicitly select the public A2A request version
+azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
+azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+```
 
-# Explicitly select the A2A request version
-azd ai agent invoke --protocol a2a --a2a-version 1.0 "Hello!"
-azd ai agent invoke --protocol a2a --a2a-version 0.3 "Hello!"
+These are public A2A protocol versions, not Foundry API versions or deployed
+agent versions. See the pinned [A2A 1.0 versioning specification](https://a2a-protocol.org/v1.0.0/specification/#36-versioning)
+and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
+
+For plain messages, azd composes both the version-specific JSON-RPC body and
+the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
+default when `--a2a-version` is omitted:
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
 ```
 
 **File input requires an explicit version.** When using `--input-file` (`-f`)
 with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
-agent configuration declares an A2A version. No version is inferred from the
-agent configuration or request body.
+native A2A agent YAML declares a version. No heuristic infers the version
+from agent configuration or the request body.
 
 The file must contain a complete public JSON-RPC request for the selected A2A
 version, not a version envelope. The CLI sends the file bytes unchanged; it
-does not wrap, rewrite, or convert the body. Matching `--a2a-version` to the
-body is the caller's responsibility. For example, save this A2A 0.3 request as
-`a2a-request.json`:
+does not wrap, rewrite, or convert the body. The caller must match the body
+to `--a2a-version`, which selects the `A2A-Version` header. For example, save
+this complete A2A 1.0 request as `a2a-request-1.0.json`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "hello-message-1",
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello!"}]
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text"],
+      "returnImmediately": false
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke -p a2a --a2a-version 1.0 --input-file a2a-request-1.0.json
+```
+
+For A2A 0.3, save this request as `a2a-request-0.3.json` instead:
 
 ```json
 {
@@ -594,22 +627,28 @@ body is the caller's responsibility. For example, save this A2A 0.3 request as
   "method": "message/send",
   "params": {
     "message": {
-      "role": "user",
+      "kind": "message",
       "messageId": "hello-message-1",
+      "role": "user",
       "parts": [{"kind": "text", "text": "Hello!"}]
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text"],
+      "blocking": true
     }
   }
 }
 ```
 
 ```bash
-azd ai agent invoke --protocol a2a --a2a-version 0.3 --input-file a2a-request.json
+azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
 ```
 
 `--a2a-version` is valid only for A2A; do not use it with Responses or
 Invocations. It is separate from `--version`, which continues to select a
-**deployed agent version**, not an A2A protocol version. A2A invocation remains
-remote-only (`--local` is not supported).
+**deployed agent version**, not an A2A protocol version. This CLI does not
+support A2A invocation with `--local`; this is a CLI limitation, not a
+restriction of the A2A protocol.
 
 ## Invoke latency diagnostics
 

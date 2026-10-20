@@ -161,8 +161,8 @@ Use the full project resource ID before adding managed deployments.
 
 ### Host agents on a customer-owned AKS cluster
 
-For a newly created Foundry account, set `agentHosting` on the `azure.ai.project`
-service:
+For a newly created Foundry account, the experimental `agentHosting` input on the
+`azure.ai.project` service identifies the customer-owned cluster:
 
 ```yaml
 infra:
@@ -172,20 +172,92 @@ services:
   my-project:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: ${AZURE_AKS_CLUSTER_ID}
-      agentSubnetResourceId: ${AZURE_AGENT_SUBNET_ID}
-      hostingManagementIdentityResourceId: ${AZURE_HOSTING_MANAGEMENT_IDENTITY_ID}
-      storageAccountResourceId: ${AZURE_HOSTED_AGENTS_STORAGE_ID}
-      workloadIdentityResourceId: ${AZURE_HOSTED_AGENTS_WORKLOAD_IDENTITY_ID}
 ```
 
-The referenced cluster, agent subnet, storage account, and two user-assigned managed
-identities must already exist. The storage account must be in the same
-subscription and region as the AKS cluster, and its data-plane endpoint must be
-reachable from the workload network. The hosting management identity is
-attached to the Foundry account automatically.
+`hostingType` defaults to `ManagedCluster` and `name` to `aks`. Optional
+`storageAccountResourceId` and `agentSubnetResourceId` select existing resources.
+Select an existing container registry through `AZURE_CONTAINER_REGISTRY_RESOURCE_ID`.
+Explicitly empty, null, or malformed resource selections are errors. The public
+`hostingManagementIdentityResourceId` and `workloadIdentityResourceId` properties
+are rejected, including empty or null values: preparation owns two distinct
+user-assigned identities.
+
+The workflow is `azd init`, `azd provision`, then `azd deploy`. Provision first
+collects read-only resource and scoped authorization evidence. Mandatory `FAIL`
+or `UNVERIFIED` results stop dependency creation and Foundry deployment. Preview
+does not create identities, grants, or other resources. Referenced subscriptions
+must have the same owning tenant; same-tenant cross-subscription references are
+not rejected merely for using different subscriptions.
+
+Permission checks include the selected standard-template model deployments,
+project connections and target-scope nested deployments, the future project's
+registry grant, and the existing optional developer Cognitive Services User
+assignment with its actual recipient and principal type. A future project
+principal remains unknown during conditional-delegation checks.
+
+**This onboarding path is not production-ready.** An authoritative read-only
+private-preview admission contract and supported source-bound network evidence
+are not available in the production adapters. ARM readability, deployment
+validation, role assignment readback, and local connectivity are not substitutes
+for those gates. Provision therefore reports these missing contracts rather than
+claiming a successful onboarding. Terraform eject is unavailable for this path
+because it cannot run the required extension preparation lifecycle.
+
+When no agent subnet is supplied, the bounded default topology plans an unused
+private IPv4 `/27` in the qualifying agent pool's existing VNet, in the target
+region. Its address inventory includes current subnets, AKS Pod/Service ranges,
+and known connected peering ranges. Gateway-transit and route-server topologies
+are not supported by this resolver. Preparation creates only that journaled
+subnet with the `Microsoft.App/environments` delegation; it does not rewrite
+existing subnets, routes, NSGs, peerings, AKS settings, or network policy.
+New paths still need source-bound verification after creation. Broader selected
+private-network mutations require administrator preparation.
+
+After all preflight gates pass, preparation creates or resumes only its journaled,
+owner-tagged dependencies and exact scoped grants. Missing Storage and registry
+resources are created with safe defaults; supplied resources are not rewritten.
+Actual Storage, companion-subnet, and registry paths require post-creation network
+evidence before deployment. Registry checks cover source-bound DNS, TCP 443, and
+TLS to its login server and all enabled dedicated data endpoints; this does not
+establish kubelet image-pull authorization or data-plane role propagation.
+Storage does not need to be dedicated to this workflow. Preserve the environment
+value `AZD_FOUNDRY_BYO_AKS_PREPARATION`: it records owned resource IDs and grant
+intent/results for interrupted-operation recovery, not credentials or proof of
+data-plane propagation. Final template binding preserves existing resource-group
+tags across retries while honoring explicit customer tag changes. Conflicting
+private ownership tags, including case-insensitive aliases, are rejected.
+Provision uses two internal ARM stages: create the owned account/project, prepare
+its actual managed identity's journaled registry grant, then configure its
+registry connection. This adds no user command. The private account target,
+deployment attempts and ownership markers are persisted for recovery.
+BYO on-disk Bicep must retain the standard deployment resource bindings;
+supported selections belong in configuration or parameter inputs. Altered
+templates are rejected before preparation. The actual ARM template hash and
+target parameters must match the persisted attempt before cleanup; a planned
+account's absence alone is not sufficient evidence. Explicit resource-group and
+location parameters must agree with the environment's resolved target.
+Foundry failures retain nested deployment-operation errors and correlation IDs;
+unavailable diagnostic reads are reported separately from the original failure.
+
+`azd down` uses the persisted ownership journal even if the current hosting
+configuration changes. It never deletes the resource group. It first verifies
+terminal deployment evidence, inventories projects and model deployments, deletes
+only tracked models, and confirms deletion of the owned account. Service-owned
+federated credentials must disappear before dependency grants are removed; azd
+does not delete those credentials itself. Cleanup then deletes only proven-owned
+assignments, identities, Storage, registry and prepared subnet IDs. Supplied
+resources, reused customer grants and later-added resource-group resources are
+preserved. Unknown ownership, an active deployment, unexpected account children,
+or an in-use/changed subnet stops cleanup and retains the recoverable journal.
+Progress survives permission failures and interruption; retry `azd down` after
+resolving the reported condition.
+
+Normal account deletion is soft deletion and can reserve the name for 48 hours.
+Only explicit `azd down --purge` requests irreversible purge; model deployments
+are removed first to avoid charges persisting through soft deletion. Journals
+from versions without authoritative Foundry lifecycle evidence are rejected
+rather than used to infer account absence or delete dependencies.
 
 Foundry agent hosting configuration is fixed when the account is created. It
 cannot be added to an existing account or changed after creation, so

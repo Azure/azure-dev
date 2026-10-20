@@ -210,6 +210,12 @@ Metadata requests are unauthenticated when no matching token is set.
 > **Note**: These variables are defined and consumed by individual azd extensions. As the extension
 > ecosystem grows, extension-specific variables may move to each extension's own documentation.
 
+### azure.ai.projects
+
+| Variable | Description |
+| --- | --- |
+| `AZD_FOUNDRY_BYO_AKS_PREPARATION` | Internal JSON ownership journal in the active azd environment for interrupted BYO-AKS dependency preparation. Read and written through the azd environment service, not directly from the host shell. Contains resource IDs, identity metadata, and scoped grant intent/results; preserve it for recovery. See the [Projects extension reference](../extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) for the experimental workflow's evidence and cleanup limitations. |
+
 ### azure.ai.agents
 
 | Variable | Description |

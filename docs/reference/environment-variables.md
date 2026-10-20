@@ -1,5 +1,10 @@
 # Environment Variables
 
+The experimental Projects BYO-AKS preparation journal
+`AZD_FOUNDRY_BYO_AKS_PREPARATION` is persisted through the azd environment service,
+not read directly from the host shell. Preserve it for interrupted-operation
+recovery. See the [canonical extension-specific reference](../../cli/azd/docs/environment-variables.md#azureaiprojects).
+
 Environment variables that configure Azure Developer CLI behavior. These can be set in your shell, CI/CD pipeline, or `.env` files.
 
 ## Feature Flags

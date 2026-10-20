@@ -78,6 +78,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
+| [Projects BYO-AKS simplified onboarding](../../cli/azd/extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) | In development; production admission and source-bound network evidence unavailable |
 
 ## Extension gRPC Contracts
 

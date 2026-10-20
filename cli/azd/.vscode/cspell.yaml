@@ -1,5 +1,29 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - ABAC
+  - armcompute
+  - armnetwork
+  - armprivatedns
+  - armstorage
+  - byoaks
+  - foranyofanyvalues
+  - guidequals
+  - journaled
+  - kata
+  - katagen
+  - kubelet
+  - kubeletidentity
+  - ossku
+  - parseable
+  - principalid
+  - principaltype
+  - privatedns
+  - readback
+  - roleassignments
+  - roledefinitionid
+  - SNAT
+  - stringequals
+  - stringequalsignorecase
   - braydonk
   - osutil
   - upserted

@@ -28,16 +28,16 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 	}{
 		{"default", "", "", "SendMessage", "ROLE_USER",
 			map[string]any{"text": "Hello!"},
-			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text"}}},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
 		{"1.0", "1.0", "", "SendMessage", "ROLE_USER",
 			map[string]any{"text": "Hello!"},
-			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text"}}},
+			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
 		{"0.3", "0.3", "", "message/send", "user",
 			map[string]any{"kind": "text", "text": "Hello!"},
-			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text"}}},
+			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text/plain"}}},
 		{"explicit wins", "0.3", "1.0", "message/send", "user",
 			map[string]any{"kind": "text", "text": "Hello!"},
-			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text"}}},
+			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text/plain"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()

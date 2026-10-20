@@ -496,7 +496,7 @@ this complete A2A 1.0 request as `a2a-request-1.0.json`:
       "parts": [{"text": "Hello!"}]
     },
     "configuration": {
-      "acceptedOutputModes": ["text"],
+      "acceptedOutputModes": ["text/plain"],
       "returnImmediately": false
     }
   }
@@ -522,7 +522,7 @@ For A2A 0.3, save this request as `a2a-request-0.3.json` instead:
       "parts": [{"kind": "text", "text": "Hello!"}]
     },
     "configuration": {
-      "acceptedOutputModes": ["text"],
+      "acceptedOutputModes": ["text/plain"],
       "blocking": true
     }
   }

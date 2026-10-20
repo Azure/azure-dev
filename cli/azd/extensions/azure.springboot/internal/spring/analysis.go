@@ -267,19 +267,20 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 		chatDeploymentProperty,
 		embeddingDeploymentProperty,
 	}
-	active := slices.ContainsFunc(properties, func(key string) bool {
-		value, present := c.raw(key)
-		return present && strings.TrimSpace(value.text) != ""
-	})
-	chatModel, chatModelPresent, err := resolvedProvider(c, chatModelProperty)
+	sharedConfigured := configuredProperty(c, endpointProperty) || configuredProperty(c, apiKeyProperty)
+	chatConfigured := configuredProperty(c, chatDeploymentProperty)
+	embeddingConfigured := configuredProperty(c, embeddingDeploymentProperty)
+	chatModel, chatModelPresent, err := resolvedProvider(
+		c, chatModelProperty, sharedConfigured || chatConfigured)
 	if err != nil {
 		return nil, err
 	}
-	embeddingModel, embeddingModelPresent, err := resolvedProvider(c, embeddingModelProperty)
+	embeddingModel, embeddingModelPresent, err := resolvedProvider(
+		c, embeddingModelProperty, embeddingConfigured)
 	if err != nil {
 		return nil, err
 	}
-	active = active ||
+	active := sharedConfigured || chatConfigured || embeddingConfigured ||
 		chatModelPresent && strings.EqualFold(chatModel, azureOpenAIProvider) ||
 		embeddingModelPresent && strings.EqualFold(embeddingModel, azureOpenAIProvider)
 	if !active {
@@ -289,8 +290,6 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 		return nil, unsupportedConfiguration(
 			"Azure OpenAI configuration requires org.springframework.ai:spring-ai-starter-model-azure-openai")
 	}
-	chatConfigured := configuredProperty(c, chatDeploymentProperty)
-	embeddingConfigured := configuredProperty(c, embeddingDeploymentProperty)
 	if chatConfigured && chatModelPresent && !strings.EqualFold(chatModel, azureOpenAIProvider) {
 		return nil, unsupportedConfiguration(
 			"%s cannot configure Azure OpenAI while %s selects %s",
@@ -374,12 +373,15 @@ func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 	}, nil
 }
 
-func resolvedProvider(c *configuration, property string) (string, bool, error) {
+func resolvedProvider(c *configuration, property string, required bool) (string, bool, error) {
 	if _, present := c.raw(property); !present {
 		return "", false, nil
 	}
 	value, err := c.resolve(property)
 	if err != nil {
+		if _, missing := errors.AsType[*missingInput](err); missing && !required {
+			return "", false, nil
+		}
 		return "", true, err
 	}
 	return strings.TrimSpace(value), true, nil

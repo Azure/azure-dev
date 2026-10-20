@@ -230,6 +230,48 @@ func TestAnalyzeFoundryAcceptsAzureChatModelSelector(t *testing.T) {
 	require.NotNil(t, application.Foundry)
 }
 
+func TestAnalyzeProjectIgnoresUnresolvedNonAzureModelSelectors(t *testing.T) {
+	for _, property := range []string{"spring.ai.model.chat", "spring.ai.model.embedding"} {
+		t.Run(property, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				property+"=${AI_PROVIDER}\n")
+
+			analysis, err := AnalyzeProject(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, "")}, DeploymentInputs{})
+			require.NoError(t, err)
+			require.Empty(t, analysis.Diagnostics)
+			require.Empty(t, analysis.Decisions)
+			require.Empty(t, analysis.Bindings)
+			require.Empty(t, analysis.Resources)
+		})
+	}
+}
+
+func TestAnalyzeFoundryRequiresResolvedSelectorWithAzureEvidence(t *testing.T) {
+	for _, tt := range []struct {
+		property   string
+		deployment string
+	}{
+		{"spring.ai.model.chat", "spring.ai.azure.openai.chat.options.deployment-name=chat\n"},
+		{"spring.ai.model.embedding", "spring.ai.azure.openai.embedding.options.deployment-name=embeddings\n"},
+	} {
+		t.Run(tt.property, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, "src/main/resources/application.properties",
+				tt.property+"=${AI_PROVIDER}\n"+tt.deployment)
+			model := effectiveModel(t, directory,
+				dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))
+
+			application, err := Analyze(t.Context(), directory, staticResolver{model: model}, envLookup(nil))
+			require.ErrorContains(t, err, "AI_PROVIDER")
+			require.Nil(t, application)
+		})
+	}
+}
+
 func TestAnalyzeFoundryRejectsConflictingEmbeddingModelSelector(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")

@@ -275,6 +275,12 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/exec/cmdtree_processes_darwin.go
+    words:
+      - Eproc
+      - Kinfo
+      - procargs
+      - Ucred
   - filename: pkg/tools/dotnet/dotnet.go
     words:
       - PWORD

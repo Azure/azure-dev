@@ -129,7 +129,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 | Check | What It Does | Severity |
 |---|---|---|
-| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and checks `roleAssignments/write` permission on the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical warning |
+| Missing role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` and checks `roleAssignments/write` permission on the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical only when a snapshot assignment explicitly targets that subscription scope; otherwise regular warning |
 | Conditional role assignment permissions | Warns when all roles granting the required permission have ABAC conditions. Diagnostic: `role_assignment_conditional`. | Warning |
 | Reserved resource names | Checks predicted resource names against Azure's reserved-word restrictions. Diagnostic: `reserved_resource_name`. | Warning |
 | AI model availability | Checks whether the requested model, SKU, and version exist in the deployment location's catalog. Diagnostic: `ai_model_not_found`. | Warning |
@@ -139,7 +139,7 @@ validator.AddCheck(ProvisionValidationCheck{
 
 Results are displayed using the `ProvisionValidationReport` UX component (`pkg/output/ux/provision_validation_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors.
 
-Regular warnings use `(!) Warning:`. Every built-in missing-role-permission finding from the existing subscription check uses a bold yellow `(!) Critical warning:` heading, regardless of the snapshot assignment scope. There is no verified/unverified scope split and no new scope-specific permission lookup. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Conditional-permission and extension findings remain regular warnings.
+Regular warnings use `(!) Warning:`. The built-in missing-role-permission finding uses a bold yellow `(!) Critical warning:` heading only when a snapshot role assignment explicitly targets the subscription scope checked by the permission lookup. Matching subscription scopes is case-insensitive and ignores trailing slashes. Cross-subscription, resource-group, resource-level, tenant, management-group, unresolved, and absent scopes remain regular warnings because permissions at those actual scopes were not verified. These warnings say that target-scope permissions were not verified rather than asserting missing permissions or likely deployment failure. The lookup remains subscription-only; this conservative fallback does not add scope-specific permission checks, and Azure remains authoritative for other assignment scopes. If a report contains both checked and unchecked assignment scopes, a missing permission at the checked scope is still critical. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Conditional-permission and extension findings remain regular warnings.
 
 Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation: `2 critical warnings found.` when all warnings are critical, `2 warnings found (1 critical).` for mixed warnings, or `2 warnings found.` for regular-only warnings. A single finding uses `1 critical warning found.` or `1 warning found.`.
 
@@ -174,7 +174,7 @@ Validating deployment
 ? Proceed with deployment anyway? [Y/n]
 ```
 
-When the report contains the built-in missing-role-permission warning, the prompt changes to `Deployment will likely fail. Proceed anyway?` with a bold yellow message. The `?` marker, `[y/N]` choices, and answer retain azd's standard blue prompt styling. The default is **No**, even when other regular warnings are also present:
+When the report contains a critical missing-role-permission warning at a checked assignment scope, the prompt changes to `Deployment will likely fail. Proceed anyway?` with a bold yellow message. The `?` marker, `[y/N]` choices, and answer retain azd's standard blue prompt styling. The default is **No**, even when other regular warnings are also present:
 
 ```
 Validating deployment
@@ -421,7 +421,7 @@ disables both dispatch sites). Registration still requires the
 
 Both dispatch sites use the same warning layout, per-report totals, and confirmation
 wording. Extension findings remain regular warnings and default to Yes. Only the
-built-in Bicep missing-role-permission finding sets critical warning metadata,
+built-in Bicep missing-role-permission finding at a checked assignment scope sets critical warning metadata,
 which changes that report's confirmation default to No, including with `--no-prompt`.
 
 ### Extension Code Example

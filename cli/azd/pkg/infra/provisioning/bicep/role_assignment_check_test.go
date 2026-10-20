@@ -125,7 +125,12 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(),
-				&validationContext{Props: resourcesProperties{HasRoleAssignments: true}})
+				&validationContext{
+					Props: resourcesProperties{HasRoleAssignments: true},
+					SnapshotResources: []armTemplateResource{{
+						Type: "Microsoft.Authorization/roleAssignments", Scope: "/subscriptions/SUBSCRIPTION_ID",
+					}},
+				})
 			require.NoError(t, err)
 			require.Len(t, results, 1)
 			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
@@ -152,20 +157,20 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 
 func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 	tests := []struct {
-		name              string
-		critical          bool
-		crossSubscription bool
-		regular           bool
-		noPrompt          bool
-		realConsole       bool
-		input             string
-		answer            bool
-		wantDefault       bool
-		wantCancel        bool
-		wantError         bool
-		wantEOF           bool
-		wantSummary       string
-		wantOutcome       string
+		name        string
+		critical    bool
+		roleScope   *string
+		regular     bool
+		noPrompt    bool
+		realConsole bool
+		input       string
+		answer      bool
+		wantDefault bool
+		wantCancel  bool
+		wantError   bool
+		wantEOF     bool
+		wantSummary string
+		wantOutcome string
 	}{
 		{
 			name: "critical automation", critical: true, noPrompt: true,
@@ -178,9 +183,42 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
 		{
-			name: "cross-subscription automation", critical: true, crossSubscription: true, noPrompt: true,
-			wantError: true, wantSummary: "1 critical warning found.",
-			wantOutcome: provisionValidationOutcomeCanceledNoPrompt,
+			name: "cross-subscription automation", roleScope: new("/subscriptions/other-subscription"), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name:      "resource-group automation",
+			roleScope: new("/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name:      "resource automation",
+			roleScope: new("/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "unknown scope automation", roleScope: new(""), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "unresolved scope automation", roleScope: new("[subscription().id]"), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "cross-subscription interactive", roleScope: new("/subscriptions/other-subscription"), answer: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name: "mixed unverified automation", roleScope: new("/subscriptions/other-subscription"),
+			regular: true, noPrompt: true,
+			wantDefault: true, wantSummary: "2 warnings found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
 		{
 			name: "mixed automation", critical: true, regular: true, noPrompt: true,
@@ -253,10 +291,10 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 
 			resources := make([]armTemplateResource, 0, 2)
-			if tt.critical {
+			if tt.critical || tt.roleScope != nil {
 				scope := "/subscriptions/SUBSCRIPTION_ID"
-				if tt.crossSubscription {
-					scope = "/subscriptions/other-subscription"
+				if tt.roleScope != nil {
+					scope = *tt.roleScope
 				}
 				resources = append(resources, armTemplateResource{
 					Type: "Microsoft.Authorization/roleAssignments",
@@ -330,6 +368,9 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			require.Equal(t, tt.wantOutcome, outcome.Value.AsString())
 			if tt.noPrompt || tt.realConsole {
 				require.Contains(t, outputBuffer.String(), tt.wantSummary)
+				if !tt.critical {
+					require.NotContains(t, outputBuffer.String(), "Deployment will likely fail")
+				}
 			} else {
 				require.True(t, prompted)
 				require.Contains(t, strings.Join(mockContext.Console.Output(), "\n"), tt.wantSummary)
@@ -340,20 +381,28 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 
 func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 	tests := []struct {
-		name   string
-		scopes []string
+		name     string
+		scopes   []string
+		critical bool
 	}{
-		{name: "deployment subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}},
-		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}},
+		{name: "deployment subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}, critical: true},
+		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}, critical: true},
 		{name: "cross subscription", scopes: []string{"/subscriptions/other-subscription"}},
 		{name: "resource group", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"}},
 		{name: "resource", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"}},
+		{name: "tenant", scopes: []string{"/"}},
+		{name: "management group", scopes: []string{"/providers/Microsoft.Management/managementGroups/group"}},
 		{name: "unknown", scopes: []string{""}},
 		{name: "unresolved", scopes: []string{"[subscription().id]"}},
 		{name: "no snapshot"},
 		{
-			name:   "multiple scopes",
-			scopes: []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			name:     "checked and unchecked scopes",
+			scopes:   []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			critical: true,
+		},
+		{
+			name:   "multiple unchecked scopes",
+			scopes: []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"},
 		},
 	}
 	for _, tt := range tests {
@@ -371,8 +420,14 @@ func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, results, 1)
 			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
-			require.True(t, results[0].IsCritical)
-			require.Contains(t, results[0].Message, "Deployment will likely fail")
+			require.Equal(t, tt.critical, results[0].IsCritical)
+			if tt.critical {
+				require.Contains(t, results[0].Message, "Deployment will likely fail")
+			} else {
+				require.NotContains(t, results[0].Message, "Deployment will likely fail")
+				require.Contains(t, results[0].Message, "target scopes were not verified")
+				require.Contains(t, results[0].Suggestion, "at the scopes of the role assignments")
+			}
 		})
 	}
 }

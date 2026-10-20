@@ -277,7 +277,7 @@ func askOnePrompt(
 			// EOF leaves no further answer to read. Preserve the legacy default unless input is required.
 			if errors.Is(err, io.EOF) {
 				if requireInput {
-					return fmt.Errorf("confirmation requires a response: %w", io.EOF)
+					return io.EOF
 				}
 				*pResponse = defaultValue
 				return nil

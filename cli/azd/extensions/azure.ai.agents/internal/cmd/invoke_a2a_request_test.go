@@ -90,29 +90,40 @@ func TestA2AReadmeRequestsMatchWireFixtures(t *testing.T) {
 	t.Parallel()
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	require.NoError(t, err)
-	_, section, found := strings.Cut(string(readme), "## Invoking agents over A2A\n")
-	require.True(t, found)
-	section, _, _ = strings.Cut(section, "\n## ")
-	examples := regexp.MustCompile("(?s)```json\\n(.*?)\\n```").FindAllStringSubmatch(section, -1)
-	seen := map[string]bool{}
-	for _, example := range examples {
-		var request struct {
-			Method string `json:"method"`
-		}
-		require.NoError(t, json.Unmarshal([]byte(example[1]), &request))
-		var version string
-		switch request.Method {
-		case "message/send":
-			version = "0.3"
-		case "SendMessage":
-			version = "1.0"
-		default:
-			continue
-		}
-		golden, err := os.ReadFile(filepath.Join("testdata", "a2a", "request-"+version+".json"))
-		require.NoError(t, err)
-		require.JSONEq(t, string(golden), example[1], "README A2A %s request must remain usable", version)
-		seen[version] = true
+	lfReadme := strings.ReplaceAll(string(readme), "\r\n", "\n")
+	for _, tt := range []struct{ name, text string }{
+		{"LF", lfReadme},
+		{"CRLF", strings.ReplaceAll(lfReadme, "\n", "\r\n")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			// Windows checkouts may use CRLF; markdown and JSON semantics do not depend on it.
+			text := strings.ReplaceAll(tt.text, "\r\n", "\n")
+			_, section, found := strings.Cut(text, "## Invoking agents over A2A\n")
+			require.True(t, found)
+			section, _, _ = strings.Cut(section, "\n## ")
+			examples := regexp.MustCompile("(?s)```json\\n(.*?)\\n```").FindAllStringSubmatch(section, -1)
+			seen := map[string]bool{}
+			for _, example := range examples {
+				var request struct {
+					Method string `json:"method"`
+				}
+				require.NoError(t, json.Unmarshal([]byte(example[1]), &request))
+				var version string
+				switch request.Method {
+				case "message/send":
+					version = "0.3"
+				case "SendMessage":
+					version = "1.0"
+				default:
+					continue
+				}
+				golden, err := os.ReadFile(filepath.Join("testdata", "a2a", "request-"+version+".json"))
+				require.NoError(t, err)
+				require.JSONEq(t, string(golden), example[1], "README A2A %s request must remain usable", version)
+				seen[version] = true
+			}
+			require.Equal(t, map[string]bool{"0.3": true, "1.0": true}, seen)
+		})
 	}
-	require.Equal(t, map[string]bool{"0.3": true, "1.0": true}, seen)
 }

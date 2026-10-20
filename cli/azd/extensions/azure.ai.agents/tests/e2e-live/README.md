@@ -192,9 +192,14 @@ Logs for each run are published as the `tier2-live-logs-<BuildId>` artifact.
 2. **Service connection** — the `serviceConnection` parameter (default
   `azure-sdk-tests`) authenticates via OIDC / workload-identity federation.
   Its identity must already have access to the selected `subscriptionId`;
-  the parameter does not grant additional access. The identity needs enough RBAC to
-   create Foundry projects and deploy models (Contributor + Azure AI Developer +
-   Cognitive Services Contributor, or equivalent).
+  the parameter does not grant additional access. Resource provisioning needs
+  Contributor or equivalent scoped management permissions. Creating, reading,
+  and invoking agents additionally needs Foundry User (formerly Azure AI User,
+  role ID `53ca6127-db72-4b80-b1b0-d745d6d5456d`) or equivalent data permissions
+  at a scope covering the test project. Contributor and the older Azure AI
+  Developer role do not provide these Foundry agent data actions. Container
+  mode also needs permission to assign the project's identity AcrPull on ACR;
+  code mode skips that registry requirement, not the agent data permissions.
 3. **GitHub auth** — clones of the starter template use the azure-sdk org secret
    `azuresdk-github-pat` (already provided by the Azure SDK ADO project) to avoid
    anonymous rate limits, so no extra secret setup is required.

@@ -164,7 +164,6 @@ audio:
 `,
 			want: []string{
 				"outputModalities[0]",
-				"parallelToolCalls",
 				"maxOutputTokens",
 				"audio.input.noiseReduction.type",
 				"audio.input.turnDetection.type",

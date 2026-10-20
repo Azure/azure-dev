@@ -168,6 +168,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node
 					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						for _, field := range []string{
+							"subagent_config", "subagentConfig", "interim_response", "interimResponse",
+						} {
+							if _, ok := fields[field]; ok {
+								errors = append(errors,
+									field+" is not supported by this azd version; remove it or upgrade azd")
+							}
+						}
 						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
 							errors = append(errors,
 								"codeConfiguration is not supported for a prompt-voice agent; "+
@@ -242,15 +250,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model != nil {
 							errors = append(errors, "model is not allowed for hosted voice wrappers")
 						}
-						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
-							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
-							agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
-							agent.MaxOutputTokens != nil ||
-							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
+						if agent.Instructions != nil || len(agent.Tools) > 0 || agent.ToolChoice != nil {
 							errors = append(errors,
-								"inputSchema, outputSchema, instructions, structuredInputs, tools, toolChoice, "+
-									"parallelToolCalls, maxOutputTokens, include, and handoff belong to the "+
-									"target hosted agent")
+								"model, modelType, instructions, tools, and toolChoice belong to the target hosted agent")
 						}
 					} else {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
@@ -296,6 +298,10 @@ func isHostedVoiceWrapper(agent VoiceAgent) bool {
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	var errors []string
+	if agent.InputSchema != nil || agent.OutputSchema != nil {
+		errors = append(errors,
+			"inputSchema and outputSchema are not properties of the GA voice agent definition; remove them")
+	}
 	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
 		errors = append(errors, "outputModalities must not be empty when specified")
 	}
@@ -304,10 +310,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			errors = append(errors, fmt.Sprintf("outputModalities[%d] must not be blank", i))
 		}
 	}
-	if agent.ParallelToolCalls != nil {
+	if len(agent.Handoff) > 0 {
 		errors = append(errors,
-			"parallelToolCalls is not currently supported by the prompt voice runtime; "+
-				"remove it from the agent definition")
+			"handoff is not supported by the GA voice agent API; remove it and use telephony transferTargets where applicable")
 	}
 	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
 		errors = append(errors, err.Error())
@@ -352,6 +357,10 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			}
 			if strings.TrimSpace(voice.Name) == "" {
 				errors = append(errors, "audio.output.voice.name must not be blank")
+			}
+			if voice.Rate != nil && strings.TrimSpace(*voice.Rate) != "" {
+				errors = append(errors,
+					"audio.output.voice.rate is not supported by the GA voice agent API; use audio.output.speed")
 			}
 		}
 		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
@@ -637,8 +646,15 @@ func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
 	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
 		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
 	}
-	if format.Rate != nil && *format.Rate <= 0 {
-		errors = append(errors, path+".rate must be greater than 0")
+	if format.Rate != nil {
+		switch formatType {
+		case "audio/pcm":
+			if *format.Rate != 24000 {
+				errors = append(errors, path+".rate must be 24000 for audio/pcm")
+			}
+		case "audio/pcmu", "audio/pcma":
+			errors = append(errors, path+".rate must be omitted for G.711 audio/pcmu and audio/pcma")
+		}
 	}
 	return errors
 }

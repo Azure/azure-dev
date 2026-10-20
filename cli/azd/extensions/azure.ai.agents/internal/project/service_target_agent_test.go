@@ -25,6 +25,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -134,6 +135,7 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 			Name:    "voice-target",
 			Version: "deployed",
 		},
+		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 
@@ -158,6 +160,7 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *test
 			Name:    "voice-target",
 			Version: "deployed",
 		},
+		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 
@@ -180,6 +183,7 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_ConversationEngine(t *testin
 			Type: "hosted_agent",
 			Name: "voice-target",
 		},
+		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 	svc := &azdext.ServiceConfig{
@@ -256,6 +260,32 @@ func TestVoiceAgentFromResolvedServiceRejectsInvalidVoiceFields(t *testing.T) {
 	_, _, err = VoiceAgentFromResolvedService(svc, t.TempDir())
 	require.ErrorContains(t, err, "environmentVariables is not supported on voice agents")
 
+}
+
+func TestVoiceAgentFromResolvedServiceRejectsIgnoredServiceFields(t *testing.T) {
+	t.Parallel()
+	for _, source := range []string{"inline", "root-ref"} {
+		for _, field := range []string{"subagent_config", "subagentConfig", "interim_response", "interimResponse"} {
+			t.Run(source+"/"+field, func(t *testing.T) {
+				t.Parallel()
+				root := t.TempDir()
+				definition := map[string]any{
+					"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+					field: map[string]any{},
+				}
+				props := mustStruct(t, definition)
+				if source == "root-ref" {
+					data, err := yaml.Marshal(definition)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"), data, 0o600))
+					props = mustStruct(t, map[string]any{"$ref": "agent.yaml"})
+				}
+				svc := &azdext.ServiceConfig{Name: "voice", Host: "azure.ai.agent", AdditionalProperties: props}
+				_, _, err := VoiceAgentFromResolvedService(svc, root)
+				require.ErrorContains(t, err, field+" is not supported")
+			})
+		}
+	}
 }
 
 func TestHostedAgentInlineServicePropertiesRejectsHostedVoiceFields(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -18,24 +19,54 @@ var hostile = []string{
 	"my agent", "my-$USER", "it's", "tab\there", "back`tick`", "my~agent", "a;b", "$(echo x)",
 }
 
-func TestCdPOSIXRoundTrip(t *testing.T) {
+// lookPOSIXShell returns sh, skipping on Windows where sh on PATH is usually
+// a Git Bash shim with translated paths and argument parsing.
+func lookPOSIXShell(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX round-trip is not meaningful on Windows")
+	}
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("sh not installed")
 	}
+	return sh
+}
+
+// mkdirOrSkip creates root/name, skipping names the OS rejects (e.g. tabs on Windows).
+func mkdirOrSkip(t *testing.T, root, name string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" && strings.ContainsAny(name, "\t\n") {
+		t.Skipf("%q is not a valid Windows file name", name)
+	}
+	dir := filepath.Join(root, name)
+	require.NoError(t, os.Mkdir(dir, 0o750))
+	return dir
+}
+
+// requireSameDir compares directories after resolving symlinks and short names
+// (macOS /var -> /private/var, Windows 8.3 names).
+func requireSameDir(t *testing.T, want, got string) {
+	t.Helper()
+	wantResolved, err := filepath.EvalSymlinks(want)
+	require.NoError(t, err)
+	gotResolved, err := filepath.EvalSymlinks(got)
+	require.NoError(t, err, "got: %q", got)
+	require.Equal(t, wantResolved, gotResolved)
+}
+
+func TestCdPOSIXRoundTrip(t *testing.T) {
+	sh := lookPOSIXShell(t)
 	for _, name := range hostile {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o750))
+			dir := mkdirOrSkip(t, root, name)
 			script := Cd(name).Render(POSIX) + " && pwd -P"
 			cmd := exec.CommandContext(t.Context(), sh, "-c", script)
 			cmd.Dir = root
 			out, err := cmd.Output()
 			require.NoError(t, err, "script: %s", script)
-			want, err := filepath.EvalSymlinks(dir)
-			require.NoError(t, err)
-			require.Equal(t, want+"\n", string(out))
+			requireSameDir(t, dir, strings.TrimSuffix(string(out), "\n"))
 		})
 	}
 }
@@ -49,23 +80,19 @@ func TestCdPowerShellRoundTrip(t *testing.T) {
 	for _, name := range names {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o750))
+			dir := mkdirOrSkip(t, root, name)
 			script := Cd(name).Render(PowerShell) + "; (Get-Location).ProviderPath"
 			cmd := exec.CommandContext(t.Context(), pwsh, "-NoProfile", "-Command", script)
 			cmd.Dir = root
 			out, err := cmd.Output()
 			require.NoError(t, err, "script: %s", script)
-			require.Equal(t, dir, strings.TrimRight(string(out), "\r\n"))
+			requireSameDir(t, dir, strings.TrimRight(string(out), "\r\n"))
 		})
 	}
 }
 
 func TestGoQuoteIsNotShellSafe(t *testing.T) {
-	sh, err := exec.LookPath("sh")
-	if err != nil {
-		t.Skip("sh not installed")
-	}
+	sh := lookPOSIXShell(t)
 	root := t.TempDir()
 	name := "my-$USER"
 	require.NoError(t, os.Mkdir(filepath.Join(root, name), 0o750))
@@ -166,8 +193,7 @@ func TestPowerShellSplatAndCommaRoundTrip(t *testing.T) {
 	for _, name := range []string{"@splat", "a,b"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			dir := filepath.Join(root, name)
-			require.NoError(t, os.Mkdir(dir, 0o750))
+			dir := mkdirOrSkip(t, root, name)
 
 			unquoted := "cd " + name + "; (Get-Location).ProviderPath"
 			bad := exec.CommandContext(t.Context(), pwsh, "-NoProfile", "-Command", unquoted)
@@ -181,16 +207,13 @@ func TestPowerShellSplatAndCommaRoundTrip(t *testing.T) {
 			cmd.Dir = root
 			out, err := cmd.Output()
 			require.NoError(t, err, "script: %s", script)
-			require.Equal(t, dir, strings.TrimRight(string(out), "\r\n"))
+			requireSameDir(t, dir, strings.TrimRight(string(out), "\r\n"))
 		})
 	}
 }
 
 func TestCommandPOSIXRoundTrip(t *testing.T) {
-	sh, err := exec.LookPath("sh")
-	if err != nil {
-		t.Skip("sh not installed")
-	}
+	sh := lookPOSIXShell(t)
 	values := append([]string{"", "plain", "line\nbreak", `"double"`, `back\slash`, "*?[abc]", "x&y|z>out", "@splat", "a,b", "%PATH%", "!x!"}, hostile...)
 	args := []Arg{Lit("%s\\000")}
 	for _, value := range values {

@@ -304,7 +304,7 @@ func TestPlanAgentServiceUsesRejectsHostedVoiceNameCollision(t *testing.T) {
 				root := t.TempDir()
 				definition := loadAgentDependencyDefinition(t, root, "wrapper",
 					"kind: voice\nname: shared-agent\nconversationEngine:\n"+
-						"  type: hosted_agent\n  name: target\n")
+						"  type: hosted_agent\n  name: target\ngreeting:\n  text: Hello\n")
 				target := hostedAgentDependencyService(t, "target")
 				target.AdditionalProperties.Fields["name"] = structpb.NewStringValue(targetName)
 				if useRef {
@@ -348,6 +348,8 @@ conversationEngine:
   type: hosted_agent
   name: new-target
   version: deployed
+greeting:
+  text: Hello
 `)
 	oldAgent := agentDependencyService(t, "voice-wrapper", AiAgentHost, map[string]any{
 		"kind": "voice",
@@ -356,6 +358,7 @@ conversationEngine:
 			"type": "hosted_agent",
 			"name": "old-target",
 		},
+		"greeting": map[string]any{"text": "Hello"},
 	}, "old-target", "manual-agent", "project")
 	services := map[string]*azdext.ServiceConfig{
 		"project":       agentDependencyService(t, "project", AiProjectHost, nil),
@@ -386,6 +389,8 @@ name: voice-wrapper
 conversationEngine:
   type: hosted_agent
   name: target
+greeting:
+  text: Hello
 `
 	promptDefinition := func(extra string) string {
 		return `kind: prompt

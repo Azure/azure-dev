@@ -840,7 +840,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		out := buildVoiceConfig(name)
 		out.Style = voice.Style
 		out.Pitch = voice.Pitch
-		out.Rate = voice.Rate
 		out.Locale = voice.Locale
 		out.Volume = voice.Volume
 		return out
@@ -853,7 +852,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		Name:   name,
 		Style:  voice.Style,
 		Pitch:  voice.Pitch,
-		Rate:   voice.Rate,
 		Locale: voice.Locale,
 		Volume: voice.Volume,
 	}
@@ -915,13 +913,10 @@ func createVoiceAgentAPIRequest(
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
 		}
-		if voiceAgent.Model != nil || voiceAgent.InputSchema != nil || voiceAgent.OutputSchema != nil ||
-			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
-			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
-			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
+		if voiceAgent.Model != nil || voiceAgent.ModelType != "" || voiceAgent.Instructions != nil ||
+			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil {
 			return nil, fmt.Errorf(
-				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
-					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+				"model, model_type, instructions, tools, and tool_choice belong to the target hosted agent",
 			)
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
@@ -1000,7 +995,6 @@ func createVoiceAgentAPIRequest(
 		},
 		ModelType:          voiceWireModelType(modelType, hostedAgent),
 		Model:              modelID,
-		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
 		Instructions:       instructions,
 		StructuredInputs:   mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
@@ -1013,7 +1007,6 @@ func createVoiceAgentAPIRequest(
 				VoiceLocale: voiceWireLocale(outputVoice),
 				Style:       outputVoice.Style,
 				Pitch:       outputVoice.Pitch,
-				Rate:        outputVoice.Rate,
 				Volume:      outputVoice.Volume,
 				Speed:       outputSpeed,
 			},
@@ -1023,7 +1016,6 @@ func createVoiceAgentAPIRequest(
 		Tools:             voiceAgent.Tools,
 		Avatar:            voiceAgent.Avatar,
 		Greeting:          voiceAgent.Greeting,
-		Handoff:           voiceAgent.Handoff,
 		ToolChoice:        voiceAgent.ToolChoice,
 		ParallelToolCalls: voiceAgent.ParallelToolCalls,
 		MaxOutputTokens:   voiceAgent.MaxOutputTokens,

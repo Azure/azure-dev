@@ -1237,6 +1237,48 @@ func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
 	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
 }
 
+func TestVoiceAgentCreateUpdateBodiesHaveDefinitionParity(t *testing.T) {
+	t.Parallel()
+	definition := VoiceAgentDefinition{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice},
+		ModelType:       VoiceModelTypeManaged,
+		Model:           "gpt-realtime",
+		Audio: &VoiceAudioConfig{
+			Input: &VoiceInputConfig{Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}},
+			Output: &VoiceOutputConfig{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}, Speed: new(1.1),
+			},
+		},
+	}
+	client, transport := newCaptureClient(http.StatusOK,
+		`{"object":"agent","id":"va-1","name":"voice","versions":{"latest":{}}}`)
+	_, err := client.CreateVoiceAgent(t.Context(), &CreateAgentRequest{
+		Name: "voice", CreateAgentVersionRequest: CreateAgentVersionRequest{Definition: definition},
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	_, err = client.UpdateVoiceAgent(t.Context(), "voice", &UpdateAgentRequest{
+		Definition: definition,
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 2)
+
+	definitions := make([]any, 2)
+	for i, request := range transport.requests {
+		body, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		var wire map[string]any
+		require.NoError(t, json.Unmarshal(body, &wire))
+		definitions[i] = wire["definition"]
+	}
+	require.Equal(t, definitions[0], definitions[1])
+	definitionWire := definitions[0].(map[string]any)
+	require.NotContains(t, definitionWire, "target_agent")
+	require.NotContains(t, definitionWire, "handoff")
+	output := definitionWire["audio"].(map[string]any)["output"].(map[string]any)
+	require.Equal(t, 1.1, output["speed"])
+	require.NotContains(t, output, "rate")
+}
+
 func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {
 	body := `{"id":"twilio:%2B14255550123","provider":"twilio","identifier":"+14255550123"}`
 	client, transport := newCaptureClient(http.StatusOK, body)

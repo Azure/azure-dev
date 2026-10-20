@@ -56,6 +56,11 @@ before starting the extension. Inherited parent-process environment variables
 and azd launch/protocol variables are still passed. Explicit Environment gRPC
 calls are unaffected.
 
+Extension opt-ins can reuse the shared Alpha registry and its
+[additive snapshot evaluator](../../cli/azd/docs/alpha-features.md#additive-extension-opt-ins).
+That contract documents independent sources and the minimum host requirement
+for preserving positive process flags across direct and lifecycle launches.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project

@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -67,9 +69,24 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		options.Env = append(options.Env, fmt.Sprintf("AZD_ENVIRONMENT=%s", options.Environment))
 	}
 
+	// Retain machine opt-ins after project overrides.
+	env := options.Env
+	const featurePrefix = "AZD_FOUNDRY_EXT_ENABLE_"
+	for _, entry := range options.Env {
+		name, _, hasValue := strings.Cut(entry, "=")
+		if !hasValue || !strings.HasPrefix(name, featurePrefix) ||
+			name == featurePrefix || name == featurePrefix+"ALL" {
+			continue
+		}
+		value := os.Getenv(name)
+		if enabled, err := strconv.ParseBool(value); err == nil && enabled {
+			env = append(env, name+"="+value)
+		}
+	}
+
 	runArgs := exec.NewRunArgs(extensionPath, options.Args...)
-	if len(options.Env) > 0 {
-		runArgs = runArgs.WithEnv(options.Env)
+	if len(env) > 0 {
+		runArgs = runArgs.WithEnv(env)
 	}
 
 	if options.Interactive {

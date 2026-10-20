@@ -237,6 +237,33 @@ func Test_DefaultEnablement_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
+func Test_AlphaFeature_EnvironmentFalseOverrides(t *testing.T) {
+	const id = "test.core.override"
+	for _, key := range []string{"alpha." + id, "alpha.all"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("AZD_ALPHA_ENABLE_TEST.CORE.OVERRIDE", "false")
+			t.Setenv("AZD_ALPHA_ENABLE_TEST_CORE_OVERRIDE", "true")
+			userConfig := config.NewEmptyConfig()
+			require.NoError(t, userConfig.Set(key, "on"))
+			SetDefaultEnablement(id, true)
+			t.Cleanup(func() { ResetDefaultEnablement(id) })
+
+			manager := NewFeaturesManagerWithConfig(userConfig)
+			require.False(t, manager.IsEnabled(id))
+		})
+	}
+
+	t.Run("underscore env overrides default", func(t *testing.T) {
+		t.Setenv("AZD_ALPHA_ENABLE_TEST.CORE.OVERRIDE", "")
+		t.Setenv("AZD_ALPHA_ENABLE_TEST_CORE_OVERRIDE", "false")
+		SetDefaultEnablement(id, true)
+		t.Cleanup(func() { ResetDefaultEnablement(id) })
+
+		manager := NewFeaturesManagerWithConfig(config.NewEmptyConfig())
+		require.False(t, manager.IsEnabled(id))
+	})
+}
+
 func newFeatureManagerForTest(alphaFeatureResolver func() []Feature, config config.Config) *FeatureManager {
 	return &FeatureManager{
 		alphaFeaturesResolver: alphaFeatureResolver,

@@ -6,6 +6,7 @@ package extensions
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -455,4 +456,93 @@ func TestRunner_Invoke_EnsureInit_Called(t *testing.T) {
 	require.NotNil(t, ext.stdout)
 	require.NotNil(t, ext.stderr)
 	require.NotNil(t, ext.readySignal)
+}
+
+func TestRunner_Invoke_FeatureOptIns(t *testing.T) {
+	const featureEnv = "AZD_FOUNDRY_EXT_ENABLE_AGENTS_TEST"
+	const ordinaryEnv = "AZD_TEST_EXTENSION_ORDINARY"
+	const coreEnv = "AZD_ALPHA_ENABLE_TEST"
+	const infrastructureEnv = "AZD_FOUNDRY_PROJECT_NAME"
+	const allEnv = "AZD_FOUNDRY_EXT_ENABLE_ALL"
+	const legacyEnv = "AZD_AGENT_RESUME_SESSION_ON_DEPLOY"
+
+	tests := []struct {
+		name    string
+		machine string
+		project string
+		want    string
+	}{
+		{name: "machine true project false", machine: "true", project: "false", want: "true"},
+		{name: "machine false project true", machine: "false", project: "true", want: "true"},
+		{name: "machine true project empty", machine: "true", project: "", want: "true"},
+		{name: "machine true project invalid", machine: "true", project: "invalid", want: "true"},
+		{name: "machine 1 project off", machine: "1", project: "off", want: "1"},
+		{name: "machine false project false", machine: "false", project: "false", want: "false"},
+		{name: "machine invalid project false", machine: "invalid", project: "false", want: "false"},
+		{name: "machine off project empty", machine: "off", project: "", want: ""},
+	}
+
+	for _, mode := range []string{"command", "listen"} {
+		for _, tt := range tests {
+			t.Run(mode+"/"+tt.name, func(t *testing.T) {
+				configDir := t.TempDir()
+				t.Setenv("AZD_CONFIG_DIR", configDir)
+				t.Setenv("NO_COLOR", "1")
+				t.Setenv(featureEnv, tt.machine)
+				for _, name := range []string{ordinaryEnv, coreEnv, infrastructureEnv, allEnv, legacyEnv} {
+					t.Setenv(name, "true")
+				}
+
+				binary, err := os.Executable()
+				require.NoError(t, err)
+				extensionPath, err := filepath.Rel(configDir, binary)
+				require.NoError(t, err)
+				extension := &Extension{Id: "test-env", Path: extensionPath}
+
+				env := []string{
+					"AZD_TEST_EXTENSION_ENV_CHILD=true",
+					"AZD_TEST_EXTENSION_EXPECTED_OPT_IN=" + tt.want,
+					featureEnv + "=" + tt.project,
+				}
+				for _, name := range []string{ordinaryEnv, coreEnv, infrastructureEnv, allEnv, legacyEnv} {
+					env = append(env, name+"=false")
+				}
+				if mode == "command" {
+					env = append(os.Environ(), env...)
+				}
+
+				var childOutput bytes.Buffer
+				runner := NewRunner(exec.NewCommandRunner(&exec.RunnerOptions{
+					Stdin: strings.NewReader(""), Stdout: &childOutput, Stderr: io.Discard,
+				}))
+				result, err := runner.Invoke(t.Context(), extension, &InvokeOptions{
+					Args:        []string{"-test.run=^TestRunner_FeatureEnvChild$", "-test.v", "--", mode},
+					Env:         env,
+					Interactive: mode == "command",
+				})
+				require.NoError(t, err, "child result: %+v; stdout: %s", result, childOutput.String())
+				require.Zero(t, result.ExitCode)
+				require.Contains(t, childOutput.String()+result.Stdout, "verified extension environment")
+				require.Equal(t, tt.machine, os.Getenv(featureEnv))
+			})
+		}
+	}
+}
+
+func TestRunner_FeatureEnvChild(t *testing.T) {
+	if os.Getenv("AZD_TEST_EXTENSION_ENV_CHILD") != "true" {
+		return
+	}
+
+	require.Equal(t, os.Getenv("AZD_TEST_EXTENSION_EXPECTED_OPT_IN"), os.Getenv("AZD_FOUNDRY_EXT_ENABLE_AGENTS_TEST"))
+	for _, name := range []string{
+		"AZD_TEST_EXTENSION_ORDINARY",
+		"AZD_ALPHA_ENABLE_TEST",
+		"AZD_FOUNDRY_PROJECT_NAME",
+		"AZD_FOUNDRY_EXT_ENABLE_ALL",
+		"AZD_AGENT_RESUME_SESSION_ON_DEPLOY",
+	} {
+		require.Equal(t, "false", os.Getenv(name), name)
+	}
+	t.Log("verified extension environment")
 }

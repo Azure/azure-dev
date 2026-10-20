@@ -60,6 +60,11 @@ Go extensions can opt into beta structured messages for service
 [contract versioning](../../cli/azd/docs/extensions/contract-versioning.md)
 for the stream requirements and legacy-client behavior.
 
+For experimental extension features, reuse the shared Alpha registry and
+[additive opt-in primitives](../../cli/azd/docs/alpha-features.md#additive-extension-opt-ins).
+Keep source maps independent, propagate loading errors, and require a host
+release that preserves process opt-ins before relying on that guarantee.
+
 ### 4. Build
 
 ```bash

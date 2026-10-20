@@ -347,8 +347,14 @@
           "anyOf": [
             { "required": ["model"] },
             { "required": ["modelType"] },
-      { "required": ["inputSchema"] },
-      { "required": ["outputSchema"] },
+            { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] },
+            { "required": ["codeConfiguration"] },
+            { "required": ["sessionConfiguration"] },
+            { "required": ["environmentVariables"] },
+            { "required": ["policies"] },
+            { "required": ["protocols"] },
+            { "required": ["toolbox"] },
             { "required": ["instructions"] },
             { "required": ["tools"] },
       { "required": ["toolChoice"] }

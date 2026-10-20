@@ -101,7 +101,6 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 			Name:    "voice-target",
 			Version: "deployed",
 		},
-		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 
@@ -126,7 +125,6 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *test
 			Name:    "voice-target",
 			Version: "deployed",
 		},
-		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 
@@ -149,7 +147,6 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_ConversationEngine(t *testin
 			Type: "hosted_agent",
 			Name: "voice-target",
 		},
-		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}, nil)
 	require.NoError(t, err)
 	svc := &azdext.ServiceConfig{

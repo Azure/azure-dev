@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -117,6 +118,19 @@ func resolvePromptAgentService(
 	// non-existent one, yielding an HTML 404 the client cannot parse.
 	if _, mapErr := project.ResolvePromptTargetFromEnv(settings, envValues); mapErr != nil {
 		return nil, false, mapErr
+	}
+
+	// Use the deployment deploy resolved for this environment, so requests that
+	// name the model match the deployed agent.
+	if proj != nil {
+		model, modelErr := project.ResolvePromptAgentModel(
+			agentDef.Model, svc, proj.GetServices(), projectPath, envValues,
+		)
+		if modelErr != nil {
+			log.Printf("resolving prompt agent model for %q: %v", svc.GetName(), modelErr)
+		} else {
+			agentDef.Model = model
+		}
 	}
 
 	pctx := &promptServiceContext{

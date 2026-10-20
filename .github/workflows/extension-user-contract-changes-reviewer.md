@@ -20,7 +20,7 @@ engine:
   model: copilot/gpt-5.6-sol
   args: ["--effort", "medium"]
 skills:
-  - Azure/azure-dev/.github/skills/azd-code-reviewer@f94124ba3dd65e7bf2db762cdd743e60807e58eb
+  - Azure/azure-dev/.github/skills/azd-code-reviewer@main
 strict: true
 network:
   allowed: [defaults, github, go]

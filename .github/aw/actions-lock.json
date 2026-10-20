@@ -1,5 +1,10 @@
 {
   "entries": {
+    "Azure/azure-dev/.github/skills/azd-code-reviewer@main": {
+      "repo": "Azure/azure-dev/.github/skills/azd-code-reviewer",
+      "version": "main",
+      "sha": "91f71ba0a39e31039379fcf11ff282ebf51cff0d"
+    },
     "github/gh-aw-actions/setup-cli@v0.91.5": {
       "repo": "github/gh-aw-actions/setup-cli",
       "version": "v0.91.5",

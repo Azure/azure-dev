@@ -4,6 +4,7 @@
 package onboarding
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"slices"
@@ -71,6 +72,44 @@ func selectedOperationAuthorizer(t *testing.T, scope, excluded, condition string
 		return contractARMResponse(request, 200, body), nil
 	})
 	return &scopedAuthorizer{credential: contractCredential{}, options: onboardingARMOptions(options)}
+}
+
+func TestMissingSelectedStandardTemplateActionStopsPreparation(t *testing.T) {
+	plan := selectedDeploymentContract(t, true, "User")
+	for _, selected := range []struct{ action, scope string }{
+		{"Microsoft.CognitiveServices/accounts/projects/connections/write", plan.Hosting.Parent},
+		{"Microsoft.CognitiveServices/accounts/deployments/write", plan.Hosting.Parent},
+		{"Microsoft.Resources/deployments/write", plan.Hosting.Parent},
+		{roleAssignmentWrite, plan.Hosting.Parent},
+	} {
+		t.Run(selected.action+"/"+selected.scope, func(t *testing.T) {
+			index := slices.IndexFunc(plan.Operations, func(op Operation) bool {
+				return op.Action == selected.action && op.Scope == selected.scope
+			})
+			require.NotEqual(t, -1, index)
+			op := plan.Operations[index]
+			auth := selectedOperationAuthorizer(t, op.Scope, op.Action, "")
+			status, reason, err := auth.evaluate(t.Context(), callerIdentity{objectID: "operator"}, op)
+			require.NoError(t, err)
+			require.Equal(t, Fail, status, reason)
+			pipeline := Pipeline{
+				Resources: contractResources(func(context.Context, Plan) (Facts, Report, error) { return Facts{}, nil, nil }),
+				Access: contractAccess(func(context.Context, Plan, Facts) (Report, error) {
+					return Report{{ID: "P09", Scope: op.Scope, Status: status, Mandatory: true,
+						Expected: op.Action, Observed: reason}}, nil
+				}),
+				Prepare: contractPreparer(func(context.Context, Plan, Facts) (Prepared, error) {
+					t.Fatal("missing selected template action must block before resource preparation")
+					return Prepared{}, nil
+				}),
+			}
+			_, err = pipeline.Run(t.Context(), plan, false, func(context.Context, Prepared) error {
+				t.Fatal("missing selected action must not reach Foundry")
+				return nil
+			})
+			require.Error(t, err)
+		})
+	}
 }
 
 func TestDeveloperDelegationUsesActualRoleRecipientAndType(t *testing.T) {

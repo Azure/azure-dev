@@ -95,6 +95,43 @@ func TestScopedPermissionAndDenyRules(t *testing.T) {
 	}
 }
 
+func TestExistingParentDiscoveryUsesScopedPermissions(t *testing.T) {
+	for _, exists := range []bool{false, true} {
+		t.Run(fmt.Sprint(exists), func(t *testing.T) {
+			input := contractPlanInput()
+			input.StorageID, input.RegistryID = "", ""
+			plan, err := BuildPlan(input)
+			require.NoError(t, err)
+			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+				assert.Equal(t, http.MethodGet, request.Method)
+				if !exists {
+					return contractARMResponse(request, 404, `{"error":{"code":"ResourceGroupNotFound"}}`), nil
+				}
+				return contractARMResponse(request, 200, `{"id":"`+request.URL.Path+`","location":"eastus"}`), nil
+			})
+			refined, err := ResolveExistingParents(t.Context(), plan, contractCredential{}, options)
+			require.NoError(t, err)
+			want := "/subscriptions/" + plan.SubscriptionID
+			if exists {
+				want += "/resourceGroups/" + plan.ResourceGroup
+			}
+			assert.Equal(t, want, refined.Hosting.Parent)
+			assert.Equal(t, want, refined.Workload.Parent)
+			assert.Equal(t, want, refined.Storage.Parent)
+			assert.Equal(t, want, refined.Registry.Parent)
+			for _, op := range refined.Operations {
+				if op.CheckID == "P01" || strings.Contains(op.Action, "/deployments/") {
+					assert.Equal(t, "/subscriptions/"+plan.SubscriptionID, op.Scope)
+				}
+				if op.CheckID == "P02" || op.CheckID == "P04" || op.CheckID == "P05" {
+					assert.Equal(t, want, op.Scope)
+				}
+			}
+			assert.NotEqual(t, "", plan.Hosting.Parent)
+		})
+	}
+}
+
 func TestScopedAuthorizerReadsOnlyAndEvaluatesKnownRecipient(t *testing.T) {
 	scope := "/subscriptions/sub/resourceGroups/rg"
 	condition := "@Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEquals 'ServicePrincipal'"

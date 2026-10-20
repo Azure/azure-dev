@@ -157,8 +157,8 @@ within `azd up`; other database modes omit or replace the bootstrap steps.
 ## Appendix: Foundry chat binding
 
 The first Foundry scenario targets a single Spring AI Azure OpenAI chat binding.
-The acceptance application is a sanitized, attributed fixture under
-`testdata/foundry-chat`; live tests copy it before running `azd spring init`.
+The acceptance application and reviewed generated output live in the independent
+`azure-dev-spring-extension-tests` repository.
 
 - Detect `spring-ai-starter-model-azure-openai` and the standard endpoint,
   API-key, and deployment-name properties. Model Foundry separately from datasource

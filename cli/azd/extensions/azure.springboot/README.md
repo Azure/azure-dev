@@ -278,9 +278,10 @@ connections to verify rejected changes were not committed, then remove their fix
 
 Documented decision fixtures are in
 [`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).
-The sanitized Foundry chat acceptance fixture is in
-[`testdata/foundry-chat`](testdata/foundry-chat/README.md); live tests must copy it
-before initialization.
+Foundry chat acceptance applications and reviewed generated output live in the
+independent
+[`azure-dev-spring-extension-tests`](https://github.com/weidongxu-microsoft/azure-dev-spring-extension-tests)
+repository.
 
 The extension imports a published azd Go module for the SDK/Maven tooling, but
 does not call core project serialization or infrastructure composition APIs.

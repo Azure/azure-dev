@@ -395,6 +395,26 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+	// EnvUnsetOutcomeKey records success, no_change, user_declined, or failed.
+	EnvUnsetOutcomeKey = AttributeKey{
+		Key:            attribute.Key("env.unset.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// EnvUnsetRemovedCountKey counts distinct keys removed by a fully successful save.
+	EnvUnsetRemovedCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.removed_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// EnvUnsetMissingCountKey counts distinct requested keys observed missing, including after confirmation.
+	EnvUnsetMissingCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.missing_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 )
 
 // Hooks command related fields

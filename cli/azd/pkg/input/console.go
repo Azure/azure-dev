@@ -204,6 +204,10 @@ type ConsoleOptions struct {
 	// Nil preserves the historical behavior of allowing empty selections.
 	AllowEmptySelection *bool
 
+	// RequireInput prevents non-terminal confirmations from accepting the default on unanswered EOF.
+	// Enter still accepts the default. No-prompt mode is unchanged.
+	RequireInput bool
+
 	// Prompt-only options
 	IsPassword bool
 
@@ -1017,6 +1021,9 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	var response bool
 
 	err := c.doInteraction(func(c *AskerConsole) error {
+		if options.RequireInput && !c.noPrompt {
+			return askOnePrompt(prompt, &response, false, c.handles.Stdout, c.handles.Stdin, true)
+		}
 		return c.asker(prompt, &response)
 	})
 	if err != nil {

@@ -123,6 +123,12 @@ func TestSnapshotBuildProject(t *testing.T) {
 	project, err := snapshotBuildProject([]byte(manifest))
 	require.NoError(t, err)
 	require.Equal(t, "src/agent", project)
+	t.Run("initialized container sample", func(t *testing.T) {
+		containerManifest := strings.ReplaceAll(manifest, "language: python", "language: docker")
+		project, err := snapshotBuildProject([]byte(containerManifest))
+		require.NoError(t, err)
+		require.Equal(t, "src/agent", project)
+	})
 	for _, invalid := range []string{
 		strings.ReplaceAll(manifest, "src/agent", "../outside"),
 		strings.ReplaceAll(manifest, "src/agent", "/outside"),

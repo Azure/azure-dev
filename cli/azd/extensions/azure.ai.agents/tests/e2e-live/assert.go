@@ -139,7 +139,7 @@ func snapshotBuildProject(manifest []byte) (string, error) {
 		if project != "" {
 			return "", errors.New("snapshot image build requires exactly one agent service")
 		}
-		if service.Kind != "hosted" || service.Language != "python" {
+		if service.Kind != "hosted" || (service.Language != "python" && service.Language != "docker") {
 			return "", errors.New("snapshot image build requires a hosted Python agent sample")
 		}
 		if !filepath.IsLocal(service.Project) {

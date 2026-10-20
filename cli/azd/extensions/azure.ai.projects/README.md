@@ -89,7 +89,8 @@ Existing-project reuse is rechecked after preprovision hooks so a deployment
 list supplied by a hook is provisioned rather than silently skipped.
 
 Adopting an existing project reconciles the active environment's effective
-deployment list with reuse and skip choices, including an explicit `[]` when no
+deployment list with reuse, "Choose a different model" (any existing deployment
+or a catalog model), and skip choices, including an explicit `[]` when no
 managed deployments remain. Ejecting infrastructure seeds the generated Bicep
 or Terraform deployment parameters from that effective list. Subsequent edits
 to those parameter files remain authoritative.

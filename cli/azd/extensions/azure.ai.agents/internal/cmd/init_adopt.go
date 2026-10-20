@@ -1371,7 +1371,7 @@ func finalizeAdoptedProject(
 			result.FoundryProject,
 			projectRoot,
 			projectAuthoringExisting,
-			flags.noPrompt,
+			adoptedProjectAddNoPrompt(flags),
 		); err != nil {
 			return err
 		}
@@ -1510,6 +1510,13 @@ func wireAdoptedProjectDependency(
 		}
 	}
 	return nil
+}
+
+// adoptedProjectAddNoPrompt keeps project authoring headless when
+// --model-deployment already names the model, so Projects does not prompt
+// for template deployments before the override is applied.
+func adoptedProjectAddNoPrompt(flags *initFlags) bool {
+	return flags.noPrompt || strings.TrimSpace(flags.modelDeployment) != ""
 }
 
 func validateAdoptedModelDeploymentTarget(

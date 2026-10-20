@@ -137,7 +137,7 @@ func reconcileAdoptedDeployments(
 	})
 
 	return reconcileAdoptedDeploymentChoices(
-		ctx, client, envName, declared, live, environmentValues, noPrompt,
+		ctx, client, envName, target, declared, live, environmentValues, noPrompt,
 	)
 }
 
@@ -145,6 +145,7 @@ func reconcileAdoptedDeploymentChoices(
 	ctx context.Context,
 	client *azdext.AzdClient,
 	envName string,
+	target *resolvedProject,
 	declared []synthesis.Deployment,
 	live []liveProjectDeployment,
 	environmentValues map[string]string,
@@ -172,14 +173,18 @@ func reconcileAdoptedDeploymentChoices(
 				"expand adopted deployment %q: %w", item.Name, err,
 			)
 		}
-		if len(matches) == 0 {
+		// Without a prompt, unmatched declarations are kept as configured.
+		if len(matches) == 0 && noPrompt {
 			remaining = append(remaining, item)
 			referenced = append(referenced, expandedItem)
 			continue
 		}
-		selected := matches[0]
+		var selected liveProjectDeployment
+		if len(matches) > 0 {
+			selected = matches[0]
+		}
 		if !noPrompt {
-			choices := make([]*azdext.SelectChoice, 0, len(matches)+2)
+			choices := make([]*azdext.SelectChoice, 0, len(matches)+3)
 			for _, candidate := range matches {
 				choices = append(choices, &azdext.SelectChoice{
 					Value: "use:" + candidate.Name,
@@ -193,6 +198,10 @@ func reconcileAdoptedDeploymentChoices(
 				&azdext.SelectChoice{
 					Value: "deploy",
 					Label: "Deploy as configured",
+				},
+				&azdext.SelectChoice{
+					Value: "change",
+					Label: "Choose a different model",
 				},
 				&azdext.SelectChoice{
 					Value: "skip",
@@ -225,6 +234,19 @@ func reconcileAdoptedDeploymentChoices(
 				}
 				continue
 			case choice == "skip":
+				changed = true
+				continue
+			case choice == "change":
+				alternative, provision, err := selectAlternativeAdoptedDeployment(
+					ctx, client, target, expandedItem, live,
+				)
+				if err != nil {
+					return "", false, nil, err
+				}
+				if provision {
+					remaining = append(remaining, alternative)
+				}
+				referenced = append(referenced, alternative)
 				changed = true
 				continue
 			default:
@@ -296,6 +318,95 @@ func reconcileAdoptedDeploymentChoices(
 		return "", false, nil, operationErr
 	}
 	return defaultName, changed, restore, nil
+}
+
+// selectAlternativeAdoptedDeployment lets the user pick any live deployment in
+// the project, or a catalog model deployed under the declared deployment name.
+// The returned flag reports whether the deployment still needs provisioning.
+func selectAlternativeAdoptedDeployment(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	target *resolvedProject,
+	original synthesis.Deployment,
+	live []liveProjectDeployment,
+) (synthesis.Deployment, bool, error) {
+	choices := make([]*azdext.SelectChoice, 0, len(live)+1)
+	for _, candidate := range live {
+		choices = append(choices, &azdext.SelectChoice{
+			Value: candidate.Name,
+			Label: fmt.Sprintf(
+				"Use existing deployment %q (model: %s, version: %s)",
+				candidate.Name, candidate.Model.Name, candidate.Model.Version,
+			),
+		})
+	}
+	choices = append(choices, &azdext.SelectChoice{
+		Value: "", Label: "Deploy a new model from the catalog",
+	})
+	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "How would you like to choose a model?",
+			Choices: choices,
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return synthesis.Deployment{}, false,
+				exterrors.Cancelled("model selection was cancelled")
+		}
+		return synthesis.Deployment{}, false, fmt.Errorf(
+			"select an alternative model: %w", err,
+		)
+	}
+	index := int(response.GetValue())
+	if index < 0 || index >= len(choices) {
+		return synthesis.Deployment{}, false, fmt.Errorf(
+			"invalid alternative model selection: %d", index,
+		)
+	}
+	if index < len(live) {
+		selected := live[index]
+		return synthesis.Deployment{
+			Name: selected.Name, Model: selected.Model, Sku: selected.Sku,
+		}, false, nil
+	}
+
+	var tenantID, subscriptionID, location string
+	if target != nil {
+		tenantID, subscriptionID, location =
+			target.UserTenantId, target.SubscriptionId, target.Location
+	}
+	azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
+		SubscriptionId: subscriptionID,
+		TenantId:       tenantID,
+		Location:       location,
+	}}
+	model, err := client.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+		AzureContext:  azureContext,
+		Filter:        &azdext.AiModelFilterOptions{Locations: []string{location}},
+		SelectOptions: &azdext.SelectOptions{Message: "Select a model"},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return synthesis.Deployment{}, false,
+				exterrors.Cancelled("model selection was cancelled")
+		}
+		return synthesis.Deployment{}, false, fmt.Errorf(
+			"select a model from the catalog: %w", err,
+		)
+	}
+	selected, err := selectModelDeployment(
+		ctx, client, azureContext,
+		modelSelection{
+			Name:           model.GetModel().GetName(),
+			DeploymentName: original.Name,
+		},
+		deploymentSelectionOptions{}, false,
+	)
+	if err != nil {
+		return synthesis.Deployment{}, false, err
+	}
+	return selected.Deployment, true, nil
 }
 
 func selectReconciledDefault(

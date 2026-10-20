@@ -2,6 +2,11 @@
 
 ## Hosted agent deployment preview
 
+Hosted-agent `container.resources` settings are checked locally against the schema before
+defaults are applied. Unknown fields, wrong types, empty/null values, and malformed CPU/memory
+strings are rejected; omitted fields retain their independent defaults. Valid resource strings
+are passed to Foundry for SKU, pairing, and regional availability validation.
+
 With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 

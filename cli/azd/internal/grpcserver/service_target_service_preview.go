@@ -10,76 +10,53 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-type betaServiceTargetStream = grpc.BidiStreamingServer[v1beta.ServiceTargetMessage, v1beta.ServiceTargetMessage]
-
-// serviceTargetPreviewRegistration is the v1beta deployment preview stream for an extension-provided host.
+// serviceTargetPreviewRegistration is the deployment preview stream for an extension-provided host.
 type serviceTargetPreviewRegistration struct {
 	extensionId string
-	broker      *grpcbroker.MessageBroker[v1beta.ServiceTargetMessage]
-}
-
-// betaServiceTargetServiceOverride serves the dedicated v1beta deployment preview stream.
-// Any other v1beta stream is forwarded to the stable service target service through the generated adapter,
-// so ordinary service target lifecycle requests never depend on beta-only fields.
-type betaServiceTargetServiceOverride struct {
-	service *ServiceTargetService
-}
-
-var _ BetaServiceTargetServiceStreamOverride = (*betaServiceTargetServiceOverride)(nil)
-
-func (o *betaServiceTargetServiceOverride) Stream(stream betaServiceTargetStream) error {
-	first, err := stream.Recv()
-	if err != nil {
-		return err
-	}
-
-	replay := &replayServiceTargetStream{betaServiceTargetStream: stream, first: first}
-	if !first.GetRegisterServiceTargetRequest().GetSupportsPreview() {
-		return (&betaServiceTargetServiceAdapter{stable: o.service}).Stream(replay)
-	}
-
-	return o.service.previewStream(replay)
+	broker      *grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
 }
 
 // replayServiceTargetStream returns an already received first message before reading from the stream.
 type replayServiceTargetStream struct {
-	betaServiceTargetStream
-	first *v1beta.ServiceTargetMessage
+	azdext.ServiceTargetService_StreamServer
+	first    *azdext.ServiceTargetMessage
+	firstErr error
 }
 
-func (s *replayServiceTargetStream) Recv() (*v1beta.ServiceTargetMessage, error) {
+func (s *replayServiceTargetStream) Recv() (*azdext.ServiceTargetMessage, error) {
+	if err := s.firstErr; err != nil {
+		s.firstErr = nil
+		return nil, err
+	}
 	if first := s.first; first != nil {
 		s.first = nil
 		return first, nil
 	}
 
-	return s.betaServiceTargetStream.Recv()
+	return s.ServiceTargetService_StreamServer.Recv()
 }
 
 // previewStream accepts deployment preview registrations for hosts provided by the calling extension.
-func (s *ServiceTargetService) previewStream(stream betaServiceTargetStream) error {
+func (s *ServiceTargetService) previewStream(
+	stream azdext.ServiceTargetService_StreamServer,
+	extension *extensions.Extension,
+) error {
 	ctx := stream.Context()
-	extension, err := s.serviceTargetExtension(ctx)
-	if err != nil {
-		return err
-	}
-
-	broker := grpcbroker.NewMessageBroker(stream, azdext.NewServiceTargetPreviewEnvelope(), extension.Id, log.Default())
+	broker := grpcbroker.NewMessageBroker(stream, azdext.NewServiceTargetEnvelope(), extension.Id, log.Default())
 
 	var registeredHosts []string
-	err = broker.On(func(
+	err := broker.On(func(
 		ctx context.Context,
-		req *v1beta.RegisterServiceTargetRequest,
-	) (*v1beta.ServiceTargetMessage, error) {
+		req *azdext.RegisterServiceTargetRequest,
+	) (*azdext.ServiceTargetMessage, error) {
 		hostType := req.GetHost()
 		if !req.GetSupportsPreview() {
 			return nil, status.Errorf(
@@ -97,9 +74,9 @@ func (s *ServiceTargetService) previewStream(stream betaServiceTargetStream) err
 		registeredHosts = append(registeredHosts, hostType)
 		log.Printf("Registered service target preview: %s", hostType)
 
-		return &v1beta.ServiceTargetMessage{
-			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetResponse{
-				RegisterServiceTargetResponse: &v1beta.RegisterServiceTargetResponse{},
+		return &azdext.ServiceTargetMessage{
+			MessageType: &azdext.ServiceTargetMessage_RegisterServiceTargetResponse{
+				RegisterServiceTargetResponse: &azdext.RegisterServiceTargetResponse{},
 			},
 		}, nil
 	})
@@ -134,15 +111,10 @@ func (s *ServiceTargetService) previewFunc(hostType string, extensionId string) 
 			return nil, project.ErrDeployPreviewNotSupported
 		}
 
-		betaConfig := &v1beta.ServiceConfig{}
-		if err := transcodeVersionedMessage(serviceConfig, betaConfig, false); err != nil {
-			return nil, err
-		}
-
-		resp, err := registration.broker.SendAndWait(ctx, &v1beta.ServiceTargetMessage{
+		resp, err := registration.broker.SendAndWait(ctx, &azdext.ServiceTargetMessage{
 			RequestId: uuid.NewString(),
-			MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
-				PreviewRequest: &v1beta.ServiceTargetPreviewRequest{ServiceConfig: betaConfig},
+			MessageType: &azdext.ServiceTargetMessage_PreviewRequest{
+				PreviewRequest: &azdext.ServiceTargetPreviewRequest{ServiceConfig: serviceConfig},
 			},
 		})
 		if err != nil {

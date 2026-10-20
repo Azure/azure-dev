@@ -199,11 +199,18 @@ The built-in App Service, Container Apps, Functions, Static Web Apps, AKS, and A
 endpoint hosts report the resolved Azure target and the deployment operation they
 would perform.
 
-Extensions opt in with `WithBetaServiceTargetPreview` and
-`preview.ServiceTargetPreviewProvider`. The contract is **v1beta-only**: the host
+Extensions opt in with `WithServiceTargetPreview` and
+`azdext.ServiceTargetPreviewProvider`. The contract graduates to **stable v1**,
+targeting host and SDK 1.37.0: the host
 stays on the stable service target stream for normal deployments and also registers
-on a dedicated v1beta stream that carries only preview registration and preview
+on a dedicated v1 stream that carries only preview registration and preview
 messages. Each preview runs on a fresh provider without `Initialize`.
+Deprecated beta registrations, provider interfaces, and wire routes remain
+supported without a removal date. The generated beta adapter delegates to the
+same stable host implementation; the frozen unversioned bridge is not extended.
+The [second graduation audit](https://github.com/Azure/azure-dev/issues/10625)
+tracks actual release completion, and [consumer migration](https://github.com/Azure/azure-dev/issues/10626)
+waits for the published SDK before updating the Foundry extensions.
 See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
 for registration and provider requirements.
 

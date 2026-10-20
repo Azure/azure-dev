@@ -213,6 +213,18 @@ func TestValidateSnapshotAgentVersion(t *testing.T) {
 	}
 }
 
+func TestStackedCILintDispatch(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "..", "..", "..", ".github", "workflows", "lint-ext-azure-ai-agents.yml")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var workflow struct {
+		On map[string]yaml.Node `yaml:"on"`
+	}
+	require.NoError(t, yaml.Unmarshal(data, &workflow))
+	require.Contains(t, workflow.On, "workflow_dispatch")
+	require.Contains(t, workflow.On, "pull_request")
+}
+
 func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 	path := filepath.Join("..", "..", "..", "..", "..", "..", "eng", "pipelines", "ext-azure-ai-agents-live.yml")
 	data, err := os.ReadFile(path)

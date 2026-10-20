@@ -1,6 +1,7 @@
 name: ext-azure-ai-agents-lint
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - "cli/azd/extensions/azure.ai.agents/**"

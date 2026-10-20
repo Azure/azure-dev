@@ -1219,6 +1219,13 @@ func writeExistingProjectBicepTemplates(
 			relPath: filepath.ToSlash(filepath.Join(artifactRoot, "modules/container-registry.bicep")),
 			bytes:   registry.Len(),
 		})
+		if acrMode == infraEjectAcrReuseConnect {
+			// The reuse-connect registry module grants pull access through this nested module.
+			files = append(files, struct {
+				source string
+				target string
+			}{"templates/modules/acr-pull-role-assignment.bicep", "modules/acr-pull-role-assignment.bicep"})
+		}
 	}
 	for _, file := range files {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), file.source)

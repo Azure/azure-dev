@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -837,6 +838,8 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 		mode     projectEjectAcrMode
 		values   map[string]string
 		wantFile bool
+		// wantAccess: reuse-connect grants pull access through a nested module.
+		wantAccess bool
 	}{
 		{name: "none", mode: projectEjectAcrNone, wantFile: false},
 		{name: "create", mode: projectEjectAcrCreate, wantFile: true},
@@ -847,7 +850,8 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "https://registry.azurecr.io",
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
 			},
-			wantFile: true,
+			wantFile:   true,
+			wantAccess: true,
 		},
 		{
 			name: "already connected",
@@ -873,6 +877,20 @@ func TestWriteExistingProjectBicepAcrModes(t *testing.T) {
 				assert.FileExists(t, registryPath)
 			} else {
 				assert.NoFileExists(t, registryPath)
+			}
+			accessPath := filepath.Join(dir, "modules", "acr-pull-role-assignment.bicep")
+			if test.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
+			}
+			if bicep, err := exec.LookPath("bicep"); err == nil {
+				out := filepath.Join(t.TempDir(), "main.json")
+				//nolint:gosec // test-controlled bicep path and arguments
+				build := exec.CommandContext(t.Context(), bicep, "build",
+					filepath.Join(dir, "main.bicep"), "--outfile", out)
+				output, err := build.CombinedOutput()
+				require.NoErrorf(t, err, "ejected Bicep failed to compile: %s", output)
 			}
 			assert.FileExists(t, filepath.Join(dir, "main.bicep"))
 			assert.FileExists(t, filepath.Join(dir, "main.parameters.json"))

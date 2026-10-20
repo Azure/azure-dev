@@ -49,20 +49,48 @@ const (
 	maxFixupLines = 3
 )
 
-// shellQuoteCdPath single-quotes a cd target that contains whitespace or shell
-// metacharacters for POSIX shells. PowerShell users must double embedded
-// apostrophes instead.
+// shellQuoteCdPath quotes paths for POSIX shells.
 func shellQuoteCdPath(path string) string {
-	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#\\~") {
+	if strings.ContainsFunc(path, unicode.IsSpace) || strings.ContainsAny(path, "'\"&;|<>()$`!*?[]{}#\\~%@,^") {
 		return shellEscapeSingleQuoted(path)
 	}
 	return path
 }
 
-// CdCommand renders a copyable POSIX `cd` line for dir. Every init next-step
-// surface uses it so a pre-existing target such as `my-$USER` stays literal.
-func CdCommand(dir string) string {
-	return "cd " + shellQuoteCdPath(dir)
+// CdSuggestions returns navigation hints with labeled shell alternatives
+// when the path needs quoting. All init flows share these commands.
+func CdSuggestions(folder string) []Suggestion {
+	posixPath := shellQuoteCdPath(folder)
+	if posixPath == folder {
+		return []Suggestion{{
+			Command:     "cd " + folder,
+			Description: "enter your new project folder",
+		}}
+	}
+
+	suggestions := []Suggestion{
+		{
+			Command:     "cd " + posixPath,
+			Description: "POSIX shells: enter your project folder (choose one)",
+		},
+		{
+			Command: "Set-Location -LiteralPath '" +
+				strings.ReplaceAll(folder, "'", "''") + "'",
+			Description: "PowerShell: enter your project folder (choose one)",
+		},
+	}
+	if strings.ContainsAny(folder, "%!\"\r\n") {
+		suggestions = append(suggestions, Suggestion{
+			Command:     "cmd.exe: use a shell-specific alternative above",
+			Description: "this path cannot be represented safely by a literal cmd.exe cd hint",
+		})
+	} else {
+		suggestions = append(suggestions, Suggestion{
+			Command:     "cd /d \"" + folder + "\"",
+			Description: "cmd.exe: enter your project folder (choose one)",
+		})
+	}
+	return suggestions
 }
 
 // ResolveAfterInit produces the Next: block printed at the end of a
@@ -164,11 +192,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	// in the original directory. A leading `cd` suggestion lets them
 	// navigate before running any subsequent commands.
 	if state.CreatedFolderDisplay != "" {
-		out = append(out, Suggestion{
-			Command:     CdCommand(state.CreatedFolderDisplay),
-			Description: "enter your new project folder",
-			Priority:    0,
-		})
+		out = append(out, CdSuggestions(state.CreatedFolderDisplay)...)
 	}
 
 	// Placeholder fix-ups come first when present: they are

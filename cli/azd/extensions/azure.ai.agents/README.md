@@ -597,6 +597,11 @@ with `cd <folder>` before the provisioning command, even if that folder already
 existed. Run the `cd` command first: init does not change your shell's working
 directory. Initializing in the current directory does not need a `cd` hint.
 
+For paths requiring shell-specific quoting, the block labels alternatives for
+POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
+shell, then continue with the remaining steps. If cmd.exe cannot safely express
+the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

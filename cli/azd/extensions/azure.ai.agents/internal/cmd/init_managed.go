@@ -640,7 +640,10 @@ func printPromptInitNextSteps(folderDisplay string) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if folderDisplay != "" {
-		fmt.Printf("  %s\n", nextstep.CdCommand(folderDisplay))
+		for _, suggestion := range nextstep.CdSuggestions(folderDisplay) {
+			fmt.Printf("  %s\n", suggestion.Command)
+			fmt.Printf("  # %s\n", suggestion.Description)
+		}
 	}
 	fmt.Println("  # Provision infrastructure and deploy the agent")
 	fmt.Println("  azd up")

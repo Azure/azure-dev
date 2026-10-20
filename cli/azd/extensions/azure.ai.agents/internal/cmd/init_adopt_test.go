@@ -507,8 +507,7 @@ func TestPrintPromptInitNextSteps(t *testing.T) {
 	require.NotContains(t, stdout, "--local")
 }
 
-// Prompt-only adoption into a pre-existing target must print a cd line that a
-// POSIX shell treats literally (no $VAR / $(...) expansion, no `\t` escapes).
+// Prompt-only adoption preserves paths in each shell's navigation hint.
 func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
 	t.Chdir(t.TempDir())
 	for _, tt := range []struct {
@@ -519,6 +518,12 @@ func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
 		{"my-$(whoami)", "cd 'my-$(whoami)'"},
 		{"it's", `cd 'it'\''s'`},
 		{"tab\there", "cd 'tab\there'"},
+		{"My Agent", "cd 'My Agent'"},
+		{"Bob's Agent", `cd 'Bob'\''s Agent'`},
+		{"my~agent", "cd 'my~agent'"},
+		{"agent[1]", "cd 'agent[1]'"},
+		{"my-%PATH%", "cd 'my-%PATH%'"},
+		{"my-!PATH!", "cd 'my-!PATH!'"},
 	} {
 		t.Run(tt.dir, func(t *testing.T) {
 			if runtime.GOOS == "windows" && strings.ContainsAny(tt.dir, "\t") {
@@ -532,7 +537,16 @@ func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
 				printPromptInitNextSteps(display)
 			})
 			require.Contains(t, stdout, "  "+tt.want+"\n")
-			require.NotContains(t, stdout, `cd "`)
+			require.Contains(t, stdout, "  Set-Location -LiteralPath '"+
+				strings.ReplaceAll(tt.dir, "'", "''")+"'\n")
+			if strings.ContainsAny(tt.dir, "%!") {
+				require.Contains(t, stdout, "cmd.exe: use a shell-specific alternative above")
+			} else {
+				require.Contains(t, stdout, "  cd /d \""+tt.dir+"\"\n")
+			}
+			require.Contains(t, stdout, "# POSIX shells:")
+			require.Contains(t, stdout, "# PowerShell:")
+			require.Contains(t, stdout, "azd up")
 		})
 	}
 }

@@ -5,7 +5,6 @@ package nextstep
 
 import (
 	"os/exec"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -320,11 +319,41 @@ func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
 	}
 }
 
+func TestCdSuggestionsShellAlternatives(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "@agent", "my,agent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterInit(&State{CreatedFolderDisplay: folder}, nil)
+			require.GreaterOrEqual(t, len(out), 4)
+			assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+
+				strings.ReplaceAll(folder, "'", "''")+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			for i, shell := range []string{"POSIX shells", "PowerShell", "cmd.exe"} {
+				assert.Contains(t, out[i].Description, shell)
+				assert.Contains(t, out[i].Description, "choose one")
+				assert.Less(t, out[i].Priority, out[3].Priority)
+			}
+		})
+	}
+}
+
+func TestCdSuggestionsUnsafeCmdPath(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{"my-%PATH%", "my-!PATH!", "my\"agent", "my\nagent", "my\ragent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
+			assert.Contains(t, out[2].Description, "cannot be represented safely")
+		})
+	}
+}
+
 func TestShellQuoteCdPathRoundTrip(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX shell quoting is not supported on Windows")
-	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh is not available on PATH")
 	}
@@ -338,6 +367,13 @@ func TestShellQuoteCdPathRoundTrip(t *testing.T) {
 		"my-$USER",
 		"my-$(whoami)",
 		"Bob's Agent",
+		"my~agent",
+		"my-%PATH%",
+		"my-!PATH!",
+		"agent[1]",
+		"@agent",
+		"my,agent",
+		"my^agent",
 	}
 	for _, folder := range folders {
 		t.Run(folder, func(t *testing.T) {

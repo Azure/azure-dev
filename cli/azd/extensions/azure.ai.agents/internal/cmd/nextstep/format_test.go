@@ -464,6 +464,7 @@ func TestFormatNext_HighlightsCdCommand(t *testing.T) {
 
 	suggestions := []Suggestion{
 		{Command: "cd my-agent", Description: "enter your new project folder", Priority: 0},
+		{Command: "Set-Location -LiteralPath 'My Agent'", Description: "PowerShell alternative", Priority: 0},
 		{Command: "edit azure.yaml: enable the toolbox", Description: "fix the toolbox", Priority: 5},
 		{Command: "azd deploy", Description: "deploy to Azure", Priority: 10, Trailing: true},
 	}
@@ -473,6 +474,8 @@ func TestFormatNext_HighlightsCdCommand(t *testing.T) {
 	got := buf.String()
 
 	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "cd my-agent")+"\n")
+	assert.Contains(t, got, bodyIndent+
+		output.WithHighLightFormat("%s", "Set-Location -LiteralPath 'My Agent'")+"\n")
 	assert.Contains(t, got, bodyIndent+output.WithHighLightFormat("%s", "azd deploy")+"\n")
 	// The description stays plain.
 	assert.Contains(t, got, bodyIndent+"enter your new project folder\n")

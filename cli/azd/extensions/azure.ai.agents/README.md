@@ -25,8 +25,8 @@ azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
 
 The matching process variable or a key in any `azure.yaml` `services[].env`
 map also enables the feature. Sources combine with OR: false never overrides
-true elsewhere. `alpha.all=on` enables every gate; `agents.hosted` no longer
-controls these capabilities. Ordinary hosted and plain prompt agents need no
+true elsewhere. `alpha.all` and unrelated config keys, including `agents.hosted`,
+do not enable these capabilities. Ordinary hosted and plain prompt agents need no
 preview opt-in.
 
 Checks cover explicit init/add inputs, staged template definitions, local

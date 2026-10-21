@@ -57,7 +57,9 @@ func (s *previewEnvServer) GetValues(
 	return &azdext.KeyValueListResponse{}, nil
 }
 
-var previewFeaturesOn = map[string]any{"all": "on"}
+var previewFeaturesOn = map[string]any{"agents": map[string]any{
+	"managed_harness": "on", "voice": "on", "long_running": "on",
+}}
 
 func registerPreviewFeaturesOn(server *grpc.Server) {
 	azdext.RegisterUserConfigServiceServer(server, &previewConfigServer{alpha: previewFeaturesOn})

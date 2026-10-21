@@ -88,6 +88,37 @@ func clearPreviewProcess(t *testing.T) {
 	t.Setenv("AZD_ENVIRONMENT", "")
 }
 
+func TestGlobalConfigCannotUnlockPreviewGates(t *testing.T) {
+	clearPreviewProcess(t)
+	for _, value := range []string{"on", "ON", "On", "oN"} {
+		t.Run(value, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			startPreviewCommandServer(t, map[string]any{"all": value}, nil, nil)
+			for _, tc := range []struct {
+				args    []string
+				feature featureflags.Feature
+			}{
+				{[]string{"--kind", "prompt", "--harness", "microsoft_copilot_preview"}, featureflags.ManagedHarness},
+				{[]string{"--kind", "prompt-voice", "--agent-name", "voice-agent"}, featureflags.Voice},
+			} {
+				command := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+				command.SetOut(io.Discard)
+				command.SetErr(io.Discard)
+				command.SetArgs(tc.args)
+				require.ErrorContains(t, command.Execute(), tc.feature.ID)
+			}
+			action := &InvokeAction{
+				flags:    &invokeFlags{protocol: "responses", longRunning: true, noWait: true, message: "hello"},
+				endpoint: &parsedAgentEndpoint{}, credential: invokeUsageFailingCredential{},
+			}
+			require.ErrorContains(t, action.Run(t.Context()), featureflags.LongRunning.ID)
+			entries, err := os.ReadDir(".")
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
 func TestIndependentPreviewGates(t *testing.T) {
 	clearPreviewProcess(t)
 	features := []featureflags.Feature{
@@ -96,6 +127,7 @@ func TestIndependentPreviewGates(t *testing.T) {
 	for _, enabled := range features {
 		t.Run(enabled.ID, func(t *testing.T) {
 			client, env := startPreviewCommandServer(t, map[string]any{
+				"all":    "on",
 				"agents": map[string]any{enabled.ID[len("agents."):]: "on"},
 			}, nil, nil)
 			ctx := featureflags.WithEnvironment(t.Context(), "selected-env")

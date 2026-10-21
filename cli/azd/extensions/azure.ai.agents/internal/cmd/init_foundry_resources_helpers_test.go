@@ -528,7 +528,9 @@ type hostedOptInConfigServer struct {
 func (hostedOptInConfigServer) Get(
 	context.Context, *azdext.GetUserConfigRequest,
 ) (*azdext.GetUserConfigResponse, error) {
-	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(`{"all":"on"}`)}, nil
+	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(
+		`{"agents":{"managed_harness":"on","voice":"on","long_running":"on"}}`,
+	)}, nil
 }
 
 // hostedOptInProjectServer supplies the preview project read.

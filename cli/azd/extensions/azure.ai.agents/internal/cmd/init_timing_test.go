@@ -80,9 +80,9 @@ func TestInitStepTimingSuccessRetryAndCancellation(t *testing.T) {
 			event := recorder.events[0]
 			assert.Equal(t, "agent.init.step", event.Name)
 			require.Len(t, event.Attributes, 3)
-			assert.Equal(t, "agent_name_selection", event.Attributes["init.step.id"])
-			assert.Equal(t, "1", event.Attributes["init.step.sequence"])
-			duration, err := strconv.ParseFloat(event.Attributes["duration_ms"], 64)
+			assert.Equal(t, "agent_name_selection", event.Attributes["agent.init.step.id"])
+			assert.Equal(t, "1", event.Attributes["agent.init.step.sequence"])
+			duration, err := strconv.ParseFloat(event.Attributes["agent.init.step.duration_ms"], 64)
 			require.NoError(t, err)
 			assert.GreaterOrEqual(t, duration, 0.0)
 			for _, private := range []string{"my-agent", "invalid/name", "private response", "Enter a name"} {
@@ -106,16 +106,16 @@ func TestInitStepTimingNonInteractive(t *testing.T) {
 	recorder := &initTimingRecorder{}
 	timing.Flush(ctx, recorder)
 	require.Len(t, recorder.events, 2)
-	assert.Equal(t, "init_mode_selection", recorder.events[0].Attributes["init.step.id"])
-	assert.Equal(t, "agent_name_selection", recorder.events[1].Attributes["init.step.id"])
+	assert.Equal(t, "init_mode_selection", recorder.events[0].Attributes["agent.init.step.id"])
+	assert.Equal(t, "agent_name_selection", recorder.events[1].Attributes["agent.init.step.id"])
 }
 
 func recordedStepDurations(t *testing.T, recorder *initTimingRecorder, id inittelemetry.Step) []float64 {
 	t.Helper()
 	var durations []float64
 	for _, event := range recorder.events {
-		if event.Attributes["init.step.id"] == string(id) {
-			duration, err := strconv.ParseFloat(event.Attributes["duration_ms"], 64)
+		if event.Attributes["agent.init.step.id"] == string(id) {
+			duration, err := strconv.ParseFloat(event.Attributes["agent.init.step.duration_ms"], 64)
 			require.NoError(t, err)
 			durations = append(durations, duration)
 		}
@@ -146,7 +146,7 @@ func TestInitStepTimingAzureYamlScaffoldingFailure(t *testing.T) {
 	}
 }
 
-func TestInitStepTimingGeneratedProjectIsRecordedOnce(t *testing.T) {
+func TestInitStepTimingGeneratedProjectOnlyRecordsScaffolding(t *testing.T) {
 	for _, target := range []string{"", "image-agent"} {
 		for _, existing := range []bool{false, true} {
 			t.Run(fmt.Sprintf("target=%s/existing=%t", target, existing), func(t *testing.T) {
@@ -172,7 +172,12 @@ func TestInitStepTimingGeneratedProjectIsRecordedOnce(t *testing.T) {
 				}
 				recorder := &initTimingRecorder{}
 				timing.Flush(ctx, recorder)
-				require.Len(t, recordedStepDurations(t, recorder, inittelemetry.ProjectScaffolding), 1)
+				durations := recordedStepDurations(t, recorder, inittelemetry.ProjectScaffolding)
+				if existing {
+					require.Empty(t, durations, "existing projects must not add no-op scaffolding samples")
+				} else {
+					require.Len(t, durations, 1)
+				}
 			})
 		}
 	}

@@ -855,7 +855,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			var cachedExplicitAzureYaml []byte
 			if userProvidedTemplate {
-				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
+				content, cached, err := validateLocalExplicitAzureYaml(ctx, flags.templatePointer)
 				if err != nil {
 					return err
 				}
@@ -1558,10 +1558,10 @@ func ensureProject(
 	azdClient *azdext.AzdClient,
 	targetDir string,
 ) (*azdext.ProjectConfig, error) {
-	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
-
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		envName := deriveEnvName(flags, targetDir)

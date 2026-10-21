@@ -13,14 +13,14 @@ The existing extension telemetry API records an `ext.usage` span with
 
 | Property | Meaning |
 |---|---|
-| `ext.init.step.id` | Fixed step identifier, such as `template_selection`, `foundry_project_selection`, or `model_selection`. |
-| `ext.init.step.sequence` | Step start order within this Init invocation, beginning at 1. Repeated calls have the same ID and different sequence numbers. |
-| `ext.duration_ms` | Monotonic elapsed time in milliseconds, with three decimal places. |
+| `ext.agent.init.step.id` | Fixed step identifier, such as `template_selection`, `foundry_project_selection`, or `model_selection`. |
+| `ext.agent.init.step.sequence` | Step start order within this Init invocation, beginning at 1. Repeated calls have the same ID and different sequence numbers. |
+| `ext.agent.init.step.duration_ms` | Monotonic elapsed time in milliseconds, with three decimal places. |
 
 There are no categories, input sources, per-step outcomes, or prompt summaries.
 Success and failure remain on the existing Init completion record. The usage
 span's native duration measures reporting, not the business step; queries must
-use `ext.duration_ms`.
+use `ext.agent.init.step.duration_ms`.
 
 Steps cover input validation, authentication, init mode, template selection and
 loading/staging, project scaffolding, agent configuration, deploy mode, code and
@@ -30,9 +30,12 @@ Steps are measured at existing business-function boundaries, not per function
 or filesystem operation. A selection that retries internally produces one timing
 including those retries. A skipped branch produces no timing.
 
+`template_loading` covers the initial read and validation of both local explicit
+templates and remote inputs; cached local bytes are not loaded or timed again.
 `project_scaffolding` covers core project initialization for both adopted templates
-and generated projects; delegation to another Init helper does not create a second
-sample. `location_selection` covers supported-region loading (including fallback),
+and generated projects; an existing project emits no scaffolding sample, and
+delegation to another Init helper does not create a second sample.
+`location_selection` covers supported-region loading (including fallback),
 configured-location validation, any prompt, and environment persistence. Direct
 callers that already supply allowed locations receive one sample without loading
 the region catalog.
@@ -73,8 +76,8 @@ requests
 | where name == "ext.usage"
 | where tostring(customDimensions["extension.id"]) == "azure.ai.agents"
 | where tostring(customDimensions["extension.event"]) == "agent.init.step"
-| extend step = tostring(customDimensions["ext.init.step.id"]),
-         elapsedMs = todouble(customDimensions["ext.duration_ms"])
+| extend step = tostring(customDimensions["ext.agent.init.step.id"]),
+         elapsedMs = todouble(customDimensions["ext.agent.init.step.duration_ms"])
 | summarize samples=count(), percentiles(elapsedMs, 75, 90) by step
 ```
 

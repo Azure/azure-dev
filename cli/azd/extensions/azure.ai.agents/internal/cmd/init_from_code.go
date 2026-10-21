@@ -194,10 +194,10 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
-	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
-
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		// Derive an environment name when the user didn't pass --environment.

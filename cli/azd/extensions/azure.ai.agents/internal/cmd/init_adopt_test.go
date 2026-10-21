@@ -136,7 +136,16 @@ func TestValidateLocalExplicitAzureYaml(t *testing.T) {
 				require.NoError(t, os.WriteFile(pointer, []byte(tt.content), 0o600))
 			}
 
-			content, cached, err := validateLocalExplicitAzureYaml(pointer)
+			ctx, timing := inittelemetry.NewContext(t.Context())
+			content, cached, err := validateLocalExplicitAzureYaml(ctx, pointer)
+			recorder := &initTimingRecorder{}
+			timing.Flush(ctx, recorder)
+			durations := recordedStepDurations(t, recorder, inittelemetry.TemplateLoading)
+			if tt.pointer == "" {
+				require.Len(t, durations, 1, "local reading and validation must be timed, including failures")
+			} else {
+				require.Empty(t, durations, "deferring a remote input does not load a template")
+			}
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.False(t, cached)
@@ -168,14 +177,23 @@ func TestLoadExplicitAzureYamlRemote(t *testing.T) {
 		}, nil
 	})}
 
+	pointer := "https://github.com/example/repo/blob/main/azure.yaml"
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	cachedContent, cached, err := validateLocalExplicitAzureYaml(ctx, pointer)
+	require.NoError(t, err)
+	require.False(t, cached)
+	require.Nil(t, cachedContent)
 	got, err := loadExplicitAzureYaml(
-		t.Context(),
+		ctx,
 		nil,
-		&initFlags{templatePointer: "https://github.com/example/repo/blob/main/azure.yaml"},
+		&initFlags{templatePointer: pointer},
 		client,
 	)
 	require.NoError(t, err)
 	require.Equal(t, content, string(got))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.TemplateLoading), 1)
 }
 
 func TestExplicitManifestErrorsRedactCredentials(t *testing.T) {

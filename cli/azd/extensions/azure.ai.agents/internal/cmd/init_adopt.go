@@ -331,7 +331,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	)
 }
 
-func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+func validateLocalExplicitAzureYaml(ctx context.Context, templatePointer string) ([]byte, bool, error) {
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
@@ -339,6 +339,8 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}

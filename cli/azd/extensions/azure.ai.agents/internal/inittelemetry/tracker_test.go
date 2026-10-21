@@ -51,13 +51,13 @@ func TestStepTimingsIncludeAllWorkAndRepeatedAttempts(t *testing.T) {
 	assert.Equal(t, foundryTelemetry.Event{
 		Name: "agent.init.step",
 		Attributes: map[string]string{
-			"init.step.id": "model_selection", "init.step.sequence": "1", "duration_ms": "2004.500",
+			"agent.init.step.id": "model_selection", "agent.init.step.sequence": "1", "agent.init.step.duration_ms": "2004.500",
 		},
 	}, recorder.events[0])
 	assert.Equal(t, foundryTelemetry.Event{
 		Name: "agent.init.step",
 		Attributes: map[string]string{
-			"init.step.id": "model_selection", "init.step.sequence": "2", "duration_ms": "1.500",
+			"agent.init.step.id": "model_selection", "agent.init.step.sequence": "2", "agent.init.step.duration_ms": "1.500",
 		},
 	}, recorder.events[1])
 }
@@ -103,7 +103,7 @@ func TestUnfinishedStepsAreNotReported(t *testing.T) {
 	recorder := &recordingReporter{}
 	tracker.Flush(ctx, recorder)
 	require.Len(t, recorder.events, 1)
-	assert.Equal(t, "2", recorder.events[0].Attributes["init.step.sequence"])
+	assert.Equal(t, "2", recorder.events[0].Attributes["agent.init.step.sequence"])
 	Start(t.Context(), ModelSelection)() // Other commands do not enable timing.
 }
 
@@ -118,6 +118,6 @@ func TestConcurrentCompletionKeepsStartOrder(t *testing.T) {
 	recorder := &recordingReporter{}
 	tracker.Flush(ctx, recorder)
 	require.Len(t, recorder.events, 2)
-	assert.Equal(t, "template_loading", recorder.events[0].Attributes["init.step.id"])
-	assert.Equal(t, "template_staging", recorder.events[1].Attributes["init.step.id"])
+	assert.Equal(t, "template_loading", recorder.events[0].Attributes["agent.init.step.id"])
+	assert.Equal(t, "template_staging", recorder.events[1].Attributes["agent.init.step.id"])
 }

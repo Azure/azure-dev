@@ -127,9 +127,9 @@ func (t *Tracker) Flush(ctx context.Context, reporter foundryTelemetry.Reporter)
 			reporter.Report(reportCtx, foundryTelemetry.Event{
 				Name: "agent.init.step",
 				Attributes: map[string]string{
-					"init.step.id":       string(step.id),
-					"init.step.sequence": strconv.Itoa(i + 1),
-					"duration_ms":        strconv.FormatFloat(step.duration.Seconds()*1000, 'f', 3, 64),
+					"agent.init.step.id":          string(step.id),
+					"agent.init.step.sequence":    strconv.Itoa(i + 1),
+					"agent.init.step.duration_ms": strconv.FormatFloat(step.duration.Seconds()*1000, 'f', 3, 64),
 				},
 			})
 		}

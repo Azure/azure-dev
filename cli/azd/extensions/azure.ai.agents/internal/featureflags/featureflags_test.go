@@ -231,7 +231,8 @@ func TestConfigValues(t *testing.T) {
 }
 
 func TestGlobalConfigDoesNotEnableAgentsFeatures(t *testing.T) {
-	for _, id := range []string{"agents.managed_harness", "agents.voice", "agents.long_running"} {
+	for _, feature := range All() {
+		id := feature.ID
 		for _, value := range []any{"on", "ON", "On", "oN", "off", "", true, nil} {
 			t.Run(id+"/"+fmt.Sprint(value), func(t *testing.T) {
 				alphaValues := map[string]any{

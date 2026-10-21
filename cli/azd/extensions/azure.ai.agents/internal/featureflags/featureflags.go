@@ -27,6 +27,8 @@ type Feature struct {
 	ID string
 	// EnvVar is the exact environment key read for this feature.
 	EnvVar string
+	// Description is a short summary for listings. It is optional.
+	Description string
 }
 
 const (

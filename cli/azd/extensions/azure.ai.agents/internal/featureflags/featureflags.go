@@ -3,7 +3,7 @@
 
 // cspell:ignore featureflags
 
-// Package featureflags resolves shared Foundry extension opt-ins.
+// Package featureflags resolves agents extension preview opt-ins.
 package featureflags
 
 import (
@@ -23,10 +23,9 @@ import (
 
 // Feature declares one extension opt-in.
 type Feature struct {
-	// ID is the user config key under alpha, for example "agents.hosted".
+	// ID is the user config key under alpha.
 	ID string
-	// EnvVar is the only environment key read, for example
-	// "AZD_FOUNDRY_EXT_ENABLE_AGENTS_HOSTED".
+	// EnvVar is the exact environment key read for this feature.
 	EnvVar string
 }
 
@@ -36,9 +35,10 @@ const (
 	enabledValue = "on"
 )
 
-// Host errors for an absent optional scope. They match
-// azdcontext.ErrNoProject and environment.ErrDefaultEnvironmentNotFound
-// without importing those packages and their dependencies.
+// Host errors for an absent optional scope. They match the sentinels
+// azdcontext.ErrNoProject and
+// environment.ErrDefaultEnvironmentNotFound without importing
+// those packages and their dependencies.
 var (
 	errNoProject                  = errors.New("no project exists; to create a new project, run `azd init`")
 	errDefaultEnvironmentNotFound = errors.New("default environment not found")
@@ -122,7 +122,7 @@ func isEnabled(
 		}
 	}
 
-	// Each service map counts on its own, so one false never hides another true.
+	// Each service counts independently; false never hides another true.
 	for _, service := range projectResponse.Project.Services {
 		if envEnabled(service.GetEnvironment()[feature.EnvVar]) {
 			enabled = true
@@ -139,7 +139,7 @@ func envEnabled(value string) bool {
 	return err == nil && enabled
 }
 
-// configEnabled matches azd core: "on" (any case) at alpha.all or alpha.<id>.
+// configEnabled matches "on" (any case) at alpha.all or alpha.<id>.
 // Other values, including non-string values, contribute no signal.
 func configEnabled(alphaValues any, id string) bool {
 	userConfig := config.NewConfig(map[string]any{alphaKey: alphaValues})

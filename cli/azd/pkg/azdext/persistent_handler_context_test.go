@@ -7,7 +7,6 @@ import (
 	"context"
 	"testing"
 
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/stretchr/testify/require"
 )
@@ -51,15 +50,15 @@ func TestOnlyEventSubscriptionsPreserveHandlerContext(t *testing.T) {
 	})
 
 	t.Run("service target preview", func(t *testing.T) {
-		envelope := NewServiceTargetPreviewEnvelope()
-		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
-			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetRequest{
-				RegisterServiceTargetRequest: &v1beta.RegisterServiceTargetRequest{},
+		envelope := NewServiceTargetEnvelope()
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ServiceTargetMessage{
+			MessageType: &ServiceTargetMessage_RegisterServiceTargetRequest{
+				RegisterServiceTargetRequest: &RegisterServiceTargetRequest{},
 			},
 		}))
-		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
-			MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
-				PreviewRequest: &v1beta.ServiceTargetPreviewRequest{},
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ServiceTargetMessage{
+			MessageType: &ServiceTargetMessage_PreviewRequest{
+				PreviewRequest: &ServiceTargetPreviewRequest{},
 			},
 		}))
 	})

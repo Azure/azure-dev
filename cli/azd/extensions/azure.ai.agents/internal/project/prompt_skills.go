@@ -6,6 +6,7 @@ package project
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -986,7 +987,7 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 
 	candidates := []string{toolboxName + "-mcp"}
 	if toolboxVersion != "1" {
-		candidates = append(candidates, fmt.Sprintf("%s-v%s-mcp", toolboxName, toolboxVersion))
+		candidates = append(candidates, toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL))
 	}
 	for i, connectionName := range candidates {
 		_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
@@ -1048,6 +1049,13 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 		exterrors.CodeConnectionCreationFail,
 		fmt.Sprintf("failed to resolve a connection name for toolbox %q", toolboxName),
 	)
+}
+
+// toolboxVersionConnectionName distinguishes version-scoped connections from
+// unversioned connections for toolboxes whose names already end in a version.
+func toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL string) string {
+	sum := sha256.Sum256([]byte(mcpURL))
+	return fmt.Sprintf("%s-v%s-%x-mcp", toolboxName, toolboxVersion, sum[:4])
 }
 
 func isMatchingToolboxConnection(

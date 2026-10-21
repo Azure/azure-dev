@@ -795,7 +795,7 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 	require.Equal(t, att1, att2)
 
 	// 3. Toolbox updated to v2: preserves research-tools-mcp (still pointing to v1)
-	// and creates version-scoped research-tools-v2-mcp.
+	// and creates an endpoint-hashed version-scoped connection.
 	att3, err := builder.ResolveToolbox(t.Context(), toolboxRef{
 		Name:        "research-tools",
 		MCPEndpoint: mcpURLv2,
@@ -804,11 +804,30 @@ func TestFoundryToolboxBuilder_CreatesAndReusesUserEntraTokenConnection(t *testi
 	require.Equal(t, 4, getCalls)
 	require.Equal(t, 2, putCalls)
 	require.Equal(t, mcpURLv2, att3.McpURL)
-	require.Equal(t, "research-tools-v2-mcp", att3.ProjectConnectionID)
+	versionConnection := toolboxVersionConnectionName("research-tools", "2", mcpURLv2)
+	require.Equal(t, versionConnection, att3.ProjectConnectionID)
 	require.Equal(t, mcpURLv1, stored["research-tools-mcp"].Properties.Target, "v1 connection must remain intact")
-	require.NotNil(t, stored["research-tools-v2-mcp"])
-	require.Equal(t, mcpURLv2, stored["research-tools-v2-mcp"].Properties.Target)
-	require.Equal(t, "2", stored["research-tools-v2-mcp"].Properties.Metadata["toolboxVersion"])
+	require.NotNil(t, stored[versionConnection])
+	require.Equal(t, mcpURLv2, stored[versionConnection].Properties.Target)
+	require.Equal(t, "2", stored[versionConnection].Properties.Metadata["toolboxVersion"])
+
+	// A distinct toolbox named research-tools-v2 must not collide with version 2
+	// of research-tools, even when both are attached in the same project.
+	const suffixedURL = projectEndpoint + "/toolboxes/research-tools-v2/versions/1/mcp?api-version=v1"
+	suffixed, err := builder.ResolveToolbox(t.Context(), toolboxRef{
+		Name: "research-tools-v2", MCPEndpoint: suffixedURL,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "research-tools-v2-mcp", suffixed.ProjectConnectionID)
+	require.NotEqual(t, att3.ProjectConnectionID, suffixed.ProjectConnectionID)
+	require.Equal(t, suffixedURL, stored[suffixed.ProjectConnectionID].Properties.Target)
+	require.Equal(t, mcpURLv2, stored[att3.ProjectConnectionID].Properties.Target)
+	putsBeforeRedeploy := putCalls
+	for _, endpoint := range []string{mcpURLv2, suffixedURL} {
+		_, err := builder.ResolveToolbox(t.Context(), toolboxRef{MCPEndpoint: endpoint})
+		require.NoError(t, err)
+	}
+	require.Equal(t, putsBeforeRedeploy, putCalls, "both connections must be reused on redeployment")
 }
 
 func TestFoundryToolboxBuilder_PutConnectionReplaysBodyOnRetry(t *testing.T) {
@@ -1226,7 +1245,7 @@ func TestToolboxNode_TwoServicesTargetingDifferentVersionsDisambiguateLabelsAndP
 		"type":                  "mcp",
 		"server_label":          "tools-v2",
 		"server_url":            urlV2,
-		"project_connection_id": "research-tools-v2-mcp",
+		"project_connection_id": toolboxVersionConnectionName("research-tools", "2", urlV2),
 		"require_approval":      "always",
 	}, managed.Tools[1])
 }
@@ -1388,7 +1407,7 @@ func TestToolboxNode_MultipleToolboxesAndPreservesToolsAndApproval(t *testing.T)
 		"type":                  "mcp",
 		"server_label":          "support-tools",
 		"server_url":            urlB,
-		"project_connection_id": "support-tools-v3-mcp",
+		"project_connection_id": toolboxVersionConnectionName("support-tools", "3", urlB),
 		"require_approval":      "never",
 	}, managed.Tools[1])
 	require.Equal(t, map[string]any{
@@ -1491,9 +1510,10 @@ func TestFoundryToolboxBuilder_ConcurrentFirstDeploymentsDoNotOverwriteTargets(t
 	require.NoError(t, err1)
 	require.NoError(t, err2)
 	require.Equal(t, "research-tools-mcp", att1.ProjectConnectionID)
-	require.Equal(t, "research-tools-v2-mcp", att2.ProjectConnectionID)
+	versionConnection := toolboxVersionConnectionName("research-tools", "2", urlV2)
+	require.Equal(t, versionConnection, att2.ProjectConnectionID)
 	require.NotNil(t, stored["research-tools-mcp"])
-	require.NotNil(t, stored["research-tools-v2-mcp"])
+	require.NotNil(t, stored[versionConnection])
 	require.Equal(t, urlV1, stored["research-tools-mcp"].Properties.Target)
-	require.Equal(t, urlV2, stored["research-tools-v2-mcp"].Properties.Target)
+	require.Equal(t, urlV2, stored[versionConnection].Properties.Target)
 }

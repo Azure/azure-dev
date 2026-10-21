@@ -361,6 +361,42 @@ func TestCdSuggestionsPowerShellSmartQuotes(t *testing.T) {
 	}
 }
 
+func TestCdSuggestionsPowerShellSmartDoubleQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u201c", "\u201d", "\u201e", "\u201f"} {
+		for _, folder := range []string{"my" + quote + "agent", "my" + quote + "agent" + quote, "my " + quote + "agent"} {
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+				assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+				assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			})
+		}
+	}
+}
+
+func TestCdSuggestionsPowerShellUnicodeDashes(t *testing.T) {
+	t.Parallel()
+	for _, dash := range []string{"\u2013", "\u2014", "\u2015"} {
+		t.Run(dash, func(t *testing.T) {
+			t.Parallel()
+			folder := dash + "agent"
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd "+folder, out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			embedded := "my" + dash + "agent"
+			out = CdSuggestions(embedded)
+			require.Len(t, out, 1)
+			assert.Equal(t, "cd "+embedded, out[0].Command)
+		})
+	}
+}
+
 func TestCdSuggestionsUnsafeCmdPath(t *testing.T) {
 	t.Parallel()
 	for _, folder := range []string{"my-%PATH%", "my-!PATH!", "my\"agent", "my\nagent", "my\ragent"} {

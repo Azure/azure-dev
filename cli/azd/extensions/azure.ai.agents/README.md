@@ -603,6 +603,9 @@ shell, then continue with the remaining steps. If cmd.exe cannot safely express
 the path (for example, it contains `%` or `!`), use the PowerShell alternative.
 Drive-qualified paths also show these alternatives so cmd.exe switches drives.
 PowerShell alternatives preserve both straight and smart apostrophes literally.
+Paths containing smart double quotes also use the shell-specific alternatives.
+The same applies to paths starting with a Unicode dash that PowerShell treats
+as a parameter prefix.
 
 ## Migrating Legacy Agent Configuration
 

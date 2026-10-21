@@ -63,11 +63,13 @@ func CdSuggestions(folder string) []Suggestion {
 	posixPath := shellQuoteCdPath(folder)
 	driveQualified := len(folder) >= 2 && folder[1] == ':' &&
 		((folder[0] >= 'A' && folder[0] <= 'Z') || (folder[0] >= 'a' && folder[0] <= 'z'))
-	// POSIX cd parses a leading '-' as an option, and cmd.exe cannot cd into a UNC path.
+	// POSIX cd treats '-' as an option; cmd.exe cannot cd into UNC paths.
 	optionLike := strings.HasPrefix(folder, "-")
+	powerShellOptionLike := strings.HasPrefix(folder, "\u2013") || strings.HasPrefix(folder, "\u2014") ||
+		strings.HasPrefix(folder, "\u2015")
 	unc := strings.HasPrefix(folder, "//") || strings.HasPrefix(folder, `\\`)
-	if posixPath == folder && !driveQualified && !optionLike && !unc &&
-		!strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b") {
+	if posixPath == folder && !driveQualified && !optionLike && !powerShellOptionLike && !unc &&
+		!strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
 		return []Suggestion{{
 			Command:     "cd " + folder,
 			Description: "enter your new project folder",

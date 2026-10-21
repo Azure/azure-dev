@@ -26,6 +26,7 @@ Available Commands
   init         : Initialize a new prompt, hosted, or voice agent project. (Preview)
   invocations  : Inspect and manage work created by invoking an agent.
   invoke       : Send a message to your prompt or hosted agent.
+  list-alpha   : Display all available agent preview features and their status.
   monitor      : Monitor logs from a hosted agent.
   optimize     : Evaluate and optimize AI agents.
   pack         : Build a ready-to-sideload Teams app package for an activity agent.

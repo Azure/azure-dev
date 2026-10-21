@@ -2,7 +2,34 @@
 
 ## Preview feature opt-ins
 
-Three capabilities are independently disabled by default:
+Three capabilities are independently disabled by default.
+
+Run `azd ai agent list-alpha` to see every available agent preview feature and its
+effective status, including disabled features. Use `--environment <name>` (`-e`)
+to read a specific environment. The command is always available and follows the
+default `azd config list-alpha` format:
+
+```text
+Name: agents.long_running
+Description: Start background Responses invocations.
+Status: Off
+
+Name: agents.managed_harness
+Description: Use a Microsoft Copilot harness with prompt agents.
+Status: Off
+
+Name: agents.voice
+Description: Use managed voice agents and hosted voice bridges.
+Status: Off
+```
+
+Records are sorted by feature ID. Each status is `On` if any of the four opt-in
+sources enables that feature; otherwise it is `Off`. `alpha.all` is an input,
+not a separate feature, and core-only features are not listed. Without a project
+or default environment, available sources still apply. Explicit invalid
+environments and source-loading errors fail before any records are printed.
+The command adds no authentication, prompts, or configuration writes; existing
+host project/environment loading behavior still applies.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |

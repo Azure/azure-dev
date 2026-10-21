@@ -4,10 +4,12 @@
 package featureflags
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
@@ -19,20 +21,32 @@ import (
 var (
 	// ManagedHarness controls prompt agents using a Copilot harness.
 	ManagedHarness = Feature{
-		ID:     "agents.managed_harness",
-		EnvVar: "AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS",
+		ID:          "agents.managed_harness",
+		Description: "Use a Microsoft Copilot harness with prompt agents.",
+		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS",
 	}
 	// Voice controls managed voice and hosted voice agents.
 	Voice = Feature{
-		ID:     "agents.voice",
-		EnvVar: "AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE",
+		ID:          "agents.voice",
+		Description: "Use managed voice agents and hosted voice bridges.",
+		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE",
 	}
 	// LongRunning controls starting background Responses invocations.
 	LongRunning = Feature{
-		ID:     "agents.long_running",
-		EnvVar: "AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING",
+		ID:          "agents.long_running",
+		Description: "Start background Responses invocations.",
+		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING",
 	}
 )
+
+// List returns independent copies of all features, sorted by ID.
+func List() []Feature {
+	features := []Feature{ManagedHarness, Voice, LongRunning}
+	slices.SortFunc(features, func(a, b Feature) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
+	return features
+}
 
 type environmentKey struct{}
 type servicesKey struct{}

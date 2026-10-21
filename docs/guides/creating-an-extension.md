@@ -134,6 +134,10 @@ multiple handlers and workflow steps are resolved.
 - **Extend existing command categories** — Use verb-first structure (e.g., `azd add <resource>`)
 - **Reuse parameter patterns** — Use established flags like `--subscription`, `--name`, `--type`
 - **Integrate with help** — Make your extension discoverable through `azd help`
+- **Preview discovery** — Keep extension-owned declarations and runtime checks
+  together. The agents extension's `azd ai agent list-alpha` shows all declared
+  previews with effective statuses, without registering them as core features.
+  See its [listing contract](../../cli/azd/extensions/azure.ai.agents/docs/specs/preview-feature-flags.md#listing-preview-features).
 - **Error handling** — Use `ServiceError` for Azure API errors and `LocalError` for client-side errors
 - **Telemetry** — Follow the [extension telemetry guide](../../cli/azd/docs/extensions/extension-telemetry.md);
   first-party `ReportUsage` attributes must be declared and classified in

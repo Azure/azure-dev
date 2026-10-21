@@ -34,6 +34,7 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 		"init",
 		"invoke",
 		"invocations",
+		"list-alpha",
 		"monitor",
 		"optimize",
 		"pack",

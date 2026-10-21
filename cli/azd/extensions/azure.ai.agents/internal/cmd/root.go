@@ -52,7 +52,7 @@ func NewRootCommand() *cobra.Command {
 		cmd.SetContext(featureflags.WithEnvironment(cmd.Context(), extCtx.Environment))
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {
-		case "deploy", "init", "listen", "metadata", "version":
+		case "deploy", "init", "list-alpha", "listen", "metadata", "version":
 		default:
 			telemetryReporter.reportProject(cmd.Context(), operation)
 		}
@@ -82,6 +82,7 @@ func NewRootCommand() *cobra.Command {
 		configureExtensionHostWithTelemetry(host, telemetryReporter)
 	}))
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newListAlphaCommand(extCtx))
 	rootCmd.AddCommand(newInitCommand(extCtx))
 	rootCmd.AddCommand(newAgentServiceAddCommand(extCtx))
 	rootCmd.AddCommand(newAgentDependencyCommand(extCtx, "toolbox", AiToolboxHost))

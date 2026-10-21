@@ -53,12 +53,13 @@ func (s *previewTestEnvironment) GetValues(
 
 func startPreviewCommandServer(
 	t *testing.T, alpha map[string]any, config *azdext.ProjectConfig, prompts *helpersPromptServer,
+	options ...grpc.ServerOption,
 ) (*azdext.AzdClient, *previewTestEnvironment) {
 	t.Helper()
 	if config == nil {
 		config = &azdext.ProjectConfig{}
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	env := &previewTestEnvironment{}
 	azdext.RegisterUserConfigServiceServer(server, &previewTestConfig{alpha: alpha})
 	azdext.RegisterProjectServiceServer(server, &helpersProjectServer{project: config})

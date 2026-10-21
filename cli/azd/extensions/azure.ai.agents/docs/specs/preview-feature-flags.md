@@ -25,7 +25,7 @@ azure.ai.agents/
 │   ├── cmd/                       # Command discovery and runtime callers
 │   ├── project/                   # Project/service integration callers
 │   └── featureflags/
-│       ├── agents.go              # Identities, classification, enforcement
+│       ├── agents.go              # Catalog, classification, enforcement
 │       ├── featureflags.go        # Validation, source reads, evaluation
 │       └── featureflags_test.go   # Source combinations and regressions
 └── docs/specs/
@@ -44,9 +44,12 @@ Keep validation, reads, and small evaluation helpers together in one implementat
 
 ```go
 type Feature struct {
-    ID     string
-    EnvVar string
+    ID          string
+    Description string
+    EnvVar      string
 }
+
+func List() []Feature
 
 func IsEnabled(
     ctx context.Context,
@@ -79,6 +82,33 @@ azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
 ```
 
 The [README](../../README.md#preview-feature-opt-ins) lists the equivalent commands for all three capabilities.
+
+### Listing preview features
+
+`azd ai agent list-alpha` is always available, including when all gates are off.
+`List` returns copies of all three declarations sorted by ID, with descriptions
+defined alongside their IDs and environment keys. The command calls `IsEnabled`
+for each declaration with the parsed `ExtensionContext.Environment`; it does
+not consult core's feature manager or infer a catalog from configured values.
+
+Output matches the default `azd config list-alpha` shape: `Name: <ID>`,
+`Description: <description>`, and `Status: On` or `Status: Off`, with blank lines
+between records and a final newline. All statuses are resolved before anything
+is printed to the Cobra command's injected writer. A later source error
+therefore cannot leave earlier records looking like a successful partial list.
+Writer failures also propagate.
+
+`alpha.all` remains a global config input, not a listed declaration.
+`agents.hosted` and core-only features are absent. The only supported output
+format is `default`; unsupported explicit formats, including an empty value,
+and positional arguments fail before source reads. Existing global flags and
+SDK help, completion, and metadata behavior are preserved.
+
+The command adds no cloud calls, authentication, prompts, writes, or
+feature-specific telemetry. It inherits the optional-scope/error contract
+below. Existing host project/environment loaders may still have their own
+environment-selection or state-loading behavior; this is not a host-wide
+no-side-effects guarantee.
 
 ## Four independent enablement sources
 
@@ -125,7 +155,7 @@ An explicit HTTP `--agent-endpoint` carries no kind or harness information. It r
 
 Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. There is no state migration or automatic enablement. Agents-private checks do **not** intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
-The small API deliberately returns only an enablement decision and error, not a source report, registry entry, or policy object. OR semantics avoid accidental disabling by unrelated scopes, at the cost of having no local override for an existing opt-in. Exact optional-error matching avoids swallowing real failures but remains coupled to the existing host error contract.
+The evaluator deliberately returns only an enablement decision and error, not a source report, registry entry, or policy object. The listing accessor exposes declarations, not source provenance. OR semantics avoid accidental disabling by unrelated scopes, at the cost of having no local override for an existing opt-in. Exact optional-error matching avoids swallowing real failures but remains coupled to the existing host error contract.
 
 Disabled capabilities return the structured `feature_not_enabled` compatibility error with the exact config/environment enable commands. Explicit preview inputs are rejected rather than silently dropped. Enabling one capability does not enable another; `alpha.all=on` remains the shared config opt-in.
 
@@ -134,5 +164,11 @@ Disabled capabilities return the structured `feature_not_enabled` compatibility 
 Tests cover all 16 combinations of the four sources, all supported boolean spellings and non-enabling values, nested alpha config and `alpha.all`, exact environment keys, every service host and conflicting service order, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
 
 Command/provider regressions additionally cover independent gates, obsolete hosted opt-in isolation, selected-environment forwarding, voice discovery, explicit init/add inputs, staged manifests, local invocation bypasses, unchanged inputs on disabled-feature rejection, ordinary flows, and retained read access.
+
+Listing regressions cover the complete sorted catalog, independent statuses from
+each source, `alpha.all`, service-host independence, the exact record format,
+selected/default/explicit-empty environment forwarding, optional scopes, and
+source or writer failures without partial source-success output. Help and
+metadata advertise the command and its contextual enable examples.
 
 Run offline tests, build, vet, and scoped lint against the pinned SDK. Tier 0 scenarios document the new opt-in UX; they require a separate scenario-run request. No Azure scenario execution or user auth/config mutation is needed for unit validation.

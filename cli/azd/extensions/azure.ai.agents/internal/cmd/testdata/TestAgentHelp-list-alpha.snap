@@ -1,0 +1,36 @@
+Display all declared agent preview features, including disabled features,
+sorted by name. Each entry includes its name, description, and On or Off status,
+matching the default format of 'azd config list-alpha'.
+
+Status uses the same opt-in checks as agent operations: user config, the process
+environment, the selected azd environment (-e), and every azure.yaml service's
+env mapping. Any enabling source turns a feature on; false does not override
+another source's opt-in.
+
+Without a project or default environment, the available sources still apply.
+An invalid explicit environment or a source read error fails without printing
+feature records. This command is always available and needs no preview opt-in.
+
+Usage
+  azd ai agent list-alpha [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list-alpha
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: default) (default "default")
+
+Examples
+  List every agent preview feature and its effective status
+    azd ai agent list-alpha
+
+  Read values from a specific environment
+    azd ai agent list-alpha --environment dev
+
+  Enable voice through user config
+    azd config set alpha.agents.voice on
+
+  Alternatively, enable voice in the selected environment
+    azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true

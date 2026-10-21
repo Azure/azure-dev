@@ -13,6 +13,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestList(t *testing.T) {
+	features := List()
+	require.Equal(t, []Feature{LongRunning, ManagedHarness, Voice}, features)
+	require.Equal(t, []string{
+		"agents.long_running", "agents.managed_harness", "agents.voice",
+	}, []string{features[0].ID, features[1].ID, features[2].ID})
+	require.Equal(t, []string{
+		"AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING",
+		"AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS",
+		"AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE",
+	}, []string{features[0].EnvVar, features[1].EnvVar, features[2].EnvVar})
+	for _, feature := range features {
+		require.NotEmpty(t, feature.Description)
+	}
+
+	features[0] = Feature{ID: "changed", Description: "changed", EnvVar: "CHANGED"}
+	require.Equal(t, []Feature{LongRunning, ManagedHarness, Voice}, List())
+}
+
 func TestAgentPreviewFourSourceCombinations(t *testing.T) {
 	for _, feature := range []Feature{ManagedHarness, Voice, LongRunning} {
 		for mask := range 16 {

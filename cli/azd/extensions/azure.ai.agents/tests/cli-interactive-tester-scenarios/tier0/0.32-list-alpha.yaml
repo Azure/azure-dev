@@ -1,0 +1,21 @@
+# Tier 0: agent preview feature discovery; no auth or Azure cost.
+name: "list-alpha"
+command: "azd ai agent list-alpha --no-prompt"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:list-alpha", "parallel-safe"]
+env:
+  NO_COLOR: "1"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_ENVIRONMENT: ""
+  AZURE_ENV_NAME: ""
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING: "true"
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS: "true"
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE: "true"
+goals:
+  - "Confirm the command exits with code 0 without a login prompt, picker, Azure request, or project/configuration write."
+  - "Confirm exactly three feature records appear, ordered by Name: agents.long_running, agents.managed_harness, agents.voice."
+  - "Confirm each record has exactly Name, Description, and Status lines, with a nonempty description and Status: On. Records must be separated by blank lines, matching the default azd config list-alpha shape."
+  - "Confirm alpha.all, agents.hosted, core-only features, raw environment values, and terminal escape sequences are absent from the listing."
+  - "Run 'azd ai agent list-alpha --help'; confirm the help explains disabled-feature listing, --environment selection, and additive opt-in sources, and includes 'azd config set alpha.agents.voice on' and 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true'."
+  - "Take a screenshot of the feature listing."
+  - "Report a finding if a feature is missing or unsorted, a status ignores the supplied true process values, the record format differs, help omits enable guidance, or the command prompts, writes configuration, or contacts Azure."

@@ -25,6 +25,8 @@ import (
 type Feature struct {
 	// ID is the user config key under alpha.
 	ID string
+	// Description explains the capability enabled by this feature.
+	Description string
 	// EnvVar is the exact environment key read for this feature.
 	EnvVar string
 }

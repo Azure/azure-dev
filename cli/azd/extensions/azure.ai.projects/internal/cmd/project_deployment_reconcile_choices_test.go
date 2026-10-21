@@ -23,6 +23,7 @@ type sequencedAdoptionPrompt struct {
 	selections []int32
 	requests   []*azdext.SelectRequest
 	modelCalls int
+	modelQuota *azdext.QuotaCheckOptions
 }
 
 func (s *sequencedAdoptionPrompt) Select(
@@ -38,9 +39,10 @@ func (s *sequencedAdoptionPrompt) Select(
 }
 
 func (s *sequencedAdoptionPrompt) PromptAiModel(
-	context.Context, *azdext.PromptAiModelRequest,
+	_ context.Context, request *azdext.PromptAiModelRequest,
 ) (*azdext.PromptAiModelResponse, error) {
 	s.modelCalls++
+	s.modelQuota = request.GetQuota()
 	return &azdext.PromptAiModelResponse{Model: &azdext.AiModel{Name: "gpt-4.1"}}, nil
 }
 
@@ -184,6 +186,10 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 				assert.Zero(t, prompt.requests[0].GetOptions().GetSelectedIndex())
 			}
 			assert.Equal(t, test.wantCatalog, prompt.modelCalls == 1)
+			if test.wantCatalog {
+				require.NotNil(t, prompt.modelQuota)
+				assert.Equal(t, float64(1), prompt.modelQuota.GetMinRemainingCapacity())
+			}
 			assert.Equal(t, test.wantCatalog, ai.calls > 0)
 			assert.False(t, project.deploymentSet, "adoption must never write portable deployments")
 			got, present, err := provisioning.DecodeProjectDeployments(env.values[projectDeploymentsEnvKey])

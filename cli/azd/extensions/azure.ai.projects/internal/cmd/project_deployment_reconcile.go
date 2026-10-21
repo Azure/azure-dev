@@ -389,6 +389,7 @@ func selectAlternativeAdoptedDeployment(
 		AzureContext:  azureContext,
 		Filter:        &azdext.AiModelFilterOptions{Locations: []string{location}},
 		SelectOptions: &azdext.SelectOptions{Message: "Select a model"},
+		Quota:         &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
 	})
 	if err != nil {
 		if exterrors.IsCancellation(err) {

@@ -30,7 +30,7 @@ func MissingTenant() error {
 		Code:       CodeMissingTenant,
 		Category:   azdext.LocalErrorCategoryDependency,
 		Message:    "No Azure tenant is configured for this operation.",
-		Suggestion: "Supply the tenant option or AZURE_TENANT_ID, or use an azd environment with a configured tenant.",
+		Suggestion: "Set AZURE_TENANT_ID, or use an azd environment with a configured tenant.",
 	}
 }
 

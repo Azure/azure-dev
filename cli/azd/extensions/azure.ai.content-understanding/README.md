@@ -1,9 +1,8 @@
 # Azure Content Understanding
 
-Native Go foundation for the Azure Content Understanding first-party extension.
-This development build provides help, version, metadata, and runtime foundations.
-The complete internal REST client is implemented but is not yet exposed as public
-service commands.
+Native Go first-party Azure Content Understanding extension.
+This development build provides help, version, metadata, and analyzer
+list/show/create/delete commands. The remaining CU workflows are in development.
 
 ## Installation
 
@@ -20,11 +19,55 @@ from this directory with `azd x build`.
 azd ai cu --help
 azd ai cu version
 azd ai cu version --output json
+azd ai cu analyzer list --kind custom --sort-by createdAt -o json
+azd ai cu analyzer show prebuilt-document
+azd ai cu analyzer create invoice_v1 --schema schema.json
+azd ai cu analyzer delete invoice_v1 --yes --no-prompt
 ```
 
-These commands do not require a CU endpoint, Azure sign-in, or an azd project.
+Help, version, and metadata do not require an endpoint, sign-in, or project.
+Service commands require a CU endpoint, a resolved tenant, and azd sign-in.
+For projectless use, set `AZURE_TENANT_ID`, run `azd auth login`, and pass
+`--endpoint` or set process `CU_ENDPOINT`.
 Hidden `metadata` output is generated from the runtime Cobra command tree.
 The extension inherits azd global flags instead of defining a second set.
+
+### Analyzer commands
+
+- `list` accepts `--kind all|prebuilt|custom` and
+  `--sort-by analyzerId|createdAt|lastModifiedAt`. Filtering/sorting is local after
+  all service pages have completed. Date sorting is chronological, missing dates
+  sort first, and equal keys retain service order.
+- `show`, `create`, and `delete` require exactly one analyzer name: positional,
+  `--name`, `-n`, or `-a`. Positional and named forms cannot be combined.
+- `create` requires `--schema` / `-s`. Custom IDs use 1-64 ASCII letters,
+  numbers, or underscores, unlike prebuilt IDs, which can contain hyphens.
+  Files are read relative to the inherited `--cwd`. Local UTF-8/JSON and blocking
+  structural rules run before opening a service session. A schema's `apiVersion`
+  must match the resolved API version. Unknown JSON properties and exact numbers
+  are retained. Empty invalid containers are rejected, rather than being treated
+  as absent; canonical properties take precedence over legacy snake-case aliases.
+  Authoring warnings and the standalone `analyzer validate` workflow remain
+  separate work. Create never replaces an existing analyzer or retries a write.
+- `delete` prompts through azd with a default of **No**, unless `--yes` / `-y`
+  is supplied. `--no-prompt` (or `AZD_NO_PROMPT=true`) without `--yes` fails before
+  configuration/service access. Declining confirmation cancels the operation.
+  After confirmation, GET verifies existence before DELETE; a failed lookup never
+  deletes, and a missing analyzer is an error.
+
+As in PR2, default human-readable output is pretty-printed, complete JSON rather
+than a summary table. `-o default` and `-o json` preserve the same result shape:
+a list array, a complete show/create analyzer object (including service warnings),
+or `{"deleted":true,"analyzerId":"..."}`. `-o none` suppresses successful result
+output, not the operation, confirmation, or errors. An empty list is `[]`, not
+`null`. Unknown properties and large integers survive serialization. No progress
+messages are mixed into result stdout; debug lifecycle messages go to stderr.
+
+All CU command metadata sets `launch.noAzdEnvironment`. The host therefore
+does not inject persisted environment values or resolve unrelated Key Vault
+references before launch; the extension reads its selected environment through
+scoped RPCs. Inherited process inputs remain available. This preserves source
+precedence and projectless execution, including offline help and metadata.
 
 ## Development
 
@@ -79,8 +122,9 @@ implementation/release gates.
 
 ### Configuration resolution
 
-The internal runtime resolves configuration before constructing the azd-backed
-credential. These settings are not yet exposed as public CU service commands.
+The runtime resolves configuration before constructing the azd-backed credential.
+Analyzer commands expose `--endpoint` and `--api-version`; remaining settings
+come from the supported environment/config sources.
 No global CU profile or user-config store is introduced.
 
 | Setting | Highest to lowest priority |
@@ -124,6 +168,8 @@ in the selected environment and `cu.apiKey` (including legacy `api_key`) in its
 config are rejected even when runtime options override other settings. Empty
 persisted key entries must also be removed. Secrets are never included in resolved
 configuration, diagnostic logs, or errors.
+The PR2 `--auth-mode` and `--api-key` options are intentionally not exposed while
+the API-key flow remains undecided.
 
 ### CU client contract
 
@@ -148,8 +194,8 @@ preview-version strings remains a separate CLI compatibility decision.
 The contract is based on the [public CU TypeSpec and versioned OpenAPI specifications](https://github.com/Azure/azure-rest-api-specs/tree/56b13af91ff8d8b5ad706a502e6b4e44e6d57e1f/specification/ai/data-plane/ContentUnderstanding).
 Inline analysis is preview-only; the adapter rejects it locally with the GA
 version. Wire tests cover both versions and supported input/mode combinations.
-Domain input validation alone does not claim wire/API-version conformance. Public
-CU command wiring remains a separate step.
+Domain input validation alone does not claim wire/API-version conformance.
+Analyzer list/show/create/delete are wired; remaining CU commands are not yet exposed.
 
 ### Authenticated HTTP transport
 
@@ -180,8 +226,9 @@ tenant or identity. API-key authentication is not implemented.
   are redacted by the standard pipeline logging policy.
 
 Tests use fake credentials/transports and local HTTPS servers. They do not call
-Azure or incur service charges. The transport is not yet wired to public CU
-commands.
+Azure or incur service charges. Command tests additionally use injected clients
+and local azd gRPC servers for request mapping, golden output files, confirmation,
+cancellation, metadata launch policy, and safe failures.
 
 ### Analyzer REST operations
 
@@ -206,8 +253,8 @@ versions.
   safe codes and redacted nested diagnostics, not raw service error text.
 - Optional usage distinguishes absent counters from zero. Usage is taken from
   the completed operation response.
-- Delete uses the service's idempotent semantics. The future command must look up
-  existence first when a missing analyzer should be reported as an error.
+- Delete uses the service's idempotent semantics. The command first checks
+  existence so a missing analyzer is reported as an error.
 - Defaults update uses `application/merge-patch+json`. The service returns the
   resulting mapping; an empty mapping is not a request to clear existing entries.
 

@@ -9,14 +9,17 @@ import (
 )
 
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(openServiceSession)
+}
+
+func newRootCommand(open sessionFactory) *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:    "cu",
 		Use:     "cu <command> [options]",
 		Version: Version,
 		Short:   "Work with Azure Content Understanding. (Preview)",
 		Long: "Work with Azure Content Understanding using a native Go azd extension.\n\n" +
-			"This development build provides the extension foundation. " +
-			"Content Understanding operations are not yet available.",
+			"Manage analyzer definitions in your Microsoft Foundry resource.",
 	})
 
 	rootCmd.SilenceUsage = true
@@ -29,6 +32,7 @@ func NewRootCommand() *cobra.Command {
 
 	rootCmd.AddCommand(newVersionCommand(&extCtx.OutputFormat))
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
+	rootCmd.AddCommand(newAnalyzerCommand(extCtx, open))
 	rootCmd.Example = `  # Show extension help
   azd ai cu --help
 

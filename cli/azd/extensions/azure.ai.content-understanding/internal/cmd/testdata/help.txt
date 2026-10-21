@@ -1,6 +1,6 @@
 Work with Azure Content Understanding using a native Go azd extension.
 
-This development build provides the extension foundation. Content Understanding operations are not yet available.
+Manage analyzer definitions in your Microsoft Foundry resource.
 
 Usage:
   cu [command]
@@ -13,6 +13,7 @@ Examples:
   azd ai cu version --output json
 
 Available Commands:
+  analyzer    Manage Content Understanding analyzers
   version     Display the extension version
 
 Flags:

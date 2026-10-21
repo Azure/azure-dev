@@ -65,6 +65,9 @@ func TestRootHelpSnapshot(t *testing.T) {
 	actual, stderr, err := executeRoot(t, "--help")
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
+	if os.Getenv("UPDATE_SNAPSHOTS") == "true" {
+		require.NoError(t, os.WriteFile("testdata/help.txt", []byte(actual), 0o600))
+	}
 	expected, err := os.ReadFile("testdata/help.txt")
 	require.NoError(t, err)
 	assert.Equal(t, string(expected), actual)

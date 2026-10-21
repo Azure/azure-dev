@@ -68,7 +68,7 @@ func (*environmentServer) GetConfigSection(
 	return &azdext.GetConfigSectionResponse{}, nil
 }
 
-func startHost(t *testing.T, server *deploymentServer) {
+func startHost(t *testing.T, server *deploymentServer, prompts ...azdext.PromptServiceServer) {
 	t.Helper()
 	for key := range config.ProcessValues() {
 		t.Setenv(key, "")
@@ -79,6 +79,9 @@ func startHost(t *testing.T, server *deploymentServer) {
 	host := grpc.NewServer()
 	azdext.RegisterDeploymentServiceServer(host, server)
 	azdext.RegisterEnvironmentServiceServer(host, &environmentServer{})
+	if len(prompts) != 0 {
+		azdext.RegisterPromptServiceServer(host, prompts[0])
+	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- host.Serve(listener) }()
 	t.Cleanup(func() {

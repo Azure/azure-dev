@@ -4,6 +4,7 @@
 package localio
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -16,6 +17,31 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBoundedStateReadsAndExecutablePublication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state")
+	require.NoError(t, Write(path, []byte("state"), false))
+	body, err := Read(path)
+	require.NoError(t, err)
+	assert.Equal(t, "state", string(body))
+	require.NoError(t, MakeExecutable(path))
+	for _, invalid := range []string{filepath.Dir(path), path + "-absent", filepath.Join(path, "child")} {
+		_, err := Read(invalid)
+		require.Error(t, err)
+		require.Error(t, MakeExecutable(invalid))
+	}
+	for _, body := range [][]byte{{0xff}, bytes.Repeat([]byte("a"), 8*1024*1024+1)} {
+		require.NoError(t, Write(path, body, true))
+		_, err := Read(path)
+		require.Error(t, err)
+	}
+	link := path + "-link"
+	if err := os.Symlink(path, link); err == nil {
+		_, err := Read(link)
+		require.Error(t, err)
+		require.Error(t, MakeExecutable(link))
+	}
+}
 
 func TestAtomicWritePoliciesAndPermissions(t *testing.T) {
 	directory := t.TempDir()

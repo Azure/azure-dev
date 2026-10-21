@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package armclient provides read-only ARM account discovery for CU workflows.
+// Package armclient provides ARM account discovery and scoped model management for CU workflows.
 package armclient
 
 import (

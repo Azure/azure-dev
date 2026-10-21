@@ -2,8 +2,10 @@
 
 Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
-list/show/create/copy/delete/validate/test, schema authoring, service defaults, doctor, and environment-variable
-inspection. The remaining CU workflows are in development.
+list/show/create/copy/delete/validate/test, schema authoring, service defaults, doctor,
+environment-variable inspection, infrastructure generation, and generated-project hooks.
+All 16 required command paths are implemented; release readiness and generated Go
+SDK conformance remain separate gates.
 
 ## Installation
 
@@ -37,6 +39,7 @@ azd ai cu defaults show
 azd ai cu defaults set --from-environment
 azd ai cu doctor
 azd ai cu env-var list
+azd ai cu infra generate -d provision -e dev --models none
 ```
 
 Help, version, and metadata do not require an endpoint, sign-in, or project.
@@ -45,6 +48,90 @@ For projectless use, set `AZURE_TENANT_ID`, run `azd auth login`, and pass
 `--endpoint` or set process `CU_ENDPOINT`.
 Hidden `metadata` output is generated from the runtime Cobra command tree.
 The extension inherits azd global flags instead of defining a second set.
+
+### Infrastructure and generated-project hooks
+
+`infra generate` writes the canonical infra-only azd project: Bicep, parameters,
+model input, `azure.yaml`, Bash/PowerShell hooks, and selected azd environment
+state. It needs the azd host and subscription context, but no existing project
+or CU endpoint. Generation itself never deploys Azure resources or models.
+Defaults are `provision`, environment `dev`, region `eastus2`, GA API version,
+model selection `prompt`, and no role assignments. Inherited `-e` selects the
+generated environment; no conflicting extension-local environment flag is added.
+With `--no-prompt`, the host must expose an unambiguous default subscription
+(or a single available subscription). It never arbitrarily selects one.
+
+```bash
+azd ai cu infra generate -d provision -e dev --models recommended --no-prompt
+azd ai cu infra generate -d provision --foundry-endpoint <account-name-or-ARM-ID-or-HTTPS-endpoint>
+azd ai cu infra generate -d provision --foundry-prefix my-cu --assign-roles
+cd provision
+azd auth login
+azd up
+```
+
+An existing resource is resolved with ARM under the selected subscription; its
+region is used unless `--location` overrides it. A prefix and existing resource
+cannot be combined. `--assign-roles` opts into the template's new-account
+Cognitive Services User assignment and requires role-assignment permissions.
+`--no-assign-roles` explicitly retains the default. Existing accounts require
+an existing data-plane role. The extension is Entra-only; it never lists,
+stores, or falls back to account keys.
+
+A recognized generated project is reused without replacing editable assets,
+models, unknown azd config, or custom environment lines. The legacy environment
+completion marker is preserved during merge, but hook completion is tracked by
+the selected environment's `cu.modelSetupComplete` boolean. `--force` replaces
+known generated assets/state, clears the model file, and sets
+`CU_CONFIG_SETUP_FORCE=true`; unrelated files are not deleted. Invalid reusable
+state and unsafe output paths fail preflight before writes. Files are published
+individually and atomically, not as a directory transaction; an I/O failure
+retains completed files. Output includes resolved choices, file paths, reuse
+status, and shell-quoted next steps.
+
+The generated hooks invoke only `azd ai cu infra _postprovision-v1`; neither
+Python nor standalone `cu` is required. The hidden `_models` compatibility hook
+accepts `--resource-group`, `--account`, `--selection`, and `--out`. Its
+`none` selection writes `[]` entirely offline, with no host/auth/catalog calls.
+Other selections require the account to match the selected generated environment,
+preventing cross-account CU-default writes.
+
+Model policy ports the shared core: intersect `prebuilt-document` supported
+families with the account's live ARM catalog, prefer GlobalStandard /
+DataZoneStandard / Standard SKUs, retain explicit versions and capacities, and
+reject ambiguous versions or duplicate families. `recommended` uses the existing
+CU family preferences; `prompt` uses azd confirmations defaulting to No.
+Unattended provisioning must use `none`, `recommended`, or explicit comma-separated
+`model@version` selectors. Model discovery and deployment use the official ARM Go
+SDK, API `2025-06-01`; Bicep assets retain their pinned resource API versions.
+Deployment writes are not automatically replayed. Exact **succeeded** matches
+are reused; conflicting or unfinished deployments are not overwritten/deleted.
+All selected deployments are checked for conflicts before any create request.
+Create requests include `If-None-Match: *`; concurrent ARM changes can still
+require inspection and retry rather than being treated as successful.
+
+Postprovision performs optional model setup before basic configuration.
+Successful model setup records `cu.modelSetupComplete=true`; completed setup is
+not repeated. `CU_DISABLE_AUTO_CONFIG=true` disables subsequent configuration,
+not model setup. Existing analyzer/model configuration is preserved unless
+forced. Required writes set `CU_ENDPOINT` and `cu.defaultAnalyzer=prebuilt-layout`;
+model mappings are written as a whole JSON map so dots in model names remain
+literal keys. Existing CU defaults are merged using the shared defaults helper.
+Optional model/catalog/default failures are explicit safe warnings; required
+configuration failures return nonzero without success-shaped stdout.
+Cancellation always stops the workflow. Generative readiness requires succeeded
+completion and embedding deployments **and** successfully configured defaults.
+No live Azure deployment is performed by the local test suite.
+
+Infrastructure assets are vendored from `cu-cli-core` revision
+`25d39b30116a840491b7b6f393d6db792b38d4a4`; seven executable/configuration assets
+are hash-checked against its golden fixtures. Only the bundled README is adapted
+for native installation, Entra-only authentication, confirmation UX, and truthful
+versioned-hook support. Intentional safety improvements over the Python prototype
+include full conflict preflight, rejecting unfinished matching deployments,
+scoped hook arguments, literal model-map keys, and cancellation propagation.
+The CU data-plane adapter remains replaceable by the future TypeSpec-generated
+Go SDK; no generated-source comparison is claimed yet.
 
 ### Analyzer commands
 

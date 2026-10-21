@@ -1,0 +1,449 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"azure.ai.content-understanding/internal/armclient"
+	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/infra"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+)
+
+type infraCommandHost struct {
+	snapshot     infraSnapshot
+	capabilities *infraCommandCapabilities
+	calls        []string
+	selected     string
+	request      infra.PostRequest
+}
+
+func infraCommandFixture(t *testing.T) *infraCommandHost {
+	t.Helper()
+	for _, name := range []string{"AZD_ENVIRONMENT", "AZD_NO_PROMPT", "AZD_CWD", "CU_DISABLE_AUTO_CONFIG"} {
+		t.Setenv(name, "")
+	}
+	return &infraCommandHost{capabilities: &infraCommandCapabilities{}, snapshot: infraSnapshot{
+		environment: "dev", section: map[string]json.RawMessage{}, values: map[string]string{
+			"FOUNDRY_ENDPOINT": "https://foundry.example", "FOUNDRY_RESOURCE_NAME": "foundry",
+			"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_TENANT_ID": "tenant", "AZURE_RESOURCE_GROUP": "group",
+			"CU_MODEL_SELECTION": "none",
+		},
+	}}
+}
+func (f *infraCommandHost) Subscription(context.Context, bool) (*azdext.Subscription, error) {
+	f.calls = append(f.calls, "subscription")
+	return &azdext.Subscription{Id: "sub", TenantId: "tenant", Name: "Subscription"}, nil
+}
+func (f *infraCommandHost) Resolve(_ context.Context, _ *azdext.Subscription, resource string) (armclient.Account, error) {
+	f.calls = append(f.calls, "resolve")
+	return armclient.Account{
+		ID:       "/subscriptions/sub/resourceGroups/existing/providers/Microsoft.CognitiveServices/accounts/foundry",
+		Endpoint: "https://foundry.example/contentunderstanding", Region: "westus3"}, nil
+}
+func (f *infraCommandHost) Snapshot(_ context.Context, name string) (infraSnapshot, error) {
+	f.calls = append(f.calls, "snapshot")
+	f.selected = name
+	return f.snapshot, nil
+}
+func (f *infraCommandHost) Capabilities(_ context.Context, _ infraSnapshot, request infra.PostRequest,
+) (infra.PostCapabilities, infra.ModelCapabilities, error) {
+	f.calls = append(f.calls, "capabilities")
+	f.request = request
+	return f.capabilities, f.capabilities, nil
+}
+func (f *infraCommandHost) Close() { f.calls = append(f.calls, "close") }
+
+type infraCommandCapabilities struct {
+	calls []string
+	fail  string
+}
+
+func (c *infraCommandCapabilities) record(value string) error {
+	c.calls = append(c.calls, value)
+	if c.fail == value {
+		return errors.New("private-service-token-detail")
+	}
+	return nil
+}
+func (c *infraCommandCapabilities) SetupModels(context.Context) error  { return c.record("setup") }
+func (c *infraCommandCapabilities) MarkComplete(context.Context) error { return c.record("complete") }
+func (c *infraCommandCapabilities) HasConfiguration(context.Context) (bool, error) {
+	return false, c.record("inspect")
+}
+func (c *infraCommandCapabilities) SetConfiguration(_ context.Context, key, value string) error {
+	return c.record(key)
+}
+func (c *infraCommandCapabilities) ListDeployments(context.Context) ([]infra.Deployment, error) {
+	return []infra.Deployment{}, c.record("list")
+}
+func (c *infraCommandCapabilities) ConfigureDefaults(context.Context, map[string]string) error {
+	return c.record("defaults")
+}
+func (c *infraCommandCapabilities) Supported(context.Context) (cuclient.Analyzer, error) {
+	return cuclient.Analyzer{JSON: []byte(`{"supportedModels":{"completion":["gpt-5.2"]}}`)}, c.record("supported")
+}
+func (c *infraCommandCapabilities) Catalog(context.Context) ([]infra.CatalogModel, error) {
+	return []infra.CatalogModel{{Name: "gpt-5.2", Version: "v1", Format: "OpenAI",
+			SKUs: []infra.ModelSKU{{Name: "Standard", Capacity: 1}}}},
+		c.record("catalog")
+}
+func (c *infraCommandCapabilities) PromptModels(_ context.Context, models []infra.Model) ([]infra.Model, error) {
+	return models, c.record("prompt")
+}
+func (c *infraCommandCapabilities) Deploy(context.Context, []infra.Model) error {
+	return c.record("deploy")
+}
+
+func executeInfra(t *testing.T, host *infraCommandHost, args ...string) (string, string, error) {
+	t.Helper()
+	root := newRootCommandWithInfra(nil, func(*cobra.Command, *azdext.ExtensionContext) (infraHost, error) {
+		host.calls = append(host.calls, "open")
+		return host, nil
+	})
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs(args)
+	err := root.ExecuteContext(t.Context())
+	return stdout.String(), stderr.String(), err
+}
+
+func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
+	f := infraCommandFixture(t)
+	t.Setenv("CU_ENDPOINT", "invalid-not-read")
+	t.Setenv("CU_API_KEY", "private-not-read")
+	target := filepath.Join(t.TempDir(), "generated")
+	stdout, stderr, err := executeInfra(t, f,
+		"infra", "generate", "-d", target, "-e", "new-env", "--models", "none", "--no-prompt")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	var result infra.Generation
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.Equal(t, "new-env", result.Environment)
+	assert.Equal(t, "eastus2", result.Location)
+	assert.Equal(t, "sub", result.SubscriptionID)
+	assert.Equal(t, []string{"open", "subscription", "close"}, f.calls)
+	assert.Len(t, result.Files, 10)
+	f.calls = nil
+	stdout, _, err = executeInfra(t, f, "infra", "generate", "-d", target, "-e", "new-env", "--models", "none",
+		"--foundry-endpoint", "foundry", "--assign-roles")
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.True(t, result.ReusedExistingTemplate)
+	assert.Equal(t, "westus3", result.Location)
+	assert.Equal(t, "https://foundry.example", result.FoundryEndpoint)
+	assert.Equal(t, "existing", result.FoundryResourceGroup)
+	assert.True(t, result.AssignRoles)
+	assert.Equal(t, []string{"open", "subscription", "resolve", "close"}, f.calls)
+	for _, args := range [][]string{
+		{"infra", "generate", "-e", "../escape"}, {"infra", "generate", "--location", "invalid"},
+		{"infra", "generate", "--models", "none,other"},
+		{"infra", "generate", "--foundry-prefix", "prefix", "--foundry-endpoint", "foundry"},
+		{"infra", "generate", "--subscription", "sub"}, {"infra", "generate", "--api-key", "private"},
+	} {
+		f.calls = nil
+		stdout, _, err := executeInfra(t, f, args...)
+		require.Error(t, err)
+		assert.Empty(t, stdout)
+		assert.Empty(t, f.calls)
+	}
+}
+
+func TestInfraModelHookOfflineAndScopedDeployment(t *testing.T) {
+	f := infraCommandFixture(t)
+	output := filepath.Join(t.TempDir(), "models.json")
+	args := []string{"infra", "_models", "--resource-group", "group", "--account", "foundry",
+		"--selection", "none", "--out", output, "-o", "none"}
+	stdout, stderr, err := executeInfra(t, f, args...)
+	require.NoError(t, err)
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+	assert.Empty(t, f.calls)
+	args[7] = "recommended"
+	_, _, err = executeInfra(t, f, args...)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"open", "snapshot", "capabilities", "close"}, f.calls)
+	assert.Equal(t, []string{"supported", "catalog", "deploy", "defaults"}, f.capabilities.calls)
+	f.calls = nil
+	_, _, err = executeInfra(t, f, "infra", "_models", "--resource-group", "group", "--account", "different",
+		"--selection", "recommended", "--out", output, "-e", "selected")
+	require.Error(t, err)
+	assert.Equal(t, "selected", f.selected)
+	assert.NotContains(t, f.calls, "capabilities")
+	f.calls = nil
+	_, _, err = executeInfra(t, f, "infra", "_models", "--resource-group", "group", "--account", "foundry",
+		"--selection", "prompt", "--out", output, "--no-prompt")
+	require.Error(t, err)
+	assert.Empty(t, f.calls)
+}
+
+func TestInfraPostHookResultsWarningsAndRequiredFailure(t *testing.T) {
+	for _, fail := range []string{"", "setup", "endpoint", "inspect"} {
+		f := infraCommandFixture(t)
+		f.capabilities.fail = fail
+		stdout, stderr, err := executeInfra(t, f, "infra", "_postprovision-v1", "-e", "selected", "-o", "json", "--debug")
+		assert.Equal(t, "selected", f.selected)
+		assert.Equal(t, "https://foundry.example", f.request.Endpoint)
+		assert.NotContains(t, stdout+stderr, "private-service-token")
+		switch fail {
+		case "endpoint", "inspect":
+			require.Error(t, err)
+			assert.Empty(t, stdout)
+		case "setup":
+			require.NoError(t, err)
+			assert.Contains(t, stderr, "Optional model setup failed")
+			assert.Contains(t, stdout, `"modelSetup": "failed"`)
+		default:
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			assert.Contains(t, stdout, `"succeeded": true`)
+		}
+	}
+}
+
+func TestInfraMetadataAndPostEnvironmentPrecedence(t *testing.T) {
+	stdout, _, err := executeInfra(t, infraCommandFixture(t), "metadata")
+	require.NoError(t, err)
+	var metadata extensions.ExtensionCommandMetadata
+	require.NoError(t, json.Unmarshal([]byte(stdout), &metadata))
+	for _, path := range [][]string{{"infra", "generate"}, {"infra", "_models"}, {"infra", "_postprovision-v1"}} {
+		command := extensions.ResolveCommand(&metadata, path)
+		require.NotNil(t, command)
+		require.NotNil(t, command.Launch)
+		assert.True(t, command.Launch.NoAzdEnvironment)
+	}
+	f := infraCommandFixture(t)
+	f.snapshot.values["CU_ENDPOINT"] = "https://other.example"
+	f.snapshot.values["CU_MODEL_SETUP_COMPLETE"] = "true"
+	f.snapshot.values["CU_CONFIG_SETUP_FORCE"] = "true"
+	f.snapshot.section["apiVersion"] = json.RawMessage(`"2026-06-01-preview"`)
+	request, err := postRequest(f.snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, "https://foundry.example", request.Endpoint)
+	assert.Equal(t, cuclient.PreviewAPIVersion, request.APIVersion)
+	assert.False(t, request.SetupComplete)
+	assert.True(t, request.ForceConfiguration)
+	f.snapshot.section["modelSetupComplete"] = json.RawMessage(`true`)
+	request, err = postRequest(f.snapshot)
+	require.NoError(t, err)
+	assert.True(t, request.SetupComplete)
+	f.snapshot.section["modelSetupComplete"] = json.RawMessage(`"true"`)
+	_, err = postRequest(f.snapshot)
+	require.Error(t, err)
+}
+
+type infraRPC struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	azdext.UnimplementedAccountServiceServer
+	mu            sync.Mutex
+	calls         []string
+	values        []*azdext.KeyValue
+	section       *azdext.GetConfigSectionResponse
+	subscriptions []*azdext.Subscription
+	writes        map[string]json.RawMessage
+}
+
+func (h *infraRPC) record(value string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, value)
+}
+func (h *infraRPC) Get(_ context.Context, request *azdext.GetEnvironmentRequest) (*azdext.EnvironmentResponse, error) {
+	h.record("get:" + request.Name)
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: request.Name}}, nil
+}
+func (h *infraRPC) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
+	h.record("current")
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "default"}}, nil
+}
+func (h *infraRPC) GetValues(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	h.record("values:" + request.Name)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return &azdext.KeyValueListResponse{KeyValues: h.values}, nil
+}
+func (h *infraRPC) GetConfigSection(_ context.Context, request *azdext.GetConfigSectionRequest,
+) (*azdext.GetConfigSectionResponse, error) {
+	h.record("config:" + request.EnvName + ":" + request.Path)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.section, nil
+}
+func (h *infraRPC) SetConfig(_ context.Context, request *azdext.SetConfigRequest) (*azdext.EmptyResponse, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "set:"+request.EnvName+":"+request.Path)
+	h.writes[request.Path] = append(json.RawMessage{}, request.Value...)
+	return &azdext.EmptyResponse{}, nil
+}
+func (h *infraRPC) SetValue(_ context.Context, request *azdext.SetEnvRequest) (*azdext.EmptyResponse, error) {
+	h.record("env:" + request.EnvName + ":" + request.Key + ":" + request.Value)
+	return &azdext.EmptyResponse{}, nil
+}
+func (h *infraRPC) ListSubscriptions(
+	context.Context, *azdext.ListSubscriptionsRequest,
+) (*azdext.ListSubscriptionsResponse, error) {
+	h.record("subscriptions")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return &azdext.ListSubscriptionsResponse{Subscriptions: h.subscriptions}, nil
+}
+func (h *infraRPC) PromptSubscription(context.Context, *azdext.PromptSubscriptionRequest,
+) (*azdext.PromptSubscriptionResponse, error) {
+	h.record("prompt-subscription")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return &azdext.PromptSubscriptionResponse{Subscription: h.subscriptions[0]}, nil
+}
+
+func (h *infraRPC) LookupTenant(
+	_ context.Context, request *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	h.record("tenant:" + request.SubscriptionId)
+	return &azdext.LookupTenantResponse{TenantId: "tenant"}, nil
+}
+
+type infraPromptRPC struct {
+	azdext.UnimplementedPromptServiceServer
+	rpc *infraRPC
+}
+
+func (h *infraPromptRPC) PromptSubscription(
+	ctx context.Context, request *azdext.PromptSubscriptionRequest,
+) (*azdext.PromptSubscriptionResponse, error) {
+	return h.rpc.PromptSubscription(ctx, request)
+}
+func infraRPCClient(t *testing.T, h *infraRPC) *azdInfraHost {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, h)
+	azdext.RegisterAccountServiceServer(server, h)
+	azdext.RegisterPromptServiceServer(server, &infraPromptRPC{rpc: h})
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		err := <-done
+		if err != nil {
+			assert.ErrorIs(t, err, grpc.ErrServerStopped)
+		}
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	t.Setenv("AZD_ACCESS_TOKEN", "host-test-token")
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	host, err := openInfraHost(cmd, &azdext.ExtensionContext{})
+	require.NoError(t, err)
+	t.Cleanup(host.Close)
+	actual, ok := host.(*azdInfraHost)
+	require.True(t, ok)
+	return actual
+}
+
+func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {
+	rpc := &infraRPC{section: &azdext.GetConfigSectionResponse{}, writes: map[string]json.RawMessage{},
+		values:        []*azdext.KeyValue{{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"}},
+		subscriptions: []*azdext.Subscription{{Id: "sub", TenantId: "tenant", IsDefault: true}}}
+	host := infraRPCClient(t, rpc)
+	ctx := azdext.WithAccessToken(t.Context())
+	snapshot, err := host.Snapshot(ctx, "selected")
+	require.NoError(t, err)
+	assert.Equal(t, "selected", snapshot.environment)
+	assert.Equal(t, "selected-sub", snapshot.values["AZURE_SUBSCRIPTION_ID"])
+	_, err = host.Subscription(ctx, true)
+	require.NoError(t, err)
+	_, err = host.Subscription(ctx, false)
+	require.NoError(t, err)
+	capabilities := &infraCapabilities{host: host, snapshot: snapshot}
+	require.NoError(t, capabilities.SetConfiguration(ctx, "endpoint", "https://account.example"))
+	require.NoError(t, capabilities.SetConfiguration(ctx, "default_analyzer", "prebuilt-layout"))
+	require.NoError(t, capabilities.SetConfiguration(ctx, "model_deployments.gpt-5.2", "deployment"))
+	require.NoError(t, capabilities.SetConfiguration(ctx, "model_deployments.text-embedding-3-large", "embedding"))
+	require.NoError(t, capabilities.MarkComplete(ctx))
+	rpc.mu.Lock()
+	assert.JSONEq(t, `{"gpt-5.2":"deployment","text-embedding-3-large":"embedding"}`,
+		string(rpc.writes["cu.modelDeployments"]))
+	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
+	assert.NotContains(t, strings.Join(rpc.calls, " "), "get:default")
+	assert.NotContains(t, rpc.calls, "current")
+	assert.Equal(t, []string{"get:selected", "values:selected", "config:selected:cu"}, rpc.calls[:3])
+	rpc.mu.Unlock()
+}
+
+func TestInfraHostNoninteractiveDecisionsAndInvalidState(t *testing.T) {
+	rpc := &infraRPC{section: &azdext.GetConfigSectionResponse{}, writes: map[string]json.RawMessage{}}
+	host := infraRPCClient(t, rpc)
+	ctx := azdext.WithAccessToken(t.Context())
+	for _, subscriptions := range [][]*azdext.Subscription{
+		{}, {{Id: "first", TenantId: "tenant"}, {Id: "second", TenantId: "tenant"}},
+		{{Id: "first", TenantId: "tenant", IsDefault: true}, {Id: "second", TenantId: "tenant", IsDefault: true}},
+		{{Id: "first"}},
+	} {
+		rpc.mu.Lock()
+		rpc.subscriptions = subscriptions
+		rpc.mu.Unlock()
+		_, err := host.Subscription(ctx, true)
+		require.Error(t, err)
+	}
+	rpc.mu.Lock()
+	rpc.subscriptions = []*azdext.Subscription{{Id: "single", TenantId: "tenant"}}
+	rpc.mu.Unlock()
+	subscription, err := host.Subscription(ctx, true)
+	require.NoError(t, err)
+	assert.Equal(t, "single", subscription.Id)
+	snapshot, err := host.Snapshot(ctx, "")
+	require.NoError(t, err)
+	assert.Equal(t, "default", snapshot.environment)
+	for _, section := range []string{"null", "[]", "invalid"} {
+		rpc.mu.Lock()
+		rpc.section = &azdext.GetConfigSectionResponse{Found: true, Section: []byte(section)}
+		rpc.mu.Unlock()
+		_, err := host.Snapshot(ctx, "selected")
+		require.Error(t, err)
+	}
+	rpc.mu.Lock()
+	rpc.section = &azdext.GetConfigSectionResponse{}
+	rpc.values = []*azdext.KeyValue{{Key: "duplicate"}, {Key: "duplicate"}}
+	rpc.mu.Unlock()
+	_, err = host.Snapshot(ctx, "selected")
+	require.Error(t, err)
+	request := infra.PostRequest{Endpoint: "https://foundry.example", Account: "foundry", Subscription: "sub",
+		ResourceGroup: "group", APIVersion: cuclient.DefaultAPIVersion, Selection: "none"}
+	post, _, err := host.Capabilities(ctx, snapshot, request)
+	require.NoError(t, err)
+	actual, ok := post.(*infraCapabilities)
+	require.True(t, ok)
+	assert.Equal(t, "https://foundry.example", actual.request.Endpoint)
+	require.NoError(t, actual.SetConfiguration(ctx, "default_analyzer", "prebuilt-layout"))
+	actual.snapshot.section["modelDeployments"] = json.RawMessage(`[]`)
+	require.Error(t, actual.SetConfiguration(ctx, "model_deployments.gpt-5.2", "deployment"))
+	require.Error(t, actual.SetConfiguration(ctx, "unsupported", "value"))
+	host.noPrompt = true
+	_, err = actual.PromptModels(ctx, nil)
+	require.Error(t, err)
+	actual.request.Selection = "prompt"
+	require.Error(t, actual.SetupModels(ctx))
+	_, err = host.Resolve(ctx, subscription, "http://invalid.example")
+	require.Error(t, err)
+}

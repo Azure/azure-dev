@@ -1,5 +1,6 @@
 import: ../../.vscode/cspell.yaml
-words: []
+words:
+  - noninteractive
 overrides:
   - filename: "internal/**/*.go"
     words:
@@ -7,6 +8,7 @@ overrides:
       - cuclient
       - analyzercopy
       - armclient
+      - armcognitiveservices
       - contentunderstanding
       - fnmatch
       - localio
@@ -30,3 +32,12 @@ overrides:
   - filename: "internal/schema/author.go"
     words:
       - epub
+  - filename: "internal/infra/templates.go"
+    words:
+      - australiaeast
+      - japaneast
+      - northeurope
+      - southcentralus
+      - southeastasia
+      - uksouth
+      - westeurope

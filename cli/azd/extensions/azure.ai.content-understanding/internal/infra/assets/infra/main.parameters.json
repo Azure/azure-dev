@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "foundryResourcePrefix": {
+      "value": "${FOUNDRY_RESOURCE_PREFIX=}"
+    },
+    "existingFoundryEndpoint": {
+      "value": "${FOUNDRY_EXISTING_ENDPOINT=}"
+    },
+    "existingFoundryResourceGroup": {
+      "value": "${FOUNDRY_EXISTING_RESOURCE_GROUP=}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE=User}"
+    },
+    "assignRolesToPrincipal": {
+      "value": "${AZD_ASSIGN_ROLES=false}"
+    }
+  }
+}

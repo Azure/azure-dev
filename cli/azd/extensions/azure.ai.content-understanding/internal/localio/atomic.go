@@ -7,10 +7,12 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // Check rejects symlinks and special files without creating parent directories.
@@ -24,6 +26,68 @@ func Check(path string) (bool, error) {
 	}
 	defer parent.Close()
 	return checkFile(parent, filepath.Base(path))
+}
+
+// MakeExecutable marks a published script executable without following replacement symlinks.
+func MakeExecutable(path string) (err error) {
+	parent, err := openDirectory(filepath.Dir(path), false)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, parent.Close()) }()
+	info, err := parent.Lstat(filepath.Base(path))
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("script must be a regular file")
+	}
+	file, err := parent.Open(filepath.Base(path))
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	actual, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(info, actual) {
+		return fmt.Errorf("script changed while opening")
+	}
+	return file.Chmod(info.Mode().Perm() | 0o111)
+}
+
+// Read reads one existing regular UTF-8/state file through the same anchored directory rules as Write.
+func Read(path string) (body []byte, err error) {
+	parent, err := openDirectory(filepath.Dir(path), false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, parent.Close()) }()
+	info, err := parent.Lstat(filepath.Base(path))
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("state must be a regular file")
+	}
+	file, err := parent.Open(filepath.Base(path))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	actual, err := file.Stat()
+	if err != nil || !os.SameFile(info, actual) {
+		return nil, fmt.Errorf("state changed while opening")
+	}
+	body, err = io.ReadAll(io.LimitReader(file, 8*1024*1024+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > 8*1024*1024 || !utf8.Valid(body) {
+		return nil, fmt.Errorf("state must be bounded UTF-8 text")
+	}
+	return body, nil
 }
 
 func checkFile(parent *os.Root, name string) (bool, error) {

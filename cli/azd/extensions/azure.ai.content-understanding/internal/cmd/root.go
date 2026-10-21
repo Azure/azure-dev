@@ -13,6 +13,10 @@ func NewRootCommand() *cobra.Command {
 }
 
 func newRootCommand(open sessionFactory) *cobra.Command {
+	return newRootCommandWithInfra(open, openInfraHost)
+}
+
+func newRootCommandWithInfra(open sessionFactory, infraOpen infraHostFactory) *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name:    "cu",
 		Use:     "cu <command> [options]",
@@ -37,6 +41,7 @@ func newRootCommand(open sessionFactory) *cobra.Command {
 	rootCmd.AddCommand(newDefaultsCommand(extCtx, open))
 	rootCmd.AddCommand(newDoctorCommand(extCtx, open))
 	rootCmd.AddCommand(newEnvVarCommand(extCtx))
+	rootCmd.AddCommand(newInfraCommand(extCtx, infraOpen))
 	rootCmd.Example = `  # Show extension help
   azd ai cu --help
 

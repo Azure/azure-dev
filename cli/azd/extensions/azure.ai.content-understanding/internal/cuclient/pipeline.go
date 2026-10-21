@@ -27,10 +27,14 @@ const maxErrorBodyBytes = 64 * 1024
 
 var serviceCodePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 
-// RESTTransport is the internal HTTP foundation, not yet a complete Client adapter.
+// RESTTransport implements analyzer operations over the internal HTTP pipeline.
+// Analysis submission is added separately before this implements the full Client.
 type RESTTransport struct {
 	endpoint      string
 	apiVersion    string
+	pollInterval  time.Duration
+	readRetry     policy.RetryOptions
+	writeRetry    policy.RetryOptions
 	readPipeline  runtime.Pipeline
 	writePipeline runtime.Pipeline
 }
@@ -53,12 +57,13 @@ func NewRESTTransport(
 	if transport == nil {
 		transport = newHTTPTransport(settings.RequestTimeout)
 	}
-	build := func(retries int32) runtime.Pipeline {
+	readRetry := policy.RetryOptions{MaxRetries: 2, TryTimeout: settings.RequestTimeout}
+	writeRetry := readRetry
+	writeRetry.MaxRetries = -1
+	build := func(retry policy.RetryOptions) runtime.Pipeline {
 		return runtime.NewPipeline("azd-cu", "v0.0.1", runtime.PipelineOptions{}, &policy.ClientOptions{
 			Transport: &boundedErrorTransport{inner: transport},
-			Retry: policy.RetryOptions{
-				MaxRetries: retries, TryTimeout: settings.RequestTimeout,
-			},
+			Retry:     retry,
 			PerCallPolicies: []policy.Policy{
 				&credentialPolicy{credential: credential},
 				azsdk.NewMsClientRequestIdPolicy(),
@@ -69,7 +74,8 @@ func NewRESTTransport(
 	}
 	return &RESTTransport{
 		endpoint: normalized, apiVersion: settings.APIVersion,
-		readPipeline: build(2), writePipeline: build(-1),
+		pollInterval: time.Second, readRetry: readRetry, writeRetry: writeRetry,
+		readPipeline: build(readRetry), writePipeline: build(writeRetry),
 	}, nil
 }
 
@@ -110,6 +116,13 @@ func (c *RESTTransport) request(
 	}
 	values.Set("api-version", c.apiVersion)
 	target.RawQuery = values.Encode()
+	pipeline, retry := c.writePipeline, c.writeRetry
+	if method == http.MethodGet || method == http.MethodHead {
+		pipeline, retry = c.readPipeline, c.readRetry
+	}
+	// azcore accepts context-level retry overrides. Do not let a host context
+	// silently weaken CU's retry or per-attempt timeout guarantees.
+	ctx = policy.WithRetryOptions(ctx, retry)
 	request, err := runtime.NewRequest(ctx, method, target.String())
 	if err != nil {
 		return nil, validationError("invalid_request", "The CU HTTP request could not be constructed.")
@@ -124,10 +137,6 @@ func (c *RESTTransport) request(
 		}
 	}
 	runtime.SkipBodyDownload(request)
-	pipeline := c.writePipeline
-	if method == http.MethodGet || method == http.MethodHead {
-		pipeline = c.readPipeline
-	}
 	response, err := pipeline.Do(request)
 	if err != nil {
 		return nil, transportError(err)

@@ -13,3 +13,6 @@ overrides:
       - cuclient
       - multimodal
       - contentunderstanding
+  - filename: "internal/cuclient/polling.go"
+    words:
+      - notstarted

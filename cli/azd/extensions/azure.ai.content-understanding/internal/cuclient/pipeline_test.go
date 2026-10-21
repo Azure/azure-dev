@@ -63,6 +63,7 @@ func TestTransportOptionsValidation(t *testing.T) {
 		assert.Equal(t, "https://resource.test/contentunderstanding", client.endpoint)
 		assert.Equal(t, DefaultAPIVersion, client.apiVersion)
 	}
+
 	for _, endpoint := range []string{
 		"", "http://resource.test", "https:///path", "https://user:private-token@resource.test",
 		"https://resource.test?sig=private-token", "https://resource.test#private-token", "https://resource.test?",
@@ -85,6 +86,35 @@ func TestTransportOptionsValidation(t *testing.T) {
 		assert.Nil(t, client)
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private-token")
+	}
+}
+
+func TestContextCannotOverrideCURetrySafety(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPost,
+		http.MethodPatch, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			calls := 0
+			client := newTestTransport(t, func(request *http.Request) (*http.Response, error) {
+				calls++
+				deadline, present := request.Context().Deadline()
+				assert.True(t, present)
+				assert.Greater(t, time.Until(deadline), time.Minute, "ignore caller's shorter SDK try-timeout override")
+				result := response(http.StatusServiceUnavailable, "")
+				result.Header.Set("x-ms-retry-after-ms", "1")
+				return result, nil
+			})
+			ctx := policy.WithRetryOptions(t.Context(), policy.RetryOptions{
+				MaxRetries: 10, RetryDelay: time.Millisecond, TryTimeout: time.Millisecond,
+				ShouldRetry: func(*http.Response, error) bool { return true },
+			})
+			_, err := client.request(ctx, method, "/analyzers/custom", nil, nil, "")
+			require.Error(t, err)
+			expected := 1
+			if method == http.MethodGet || method == http.MethodHead {
+				expected = 3
+			}
+			assert.Equal(t, expected, calls)
+		})
 	}
 }
 

@@ -178,7 +178,7 @@ func (r CopyAnalyzerRequest) Validate() error {
 
 func (r UpdateDefaultsRequest) Validate() error {
 	if r.ModelDeployments == nil {
-		return validationError("missing_model_deployments", "Specify model deployments; use an empty mapping to clear them.")
+		return validationError("missing_model_deployments", "Specify a model deployment mapping.")
 	}
 	for model, deployment := range r.ModelDeployments {
 		if strings.TrimSpace(model) == "" || strings.TrimSpace(deployment) == "" {

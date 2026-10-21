@@ -2,7 +2,8 @@
 
 Native Go foundation for the Azure Content Understanding first-party extension.
 This development build provides help, version, metadata, and runtime foundations.
-CU service operations are not implemented yet.
+Analyzer REST operations are implemented internally but are not yet exposed as
+public commands. Analysis submission is not implemented yet.
 
 ## Installation
 
@@ -118,6 +119,7 @@ tenant or identity. API-key authentication is not implemented.
   Other methods get one attempt, including on 401 authentication challenges.
   Credentials are acquired once per operation rather than using a bearer policy
   that can automatically replay a write after a challenge.
+  Context-level SDK retry overrides cannot change these operation safety limits.
 - The default timeout is two minutes per HTTP attempt and can be overridden
   internally. Caller cancellation propagates to token acquisition, requests, and
   response reads. The default HTTP client does not follow redirects.
@@ -131,4 +133,32 @@ tenant or identity. API-key authentication is not implemented.
 
 Tests use fake credentials/transports and local HTTPS servers. They do not call
 Azure or incur service charges. The transport is not yet wired to public CU
-commands, paging, or long-running operation polling.
+commands.
+
+### Analyzer REST operations
+
+The internal REST adapter implements list/get/create/delete, copy authorization,
+same-resource and cross-resource copy, and service defaults for both agreed API
+versions. It is not a complete `Client` implementation until analysis is added.
+
+- Listing drains every page in service order. Filtering/sorting belongs to
+  commands. A failed or malformed page is an error, not a partial list.
+- Continuation links must remain on the exact configured HTTPS origin and analyzer
+  collection path, with the selected API version. Relative links are supported;
+  repeated links, traversal, and credential-bearing links are rejected.
+- Create and copy explicitly send `allowReplace=false`; no conditional headers or
+  automatic write replay are used. Copy source lookup, destination preflight, and
+  cross-resource grant orchestration belong to commands.
+- Create/copy follow validated analyzer operation locations until completion.
+  Pending polls use a one-second interval unless the service supplies a positive
+  `Retry-After`. Cancellation/deadlines interrupt both waiting and HTTP requests.
+  Success without an embedded result triggers the final analyzer GET.
+- Analyzer JSON is retained without reconstructing schemas or rounding numbers.
+  Warnings retain nested codes, messages, and targets. Operation failures expose
+  safe codes and redacted nested diagnostics, not raw service error text.
+- Optional usage distinguishes absent counters from zero. Usage is taken from
+  the completed operation response.
+- Delete uses the service's idempotent semantics. The future command must look up
+  existence first when a missing analyzer should be reported as an error.
+- Defaults update uses `application/merge-patch+json`. The service returns the
+  resulting mapping; an empty mapping is not a request to clear existing entries.

@@ -224,7 +224,61 @@ func TestConfigValues(t *testing.T) {
 				enabled, err := isEnabled(t.Context(), client, fixture, "")
 
 				require.NoError(t, err)
-				require.Equal(t, tt.want, enabled)
+				require.Equal(t, path == "feature" && tt.want, enabled)
+			})
+		}
+	}
+}
+
+func TestGlobalConfigDoesNotEnableAgentsFeatures(t *testing.T) {
+	for _, id := range []string{"agents.managed_harness", "agents.voice", "agents.long_running"} {
+		for _, value := range []any{"on", "ON", "On", "oN", "off", "", true, nil} {
+			t.Run(id+"/"+fmt.Sprint(value), func(t *testing.T) {
+				alphaValues := map[string]any{
+					"all": value,
+					"agents": map[string]any{
+						"unrelated": "on",
+					},
+				}
+
+				require.False(t, configEnabled(alphaValues, id))
+			})
+		}
+	}
+}
+
+func TestUnrelatedConfigDoesNotOverrideOptIn(t *testing.T) {
+	for _, value := range []any{"on", "ON", "On", "oN", "off", "", false, nil} {
+		for _, source := range []string{"config", "process", "dotenv", "service"} {
+			t.Run(fmt.Sprint(value)+"/"+source, func(t *testing.T) {
+				t.Setenv(fixture.EnvVar, "false")
+				configValue := "off"
+				dotenv := map[string]string{}
+				svc := service("containerapp", "false")
+				switch source {
+				case "config":
+					configValue = "on"
+				case "process":
+					t.Setenv(fixture.EnvVar, "true")
+				case "dotenv":
+					dotenv[fixture.EnvVar] = "true"
+				case "service":
+					svc.Environment[fixture.EnvVar] = "true"
+				}
+				response := alphaResponse(t, configValue, value)
+				var alphaValues map[string]any
+				require.NoError(t, json.Unmarshal(response.Value, &alphaValues))
+				alphaValues["unrelated"] = value
+				data, err := json.Marshal(alphaValues)
+				require.NoError(t, err)
+				response.Value = data
+				client := newMockClient(t)
+				client.expectSources(response, projectWithServices(svc), dotenv, "")
+
+				enabled, err := isEnabled(t.Context(), client, fixture, "")
+
+				require.NoError(t, err)
+				require.True(t, enabled)
 			})
 		}
 	}
@@ -436,7 +490,7 @@ func TestSourceErrorsAreReturned(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(fixture.EnvVar, "true")
 			client := newMockClient(t)
-			configResponse := alphaResponse(t, "on", "on")
+			configResponse := alphaResponse(t, "on", "off")
 			switch tt.stage {
 			case "config":
 				client.expectConfig(nil, tt.cause)
@@ -497,7 +551,7 @@ func TestMalformedResponses(t *testing.T) {
 			case "decode":
 				client.expectConfig(&azdext.GetUserConfigResponse{Found: true, Value: tt.value}, nil)
 			default:
-				client.expectConfig(alphaResponse(t, "on", "on"), nil)
+				client.expectConfig(alphaResponse(t, "on", "off"), nil)
 				switch tt.stage {
 				case "project":
 					client.expectProject(nil, nil)

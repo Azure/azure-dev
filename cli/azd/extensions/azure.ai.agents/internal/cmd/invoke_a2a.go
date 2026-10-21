@@ -445,8 +445,9 @@ func printA2AResult(respBody []byte, agentName string, version string) {
 }
 
 // extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A
-// response. In 0.3, `result` is a Message or Task; in 1.0 it wraps `message`
-// or `task`. Tasks carry text in status.message, artifacts, or history.
+// response. In 0.3, `result` is a Message or Task. In 1.0, SendMessage wraps
+// `message` or `task`, while GetTask and CancelTask return a Task directly.
+// Tasks carry text in status.message, artifacts, or history.
 // Returns "" when no text can be found, signaling the caller to fall back to
 // printing the JSON body.
 func extractA2AText(respBody []byte, version string) string {
@@ -466,11 +467,12 @@ func extractA2AText(respBody []byte, version string) string {
 		if message, ok := result["message"].(map[string]any); ok {
 			return a2aTextFromParts(message["parts"])
 		}
-		task, ok := result["task"].(map[string]any)
-		if !ok {
+		if task, ok := result["task"].(map[string]any); ok {
+			result = task
+		} else if _, ok := result["status"].(map[string]any); !ok {
+			// Only task operations return an unwrapped result in 1.0.
 			return ""
 		}
-		result = task
 	}
 
 	// Message result: parts directly on the object.

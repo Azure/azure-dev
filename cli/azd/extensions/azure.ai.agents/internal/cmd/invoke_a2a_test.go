@@ -502,6 +502,12 @@ func TestExtractA2AText_Versions(t *testing.T) {
 			`{"result":{"task":{"status":{"message":{"parts":[{"text":"done"}]}}}}}`, "done"},
 		{"1.0 task artifacts", "1.0",
 			`{"result":{"task":{"artifacts":[{"parts":[{"text":"one"},{"text":"two"}]}]}}}`, "one\ntwo"},
+		{"1.0 GetTask direct result", "1.0",
+			`{"result":{"id":"task-1","contextId":"context-1","status":{"state":"TASK_STATE_COMPLETED"},` +
+				`"artifacts":[{"parts":[{"text":"lookup answer"}]}]}}`, "lookup answer"},
+		{"1.0 CancelTask direct result", "1.0",
+			`{"result":{"id":"task-1","contextId":"context-1","status":{"state":"TASK_STATE_CANCELED",` +
+				`"message":{"parts":[{"text":"Canceled"}]}}}}`, "Canceled"},
 		{"1.0 task history skips user", "1.0",
 			`{"result":{"task":{"history":[{"role":"ROLE_AGENT","parts":[{"text":"answer"}]},` +
 				`{"role":"ROLE_USER","parts":[{"text":"question"}]}]}}}`, "answer"},
@@ -510,7 +516,7 @@ func TestExtractA2AText_Versions(t *testing.T) {
 				`{"role":"user","parts":[{"text":"q1"}]},{"role":"ROLE_USER","parts":[{"text":"q2"}]}]}}`, "answer"},
 		{"1.0 user only history", "1.0",
 			`{"result":{"task":{"history":[{"role":"ROLE_USER","parts":[{"text":"question"}]}]}}}`, ""},
-		{"1.0 requires wrapper", "1.0", `{"result":{"parts":[{"text":"legacy"}]}}`, ""},
+		{"1.0 rejects unwrapped message", "1.0", `{"result":{"parts":[{"text":"legacy"}]}}`, ""},
 		{"0.3 does not unwrap 1.0", "0.3", `{"result":{"message":{"parts":[{"text":"new"}]}}}`, ""},
 		{"1.0 malformed wrapper", "1.0", `{"result":{"task":"not a task"}}`, ""},
 		{"1.0 null result", "1.0", `{"result":null}`, ""},

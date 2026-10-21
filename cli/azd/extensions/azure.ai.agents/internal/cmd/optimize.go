@@ -140,6 +140,7 @@ When run without a subcommand, submits an optimization job.
 Use --eval to reuse an agent-targeted evaluation from an azure.ai.eval service,
 or --eval-config to select an evaluation configuration file.
 Use --config for an optimization request file (YAML or JSON).
+Omitted optional optimization settings use service defaults.
 Legacy agent eval.yaml files are not supported.`,
 		Example: `  # Optimize (auto-detect agent from azd project)
   azd ai agent optimize
@@ -192,7 +193,7 @@ Legacy agent eval.yaml files are not supported.`,
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil,
 		"Built-in or custom evaluator name (repeatable; required when not set in config)")
 	cmd.Flags().IntVar(&flags.maxCandidates, "max-candidates", 0,
-		"Maximum number of optimization candidates to generate (must be >= 1; default: 5)")
+		"Maximum number of optimization candidates to generate (must be >= 1; service default when omitted)")
 	cmd.Flags().BoolVar(&flags.noWait, "no-wait", false, "Submit job and return immediately without waiting for completion")
 	cmd.Flags().IntVar(&flags.pollInterval, "poll-interval", 10, "Polling interval in seconds")
 	flags.optimizeConnectionFlags.register(cmd)
@@ -583,12 +584,7 @@ func (a *OptimizeAction) submitJob(
 	// Save baseline config before starting optimization.
 	hasProject := agentProject != ""
 	if hasProject && !a.promptAgent {
-		if err := writeBaselineConfig(agentProject, baselineParams{
-			Model:       cfg.Agent.Model,
-			Instruction: cfg.Agent.ResolvedSystemPrompt(),
-			SkillDir:    cfg.SkillDir,
-			ToolsFile:   cfg.ToolsFile,
-		}); err != nil {
+		if err := cfg.saveBaseline(agentProject, optimizeReq); err != nil {
 			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
 		} else {
 			baselineMetaPath := optconfig.BaselineConfigRelPath()

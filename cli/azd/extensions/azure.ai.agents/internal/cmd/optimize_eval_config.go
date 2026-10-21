@@ -284,10 +284,15 @@ func optimizeConfigFromEval(choice optimizeEvalChoice, agentName, version, judge
 			}
 		}
 		params := evaluator.InitializationParameters
-		if model, ok := params["model"]; ok {
+		for _, key := range []string{"model", "deployment_name"} {
+			model, ok := params[key]
+			if !ok {
+				continue
+			}
 			name, valid := model.(string)
 			if !valid || name == "" {
-				return nil, fmt.Errorf("evaluator %q: initializationParameters.model must be non-empty", evaluator.Evaluator)
+				return nil, fmt.Errorf("evaluator %q: initializationParameters.%s must be non-empty",
+					evaluator.Evaluator, key)
 			}
 			if cfg.Options.EvalModel == "" {
 				cfg.Options.EvalModel = name

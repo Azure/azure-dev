@@ -83,7 +83,7 @@ type BaselineAgentConfiguration struct {
 
 // OptimizationSpace declares mutable agent attributes and alternative models.
 type OptimizationSpace struct {
-	TargetAttributes []string `json:"target_attributes"`
+	TargetAttributes []string `json:"target_attributes,omitzero"`
 	ModelSearchSpace []string `json:"model_search_space,omitempty"`
 }
 

@@ -126,13 +126,36 @@ type baselineParams struct {
 	Instruction string // system prompt text (optional)
 	SkillDir    string // absolute skill dir path (empty = auto-detect)
 	ToolsFile   string // absolute tools file path (optional)
+	Baseline    *optimize_api.BaselineAgentConfiguration
+}
+
+func (c *OptimizeConfig) saveBaseline(agentProject string, request *optimize_api.OptimizeRequest) error {
+	return writeBaselineConfig(agentProject, baselineParams{
+		Model:       c.Agent.Model,
+		Instruction: c.Agent.ResolvedSystemPrompt(),
+		SkillDir:    c.SkillDir,
+		ToolsFile:   c.ToolsFile,
+		Baseline:    request.OptimizationConfiguration.BaselineAgentConfiguration,
+	})
 }
 
 // writeBaselineConfig writes a baseline agent config to .agent_configs/baseline/.
 // It creates metadata.yaml with file pointers and writes instructions.md.
-// When skillDir is empty, it auto-detects a "skills" or "skill" directory.
+// Inline skills and tools are materialized when no local path supplies them.
+// When neither inline skills nor skillDir is set, it auto-detects a "skills" or "skill" directory.
 // Used when optimization captures the original agent configuration.
 func writeBaselineConfig(agentProject string, p baselineParams) error {
+	if p.Baseline != nil {
+		p.Model = p.Baseline.CurrentModel
+		p.Instruction = p.Baseline.SystemPrompt
+		if p.SkillDir == "" {
+			for _, skill := range p.Baseline.Skills {
+				if !isSafePathSegment(skill.Name) || strings.ContainsAny(skill.Name, `/\`) {
+					return fmt.Errorf("invalid baseline skill name %q: expected a single directory name", skill.Name)
+				}
+			}
+		}
+	}
 	baseDir := filepath.Join(agentProject, optconfig.AgentConfigsDir, optconfig.BaselineDir)
 	if err := os.MkdirAll(baseDir, 0750); err != nil {
 		return fmt.Errorf("creating baseline directory: %w", err)
@@ -155,7 +178,33 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 		meta.InstructionFile = optconfig.InstructionFile
 	}
 
-	// Resolve skill_dir: use explicit path, or auto-detect from project.
+	if p.Baseline != nil && p.SkillDir == "" && p.Baseline.Skills != nil {
+		skillDir := filepath.Join(baseDir, optconfig.SkillsDir)
+		if err := os.RemoveAll(skillDir); err != nil {
+			return fmt.Errorf("replacing baseline skills: %w", err)
+		}
+		if err := os.MkdirAll(skillDir, 0750); err != nil {
+			return fmt.Errorf("creating baseline skill directory: %w", err)
+		}
+		skills := make([]any, 0, len(p.Baseline.Skills))
+		for _, skill := range p.Baseline.Skills {
+			skills = append(skills, map[string]any{
+				"name": skill.Name, "description": skill.Description, "body": skill.Body,
+			})
+		}
+		if err := writeInlineSkills(baseDir, map[string]any{"skills": skills}); err != nil {
+			return fmt.Errorf("writing baseline skills: %w", err)
+		}
+		p.SkillDir = skillDir
+	}
+	if p.Baseline != nil && p.ToolsFile == "" && p.Baseline.Tools != nil {
+		if err := writeToolsFile(baseDir, map[string]any{"tools": p.Baseline.Tools}); err != nil {
+			return fmt.Errorf("writing baseline tools: %w", err)
+		}
+		p.ToolsFile = filepath.Join(baseDir, optconfig.ToolsFile)
+	}
+
+	// Resolve skill_dir: use explicit or materialized skills, or auto-detect from project.
 	skillDir := p.SkillDir
 	if skillDir == "" {
 		for _, candidate := range []string{"skills", "skill"} {

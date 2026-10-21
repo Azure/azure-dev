@@ -64,6 +64,122 @@ func TestOptimizeGAConfigRoundTripAndAuthority(t *testing.T) {
 	require.Empty(t, envServer.setKeys)
 }
 
+func TestOptimizeGAConfigOmittedOptions(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name          string
+		search        *optimize_api.CandidateSearchConfiguration
+		maxCandidates int
+	}{
+		{name: "omitted objects"},
+		{name: "empty search", search: &optimize_api.CandidateSearchConfiguration{}},
+		{
+			name: "screening only",
+			search: &optimize_api.CandidateSearchConfiguration{
+				CandidateScreeningDataSampleSize: new(2),
+			},
+		},
+		{name: "explicit default value", maxCandidates: 5},
+		{
+			name: "explicit override",
+			search: &optimize_api.CandidateSearchConfiguration{
+				MaxCandidates: new(7), CandidateScreeningDataSampleSize: new(2),
+			},
+			maxCandidates: 3,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var expected optimize_api.OptimizeRequest
+			require.NoError(t, json.Unmarshal([]byte(gaOptimizationTestConfig), &expected))
+			expected.OptimizationConfiguration.CandidateSearchConfiguration = tt.search
+			expected.OptimizationConfiguration.AgentOptimizationSpace = nil
+			authored, err := json.Marshal(expected)
+			require.NoError(t, err)
+			path := writeTestFile(t, t.TempDir(), "optimization.json", string(authored))
+			cfg, err := LoadOptimizeConfig(path)
+			require.NoError(t, err)
+			action := &OptimizeAction{
+				flags: &optimizeFlags{maxCandidates: tt.maxCandidates}, noPrompt: true,
+			}
+
+			require.NoError(t, action.applyOverrides(t.Context(), cfg, ""))
+			request, warnings, err := cfg.ToRequest()
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			if tt.maxCandidates != 0 {
+				search := optimize_api.CandidateSearchConfiguration{}
+				if tt.search != nil {
+					search = *tt.search
+				}
+				search.MaxCandidates = new(tt.maxCandidates)
+				expected.OptimizationConfiguration.CandidateSearchConfiguration = &search
+			}
+			expectedJSON, err := json.Marshal(expected)
+			require.NoError(t, err)
+			actual, err := json.Marshal(request)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(expectedJSON), string(actual))
+			assert.Nil(t, request.OptimizationConfiguration.AgentOptimizationSpace)
+			original, err := json.Marshal(cfg.Request)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(authored), string(original), "conversion must not mutate the authored request")
+		})
+	}
+}
+
+func TestDefaultOptimizeConfigOmitsOptionalSettings(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name       string
+		max        *int
+		settings   map[string]json.RawMessage
+		wantSearch string
+		wantSpace  string
+	}{
+		{name: "unspecified"},
+		{name: "explicit candidate limit", max: new(5), wantSearch: `{"max_candidates":5}`},
+		{
+			name:      "explicit attributes",
+			settings:  map[string]json.RawMessage{"target_attributes": json.RawMessage(`["tools"]`)},
+			wantSpace: `{"target_attributes":["tools"]}`,
+		},
+		{
+			name:      "explicit empty attributes",
+			settings:  map[string]json.RawMessage{"target_attributes": json.RawMessage(`[]`)},
+			wantSpace: `{"target_attributes":[]}`,
+		},
+		{
+			name:      "models without default attributes",
+			settings:  map[string]json.RawMessage{"model_search_space": json.RawMessage(`["alternative"]`)},
+			wantSpace: `{"model_search_space":["alternative"]}`,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := defaultOptimizeConfig("agent")
+			assert.Nil(t, cfg.Options.MaxCandidates)
+			cfg.Options.MaxCandidates = tt.max
+			cfg.Options.OptimizationConfig = tt.settings
+			request, _, err := cfg.ToRequest()
+			require.NoError(t, err)
+			data, err := json.Marshal(request.OptimizationConfiguration)
+			require.NoError(t, err)
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &fields))
+			for key, expected := range map[string]string{
+				"candidate_search_configuration": tt.wantSearch, "agent_optimization_space": tt.wantSpace,
+			} {
+				if expected == "" {
+					assert.NotContains(t, fields, key)
+				} else {
+					assert.JSONEq(t, expected, string(fields[key]))
+				}
+			}
+		})
+	}
+}
+
 func TestOptimizeGAConfigRejectsUnknownFields(t *testing.T) {
 	t.Parallel()
 	for _, config := range []string{
@@ -138,6 +254,8 @@ evals:
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	evaluation := request.OptimizationConfiguration.EvaluationConfiguration
+	assert.Nil(t, request.OptimizationConfiguration.CandidateSearchConfiguration)
+	assert.Nil(t, request.OptimizationConfiguration.AgentOptimizationSpace)
 	require.Len(t, evaluation.TrainingSet.Source.TestCases, 1)
 	assert.JSONEq(t, strings.Split(rows, "\n")[0], string(evaluation.TrainingSet.Source.TestCases[0]))
 	assert.Equal(t, "6", evaluation.Evaluators[0].Version)
@@ -231,6 +349,93 @@ evals:
 	resolved.MaxSamples = 1
 	_, _, err = resolved.ToRequest()
 	require.ErrorContains(t, err, "maxSamples requires a local dataset")
+}
+
+func TestOptimizeEvalJudgeModelAliases(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name       string
+		parameters []string
+		override   string
+		wantError  string
+	}{
+		{name: "model", parameters: []string{"{model: judge}"}},
+		{name: "deployment name", parameters: []string{"{deployment_name: judge}"}},
+		{name: "matching aliases", parameters: []string{"{model: judge, deployment_name: judge}"}},
+		{name: "mixed aliases", parameters: []string{"{model: judge}", "{deployment_name: judge}"}},
+		{
+			name: "conflicting evaluators", parameters: []string{"{model: first}", "{deployment_name: second}"},
+			wantError: "multiple judge models",
+		},
+		{
+			name: "conflicting aliases", parameters: []string{"{model: first, deployment_name: second}"},
+			wantError: "multiple judge models",
+		},
+		{
+			name: "override conflicts", parameters: []string{"{model: first}", "{deployment_name: second}"},
+			override: "override",
+		},
+		{
+			name: "override both aliases", parameters: []string{"{model: first, deployment_name: second}"},
+			override: "override",
+		},
+		{
+			name: "empty deployment", parameters: []string{"{deployment_name: ''}"},
+			wantError: "initializationParameters.deployment_name must be non-empty",
+		},
+		{
+			name: "invalid deployment type", parameters: []string{"{deployment_name: 42}"},
+			wantError: "initializationParameters.deployment_name must be non-empty",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var config strings.Builder
+			config.WriteString("datasets: [{name: golden, version: '2'}]\n" +
+				"evals:\n  - name: nightly\n    dataset: golden\n" +
+				"    target: {type: agent, name: assistant}\n    evaluators:\n")
+			for _, parameters := range tt.parameters {
+				config.WriteString("      - evaluator: builtin.coherence\n        initializationParameters: " +
+					parameters + "\n")
+			}
+			path := writeTestFile(t, t.TempDir(), "azure.eval.yaml", config.String())
+			declared, err := readOptimizeEvalConfig(path)
+			require.NoError(t, err)
+			choices, err := optimizeEvalChoices(declared, path, "", "assistant", "")
+			require.NoError(t, err)
+			require.Len(t, choices, 1)
+			original, err := json.Marshal(choices[0].eval)
+			require.NoError(t, err)
+
+			cfg, err := optimizeConfigFromEval(choices[0], "assistant", "", tt.override)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			model := "judge"
+			if tt.override != "" {
+				model = tt.override
+			}
+			assert.Equal(t, model, cfg.Options.EvalModel)
+			cfg.Options.OptimizationModel = "optimizer"
+			require.NoError(t, cfg.Validate())
+			request, _, err := cfg.ToRequest()
+			require.NoError(t, err)
+			evaluation := request.OptimizationConfiguration.EvaluationConfiguration
+			assert.Equal(t, model, evaluation.EvaluationModel.Model)
+			for _, evaluator := range evaluation.Evaluators {
+				for _, key := range []string{"model", "deployment_name"} {
+					if value, exists := evaluator.InitializationParameters[key]; exists {
+						assert.Equal(t, model, value)
+					}
+				}
+			}
+			unchanged, err := json.Marshal(choices[0].eval)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(original), string(unchanged), "model overrides must not mutate authored config")
+		})
+	}
 }
 
 func TestOptimizeEvalRelativeFileUsesDeclaringDirectory(t *testing.T) {

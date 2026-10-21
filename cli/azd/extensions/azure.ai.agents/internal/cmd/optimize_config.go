@@ -41,6 +41,7 @@ type OptimizeConfig struct {
 }
 
 // LoadOptimizeConfig reads a GA v1 optimization request from YAML or JSON.
+// Omitted optional settings retain service defaults rather than command defaults.
 func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is provided by user for local config
 	if err != nil {
@@ -155,16 +156,14 @@ func (c *OptimizeConfig) Validate() error {
 	return nil
 }
 
-// defaultOptimizeConfig returns a minimal config skeleton with sensible defaults.
+// defaultOptimizeConfig returns a minimal config skeleton without optional optimization defaults.
 // Dataset, eval model, evaluators, and other values are resolved interactively or via flags.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
 		Config: optconfig.Config{
 			Agent: optconfig.AgentRef{Name: agentName},
 		},
-		Options: &optconfig.Options{
-			MaxCandidates: new(5),
-		},
+		Options: &optconfig.Options{},
 	}
 }
 
@@ -239,18 +238,20 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		cases := evaluation.TrainingSet.Source.TestCases
 		evaluation.TrainingSet.Source.TestCases = cases[:min(len(cases), c.MaxSamples)]
 	}
-	search := optimize_api.CandidateSearchConfiguration{}
-	if config.CandidateSearchConfiguration != nil {
-		search = *config.CandidateSearchConfiguration
+	if config.CandidateSearchConfiguration != nil || options.MaxCandidates != nil || options.MaxStalls != nil {
+		search := optimize_api.CandidateSearchConfiguration{}
+		if config.CandidateSearchConfiguration != nil {
+			search = *config.CandidateSearchConfiguration
+		}
+		search.MaxCandidates = options.MaxCandidates
+		search.MaxConsecutiveFailedCandidateScreens = options.MaxStalls
+		config.CandidateSearchConfiguration = &search
 	}
-	search.MaxCandidates = options.MaxCandidates
-	search.MaxConsecutiveFailedCandidateScreens = options.MaxStalls
-	config.CandidateSearchConfiguration = &search
 	baseline := optimize_api.BaselineAgentConfiguration{}
 	if config.BaselineAgentConfiguration != nil {
 		baseline = *config.BaselineAgentConfiguration
 	}
-	space := optimize_api.OptimizationSpace{TargetAttributes: []string{"instructions"}}
+	space := optimize_api.OptimizationSpace{}
 	if config.AgentOptimizationSpace != nil {
 		space = *config.AgentOptimizationSpace
 	}
@@ -309,7 +310,10 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	if baseline.CurrentModel != "" || baseline.SystemPrompt != "" || baseline.Skills != nil || baseline.Tools != nil {
 		config.BaselineAgentConfiguration = &baseline
 	}
-	config.AgentOptimizationSpace = &space
+	if config.AgentOptimizationSpace != nil ||
+		space.TargetAttributes != nil || space.ModelSearchSpace != nil {
+		config.AgentOptimizationSpace = &space
+	}
 	return &req, warnings, nil
 }
 
@@ -478,7 +482,7 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 // skillPreamble represents the YAML preamble in a skill markdown file.
 type skillPreamble struct {
 	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // parseSkillFile parses a skill file. For .md files it attempts to extract

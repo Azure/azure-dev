@@ -4,6 +4,7 @@ When run without a subcommand, submits an optimization job.
 Use --eval to reuse an agent-targeted evaluation from an azure.ai.eval service,
 or --eval-config to select an evaluation configuration file.
 Use --config for an optimization request file (YAML or JSON).
+Omitted optional optimization settings use service defaults.
 Legacy agent eval.yaml files are not supported.
 
 Usage
@@ -26,7 +27,7 @@ Flags
       --eval-config string      : Evaluation configuration from 'azd ai eval init'
   -m, --eval-model string       : Model for evaluation (required)
       --evaluator stringArray   : Built-in or custom evaluator name (repeatable; required when not set in config)
-      --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; default: 5)
+      --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; service default when omitted)
       --no-wait                 : Submit job and return immediately without waiting for completion
       --optimize-model string   : Model for optimization reasoning (gpt-5 family recommended; required)
       --poll-interval int       : Polling interval in seconds (default 10)

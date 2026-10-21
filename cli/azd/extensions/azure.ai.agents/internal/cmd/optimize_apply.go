@@ -806,12 +806,13 @@ func writeInlineSkills(candidateDir string, config map[string]any) error {
 		}
 
 		// Build the skill file content with YAML front-matter.
+		header, err := yaml.Marshal(skillPreamble{Name: name, Description: description})
+		if err != nil {
+			return fmt.Errorf("serializing skill %s metadata: %w", name, err)
+		}
 		var content strings.Builder
 		content.WriteString("---\n")
-		content.WriteString(fmt.Sprintf("name: %s\n", name))
-		if description != "" {
-			content.WriteString(fmt.Sprintf("description: %s\n", description))
-		}
+		content.Write(header)
 		content.WriteString("---\n")
 		if body != "" {
 			content.WriteString(body)

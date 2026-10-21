@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/optconfig"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,6 +130,127 @@ func TestWriteBaselineConfig_PreservesLegacyToolsReference(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(data, &metadata))
 	assert.Equal(t, "tools.json", metadata["tool_file"])
 	assert.NotContains(t, metadata, "tools_file")
+}
+
+func TestOptimizeGAConfigBaselineRerun(t *testing.T) {
+	t.Parallel()
+	skills := []optimize_api.SkillDefinition{
+		{Name: "clock", Description: "Time: UTC # clock", Body: "Read the UTC clock."},
+		{Name: "calculate", Description: "Calculate results", Body: "Use the calculator."},
+	}
+	tools := []optimize_api.ToolDefinition{{
+		Type: "function",
+		Function: optimize_api.ToolFunction{
+			Name: "get_time", Description: "Read UTC time",
+			Parameters: map[string]any{"type": "object", "properties": map[string]any{}},
+			Strict:     new(true),
+		},
+	}}
+	for _, tt := range []struct {
+		name     string
+		skills   []optimize_api.SkillDefinition
+		tools    []optimize_api.ToolDefinition
+		useFiles bool
+	}{
+		{name: "inline arrays", skills: skills, tools: tools},
+		{name: "inline skills", skills: skills},
+		{name: "inline tools", tools: tools},
+		{name: "explicit empty arrays", skills: []optimize_api.SkillDefinition{}, tools: []optimize_api.ToolDefinition{}},
+		{name: "local files", skills: skills, tools: tools, useFiles: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			project := t.TempDir()
+			configsDir := filepath.Join(project, optconfig.AgentConfigsDir)
+			writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "Stale prompt.",
+				map[string]string{filepath.Join(optconfig.SkillsDir, "stale", "SKILL.md"): "Stale skill."})
+
+			var authored optimize_api.OptimizeRequest
+			require.NoError(t, json.Unmarshal([]byte(gaOptimizationTestConfig), &authored))
+			authored.OptimizationConfiguration.BaselineAgentConfiguration = &optimize_api.BaselineAgentConfiguration{
+				CurrentModel: "baseline", SystemPrompt: "Authored prompt.", Skills: tt.skills, Tools: tt.tools,
+			}
+			cfg := optimizeConfigFromRequest(&authored)
+			if tt.useFiles {
+				inputs := filepath.Join(project, "inputs")
+				require.NoError(t, os.MkdirAll(inputs, 0750))
+				inlineSkills := make([]any, 0, len(skills))
+				for _, skill := range skills {
+					inlineSkills = append(inlineSkills, map[string]any{
+						"name": skill.Name, "description": skill.Description, "body": skill.Body,
+					})
+				}
+				require.NoError(t, writeInlineSkills(inputs, map[string]any{"skills": inlineSkills}))
+				require.NoError(t, writeToolsFile(inputs, map[string]any{"tools": tools}))
+				cfg.SkillDir = filepath.Join(inputs, optconfig.SkillsDir)
+				cfg.ToolsFile = filepath.Join(inputs, optconfig.ToolsFile)
+			}
+			if tt.skills != nil {
+				projectSkills := filepath.Join(project, optconfig.SkillsDir)
+				require.NoError(t, os.MkdirAll(projectSkills, 0750))
+				writeTestFile(t, projectSkills, "unrelated.md", "Do not select this skill.")
+			}
+			submitted, warnings, err := cfg.ToRequest()
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			require.NoError(t, cfg.saveBaseline(project, submitted))
+
+			rerun := defaultOptimizeConfig(cfg.Agent.Name)
+			rerun.Options.EvalModel = cfg.Options.EvalModel
+			rerun.Options.OptimizationModel = cfg.Options.OptimizationModel
+			rerun.Evaluators = cfg.Evaluators
+			rerun.TrainingSet = cfg.TrainingSet
+			mergeAgentBaseline(rerun, project)
+			require.NoError(t, rerun.Validate())
+			actual, warnings, err := rerun.ToRequest()
+			require.NoError(t, err)
+			if tt.tools != nil && len(tt.tools) == 0 {
+				require.Len(t, warnings, 1)
+				assert.Contains(t, warnings[0], "contains no tool definitions")
+			} else {
+				assert.Empty(t, warnings)
+			}
+			baseline := actual.OptimizationConfiguration.BaselineAgentConfiguration
+			require.NotNil(t, baseline)
+			assert.Equal(t, submitted.OptimizationConfiguration.BaselineAgentConfiguration.CurrentModel, baseline.CurrentModel)
+			assert.Equal(t, submitted.OptimizationConfiguration.BaselineAgentConfiguration.SystemPrompt, baseline.SystemPrompt)
+			assert.ElementsMatch(t, tt.skills, baseline.Skills)
+			assert.Equal(t, tt.tools, baseline.Tools)
+			if tt.skills != nil && !tt.useFiles {
+				assert.NoFileExists(t, filepath.Join(configsDir, optconfig.BaselineDir, optconfig.SkillsDir, "stale", "SKILL.md"))
+				assert.Equal(t, filepath.Join(configsDir, optconfig.BaselineDir, optconfig.SkillsDir), rerun.SkillDir)
+			}
+			if tt.tools != nil && !tt.useFiles {
+				assert.Equal(t, filepath.Join(configsDir, optconfig.BaselineDir, optconfig.ToolsFile), rerun.ToolsFile)
+			}
+			if tt.useFiles {
+				assert.Equal(t, cfg.SkillDir, rerun.SkillDir)
+				assert.Equal(t, cfg.ToolsFile, rerun.ToolsFile)
+			}
+		})
+	}
+}
+
+func TestWriteBaselineConfigRejectsUnsafeInlineSkillNames(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"", ".", "..", "parent/skill", `parent\skill`} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			project := t.TempDir()
+			configsDir := filepath.Join(project, optconfig.AgentConfigsDir)
+			writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "Original prompt.", nil)
+			err := writeBaselineConfig(project, baselineParams{
+				Baseline: &optimize_api.BaselineAgentConfiguration{
+					SystemPrompt: "Replacement prompt.",
+					Skills:       []optimize_api.SkillDefinition{{Name: name, Body: "Skill body."}},
+				},
+			})
+			require.ErrorContains(t, err, "invalid baseline skill name")
+			content, err := os.ReadFile(filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
+			require.NoError(t, err)
+			assert.Equal(t, "Original prompt.", string(content))
+		})
+	}
 }
 
 func TestIsDatasetName(t *testing.T) {

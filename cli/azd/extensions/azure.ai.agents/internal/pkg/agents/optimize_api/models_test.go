@@ -58,6 +58,25 @@ func TestOptimizeRequest_RoundTrip(t *testing.T) {
 	assert.Contains(t, string(data), `"test_cases"`)
 }
 
+func TestOptimizationSpaceOptionalAttributes(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{
+		`{}`,
+		`{"model_search_space":["alternative"]}`,
+		`{"target_attributes":[]}`,
+		`{"target_attributes":["instructions"]}`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+			var space OptimizationSpace
+			require.NoError(t, json.Unmarshal([]byte(input), &space))
+			data, err := json.Marshal(space)
+			require.NoError(t, err)
+			assert.JSONEq(t, input, string(data))
+		})
+	}
+}
+
 func TestOptimizeJobStatus_GAResponse(t *testing.T) {
 	t.Parallel()
 	body := `{

@@ -86,11 +86,6 @@ Extensions declare their capabilities in `extension.yaml`:
 | `provisioning-provider` | Add custom infrastructure provisioning support |
 | `metadata` | Provide metadata about commands and capabilities |
 
-Extension-owned preview catalogs need not register features in core. For
-example, `azd ai agent list-alpha` lists the agents extension's declarations and
-uses the same private evaluator as its runtime gates. See the
-[agents preview flag design](../../cli/azd/extensions/azure.ai.agents/docs/specs/preview-feature-flags.md#listing-preview-features).
-
 ## Available gRPC Services
 
 Extensions can access these azd services via gRPC:

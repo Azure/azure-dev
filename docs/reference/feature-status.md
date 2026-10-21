@@ -7,7 +7,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Feature | Stage |
 |---|---|
 | `add` | Beta |
-| `ai agent list-alpha` | Preview |
 | `auth` | Stable |
 | `config` | Stable |
 | `deploy` | Stable |
@@ -90,8 +89,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Long-running Responses invocation | Preview (default off) | `alpha.agents.long_running` |
 
 These are private agents-extension checks, not core feature registrations.
-`azd ai agent list-alpha` lists every declared capability and its effective
-`On`/`Off` status; the listing command itself is not gated.
 Ordinary hosted and plain prompt agents are not gated. See the
 [opt-in guide and enforcement limits](../../cli/azd/extensions/azure.ai.agents/README.md#preview-feature-opt-ins).
 

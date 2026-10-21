@@ -5,9 +5,17 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Internal opt-in mechanism and design; no command adoption in this change.
+- **Scope:** Independent, default-off managed-harness, voice, and long-running invocation gates.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension, without adding an azd core feature, registry, or public extension SDK API. The intended adoption scope is limited to **managed harness agents**, **voice agents**, and **long-running agent invocation**. General hosted agents and plain prompt functionality are not intended gates.
+Keep preview opt-in decisions inside the Microsoft Foundry agents extension, without adding an azd core feature, registry, or public extension SDK API. General hosted agents and plain prompt functionality are not gated.
+
+| Declaration | Feature ID | Explicit environment key |
+| --- | --- | --- |
+| `ManagedHarness` | `agents.managed_harness` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `Voice` | `agents.voice` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` |
+| `LongRunning` | `agents.long_running` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` |
+
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands. The obsolete `agents.hosted` opt-in does not enable any of these gates.
 
 ## Ownership and code organization
 
@@ -17,6 +25,7 @@ azure.ai.agents/
 │   ├── cmd/                       # Command discovery and runtime callers
 │   ├── project/                   # Project/service integration callers
 │   └── featureflags/
+│       ├── agents.go              # Identities, classification, enforcement
 │       ├── featureflags.go        # Validation, source reads, evaluation
 │       └── featureflags_test.go   # Source combinations and regressions
 └── docs/specs/
@@ -47,22 +56,29 @@ func IsEnabled(
 ) (bool, error)
 ```
 
-Callers declare the feature identity; the helper does not register features or derive environment keys. For example, the following voice identity is illustrative, not a production declaration or final naming decision:
+The private package declares the three identities explicitly; it does not register features in core or derive environment keys:
 
 ```go
-voice := featureflags.Feature{
-    ID:     "agents.voice",
-    EnvVar: "AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE",
-}
 enabled, err := featureflags.IsEnabled(
     extCtx.Context(),
     azdClient,
-    voice,
+    featureflags.Voice,
     extCtx.Environment,
 )
 ```
 
 `IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host; the helper does not infer selection from ambient `AZD_ENVIRONMENT`.
+
+Command callers bind the parsed environment into context with `WithEnvironment`. `Require` uses that value unchanged, including an explicit empty value. Lifecycle callbacks without that command context use the host's `AZD_ENVIRONMENT` selection.
+
+For example, either of these enables voice:
+
+```bash
+azd config set alpha.agents.voice on
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
+```
+
+The [README](../../README.md#preview-feature-opt-ins) lists the equivalent commands for all three capabilities.
 
 ## Four independent enablement sources
 
@@ -76,6 +92,8 @@ A feature is enabled if **any** of these sources opts in:
 | Project service environment | Exact `EnvVar` in each `services[].env` map from `Project.Get` | A true value accepted by `strconv.ParseBool` |
 
 All service hosts count, including non-Foundry services. Service maps stay separate: a true value in any service wins regardless of other services' values or iteration order. These are project-wide opt-ins, not per-service permissions.
+
+Before adopting a staged manifest, `WithServices` includes its prospective service environment maps in the same service source. Definition-file `env` is included before `agent add` writes the service. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
 
 False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace; booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`; `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle, `AZD_ALPHA_ENABLE_*` alias, or experimentation default.
 
@@ -99,16 +117,22 @@ There is no global cache, process environment mutation, output, configuration wr
 
 ## Adoption boundary and trade-offs
 
-Command discovery and runtime enforcement are separate caller responsibilities. A future discovery check may hide a preview-only command, but that alone cannot gate preview flags on existing commands, project/service flows, or direct invocation paths. Runtime callers must check the selected capability before its side effects and forward the actual environment selection. No command registration, command behavior, or runtime gate changes in this PR.
+Discovery and runtime enforcement are separate. The init picker omits the voice option when disabled; managed harness has no separate picker. Template catalogs lack capability metadata, so catalog entries remain visible. Their staged effective definitions are checked before adoption instead of inferring capabilities from template names.
 
-Only the three intended capabilities listed above are candidates for adoption. Agents-private checks do **not** automatically intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Runtime checks cover explicit init flags, existing/local/staged manifests, `agent add`, selected-service invocation and local run, preprovision/predeploy callbacks, package/publish/deploy/resource selection, and optimize deployment. Inline definitions and root/field `$ref` includes use the existing resolver. Locally identifiable disabled inputs fail before authentication or project/environment writes. Optimize deployment also checks the definition it already fetches before creating a new version.
+
+An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
+
+Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. There is no state migration or automatic enablement. Agents-private checks do **not** intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 The small API deliberately returns only an enablement decision and error, not a source report, registry entry, or policy object. OR semantics avoid accidental disabling by unrelated scopes, at the cost of having no local override for an existing opt-in. Exact optional-error matching avoids swallowing real failures but remains coupled to the existing host error contract.
 
-Adoption still needs to settle the final three identities/environment keys, exact command and runtime check locations, and disabled-feature guidance for each capability. Those decisions belong with the relevant behavior changes, not speculative declarations here.
+Disabled capabilities return the structured `feature_not_enabled` compatibility error with the exact config/environment enable commands. Explicit preview inputs are rejected rather than silently dropped. Enabling one capability does not enable another; `alpha.all=on` remains the shared config opt-in.
 
 ## Validation
 
 Tests cover all 16 combinations of the four sources, all supported boolean spellings and non-enabling values, nested alpha config and `alpha.all`, exact environment keys, every service host and conflicting service order, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
 
-Run focused tests and vet for `./internal/featureflags`, build the agents module against its pinned azd dependency, and apply the module's formatting/lint rules. No Azure scenario or user auth/config mutation is needed for this mechanism-only change.
+Command/provider regressions additionally cover independent gates, obsolete hosted opt-in isolation, selected-environment forwarding, voice discovery, explicit init/add inputs, staged manifests, local invocation bypasses, unchanged inputs on disabled-feature rejection, ordinary flows, and retained read access.
+
+Run offline tests, build, vet, and scoped lint against the pinned SDK. Tier 0 scenarios document the new opt-in UX; they require a separate scenario-run request. No Azure scenario execution or user auth/config mutation is needed for unit validation.

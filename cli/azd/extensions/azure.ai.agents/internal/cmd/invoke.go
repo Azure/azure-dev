@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/telemetry"
 
@@ -170,10 +171,17 @@ or use --debug-latency=false.
 Raw output includes the returned headers without a formatted latency summary.
 
 Long-running Invocations:
+Enable with 'azd config set alpha.agents.long_running on' or
+'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true'.
+This opt-in is disabled by default and also applies to explicit agent endpoints.
 Use --long-running with the Responses protocol to start work that continues running in
 the service if this command disconnects. The command remains attached until the work
 finishes. Add --no-wait to return after azd receives the Response ID.
-This option does not provide crash recovery or automatic reconnection.`,
+This option does not provide crash recovery or automatic reconnection.
+
+Project-backed Copilot harness agents require alpha.agents.managed_harness.
+Explicit HTTP --agent-endpoint targets are not queried for their kind or harness;
+the managed-harness gate cannot classify that route.`,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -229,6 +237,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
+			ctx = featureflags.WithEnvironment(ctx, extCtx.Environment)
 
 			// The inherited global --output flag is parsed and validated by the
 			// extension SDK (see azdext.RegisterFlagOptions below). Snapshot the
@@ -549,6 +558,18 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if a.flags.longRunning && a.flags.protocol != "" && a.flags.protocol != "responses" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("--long-running is not supported with the %s protocol", a.flags.protocol),
+			"use a deployed Responses agent or remove --long-running",
+		)
+	}
+	if a.flags.longRunning || a.flags.noWait {
+		if err := requireLongRunningFeature(ctx); err != nil {
+			return err
+		}
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -568,7 +589,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		}
 		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(
-			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(), withPreviewFeatures(),
 		)
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
@@ -582,6 +603,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if a.flags.longRunning || a.flags.noWait {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--long-running and --no-wait are not supported for prompt agents",
+					"remove these flags or invoke a hosted Responses agent",
+				)
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -625,6 +653,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	if a.flags.local {
+		if err := a.requireLocalPreviewFeatures(ctx); err != nil {
+			return err
+		}
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
@@ -1374,6 +1405,7 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	// keys on s.Name in azure.yaml and would 404 on the deployed Foundry
 	// name in the divergent case.
 	resolutionOptions := []agentServiceResolutionOption{
+		withPreviewFeatures(),
 		withBrownfieldInlineAgentName(),
 		withVoiceInvocationGuidance(),
 		withHostedKind(),

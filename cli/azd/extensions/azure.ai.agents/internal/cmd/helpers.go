@@ -1031,6 +1031,7 @@ func expandBrownfieldServiceValues(
 type brownfieldAgentExistenceResolver func(context.Context, string, string) (bool, error)
 
 type agentServiceResolutionOptions struct {
+	requirePreviewFeatures         bool
 	environmentName                string
 	allowBrownfieldInlineName      bool
 	brownfieldAgentExists          brownfieldAgentExistenceResolver
@@ -1043,6 +1044,12 @@ type agentServiceResolutionOptions struct {
 }
 
 type agentServiceResolutionOption func(*agentServiceResolutionOptions)
+
+func withPreviewFeatures() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.requirePreviewFeatures = true
+	}
+}
 
 func withHostedKind() agentServiceResolutionOption {
 	return func(options *agentServiceResolutionOptions) {
@@ -1160,6 +1167,11 @@ func resolveAgentServiceFromProject(
 		}
 	}
 
+	if resolutionOptions.requirePreviewFeatures {
+		if err := projectpkg.RequireAgentFeatures(ctx, azdClient, svc, projectConfig.Path); err != nil {
+			return nil, err
+		}
+	}
 	if resolutionOptions.rejectVoiceInvocation {
 		if err := voiceInvocationError(svc, projectConfig.Path); err != nil {
 			return nil, err
@@ -1343,6 +1355,9 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	if err != nil {
 		return nil, err
 	}
+	if err := projectpkg.RequireAgentFeatures(ctx, azdClient, svc, project.Path); err != nil {
+		return nil, err
+	}
 	if err := projectpkg.ResolveServiceConfigInPlace(
 		svc,
 		project.Path,
@@ -1514,6 +1529,9 @@ func resolveAgentProtocol(
 		)
 	}
 
+	if err := projectpkg.RequireAgentFeatures(ctx, azdClient, svc, proj.Path); err != nil {
+		return "", "", err
+	}
 	if err := voiceInvocationError(svc, proj.Path); err != nil {
 		return "", "", err
 	}

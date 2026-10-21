@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -48,6 +49,7 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
+		cmd.SetContext(featureflags.WithEnvironment(cmd.Context(), extCtx.Environment))
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {
 		case "deploy", "init", "listen", "metadata", "version":

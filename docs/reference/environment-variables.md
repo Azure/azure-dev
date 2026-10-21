@@ -7,6 +7,14 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | Variable | Description |
 |---|---|
 | `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` | Agents-extension opt-in for Copilot harness prompt agents; explicit HTTP endpoints remain unclassified. |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` | Agents-extension opt-in for voice / prompt-voice and hosted voice agents. |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` | Agents-extension opt-in for starting background Responses invocations. |
+
+These Foundry variables are read by the agents extension, not core. They accept
+true boolean values from the process, selected azd environment, or any service
+`env` map. Config opt-ins combine with OR. See the
+[canonical reference](../../cli/azd/docs/environment-variables.md#foundry-agents-extension-preview-variables).
 
 ## Configuration
 

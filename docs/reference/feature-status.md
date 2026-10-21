@@ -80,6 +80,18 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Stacks | Alpha |
 | Extensions | Stable |
 
+## Foundry agents extension previews
+
+| Capability | Stage | Extension opt-in |
+| --- | --- | --- |
+| Managed-harness prompt agents | Preview (default off) | `alpha.agents.managed_harness` |
+| Managed and hosted voice agents | Preview (default off) | `alpha.agents.voice` |
+| Long-running Responses invocation | Preview (default off) | `alpha.agents.long_running` |
+
+These are private agents-extension checks, not core feature registrations.
+Ordinary hosted and plain prompt agents are not gated. See the
+[opt-in guide and enforcement limits](../../cli/azd/extensions/azure.ai.agents/README.md#preview-feature-opt-ins).
+
 ## Extension gRPC Contracts
 
 | Capability | Contract stage | Stable since | Beta status |

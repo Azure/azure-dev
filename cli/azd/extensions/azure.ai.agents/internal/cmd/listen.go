@@ -80,6 +80,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := requireProjectPreviewFeatures(ctx, azdClient, args.Project); err != nil {
+		return err
+	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
@@ -345,11 +348,8 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	// Hosted Agent package/deploy requires the preview opt-in.
-	if isHostedAgentService(svc, args.Project) {
-		if err := project.RequireHostedAgentFeature(ctx, azdClient); err != nil {
-			return err
-		}
+	if err := project.RequireAgentFeatures(ctx, azdClient, svc, args.Project.GetPath()); err != nil {
+		return err
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent

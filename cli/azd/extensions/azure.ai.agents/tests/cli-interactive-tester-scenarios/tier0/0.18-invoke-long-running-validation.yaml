@@ -7,6 +7,8 @@ tags: ["tier:0", "cmd:invoke", "negative-path", "parallel-safe"]
 goals:
   - "Confirm the initial command exits non-zero with '--no-wait requires --long-running'."
   - "Run 'azd ai agent invoke --help'. Confirm it exits with code 0, advertises --long-running and --no-wait, and explains continued service-side execution after disconnection separately from returning after receiving an ID."
+  - "Confirm invoke help names alpha.agents.long_running and AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING, states the opt-in defaults to off, and says it applies to explicit agent endpoints."
+  - "Confirm help explains that explicit HTTP --agent-endpoint targets are not queried for kind or harness, so managed-harness enforcement cannot classify that route."
   - "Confirm invoke help does not advertise --background or --resumable."
   - "Run 'azd ai agent invoke \"hello\" --long-running --local'. Confirm it exits non-zero and explains that --long-running is supported only for remote Responses agents."
   - "Run 'azd ai agent invoke \"hello\" --long-running --timeout 30'. Confirm it exits non-zero with '--timeout cannot be used with --long-running'."

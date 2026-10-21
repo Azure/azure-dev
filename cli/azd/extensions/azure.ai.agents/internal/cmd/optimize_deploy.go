@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	projectpkg "azureaiagent/internal/project"
@@ -60,7 +61,7 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 				flags.agent = args[0]
 			}
 
-			return action.Run(ctx, cmd)
+			return action.Run(featureflags.WithEnvironment(ctx, extCtx.Environment), cmd)
 		},
 	}
 
@@ -92,8 +93,9 @@ func (a *OptimizeDeployAction) runDirect(
 	out io.Writer,
 	bold *color.Color,
 ) error {
+	ctx = featureflags.WithEnvironment(ctx, a.envName)
 	// Resolve agent name from flag or azd project environment.
-	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, false)
+	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, false, true)
 	if err != nil {
 		return err
 	}
@@ -139,6 +141,9 @@ func (a *OptimizeDeployAction) runDirect(
 	// Extract definition from latest version using map[string]any for flexibility.
 	latestDef, err := extractLatestDefinition(agentObj)
 	if err != nil {
+		return err
+	}
+	if err := requireDefinitionPreviewFeatures(ctx, latestDef); err != nil {
 		return err
 	}
 

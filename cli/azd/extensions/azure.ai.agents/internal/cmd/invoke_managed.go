@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -81,6 +82,11 @@ func promptConversationEndpoint(projectEndpoint, agentName string, harnessed boo
 // service (promptServiceContext), so prompt agents invoke through the same
 // service resolution as hosted agents.
 func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceContext) error {
+	if agent_api.IsCopilotHarness(pctx.Agent.HarnessType()) {
+		if err := featureflags.Require(ctx, pctx.AzdClient, featureflags.ManagedHarness); err != nil {
+			return err
+		}
+	}
 	if timeout := a.httpTimeout(); timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)

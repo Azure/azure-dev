@@ -24,6 +24,23 @@ for each environment.
 | `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the Aspire dashboard hosted on Azure App Service. |
 | `AZURE_AKS_CLUSTER_NAME` | The name of the Azure Kubernetes Service cluster. |
 
+## Foundry Agents Extension Preview Variables
+
+These variables are read by `azure.ai.agents`, not azd core. Each capability
+defaults to off. A true value in the process, selected azd environment, or any
+`azure.yaml` service's `env` map enables it. User config `alpha.<feature ID>=on`
+or `alpha.all=on` also enables it; false elsewhere never overrides an opt-in.
+
+| Variable | Feature ID and scope |
+| --- | --- |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` | `agents.managed_harness`: prompt agents using the Microsoft Copilot preview harness or its legacy GitHub Copilot name. Explicit HTTP agent endpoints are not queried for their harness and remain unclassified. |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` | `agents.voice`: managed voice / prompt-voice agents and hosted voice bridges. |
+| `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` | `agents.long_running`: starting background Responses invocations with `--long-running` / `--no-wait`, including explicit endpoints; not read/cancel/cleanup operations. |
+
+Use `azd env set <variable> true` for the selected environment. See the
+[agents opt-in guide](../extensions/azure.ai.agents/README.md#preview-feature-opt-ins)
+for config commands and enforcement limits.
+
 ## Dev Center Variables
 
 Variables for [Azure Dev Center](https://learn.microsoft.com/azure/dev-box/overview-what-is-microsoft-dev-box)

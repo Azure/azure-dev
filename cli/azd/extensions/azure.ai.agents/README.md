@@ -1,16 +1,50 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Preview feature opt-ins
+
+Three capabilities are independently disabled by default:
+
+| Feature ID | Scope | Environment variable |
+| --- | --- | --- |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` |
+
+Enable only the features you need, using user config or the selected azd environment:
+
+```bash
+azd config set alpha.agents.managed_harness on
+azd config set alpha.agents.voice on
+azd config set alpha.agents.long_running on
+
+# Alternatively, enable in the selected environment:
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS true
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
+```
+
+The matching process variable or a key in any `azure.yaml` `services[].env`
+map also enables the feature. Sources combine with OR: false never overrides
+true elsewhere. `alpha.all=on` enables every gate; `agents.hosted` no longer
+controls these capabilities. Ordinary hosted and plain prompt agents need no
+preview opt-in.
+
+Checks cover explicit init/add inputs, staged template definitions, local
+service invocation/run, provisioning, package/publish/deploy, and optimize
+deployment. Disabled voice is omitted from the init picker. Template catalogs
+do not identify capabilities, so templates are checked after staging and
+before adoption rather than classified by their names.
+
+An explicit HTTP `--agent-endpoint` remains unclassified: the extension does
+not query its remote definition, so it cannot enforce the managed-harness
+gate on that route. The long-running gate still applies. Text invoke does
+not accept voice WebSocket endpoints. Read, show, cancel, and cleanup paths
+remain available with gates off. These checks do not govern generic requests
+from the evaluations or routines extensions.
+
+See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
 ## Hosted agent deployment preview
-
-Hosted Agent package and deploy are opt-in. Enable with any of:
-
-- `azd config set alpha.agents.hosted on`
-- process env `AZD_FOUNDRY_EXT_ENABLE_AGENTS_HOSTED=true`
-- the same key in the selected azd environment `.env`
-- the same key in any `azure.yaml` `services[].env` map
-
-A `false` value in one place never overrides `true` in another.
-Prompt and voice agent paths are unchanged.
 
 With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:

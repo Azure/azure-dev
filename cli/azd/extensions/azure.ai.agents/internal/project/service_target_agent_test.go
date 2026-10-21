@@ -704,9 +704,9 @@ func newServiceTargetTestClient(
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
 	} else {
-		azdext.RegisterProjectServiceServer(srv, &hostedFeatureProjectServer{})
+		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
-	registerHostedFeatureOn(srv)
+	registerPreviewFeaturesOn(srv)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -815,7 +815,7 @@ func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient
 	})
 	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
 	azdext.RegisterAccountServiceServer(srv, &stubAccountServer{})
-	azdext.RegisterUserConfigServiceServer(srv, &hostedFeatureConfigServer{alpha: hostedFeatureOn})
+	azdext.RegisterUserConfigServiceServer(srv, &previewConfigServer{alpha: previewFeaturesOn})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

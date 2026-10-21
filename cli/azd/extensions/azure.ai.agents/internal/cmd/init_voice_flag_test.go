@@ -99,7 +99,7 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 						require.NoError(t, os.WriteFile("main.py", []byte("# sample"), 0600))
 					}
 					prompts := &helpersPromptServer{selectIndex: index}
-					client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+					client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 					mode, err := promptInitModeForVoice(t.Context(), client, false, specified, nil)
 					if specified && index != count-1 {
 						require.ErrorContains(t, err, "--voice is only supported")
@@ -180,7 +180,7 @@ func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
 		{0, initModeFromCode}, {1, initModeTemplate}, {2, initModeVoice},
 	} {
 		prompts := &helpersPromptServer{selectIndex: choice.index}
-		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 		mode, err := promptInitModeForVoice(t.Context(), client, false, false, inputErr)
 		if choice.want == initModeVoice {
 			require.ErrorIs(t, err, inputErr)

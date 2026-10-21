@@ -47,7 +47,9 @@ type optimizeAgentContext struct {
 //     is prompted). The Foundry agent name is read from the environment.
 //  2. No azd project — --agent is treated as the Foundry agent name directly.
 //  3. Error with guidance.
-func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noPrompt bool) (*optimizeAgentContext, error) {
+func resolveOptimizeAgent(
+	ctx context.Context, flagValue, envName string, noPrompt bool, requirePreviews ...bool,
+) (*optimizeAgentContext, error) {
 	// Try resolving from azd project first — --agent (if set) is interpreted
 	// as a service name, consistent with show/delete/run.
 	azdClient, err := azdext.NewAzdClient()
@@ -56,6 +58,11 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 
 		svc, project, svcErr := resolveAgentService(ctx, azdClient, flagValue, noPrompt)
 		if svcErr == nil && svc != nil && project != nil {
+			if len(requirePreviews) > 0 && requirePreviews[0] {
+				if err := projectpkg.RequireAgentFeatures(ctx, azdClient, svc, project.Path); err != nil {
+					return nil, err
+				}
+			}
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)
 			validation, validationErr := projectpkg.ValidateAgentServiceDefinition(svc, project.Path)

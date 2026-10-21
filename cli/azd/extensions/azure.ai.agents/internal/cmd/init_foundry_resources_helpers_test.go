@@ -520,7 +520,7 @@ func newTestAzdClient(
 	return azdClient
 }
 
-// hostedOptInConfigServer turns on the Hosted Agent opt-in (alpha.agents.hosted).
+// hostedOptInConfigServer enables previews in test fixtures.
 type hostedOptInConfigServer struct {
 	azdext.UnimplementedUserConfigServiceServer
 }
@@ -528,10 +528,10 @@ type hostedOptInConfigServer struct {
 func (hostedOptInConfigServer) Get(
 	context.Context, *azdext.GetUserConfigRequest,
 ) (*azdext.GetUserConfigResponse, error) {
-	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(`{"agents":{"hosted":"on"}}`)}, nil
+	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(`{"all":"on"}`)}, nil
 }
 
-// hostedOptInProjectServer returns an empty project for the Hosted Agent opt-in read.
+// hostedOptInProjectServer supplies the preview project read.
 type hostedOptInProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
 }

@@ -26,6 +26,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/telemetry"
@@ -111,7 +112,7 @@ Playground for activity agents. Use --no-client to skip this.`,
 			}
 			flags.inspectorPortSet = cmd.Flags().Changed("inspector-port")
 			ctx := azdext.WithAccessToken(cmd.Context())
-			return runRun(ctx, flags, extCtx.NoPrompt)
+			return runRun(featureflags.WithEnvironment(ctx, extCtx.Environment), flags, extCtx.NoPrompt)
 		},
 	}
 

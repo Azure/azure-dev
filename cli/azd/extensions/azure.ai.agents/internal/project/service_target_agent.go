@@ -850,6 +850,9 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
+	if err := p.requirePreviewFeatures(ctx); err != nil {
+		return nil, err
+	}
 	if p.isPromptAgentService() {
 		return &azdext.TargetResource{SubscriptionId: subscriptionId}, nil
 	}
@@ -920,6 +923,9 @@ func (p *AgentServiceTargetProvider) Package(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
+	if err := p.requirePreviewFeatures(ctx); err != nil {
+		return nil, err
+	}
 	// Prompt agents have no container/code to build — the harness owns the
 	// runtime. Skip packaging entirely.
 	if p.isPromptAgentService() {
@@ -936,9 +942,6 @@ func (p *AgentServiceTargetProvider) Package(
 	}
 	if !isContainerAgent {
 		return &azdext.ServicePackageResult{}, nil
-	}
-	if err := RequireHostedAgentFeature(ctx, p.azdClient); err != nil {
-		return nil, err
 	}
 	if err := validateRegistryConnectionDefinition(agentDef); err != nil {
 		return nil, err
@@ -1069,6 +1072,9 @@ func (p *AgentServiceTargetProvider) Publish(
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return nil, err
+	}
+	if err := p.requirePreviewFeatures(ctx); err != nil {
 		return nil, err
 	}
 	// Prompt agents have no container image to publish.
@@ -1567,6 +1573,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
+	if err := p.requirePreviewFeatures(ctx); err != nil {
+		return nil, err
+	}
 	// Prompt agents are created on the managed harness, not the Foundry
 	// service. Dispatch to the dedicated harness deploy path before any
 	// ARM/Foundry resolution the hosted path requires. The deploy context still
@@ -1603,10 +1612,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"unsupported agent kind in the agent service definition",
 				"use a supported kind: 'hosted'",
 			)
-		}
-
-		if err := RequireHostedAgentFeature(ctx, p.azdClient); err != nil {
-			return nil, err
 		}
 
 		if err := validateEnvironmentVariableNames(

@@ -5,6 +5,10 @@ refer to a direct YAML or JSON definition for a prompt, hosted (including code
 deployment), voice, or prompt-voice Agent. The service's root $ref resolves
 from the directory containing azure.yaml.
 
+Copilot harnesses require 'azd config set alpha.agents.managed_harness on';
+voice definitions require 'azd config set alpha.agents.voice on'.
+Both previews default to off and are checked before project writes.
+
 The command validates locally and writes through azd's project API only. It
 does not authenticate to Azure, create remote resources, copy source files,
 or deploy the Agent. The project must declare exactly one

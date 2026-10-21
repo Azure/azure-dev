@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -693,6 +694,13 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
+Preview opt-ins:
+Copilot harnesses require 'azd config set alpha.agents.managed_harness on'
+or 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS true'.
+Voice agents require 'azd config set alpha.agents.voice on'
+or 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true'.
+Both are disabled by default; ordinary hosted and plain prompt agents are unaffected.
+
 Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
 source code or container scaffolding.
@@ -836,6 +844,17 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			ctx = featureflags.WithEnvironment(ctx, extCtx.Environment)
+			if cmd.Flags().Changed("harness") && strings.TrimSpace(flags.harness) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--harness cannot be empty",
+					"omit --harness or use --harness none for a plain prompt agent",
+				)
+			}
+			if err := requireInitPreviewFeatures(ctx, azdClient, flags, cmd.Flags().Changed("voice")); err != nil {
+				return err
+			}
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
 			}
@@ -849,6 +868,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					cachedExplicitAzureYaml = content
+					root := filepath.Dir(flags.templatePointer)
+					if err := requireManifestPreviewFeatures(ctx, azdClient, content, root); err != nil {
+						return err
+					}
 				}
 			}
 			sourceValidated := false
@@ -904,6 +927,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
+			var projectResponse *azdext.GetProjectResponse
+			var projectErr error
+			if !userProvidedTemplate {
+				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireProjectPreviewFeatures(ctx, azdClient, projectResponse.GetProject()); err != nil {
+						return err
+					}
+					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+						return err
+					}
+				}
+			}
+
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
 			}
@@ -953,16 +990,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
 				return err
-			}
-
-			// Project().Get discovers a parent azd project even when init runs
-			// from one of its subdirectories. Validate configured agent services
-			// before any generated init path can prompt or mutate the project.
-			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-			if projectErr == nil && projectResponse.GetProject() != nil {
-				if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
-					return err
-				}
 			}
 
 			switch {

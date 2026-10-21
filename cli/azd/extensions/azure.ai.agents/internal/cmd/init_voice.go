@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 
@@ -25,6 +26,9 @@ func runInitVoice(
 	projectTargetDir string,
 	createdFolderDisplay string,
 ) error {
+	if err := featureflags.Require(ctx, azdClient, featureflags.Voice); err != nil {
+		return err
+	}
 	projectConfig, err := ensureProject(ctx, flags, azdClient, projectTargetDir)
 	if err != nil {
 		return err

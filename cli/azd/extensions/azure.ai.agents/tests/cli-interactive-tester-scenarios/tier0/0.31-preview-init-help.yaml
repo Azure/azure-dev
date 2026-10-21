@@ -1,0 +1,11 @@
+# Tier 0: read-only preview opt-in documentation; no auth or Azure cost.
+name: "preview-init-help"
+command: "azd ai agent init --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:init", "parallel-safe"]
+goals:
+  - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
+  - "Confirm help names alpha.agents.managed_harness and AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS, with azd config set and azd env set enable commands."
+  - "Confirm help names alpha.agents.voice and AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE, states both previews default to off, and says ordinary hosted and plain prompt agents are unaffected."
+  - "Take a screenshot of the help output."
+  - "Report a finding if either opt-in is missing, the help implies all hosted or prompt agents require it, or the command prompts or mutates a project."

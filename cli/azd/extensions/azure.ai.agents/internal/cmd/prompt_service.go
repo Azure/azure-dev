@@ -83,6 +83,11 @@ func resolvePromptAgentService(
 	for _, option := range options {
 		option(&resolutionOptions)
 	}
+	if resolutionOptions.requirePreviewFeatures {
+		if err := project.RequireAgentFeatures(ctx, azdClient, svc, projectPath); err != nil {
+			return nil, false, err
+		}
+	}
 	if resolutionOptions.rejectVoiceInvocation {
 		if err := voiceInvocationError(svc, projectPath); err != nil {
 			return nil, false, err

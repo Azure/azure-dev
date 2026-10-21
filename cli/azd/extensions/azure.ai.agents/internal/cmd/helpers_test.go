@@ -572,8 +572,11 @@ func newHelpersTestAzdClient(
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
 	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, hostedOptInConfigServer{})
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
+	} else {
+		azdext.RegisterEnvironmentServiceServer(grpcServer, &previewTestEnvironment{})
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

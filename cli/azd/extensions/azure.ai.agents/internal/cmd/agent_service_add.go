@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
@@ -123,6 +124,10 @@ refer to a direct YAML or JSON definition for a prompt, hosted (including code
 deployment), voice, or prompt-voice Agent. The service's root $ref resolves
 from the directory containing azure.yaml.
 
+Copilot harnesses require 'azd config set alpha.agents.managed_harness on';
+voice definitions require 'azd config set alpha.agents.voice on'.
+Both previews default to off and are checked before project writes.
+
 The command validates locally and writes through azd's project API only. It
 does not authenticate to Azure, create remote resources, copy source files,
 or deploy the Agent. The project must declare exactly one
@@ -192,7 +197,9 @@ project tree. Deploy it with
 				out:          cmd.OutOrStdout(),
 				errOut:       cmd.ErrOrStderr(),
 			}
-			return action.Run(cmd.Context())
+			return action.Run(featureflags.WithEnvironment(
+				azdext.WithAccessToken(cmd.Context()), extCtx.Environment,
+			))
 		},
 	}
 
@@ -324,6 +331,9 @@ func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 		a.flags.serviceName,
 	)
 	if err != nil {
+		return err
+	}
+	if err := requireDefinitionPreviewFeatures(ctx, definition.ResolvedProperties); err != nil {
 		return err
 	}
 	dependencies, err := planAgentServiceUses(

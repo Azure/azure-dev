@@ -15,6 +15,13 @@ Compatibility
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
+Preview opt-ins:
+Copilot harnesses require 'azd config set alpha.agents.managed_harness on'
+or 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS true'.
+Voice agents require 'azd config set alpha.agents.voice on'
+or 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true'.
+Both are disabled by default; ordinary hosted and plain prompt agents are unaffected.
+
 Voice Agents
 Use --kind prompt-voice to initialize a managed prompt voice agent without
 source code or container scaffolding.

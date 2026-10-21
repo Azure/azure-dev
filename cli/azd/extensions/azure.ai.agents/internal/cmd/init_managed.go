@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -42,6 +43,11 @@ func runInitManaged(
 	azdClient *azdext.AzdClient,
 	harness string,
 ) error {
+	if harness != "" {
+		if err := featureflags.Require(ctx, azdClient, featureflags.ManagedHarness); err != nil {
+			return err
+		}
+	}
 	recordInitProperties(ctx, map[string]any{"kind": "prompt"})
 	// Every prompt-agent init converges here — interactive picker, --kind prompt,
 	// and manifest adoption alike — so this is the one place the preview notice

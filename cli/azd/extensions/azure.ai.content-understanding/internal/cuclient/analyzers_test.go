@@ -40,11 +40,11 @@ type wireStep struct {
 	headers     http.Header
 }
 
-func newWireClient(t *testing.T, version string, steps ...wireStep) *RESTTransport {
+func newWireClient(t *testing.T, version string, steps ...wireStep) Client {
 	t.Helper()
 	calls := 0
 	credential := &testCredential{}
-	client, err := NewRESTTransport("https://resource.test", credential, &TransportOptions{
+	client, err := NewSDKTransport("https://resource.test", credential, &TransportOptions{
 		APIVersion: version,
 		Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
 			require.Less(t, calls, len(steps), "unexpected request: %s %s", request.Method, request.URL.Path)
@@ -105,7 +105,7 @@ func assertReadyAnalyzer(t *testing.T, analyzer Analyzer) {
 	assert.Contains(t, string(analyzer.JSON), "9007199254740993", "raw JSON must not round large integers")
 }
 
-func TestAnalyzerRESTOperationsWire(t *testing.T) {
+func TestAnalyzerOperationsWire(t *testing.T) {
 	for _, version := range []string{DefaultAPIVersion, PreviewAPIVersion} {
 		t.Run(version, func(t *testing.T) {
 			t.Run("get", func(t *testing.T) {
@@ -298,25 +298,25 @@ func TestListAnalyzersRejectsRepeatedContinuation(t *testing.T) {
 func TestAnalyzerOperationsValidateBeforeHTTP(t *testing.T) {
 	for _, test := range []struct {
 		name string
-		run  func(*RESTTransport) error
+		run  func(Client) error
 	}{
-		{"get", func(c *RESTTransport) error { _, err := c.GetAnalyzer(t.Context(), "../private-token"); return err }},
-		{"delete", func(c *RESTTransport) error { return c.DeleteAnalyzer(t.Context(), "") }},
-		{"create", func(c *RESTTransport) error {
+		{"get", func(c Client) error { _, err := c.GetAnalyzer(t.Context(), "../private-token"); return err }},
+		{"delete", func(c Client) error { return c.DeleteAnalyzer(t.Context(), "") }},
+		{"create", func(c Client) error {
 			_, err := c.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{AnalyzerID: "custom", Definition: []byte(`null`)})
 			return err
 		}},
-		{"copy", func(c *RESTTransport) error {
+		{"copy", func(c Client) error {
 			_, err := c.CopyAnalyzer(t.Context(), CopyAnalyzerRequest{
 				SourceAnalyzerID: "same", DestinationAnalyzerID: "same",
 			})
 			return err
 		}},
-		{"grant", func(c *RESTTransport) error {
+		{"grant", func(c Client) error {
 			_, err := c.GrantCopyAuthorization(t.Context(), GrantCopyAuthorizationRequest{AnalyzerID: "custom"})
 			return err
 		}},
-		{"defaults", func(c *RESTTransport) error {
+		{"defaults", func(c Client) error {
 			_, err := c.UpdateDefaults(t.Context(), UpdateDefaultsRequest{})
 			return err
 		}},
@@ -366,15 +366,15 @@ func TestAnalyzerWritesAreNotReplayed(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		step wireStep
-		run  func(*RESTTransport) error
+		run  func(Client) error
 	}{
-		{"delete", wireStep{method: http.MethodDelete, path: "/analyzers/custom"}, func(c *RESTTransport) error {
+		{"delete", wireStep{method: http.MethodDelete, path: "/analyzers/custom"}, func(c Client) error {
 			return c.DeleteAnalyzer(t.Context(), "custom")
 		}},
 		{"copy", wireStep{
 			method: http.MethodPost, path: "/analyzers/custom:copy", query: url.Values{"allowReplace": {"false"}},
 			body: `{"sourceAnalyzerId":"source"}`, contentType: "application/json",
-		}, func(c *RESTTransport) error {
+		}, func(c Client) error {
 			_, err := c.CopyAnalyzer(t.Context(), CopyAnalyzerRequest{
 				SourceAnalyzerID: "source", DestinationAnalyzerID: "custom",
 			})
@@ -383,7 +383,7 @@ func TestAnalyzerWritesAreNotReplayed(t *testing.T) {
 		{"grant", wireStep{
 			method: http.MethodPost, path: "/analyzers/custom:grantCopyAuthorization",
 			body: `{"targetAzureResourceId":"/target"}`, contentType: "application/json",
-		}, func(c *RESTTransport) error {
+		}, func(c Client) error {
 			_, err := c.GrantCopyAuthorization(t.Context(), GrantCopyAuthorizationRequest{
 				AnalyzerID: "custom", TargetAzureResourceID: "/target",
 			})
@@ -392,7 +392,7 @@ func TestAnalyzerWritesAreNotReplayed(t *testing.T) {
 		{"defaults", wireStep{
 			method: http.MethodPatch, path: "/defaults", body: `{"modelDeployments":{}}`,
 			contentType: "application/merge-patch+json",
-		}, func(c *RESTTransport) error {
+		}, func(c Client) error {
 			_, err := c.UpdateDefaults(t.Context(), UpdateDefaultsRequest{ModelDeployments: map[string]string{}})
 			return err
 		}},
@@ -501,31 +501,31 @@ func TestAnalyzerReadsPreserveHTTPFailures(t *testing.T) {
 func TestAnalyzerResponseFailures(t *testing.T) {
 	operations := []struct {
 		name string
-		run  func(*RESTTransport) error
+		run  func(Client) error
 	}{
-		{"list", func(c *RESTTransport) error { _, err := c.ListAnalyzers(t.Context()); return err }},
-		{"get", func(c *RESTTransport) error { _, err := c.GetAnalyzer(t.Context(), "custom"); return err }},
-		{"create", func(c *RESTTransport) error {
+		{"list", func(c Client) error { _, err := c.ListAnalyzers(t.Context()); return err }},
+		{"get", func(c Client) error { _, err := c.GetAnalyzer(t.Context(), "custom"); return err }},
+		{"create", func(c Client) error {
 			_, err := c.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{
 				AnalyzerID: "custom", Definition: []byte(`{}`),
 			})
 			return err
 		}},
-		{"delete", func(c *RESTTransport) error { return c.DeleteAnalyzer(t.Context(), "custom") }},
-		{"grant", func(c *RESTTransport) error {
+		{"delete", func(c Client) error { return c.DeleteAnalyzer(t.Context(), "custom") }},
+		{"grant", func(c Client) error {
 			_, err := c.GrantCopyAuthorization(t.Context(), GrantCopyAuthorizationRequest{
 				AnalyzerID: "custom", TargetAzureResourceID: "/target",
 			})
 			return err
 		}},
-		{"copy", func(c *RESTTransport) error {
+		{"copy", func(c Client) error {
 			_, err := c.CopyAnalyzer(t.Context(), CopyAnalyzerRequest{
 				SourceAnalyzerID: "source", DestinationAnalyzerID: "custom",
 			})
 			return err
 		}},
-		{"get_defaults", func(c *RESTTransport) error { _, err := c.GetDefaults(t.Context()); return err }},
-		{"update_defaults", func(c *RESTTransport) error {
+		{"get_defaults", func(c Client) error { _, err := c.GetDefaults(t.Context()); return err }},
+		{"update_defaults", func(c Client) error {
 			_, err := c.UpdateDefaults(t.Context(), UpdateDefaultsRequest{ModelDeployments: map[string]string{}})
 			return err
 		}},
@@ -572,7 +572,10 @@ type closeErrorBody struct{ io.Reader }
 func (closeErrorBody) Close() error { return errors.New("private-close-error") }
 
 func TestAnalyzerJSONEncodingFailure(t *testing.T) {
-	client := newWireClient(t, DefaultAPIVersion)
+	client := newTestTransport(t, func(*http.Request) (*http.Response, error) {
+		t.Fatal("invalid JSON must not reach the transport")
+		return nil, nil
+	})
 	_, err := client.jsonRequest(t.Context(), http.MethodPost, "/analyzers/custom:copy",
 		nil, make(chan int), "application/json")
 	require.Error(t, err)

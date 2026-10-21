@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
@@ -45,14 +46,16 @@ func (c *Client) NewListAnalyzersPager() *runtime.Pager[ListAnalyzersResponse] {
 					return ListAnalyzersResponse{}, err
 				}
 				next = req.Raw().URL.ResolveReference(next)
-				if next.Scheme != req.Raw().URL.Scheme || next.Host != req.Raw().URL.Host || next.User != nil {
+				if next.Scheme != req.Raw().URL.Scheme || !strings.EqualFold(next.Host, req.Raw().URL.Host) || next.User != nil {
 					return ListAnalyzersResponse{}, errors.New("analyzer nextLink must remain on the resource endpoint")
 				}
+				next.Host = req.Raw().URL.Host
 				req, err = runtime.NewRequest(ctx, http.MethodGet, next.String())
 				if err != nil {
 					return ListAnalyzersResponse{}, err
 				}
 			}
+			req.Raw().Header.Set("Accept", "application/json")
 			resp, err := c.send(req, http.StatusOK)
 			if err != nil {
 				return ListAnalyzersResponse{}, err
@@ -65,7 +68,7 @@ func (c *Client) NewListAnalyzersPager() *runtime.Pager[ListAnalyzersResponse] {
 // BeginCreateAnalyzer creates an analyzer without replacing an existing definition.
 // definition is an analyzer JSON object; unknown schema/config properties are retained.
 func (c *Client) BeginCreateAnalyzer(ctx context.Context, analyzerID string, definition json.RawMessage) (*runtime.Poller[AnalyzerResponse], error) {
-	ctx = noWriteRetry(ctx)
+	ctx = c.noWriteRetry(ctx)
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(definition, &object); err != nil || object == nil {
 		return nil, errors.New("analyzer definition must be a JSON object")
@@ -87,7 +90,7 @@ func (c *Client) BeginCreateAnalyzer(ctx context.Context, analyzerID string, def
 
 // DeleteAnalyzer deletes an analyzer. Missing resources follow service DELETE semantics.
 func (c *Client) DeleteAnalyzer(ctx context.Context, analyzerID string) error {
-	ctx = noWriteRetry(ctx)
+	ctx = c.noWriteRetry(ctx)
 	path, err := analyzerPath(analyzerID)
 	if err != nil {
 		return err
@@ -107,7 +110,7 @@ func (c *Client) DeleteAnalyzer(ctx context.Context, analyzerID string) error {
 // For cross-resource copy call this method on the destination client after granting
 // authorization on the source client.
 func (c *Client) BeginCopyAnalyzer(ctx context.Context, analyzerID string, body CopyAnalyzerRequest) (*runtime.Poller[AnalyzerResponse], error) {
-	ctx = noWriteRetry(ctx)
+	ctx = c.noWriteRetry(ctx)
 	if body.SourceAnalyzerID == "" {
 		return nil, errors.New("source analyzer ID is required")
 	}
@@ -128,7 +131,7 @@ func (c *Client) BeginCopyAnalyzer(ctx context.Context, analyzerID string, body 
 
 // GrantCopyAuthorization permits a destination resource to copy this source analyzer.
 func (c *Client) GrantCopyAuthorization(ctx context.Context, analyzerID string, body GrantCopyAuthorizationRequest) (CopyAuthorization, error) {
-	ctx = noWriteRetry(ctx)
+	ctx = c.noWriteRetry(ctx)
 	if body.TargetAzureResourceID == "" {
 		return CopyAuthorization{}, errors.New("target Azure resource ID is required")
 	}

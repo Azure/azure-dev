@@ -25,7 +25,7 @@ func (c *Client) GetDefaults(ctx context.Context) (Defaults, error) {
 // UpdateDefaults patches model deployment mappings. A nil value removes a mapping.
 // Merge or replacement policy and prebuilt aliases belong to the caller.
 func (c *Client) UpdateDefaults(ctx context.Context, mappings map[string]*string) (Defaults, error) {
-	ctx = noWriteRetry(ctx)
+	ctx = c.noWriteRetry(ctx)
 	if mappings == nil {
 		return Defaults{}, errors.New("model deployment mappings are required")
 	}

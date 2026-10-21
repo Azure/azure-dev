@@ -657,8 +657,10 @@ tenant or identity. The SDK's key constructor is not exposed by the extension.
   bodies still return an explicit HTTP failure. Valid `Retry-After` values are
   retained with a maximum of 24 hours.
 - Failed service and polling envelopes are converted to sanitized
-  `azcore.ResponseError` values without logging service bodies, request URLs,
-  schemas, paths, or customer content.
+  errors without logging service bodies, request URLs, schemas, paths, or customer
+  content. Terminal `OperationError` values preserve status and safe nested codes
+  and wrap `azcore.ResponseError`; the adapter retains CLI cancellation categories
+  and operation-specific failure messages while keeping actual HTTP status.
 
 Tests use fake credentials/transports and local HTTPS servers. They do not call
 Azure or incur service charges. Command tests additionally use injected clients
@@ -725,7 +727,9 @@ versions.
   distinct from explicit zero. Input readers remain caller-owned on success,
   cancellation, and failure; the Azure pipeline may rewind and consume them.
 
-The local SDK unit suite and adapter tests cover the complete
+Analyzer/analysis wire and polling conformance tests construct the production
+`SDKTransport`; low-level REST pipeline/helper tests remain reference coverage.
+The local SDK unit suite and adapter tests cover the supported
 version/input/mode matrix, exact raw JSON, failures, polling, no-replay, stream
 ownership, and SDK log redaction. The test suite makes no live Azure calls.
 Prior prototype live evidence covers GA/preview URL, binary and base64 analysis,

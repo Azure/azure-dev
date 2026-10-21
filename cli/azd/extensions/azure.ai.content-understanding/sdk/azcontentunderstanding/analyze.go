@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
@@ -32,7 +33,7 @@ func (c *Client) BeginAnalyze(ctx context.Context, analyzerID string, body Analy
 }
 
 // BeginAnalyzeBinary submits binary input. The content type defaults to application/octet-stream.
-// The stream must support seeking so retries can resend it.
+// The stream must support seeking so the pipeline can determine its length.
 func (c *Client) BeginAnalyzeBinary(ctx context.Context, analyzerID string, body io.ReadSeekCloser, contentType string) (*runtime.Poller[AnalyzeResponse], error) {
 	if body == nil {
 		return nil, errors.New("binary input is required")
@@ -70,29 +71,30 @@ func (c *Client) analyzeInline(ctx context.Context, analyzerID string, input Ana
 		return AnalyzeResponse{}, err
 	}
 	var state struct {
-		Status string `json:"status"`
-		Error  struct {
-			Code string `json:"code"`
-		} `json:"error"`
+		Status string              `json:"status"`
+		Error  OperationDiagnostic `json:"error"`
 	}
 	if _, err := runtime.Payload(resp); err != nil {
 		return AnalyzeResponse{}, err
 	}
 	if err := runtime.UnmarshalAsJSON(resp, &state); err != nil {
-		return AnalyzeResponse{}, err
+		return AnalyzeResponse{}, errors.Join(ErrInvalidResponse, err)
 	}
 	if state.Status != "Succeeded" {
-		code := state.Error.Code
-		if code == "" {
-			code = "UnexpectedOperationStatus"
+		status := strings.ToLower(state.Status)
+		if status == "failed" || status == "canceled" || status == "cancelled" {
+			return AnalyzeResponse{}, newOperationError(resp, status, state.Error)
 		}
-		return AnalyzeResponse{}, safeResponseError(resp, code)
+		return AnalyzeResponse{}, ErrInvalidResponse
 	}
 	return decodeResponse[AnalyzeResponse](resp)
 }
 
 func (c *Client) analyze(ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string, inline bool) (*http.Response, error) {
-	ctx = noWriteRetry(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ctx = c.noWriteRetry(ctx)
 	path, err := analyzerPath(analyzerID)
 	if err != nil {
 		return nil, err

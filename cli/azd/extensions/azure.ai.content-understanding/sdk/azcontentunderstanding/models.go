@@ -7,11 +7,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 )
 
 // ErrInvalidResponse marks a successful service response that does not satisfy
 // the Content Understanding response contract.
 var ErrInvalidResponse = errors.New("invalid Content Understanding response")
+
+// OperationError represents an unsuccessful terminal service operation, even
+// when the polling or inline HTTP response was successful.
+type OperationError struct {
+	Status        string
+	Code          string
+	Details       []OperationDiagnostic
+	ResponseError *azcore.ResponseError
+}
+
+// OperationDiagnostic retains nested service codes without customer messages or targets.
+type OperationDiagnostic struct {
+	Code    string                `json:"code"`
+	Details []OperationDiagnostic `json:"details,omitempty"`
+}
+
+func (e *OperationError) Error() string {
+	return fmt.Sprintf("Content Understanding operation ended with status %s (%s)", e.Status, e.ResponseError.ErrorCode)
+}
+
+// Unwrap preserves compatibility with callers inspecting azcore.ResponseError.
+func (e *OperationError) Unwrap() error {
+	return e.ResponseError
+}
 
 // AnalysisInput identifies a URL or base64-encoded binary input.
 // Set exactly one of URL or Data. Data is encoded as base64 by encoding/json.
@@ -85,7 +111,8 @@ func (a *Analyzer) UnmarshalJSON(data []byte) error {
 
 // AnalyzerResponse retains the complete terminal create or copy envelope,
 // including operation-level usage. Direct, synchronously completed analyzer
-// responses are also accepted.
+// responses are also accepted. A succeeded envelope without an embedded result
+// leaves Analyzer empty so the caller can retrieve the final resource.
 type AnalyzerResponse struct {
 	Analyzer
 	Usage   json.RawMessage
@@ -101,6 +128,13 @@ func (r *AnalyzerResponse) UnmarshalJSON(data []byte) error {
 	}
 	if err := json.Unmarshal(data, &operation); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidResponse, err)
+	}
+	if operation.Status == "Succeeded" && (len(operation.Result) == 0 || string(operation.Result) == "null") {
+		*r = AnalyzerResponse{
+			Usage:   append(json.RawMessage(nil), operation.Usage...),
+			RawJSON: append(json.RawMessage(nil), data...),
+		}
+		return nil
 	}
 	if len(operation.Result) != 0 && string(operation.Result) != "null" {
 		if operation.Status != "Succeeded" {

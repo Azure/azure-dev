@@ -47,9 +47,10 @@ type ClientOptions struct {
 // Client calls the Content Understanding data-plane service.
 // Methods are safe for concurrent use. Pollers and pagers are not.
 type Client struct {
-	internal   *azcore.Client
-	endpoint   string
-	apiVersion string
+	internal     *azcore.Client
+	endpoint     string
+	apiVersion   string
+	retryOptions policy.RetryOptions
 }
 
 // NewClient creates a client using a caller-provided Microsoft Entra credential.
@@ -61,7 +62,10 @@ func NewClient(endpoint string, credential azcore.TokenCredential, options *Clie
 	if options != nil && options.Audience != "" {
 		audience = strings.TrimRight(options.Audience, "/")
 	}
-	return newClient(endpoint, runtime.NewBearerTokenPolicy(credential, []string{audience + "/.default"}, nil), options)
+	return newClient(endpoint, &tokenCredentialPolicy{
+		credential: credential,
+		scopes:     []string{audience + "/.default"},
+	}, options)
 }
 
 // NewClientWithKeyCredential creates a client using a resource key.
@@ -90,13 +94,41 @@ func newClient(endpoint string, auth policy.Policy, options *ClientOptions) (*Cl
 	opts.ClientOptions.APIVersion = opts.APIVersion
 	client, err := azcore.NewClient(moduleName, version, runtime.PipelineOptions{
 		APIVersion: runtime.APIVersionOptions{Name: "api-version"},
-		PerCall:    []policy.Policy{runtime.NewRequestIDPolicy()},
-		PerRetry:   []policy.Policy{&resourceCredentialPolicy{host: u.Host, auth: auth}},
+		PerCall: []policy.Policy{
+			runtime.NewRequestIDPolicy(),
+			&resourceCredentialPolicy{host: u.Host, auth: auth},
+		},
 	}, &opts.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{internal: client, endpoint: strings.TrimRight(u.String(), "/"), apiVersion: opts.APIVersion}, nil
+	return &Client{
+		internal: client, endpoint: strings.TrimRight(u.String(), "/"),
+		apiVersion: opts.APIVersion, retryOptions: opts.Retry,
+	}, nil
+}
+
+type tokenCredentialPolicy struct {
+	credential azcore.TokenCredential
+	scopes     []string
+}
+
+func (p *tokenCredentialPolicy) Do(req *policy.Request) (*http.Response, error) {
+	if err := req.Raw().Context().Err(); err != nil {
+		return nil, err
+	}
+	token, err := p.credential.GetToken(req.Raw().Context(), policy.TokenRequestOptions{
+		EnableCAE: true,
+		Scopes:    p.scopes,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if token.Token == "" {
+		return nil, errors.New("credential returned an empty access token")
+	}
+	req.Raw().Header.Set("Authorization", "Bearer "+token.Token)
+	return req.Next()
 }
 
 type resourceCredentialPolicy struct {
@@ -119,8 +151,10 @@ func analyzerPath(analyzerID string) (string, error) {
 	return "/analyzers/" + url.PathEscape(analyzerID), nil
 }
 
-func noWriteRetry(ctx context.Context) context.Context {
-	return policy.WithRetryOptions(ctx, policy.RetryOptions{MaxRetries: -1})
+func (c *Client) noWriteRetry(ctx context.Context) context.Context {
+	options := c.retryOptions
+	options.MaxRetries = -1
+	return policy.WithRetryOptions(ctx, options)
 }
 
 func (c *Client) request(ctx context.Context, method, path string, query url.Values, body []byte, contentType string) (*policy.Request, error) {
@@ -152,6 +186,9 @@ func (c *Client) send(req *policy.Request, codes ...int) (*http.Response, error)
 		return nil, err
 	}
 	if !runtime.HasStatusCode(resp, codes...) {
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil, ErrInvalidResponse
+		}
 		return nil, safeResponseError(resp, "")
 	}
 	return resp, nil

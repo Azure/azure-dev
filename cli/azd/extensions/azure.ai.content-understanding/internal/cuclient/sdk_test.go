@@ -6,6 +6,8 @@ package cuclient
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -82,11 +84,14 @@ func TestSDKTransportContract(t *testing.T) {
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/one:analyze":
 			assert.Equal(t, "codePoint", request.URL.Query().Get("stringEncoding"))
-			return sdkResponse(request, http.StatusAccepted,
+			response := sdkResponse(request, http.StatusAccepted,
 				`{"id":"op","status":"Succeeded","result":{"analyzerId":"one",`+
 					`"apiVersion":"2026-06-01-preview","contents":[{"kind":"document",`+
 					`"mimeType":"text/markdown","fields":{"large":9007199254740993}}]},`+
-					`"usage":{"tokens":{"model":4}},"future":9007199254740993}`), nil
+					`"usage":{"tokens":{"model":4}},"future":9007199254740993}`)
+			response.Header.Set("Operation-Location",
+				"https://resource.test/contentunderstanding/analyzerResults/op")
+			return response, nil
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/one:analyzeBinaryInline":
 			assert.Equal(t, "codePoint", request.URL.Query().Get("stringEncoding"))
@@ -175,6 +180,23 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 		assert.Equal(t, 1, calls)
 	})
 
+	t.Run("authentication challenges do not replay writes", func(t *testing.T) {
+		var calls int
+		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+			calls++
+			response := sdkResponse(request, http.StatusUnauthorized,
+				`{"error":{"code":"AuthenticationFailed"}}`)
+			response.Header.Set("WWW-Authenticate",
+				`Bearer error="insufficient_claims", claims="e30="`)
+			return response, nil
+		})
+		_, err := client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{
+			AnalyzerID: "created", Definition: []byte(`{"description":"example"}`),
+		})
+		require.Error(t, err)
+		assert.Equal(t, 1, calls)
+	})
+
 	t.Run("reads retain bounded retry", func(t *testing.T) {
 		var calls int
 		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
@@ -183,6 +205,7 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 				return sdkResponse(request, http.StatusInternalServerError,
 					`{"error":{"code":"ServiceUnavailable"}}`), nil
 			}
+
 			return sdkResponse(request, http.StatusOK,
 				`{"analyzerId":"one","status":"ready"}`), nil
 		})
@@ -190,4 +213,122 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 2, calls)
 	})
+}
+
+func TestSDKTransportCallerCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+		return nil, request.Context().Err()
+	})
+	_, err := client.Analyze(ctx, AnalyzeRequest{
+		AnalyzerID: "one", Mode: AnalysisModeAsync, Input: Input{URL: "https://input.test/a"},
+	})
+	var domain *Error
+	require.ErrorAs(t, err, &domain)
+	assert.Equal(t, ErrorCancelled, domain.Kind)
+	assert.True(t, errors.Is(err, context.Canceled))
+}
+
+func TestSDKTransportTerminalOperationErrors(t *testing.T) {
+	for _, mode := range []string{"analysis", "inline", "create", "copy"} {
+		for _, tc := range []struct {
+			status string
+			code   string
+			kind   ErrorKind
+			suffix string
+		}{
+			{"Failed", "", ErrorService, "failed"},
+			{"Canceled", "", ErrorCancelled, "canceled"},
+			{"Cancelled", "", ErrorCancelled, "canceled"},
+			{"Failed", "InvalidContent", ErrorService, "failed"},
+			{"Canceled", "OperationCanceled", ErrorCancelled, "canceled"},
+			{"Failed", "private value", ErrorService, "failed"},
+		} {
+			for _, polled := range []bool{false, true} {
+				if mode == "inline" && polled {
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/%s/%s/polled=%t", mode, tc.status, tc.code, polled), func(t *testing.T) {
+					var calls int
+					client := newSDKTestTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
+						calls++
+						if polled && calls == 1 {
+							status := http.StatusOK
+							if mode == "analysis" {
+								status = http.StatusAccepted
+							}
+							response := sdkResponse(request, status, `{"status":"Running"}`)
+							location := "https://resource.test/contentunderstanding/analyzers/one/operations/op"
+							if mode == "analysis" {
+								location = "https://resource.test/contentunderstanding/analyzerResults/op"
+							}
+							response.Header.Set("Operation-Location", location)
+							return response, nil
+						}
+						payload := fmt.Sprintf(`{"status":%q,"error":{"code":%q,"message":"private value",`+
+							`"details":[{"code":"InvalidField","message":"private value","target":"private target",`+
+							`"details":[{"code":"private value","message":"private value"}]}]}}`,
+							tc.status, tc.code)
+						status := http.StatusOK
+						if mode == "analysis" && !polled {
+							status = http.StatusAccepted
+						}
+						response := sdkResponse(request, status, payload)
+						if mode == "analysis" && !polled {
+							response.Header.Set("Operation-Location",
+								"https://resource.test/contentunderstanding/analyzerResults/op")
+						}
+						return response, nil
+					})
+					var err error
+					operation := "analyzer"
+					switch mode {
+					case "analysis", "inline":
+						operation = "analysis"
+						analysisMode := AnalysisModeAsync
+						if mode == "inline" {
+							analysisMode = AnalysisModeInline
+						}
+						_, err = client.Analyze(t.Context(), AnalyzeRequest{
+							AnalyzerID: "one", Mode: analysisMode, Input: Input{URL: "https://input.test/a"},
+						})
+					case "create":
+						_, err = client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{
+							AnalyzerID: "one", Definition: []byte(`{"description":"example"}`),
+						})
+					case "copy":
+						_, err = client.CopyAnalyzer(t.Context(), CopyAnalyzerRequest{
+							SourceAnalyzerID: "source", DestinationAnalyzerID: "one",
+						})
+					}
+					var domain *Error
+					require.ErrorAs(t, err, &domain)
+					assert.Equal(t, tc.kind, domain.Kind)
+					expectedStatus := http.StatusOK
+					if mode == "analysis" && !polled {
+						expectedStatus = http.StatusAccepted
+					}
+					assert.Equal(t, expectedStatus, domain.StatusCode)
+					expectedCode := operation + "_operation_" + tc.suffix
+					if tc.code != "" && tc.code != "private value" {
+						expectedCode = tc.code
+					}
+					assert.Equal(t, expectedCode, domain.Code)
+					assert.Contains(t, domain.Message, operation+" operation")
+					assert.NotContains(t, domain.Message, "HTTP 200")
+					assert.NotContains(t, err.Error(), "private value")
+					assert.Equal(t, []Diagnostic{{
+						Code: "InvalidField", Message: "The service reported an operation error.",
+						Details: []Diagnostic{{Code: "service_error", Message: "The service reported an operation error."}},
+					}}, domain.Details)
+					expectedCalls := 1
+					if polled {
+						expectedCalls = 2
+					}
+					assert.Equal(t, expectedCalls, calls)
+				})
+			}
+		}
+	}
 }

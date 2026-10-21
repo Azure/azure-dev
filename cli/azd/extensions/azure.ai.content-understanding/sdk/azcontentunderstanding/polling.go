@@ -12,22 +12,44 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 type operationPoller[T any] struct {
-	client    *Client
-	location  string
-	validated bool
-	done      bool
-	failed    bool
-	code      string
-	response  *http.Response
-	payload   []byte
+	client      *Client
+	location    string
+	done        bool
+	failed      bool
+	code        string
+	status      string
+	details     []OperationDiagnostic
+	operationID string
+	response    *http.Response
+	payload     []byte
 }
 
 func newOperationPoller[T any](initial *http.Response, client *Client) (*runtime.Poller[T], error) {
 	handler := &operationPoller[T]{client: client}
+	if location := initial.Header.Get("Operation-Location"); location != "" {
+		base := client.endpoint
+		if initial.Request != nil {
+			base = initial.Request.URL.String()
+		}
+		resolved, err := client.operationLocation(location, base)
+		if err != nil {
+			return nil, err
+		}
+		handler.location = resolved
+		locationURL, err := url.Parse(resolved)
+		if err != nil {
+			return nil, ErrInvalidResponse
+		}
+		handler.operationID = locationURL.Path[strings.LastIndex(locationURL.Path, "/")+1:]
+		if handler.operationID == "" {
+			return nil, ErrInvalidResponse
+		}
+	}
 	if err := handler.accept(initial, false); err != nil {
 		return nil, err
 	}
@@ -42,17 +64,7 @@ func (p *operationPoller[T]) Poll(ctx context.Context) (*http.Response, error) {
 	if p.done {
 		return p.response, nil
 	}
-	location := p.location
-	if !p.validated {
-		var err error
-		location, err = p.client.operationLocation(location)
-		if err != nil {
-			return nil, err
-		}
-		p.location = location
-		p.validated = true
-	}
-	req, err := runtime.NewRequest(ctx, http.MethodGet, location)
+	req, err := runtime.NewRequest(ctx, http.MethodGet, p.location)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +84,7 @@ func (p *operationPoller[T]) Result(_ context.Context, out *T) error {
 		return errors.New("operation has not completed")
 	}
 	if p.failed {
-		return safeResponseError(p.response, p.code)
+		return newOperationError(p.response, p.status, OperationDiagnostic{Code: p.code, Details: p.details})
 	}
 	if err := json.Unmarshal(p.payload, out); err != nil {
 		return errors.Join(ErrInvalidResponse, err)
@@ -89,20 +101,18 @@ func (p *operationPoller[T]) accept(resp *http.Response, polled bool) error {
 	p.payload = append(p.payload[:0], payload...)
 
 	var state struct {
-		Status     string `json:"status"`
-		AnalyzerID string `json:"analyzerId"`
-		Error      struct {
-			Code string `json:"code"`
-		} `json:"error"`
+		ID         string              `json:"id"`
+		Status     string              `json:"status"`
+		AnalyzerID string              `json:"analyzerId"`
+		Error      OperationDiagnostic `json:"error"`
 	}
 	if len(bytes.TrimSpace(payload)) != 0 {
 		if err := json.Unmarshal(payload, &state); err != nil {
 			return errors.Join(ErrInvalidResponse, err)
 		}
 	}
-	location := resp.Header.Get("Operation-Location")
-	if p.location == "" && location != "" {
-		p.location = location
+	if state.ID != "" && p.operationID != "" && state.ID != p.operationID {
+		return ErrInvalidResponse
 	}
 	switch strings.ToLower(state.Status) {
 	case "succeeded":
@@ -111,11 +121,13 @@ func (p *operationPoller[T]) accept(resp *http.Response, polled bool) error {
 		p.done = true
 		p.failed = true
 		p.code = state.Error.Code
+		p.status = strings.ToLower(state.Status)
+		p.details = state.Error.Details
 	case "notstarted", "running":
 	default:
 		if state.AnalyzerID != "" && (p.location == "" || strings.EqualFold(state.Status, "ready")) {
 			p.done = true
-		} else if polled || (p.location == "" && state.Status != "") {
+		} else if polled || state.AnalyzerID == "" || !strings.EqualFold(state.Status, "creating") {
 			return ErrInvalidResponse
 		}
 	}
@@ -125,19 +137,58 @@ func (p *operationPoller[T]) accept(resp *http.Response, polled bool) error {
 	return nil
 }
 
-func (c *Client) operationLocation(value string) (string, error) {
+func newOperationError(resp *http.Response, status string, problem OperationDiagnostic) error {
+	code := problem.Code
+	if !serviceErrorCodePattern.MatchString(code) {
+		code = ""
+	}
+	responseCode := code
+	if responseCode == "" {
+		responseCode = "OperationFailed"
+	}
+	err := safeResponseError(resp, responseCode)
+	var responseError *azcore.ResponseError
+	if !errors.As(err, &responseError) {
+		return err
+	}
+	return &OperationError{
+		Status: status, Code: code, Details: safeOperationDiagnostics(problem.Details), ResponseError: responseError,
+	}
+}
+
+func safeOperationDiagnostics(values []OperationDiagnostic) []OperationDiagnostic {
+	if values == nil {
+		return nil
+	}
+	result := make([]OperationDiagnostic, len(values))
+	for i, value := range values {
+		code := value.Code
+		if !serviceErrorCodePattern.MatchString(code) {
+			code = "service_error"
+		}
+		result[i] = OperationDiagnostic{Code: code, Details: safeOperationDiagnostics(value.Details)}
+	}
+	return result
+}
+
+func (c *Client) operationLocation(value, baseURL string) (string, error) {
 	location, err := url.Parse(value)
 	if err != nil {
-		return "", err
+		return "", ErrInvalidResponse
 	}
 	base, err := url.Parse(c.endpoint)
 	if err != nil {
 		return "", err
 	}
-	location = base.ResolveReference(location)
-	if location.Scheme != base.Scheme || !strings.EqualFold(location.Host, base.Host) || location.User != nil {
-		return "", errors.New("operation location must remain on the resource endpoint")
+	resolutionBase, err := url.Parse(baseURL)
+	if err != nil {
+		return "", ErrInvalidResponse
 	}
+	location = resolutionBase.ResolveReference(location)
+	if location.Scheme != base.Scheme || !strings.EqualFold(location.Host, base.Host) || location.User != nil {
+		return "", errors.Join(ErrInvalidResponse, errors.New("operation location must remain on the resource endpoint"))
+	}
+	location.Host = base.Host
 	return location.String(), nil
 }
 

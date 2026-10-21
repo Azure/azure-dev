@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,8 +22,10 @@ import (
 
 // SDKTransport adapts the prototype CU Go SDK to the host-neutral command contract.
 type SDKTransport struct {
-	client     *sdk.Client
-	apiVersion string
+	client       *sdk.Client
+	endpoint     string
+	apiVersion   string
+	pollInterval time.Duration
 }
 
 var _ Client = (*SDKTransport)(nil)
@@ -56,6 +60,7 @@ func NewSDKTransport(
 					TryTimeout: settings.RequestTimeout,
 				},
 				PerCallPolicies: []policy.Policy{
+					&sdkResponsePolicy{endpoint: normalized, apiVersion: settings.APIVersion},
 					azsdk.NewMsClientRequestIdPolicy(),
 					azsdk.NewMsCorrelationPolicy(),
 					azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
@@ -66,13 +71,15 @@ func NewSDKTransport(
 	if err != nil {
 		return nil, sdkDomainError(err)
 	}
-	return &SDKTransport{client: client, apiVersion: settings.APIVersion}, nil
+	return &SDKTransport{
+		client: client, endpoint: normalized, apiVersion: settings.APIVersion, pollInterval: time.Second,
+	}, nil
 }
 
 func (c *SDKTransport) ListAnalyzers(ctx context.Context) ([]Analyzer, error) {
 	pager := c.client.NewListAnalyzersPager()
 	items := []Analyzer{}
-	seen := map[string]bool{}
+	seen := map[string]bool{(url.Values{"api-version": {c.apiVersion}}).Encode(): true}
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -89,10 +96,14 @@ func (c *SDKTransport) ListAnalyzers(ctx context.Context) ([]Analyzer, error) {
 			items = append(items, analyzer)
 		}
 		if page.NextLink != "" {
-			if seen[page.NextLink] {
+			path, query, err := serviceLink(c.endpoint, c.apiVersion, page.NextLink, "/analyzers")
+			if err != nil {
+				return nil, err
+			}
+			if path != "/analyzers" || seen[query.Encode()] {
 				return nil, malformedResponse()
 			}
-			seen[page.NextLink] = true
+			seen[query.Encode()] = true
 		}
 	}
 	return items, nil
@@ -117,13 +128,13 @@ func (c *SDKTransport) CreateAnalyzer(
 	}
 	poller, err := c.client.BeginCreateAnalyzer(ctx, request.AnalyzerID, request.Definition)
 	if err != nil {
-		return AnalyzerResponse{}, sdkDomainError(err)
+		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
 	}
-	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: time.Second})
+	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 	if err != nil {
-		return AnalyzerResponse{}, sdkDomainError(err)
+		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
 	}
-	return analyzerResponse(value, request.AnalyzerID)
+	return c.analyzerResponse(ctx, value, request.AnalyzerID)
 }
 
 func (c *SDKTransport) DeleteAnalyzer(ctx context.Context, id string) error {
@@ -168,13 +179,13 @@ func (c *SDKTransport) CopyAnalyzer(
 		SourceRegion:          request.SourceRegion,
 	})
 	if err != nil {
-		return AnalyzerResponse{}, sdkDomainError(err)
+		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
 	}
-	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: time.Second})
+	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 	if err != nil {
-		return AnalyzerResponse{}, sdkDomainError(err)
+		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
 	}
-	return analyzerResponse(value, request.DestinationAnalyzerID)
+	return c.analyzerResponse(ctx, value, request.DestinationAnalyzerID)
 }
 
 func (c *SDKTransport) GetDefaults(ctx context.Context) (Defaults, error) {
@@ -225,7 +236,7 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 			var poller *runtime.Poller[sdk.AnalyzeResponse]
 			poller, err = c.client.BeginAnalyzeBinary(ctx, request.AnalyzerID, body, contentType)
 			if err == nil {
-				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: time.Second})
+				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 			}
 		}
 	} else {
@@ -238,12 +249,12 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 			var poller *runtime.Poller[sdk.AnalyzeResponse]
 			poller, err = c.client.BeginAnalyze(ctx, request.AnalyzerID, input)
 			if err == nil {
-				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: time.Second})
+				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 			}
 		}
 	}
 	if err != nil {
-		return AnalyzeResponse{}, sdkDomainError(err)
+		return AnalyzeResponse{}, sdkOperationDomainError(err, "analysis")
 	}
 	result, err := parseAnalysisResult(value.Result, request.AnalyzerID, c.apiVersion)
 	if err != nil {
@@ -256,14 +267,27 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 	return AnalyzeResponse{Result: result, Usage: usage, JSON: value.RawJSON}, nil
 }
 
-func analyzerResponse(value sdk.AnalyzerResponse, expectedID string) (AnalyzerResponse, error) {
-	analyzer, err := parseAnalyzer(value.Analyzer.RawJSON, expectedID)
-	if err != nil {
-		return AnalyzerResponse{}, err
-	}
+func (c *SDKTransport) analyzerResponse(
+	ctx context.Context, value sdk.AnalyzerResponse, expectedID string,
+) (AnalyzerResponse, error) {
 	usage, err := parseUsage(value.Usage)
 	if err != nil {
 		return AnalyzerResponse{}, err
+	}
+	var analyzer Analyzer
+	if len(value.Analyzer.RawJSON) == 0 {
+		analyzer, err = c.GetAnalyzer(ctx, expectedID)
+	} else {
+		analyzer, err = parseAnalyzer(value.Analyzer.RawJSON, expectedID)
+	}
+	if err != nil {
+		return AnalyzerResponse{}, err
+	}
+	if strings.EqualFold(analyzer.Status, "failed") {
+		return AnalyzerResponse{}, operationError("analyzer", "Failed", nil)
+	}
+	if !strings.EqualFold(analyzer.Status, "ready") {
+		return AnalyzerResponse{}, malformedResponse()
 	}
 	return AnalyzerResponse{Analyzer: analyzer, Usage: usage}, nil
 }
@@ -284,6 +308,68 @@ func parseUsage(raw json.RawMessage) (*Usage, error) {
 		return nil, err
 	}
 	return value.domain(), nil
+}
+
+func sdkOperationDomainError(err error, operation string) error {
+	if failure, ok := errors.AsType[*sdk.OperationError](err); ok {
+		domain := operationError(operation, failure.Status, &wireDiagnostic{
+			Code: failure.Code, Details: operationDiagnosticDetails(failure.Details),
+		})
+		domain.StatusCode = failure.ResponseError.StatusCode
+		return domain
+	}
+	return sdkDomainError(err)
+}
+
+func operationDiagnosticDetails(values []sdk.OperationDiagnostic) []wireDiagnostic {
+	if values == nil {
+		return nil
+	}
+	result := make([]wireDiagnostic, len(values))
+	for i, value := range values {
+		result[i] = wireDiagnostic{Code: value.Code, Details: operationDiagnosticDetails(value.Details)}
+	}
+	return result
+}
+
+type sdkResponsePolicy struct {
+	endpoint   string
+	apiVersion string
+}
+
+func (p *sdkResponsePolicy) Do(request *policy.Request) (*http.Response, error) {
+	response, err := request.Next()
+	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
+		return response, err
+	}
+	if response.Request == nil {
+		response.Request = request.Raw()
+	}
+	path := strings.TrimPrefix(request.Raw().URL.Path, "/contentunderstanding")
+	asyncAnalysis := request.Raw().Method == http.MethodPost &&
+		(strings.HasSuffix(path, ":analyze") || strings.HasSuffix(path, ":analyzeBinary"))
+	analyzerWrite := request.Raw().Method == http.MethodPut && strings.HasPrefix(path, "/analyzers/") ||
+		request.Raw().Method == http.MethodPost && strings.HasSuffix(path, ":copy")
+	if !asyncAnalysis && !analyzerWrite {
+		return response, nil
+	}
+	location := response.Header.Get("Operation-Location")
+	if location == "" && !asyncAnalysis {
+		return response, nil
+	}
+	operationPath, _, err := serviceLink(p.endpoint, p.apiVersion, location, path)
+	if err != nil {
+		return nil, err
+	}
+	prefix := "/analyzerResults/"
+	if analyzerWrite {
+		prefix = strings.TrimSuffix(path, ":copy") + "/operations/"
+	}
+	id, found := strings.CutPrefix(operationPath, prefix)
+	if !found || id == "" || strings.Contains(id, "/") {
+		return nil, malformedResponse()
+	}
+	return response, nil
 }
 
 func sdkDomainError(err error) error {

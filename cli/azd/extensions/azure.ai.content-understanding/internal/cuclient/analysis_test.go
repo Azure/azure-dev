@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -82,7 +83,8 @@ func analysisSubmission(mode AnalysisMode, binary bool) (AnalyzeRequest, wireSte
 	request := AnalyzeRequest{AnalyzerID: "prebuilt-layout", Mode: mode, Input: Input{URL: privateInputURL}}
 	step := wireStep{
 		method: http.MethodPost, path: "/analyzers/prebuilt-layout:analyze", contentType: "application/json",
-		body: `{"inputs":[{"url":"` + privateInputURL + `"}]}`,
+		body:  `{"inputs":[{"url":"` + privateInputURL + `"}]}`,
+		query: url.Values{"stringEncoding": {"codePoint"}},
 	}
 	var reader *ownedInput
 	if binary {
@@ -548,7 +550,7 @@ func TestAnalysisCancellationAndTransportFailure(t *testing.T) {
 			assert.False(t, reader.closed)
 		}
 		calls := 0
-		client = newTestTransport(t, func(*http.Request) (*http.Response, error) {
+		client = newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 			calls++
 			return nil, errors.New("private-network-details")
 		})
@@ -564,7 +566,7 @@ func TestAnalysisCancellationAndTransportFailure(t *testing.T) {
 
 func TestAnalysisSubmissionTimeout(t *testing.T) {
 	calls := 0
-	client, err := NewRESTTransport("https://resource.test", &testCredential{}, &TransportOptions{
+	client, err := NewSDKTransport("https://resource.test", &testCredential{}, &TransportOptions{
 		RequestTimeout: 10 * time.Millisecond,
 		Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
 			calls++
@@ -608,7 +610,7 @@ func TestAnalysisLocalHTTPSRoundTrip(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewRESTTransport(server.URL, &testCredential{}, &TransportOptions{Transport: server.Client()})
+	client, err := NewSDKTransport(server.URL, &testCredential{}, &TransportOptions{Transport: server.Client()})
 	require.NoError(t, err)
 	request, _, reader := analysisSubmission(AnalysisModeAsync, true)
 	result, err := client.Analyze(t.Context(), request)
@@ -645,7 +647,7 @@ func TestAnalysisResponseBodyFailures(t *testing.T) {
 	for _, binary := range []bool{false, true} {
 		for _, body := range []io.ReadCloser{brokenBody{}, closeErrorBody{strings.NewReader(`{}`)}} {
 			request, _, reader := analysisSubmission(AnalysisModeAsync, binary)
-			client := newTestTransport(t, func(*http.Request) (*http.Response, error) {
+			client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 				result := response(http.StatusAccepted, "")
 				result.Body = body
 				return result, nil
@@ -688,7 +690,7 @@ func TestAnalysisInputStreamFailures(t *testing.T) {
 				reader.seekErr = errors.New("private-seek-error")
 			}
 			calls := 0
-			client := newTestTransport(t, func(request *http.Request) (*http.Response, error) {
+			client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 				calls++
 				_, err := io.ReadAll(request.Body)
 				return nil, err
@@ -714,7 +716,7 @@ func TestAnalysisCancellationDuringPollRequest(t *testing.T) {
 	defer cancel()
 	pollStarted := make(chan struct{})
 	submissions, polls := 0, 0
-	client := newTestTransport(t, func(request *http.Request) (*http.Response, error) {
+	client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 		if request.Method == http.MethodPost {
 			submissions++
 			result := response(http.StatusAccepted, `{"status":"NotStarted","id":"op1"}`)
@@ -752,7 +754,7 @@ func TestAnalysisResponseBodyTimeoutOverHTTPS(t *testing.T) {
 		<-request.Context().Done()
 	}))
 	defer server.Close()
-	client, err := NewRESTTransport(server.URL, &testCredential{}, &TransportOptions{
+	client, err := NewSDKTransport(server.URL, &testCredential{}, &TransportOptions{
 		APIVersion: PreviewAPIVersion, RequestTimeout: 100 * time.Millisecond, Transport: server.Client(),
 	})
 	require.NoError(t, err)

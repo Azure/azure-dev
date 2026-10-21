@@ -14,3 +14,19 @@
 - Source-pinned local CU Go SDK runtime and extension-owned adapter covering all
   required analysis, analyzer, copy/authorization, and defaults operations while
   preserving raw envelopes, exact values, safe polling, and write retry safety.
+
+### Bugs Fixed
+
+- Prevent authentication challenges from replaying write submissions.
+- Preserve configured request timeouts when disabling write retries, including
+  submission and response-body deadlines.
+- Preserve terminal service operation status and safe error codes so canceled
+  operations retain CLI cancellation behavior and failures use operation-specific
+  messages instead of reporting a failed HTTP 200 request.
+- Restore analyzer create/copy final-resource reads and ready-state validation,
+  retaining terminal usage when no analyzer result is embedded.
+- Reject mismatched operation IDs and invalid CLI continuation paths/versions;
+  preserve redacted nested diagnostic codes across SDK errors.
+- Exercise analyzer/analysis wire and polling conformance through the production
+  SDK adapter, including continuation headers, host casing, and cancellation
+  before binary input access.

@@ -48,7 +48,8 @@ Resource keys are supported through `NewClientWithKeyCredential`.
 not poll. Analysis requests use `codePoint` span offsets: Go callers must
 use rune-aware rather than byte slicing.
 
-Binary methods require an `io.ReadSeekCloser` for retryable streaming; callers
+Binary methods require an `io.ReadSeekCloser` so the pipeline can determine the
+content length without buffering the input; callers
 can use `streaming.NopCloser` from `azcore/streaming` with an in-memory reader. Do not close the stream
 until the submission returns. No input files are opened by the client.
 Pollers use azcore's default interval unless the caller sets `Frequency`.
@@ -58,6 +59,9 @@ context deadlines take precedence.
 `Analyzer.RawJSON` preserves the complete definition. Supply a JSON object to
 `BeginCreateAnalyzer`; create/copy do not replace existing analyzers. The
 application owns sorting, dependency preflight and other lifecycle policy.
+Create/copy return `AnalyzerResponse`, which retains the terminal envelope and
+usage. When a succeeded operation has no embedded result, `Analyzer` is empty;
+the caller can retrieve the final resource with `GetAnalyzer`.
 Cross-resource copies require a source-side authorization grant followed by
 a destination-side copy request.
 
@@ -65,6 +69,12 @@ a destination-side copy request.
 It does not populate aliases or merge application settings automatically.
 Service errors retain `*azcore.ResponseError` status/code information. Inline
 HTTP 200 responses with failed operation status return an error.
+Terminal operation failures return `*OperationError` with status, validated
+service codes, and sanitized nested diagnostic codes. They unwrap to
+`*azcore.ResponseError`, preserving the actual HTTP status even when it is 200.
+Operation IDs are checked against the operation location when present.
+Write submissions are not automatically retried or replayed after an
+authentication challenge; reads and polling retain the configured retry policy.
 
 ## Validation
 

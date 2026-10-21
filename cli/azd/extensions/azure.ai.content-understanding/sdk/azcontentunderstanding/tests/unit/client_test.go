@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -126,6 +127,32 @@ func TestAnalysisPaths(t *testing.T) {
 
 func streamingBody(value string) io.ReadSeekCloser {
 	return streaming.NopCloser(strings.NewReader(value))
+}
+
+func TestWritePreservesRequestTimeout(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		_, err := io.Copy(io.Discard, r.Body)
+		assert.NoError(t, err)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	client, err := sdk.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("test-key"), &sdk.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Transport: server.Client(),
+			Retry:     policy.RetryOptions{MaxRetries: 3, TryTimeout: 100 * time.Millisecond},
+		},
+	})
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, err = client.BeginAnalyze(ctx, "prebuilt-layout", sdk.AnalyzeRequest{
+		Inputs: []sdk.AnalysisInput{{URL: "https://storage.test/a.pdf"}},
+	})
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.NoError(t, ctx.Err(), "write timeout must expire before the caller's deadline")
+	assert.EqualValues(t, 1, calls.Load(), "timed-out writes must not be retried")
 }
 
 func TestBase64Input(t *testing.T) {
@@ -291,6 +318,63 @@ func TestImmediateAnalyzerAndMalformedDefaults(t *testing.T) {
 	require.ErrorIs(t, err, sdk.ErrInvalidResponse)
 }
 
+func TestAnalyzerTerminalEnvelopeWithoutResult(t *testing.T) {
+	for _, result := range []string{"", `,"result":null`} {
+		t.Run(result, func(t *testing.T) {
+			payload := `{"status":"Succeeded"` + result +
+				`,"usage":{"tokens":{"model":9007199254740993}},"future":true}`
+			var response sdk.AnalyzerResponse
+			require.NoError(t, json.Unmarshal([]byte(payload), &response))
+			assert.Empty(t, response.Analyzer.RawJSON)
+			assert.JSONEq(t, payload, string(response.RawJSON))
+			assert.JSONEq(t, `{"tokens":{"model":9007199254740993}}`, string(response.Usage))
+		})
+	}
+}
+
+func TestPollingOperationIdentity(t *testing.T) {
+	for _, phase := range []string{"initial", "poll"} {
+		for _, id := range []string{"", "op1", "other"} {
+			t.Run(phase+"/"+id, func(t *testing.T) {
+				var server *httptest.Server
+				client, srv := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+					if r.Method == http.MethodPost {
+						initialID := "op1"
+						if phase == "initial" {
+							initialID = id
+						}
+						w.Header().Set("Operation-Location", server.URL+"/contentunderstanding/analyzerResults/op1")
+						w.WriteHeader(http.StatusAccepted)
+						_, _ = fmt.Fprintf(w, `{"id":%q,"status":"Running"}`, initialID)
+						return
+					}
+					pollID := "op1"
+					if phase == "poll" {
+						pollID = id
+					}
+					_, _ = io.WriteString(w, strings.Replace(succeededAnalysis, `"id":"op1"`,
+						fmt.Sprintf(`"id":%q`, pollID), 1))
+				})
+				server = srv
+				poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
+					Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+				})
+				if phase == "initial" && id == "other" {
+					require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+					return
+				}
+				require.NoError(t, err)
+				_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
+				if phase == "poll" && id == "other" {
+					require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
+}
+
 func TestCopyRequests(t *testing.T) {
 	var server *httptest.Server
 	var grantSeen bool
@@ -331,7 +415,7 @@ func TestCopyRequests(t *testing.T) {
 }
 
 func TestFailedAndCanceledPolling(t *testing.T) {
-	for _, state := range []string{"Failed", "Canceled"} {
+	for _, state := range []string{"Failed", "Canceled", "Cancelled"} {
 		t.Run(state, func(t *testing.T) {
 			var server *httptest.Server
 			client, srv := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
@@ -341,14 +425,72 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 					_, _ = io.WriteString(w, `{"status":"Running"}`)
 					return
 				}
-				_, _ = io.WriteString(w, `{"status":"`+state+`","error":{"code":"AnalysisFailed","message":"failed"}}`)
+				_, _ = io.WriteString(w, `{"status":"`+state+`","error":{"code":"AnalysisFailed","message":"private value",`+
+					`"details":[{"code":"InvalidField","message":"private value","target":"private target",`+
+					`"details":[{"code":"private value"}]}]}}`)
 			})
 			server = srv
 			poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
 			require.NoError(t, err)
 			_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
-			require.Error(t, err)
+			var operationErr *sdk.OperationError
+			require.ErrorAs(t, err, &operationErr)
+			assert.Equal(t, strings.ToLower(state), operationErr.Status)
+			assert.Equal(t, "AnalysisFailed", operationErr.Code)
+			assert.Equal(t, []sdk.OperationDiagnostic{{
+				Code: "InvalidField", Details: []sdk.OperationDiagnostic{{Code: "service_error"}},
+			}}, operationErr.Details)
+			var responseErr *azcore.ResponseError
+			require.ErrorAs(t, err, &responseErr)
+			assert.Equal(t, http.StatusOK, responseErr.StatusCode)
+			assert.Equal(t, "AnalysisFailed", responseErr.ErrorCode)
+			assert.NotContains(t, err.Error(), `"message"`)
+			assert.NotContains(t, err.Error(), "private value")
 		})
+	}
+}
+
+func TestInlineTerminalOperationErrors(t *testing.T) {
+	for _, state := range []string{"Failed", "Canceled", "Cancelled"} {
+		for _, code := range []string{"", "InvalidContent", "private value"} {
+			t.Run(state+"/"+code, func(t *testing.T) {
+				client, _ := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+					payload, err := json.Marshal(map[string]any{
+						"status": state,
+						"error": map[string]any{
+							"code": code, "message": "private value", "target": "private target",
+							"details": []map[string]any{{
+								"code": "InvalidField", "message": "private value",
+								"details": []map[string]string{{"code": "private value"}},
+							}},
+						},
+					})
+					require.NoError(t, err)
+					_, _ = w.Write(payload)
+				})
+				_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{
+					Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+				})
+				var operationErr *sdk.OperationError
+				require.ErrorAs(t, err, &operationErr)
+				assert.Equal(t, strings.ToLower(state), operationErr.Status)
+				assert.Equal(t, []sdk.OperationDiagnostic{{
+					Code: "InvalidField", Details: []sdk.OperationDiagnostic{{Code: "service_error"}},
+				}}, operationErr.Details)
+				var responseErr *azcore.ResponseError
+				require.ErrorAs(t, err, &responseErr)
+				assert.Equal(t, http.StatusOK, responseErr.StatusCode)
+				if code == "InvalidContent" {
+					assert.Equal(t, code, operationErr.Code)
+					assert.Equal(t, code, responseErr.ErrorCode)
+				} else {
+					assert.Empty(t, operationErr.Code)
+					assert.Equal(t, "OperationFailed", responseErr.ErrorCode)
+				}
+				assert.NotContains(t, err.Error(), "private value")
+				assert.Equal(t, http.NoBody, responseErr.RawResponse.Body)
+			})
+		}
 	}
 }
 
@@ -366,9 +508,7 @@ func TestContinuationOriginAndCancellation(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"status":"Running"}`)
 	})
-	poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
-	require.NoError(t, err)
-	_, err = poller.Poll(t.Context())
+	_, err = client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
 	require.ErrorContains(t, err, "resource endpoint")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

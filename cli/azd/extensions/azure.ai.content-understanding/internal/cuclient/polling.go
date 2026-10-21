@@ -16,7 +16,11 @@ import (
 // serviceLink constrains server-provided URLs before forwarding credentials.
 // Paths and API versions are further checked by the operation consuming the link.
 func (c *RESTTransport) serviceLink(value, currentPath string) (string, url.Values, error) {
-	base, err := url.Parse(c.endpoint + currentPath)
+	return serviceLink(c.endpoint, c.apiVersion, value, currentPath)
+}
+
+func serviceLink(endpoint, apiVersion, value, currentPath string) (string, url.Values, error) {
+	base, err := url.Parse(endpoint + currentPath)
 	if err != nil {
 		return "", nil, malformedResponse()
 	}
@@ -40,10 +44,10 @@ func (c *RESTTransport) serviceLink(value, currentPath string) (string, url.Valu
 	if err != nil {
 		return "", nil, malformedResponse()
 	}
-	if versions, present := query["api-version"]; present && (len(versions) != 1 || versions[0] != c.apiVersion) {
+	if versions, present := query["api-version"]; present && (len(versions) != 1 || versions[0] != apiVersion) {
 		return "", nil, malformedResponse()
 	}
-	query.Set("api-version", c.apiVersion)
+	query.Set("api-version", apiVersion)
 	return strings.TrimPrefix(target.Path, prefix), query, nil
 }
 
@@ -154,7 +158,7 @@ func waitForPoll(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func operationError(operation, status string, problem *wireDiagnostic) error {
+func operationError(operation, status string, problem *wireDiagnostic) *Error {
 	result := &Error{
 		Kind: ErrorService, Code: operation + "_operation_failed",
 		Message:    fmt.Sprintf("The %s operation failed.", operation),

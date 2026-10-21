@@ -36,7 +36,7 @@ func analyzerSubmission(method string) wireStep {
 	}
 }
 
-func submitAnalyzer(t *testing.T, client *RESTTransport, ctx context.Context, method string) (AnalyzerResponse, error) {
+func submitAnalyzer(t *testing.T, client Client, ctx context.Context, method string) (AnalyzerResponse, error) {
 	t.Helper()
 	if method == http.MethodPost {
 		return client.CopyAnalyzer(ctx, CopyAnalyzerRequest{SourceAnalyzerID: "source", DestinationAnalyzerID: "custom"})
@@ -85,21 +85,33 @@ func TestAnalyzerPollingWire(t *testing.T) {
 }
 
 func TestAnalyzerPollingFinalResourceRead(t *testing.T) {
-	for _, result := range []string{"", `,"result":null`} {
-		t.Run(result, func(t *testing.T) {
-			client := newWireClient(t, DefaultAPIVersion,
-				analyzerSubmission(http.MethodPut),
-				wireStep{
-					method: http.MethodGet, path: "/analyzers/custom/operations/op1",
-					response: `{"id":"op1","status":"Succeeded"` + result + `}`,
-				},
-				wireStep{method: http.MethodGet, path: "/analyzers/custom", response: readyAnalyzer},
-			)
-			response, err := submitAnalyzer(t, client, t.Context(), http.MethodPut)
-			require.NoError(t, err)
-			assertReadyAnalyzer(t, response.Analyzer)
-			assert.Nil(t, response.Usage)
-		})
+	for _, version := range []string{DefaultAPIVersion, PreviewAPIVersion} {
+		for _, method := range []string{http.MethodPut, http.MethodPost} {
+			for _, result := range []string{"", `,"result":null`} {
+				for _, usage := range []string{"", `,"usage":{"documentPagesMinimal":0,"tokens":{"model":4}}`} {
+					t.Run(version+"/"+method+"/"+result+"/"+usage, func(t *testing.T) {
+						client := newWireClient(t, version,
+							analyzerSubmission(method),
+							wireStep{
+								method: http.MethodGet, path: "/analyzers/custom/operations/op1",
+								response: `{"id":"op1","status":"Succeeded"` + result + usage + `}`,
+							},
+							wireStep{method: http.MethodGet, path: "/analyzers/custom", response: readyAnalyzer},
+						)
+						response, err := submitAnalyzer(t, client, t.Context(), method)
+						require.NoError(t, err)
+						assertReadyAnalyzer(t, response.Analyzer)
+						if usage == "" {
+							assert.Nil(t, response.Usage)
+						} else {
+							require.NotNil(t, response.Usage)
+							assert.Equal(t, new(int64(0)), response.Usage.DocumentPagesMinimal)
+							assert.Equal(t, map[string]int64{"model": 4}, response.Usage.Tokens)
+						}
+					})
+				}
+			}
+		}
 	}
 }
 
@@ -168,31 +180,33 @@ func TestAnalyzerPollingFailuresAndMalformedResponses(t *testing.T) {
 		{`null`, "malformed_response", ErrorService},
 		{`{"status":`, "malformed_response", ErrorService},
 	} {
-		t.Run(test.body, func(t *testing.T) {
-			client := newWireClient(t, DefaultAPIVersion,
-				analyzerSubmission(http.MethodPost),
-				wireStep{
-					method: http.MethodGet, path: "/analyzers/custom/operations/op1", response: test.body,
-				},
-			)
-			result, err := submitAnalyzer(t, client, t.Context(), http.MethodPost)
-			assert.Empty(t, result)
-			domain, ok := errors.AsType[*Error](err)
-			require.True(t, ok)
-			assert.Equal(t, test.code, domain.Code)
-			assert.Equal(t, test.kind, domain.Kind)
-			assert.NotContains(t, fmt.Sprintf("%+v", domain), "private-token")
-			assert.NotContains(t, fmt.Sprintf("%+v", domain.Details), "private-token")
-			if domain.Code == "InvalidRequest" {
-				require.Len(t, domain.Details, 1)
-				assert.Equal(t, "InvalidField", domain.Details[0].Code)
-				require.Len(t, domain.Details[0].Details, 1)
-				assert.Equal(t, "service_error", domain.Details[0].Details[0].Code)
-			}
-			if test.kind == ErrorCancelled {
-				assert.ErrorIs(t, err, context.Canceled)
-			}
-		})
+		for _, method := range []string{http.MethodPut, http.MethodPost} {
+			t.Run(method+"/"+test.body, func(t *testing.T) {
+				client := newWireClient(t, DefaultAPIVersion,
+					analyzerSubmission(method),
+					wireStep{
+						method: http.MethodGet, path: "/analyzers/custom/operations/op1", response: test.body,
+					},
+				)
+				result, err := submitAnalyzer(t, client, t.Context(), method)
+				assert.Empty(t, result)
+				domain, ok := errors.AsType[*Error](err)
+				require.True(t, ok)
+				assert.Equal(t, test.code, domain.Code)
+				assert.Equal(t, test.kind, domain.Kind)
+				assert.NotContains(t, fmt.Sprintf("%+v", domain), "private-token")
+				assert.NotContains(t, fmt.Sprintf("%+v", domain.Details), "private-token")
+				if domain.Code == "InvalidRequest" {
+					require.Len(t, domain.Details, 1)
+					assert.Equal(t, "InvalidField", domain.Details[0].Code)
+					require.Len(t, domain.Details[0].Details, 1)
+					assert.Equal(t, "service_error", domain.Details[0].Details[0].Code)
+				}
+				if test.kind == ErrorCancelled {
+					assert.ErrorIs(t, err, context.Canceled)
+				}
+			})
+		}
 	}
 }
 

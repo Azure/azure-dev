@@ -5,6 +5,7 @@ BeforeDiscovery {
     $metadata = @{
         'azure.ai.agents' = @('azureaiagent/internal/version')
         'azure.ai.connections' = @('azure.ai.connections/internal/version')
+        'azure.ai.content-understanding' = @('azure.ai.content-understanding/internal/cmd')
         'azure.ai.dataset' = @('azureaidataset/internal/version')
         'azure.ai.evaluations' = @('azureaieval/internal/version')
         'azure.ai.finetune' = @('azure.ai.finetune/internal/version')

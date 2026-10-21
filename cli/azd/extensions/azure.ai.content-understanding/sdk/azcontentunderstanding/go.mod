@@ -1,6 +1,6 @@
 module github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding
 
-go 1.25.0
+go 1.26.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3

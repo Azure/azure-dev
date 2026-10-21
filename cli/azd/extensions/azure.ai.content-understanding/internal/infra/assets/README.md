@@ -73,11 +73,11 @@ meaningful, set an optional prefix and azd will construct:
 Example:
 
 ```sh
-azd env set FOUNDRY_RESOURCE_PREFIX yslincu
+azd env set FOUNDRY_RESOURCE_PREFIX my-cu
 azd up
 ```
 
-This produces resource names like `yslincu-xbrzt4yrmiexg`.
+This produces resource names following the pattern `my-cu-<unique-suffix>`.
 
 ## Live model setup
 

@@ -1,5 +1,7 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - azcontentunderstanding
+  - contentunderstanding
   - noninteractive
 overrides:
   - filename: "internal/**/*.go"
@@ -29,6 +31,12 @@ overrides:
   - filename: "internal/cuclient/analysis.go"
     words:
       - notstarted
+  - filename: "sdk/azcontentunderstanding/polling.go"
+    words:
+      - notstarted
+  - filename: "sdk/azcontentunderstanding/README.md"
+    words:
+      - coverpkg
   - filename: "internal/schema/author.go"
     words:
       - epub

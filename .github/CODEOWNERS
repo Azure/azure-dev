@@ -11,7 +11,6 @@
 /cli/installer/                             @danieljurek @vhvb1989 @tg-msft @RickWinter
 
 # ── CLI extensions registry and test snapshots - anyone added to this can approve extension publishing, provided they pass the `ext-registry-check` workflow.
-/cli/azd/extensions/azure.ai.content-understanding/ @chienyuanchang @JeffreyCA
 /cli/azd/extensions/registry.json           @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @eriolchan @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/registry.dev.json       @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @eriolchan @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/cmd/testdata/TestFigSpec.ts        @vhvb1989 @hemarina @JeffreyCA @tg-msft @RickWinter @richardpark-msft @XiaofuHuang @achauhan-scc @anchenyi @glharper @huimiu @eriolchan @hund030 @kingernupur @saanikaguptamicrosoft @therealjohn @trangevi @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
@@ -21,6 +20,7 @@
 /cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
+/cli/azd/extensions/azure.ai.content-understanding/ @chienyuanchang @yungshinlintw @JeffreyCA
 /cli/azd/extensions/azure.ai.dataset/       @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin @m7md7sien @aprilk-ms @shrutiyer @sakoll
 /cli/azd/extensions/azure.ai.evaluations/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin @m7md7sien @aprilk-ms @shrutiyer @sakoll
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft

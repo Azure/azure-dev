@@ -66,6 +66,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+For A2A Task responses in both 0.3 and 1.0, default output prefers answer
+artifacts over generic status messages such as "Done". Status messages and
+history provide fallback text when no text artifact is present.
 
 Platform Latency
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics

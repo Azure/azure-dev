@@ -1,7 +1,7 @@
 parameters:
   TagRepository: false
   VsixVersion: $(VSIX_VERSION)
-  StorageContainerName: '`$web'
+  StorageContainerName: '$web'
   PublishToMarketplace: false
 
 steps:
@@ -45,21 +45,31 @@ steps:
       Get-ChildItem release/
     displayName: Copy signed vsix to release location
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Publish files to storage locations
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
         $publishLocations = "${{ parameters.PublishLocations }}" -split ';'
+        $containerName = '${{ parameters.StorageContainerName }}'
+
         foreach ($location in $publishLocations) {
-          Write-Host "Publishing to $location"
-          azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/$location" --overwrite=true
+          $destinationPath = $location
+          Write-Host "Publishing to $containerName/$destinationPath"
+          az storage blob upload-batch `
+            --account-name "$(publish-storage-account-name)" `
+            --auth-mode login `
+            --source release `
+            --destination $containerName `
+            --destination-path $destinationPath `
+            --overwrite true
+          if ($LASTEXITCODE) {
+            Write-Error "Upload failed"
+            exit 1
+          }
         }
-    env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - ${{ if eq('true', parameters.TagRepository) }}:
     - pwsh: |

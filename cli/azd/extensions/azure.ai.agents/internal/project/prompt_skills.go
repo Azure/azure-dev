@@ -349,7 +349,7 @@ func reconcileMcpToolWithClaimed(
 				exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf(
 					"MCP tool %q declares server_url %q, which conflicts with toolbox %q endpoint %q",
-					existingLabel, existingURL, serverLabel, mcpURL,
+					existingLabel, redactURLForDiagnostic(existingURL), serverLabel, redactURLForDiagnostic(mcpURL),
 				),
 				fmt.Sprintf(
 					"remove server_url from the %q MCP tool entry to use the deployed toolbox endpoint, "+
@@ -359,7 +359,6 @@ func reconcileMcpToolWithClaimed(
 			)
 		}
 
-		urlChanged := existingURL != "" && existingURL != mcpURL
 		if existingLabel == "" && serverLabel != "" {
 			tool["server_label"] = serverLabel
 		}
@@ -368,15 +367,12 @@ func reconcileMcpToolWithClaimed(
 			tool["require_approval"] = "always"
 		}
 		if projectConnectionID != "" {
-			existingConn, has := tool["project_connection_id"]
-			if !has || strings.TrimSpace(fmt.Sprintf("%v", existingConn)) == "" || urlChanged {
-				tool["project_connection_id"] = projectConnectionID
-			}
+			tool["project_connection_id"] = projectConnectionID
 		}
 		if claimed != nil {
 			claimed[i] = struct{}{}
 		}
-		return nil
+		return validateUniqueMcpServerLabels(managed.Tools)
 	}
 	mcpTool := map[string]any{
 		"type":             "mcp",
@@ -391,7 +387,49 @@ func reconcileMcpToolWithClaimed(
 	if claimed != nil {
 		claimed[len(managed.Tools)-1] = struct{}{}
 	}
+	return validateUniqueMcpServerLabels(managed.Tools)
+}
+
+func validateUniqueMcpServerLabels(tools []any) error {
+	seen := map[string]string{}
+	for _, raw := range tools {
+		tool, ok := raw.(map[string]any)
+		if !ok || fmt.Sprintf("%v", tool["type"]) != "mcp" {
+			continue
+		}
+		label, _ := tool["server_label"].(string)
+		label = strings.TrimSpace(label)
+		if label == "" {
+			continue
+		}
+		serverURL, _ := tool["server_url"].(string)
+		serverURL = strings.TrimSpace(serverURL)
+		if prevURL, exists := seen[label]; exists && prevURL != serverURL {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf(
+					"MCP tool server_label %q is assigned to conflicting endpoints %q and %q",
+					label, redactURLForDiagnostic(prevURL), redactURLForDiagnostic(serverURL),
+				),
+				fmt.Sprintf("assign a unique server_label to each MCP tool instead of reusing %q", label),
+			)
+		}
+		seen[label] = serverURL
+	}
 	return nil
+}
+
+func redactURLForDiagnostic(rawURL string) string {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<redacted>"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
+	return u.String()
 }
 
 func isSameToolboxMCPEndpoint(existingURL, newURL string) bool {
@@ -897,7 +935,10 @@ func (b *foundryToolboxBuilder) ResolveToolbox(ctx context.Context, ref toolboxR
 	if err != nil {
 		return toolboxAttachment{}, exterrors.Validation(
 			exterrors.CodeInvalidToolbox,
-			fmt.Sprintf("toolbox %q published an invalid MCP endpoint %q: %s", ref.Name, ref.MCPEndpoint, err),
+			fmt.Sprintf(
+				"toolbox %q published an invalid MCP endpoint %q: %s",
+				ref.Name, redactURLForDiagnostic(ref.MCPEndpoint), err,
+			),
 			"redeploy the toolbox service with 'azd deploy --all' or check its configured endpoint",
 		)
 	}

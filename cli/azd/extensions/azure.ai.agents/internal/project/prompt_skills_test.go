@@ -996,7 +996,7 @@ func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *
 		require.Len(t, managed.Tools, 1)
 	})
 
-	t.Run("preserves user-authored server_label and toolChoice on exact URL match", func(t *testing.T) {
+	t.Run("preserves user-authored server_label and toolChoice on exact URL match and replaces stale connection", func(t *testing.T) {
 		t.Parallel()
 		managed := &agent_yaml.PromptAgent{
 			Model:        "gpt-4.1-mini",
@@ -1004,10 +1004,11 @@ func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *
 			ToolChoice:   map[string]any{"type": "mcp", "server_label": "search"},
 			Tools: []any{
 				map[string]any{
-					"type":             "mcp",
-					"server_label":     "search",
-					"server_url":       urlV1,
-					"require_approval": "never",
+					"type":                  "mcp",
+					"server_label":          "search",
+					"server_url":            urlV1,
+					"project_connection_id": "stale-connection-id",
+					"require_approval":      "never",
 				},
 			},
 		}
@@ -1019,6 +1020,73 @@ func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *
 		require.Equal(t, "research-tools-mcp", tool["project_connection_id"])
 		require.Equal(t, "never", tool["require_approval"])
 		require.Equal(t, map[string]any{"type": "mcp", "server_label": "search"}, managed.ToolChoice)
+	})
+
+	t.Run("rejects preserved alias that collides with a later toolbox label", func(t *testing.T) {
+		t.Parallel()
+		const urlSupport = projectEndpoint + "/toolboxes/support-tools/versions/1/mcp?api-version=v1"
+		managed := &agent_yaml.PromptAgent{
+			Tools: []any{
+				map[string]any{
+					"type":         "mcp",
+					"server_label": "support-tools",
+					"server_url":   urlV1,
+				},
+			},
+		}
+		claimed := map[int]struct{}{}
+		require.NoError(t, reconcileMcpToolWithClaimed(
+			managed, "research-tools", "research-tools", urlV1, "research-tools-mcp", claimed,
+		))
+		err := reconcileMcpToolWithClaimed(
+			managed, "support-tools", "support-tools", urlSupport, "support-tools-mcp", claimed,
+		)
+		require.ErrorContains(t, err, `MCP tool server_label "support-tools" is assigned to conflicting endpoints`)
+		tool0 := managed.Tools[0].(map[string]any)
+		require.Equal(t, "support-tools", tool0["server_label"], "authored label must not be renamed")
+	})
+
+	t.Run("redacts credentials from URLs in error diagnostics", func(t *testing.T) {
+		t.Parallel()
+		//nolint:gosec // synthetic test URL for redaction check
+		credExternalURL := "https://user:secret-pass@external.example.com/mcp?sig=secret-sig#secret-frag"
+		//nolint:gosec // synthetic test URL for redaction check
+		credUntrustedURL := "https://user:secret-pass@untrusted.example/mcp?sig=secret-sig#secret-frag"
+		managed := &agent_yaml.PromptAgent{
+			Tools: []any{
+				map[string]any{
+					"type":         "mcp",
+					"server_label": "research-tools",
+					"server_url":   credExternalURL,
+				},
+			},
+		}
+		err := reconcileMcpTool(
+			managed,
+			"research-tools",
+			urlV1+"&sig=toolbox-secret#frag",
+			"research-tools-mcp",
+		)
+		require.Error(t, err)
+		for _, secret := range []string{"secret-pass", "secret-sig", "secret-frag", "toolbox-secret"} {
+			require.NotContains(t, err.Error(), secret)
+		}
+
+		builder := &foundryToolboxBuilder{
+			subscriptionID: "sub-1",
+			resourceGroup:  "rg-1",
+			accountName:    "acct",
+			projectName:    "proj",
+			explicitConns:  map[string]struct{}{},
+		}
+		_, resolveErr := builder.ResolveToolbox(t.Context(), toolboxRef{
+			Name:        "tools",
+			MCPEndpoint: credUntrustedURL,
+		})
+		require.Error(t, resolveErr)
+		for _, secret := range []string{"secret-pass", "secret-sig", "secret-frag"} {
+			require.NotContains(t, resolveErr.Error(), secret)
+		}
 	})
 }
 

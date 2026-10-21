@@ -2,6 +2,16 @@
 
 ## Hosted agent deployment preview
 
+Hosted Agent package and deploy are opt-in. Enable with any of:
+
+- `azd config set alpha.agents.hosted on`
+- process env `AZD_FOUNDRY_EXT_ENABLE_AGENTS_HOSTED=true`
+- the same key in the selected azd environment `.env`
+- the same key in any `azure.yaml` `services[].env` map
+
+A `false` value in one place never overrides `true` in another.
+Prompt and voice agent paths are unchanged.
+
 With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 

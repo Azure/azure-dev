@@ -520,6 +520,26 @@ func newTestAzdClient(
 	return azdClient
 }
 
+// hostedOptInConfigServer turns on the Hosted Agent opt-in (alpha.agents.hosted).
+type hostedOptInConfigServer struct {
+	azdext.UnimplementedUserConfigServiceServer
+}
+
+func (hostedOptInConfigServer) Get(
+	context.Context, *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(`{"agents":{"hosted":"on"}}`)}, nil
+}
+
+// hostedOptInProjectServer returns an empty project for the Hosted Agent opt-in read.
+type hostedOptInProjectServer struct {
+	azdext.UnimplementedProjectServiceServer
+}
+
+func (hostedOptInProjectServer) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
+	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{}}, nil
+}
+
 func newTestAzdServer(
 	t *testing.T,
 	envServer azdext.EnvironmentServiceServer,
@@ -534,6 +554,8 @@ func newTestAzdServer(
 		workflowServer = &testWorkflowServiceServer{}
 	}
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
+	azdext.RegisterUserConfigServiceServer(grpcServer, hostedOptInConfigServer{})
+	azdext.RegisterProjectServiceServer(grpcServer, hostedOptInProjectServer{})
 	if len(promptServers) > 0 {
 		azdext.RegisterPromptServiceServer(grpcServer, promptServers[0])
 	}

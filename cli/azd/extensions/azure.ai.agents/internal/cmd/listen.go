@@ -345,6 +345,13 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
+	// Hosted Agent package/deploy is opt-in via IsFeatureEnabled.
+	if isHostedAgentService(svc, args.Project) {
+		if err := project.RequireHostedAgentFeature(ctx, azdClient); err != nil {
+			return err
+		}
+	}
+
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
 	// name. Foundry identifies an agent by its name, so such services overwrite
 	// each other on deploy. Advisory only — deploy continues.

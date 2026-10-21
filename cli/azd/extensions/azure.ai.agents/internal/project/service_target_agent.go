@@ -937,6 +937,9 @@ func (p *AgentServiceTargetProvider) Package(
 	if !isContainerAgent {
 		return &azdext.ServicePackageResult{}, nil
 	}
+	if err := RequireHostedAgentFeature(ctx, p.azdClient); err != nil {
+		return nil, err
+	}
 	if err := validateRegistryConnectionDefinition(agentDef); err != nil {
 		return nil, err
 	}
@@ -1600,6 +1603,10 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"unsupported agent kind in the agent service definition",
 				"use a supported kind: 'hosted'",
 			)
+		}
+
+		if err := RequireHostedAgentFeature(ctx, p.azdClient); err != nil {
+			return nil, err
 		}
 
 		if err := validateEnvironmentVariableNames(

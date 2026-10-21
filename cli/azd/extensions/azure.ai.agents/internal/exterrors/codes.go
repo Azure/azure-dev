@@ -111,6 +111,8 @@ const (
 	CodeIncompatibleAzdVersion          = "incompatible_azd_version"
 	CodeIncompleteAgentProtocolMetadata = "incomplete_agent_protocol_metadata"
 	CodeLegacyAgentProtocolMetadata     = "legacy_agent_protocol_metadata"
+	// CodeFeatureNotEnabled is returned when an opt-in extension feature is off.
+	CodeFeatureNotEnabled = "feature_not_enabled"
 )
 
 // Error codes for azd host AI service errors.

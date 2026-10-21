@@ -127,3 +127,6 @@ require (
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 )
+
+// Stacked on hui/foundry-shared-feature-access for featureflags. Remove before merge to main.
+replace github.com/azure/azure-dev/cli/azd => ../../

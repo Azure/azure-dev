@@ -73,5 +73,31 @@ require a shared azd change, not a CU-specific error-reporting bypass.
 
 The scaffold currently lists `@chienyuanchang` and `@JeffreyCA` as provisional
 CODEOWNERS. Confirm CU/azd ownership and extension identity before merging.
-The CU API version, wire-model strategy, API-key requirements, performance
-budgets, and Foundry pack timing remain implementation/release gates.
+API-key requirements, performance budgets, and Foundry pack timing remain
+implementation/release gates.
+
+### CU client contract
+
+`internal/cuclient` defines an extension-owned service interface for analyzer
+list/get/create/delete, same-resource and cross-resource copy, service defaults,
+and binary/URL analysis with asynchronous or inline completion. Every operation
+accepts context. The adapter owns paging and polling; command code owns prompts,
+filesystem I/O, resource selection, and copy preflight/orchestration.
+
+The contract includes typed diagnostics, optional usage counters, and stable
+validation, not-found, conflict, authentication, throttling, limit, cancellation,
+timeout, and service error categories. Domain types have no azd or Azure SDK
+dependency. Full analyzer/result JSON is retained alongside typed projections to
+preserve dynamic schemas, multimodal fields, and full-result output.
+
+The agreed initial API baseline is `2025-11-01` by default, with explicit
+`2026-06-01-preview` coverage. Transport-specific models will be minimal handwritten
+internal types, not a public SDK. The REST implementation and the future official
+Go SDK adapter will implement the same interface. Accepting arbitrary future
+preview-version strings remains a separate CLI compatibility decision.
+
+The contract is based on the [public CU TypeSpec and versioned OpenAPI specifications](https://github.com/Azure/azure-rest-api-specs/tree/56b13af91ff8d8b5ad706a502e6b4e44e6d57e1f/specification/ai/data-plane/ContentUnderstanding).
+Inline analysis is preview-only; its GA rejection and two-version request/response
+mapping belong to the upcoming transport tests. Domain input validation does not
+claim wire/API-version conformance. No REST adapter or new public CU command is
+enabled by the contract alone.

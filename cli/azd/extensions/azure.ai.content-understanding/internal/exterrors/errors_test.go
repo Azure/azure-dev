@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.content-understanding/internal/cuclient"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -116,4 +118,51 @@ func TestMissingTenant(t *testing.T) {
 	assert.Equal(t, CodeMissingTenant, local.Code)
 	assert.Equal(t, azdext.LocalErrorCategoryDependency, local.Category)
 	assert.Contains(t, local.Suggestion, "azd environment")
+}
+
+func TestDomainErrorMapping(t *testing.T) {
+	for _, tt := range []struct {
+		kind     cuclient.ErrorKind
+		category azdext.LocalErrorCategory
+		code     string
+	}{
+		{cuclient.ErrorValidation, azdext.LocalErrorCategoryValidation, "domain_code"},
+		{cuclient.ErrorAuthentication, azdext.LocalErrorCategoryAuth, "domain_code"},
+		{cuclient.ErrorCancelled, azdext.LocalErrorCategoryUser, CodeCancelled},
+		{cuclient.ErrorTimeout, azdext.LocalErrorCategoryInternal, CodeDeadlineExceeded},
+		{"unknown", azdext.LocalErrorCategoryInternal, CodeUnexpected},
+	} {
+		t.Run(string(tt.kind), func(t *testing.T) {
+			domain := &cuclient.Error{
+				Kind: tt.kind, Code: "domain_code", Message: "safe message", Suggestion: "safe suggestion",
+				Cause: errors.New("private-error-body"),
+			}
+			converted, ok := errors.AsType[*azdext.LocalError](FromError(fmt.Errorf("operation: %w", domain)))
+			require.True(t, ok)
+			assert.Equal(t, tt.category, converted.Category)
+			assert.Equal(t, tt.code, converted.Code)
+			assert.Equal(t, domain.Message, converted.Message)
+			assert.Equal(t, domain.Suggestion, converted.Suggestion)
+			assert.NotContains(t, converted.Error(), "private-error-body")
+			if tt.kind == cuclient.ErrorCancelled {
+				assert.ErrorIs(t, converted, context.Canceled)
+			}
+			if tt.kind == cuclient.ErrorTimeout {
+				assert.ErrorIs(t, converted, context.DeadlineExceeded)
+			}
+		})
+	}
+	for _, kind := range []cuclient.ErrorKind{
+		cuclient.ErrorNotFound, cuclient.ErrorConflict, cuclient.ErrorThrottled, cuclient.ErrorLimit, cuclient.ErrorService,
+	} {
+		domain := &cuclient.Error{
+			Kind: kind, Code: "service_code", StatusCode: 429, Message: "service message", Suggestion: "retry later",
+		}
+		converted, ok := errors.AsType[*azdext.ServiceError](FromError(domain))
+		require.True(t, ok)
+		assert.Equal(t, domain.Code, converted.ErrorCode)
+		assert.Equal(t, domain.StatusCode, converted.StatusCode)
+		assert.Equal(t, domain.Message, converted.Message)
+		assert.Equal(t, domain.Suggestion, converted.Suggestion)
+	}
 }

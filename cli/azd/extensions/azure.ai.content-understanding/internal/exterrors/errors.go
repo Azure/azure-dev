@@ -8,6 +8,8 @@ import (
 	"errors"
 	"fmt"
 
+	"azure.ai.content-understanding/internal/cuclient"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/grpc/codes"
@@ -48,6 +50,9 @@ func FromError(err error) error {
 	if azdext.ActionableErrorDetailFromError(err) != nil {
 		return err
 	}
+	if domain, ok := errors.AsType[*cuclient.Error](err); ok {
+		return fromDomainError(domain)
+	}
 	if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 		return &azdext.LocalError{
 			Code: CodeCancelled, Category: azdext.LocalErrorCategoryUser,
@@ -82,4 +87,29 @@ func FromError(err error) error {
 		Message:    "The Content Understanding extension could not complete the operation.",
 		Suggestion: "Retry with --debug. If the failure persists, report the operation and this error code.",
 	}
+}
+
+func fromDomainError(domain *cuclient.Error) error {
+	local := &azdext.LocalError{Code: domain.Code, Message: domain.Message, Suggestion: domain.Suggestion}
+	switch domain.Kind {
+	case cuclient.ErrorValidation:
+		local.Category = azdext.LocalErrorCategoryValidation
+	case cuclient.ErrorAuthentication:
+		local.Category = azdext.LocalErrorCategoryAuth
+	case cuclient.ErrorCancelled:
+		local.Category = azdext.LocalErrorCategoryUser
+		local.Code = CodeCancelled
+	case cuclient.ErrorTimeout:
+		local.Category = azdext.LocalErrorCategoryInternal
+		local.Code = CodeDeadlineExceeded
+	case cuclient.ErrorNotFound, cuclient.ErrorConflict, cuclient.ErrorThrottled, cuclient.ErrorLimit, cuclient.ErrorService:
+		return &azdext.ServiceError{
+			Message: domain.Message, ErrorCode: domain.Code,
+			StatusCode: domain.StatusCode, Suggestion: domain.Suggestion,
+		}
+	default:
+		local.Category = azdext.LocalErrorCategoryInternal
+		local.Code = CodeUnexpected
+	}
+	return local
 }

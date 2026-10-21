@@ -4,7 +4,10 @@ overrides:
   - filename: "internal/**/*.go"
     words:
       - exterrors
+      - cuclient
   - filename: "README.md"
     words:
       - CODEOWNERS
       - chienyuanchang
+      - cuclient
+      - multimodal

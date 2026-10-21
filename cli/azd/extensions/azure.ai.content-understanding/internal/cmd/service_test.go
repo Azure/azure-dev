@@ -63,12 +63,16 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 			session, err := openServiceSession(cmd, &azdext.ExtensionContext{}, config.Options{
 				Endpoint: "https://configured.example", TenantID: "configured-tenant",
 				APIVersion: cuclient.PreviewAPIVersion, DefaultAnalyzer: "configured-analyzer",
+				ModelDeployments: map[string]string{"gpt-5.2": "configured-deployment"},
 			})
 			require.NoError(t, err)
 			defer session.close()
 			assert.IsType(t, &cuclient.RESTTransport{}, session.client)
 			assert.Equal(t, cuclient.PreviewAPIVersion, session.apiVersion)
 			assert.Equal(t, "configured-analyzer", session.analyzer)
+			assert.Equal(t, "https://configured.example/contentunderstanding", session.endpoint)
+			assert.Empty(t, session.environment)
+			assert.Equal(t, map[string]string{"gpt-5.2": "configured-deployment"}, session.models)
 			confirmed, err := session.confirm(cmd.Context(), "Delete analyzer?")
 			if mode == "missing decision" || mode == "host failure" {
 				require.Error(t, err)

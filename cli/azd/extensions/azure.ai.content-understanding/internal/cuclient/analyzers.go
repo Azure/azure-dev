@@ -191,7 +191,7 @@ func readDefaults(response *http.Response) (Defaults, error) {
 	if (UpdateDefaultsRequest{ModelDeployments: wire.ModelDeployments}).Validate() != nil {
 		return Defaults{}, malformedResponse()
 	}
-	return Defaults{ModelDeployments: wire.ModelDeployments}, nil
+	return Defaults{ModelDeployments: wire.ModelDeployments, JSON: body}, nil
 }
 
 func (c *RESTTransport) jsonRequest(

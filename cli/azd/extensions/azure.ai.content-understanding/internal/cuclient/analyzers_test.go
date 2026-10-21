@@ -178,12 +178,14 @@ func TestAnalyzerRESTOperationsWire(t *testing.T) {
 				})
 			}
 			t.Run("get_defaults", func(t *testing.T) {
+				raw := `{"modelDeployments":{"gpt-4.1":"deployment"},"future":9007199254740993}`
 				client := newWireClient(t, version, wireStep{
-					method: http.MethodGet, path: "/defaults", response: `{"modelDeployments":{"gpt-4.1":"deployment"}}`,
+					method: http.MethodGet, path: "/defaults", response: raw,
 				})
 				result, err := client.GetDefaults(t.Context())
 				require.NoError(t, err)
 				assert.Equal(t, map[string]string{"gpt-4.1": "deployment"}, result.ModelDeployments)
+				assert.Equal(t, raw, string(result.JSON))
 			})
 			for _, empty := range []bool{false, true} {
 				t.Run(fmt.Sprintf("update_defaults_empty_%t", empty), func(t *testing.T) {
@@ -199,6 +201,7 @@ func TestAnalyzerRESTOperationsWire(t *testing.T) {
 					})
 					result, err := client.UpdateDefaults(t.Context(), UpdateDefaultsRequest{ModelDeployments: mapping})
 					require.NoError(t, err)
+					assert.Contains(t, string(result.JSON), `"text-embedding-3-large":"existing"`)
 					assert.Equal(t, map[string]string{
 						"gpt-4.1": "new", "text-embedding-3-large": "existing",
 					}, result.ModelDeployments)

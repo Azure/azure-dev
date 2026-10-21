@@ -9,6 +9,7 @@ overrides:
       - fnmatch
       - localio
       - renderable
+      - projectless
   - filename: "README.md"
     words:
       - CODEOWNERS

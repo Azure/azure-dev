@@ -17,11 +17,14 @@ import (
 )
 
 type serviceSession struct {
-	client     cuclient.Client
-	apiVersion string
-	analyzer   string
-	confirm    func(context.Context, string) (bool, error)
-	close      func()
+	client      cuclient.Client
+	apiVersion  string
+	analyzer    string
+	endpoint    string
+	environment string
+	models      map[string]string
+	confirm     func(context.Context, string) (bool, error)
+	close       func()
 }
 
 type sessionFactory func(*cobra.Command, *azdext.ExtensionContext, config.Options) (*serviceSession, error)
@@ -43,6 +46,8 @@ func openServiceSession(
 	return &serviceSession{
 		client: client, apiVersion: runtime.Config.APIVersion,
 		analyzer: runtime.Config.DefaultAnalyzer, close: runtime.Close,
+		endpoint: runtime.Config.Endpoint, environment: runtime.Config.Environment,
+		models: runtime.Config.ModelDeployments,
 		confirm: func(ctx context.Context, message string) (bool, error) {
 			response, err := runtime.Client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{Message: message, DefaultValue: new(false)},
@@ -59,6 +64,20 @@ func openServiceSession(
 			return response.GetValue(), nil
 		},
 	}, nil
+}
+
+func serviceCommand(cmd *cobra.Command, options *config.Options) *cobra.Command {
+	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "", "Microsoft Foundry resource endpoint")
+	cmd.Flags().StringVar(&options.APIVersion, "api-version", "",
+		"CU API version: 2025-11-01 or 2026-06-01-preview (default: resolved setting or GA)")
+	return jsonCommand(cmd)
+}
+
+func jsonCommand(cmd *cobra.Command) *cobra.Command {
+	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"default", "json", "none"},
+		Usage: "Output format: default (complete JSON), json, or none",
+	})
 }
 
 func commandError(code, message, suggestion string) error {

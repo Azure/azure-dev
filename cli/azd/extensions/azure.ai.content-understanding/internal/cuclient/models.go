@@ -81,6 +81,7 @@ type CopyAnalyzerRequest struct {
 
 type Defaults struct {
 	ModelDeployments map[string]string
+	JSON             json.RawMessage
 }
 
 type UpdateDefaultsRequest struct {

@@ -1,8 +1,9 @@
 # Azure Content Understanding
 
 Native Go first-party Azure Content Understanding extension.
-This development build provides help, version, metadata, analysis, and analyzer
-list/show/create/delete commands. The remaining CU workflows are in development.
+This development build provides help, version, metadata, analysis, analyzer
+list/show/create/delete, service defaults, doctor, and environment-variable
+inspection. The remaining CU workflows are in development.
 
 ## Installation
 
@@ -25,6 +26,10 @@ azd ai cu analyzer create invoice_v1 --schema schema.json
 azd ai cu analyzer delete invoice_v1 --yes --no-prompt
 azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice
 azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json
+azd ai cu defaults show
+azd ai cu defaults set --from-environment
+azd ai cu doctor
+azd ai cu env-var list
 ```
 
 Help, version, and metadata do not require an endpoint, sign-in, or project.
@@ -139,6 +144,92 @@ rooted filesystem operations. No-clobber publication is atomic, replacement is
 explicit, symlink/special-file destinations are rejected, and directory identity
 is checked around publication. Temporary files are removed on failure.
 `-o none` suppresses successful stdout, not result/report file writes.
+
+### Service defaults and diagnostics
+
+`defaults show/set` retain the `cu`, `az cu`, and Python PR2 meaning: they read or
+update **CU resource service defaults**, not local CLI settings.
+No CU profile or local config writer is introduced. Manage local
+configuration through `azd env select/set` and `azd env config get/set/unset`.
+
+`defaults show` returns the complete service object, including unknown
+properties and exact large numbers. Defaults that are not configured are an explicit error,
+not an empty successful response.
+
+`defaults set` accepts repeatable `--model MODEL=DEPLOYMENT`,
+`--from-environment`, and `--replace`. Explicit mappings override
+`cu.modelDeployments` when `--from-environment` is supplied; otherwise local
+model mappings are not included. Repeated mappings for the same model use the
+last value. Without `--replace`, existing service mappings are read and merged,
+with desired mappings taking precedence. Only a specific `DefaultsNotSet`
+response permits initialization; unrelated 404/auth/transport errors never
+become an empty mapping. Writes are never retried.
+
+As in PR2, `--replace` skips that **client-side merge**. CU's API is still a
+merge patch: omitted service keys are not guaranteed to be deleted. The returned
+service object is authoritative. This command does not delete deployments or
+replace an entire resource. See the official
+[update-defaults API](https://learn.microsoft.com/rest/api/contentunderstanding/content-analyzers/update-defaults?view=rest-contentunderstanding-2025-11-01).
+
+Updates derive PR2's prebuilt completion, mini-completion, and embedding aliases.
+The full-model preference is `gpt-5.2`; mini preferences are `gpt-5.2-mini`,
+`gpt-4.1-mini`, then `gpt-4o-mini`; embeddings prefer `text-embedding-3-large`.
+Other candidates use sorted model names, rather than map/property order.
+Existing aliases are retained when no corresponding real model is supplied.
+These are mapping-selection rules, not a promise of regional model availability
+or automatic model deployment.
+
+`doctor` resolves configuration, acquires Entra authentication through azd,
+and checks CU access by reading defaults. It is read-only unless
+`--fix-defaults` is explicitly supplied. That flag merges resolved
+`cu.modelDeployments` over existing service mappings and derives aliases;
+it never deploys models, provisions resources, or writes local configuration.
+An empty mapping cannot be "fixed" into success.
+
+Doctor preserves PR2's structured result and readiness rules:
+
+- Missing generative mappings produce `ready:false` and explicit
+  `missingRequirements`, with a successful diagnostic exit. This is not a
+  connectivity/authentication failure; non-generative analyzers may still work.
+- Configuration, authentication, service, and update failures use a nonzero
+  exit and the standard host error channel, without success-shaped stdout.
+- Projectless missing-tenant/context errors are distinct from invalid endpoint
+  or API-version errors. Remediation points to process inputs, `azd auth login`,
+  and `azd env`, never to CU profiles.
+- The legacy JSON field `profile` remains for PR2 compatibility. It labels the
+  **resolved azd environment** or `projectless`; it does not refer to a CU profile.
+  `defaultAnalyzer` is `null` when unset, and empty collections remain arrays or
+  objects rather than `null`.
+
+### Environment-variable inspection
+
+`env-var list` works without a project, endpoint, or host RPCs. It lists only
+currently set, supported process inputs, as `{name,value,scope,sensitive}`
+records. It does not dump selected-environment values or unrelated variables.
+`CU_API_KEY` is always `********`, including when empty, and remains unsupported.
+An invalid `CU_ENDPOINT` is shown as `[invalid endpoint]`, not echoed with URL
+credentials, SAS queries, or fragments. Host access tokens, client secrets,
+standalone telemetry/update variables, and unrelated variables are not listed.
+
+| Process variable | Accepted values / default | Scope and precedence |
+| --- | --- | --- |
+| `CU_ENDPOINT` | HTTPS resource endpoint / unset | Explicit `--endpoint` wins; then process, selected `CU_ENDPOINT`, selected `FOUNDRY_ENDPOINT`. |
+| `CU_API_VERSION` | `2025-11-01` or `2026-06-01-preview` / GA | Explicit `--api-version` wins; process precedes selected config/environment values. |
+| `CU_DEFAULT_ANALYZER` | Analyzer ID / unset | Explicit `--analyzer` wins; process precedes selected config/environment values. |
+| `CU_AUTH_MODE` | `login` or unset | Entra-only; non-login modes fail before service access. |
+| `CU_API_KEY` | Unsupported | Presence, even empty, blocks service execution; always redacted by inspection. |
+| `CU_ON_EXISTS` | `error`, `skip`, `reanalyze` / `error` | Used by analyze only when `--on-existing` is absent. |
+| `AZD_ENVIRONMENT` | Existing environment name / unset | Inherited `--environment` wins; otherwise select the default environment or projectless mode. |
+| `AZURE_TENANT_ID` | Azure tenant ID / unset | Process precedes selected environment; required for projectless service execution. |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID / unset | Process precedes selected environment; embedded ARM scope is authoritative. |
+| `AZURE_RESOURCE_GROUP` | Resource group name / unset | Process precedes selected environment; embedded ARM scope is authoritative. |
+| `AZD_DEBUG` | azd boolean / false | Inherited `--debug` overrides the SDK's process fallback. |
+| `AZD_NO_PROMPT` | azd boolean / false | Inherited `--no-prompt` overrides the SDK's process fallback. |
+| `AZD_CWD` | Working directory / unset | Inherited `--cwd` overrides the SDK's process fallback. |
+
+`FOUNDRY_ENDPOINT` is a selected-environment fallback, not an independent process
+override. Structured settings remain `cu.apiVersion`, `cu.defaultAnalyzer`, and
+`cu.modelDeployments`; credentials must never be stored in that section.
 
 ## Development
 

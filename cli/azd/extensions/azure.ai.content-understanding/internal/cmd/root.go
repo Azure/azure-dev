@@ -34,6 +34,9 @@ func newRootCommand(open sessionFactory) *cobra.Command {
 	rootCmd.AddCommand(newMetadataCommand(rootCmd))
 	rootCmd.AddCommand(newAnalyzerCommand(extCtx, open))
 	rootCmd.AddCommand(newAnalyzeCommand(extCtx, open))
+	rootCmd.AddCommand(newDefaultsCommand(extCtx, open))
+	rootCmd.AddCommand(newDoctorCommand(extCtx, open))
+	rootCmd.AddCommand(newEnvVarCommand(extCtx))
 	rootCmd.Example = `  # Show extension help
   azd ai cu --help
 

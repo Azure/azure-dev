@@ -984,9 +984,9 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 		},
 	}
 
-	candidates := []string{
-		toolboxName + "-mcp",
-		fmt.Sprintf("%s-v%s-mcp", toolboxName, toolboxVersion),
+	candidates := []string{toolboxName + "-mcp"}
+	if toolboxVersion != "1" {
+		candidates = append(candidates, fmt.Sprintf("%s-v%s-mcp", toolboxName, toolboxVersion))
 	}
 	for i, connectionName := range candidates {
 		_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
@@ -1001,7 +1001,8 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 			// If the base <toolbox>-mcp connection is bound to another version of
 			// this same toolbox, preserve it for existing agents/versions and fall
 			// back to the version-scoped connection name.
-			if i == 0 && !isExplicit && isOtherVersionToolboxConnection(existing, mcpURL, toolboxName) {
+			if i == 0 && len(candidates) > 1 && !isExplicit &&
+				isOtherVersionToolboxConnection(existing, mcpURL, toolboxName) {
 				continue
 			}
 			return "", exterrors.Validation(
@@ -1015,6 +1016,13 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 					connectionName,
 				),
 			)
+		}
+		// Only version 1 creates the unversioned <toolbox>-mcp connection. Newer
+		// versions check <toolbox>-mcp for compatible reuse above, then create
+		// their immutable version-scoped connection so concurrent first deploys
+		// of different versions cannot overwrite each other.
+		if i == 0 && len(candidates) > 1 {
+			continue
 		}
 		if isExplicit {
 			return "", exterrors.Dependency(

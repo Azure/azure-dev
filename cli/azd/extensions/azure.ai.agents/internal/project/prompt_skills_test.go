@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1387,7 +1388,7 @@ func TestToolboxNode_MultipleToolboxesAndPreservesToolsAndApproval(t *testing.T)
 		"type":                  "mcp",
 		"server_label":          "support-tools",
 		"server_url":            urlB,
-		"project_connection_id": "support-tools-mcp",
+		"project_connection_id": "support-tools-v3-mcp",
 		"require_approval":      "never",
 	}, managed.Tools[1])
 	require.Equal(t, map[string]any{
@@ -1397,4 +1398,102 @@ func TestToolboxNode_MultipleToolboxesAndPreservesToolsAndApproval(t *testing.T)
 		"project_connection_id": "research-tools-mcp",
 		"require_approval":      "always",
 	}, managed.Tools[2])
+}
+
+func TestFoundryToolboxBuilder_ConcurrentFirstDeploymentsDoNotOverwriteTargets(t *testing.T) {
+	t.Parallel()
+
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	const urlV1 = projectEndpoint + "/toolboxes/research-tools/versions/1/mcp?api-version=v1"
+	const urlV2 = projectEndpoint + "/toolboxes/research-tools/versions/2/mcp?api-version=v1"
+
+	var mu sync.Mutex
+	stored := map[string]*toolboxConnectionBody{}
+	baseGets := 0
+	bothBaseGetsDone := make(chan struct{})
+
+	pipeline := runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+		Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+			connName := parts[len(parts)-1]
+
+			if req.Method == http.MethodGet {
+				mu.Lock()
+				if connName == "research-tools-mcp" {
+					baseGets++
+					if baseGets == 2 {
+						close(bothBaseGetsDone)
+					}
+				}
+				existing := stored[connName]
+				mu.Unlock()
+
+				if connName == "research-tools-mcp" {
+					<-bothBaseGetsDone
+				}
+				if existing == nil {
+					return &http.Response{
+						StatusCode: http.StatusNotFound,
+						Request:    req,
+						Body:       io.NopCloser(strings.NewReader(`{}`)),
+					}, nil
+				}
+				raw, _ := json.Marshal(existing)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Request:    req,
+					Body:       io.NopCloser(bytes.NewReader(raw)),
+				}, nil
+			}
+
+			var body toolboxConnectionBody
+			if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+				return nil, err
+			}
+			mu.Lock()
+			stored[connName] = &body
+			mu.Unlock()
+			raw, _ := json.Marshal(body)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Request:    req,
+				Body:       io.NopCloser(bytes.NewReader(raw)),
+			}, nil
+		}),
+	})
+
+	builder := &foundryToolboxBuilder{
+		subscriptionID: "sub-1",
+		resourceGroup:  "rg-1",
+		accountName:    "acct",
+		projectName:    "proj",
+		pipeline:       pipeline,
+		explicitConns:  map[string]struct{}{},
+	}
+
+	var att1, att2 toolboxAttachment
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		att1, err1 = builder.ResolveToolbox(t.Context(), toolboxRef{
+			Name:        "tools-v1",
+			MCPEndpoint: urlV1,
+		})
+	})
+	wg.Go(func() {
+		att2, err2 = builder.ResolveToolbox(t.Context(), toolboxRef{
+			Name:        "tools-v2",
+			MCPEndpoint: urlV2,
+		})
+	})
+	wg.Wait()
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.Equal(t, "research-tools-mcp", att1.ProjectConnectionID)
+	require.Equal(t, "research-tools-v2-mcp", att2.ProjectConnectionID)
+	require.NotNil(t, stored["research-tools-mcp"])
+	require.NotNil(t, stored["research-tools-v2-mcp"])
+	require.Equal(t, urlV1, stored["research-tools-mcp"].Properties.Target)
+	require.Equal(t, urlV2, stored["research-tools-v2-mcp"].Properties.Target)
 }

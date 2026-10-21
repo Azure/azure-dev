@@ -2,10 +2,11 @@ Display all declared agent preview features, including disabled features,
 sorted by name. Each entry includes its name, description, and On or Off status,
 matching the default format of 'azd config list-alpha'.
 
-Status uses the same opt-in checks as agent operations: user config, the process
-environment, the selected azd environment (-e), and every azure.yaml service's
-env mapping. Any enabling source turns a feature on; false does not override
-another source's opt-in.
+Status uses the same opt-in checks as agent operations: per-feature user config,
+the process environment, the selected azd environment (-e), and every azure.yaml
+service's env mapping. Any enabling source turns a feature on; false does not
+override another source's opt-in.
+Only alpha.<ID> config keys apply; alpha.all does not enable agent previews.
 
 Without a project or default environment, the available sources still apply.
 An invalid explicit environment or a source read error fails without printing

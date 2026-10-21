@@ -325,7 +325,7 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 }
 
 func TestResponsesRemoteLatency(t *testing.T) {
-	startPreviewCommandServer(t, map[string]any{"all": "on"}, nil, nil)
+	startPreviewCommandServer(t, map[string]any{"agents": map[string]any{"long_running": "on"}}, nil, nil)
 	const stream = "event: response.created\ndata: " +
 		`{"response":{"id":"resp_latency","status":"in_progress"}}` + "\n\n" +
 		"event: response.output_text.delta\ndata: " + `{"delta":"agent-result"}` + "\n\n" +

@@ -16,6 +16,6 @@ goals:
   - "Confirm exactly three feature records appear, ordered by Name: agents.long_running, agents.managed_harness, agents.voice."
   - "Confirm each record has exactly Name, Description, and Status lines, with a nonempty description and Status: On. Records must be separated by blank lines, matching the default azd config list-alpha shape."
   - "Confirm alpha.all, agents.hosted, core-only features, raw environment values, and terminal escape sequences are absent from the listing."
-  - "Run 'azd ai agent list-alpha --help'; confirm the help explains disabled-feature listing, --environment selection, and additive opt-in sources, and includes 'azd config set alpha.agents.voice on' and 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true'."
+  - "Run 'azd ai agent list-alpha --help'; confirm the help explains disabled-feature listing, --environment selection, additive opt-in sources, and that alpha.all cannot enable agent previews, and includes 'azd config set alpha.agents.voice on' and 'azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true'."
   - "Take a screenshot of the feature listing."
   - "Report a finding if a feature is missing or unsorted, a status ignores the supplied true process values, the record format differs, help omits enable guidance, or the command prompts, writes configuration, or contacts Azure."

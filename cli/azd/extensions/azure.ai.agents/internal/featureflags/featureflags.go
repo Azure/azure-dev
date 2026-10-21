@@ -33,7 +33,6 @@ type Feature struct {
 
 const (
 	alphaKey     = "alpha"
-	allFeatureID = "all"
 	enabledValue = "on"
 )
 
@@ -141,17 +140,12 @@ func envEnabled(value string) bool {
 	return err == nil && enabled
 }
 
-// configEnabled matches "on" (any case) at alpha.all or alpha.<id>.
+// configEnabled matches "on" (any case) only at alpha.<id>.
 // Other values, including non-string values, contribute no signal.
 func configEnabled(alphaValues any, id string) bool {
 	userConfig := config.NewConfig(map[string]any{alphaKey: alphaValues})
-	for _, key := range []string{allFeatureID, id} {
-		if value, ok := userConfig.GetString(alphaKey + "." + key); ok && strings.EqualFold(value, enabledValue) {
-			return true
-		}
-	}
-
-	return false
+	value, ok := userConfig.GetString(alphaKey + "." + id)
+	return ok && strings.EqualFold(value, enabledValue)
 }
 
 func isAbsentScope(err error, sentinel error) bool {

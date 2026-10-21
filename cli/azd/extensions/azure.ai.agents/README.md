@@ -24,8 +24,8 @@ Status: Off
 ```
 
 Records are sorted by feature ID. Each status is `On` if any of the four opt-in
-sources enables that feature; otherwise it is `Off`. `alpha.all` is an input,
-not a separate feature, and core-only features are not listed. Without a project
+sources enables that feature; otherwise it is `Off`. The command ignores
+`alpha.all` and does not list core-only features. Without a project
 or default environment, available sources still apply. Explicit invalid
 environments and source-loading errors fail before any records are printed.
 The command adds no authentication, prompts, or configuration writes; existing
@@ -52,8 +52,8 @@ azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
 
 The matching process variable or a key in any `azure.yaml` `services[].env`
 map also enables the feature. Sources combine with OR: false never overrides
-true elsewhere. `alpha.all=on` enables every gate; `agents.hosted` no longer
-controls these capabilities. Ordinary hosted and plain prompt agents need no
+true elsewhere. `alpha.all` and unrelated config keys, including `agents.hosted`,
+do not enable these capabilities. Ordinary hosted and plain prompt agents need no
 preview opt-in.
 
 Checks cover explicit init/add inputs, staged template definitions, local

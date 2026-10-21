@@ -88,7 +88,7 @@ func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) 
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			startPreviewCommandServer(t, map[string]any{"all": "on"}, nil, nil)
+			startPreviewCommandServer(t, map[string]any{"agents": map[string]any{"long_running": "on"}}, nil, nil)
 			client := &telemetryRecordingClient{}
 			action := &InvokeAction{
 				flags: &invokeFlags{

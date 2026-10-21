@@ -44,7 +44,7 @@ func TestListAlphaCommandSources(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%03b", source, mask), func(t *testing.T) {
 				clearPreviewProcess(t)
 				agents := map[string]any{"hosted": "on"}
-				alpha := map[string]any{"agents": agents, "all": "off", "core-only": "on"}
+				alpha := map[string]any{"agents": agents, "all": "on", "core-only": "on"}
 				config := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
 					"web": {Host: "appservice", Environment: map[string]string{}},
 					"api": {Host: "containerapp", Environment: map[string]string{}},
@@ -91,15 +91,32 @@ func TestListAlphaCommandSources(t *testing.T) {
 	}
 }
 
-func TestListAlphaCommandAllConfig(t *testing.T) {
+func TestListAlphaCommandAllFeatureConfig(t *testing.T) {
 	clearPreviewProcess(t)
-	startPreviewCommandServer(t, map[string]any{"all": "oN"}, nil, nil)
+	startPreviewCommandServer(t, map[string]any{"agents": map[string]any{
+		"long_running": "oN", "managed_harness": "ON", "voice": "On",
+	}}, nil, nil)
 
 	out, err := executeListAlphaCommand(t, "--output", "default")
 
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf(listAlphaOutput, "On", "On", "On"), out)
 	t.Logf("Captured list-alpha output:\n%s", out)
+}
+
+func TestListAlphaCommandGlobalConfigIgnored(t *testing.T) {
+	for _, value := range []any{"on", "ON", "On", "oN", "off", "", true, nil} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			clearPreviewProcess(t)
+			startPreviewCommandServer(t, map[string]any{"all": value}, nil, nil)
+
+			out, err := executeListAlphaCommand(t)
+
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf(listAlphaOutput, "Off", "Off", "Off"), out)
+			t.Logf("Captured list-alpha output with alpha.all=%v:\n%s", value, out)
+		})
+	}
 }
 
 func TestListAlphaCommandEnvironmentSelection(t *testing.T) {
@@ -116,7 +133,7 @@ func TestListAlphaCommandEnvironmentSelection(t *testing.T) {
 			clearPreviewProcess(t)
 			t.Setenv("AZD_ENVIRONMENT", "host-selected")
 			var calls atomic.Int32
-			startPreviewCommandServer(t, nil, nil, nil, grpc.UnaryInterceptor(func(
+			startPreviewCommandServer(t, map[string]any{"all": "on"}, nil, nil, grpc.UnaryInterceptor(func(
 				ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 			) (any, error) {
 				if strings.HasSuffix(info.FullMethod, "EnvironmentService/GetValues") {
@@ -156,7 +173,7 @@ func TestListAlphaCommandOptionalScopes(t *testing.T) {
 				}
 				t.Setenv(featureflags.ManagedHarness.EnvVar, fmt.Sprint(positive))
 				startPreviewCommandServer(t,
-					map[string]any{"agents": map[string]any{"long_running": value}},
+					map[string]any{"all": "on", "agents": map[string]any{"long_running": value}},
 					&azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
 						"web": {Host: "appservice", Environment: map[string]string{
 							featureflags.Voice.EnvVar: fmt.Sprint(positive),
@@ -229,7 +246,9 @@ func TestListAlphaCommandSourceErrorsHaveNoPartialOutput(t *testing.T) {
 				t.Setenv(feature.EnvVar, "true")
 			}
 			var calls atomic.Int32
-			startPreviewCommandServer(t, map[string]any{"all": "on"}, nil, nil,
+			startPreviewCommandServer(t, map[string]any{"agents": map[string]any{
+				"long_running": "on", "managed_harness": "on", "voice": "on",
+			}}, nil, nil,
 				grpc.UnaryInterceptor(func(
 					ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 				) (any, error) {
@@ -320,6 +339,7 @@ func TestListAlphaCommandHelpAndMetadata(t *testing.T) {
 		"azd ai agent list-alpha", "including disabled features",
 		"azd config set alpha.agents.voice on",
 		"azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true",
+		"alpha.all does not enable agent previews",
 		"--environment", "--no-prompt", "supported: default",
 	} {
 		require.Contains(t, out.String(), text)

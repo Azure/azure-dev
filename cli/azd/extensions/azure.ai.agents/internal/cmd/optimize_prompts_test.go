@@ -135,7 +135,8 @@ func TestResolveOptimizeSystemPrompt_NoPrompt_UsesPlainGuidance(t *testing.T) {
 	t.Parallel()
 	err := resolveOptimizeSystemPrompt(t.Context(), nil, &OptimizeConfig{}, "", false, true)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Set baseline_agent_configuration.system_prompt in your --config file")
+	assert.Contains(t, err.Error(),
+		"Set optimization_configuration.baseline_agent_configuration.system_prompt in your --config file")
 	assert.Contains(t, err.Error(), ".agent_configs/baseline/metadata.yaml")
 	assert.Contains(t, err.Error(), "Run without --no-prompt")
 }

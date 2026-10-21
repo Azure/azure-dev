@@ -29,8 +29,8 @@ func MissingTenant() error {
 	return &azdext.LocalError{
 		Code:       CodeMissingTenant,
 		Category:   azdext.LocalErrorCategoryDependency,
-		Message:    "The azd deployment context does not identify an Azure tenant.",
-		Suggestion: "Select an azd environment with an Azure deployment, then retry the operation.",
+		Message:    "No Azure tenant is configured for this operation.",
+		Suggestion: "Supply the tenant option or AZURE_TENANT_ID, or use an azd environment with a configured tenant.",
 	}
 }
 

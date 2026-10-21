@@ -41,7 +41,7 @@ type RESTTransport struct {
 func NewRESTTransport(
 	endpoint string, credential azcore.TokenCredential, options *TransportOptions,
 ) (*RESTTransport, error) {
-	normalized, err := normalizeEndpoint(endpoint)
+	normalized, err := NormalizeEndpoint(endpoint)
 	if err != nil {
 		return nil, err
 	}

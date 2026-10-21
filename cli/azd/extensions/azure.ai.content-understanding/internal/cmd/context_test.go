@@ -8,9 +8,11 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"testing"
 	"time"
 
+	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -34,12 +36,49 @@ func (s *deploymentServer) GetDeploymentContext(
 	return s.get(ctx)
 }
 
+type environmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+}
+
+func (*environmentServer) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "dev"}}, nil
+}
+
+func (*environmentServer) Get(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.EnvironmentResponse, error) {
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: request.Name}}, nil
+}
+
+func (*environmentServer) GetValues(
+	_ context.Context, request *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	values := []*azdext.KeyValue{
+		{Key: "CU_ENDPOINT", Value: "https://selected.example"},
+	}
+	if request.Name == "test" {
+		values = append(values, &azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "named-tenant"})
+	}
+	return &azdext.KeyValueListResponse{KeyValues: values}, nil
+}
+
+func (*environmentServer) GetConfigSection(
+	context.Context, *azdext.GetConfigSectionRequest,
+) (*azdext.GetConfigSectionResponse, error) {
+	return &azdext.GetConfigSectionResponse{}, nil
+}
+
 func startHost(t *testing.T, server *deploymentServer) {
 	t.Helper()
+	for key := range config.ProcessValues() {
+		t.Setenv(key, "")
+		require.NoError(t, os.Unsetenv(key))
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	host := grpc.NewServer()
 	azdext.RegisterDeploymentServiceServer(host, server)
+	azdext.RegisterEnvironmentServiceServer(host, &environmentServer{})
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- host.Serve(listener) }()
 	t.Cleanup(func() {
@@ -67,10 +106,13 @@ func TestRuntimeContext(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
-	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, "")
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, config.Options{})
 	require.NoError(t, err)
 	defer runtime.Close()
 	assert.Equal(t, "selected-tenant", runtime.Credential.TenantID())
+	assert.Equal(t, runtime.Config.TenantID, runtime.Credential.TenantID())
+	assert.Equal(t, "dev", runtime.Config.Environment)
+	assert.Equal(t, "https://selected.example/contentunderstanding", runtime.Config.Endpoint)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "Initialized azd runtime")
 	assert.NotContains(t, stderr.String(), "private-host-token")
@@ -88,7 +130,7 @@ func TestMissingHostContext(t *testing.T) {
 			t.Setenv("AZD_ACCESS_TOKEN", tt.token)
 			cmd := &cobra.Command{}
 			cmd.SetContext(t.Context())
-			runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, "")
+			runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{})
 			require.Nil(t, runtime)
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
@@ -124,7 +166,7 @@ func TestRuntimeHostFailures(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
-			runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, "")
+			runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, config.Options{})
 			require.Nil(t, runtime)
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
@@ -141,7 +183,7 @@ func TestRuntimeAlreadyCancelled(t *testing.T) {
 	cancel()
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
-	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, "")
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{})
 	assert.Nil(t, runtime)
 	assert.ErrorIs(t, err, context.Canceled)
 }
@@ -155,10 +197,13 @@ func TestRuntimeExplicitTenant(t *testing.T) {
 	cmd.SetContext(t.Context())
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
-	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, "explicit-tenant")
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{
+		Endpoint: "https://explicit.example", TenantID: "explicit-tenant",
+	})
 	require.NoError(t, err)
 	defer runtime.Close()
 	assert.Equal(t, "explicit-tenant", runtime.Credential.TenantID())
+	assert.Empty(t, runtime.Config.Environment)
 	assert.Empty(t, stderr.String())
 }
 
@@ -172,7 +217,47 @@ func TestRuntimeCancellationDuringRPC(t *testing.T) {
 	}})
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
-	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, "")
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{})
 	assert.Nil(t, runtime)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRuntimeNamedEnvironmentCredential(t *testing.T) {
+	startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+		return nil, status.Error(codes.Internal, "default deployment must not supply a named environment's tenant")
+	}})
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Environment: "test", Debug: true}, config.Options{})
+	require.NoError(t, err)
+	defer runtime.Close()
+	assert.Equal(t, "test", runtime.Config.Environment)
+	assert.Equal(t, "named-tenant", runtime.Config.TenantID)
+	assert.Equal(t, runtime.Config.TenantID, runtime.Credential.TenantID())
+	assert.NotContains(t, stderr.String(), "named-tenant")
+	assert.NotContains(t, stderr.String(), "private-host-token")
+}
+
+func TestRuntimeConfigurationFailureRedaction(t *testing.T) {
+	startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+		return nil, status.Error(codes.Internal, "deployment must not be queried")
+	}})
+	t.Setenv("CU_API_KEY", "private-api-key")
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true},
+		config.Options{Endpoint: "https://explicit.example", TenantID: "explicit-tenant"})
+	require.Nil(t, runtime)
+	local, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	assert.Equal(t, "unsupported_authentication", local.Code)
+	assert.NotContains(t, err.Error()+stderr.String(), "private-api-key")
+	assert.NotContains(t, stderr.String(), "private-host-token")
+	assert.NotContains(t, stderr.String(), "explicit-tenant")
+	assert.Empty(t, stdout.String())
 }

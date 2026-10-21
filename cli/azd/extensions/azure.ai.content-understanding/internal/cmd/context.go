@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -19,10 +20,11 @@ type runtimeContext struct {
 	Client     *azdext.AzdClient
 	Credential *azdext.TokenProvider
 	Logger     *azdext.Logger
+	Config     config.Resolved
 }
 
 func newRuntimeContext(
-	cmd *cobra.Command, extCtx *azdext.ExtensionContext, tenantID string,
+	cmd *cobra.Command, extCtx *azdext.ExtensionContext, options config.Options,
 ) (*runtimeContext, error) {
 	ctx := cmd.Context()
 	if err := ctx.Err(); err != nil {
@@ -40,27 +42,22 @@ func newRuntimeContext(
 		logger.Debug("Failed to create azd host client")
 		return nil, exterrors.HostUnavailable()
 	}
-	if tenantID == "" {
-		deployment, err := client.Deployment().GetDeploymentContext(ctx, &azdext.EmptyRequest{})
-		if err != nil {
-			client.Close()
-			logger.Debug("Failed to resolve azd deployment context")
-			return nil, exterrors.FromError(err)
-		}
-		tenantID = deployment.GetAzureContext().GetScope().GetTenantId()
-		if tenantID == "" {
-			client.Close()
-			return nil, exterrors.MissingTenant()
-		}
+	resolved, err := config.Load(ctx, client, extCtx.Environment, options, config.ProcessValues())
+	if err != nil {
+		client.Close()
+		logger.Debug("Failed to resolve CU configuration")
+		return nil, exterrors.FromError(err)
 	}
-	credential, err := azdext.NewTokenProvider(ctx, client, &azdext.TokenProviderOptions{TenantID: tenantID})
+	credential, err := azdext.NewTokenProvider(ctx, client, &azdext.TokenProviderOptions{TenantID: resolved.TenantID})
 	if err != nil {
 		client.Close()
 		logger.Debug("Failed to initialize azd credential")
 		return nil, exterrors.FromError(err)
 	}
 	logger.Debug("Initialized azd runtime")
-	return &runtimeContext{Context: ctx, Client: client, Credential: credential, Logger: logger}, nil
+	return &runtimeContext{
+		Context: ctx, Client: client, Credential: credential, Logger: logger, Config: resolved,
+	}, nil
 }
 
 func (r *runtimeContext) Close() {

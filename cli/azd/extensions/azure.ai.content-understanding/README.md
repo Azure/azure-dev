@@ -77,6 +77,54 @@ CODEOWNERS. Confirm CU/azd ownership and extension identity before merging.
 API-key requirements, performance budgets, and Foundry pack timing remain
 implementation/release gates.
 
+### Configuration resolution
+
+The internal runtime resolves configuration before constructing the azd-backed
+credential. These settings are not yet exposed as public CU service commands.
+No global CU profile or user-config store is introduced.
+
+| Setting | Highest to lowest priority |
+| ------- | -------------------------- |
+| Endpoint | Explicit option; process `CU_ENDPOINT`; selected environment `CU_ENDPOINT`; selected environment `FOUNDRY_ENDPOINT`. |
+| API version | Explicit option; process `CU_API_VERSION`; environment config `cu.apiVersion`; environment `CU_API_VERSION`; `2025-11-01`. |
+| Default analyzer | Explicit option; process `CU_DEFAULT_ANALYZER`; environment config `cu.defaultAnalyzer`; environment `CU_DEFAULT_ANALYZER`. No implicit analyzer is selected. |
+| Model deployments | Explicit mapping; environment config `cu.modelDeployments`; empty mapping. |
+| Tenant | Explicit option; process `AZURE_TENANT_ID`; selected environment `AZURE_TENANT_ID`; default deployment context only when no environment was explicitly selected. |
+| Subscription/resource group | Explicit options; process `AZURE_SUBSCRIPTION_ID` / `AZURE_RESOURCE_GROUP`; selected environment values; default deployment scope when needed to obtain the default environment's tenant. |
+
+Environment selection is the inherited `--environment` option, then process
+`AZD_ENVIRONMENT`. Without either selection, a runtime endpoint (explicit or
+process `CU_ENDPOINT`) uses projectless mode; otherwise the runtime loads the
+default environment. Named environments use scoped values and the scoped `cu`
+config section, never the default environment's deployment context. Environment
+values are read as persisted values, not host-side process/environment mixtures.
+An environment/deployment read failure is an error, not a projectless fallback.
+
+Projectless service execution requires both a runtime endpoint and tenant
+(explicit inputs or the compatibility process variables above), plus any
+command-specific required inputs. It does not require a project or prior
+deployment, but still uses the azd host and azd authentication. A missing tenant
+does not trigger a lookup in another environment or a different credential chain.
+
+Full Cognitive Services account ARM IDs use their embedded subscription and
+resource group instead of ambient scope. Conflicting explicit scope options fail;
+matching scope options are compared case-insensitively. Account endpoint discovery
+and ARM network operations are separate command-layer work.
+
+`cu.apiVersion` and `cu.defaultAnalyzer` must be nonempty strings;
+`cu.modelDeployments` must map nonempty model names to nonempty deployment names.
+Invalid selected values fail instead of silently falling through to a lower
+priority source. Higher-priority runtime options override lower-priority settings.
+Configuration is read-only; the resolver writes neither process variables nor
+azd configuration.
+
+Only Entra authentication is enabled. `CU_AUTH_MODE=login` is accepted, while
+other modes and process `CU_API_KEY` fail explicitly. Plaintext `CU_API_KEY`
+in the selected environment and `cu.apiKey` (including legacy `api_key`) in its
+config are rejected even when runtime options override other settings. Empty
+persisted key entries must also be removed. Secrets are never included in resolved
+configuration, diagnostic logs, or errors.
+
 ### CU client contract
 
 `internal/cuclient` defines an extension-owned service interface for analyzer

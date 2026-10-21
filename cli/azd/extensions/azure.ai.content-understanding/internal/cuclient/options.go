@@ -23,7 +23,8 @@ type TransportOptions struct {
 	Transport policy.Transporter
 }
 
-func normalizeEndpoint(endpoint string) (string, error) {
+// NormalizeEndpoint validates and normalizes a resource endpoint for CU operations.
+func NormalizeEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil ||
 		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawPath != "" {
@@ -44,16 +45,25 @@ func normalizeEndpoint(endpoint string) (string, error) {
 	return parsed.String(), nil
 }
 
+// NormalizeAPIVersion applies the default and rejects untested API versions.
+func NormalizeAPIVersion(version string) (string, error) {
+	if version == "" {
+		return DefaultAPIVersion, nil
+	}
+	if version != DefaultAPIVersion && version != PreviewAPIVersion {
+		return "", validationError("unsupported_api_version", "Select a tested GA or preview CU API version.")
+	}
+	return version, nil
+}
+
 func normalizeOptions(options *TransportOptions) (TransportOptions, error) {
 	var result TransportOptions
 	if options != nil {
 		result = *options
 	}
-	if result.APIVersion == "" {
-		result.APIVersion = DefaultAPIVersion
-	}
-	if result.APIVersion != DefaultAPIVersion && result.APIVersion != PreviewAPIVersion {
-		return result, validationError("unsupported_api_version", "Select a tested GA or preview CU API version.")
+	var err error
+	if result.APIVersion, err = NormalizeAPIVersion(result.APIVersion); err != nil {
+		return result, err
 	}
 	if result.RequestTimeout < 0 {
 		return result, validationError("invalid_request_timeout", "The request timeout must not be negative.")

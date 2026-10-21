@@ -1,0 +1,10 @@
+import: ../../.vscode/cspell.yaml
+words: []
+overrides:
+  - filename: "internal/**/*.go"
+    words:
+      - exterrors
+  - filename: "README.md"
+    words:
+      - CODEOWNERS
+      - chienyuanchang

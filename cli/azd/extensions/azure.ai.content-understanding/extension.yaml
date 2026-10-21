@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/refs/heads/main/cli/azd/extensions/extension.schema.json
+capabilities:
+    - custom-commands
+    - metadata
+description: Native Go azd commands for Azure Content Understanding (in development)
+displayName: Azure Content Understanding
+id: azure.ai.content-understanding
+language: go
+namespace: ai.cu
+requiredAzdVersion: '>=1.37.0'
+tags:
+    - ai
+    - content-understanding
+usage: azd ai cu <command> [options]
+version: 0.0.1

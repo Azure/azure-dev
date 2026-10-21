@@ -1,0 +1,27 @@
+Work with Azure Content Understanding using a native Go azd extension.
+
+This development build provides the extension foundation. Content Understanding operations are not yet available.
+
+Usage:
+  cu [command]
+
+Examples:
+  # Show extension help
+  azd ai cu --help
+
+  # Display the extension version as JSON
+  azd ai cu version --output json
+
+Available Commands:
+  version     Display the extension version
+
+Flags:
+  -C, --cwd string           Sets the current working directory
+      --debug                Enables debug and diagnostics logging
+  -e, --environment string   The name of the environment to use
+  -h, --help                 help for cu
+      --no-prompt            Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string        The output format (default "default")
+  -v, --version              version for cu
+
+Use "cu [command] --help" for more information about a command.

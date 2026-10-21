@@ -346,6 +346,12 @@ func resolveEvalAgentService(
 	options evalContextOptions,
 ) (*azdext.ServiceConfig, error) {
 	svc, _, err := resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
+	// Never fall back to the workspace root when the agent selection is ambiguous.
+	if ambiguous, ok := errors.AsType[*ambiguousAgentServicesError](err); ok {
+		return nil, exterrors.Validation(exterrors.CodeInvalidAgentName,
+			"multiple agent services found: "+strings.Join(ambiguous.names, ", "),
+			"supply --agent <service-name> to select one")
+	}
 	if err != nil && (options.agent != "" || options.requireAgent) {
 		return nil, evalAgentContextError(err)
 	}

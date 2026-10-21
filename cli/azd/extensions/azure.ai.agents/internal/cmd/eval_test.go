@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -629,4 +630,37 @@ func TestEndpointFromProjectID(t *testing.T) {
 		_, err := endpointFromProjectID("")
 		assert.Error(t, err)
 	})
+}
+
+func TestResolveEvalAgentService_RejectsAmbiguousServicesInNoPrompt(t *testing.T) {
+	t.Parallel()
+
+	for _, requireAgent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("requireAgent=%t", requireAgent), func(t *testing.T) {
+			t.Parallel()
+
+			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"alpha": {Name: "alpha", Host: AiAgentHost, RelativePath: "alpha"},
+					"beta":  {Name: "beta", Host: AiAgentHost, RelativePath: "beta"},
+				},
+			}}
+			promptServer := &helpersPromptServer{}
+			azdClient := newHelpersTestAzdClient(t, projectServer, promptServer)
+
+			svc, err := resolveEvalAgentService(t.Context(), azdClient, evalContextOptions{
+				noPrompt:     true,
+				requireAgent: requireAgent,
+			})
+
+			require.Nil(t, svc)
+			require.ErrorContains(t, err, "multiple agent services found: alpha, beta")
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeInvalidAgentName, localErr.Code)
+			require.Contains(t, localErr.Suggestion, "--agent")
+			require.Zero(t, promptServer.promptCalls.Load())
+		})
+	}
 }

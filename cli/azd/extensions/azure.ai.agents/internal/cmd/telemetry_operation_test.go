@@ -19,7 +19,7 @@ import (
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -295,10 +295,10 @@ func TestOperationServiceClassPropertyPrecedence(t *testing.T) {
 }
 
 type operationTelemetryServer struct {
-	v1.UnimplementedTelemetryServiceServer
+	contracts.UnimplementedTelemetryServiceServer
 	azdext.UnimplementedProjectServiceServer
 	mu          sync.Mutex
-	events      []*v1.ReportUsageRequest
+	events      []*contracts.ReportUsageRequest
 	err         error
 	block       bool
 	traceparent string
@@ -319,8 +319,8 @@ func (s *operationTelemetryServer) Get(
 }
 
 func (s *operationTelemetryServer) ReportUsage(
-	ctx context.Context, req *v1.ReportUsageRequest,
-) (*v1.ReportUsageResponse, error) {
+	ctx context.Context, req *contracts.ReportUsageRequest,
+) (*contracts.ReportUsageResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, req)
@@ -332,7 +332,7 @@ func (s *operationTelemetryServer) ReportUsage(
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	return &v1.ReportUsageResponse{Accepted: false}, s.err
+	return &contracts.ReportUsageResponse{Accepted: false}, s.err
 }
 
 func TestFailedInitReportsIntentWithoutChangingFailure(t *testing.T) {
@@ -349,7 +349,7 @@ func TestFailedInitReportsIntentWithoutChangingFailure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			server := grpc.NewServer()
 			capture := &operationTelemetryServer{err: tt.err, block: tt.block}
-			v1.RegisterTelemetryServiceServer(server, capture)
+			contracts.RegisterTelemetryServiceServer(server, capture)
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			require.NoError(t, err)
 			go func() { _ = server.Serve(listener) }()
@@ -423,7 +423,7 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			require.NoError(t, os.WriteFile("azure.yaml", []byte(manifest), 0600))
 			server := grpc.NewServer()
 			capture := &operationTelemetryServer{}
-			v1.RegisterTelemetryServiceServer(server, capture)
+			contracts.RegisterTelemetryServiceServer(server, capture)
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			require.NoError(t, err)
 			go func() { _ = server.Serve(listener) }()
@@ -462,7 +462,7 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T) {
 	server := grpc.NewServer()
 	capture := &operationTelemetryServer{err: status.Error(codes.Unavailable, "private transport detail")}
-	v1.RegisterTelemetryServiceServer(server, capture)
+	contracts.RegisterTelemetryServiceServer(server, capture)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() { _ = server.Serve(listener) }()
@@ -491,7 +491,7 @@ func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T
 func TestInitOperationSuccessPreservesOriginalEventPriority(t *testing.T) {
 	server := grpc.NewServer()
 	capture := &operationTelemetryServer{}
-	v1.RegisterTelemetryServiceServer(server, capture)
+	contracts.RegisterTelemetryServiceServer(server, capture)
 	azdext.RegisterProjectServiceServer(server, capture)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

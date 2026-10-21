@@ -13,24 +13,24 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type telemetryRecordingClient struct {
-	requests []*v1.ReportUsageRequest
+	requests []*v1beta.ReportUsageRequest
 	err      error
 }
 
 func (c *telemetryRecordingClient) ReportUsage(
 	_ context.Context,
-	request *v1.ReportUsageRequest,
+	request *v1beta.ReportUsageRequest,
 	_ ...grpc.CallOption,
-) (*v1.ReportUsageResponse, error) {
+) (*v1beta.ReportUsageResponse, error) {
 	c.requests = append(c.requests, request)
-	return &v1.ReportUsageResponse{Accepted: true}, c.err
+	return &v1beta.ReportUsageResponse{Accepted: true}, c.err
 }
 
 func TestAgentTelemetryContextsClassifiesKindsAndHarnesses(t *testing.T) {

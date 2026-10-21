@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1 "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -19,25 +19,25 @@ import (
 )
 
 type containerModeRPCRecorder struct {
-	v1.UnimplementedTelemetryServiceServer
+	v1beta.UnimplementedTelemetryServiceServer
 	mu       sync.Mutex
-	requests []*v1.ReportUsageRequest
+	requests []*v1beta.ReportUsageRequest
 }
 
 func (r *containerModeRPCRecorder) ReportUsage(
-	_ context.Context, request *v1.ReportUsageRequest,
-) (*v1.ReportUsageResponse, error) {
+	_ context.Context, request *v1beta.ReportUsageRequest,
+) (*v1beta.ReportUsageResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.requests = append(r.requests, proto.Clone(request).(*v1.ReportUsageRequest))
+	r.requests = append(r.requests, proto.Clone(request).(*v1beta.ReportUsageRequest))
 	// Locally built extensions can send usage requests even when recording is gated off.
-	return &v1.ReportUsageResponse{Accepted: false}, nil
+	return &v1beta.ReportUsageResponse{Accepted: false}, nil
 }
 
-func (r *containerModeRPCRecorder) snapshot() []*v1.ReportUsageRequest {
+func (r *containerModeRPCRecorder) snapshot() []*v1beta.ReportUsageRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]*v1.ReportUsageRequest(nil), r.requests...)
+	return append([]*v1beta.ReportUsageRequest(nil), r.requests...)
 }
 
 func TestAgentContainerModeRequestOverGRPC(t *testing.T) {
@@ -56,7 +56,7 @@ func TestAgentContainerModeRequestOverGRPC(t *testing.T) {
 	}}
 	server := grpc.NewServer()
 	recorder := &containerModeRPCRecorder{}
-	v1.RegisterTelemetryServiceServer(server, recorder)
+	v1beta.RegisterTelemetryServiceServer(server, recorder)
 	azdext.RegisterProjectServiceServer(server, projectServer)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

@@ -17,6 +17,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 )
 
 const (
@@ -71,7 +72,7 @@ func (r *agentContextReporter) reportProject(ctx context.Context, operation stri
 
 func (r *agentContextReporter) reportProjectConfig(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	project *azdext.ProjectConfig,
 	operation string,
 ) {
@@ -92,7 +93,7 @@ func (r *agentContextReporter) reportProjectConfig(
 
 func (r *agentContextReporter) reportService(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	project *azdext.ProjectConfig,
 	service *azdext.ServiceConfig,
 	operation string,
@@ -108,7 +109,7 @@ func (r *agentContextReporter) reportService(
 
 func (r *agentContextReporter) report(
 	ctx context.Context,
-	telemetry azdext.TelemetryServiceClient,
+	telemetry v1beta.TelemetryServiceClient,
 	agentCtx agentTelemetryContext,
 ) {
 	if telemetry == nil {
@@ -117,7 +118,7 @@ func (r *agentContextReporter) report(
 
 	var err error
 	if agentCtx.containerMode != "" {
-		_, err = telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+		_, err = telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName: agentContextResolvedEvent,
 			Attributes: map[string]string{
 				agentKindAttribute:          agentCtx.kind,
@@ -127,7 +128,7 @@ func (r *agentContextReporter) report(
 			},
 		})
 	} else {
-		_, err = telemetry.ReportUsage(ctx, &azdext.ReportUsageRequest{
+		_, err = telemetry.ReportUsage(ctx, &v1beta.ReportUsageRequest{
 			EventName: agentContextResolvedEvent,
 			Attributes: map[string]string{
 				agentKindAttribute:      agentCtx.kind,

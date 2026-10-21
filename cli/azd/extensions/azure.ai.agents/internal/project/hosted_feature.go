@@ -11,8 +11,8 @@ import (
 	"os"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 
-	"github.com/azure/azure-dev/cli/azd/extensions/featureflags"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 

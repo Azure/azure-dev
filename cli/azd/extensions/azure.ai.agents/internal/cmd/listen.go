@@ -345,7 +345,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
-	// Hosted Agent package/deploy is opt-in via IsFeatureEnabled.
+	// Hosted Agent package/deploy requires the preview opt-in.
 	if isHostedAgentService(svc, args.Project) {
 		if err := project.RequireHostedAgentFeature(ctx, azdClient); err != nil {
 			return err

@@ -60,7 +60,7 @@ func resolveOptimizeSystemPrompt(
 		return fmt.Errorf("instruction is required for optimization.\n\n" +
 			"Provide it via one of:\n" +
 			"  1. Set optimization_configuration.baseline_agent_configuration.system_prompt " +
-				"in your --config file\n" +
+			"in your --config file\n" +
 			"  2. Save baseline instructions in .agent_configs/baseline/metadata.yaml\n" +
 			"  3. Run without --no-prompt to enter it interactively")
 	}

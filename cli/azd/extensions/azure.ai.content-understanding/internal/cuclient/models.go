@@ -127,6 +127,9 @@ type AnalysisResult struct {
 type AnalyzeResponse struct {
 	Result AnalysisResult
 	Usage  *Usage
+	// JSON retains the complete terminal response envelope for full-result output.
+	// Result.JSON retains only the nested analysis result.
+	JSON json.RawMessage
 }
 
 var analyzerIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,64}$`)

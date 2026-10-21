@@ -28,6 +28,19 @@ type wireDiagnostic struct {
 	Details []wireDiagnostic `json:"details"`
 }
 
+type wireOperation struct {
+	ID     string          `json:"id"`
+	Status string          `json:"status"`
+	Result json.RawMessage `json:"result"`
+	Error  *wireDiagnostic `json:"error"`
+	Usage  *wireUsage      `json:"usage"`
+}
+
+type wireAnalysisInput struct {
+	URL      string `json:"url"`
+	MIMEType string `json:"mimeType,omitempty"`
+}
+
 func diagnostics(values []wireDiagnostic, redact bool) []Diagnostic {
 	if values == nil {
 		return nil

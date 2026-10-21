@@ -27,8 +27,7 @@ const maxErrorBodyBytes = 64 * 1024
 
 var serviceCodePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
 
-// RESTTransport implements analyzer operations over the internal HTTP pipeline.
-// Analysis submission is added separately before this implements the full Client.
+// RESTTransport implements Client over the internal CU HTTP pipeline.
 type RESTTransport struct {
 	endpoint      string
 	apiVersion    string

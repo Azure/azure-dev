@@ -16,3 +16,6 @@ overrides:
   - filename: "internal/cuclient/polling.go"
     words:
       - notstarted
+  - filename: "internal/cuclient/analysis.go"
+    words:
+      - notstarted

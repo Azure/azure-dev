@@ -6,6 +6,7 @@ package cuclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -50,7 +51,7 @@ func (c *RESTTransport) completeAnalyzer(
 	ctx context.Context, initial Analyzer, headers http.Header,
 ) (AnalyzerResponse, error) {
 	if strings.EqualFold(initial.Status, "failed") {
-		return AnalyzerResponse{}, analyzerOperationError("Failed", nil)
+		return AnalyzerResponse{}, operationError("analyzer", "Failed", nil)
 	}
 	location := headers.Get("Operation-Location")
 	if location == "" {
@@ -68,55 +69,76 @@ func (c *RESTTransport) completeAnalyzer(
 	if !found || operationID == "" || strings.Contains(operationID, "/") {
 		return AnalyzerResponse{}, malformedResponse()
 	}
+	operation, _, err := c.pollOperation(ctx, path, query, headers)
+	if err != nil {
+		return AnalyzerResponse{}, err
+	}
+	if !strings.EqualFold(operation.Status, "succeeded") {
+		return AnalyzerResponse{}, operationError("analyzer", operation.Status, operation.Error)
+	}
+	var analyzer Analyzer
+	if len(operation.Result) == 0 || string(operation.Result) == "null" {
+		analyzer, err = c.GetAnalyzer(ctx, initial.ID)
+	} else {
+		analyzer, err = parseAnalyzer(operation.Result, initial.ID)
+	}
+	if err != nil {
+		return AnalyzerResponse{}, err
+	}
+	if strings.EqualFold(analyzer.Status, "failed") {
+		return AnalyzerResponse{}, operationError("analyzer", "Failed", operation.Error)
+	}
+	if !strings.EqualFold(analyzer.Status, "ready") {
+		return AnalyzerResponse{}, malformedResponse()
+	}
+	return AnalyzerResponse{Analyzer: analyzer, Usage: operation.Usage.domain()}, nil
+}
+
+func readOperation(response *http.Response, expectedStatus int) (wireOperation, json.RawMessage, error) {
+	body, err := readResponse(response, expectedStatus)
+	if err != nil {
+		return wireOperation{}, nil, err
+	}
+	var operation wireOperation
+	if err := decodeWire(body, &operation); err != nil {
+		return wireOperation{}, nil, err
+	}
+	switch strings.ToLower(operation.Status) {
+	case "notstarted", "running", "succeeded", "failed", "canceled", "cancelled":
+		return operation, body, nil
+	default:
+		return wireOperation{}, nil, malformedResponse()
+	}
+}
+
+func (c *RESTTransport) pollOperation(
+	ctx context.Context, path string, query url.Values, headers http.Header,
+) (wireOperation, json.RawMessage, error) {
+	expectedID := path[strings.LastIndex(path, "/")+1:]
 	delay := retryAfter(headers.Get("Retry-After"), time.Now())
 	for {
 		if err := waitForPoll(ctx, delay); err != nil {
-			return AnalyzerResponse{}, err
+			return wireOperation{}, nil, err
 		}
 		response, err := c.request(ctx, http.MethodGet, path, query, nil, "")
 		if err != nil {
-			return AnalyzerResponse{}, err
+			return wireOperation{}, nil, err
 		}
-		body, err := readResponse(response, http.StatusOK)
+		operation, body, err := readOperation(response, http.StatusOK)
 		if err != nil {
-			return AnalyzerResponse{}, err
+			return wireOperation{}, nil, err
 		}
-		var operation struct {
-			Status string          `json:"status"`
-			Result json.RawMessage `json:"result"`
-			Error  *wireDiagnostic `json:"error"`
-			Usage  *wireUsage      `json:"usage"`
-		}
-		if err := decodeWire(body, &operation); err != nil {
-			return AnalyzerResponse{}, err
+		if operation.ID != "" && operation.ID != expectedID {
+			return wireOperation{}, nil, malformedResponse()
 		}
 		switch strings.ToLower(operation.Status) {
-		case "succeeded":
-			var analyzer Analyzer
-			if len(operation.Result) == 0 || string(operation.Result) == "null" {
-				analyzer, err = c.GetAnalyzer(ctx, initial.ID)
-			} else {
-				analyzer, err = parseAnalyzer(operation.Result, initial.ID)
-			}
-			if err != nil {
-				return AnalyzerResponse{}, err
-			}
-			if strings.EqualFold(analyzer.Status, "failed") {
-				return AnalyzerResponse{}, analyzerOperationError("Failed", operation.Error)
-			}
-			if !strings.EqualFold(analyzer.Status, "ready") {
-				return AnalyzerResponse{}, malformedResponse()
-			}
-			return AnalyzerResponse{Analyzer: analyzer, Usage: operation.Usage.domain()}, nil
-		case "failed", "canceled", "cancelled":
-			return AnalyzerResponse{}, analyzerOperationError(operation.Status, operation.Error)
 		case "notstarted", "running":
 			delay = retryAfter(response.Header.Get("Retry-After"), time.Now())
 			if delay == 0 {
 				delay = c.pollInterval
 			}
 		default:
-			return AnalyzerResponse{}, malformedResponse()
+			return operation, body, nil
 		}
 	}
 }
@@ -132,15 +154,16 @@ func waitForPoll(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func analyzerOperationError(status string, problem *wireDiagnostic) error {
+func operationError(operation, status string, problem *wireDiagnostic) error {
 	result := &Error{
-		Kind: ErrorService, Code: "analyzer_operation_failed", Message: "The analyzer operation failed.",
-		Suggestion: "Check the analyzer definition and dependencies before retrying.",
+		Kind: ErrorService, Code: operation + "_operation_failed",
+		Message:    fmt.Sprintf("The %s operation failed.", operation),
+		Suggestion: "Check the analyzer configuration, input, and dependencies before retrying.",
 	}
 	if strings.EqualFold(status, "canceled") || strings.EqualFold(status, "cancelled") {
 		result.Kind = ErrorCancelled
-		result.Code = "analyzer_operation_canceled"
-		result.Message = "The analyzer operation was cancelled."
+		result.Code = operation + "_operation_canceled"
+		result.Message = fmt.Sprintf("The %s operation was cancelled.", operation)
 	}
 	if problem != nil {
 		if serviceCodePattern.MatchString(problem.Code) {

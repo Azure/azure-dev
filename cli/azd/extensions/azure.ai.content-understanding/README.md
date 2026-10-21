@@ -2,8 +2,8 @@
 
 Native Go foundation for the Azure Content Understanding first-party extension.
 This development build provides help, version, metadata, and runtime foundations.
-Analyzer REST operations are implemented internally but are not yet exposed as
-public commands. Analysis submission is not implemented yet.
+The complete internal REST client is implemented but is not yet exposed as public
+service commands.
 
 ## Installation
 
@@ -98,15 +98,15 @@ Go SDK adapter will implement the same interface. Accepting arbitrary future
 preview-version strings remains a separate CLI compatibility decision.
 
 The contract is based on the [public CU TypeSpec and versioned OpenAPI specifications](https://github.com/Azure/azure-rest-api-specs/tree/56b13af91ff8d8b5ad706a502e6b4e44e6d57e1f/specification/ai/data-plane/ContentUnderstanding).
-Inline analysis is preview-only; its GA rejection and two-version request/response
-mapping belong to the upcoming transport tests. Domain input validation does not
-claim wire/API-version conformance. No REST adapter or new public CU command is
-enabled by the contract alone.
+Inline analysis is preview-only; the adapter rejects it locally with the GA
+version. Wire tests cover both versions and supported input/mode combinations.
+Domain input validation alone does not claim wire/API-version conformance. Public
+CU command wiring remains a separate step.
 
 ### Authenticated HTTP transport
 
-`internal/cuclient.RESTTransport` supplies the HTTP foundation for the upcoming
-REST adapter. It accepts an injected azd-backed `azcore.TokenCredential` and uses
+`internal/cuclient.RESTTransport` implements the extension-owned `Client`
+interface. It accepts an injected azd-backed `azcore.TokenCredential` and uses
 the `https://cognitiveservices.azure.com/.default` scope without selecting a second
 tenant or identity. API-key authentication is not implemented.
 
@@ -139,7 +139,7 @@ commands.
 
 The internal REST adapter implements list/get/create/delete, copy authorization,
 same-resource and cross-resource copy, and service defaults for both agreed API
-versions. It is not a complete `Client` implementation until analysis is added.
+versions.
 
 - Listing drains every page in service order. Filtering/sorting belongs to
   commands. A failed or malformed page is an error, not a partial list.
@@ -162,3 +162,39 @@ versions. It is not a complete `Client` implementation until analysis is added.
   existence first when a missing analyzer should be reported as an error.
 - Defaults update uses `application/merge-patch+json`. The service returns the
   resulting mapping; an empty mapping is not a request to clear existing entries.
+
+### Analysis submission and completion
+
+- Async URL analysis sends one `inputs` entry to `:analyze`. Binary analysis
+  streams the caller-owned reader to `:analyzeBinary`, without base64 encoding
+  or downloading URL inputs in the extension.
+- Binary content defaults to `application/octet-stream`. An explicit MIME type is
+  validated and sent as the binary content-type header or the URL input's
+  `mimeType`, respectively.
+- Preview inline analysis uses `:analyzeInline` or `:analyzeBinaryInline` and
+  requires HTTP 200 with a terminal result. GA inline requests fail before input
+  I/O or authentication; there is no automatic fallback to async.
+- Async submission requires HTTP 202 and a validated operation location on the
+  configured HTTPS origin under `/contentunderstanding/analyzerResults/`. Polls
+  share the analyzer polling implementation, safe GET retries, `Retry-After`, and
+  cancellation/deadline behavior. The POST is never automatically replayed.
+- `Succeeded` with warnings is a completed partial result, not a failure.
+  Warnings and preview infos retain nested diagnostic data. Unknown statuses,
+  missing results, malformed content, and mismatched operation/result identities
+  fail explicitly.
+- The adapter does not enable input truncation or override analyzer settings.
+  Range, truncation, and other optional REST parameters outside the current
+  request contract are not added implicitly.
+- `AnalyzeResponse.JSON` retains the exact terminal response envelope, including
+  status, result, usage, and service-only fields, matching the Python CLI's
+  full-result output. `Result.JSON` retains the nested analysis result; each
+  `Content.JSON` and dynamic field also retains its original JSON. Typed
+  projections do not round large numbers or discard multimodal details.
+- Optional usage comes from the terminal envelope. Missing usage/counters remain
+  distinct from explicit zero. Input readers remain caller-owned on success,
+  cancellation, and failure; the Azure pipeline may rewind and consume them.
+
+The analysis tests include a local HTTPS binary round trip as well as fake
+transports for the complete version/input/mode matrix, partial results, failures,
+polling, no-replay, stream ownership, and SDK log redaction. No live Azure calls
+are made.

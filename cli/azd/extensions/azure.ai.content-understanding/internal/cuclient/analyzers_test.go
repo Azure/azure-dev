@@ -34,6 +34,7 @@ type wireStep struct {
 	query       url.Values
 	contentType string
 	body        string
+	binary      []byte
 	status      int
 	response    string
 	headers     http.Header
@@ -61,11 +62,15 @@ func newWireClient(t *testing.T, version string, steps ...wireStep) *RESTTranspo
 			assert.NotEmpty(t, request.Header.Get("Authorization"))
 			assert.Empty(t, request.Header.Get("If-Match"), "CU does not advertise conditional requests")
 			assert.Empty(t, request.Header.Get("If-None-Match"))
-			if step.body != "" {
+			if step.body != "" || step.binary != nil {
 				require.NotNil(t, request.Body)
 				body, err := io.ReadAll(request.Body)
 				require.NoError(t, err)
-				assert.JSONEq(t, step.body, string(body))
+				if step.binary != nil {
+					assert.Equal(t, step.binary, body)
+				} else {
+					assert.JSONEq(t, step.body, string(body))
+				}
 			} else {
 				assert.True(t, request.Body == nil || request.Body == http.NoBody)
 			}

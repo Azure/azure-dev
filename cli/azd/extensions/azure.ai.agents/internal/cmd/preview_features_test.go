@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -157,6 +159,34 @@ func TestIndependentPreviewGates(t *testing.T) {
 		t.Setenv(feature.EnvVar, "true")
 		require.NoError(t, featureflags.Require(t.Context(), client, feature))
 		t.Setenv(feature.EnvVar, "")
+	}
+}
+
+func TestPreviewGuidanceDoesNotExposeServiceOptIn(t *testing.T) {
+	clearPreviewProcess(t)
+	for _, feature := range []featureflags.Feature{
+		featureflags.ManagedHarness, featureflags.Voice, featureflags.LongRunning,
+	} {
+		t.Run(feature.ID, func(t *testing.T) {
+			client, _ := startPreviewCommandServer(t, nil, nil, nil)
+			err := featureflags.Require(t.Context(), client, feature)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			guidance := localErr.Message + " " + localErr.Suggestion
+			for _, hidden := range []string{"azure.yaml", "services[].env", "service env"} {
+				require.NotContains(t, strings.ToLower(guidance), hidden)
+			}
+			require.Contains(t, localErr.Suggestion, "azd config set alpha."+feature.ID+" on")
+			require.Contains(t, localErr.Suggestion, "azd env set "+feature.EnvVar+" true")
+			require.Contains(t, localErr.Suggestion, feature.EnvVar+"=true in the process environment")
+
+			client, _ = startPreviewCommandServer(t, nil, &azdext.ProjectConfig{
+				Services: map[string]*azdext.ServiceConfig{
+					"web": {Host: "appservice", Environment: map[string]string{feature.EnvVar: "true"}},
+				},
+			}, nil)
+			require.NoError(t, featureflags.Require(t.Context(), client, feature))
+		})
 	}
 }
 

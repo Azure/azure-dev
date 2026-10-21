@@ -78,8 +78,7 @@ func Require(ctx context.Context, client *azdext.AzdClient, feature Feature, ser
 		fmt.Sprintf("preview feature %q is disabled", feature.ID),
 		fmt.Sprintf(
 			"enable with 'azd config set alpha.%s on' or 'azd env set %s true' "+
-				"in the selected environment; alternatively set %s=true in the process "+
-				"or azure.yaml services[].env",
+				"in the selected environment; alternatively set %s=true in the process environment",
 			feature.ID, feature.EnvVar, feature.EnvVar,
 		),
 	)

@@ -74,7 +74,7 @@ enabled, err := featureflags.IsEnabled(
 
 Command callers bind the parsed environment into context with `WithEnvironment`. `Require` uses that value unchanged, including an explicit empty value. Lifecycle callbacks without that command context use the host's `AZD_ENVIRONMENT` selection.
 
-`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. Entry points call this shared definition check or require a known feature directly. The selected environment is the only flag-related context value; no business definitions or service maps are stored in context.
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. Entry points call this shared definition check or require a known feature directly. The selected environment is the only flag-related context value.
 
 For example, either of these enables voice:
 
@@ -112,20 +112,17 @@ below. Existing host project/environment loaders may still have their own
 environment-selection or state-loading behavior; this is not a host-wide
 no-side-effects guarantee.
 
-## Four independent enablement sources
+## Documented enablement methods
 
-A feature is enabled if **any** of these sources opts in:
+The documented ways to opt into a feature are listed below. These opt-ins are additive: any enabling value is sufficient.
 
 | Source | Read | Enabling value |
 | --- | --- | --- |
 | User config | `UserConfig.Get("alpha")` (`azd config set`) | Case-insensitive string `on` only at `alpha.<ID>` |
 | Process environment | Only the declared `EnvVar` | A true value accepted by `strconv.ParseBool` |
 | Selected azd environment | Exact `EnvVar` in raw `.env` values from `Environment.GetValues` (`azd env set`) | A true value accepted by `strconv.ParseBool` |
-| Project service environment | Exact `EnvVar` in each `services[].env` map from `Project.Get` | A true value accepted by `strconv.ParseBool` |
 
-All service hosts count, including non-Foundry services. Service maps stay separate: a true value in any service wins regardless of other services' values or iteration order. These are project-wide opt-ins, not per-service permissions.
-
-Before adopting a staged manifest, callers pass its prospective service environment maps explicitly to the shared project check. Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second flag-specific interpretation of service fields. Definition-file `env` is included before `agent add` writes the service. The thin `Require` helper accepts only the matching feature's prospective string values, not a project or service graph. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
+Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second interpretation of service fields.
 
 The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
 
@@ -138,7 +135,7 @@ Each call captures the declared process value, reads user config, loads the proj
 | Situation | Result |
 | --- | --- |
 | No project, no explicit environment | Skip project and dotenv sources; process and config still apply |
-| Project without a default environment, no explicit selection | Skip dotenv; process, config, and every service still apply |
+| Project without a default environment, no explicit selection | Skip dotenv; process and config still apply |
 | Explicit selection with no project or a missing environment | Return the error; do not fall back to the default |
 | Config/project/dotenv read, decoding, permission, or transport failure | Return an error even when another source enables the feature |
 | Missing config/project/environment response, or malformed config JSON | Return an error rather than treating a failed load as disabled |
@@ -165,7 +162,7 @@ Disabled capabilities return the structured `feature_not_enabled` compatibility 
 
 ## Validation
 
-Tests cover all 16 combinations of the four sources, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, every service host and conflicting service order, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
+Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
 
 Command/provider regressions additionally cover independent gates, obsolete hosted opt-in isolation, selected-environment forwarding, voice discovery, explicit init/add inputs, staged manifests, local invocation bypasses, unchanged inputs on disabled-feature rejection, ordinary flows, and retained read access.
 

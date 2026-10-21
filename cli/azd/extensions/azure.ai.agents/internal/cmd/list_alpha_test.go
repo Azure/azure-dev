@@ -83,6 +83,7 @@ func TestListAlphaCommandSources(t *testing.T) {
 
 				require.NoError(t, err)
 				require.Equal(t, fmt.Sprintf(listAlphaOutput, statuses[0], statuses[1], statuses[2]), out)
+				t.Logf("Captured list-alpha output:\n%s", out)
 				env.mu.Lock()
 				require.Equal(t, "selected-env", env.selected)
 				env.mu.Unlock()

@@ -985,9 +985,9 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 		},
 	}
 
-	candidates := []string{toolboxName + "-mcp"}
-	if toolboxVersion != "1" {
-		candidates = append(candidates, toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL))
+	candidates := []string{
+		toolboxName + "-mcp",
+		toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL),
 	}
 	for i, connectionName := range candidates {
 		_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
@@ -999,11 +999,9 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 			if isMatchingToolboxConnection(existing, mcpURL, toolboxName, toolboxVersion) {
 				return connectionName, nil
 			}
-			// If the base <toolbox>-mcp connection is bound to another version of
-			// this same toolbox, preserve it for existing agents/versions and fall
-			// back to the version-scoped connection name.
-			if i == 0 && len(candidates) > 1 && !isExplicit &&
-				isOtherVersionToolboxConnection(existing, mcpURL, toolboxName) {
+			// The legacy name is reuse-only; leave incompatible connections
+			// untouched and use the endpoint-scoped name instead.
+			if i == 0 {
 				continue
 			}
 			return "", exterrors.Validation(
@@ -1018,11 +1016,9 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 				),
 			)
 		}
-		// Only version 1 creates the unversioned <toolbox>-mcp connection. Newer
-		// versions check <toolbox>-mcp for compatible reuse above, then create
-		// their immutable version-scoped connection so concurrent first deploys
-		// of different versions cannot overwrite each other.
-		if i == 0 && len(candidates) > 1 {
+		// Never create the legacy name: distinct projects or versions must not
+		// race to create a shared connection with different targets.
+		if i == 0 {
 			continue
 		}
 		if isExplicit {
@@ -1077,28 +1073,6 @@ func isMatchingToolboxConnection(
 		return false
 	}
 	return true
-}
-
-func isOtherVersionToolboxConnection(
-	existing *toolboxConnectionProperties,
-	mcpURL, toolboxName string,
-) bool {
-	if !hasToolboxMCPConnectionAuth(existing) {
-		return false
-	}
-	if strings.TrimSpace(existing.Target) == strings.TrimSpace(mcpURL) {
-		return false
-	}
-	metaType := strings.TrimSpace(existing.Metadata["type"])
-	metaName := strings.TrimSpace(existing.Metadata["toolboxName"])
-	if metaType == toolboxMCPMetadataType && metaName == toolboxName {
-		return true
-	}
-	if metaType == "" && metaName == "" {
-		parsedName, _, err := parseToolboxMCPEndpoint(existing.Target)
-		return err == nil && parsedName == toolboxName
-	}
-	return false
 }
 
 func hasToolboxMCPConnectionAuth(existing *toolboxConnectionProperties) bool {

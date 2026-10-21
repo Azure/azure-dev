@@ -190,7 +190,7 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = mapHostError(err)
+			err = mapHostErrorForMethod(info.FullMethod, err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
 			} else if legacybridge.IsLegacyMethod(info.FullMethod) {

@@ -64,6 +64,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 - `cmd.down` — resource teardown
 - `cmd.auth.login` — authentication
 - `cmd.env.new` / `cmd.env.select` — environment management
+- `cmd.env.unset` — environment-variable removal, outcome, and aggregate removed/missing-key counts
 - `cmd.pipeline.config` — CI/CD pipeline setup
 - `cmd.monitor` — monitoring
 - `cmd.restore` — dependency restoration
@@ -266,7 +267,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | Pattern | Category | Example |
 |---------|----------|---------|
 | `Success` | No error | — |
-| `user.canceled` | User cancelled the operation | — |
+| `user.canceled` | User cancelled the operation, including an extension command interrupted by the host or reporting a `user` / `canceled` (`cancelled`) local error | — |
 | `auth.<detail>` | Authentication error | `auth.login_required`, `auth.not_logged_in`, `auth.identity_failed` |
 | `service.arm.<statusCode>` | ARM service error | `service.arm.500`, `service.arm.409` |
 | `service.aad.<detail>` | Entra ID (AAD) error | `service.aad.failed` |
@@ -277,10 +278,11 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
+| `ext.run.failed` | Unclassified extension process failure that was not caused by cancellation or a deadline | — |
+| `internal.timeout` | Operation deadline exceeded, including service operations and deadlines transported through the extension gRPC boundary | — |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
 | `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
 | `internal.extension_invalid_response` | Extension service target omitted a required deploy result or target resource | — |
-| `internal.timeout` | Operation timed out, including service publish or deploy | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
@@ -444,6 +446,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `env.count` | measurement | Number of environments that exist for the current project (`env list`) |
+| `env.unset.outcome` | string | `env unset` action result: `success`, `no_change`, `user_declined`, or `failed` |
+| `env.unset.removed_count` | measurement (number) | Distinct keys removed by a fully successful `env unset` save; zero for declined, no-change, or failed commands |
+| `env.unset.missing_count` | measurement (number) | Distinct requested keys observed missing, including keys that disappear during confirmation |
+
+The `env.unset.*` fields contain only a fixed outcome label and counts, never key names or stored values.
+They are attached directly to the `cmd.env.unset` span, not the process-global usage bag, so they do not leak onto other in-process commands.
+They are emitted when the action runs, including argument-validation failures; help and flag-parser failures do not run the action.
+Counts remain zero if validation or environment loading fails before keys can be inspected.
+`removed_count` describes a fully successful save, not the persisted state after a partial save failure or recovery attempt.
 </details>
 
 <details>
@@ -714,6 +725,15 @@ The `agency` modifier is appended when `AGENCY_SESSION_ID` is non-empty, includi
 
 Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
 
+### Environment-Key Removal Outcomes
+
+`cmd.env.unset` distinguishes a fully successful removal save (`success`), no remaining matching keys (`no_change`),
+explicitly declined removal confirmation (`user_declined`), and errors (`failed`).
+The command span's `Success` is true for `success`, `no_change`, and `user_declined`; the outcome distinguishes these non-error paths.
+Successful recovery after a save failure still reports `failed`, because recovery does not make the original command succeed.
+`env.unset.missing_count` counts each requested key once, even if repeated on the command line.
+The existing `cmd.args.count` counts positional arguments, including duplicates, and `cmd.flags` records flag names, not values.
+
 ### `infra.provider` Is Multi-Valued and Type-Polymorphic (by design)
 
 `infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
@@ -861,6 +881,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
+| **Environment-Key Removal** | `cmd.env.unset` | `env.unset.outcome`, `env.unset.removed_count`, `env.unset.missing_count`, `cmd.flags` | Removal adoption, no-change and declined operations, completed key removals, and missing-key counts |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks and service-target operations), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command, lifecycle-hook, and service-target errors, usage events, and remaining legacy gRPC bridge use |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |

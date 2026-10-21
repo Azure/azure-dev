@@ -23,8 +23,8 @@ Description: Use managed voice agents and hosted voice bridges.
 Status: Off
 ```
 
-Records are sorted by feature ID. Each status is `On` if any of the four opt-in
-sources enables that feature; otherwise it is `Off`. The command ignores
+Records are sorted by feature ID. Each status uses the same opt-in checks as
+agent operations and is either `On` or `Off`. The command ignores
 `alpha.all` and does not list core-only features. Without a project
 or default environment, available sources still apply. Explicit invalid
 environments and source-loading errors fail before any records are printed.

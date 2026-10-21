@@ -7,13 +7,10 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"maps"
 	"os"
 	"slices"
-	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -49,12 +46,6 @@ func List() []Feature {
 }
 
 type environmentKey struct{}
-type servicesKey struct{}
-
-// WithServices includes service env before manifest adoption.
-func WithServices(ctx context.Context, services map[string]*azdext.ServiceConfig) context.Context {
-	return context.WithValue(ctx, servicesKey{}, services)
-}
 
 // WithEnvironment preserves the SDK environment for nested calls.
 func WithEnvironment(ctx context.Context, name string) context.Context {
@@ -70,15 +61,14 @@ func Environment(ctx context.Context) string {
 }
 
 // Require rejects a disabled preview before its operation starts.
-func Require(ctx context.Context, client *azdext.AzdClient, feature Feature) error {
+// Service values include opt-ins from definitions not yet persisted.
+func Require(ctx context.Context, client *azdext.AzdClient, feature Feature, serviceValues ...string) error {
 	enabled, err := IsEnabled(ctx, client, feature, Environment(ctx))
 	if err != nil {
 		return err
 	}
-	if services, ok := ctx.Value(servicesKey{}).(map[string]*azdext.ServiceConfig); ok {
-		for _, service := range services {
-			enabled = envEnabled(service.GetEnvironment()[feature.EnvVar]) || enabled
-		}
+	for _, value := range serviceValues {
+		enabled = envEnabled(value) || enabled
 	}
 	if enabled {
 		return nil
@@ -93,50 +83,4 @@ func Require(ctx context.Context, client *azdext.AzdClient, feature Feature) err
 			feature.ID, feature.EnvVar, feature.EnvVar,
 		),
 	)
-}
-
-// RequiredForDefinition classifies a resolved agent definition.
-// It accepts authoring and data-plane shapes without mutating either.
-func RequiredForDefinition(definition map[string]any) []Feature {
-	kind, _ := definition["kind"].(string)
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "prompt":
-		harness, _ := definition["harness"].(map[string]any)
-		harnessType, _ := harness["type"].(string)
-		if agent_api.IsCopilotHarness(harnessType) {
-			return []Feature{ManagedHarness}
-		}
-	case "voice", "prompt-voice":
-		return []Feature{Voice}
-	case "hosted":
-		protocols, _ := definition["protocols"].([]any)
-		for _, entry := range protocols {
-			protocol, _ := entry.(map[string]any)
-			if protocol["protocol"] == "invocations_ws" {
-				return []Feature{Voice}
-			}
-		}
-	}
-	return nil
-}
-
-// RequireDefinition enforces only the previews a definition uses.
-func RequireDefinition(ctx context.Context, client *azdext.AzdClient, definition map[string]any) error {
-	if env, ok := definition["env"].(map[string]any); ok {
-		values := make(map[string]string, len(env))
-		for key, value := range env {
-			values[key] = fmt.Sprint(value)
-		}
-		services, _ := ctx.Value(servicesKey{}).(map[string]*azdext.ServiceConfig)
-		copyServices := make(map[string]*azdext.ServiceConfig, len(services)+1)
-		maps.Copy(copyServices, services)
-		copyServices[""] = &azdext.ServiceConfig{Environment: values}
-		ctx = WithServices(ctx, copyServices)
-	}
-	for _, feature := range RequiredForDefinition(definition) {
-		if err := Require(ctx, client, feature); err != nil {
-			return err
-		}
-	}
-	return nil
 }

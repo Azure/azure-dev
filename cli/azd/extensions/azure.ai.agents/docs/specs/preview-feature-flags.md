@@ -23,9 +23,9 @@ Managed harness means `kind: prompt` with harness type `microsoft_copilot_previe
 azure.ai.agents/
 ├── internal/
 │   ├── cmd/                       # Command discovery and runtime callers
-│   ├── project/                   # Project/service integration callers
+│   ├── project/                   # Definition classification and callers
 │   └── featureflags/
-│       ├── agents.go              # Catalog, classification, enforcement
+│       ├── agents.go              # Catalog and thin Require check
 │       ├── featureflags.go        # Validation, source reads, evaluation
 │       └── featureflags_test.go   # Source combinations and regressions
 └── docs/specs/
@@ -73,6 +73,8 @@ enabled, err := featureflags.IsEnabled(
 `IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host; the helper does not infer selection from ambient `AZD_ENVIRONMENT`.
 
 Command callers bind the parsed environment into context with `WithEnvironment`. `Require` uses that value unchanged, including an explicit empty value. Lifecycle callbacks without that command context use the host's `AZD_ENVIRONMENT` selection.
+
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. Entry points call this shared definition check or require a known feature directly. The selected environment is the only flag-related context value; no business definitions or service maps are stored in context.
 
 For example, either of these enables voice:
 
@@ -123,7 +125,7 @@ A feature is enabled if **any** of these sources opts in:
 
 All service hosts count, including non-Foundry services. Service maps stay separate: a true value in any service wins regardless of other services' values or iteration order. These are project-wide opt-ins, not per-service permissions.
 
-Before adopting a staged manifest, `WithServices` includes its prospective service environment maps in the same service source. Definition-file `env` is included before `agent add` writes the service. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
+Before adopting a staged manifest, callers pass its prospective service environment maps explicitly to the shared project check. Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second flag-specific interpretation of service fields. Definition-file `env` is included before `agent add` writes the service. The thin `Require` helper accepts only the matching feature's prospective string values, not a project or service graph. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
 
 The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
 
@@ -168,8 +170,7 @@ Tests cover all 16 combinations of the four sources, all supported boolean spell
 Command/provider regressions additionally cover independent gates, obsolete hosted opt-in isolation, selected-environment forwarding, voice discovery, explicit init/add inputs, staged manifests, local invocation bypasses, unchanged inputs on disabled-feature rejection, ordinary flows, and retained read access.
 
 Listing regressions cover the complete sorted catalog, independent statuses from
-each source despite `alpha.all=on`, ignored global values, service-host
-independence, the exact record format,
+each source despite `alpha.all=on`, ignored global values, the exact record format,
 selected/default/explicit-empty environment forwarding, optional scopes, and
 source or writer failures without partial source-success output. Help and
 metadata advertise the command and its contextual enable examples.

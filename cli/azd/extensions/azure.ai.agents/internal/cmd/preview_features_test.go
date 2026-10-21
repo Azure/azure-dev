@@ -15,10 +15,13 @@ import (
 	"testing"
 
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -40,6 +43,7 @@ type previewTestEnvironment struct {
 	mu       sync.Mutex
 	selected string
 	values   []*azdext.KeyValue
+	err      error
 }
 
 func (s *previewTestEnvironment) GetValues(
@@ -48,7 +52,7 @@ func (s *previewTestEnvironment) GetValues(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.selected = request.GetName()
-	return &azdext.KeyValueListResponse{KeyValues: s.values}, nil
+	return &azdext.KeyValueListResponse{KeyValues: s.values}, s.err
 }
 
 func startPreviewCommandServer(
@@ -216,9 +220,26 @@ func TestPreviewStagedManifestAndServiceOptIn(t *testing.T) {
 	require.NoError(t, requireDefinitionPreviewFeatures(t.Context(), map[string]any{
 		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
 	}))
+	require.ErrorContains(t, requireDefinitionPreviewFeatures(t.Context(), map[string]any{
+		"kind": "prompt-voice",
+	}), "agents.voice", "prospective opt-ins must not leak into later checks")
 	got, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	require.NoError(t, err)
 	require.Equal(t, content, got)
+}
+
+func TestPreviewProspectiveOptInPreservesReadErrors(t *testing.T) {
+	clearPreviewProcess(t)
+	client, env := startPreviewCommandServer(t, nil, nil, nil)
+	env.mu.Lock()
+	env.err = status.Error(codes.PermissionDenied, "cannot read selected environment")
+	env.mu.Unlock()
+	ctx := featureflags.WithEnvironment(t.Context(), "selected-env")
+	definition := map[string]any{
+		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
+	}
+	require.ErrorContains(t, project.RequireDefinitionFeatures(ctx, client, definition),
+		"cannot read selected environment")
 }
 
 func TestPreviewInvokeLocalBypassesAndReadAccess(t *testing.T) {

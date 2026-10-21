@@ -23,10 +23,10 @@ func newListAlphaCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 sorted by name. Each entry includes its name, description, and On or Off status,
 matching the default format of 'azd config list-alpha'.
 
-Status uses the same opt-in checks as agent operations: per-feature user config,
-the process environment, the selected azd environment (-e), and every azure.yaml
-service's env mapping. Any enabling source turns a feature on; false does not
-override another source's opt-in.
+Status uses the same opt-in checks as agent operations. Enable individual
+features through user config, the process environment, or the selected azd
+environment (-e). An enabling value turns a feature on; false does not override
+another opt-in.
 Only alpha.<ID> config keys apply; alpha.all does not enable agent previews.
 
 Without a project or default environment, the available sources still apply.

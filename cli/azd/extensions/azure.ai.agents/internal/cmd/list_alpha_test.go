@@ -344,6 +344,8 @@ func TestListAlphaCommandHelpAndMetadata(t *testing.T) {
 	} {
 		require.Contains(t, out.String(), text)
 	}
+	require.NotContains(t, out.String(), "azure.yaml")
+	require.NotContains(t, out.String(), "services[].env")
 
 	metadata := azdext.GenerateExtensionMetadata("1.0", "azure.ai.agents", root)
 	for _, entry := range metadata.Commands {

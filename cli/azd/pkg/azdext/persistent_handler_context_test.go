@@ -48,9 +48,14 @@ func TestOnlyEventSubscriptionsPreserveHandlerContext(t *testing.T) {
 				InitializeRequest: &ServiceTargetInitializeRequest{},
 			},
 		}))
+		require.False(t, preservesHandlerContext(t.Context(), envelope, &ServiceTargetMessage{
+			MessageType: &ServiceTargetMessage_PreviewRequest{
+				PreviewRequest: &ServiceTargetPreviewRequest{},
+			},
+		}))
 	})
 
-	t.Run("service target preview", func(t *testing.T) {
+	t.Run("beta service target preview", func(t *testing.T) {
 		envelope := NewServiceTargetPreviewEnvelope()
 		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
 			MessageType: &v1beta.ServiceTargetMessage_RegisterServiceTargetRequest{
@@ -59,6 +64,7 @@ func TestOnlyEventSubscriptionsPreserveHandlerContext(t *testing.T) {
 		}))
 		require.False(t, preservesHandlerContext(t.Context(), envelope, &v1beta.ServiceTargetMessage{
 			MessageType: &v1beta.ServiceTargetMessage_PreviewRequest{
+				//nolint:staticcheck // Exercise the retained beta preview envelope.
 				PreviewRequest: &v1beta.ServiceTargetPreviewRequest{},
 			},
 		}))

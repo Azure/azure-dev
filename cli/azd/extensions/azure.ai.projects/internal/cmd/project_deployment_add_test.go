@@ -386,6 +386,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 		{name: "rollback failed overlay write", initial: []synthesis.Deployment{other}, failKey: projectDeploymentsEnvKey},
 		{name: "rollback later failure", initial: []synthesis.Deployment{other}, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "rollback seed", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		{name: "rollback binding", failKey: synthesis.DeploymentBindingsEnvKey},
 		{name: "reject malformed before mutation", malformed: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -413,6 +414,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 			if test.malformed {
 				envServer.values[projectDeploymentsEnvKey] = "{"
 			}
+			envServer.values[synthesis.DeploymentBindingsEnvKey] = `{"chat":"reused","other":"other"}`
 			beforeEnv := maps.Clone(envServer.values)
 			envServer.failKey = test.failKey
 			action := &ProjectDeploymentAddAction{
@@ -436,6 +438,9 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 			deployments, present, err := provisioning.DecodeProjectDeployments(envServer.values[projectDeploymentsEnvKey])
 			require.NoError(t, err)
 			require.True(t, present)
+			bindings, err := synthesis.DecodeDeploymentBindings(envServer.values[synthesis.DeploymentBindingsEnvKey])
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{"chat": "chat", "other": "other"}, bindings)
 			if test.initial != nil && len(test.initial) == 0 {
 				assert.Equal(t, []synthesis.Deployment{selected}, deployments)
 			} else {

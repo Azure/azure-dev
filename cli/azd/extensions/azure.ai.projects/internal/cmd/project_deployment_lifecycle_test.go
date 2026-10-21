@@ -62,6 +62,7 @@ func TestAdoptedDeploymentChoicesPersistEffectiveList(t *testing.T) {
 		{name: "YAML fallback default write rollback", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "deployment write rollback", override: true, failKey: projectDeploymentsEnvKey},
 		{name: "default write rollback", override: true, failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
+		{name: "bindings write rollback", override: true, failKey: synthesis.DeploymentBindingsEnvKey},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			client, project, env, _, _ := newSelfInitializingDeploymentClient(

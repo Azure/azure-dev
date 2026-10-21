@@ -300,10 +300,46 @@ func TestResolvePromptAgentModelInfrastructureErrors(t *testing.T) {
 		} else {
 			require.NoError(t, os.WriteFile(path, []byte("infra: ["), 0600))
 		}
+
 		agent, services := promptModelServices(t, "chat")
 		_, err := ResolvePromptAgentModel("chat", agent, services, root, map[string]string{
 			"AI_PROJECT_DEPLOYMENTS": "[]",
 		})
 		require.ErrorContains(t, err, "infrastructure configuration")
+	}
+}
+
+func TestResolvePromptAgentModelExplicitBindings(t *testing.T) {
+	for _, onDisk := range []bool{false, true} {
+		t.Run(map[bool]string{false: "embedded", true: "ejected"}[onDisk], func(t *testing.T) {
+			root := t.TempDir()
+			if onDisk {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+					"infra:\n  provider: terraform\n",
+				), 0600))
+			}
+			agent, services := promptModelServices(t, "${CHAT}", "embeddings", "skipped")
+			env := map[string]string{
+				"CHAT": "chat", "AI_PROJECT_DEPLOYMENTS": "[]",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{\"chat\":\"selected-chat\",` +
+					`\"embeddings\":\"selected-embeddings\",\"skipped\":\"\",\"undeclared\":\"wrong\"}`,
+			}
+			for _, test := range []struct{ model, want string }{
+				{"${CHAT}", "selected-chat"},
+				{"embeddings", "selected-embeddings"},
+				{"undeclared", "undeclared"},
+				{"${AZURE_AI_MODEL_DEPLOYMENT_NAME}", "unrelated-default"},
+			} {
+				got, err := ResolvePromptAgentModel(test.model, agent, services, root, env)
+				require.NoError(t, err)
+				require.Equal(t, test.want, got)
+			}
+			_, err := ResolvePromptAgentModel("skipped", agent, services, root, env)
+			require.ErrorContains(t, err, "was skipped")
+			env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = "{"
+			_, err = ResolvePromptAgentModel("chat", agent, services, root, env)
+			require.ErrorContains(t, err, "AI_PROJECT_DEPLOYMENT_BINDINGS")
+		})
 	}
 }

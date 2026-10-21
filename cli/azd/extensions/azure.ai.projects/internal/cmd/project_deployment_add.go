@@ -227,6 +227,10 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	bindings, err := synthesis.DecodeDeploymentBindings(values[synthesis.DeploymentBindingsEnvKey])
+	if err != nil {
+		return err
+	}
 	if requiresExistingProjectID(values, service) {
 		return exterrors.Validation(
 			"project_deployment_requires_id",
@@ -371,6 +375,18 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		return rollbackProjectDeploymentAdd(
 			fmt.Errorf("set %s: %w", projectDeploymentsEnvKey, err), restoreEnvironment, restoreDeployment,
 		)
+	}
+	if _, bound := bindings[selected.Deployment.Name]; bound {
+		bindings[selected.Deployment.Name] = selected.Deployment.Name
+		encoded, err := synthesis.EncodeDeploymentBindings(bindings)
+		if err != nil {
+			return rollbackProjectDeploymentAdd(err, restoreEnvironment, restoreDeployment)
+		}
+		if err := setEnvironmentValue(synthesis.DeploymentBindingsEnvKey, encoded); err != nil {
+			return rollbackProjectDeploymentAdd(
+				fmt.Errorf("set deployment binding: %w", err), restoreEnvironment, restoreDeployment,
+			)
+		}
 	}
 	if selected.Location != "" {
 		if err := setEnvironmentValue(

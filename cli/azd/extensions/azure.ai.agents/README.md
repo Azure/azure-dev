@@ -415,15 +415,21 @@ use the local service key from `azure.yaml`, which can differ from the deployed
 agent name shown in the endpoint.
 
 For adopted prompt agents, deploy and invoke resolve the template model against
-the active environment's deployment choices. A skipped model without a runtime
-default, an ambiguous replacement, or malformed `AI_PROJECT_DEPLOYMENTS` returns an error rather than
-silently using the template model. Model-resolution failures do not block
+the active environment's deployment choices. `AI_PROJECT_DEPLOYMENT_BINDINGS` is
+an environment-local JSON object mapping each template deployment name to its
+selected deployment name. An empty target records an explicit skip. These
+bindings preserve independent choices for multiple declarations and take
+precedence over the project-wide runtime default. A skipped model, an ambiguous
+legacy replacement, or malformed deployment configuration returns an error
+rather than silently using another model. Model-resolution failures do not block
 `azd ai agent show` or `azd ai agent delete`.
 
 For on-disk Bicep or Terraform infrastructure, deployment parameters are
-authoritative, not `AI_PROJECT_DEPLOYMENTS`. Deploy and invoke expand the
-agent's authored model without inferring replacements from that environment
-list. Set the agent's model explicitly or use
+authoritative, not `AI_PROJECT_DEPLOYMENTS`. Ejection seeds deployment parameters
+from the adoption choices, and explicit per-declaration bindings remain effective
+after ejection. Without such a binding, deploy and invoke expand the agent's
+authored model without inferring replacements from the managed deployment list.
+Set the agent's model explicitly or use
 `${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
 
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension

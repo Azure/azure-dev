@@ -373,12 +373,24 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
+| `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.
 Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
 but available with quota in an unsupported recovery region. The scenario does not create
 these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
+
+The two adoption-model scenarios require an externally prepared
+`~/working/azd-agents-adoption-seed-{run_id}.json` containing `project_id` (the
+full resource ID of a readable Foundry project in the configured subscription)
+and `existing_deployment` (a live deployment on its account using a model other
+than the fixture's gpt-4o). For the catalog case, the profile's `{model}` must
+differ from gpt-4o and have deployment quota in that project's location. The
+scenarios read this seed and Azure metadata but never create or modify cloud
+resources. They are opt-in `manual-seed` scenarios; missing fixtures fail setup.
+The external seed owner retains cleanup responsibility.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.

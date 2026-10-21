@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -52,6 +54,10 @@ func replaceAdoptedTemplateDeployment(
 	if err != nil {
 		return err
 	}
+	replaced := ""
+	if len(declared) > 0 {
+		replaced = declared[0].Name
+	}
 	choose := func(existing string, names []string) (string, error) {
 		choices := make([]*azdext.SelectChoice, 0, len(names))
 		for _, name := range names {
@@ -66,7 +72,8 @@ func replaceAdoptedTemplateDeployment(
 		if err != nil {
 			return "", err
 		}
-		return names[selected.GetValue()], nil
+		replaced = names[selected.GetValue()]
+		return replaced, nil
 	}
 	value, write, err := planAdoptedDeploymentReplacement(
 		declared, values[projectDeploymentsEnvKey], existing, noPrompt, choose,
@@ -79,6 +86,16 @@ func replaceAdoptedTemplateDeployment(
 	}
 	if write {
 		updates = append(updates, struct{ key, value string }{projectDeploymentsEnvKey, value})
+		bindings, err := synthesis.DecodeDeploymentBindings(values[synthesis.DeploymentBindingsEnvKey])
+		if err != nil {
+			return err
+		}
+		bindings[replaced] = existing
+		encoded, err := synthesis.EncodeDeploymentBindings(bindings)
+		if err != nil {
+			return err
+		}
+		updates = append(updates, struct{ key, value string }{synthesis.DeploymentBindingsEnvKey, encoded})
 	}
 	for i, update := range updates {
 		if err := setEnvValue(ctx, azdClient, envName, update.key, update.value); err != nil {
@@ -172,7 +189,13 @@ func adoptedTemplateDeployments(
 		return nil, err
 	}
 	raw, _ := props.AsMap()["deployments"].([]any)
-	lookup := func(name string) string { return env[name] }
+	lookup := func(name string) string {
+		if value, ok := env[name]; ok {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
 	deployments := make([]project.Deployment, 0, len(raw))
 	for i, item := range raw {
 		expanded, err := expandDeploymentValue(item, lookup)

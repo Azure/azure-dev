@@ -100,6 +100,18 @@ An explicit "Choose a different model" selection also updates
 With multiple alternative selections, the first becomes the runtime default.
 Other adoption choices retain the existing default-selection behavior.
 
+`AI_PROJECT_DEPLOYMENT_BINDINGS` stores environment-local adoption bindings as a
+JSON object, for example `{"template-chat":"existing-chat"}`. Each declaration
+retains its own selected deployment independently of the global runtime default;
+an empty target records Skip. Prompt-agent deploy and invoke honor these explicit
+bindings even after infrastructure ejection. Bindings are cleared when the
+environment switches to a different project. Legacy environments without bindings
+retain the single-missing-declaration fallback and reject ambiguous replacements.
+Adding a managed deployment with `azd ai project deployment add` resets that
+declaration's binding to its managed name. For hand-edited agent bindings,
+update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
+or set it to `'{}'` to clear explicit bindings.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just

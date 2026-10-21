@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -18,14 +19,12 @@ import (
 // ResolvePromptAgentModel returns the deployment a prompt agent should use in
 // the current environment.
 //
-// ${VAR} references are expanded first, as for tools and policies. Then, when
-// adopting a template against an existing Foundry project, Projects records
-// the deployments to create for this environment in AI_PROJECT_DEPLOYMENTS and
-// the chosen default in AZURE_AI_MODEL_DEPLOYMENT_NAME; azure.yaml keeps the
-// template's deployments. A model that names a declared deployment missing
-// from that list was replaced by an existing deployment (or skipped), so the
-// environment default is used instead. On-disk infrastructure owns its
-// deployment inputs, so only model expansion applies in that case.
+// ${VAR} references expand first. Explicit selections are stored per
+// declaration in AI_PROJECT_DEPLOYMENT_BINDINGS without rewriting YAML.
+// Legacy environments infer a single replacement from the managed list
+// and AZURE_AI_MODEL_DEPLOYMENT_NAME. Explicit bindings take precedence,
+// including after infrastructure ejection.
+// On-disk infrastructure never infers bindings from the managed list.
 func ResolvePromptAgentModel(
 	model string,
 	agentService *azdext.ServiceConfig,
@@ -49,6 +48,27 @@ func ResolvePromptAgentModel(
 		)
 	}
 	model = strings.TrimSpace(expanded)
+
+	bindings, err := synthesis.DecodeDeploymentBindings(env[synthesis.DeploymentBindingsEnvKey])
+	if err != nil {
+		return "", err
+	}
+	if replacement, bound := bindings[model]; bound {
+		declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
+		if err != nil {
+			return "", err
+		}
+		if slices.Contains(declared, model) {
+			if replacement == "" {
+				return "", exterrors.Dependency(
+					exterrors.CodeModelDeploymentNotFound,
+					fmt.Sprintf("model deployment %q was skipped for this environment", model),
+					"change the agent's model or update AI_PROJECT_DEPLOYMENT_BINDINGS to select a deployment",
+				)
+			}
+			return replacement, nil
+		}
+	}
 
 	onDisk, err := promptModelInfrastructureOnDisk(projectRoot)
 	if err != nil {

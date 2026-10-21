@@ -152,6 +152,12 @@ func reconcileAdoptedDeploymentChoices(
 	noPrompt bool,
 ) (string, bool, func() error, error) {
 	originalDefault := environmentValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
+	bindings, err := synthesis.DecodeDeploymentBindings(
+		environmentValues[synthesis.DeploymentBindingsEnvKey],
+	)
+	if err != nil {
+		return "", false, nil, err
+	}
 	envDeployments, present, err := provisioning.DecodeProjectDeployments(
 		environmentValues[projectDeploymentsEnvKey],
 	)
@@ -176,6 +182,7 @@ func reconcileAdoptedDeploymentChoices(
 		}
 		// Without a prompt, unmatched declarations are kept as configured.
 		if len(matches) == 0 && noPrompt {
+			bindings[expandedItem.Name] = expandedItem.Name
 			remaining = append(remaining, item)
 			referenced = append(referenced, expandedItem)
 			continue
@@ -228,6 +235,7 @@ func reconcileAdoptedDeploymentChoices(
 			choice := choices[prompt.GetValue()].GetValue()
 			switch {
 			case choice == "deploy":
+				bindings[expandedItem.Name] = expandedItem.Name
 				remaining = append(remaining, item)
 				referenced = append(referenced, expandedItem)
 				if !present {
@@ -235,6 +243,7 @@ func reconcileAdoptedDeploymentChoices(
 				}
 				continue
 			case choice == "skip":
+				bindings[expandedItem.Name] = ""
 				changed = true
 				continue
 			case choice == "change":
@@ -248,6 +257,7 @@ func reconcileAdoptedDeploymentChoices(
 					remaining = append(remaining, alternative)
 				}
 				referenced = append(referenced, alternative)
+				bindings[expandedItem.Name] = alternative.Name
 				if explicitDefault == "" {
 					explicitDefault = alternative.Name
 				}
@@ -268,6 +278,7 @@ func reconcileAdoptedDeploymentChoices(
 			Model: selected.Model,
 			Sku:   selected.Sku,
 		})
+		bindings[expandedItem.Name] = selected.Name
 		changed = true
 	}
 	if len(referenced) == 0 && !changed {
@@ -290,8 +301,24 @@ func reconcileAdoptedDeploymentChoices(
 				})
 				environmentErr = err
 			}
-			return errors.Join(defaultErr, environmentErr)
+			_, bindingsErr := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     synthesis.DeploymentBindingsEnvKey,
+				Value:   environmentValues[synthesis.DeploymentBindingsEnvKey],
+			})
+			return errors.Join(defaultErr, environmentErr, bindingsErr)
 		})
+	}
+	encodedBindings, err := synthesis.EncodeDeploymentBindings(bindings)
+	if err != nil {
+		return "", false, nil, err
+	}
+	if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+		EnvName: envName, Key: synthesis.DeploymentBindingsEnvKey, Value: encodedBindings,
+	}); err != nil {
+		return "", false, nil, errors.Join(
+			fmt.Errorf("set adopted deployment bindings: %w", err), restore(),
+		)
 	}
 	if changed {
 		encoded, err := provisioning.EncodeProjectDeployments(remaining)

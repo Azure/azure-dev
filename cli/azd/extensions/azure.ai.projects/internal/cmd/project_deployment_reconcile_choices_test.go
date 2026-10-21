@@ -192,6 +192,13 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			}
 			assert.Equal(t, test.wantCatalog, ai.calls > 0)
 			assert.False(t, project.deploymentSet, "adoption must never write portable deployments")
+			bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
+			require.NoError(t, err)
+			wantBinding := test.wantDefault
+			if test.name == "ordinary reuse preserves a live default" {
+				wantBinding = matching.Name
+			}
+			require.Equal(t, wantBinding, bindings[declared.Name])
 			got, present, err := provisioning.DecodeProjectDeployments(env.values[projectDeploymentsEnvKey])
 			require.NoError(t, err)
 			if test.wantList == nil {
@@ -206,6 +213,34 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			}
 			require.NoError(t, restore())
 			assert.Equal(t, test.originalDefault, env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+			assert.Empty(t, env.values[synthesis.DeploymentBindingsEnvKey])
 		})
 	}
+
+}
+
+func TestAdoptedDeploymentChoicesPreservesEachBinding(t *testing.T) {
+	declared := []synthesis.Deployment{
+		{Name: "chat", Model: synthesis.DeploymentModel{Name: "gpt-4o"}},
+		{Name: "embeddings", Model: synthesis.DeploymentModel{Name: "text-embedding-3-small"}},
+		{Name: "skipped", Model: synthesis.DeploymentModel{Name: "other-model"}},
+	}
+	live := []liveProjectDeployment{
+		{Name: "existing-chat", Model: declared[0].Model},
+		{Name: "existing-embeddings", Model: declared[1].Model},
+	}
+	prompt := &sequencedAdoptionPrompt{selections: []int32{0, 0, 2}}
+	client, _, env, _, _ := newSelfInitializingDeploymentClient(t, t.TempDir(), prompt)
+	_, _, restore, err := reconcileAdoptedDeploymentChoices(
+		t.Context(), client, "test", nil, declared, live, nil, false,
+	)
+	require.NoError(t, err)
+	bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"chat": "existing-chat", "embeddings": "existing-embeddings", "skipped": "",
+	}, bindings)
+	require.Empty(t, prompt.selections)
+	require.NoError(t, restore())
+	require.Empty(t, env.values[synthesis.DeploymentBindingsEnvKey])
 }

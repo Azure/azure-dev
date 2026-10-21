@@ -11,6 +11,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -45,6 +46,7 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 		{"conflict before writes", "", true, "cannot tell which"},
 		{"default write failure", "AZURE_AI_MODEL_DEPLOYMENT_NAME", false, "environment write failed"},
 		{"list write failure", projectDeploymentsEnvKey, false, "environment write failed"},
+		{"bindings write failure", synthesis.DeploymentBindingsEnvKey, false, "environment write failed"},
 		{"success", "", false, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -69,8 +71,9 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 			}}
 			env := &adoptedReplacementEnvironment{
 				promptEnvironmentServer: promptEnvironmentServer{values: map[string]string{
-					"AZURE_AI_MODEL_DEPLOYMENT_NAME": "old-default",
-					projectDeploymentsEnvKey:         list,
+					"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "old-default",
+					projectDeploymentsEnvKey:           list,
+					synthesis.DeploymentBindingsEnvKey: `{"prior":"prior-selection"}`,
 				}},
 				failKey: test.failKey,
 			}
@@ -88,6 +91,11 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "existing", env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 			require.Equal(t, "[]", env.values[projectDeploymentsEnvKey])
+			bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
+			require.NoError(t, err)
+			require.Equal(t, map[string]string{
+				"prior": "prior-selection", "template-chat": "existing",
+			}, bindings)
 		})
 	}
 }
@@ -186,6 +194,8 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 }
 
 func TestAdoptedTemplateDeploymentsExpandsEnvironment(t *testing.T) {
+	t.Setenv("CHAT_MODEL", "process-model")
+	t.Setenv("CHAT_CAPACITY", "9")
 	props, err := structpb.NewStruct(map[string]any{"deployments": []any{
 		map[string]any{
 			"name":  "template-chat",
@@ -206,4 +216,17 @@ func TestAdoptedTemplateDeploymentsExpandsEnvironment(t *testing.T) {
 		Model: project.DeploymentModel{Name: "gpt-4.1-nano", Format: "OpenAI", Version: "1"},
 		Sku:   project.DeploymentSku{Name: "GlobalStandard", Capacity: 5},
 	}}, deployments)
+	deployments, err = adoptedTemplateDeployments(services, t.TempDir(), nil)
+	require.NoError(t, err)
+	require.Equal(t, "process-model", deployments[0].Model.Name)
+	require.Equal(t, 9, deployments[0].Sku.Capacity)
+	value, write, err := planAdoptedDeploymentReplacement(
+		append([]project.Deployment{adoptedTestDeployment("replaced", "gpt-4o")}, deployments...),
+		"", "existing", false, func(string, []string) (string, error) { return "replaced", nil },
+	)
+	require.NoError(t, err)
+	require.True(t, write)
+	remaining, _, err := project.DecodeProjectDeploymentsEnv(value)
+	require.NoError(t, err)
+	require.Equal(t, deployments, remaining)
 }

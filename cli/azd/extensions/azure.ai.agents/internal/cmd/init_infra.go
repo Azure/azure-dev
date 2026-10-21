@@ -573,6 +573,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
 	}
+	deployments, present, err := project.DecodeProjectDeploymentsEnv(environment[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+	if present {
+		res.Parameters["deployments"] = deployments
+	}
 	acrMode := infraEjectAcrNone
 	if existingProject {
 		values := environment

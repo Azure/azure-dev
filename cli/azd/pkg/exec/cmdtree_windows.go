@@ -15,6 +15,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const windowsControlCExitCode = 0xC000013A
+
 // CmdTree represents an `exec.Cmd` run inside a windows Job object. When
 // `Kill` is called, the entire job is terminated, which will kill any lingering
 // child processes launched by the root process.
@@ -84,4 +86,9 @@ func (o *CmdTree) Kill() {
 	if err != nil {
 		log.Printf("failed to terminate job object %d: %s\n", o.jobObject, err)
 	}
+}
+
+func isInterruptExit(_ exec.ExitError, exitCode int) bool {
+	return exitCode == 130 ||
+		uint32(exitCode) == windowsControlCExitCode //nolint:gosec // preserve the Windows exit code bit pattern
 }

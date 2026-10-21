@@ -29,10 +29,9 @@ func promptHarnessRegionsForInit(harness string) []string {
 		return nil
 	}
 	return []string{
-		"eastus2",
 		"japaneast", "swedencentral", "uksouth", "australiaeast",
 		"westeurope", "germanywestcentral", "canadacentral", "westus2",
-		"westus", "centralus", "eastus2euap",
+		"westus", "centralus",
 	}
 }
 

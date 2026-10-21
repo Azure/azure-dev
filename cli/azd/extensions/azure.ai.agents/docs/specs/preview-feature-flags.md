@@ -23,9 +23,9 @@ Managed harness means `kind: prompt` with harness type `microsoft_copilot_previe
 azure.ai.agents/
 ├── internal/
 │   ├── cmd/                       # Command discovery and runtime callers
-│   ├── project/                   # Project/service integration callers
+│   ├── project/                   # Definition classification and callers
 │   └── featureflags/
-│       ├── agents.go              # Identities, classification, enforcement
+│       ├── agents.go              # Identities and thin Require check
 │       ├── featureflags.go        # Validation, source reads, evaluation
 │       └── featureflags_test.go   # Source combinations and regressions
 └── docs/specs/
@@ -71,6 +71,8 @@ enabled, err := featureflags.IsEnabled(
 
 Command callers bind the parsed environment into context with `WithEnvironment`. `Require` uses that value unchanged, including an explicit empty value. Lifecycle callbacks without that command context use the host's `AZD_ENVIRONMENT` selection.
 
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. Entry points call this shared definition check or require a known feature directly. The selected environment is the only flag-related context value; no business definitions or service maps are stored in context.
+
 For example, either of these enables voice:
 
 ```bash
@@ -93,7 +95,7 @@ A feature is enabled if **any** of these sources opts in:
 
 All service hosts count, including non-Foundry services. Service maps stay separate: a true value in any service wins regardless of other services' values or iteration order. These are project-wide opt-ins, not per-service permissions.
 
-Before adopting a staged manifest, `WithServices` includes its prospective service environment maps in the same service source. Definition-file `env` is included before `agent add` writes the service. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
+Before adopting a staged manifest, callers pass its prospective service environment maps explicitly to the shared project check. Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second flag-specific interpretation of service fields. Definition-file `env` is included before `agent add` writes the service. The thin `Require` helper accepts only the matching feature's prospective string values, not a project or service graph. This permits an authored opt-in without first writing a manifest that would otherwise be rejected. Existing config/project/environment read failures still propagate even if the prospective manifest enables the feature.
 
 The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
 

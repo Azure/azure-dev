@@ -61,7 +61,7 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 				flags.agent = args[0]
 			}
 
-			return action.Run(featureflags.WithEnvironment(ctx, extCtx.Environment), cmd)
+			return action.Run(ctx, cmd)
 		},
 	}
 

@@ -78,7 +78,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["github_copilot_preview"]
+          "enum": ["microsoft_copilot_preview", "github_copilot_preview"]
         }
       },
       "required": ["type"],
@@ -191,14 +191,14 @@
       "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
       "items": {
         "oneOf": [
-          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          { "$ref": "#/definitions/MicrosoftCopilotToolsetPreview" },
           {
             "type": "object",
             "required": ["type"],
             "properties": {
               "type": {
                 "type": "string",
-                "not": { "const": "github_copilot_toolset_preview" }
+                "not": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] }
               }
             },
             "additionalProperties": true
@@ -531,11 +531,11 @@
       },
       "additionalProperties": false
     },
-    "GitHubCopilotToolsetPreview": {
+    "MicrosoftCopilotToolsetPreview": {
       "type": "object",
-      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "description": "Enablement configuration for Microsoft Copilot built-in tools.",
       "properties": {
-        "type": { "const": "github_copilot_toolset_preview" },
+        "type": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] },
         "defaultConfig": {
           "type": "object",
           "properties": {

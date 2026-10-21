@@ -16,6 +16,7 @@ This document is the API reference for the `azdext` SDK helpers introduced in [P
   - [NewExtensionRootCommand](#newextensionrootcommand)
   - [ExtensionCommandOptions](#extensioncommandoptions)
   - [ExtensionContext](#extensioncontext)
+  - [Command launch settings](#command-launch-settings)
   - [NewListenCommand](#newlistencommand)
   - [Project lifecycle follow-up](#project-lifecycle-follow-up)
   - [NewMetadataCommand](#newmetadatacommand)
@@ -205,6 +206,34 @@ rootCmd.AddCommand(newServeCommand(extCtx))
 
 azdext.Run(rootCmd)
 ```
+
+### Command launch settings
+
+An extension's command metadata can include a `launch` object to control only
+how azd launches that command. Set `launch.noAzdEnvironment` to `true` for a
+command that does not need the selected azd environment:
+
+```json
+{"name":["connection","add"],"launch":{"noAzdEnvironment":true}}
+```
+
+This is host-consumed JSON metadata, not an SDK helper. Extensions using a
+released SDK without support for generating the object can add it in their
+metadata command's JSON output. The settings apply to the marked command, not its
+descendants. The host honors them starting with azd 1.37.0; extensions
+that rely on skipping environment loading should require that host version.
+Aliases on parent or child commands select the same metadata as their
+canonical names.
+Recognized azd global flags and their values may appear between command
+segments without changing the selected launch settings. Resolution stops at
+`--` or an unknown extension flag rather than treating its value as a command.
+
+When `noAzdEnvironment` is `true`, azd skips loading the selected environment,
+resolving its Key Vault references, and injecting its variables before starting
+the extension. Inherited parent-process environment variables and azd
+launch/protocol variables are still passed. Explicit Environment gRPC calls
+are unaffected. Omitting `launch` or setting `noAzdEnvironment` to `false`
+preserves the default environment loading, resolution, and injection.
 
 ### ExtensionCommandOptions
 
@@ -662,6 +691,8 @@ down the connection.
 |--------|-----------|-------------|
 | `Client` | `() *AzdClient` | Returns the underlying gRPC client. |
 | `WithServiceTarget` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a custom deployment target. |
+| `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
+| `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
@@ -694,6 +725,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
+| `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |
 | `FrameworkService()` | `FrameworkServiceClient` |
 | `Container()` | `ContainerServiceClient` |
 | `Extension()` | `ExtensionServiceClient` |
@@ -704,6 +736,27 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Telemetry()` | `TelemetryServiceClient` (stable since azd 1.36.0) |
 
 Always call `defer client.Close()` after creation.
+
+#### Service configuration persistence
+
+Use existing `Project().AddService` to add or replace one complete service.
+Use `SetServiceConfigValue`, `SetServiceConfigSection`, and `UnsetServiceConfig`
+to update only managed fields of an existing service. Service names are literal
+keys, including dots; the path within a service uses dot notation.
+
+The host validates the resulting configuration, normalizes known path fields,
+and atomically saves YAML without converting unrelated raw fields through
+typed structs.
+Untouched empty mappings, large integers, and literal environment templates
+remain intact. Values explicitly sent through protobuf `Struct` still have
+protobuf numeric precision limits; avoid reading and resending entire services
+when updating a few fields. An empty section can be sent explicitly to persist
+`env: {}`. Each mutation is locked separately; several RPCs are not one
+transaction, and there is no snapshot precondition.
+
+AddService's environment values retain their existing expanded-literal
+semantics. Use a targeted service setter for raw `${VAR}` templates rather
+than passing them as AddService environment literals.
 
 `CommandResult()`, `Compose()`, `Copilot()`, `EventsBeta()`, and `ProjectBeta()`
 are preview accessors. Import
@@ -717,6 +770,17 @@ exposed through the stable `azdext` contract facade.
 |---|---|---|---|---|
 | Extension usage telemetry | `Telemetry().ReportUsage`, `azdext.ReportUsageRequest/Response` | 1.36.0 | Service, method, and messages deprecated; route retained | `>=1.36.0` |
 | Current Azure principal | `Account().GetCurrentPrincipal`, `azdext.GetCurrentPrincipalRequest/Response`, `azdext.PrincipalType` | 1.36.0 | Method, messages, enum, and `AccountBeta()` deprecated; route retained | `>=1.36.0` |
+| Deployment preview | `WithServiceTargetPreview`, `azdext.ServiceTargetPreviewProvider`, `ServiceTarget().Stream`, stable preview messages and `supports_preview` | 1.37.0 (target) | Preview messages/fields and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.37.0` |
+
+The deployment preview graduation targets host and SDK 1.37.0; its
+[audit](https://github.com/Azure/azure-dev/issues/10625) records actual release
+completion. Use only a published SDK pin. Implement the stable optional provider
+as `Preview(context.Context, *azdext.ServiceConfig) (*azdext.ServiceDeployPreviewResult, error)`.
+The SDK creates a fresh provider without `Initialize` and uses a dedicated
+stable stream; ordinary deployment behavior is unchanged. Migrate beta provider
+signatures, imports, registration calls, mocks, and test servers together.
+Deprecated beta clients and provider interfaces remain usable, including when
+recompiling against the new SDK. Structured deploy-hook messages do not graduate.
 
 Upgrading to the 1.36.0 SDK intentionally changes `Telemetry()` from a beta to
 a stable return type; replace `v1beta.ReportUsageRequest/Response` with

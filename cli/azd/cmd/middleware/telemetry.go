@@ -152,8 +152,9 @@ func (m *TelemetryMiddleware) extensionCmdInfo(extensionId string) (string, []st
 		return "", nil
 	}
 
-	commandPath := extensions.ResolveCommandPath(metadata, m.options.Args)
-	commandFlags := extensions.ResolveCommandFlags(metadata, m.options.Args)
+	args := m.options.Args
+	commandPath := extensions.ResolveCommandPath(metadata, args)
+	commandFlags := extensions.ResolveCommandFlags(metadata, args)
 	if len(commandPath) == 0 {
 		return "", commandFlags
 	}

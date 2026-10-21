@@ -6,6 +6,7 @@ package grpcserver
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,13 +32,18 @@ type promptService struct {
 	aiModelService  *ai.AiModelService
 	globalOptions   *internal.GlobalCommandOptions
 	lock            *promptLock
+	promptWriter    io.Writer
+	askSelect       func(context.Context, *ux.SelectOptions) (*int, error)
 }
 
+// NewPromptService routes all prompt UI (prompts, selections, confirmations,
+// spinners, and resource pickers) to the supplied writer.
 func NewPromptService(
 	prompter prompt.PromptService,
 	resourceService *azapi.ResourceService,
 	aiModelService *ai.AiModelService,
 	globalOptions *internal.GlobalCommandOptions,
+	promptWriter io.Writer,
 ) azdext.PromptServiceServer {
 	return &promptService{
 		prompter:        prompter,
@@ -45,6 +51,10 @@ func NewPromptService(
 		aiModelService:  aiModelService,
 		globalOptions:   globalOptions,
 		lock:            newPromptLock(),
+		promptWriter:    promptWriter,
+		askSelect: func(ctx context.Context, options *ux.SelectOptions) (*int, error) {
+			return ux.NewSelect(options).Ask(ctx)
+		},
 	}
 }
 
@@ -72,6 +82,7 @@ func (s *promptService) Confirm(ctx context.Context, req *azdext.ConfirmRequest)
 	defer release()
 
 	options := &ux.ConfirmOptions{
+		Writer:       s.promptWriter,
 		DefaultValue: req.Options.DefaultValue,
 		Message:      req.Options.Message,
 		HelpMessage:  req.Options.HelpMessage,
@@ -119,6 +130,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 	}
 
 	options := &ux.SelectOptions{
+		Writer:          s.promptWriter,
 		SelectedIndex:   convertToInt(req.Options.SelectedIndex),
 		Message:         req.Options.Message,
 		Choices:         choices,
@@ -128,8 +140,7 @@ func (s *promptService) Select(ctx context.Context, req *azdext.SelectRequest) (
 		EnableFiltering: req.Options.EnableFiltering,
 	}
 
-	selectPrompt := ux.NewSelect(options)
-	value, err := selectPrompt.Ask(ctx)
+	value, err := s.askSelect(ctx, options)
 
 	return &azdext.SelectResponse{
 		Value: convertToInt32(value),
@@ -170,7 +181,7 @@ func (s *promptService) MultiSelect(
 	}
 	defer release()
 
-	selectPrompt := ux.NewMultiSelect(newMultiSelectOptions(req.Options))
+	selectPrompt := ux.NewMultiSelect(newMultiSelectOptions(req.Options, s.promptWriter))
 	values, err := selectPrompt.Ask(ctx)
 
 	resultValues := make([]*azdext.MultiSelectChoice, len(values))
@@ -187,7 +198,7 @@ func (s *promptService) MultiSelect(
 	}, err
 }
 
-func newMultiSelectOptions(options *azdext.MultiSelectOptions) *ux.MultiSelectOptions {
+func newMultiSelectOptions(options *azdext.MultiSelectOptions, writer io.Writer) *ux.MultiSelectOptions {
 	choices := make([]*ux.MultiSelectChoice, len(options.Choices))
 	for i, choice := range options.Choices {
 		choices[i] = &ux.MultiSelectChoice{
@@ -198,6 +209,7 @@ func newMultiSelectOptions(options *azdext.MultiSelectOptions) *ux.MultiSelectOp
 	}
 
 	return &ux.MultiSelectOptions{
+		Writer:              writer,
 		Message:             options.Message,
 		Choices:             choices,
 		HelpMessage:         options.HelpMessage,
@@ -232,6 +244,7 @@ func (s *promptService) Prompt(ctx context.Context, req *azdext.PromptRequest) (
 	defer release()
 
 	options := &ux.PromptOptions{
+		Writer:            s.promptWriter,
 		DefaultValue:      req.Options.DefaultValue,
 		Message:           req.Options.Message,
 		HelpMessage:       req.Options.HelpMessage,
@@ -268,6 +281,7 @@ func (s *promptService) PromptSubscription(
 	defer release()
 
 	selectedSubscription, err := s.prompter.PromptSubscription(ctx, &prompt.SelectOptions{
+		Writer:      s.promptWriter,
 		Message:     req.Message,
 		HelpMessage: req.HelpMessage,
 	})
@@ -307,11 +321,9 @@ func (s *promptService) PromptLocation(
 		return nil, err
 	}
 
-	var selectorOptions *prompt.SelectOptions
-	if len(req.AllowedLocations) > 0 {
-		selectorOptions = &prompt.SelectOptions{
-			AllowedValues: req.AllowedLocations,
-		}
+	selectorOptions := &prompt.SelectOptions{
+		Writer:        s.promptWriter,
+		AllowedValues: req.AllowedLocations,
 	}
 
 	selectedLocation, err := s.prompter.PromptLocation(ctx, azureContext, selectorOptions)
@@ -349,7 +361,7 @@ func (s *promptService) PromptResourceGroup(
 		return nil, err
 	}
 
-	options := createResourceGroupOptions(req.Options)
+	options := createResourceGroupOptions(req.Options, s.promptWriter)
 
 	selectedResourceGroup, err := s.prompter.PromptResourceGroup(ctx, azureContext, options)
 	if err != nil {
@@ -386,7 +398,7 @@ func (s *promptService) PromptSubscriptionResource(
 		return nil, err
 	}
 
-	options := createResourceOptions(req.Options)
+	options := createResourceOptions(req.Options, s.promptWriter)
 
 	resource, err := s.prompter.PromptSubscriptionResource(ctx, azureContext, options)
 	if err != nil {
@@ -423,7 +435,7 @@ func (s *promptService) PromptResourceGroupResource(
 		return nil, err
 	}
 
-	options := createResourceOptions(req.Options)
+	options := createResourceOptions(req.Options, s.promptWriter)
 
 	resource, err := s.prompter.PromptResourceGroupResource(ctx, azureContext, options)
 	if err != nil {
@@ -472,9 +484,9 @@ func (s *promptService) createAzureContext(wire *azdext.AzureContext) (*prompt.A
 	return prompt.NewAzureContext(s.prompter, scope, resourceList, s.globalOptions.NoPrompt), nil
 }
 
-func createResourceOptions(options *azdext.PromptResourceOptions) prompt.ResourceOptions {
+func createResourceOptions(options *azdext.PromptResourceOptions, writer io.Writer) prompt.ResourceOptions {
 	if options == nil {
-		return prompt.ResourceOptions{}
+		return prompt.ResourceOptions{SelectorOptions: writerOnlySelectOptions(writer)}
 	}
 
 	var resourceType *azapi.AzureResourceType
@@ -482,10 +494,11 @@ func createResourceOptions(options *azdext.PromptResourceOptions) prompt.Resourc
 		resourceType = new(azapi.AzureResourceType(options.ResourceType))
 	}
 
-	var selectOptions *prompt.SelectOptions
+	selectOptions := writerOnlySelectOptions(writer)
 
 	if options.SelectOptions != nil {
 		selectOptions = &prompt.SelectOptions{
+			Writer:             writer,
 			ForceNewResource:   options.SelectOptions.ForceNewResource,
 			NewResourceMessage: options.SelectOptions.NewResourceMessage,
 			Message:            options.SelectOptions.Message,
@@ -547,13 +560,29 @@ func promptResourceMessage(options *azdext.PromptResourceOptions) string {
 	return fmt.Sprintf("Select %s", resourceName)
 }
 
-func createResourceGroupOptions(options *azdext.PromptResourceGroupOptions) *prompt.ResourceGroupOptions {
+// writerOnlySelectOptions returns selector options that only route output to
+// writer, so resource pickers use it even when the caller set no options.
+func writerOnlySelectOptions(writer io.Writer) *prompt.SelectOptions {
+	if writer == nil {
+		return nil
+	}
+	return &prompt.SelectOptions{Writer: writer}
+}
+
+func createResourceGroupOptions(
+	options *azdext.PromptResourceGroupOptions,
+	writer io.Writer,
+) *prompt.ResourceGroupOptions {
 	if options == nil || options.SelectOptions == nil {
+		if selectOptions := writerOnlySelectOptions(writer); selectOptions != nil {
+			return &prompt.ResourceGroupOptions{SelectorOptions: selectOptions}
+		}
 		return nil
 	}
 
 	return &prompt.ResourceGroupOptions{
 		SelectorOptions: &prompt.SelectOptions{
+			Writer:             writer,
 			ForceNewResource:   options.SelectOptions.ForceNewResource,
 			AllowNewResource:   options.SelectOptions.AllowNewResource,
 			NewResourceMessage: options.SelectOptions.NewResourceMessage,
@@ -686,7 +715,8 @@ func (s *promptService) PromptAiModel(
 		}
 	} else {
 		spinner := ux.NewSpinner(&ux.SpinnerOptions{
-			Text: "Loading AI model catalog...",
+			Writer: s.promptWriter,
+			Text:   "Loading AI model catalog...",
 		})
 
 		if err := spinner.Run(ctx, func(ctx context.Context) error {
@@ -712,6 +742,7 @@ func (s *promptService) PromptAiModel(
 	}
 
 	selectOpts := &ux.SelectOptions{
+		Writer:          s.promptWriter,
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(models)),
 		EnableFiltering: new(true),
@@ -888,6 +919,7 @@ func (s *promptService) PromptAiDeployment(
 			versionChoices[i] = &ux.SelectChoice{Value: v.label, Label: v.label}
 		}
 		vIdx, err := ux.NewSelect(&ux.SelectOptions{
+			Writer:  s.promptWriter,
 			Message: fmt.Sprintf("Select a version for %s", req.ModelName),
 			Choices: versionChoices,
 		}).Ask(ctx)
@@ -935,6 +967,7 @@ func (s *promptService) PromptAiDeployment(
 		skuChoices[i] = &ux.SelectChoice{Value: c.label, Label: c.label}
 	}
 	sIdx, err := ux.NewSelect(&ux.SelectOptions{
+		Writer:  s.promptWriter,
 		Message: fmt.Sprintf("Select a SKU for %s v%s", req.ModelName, selectedVersion.Version),
 		Choices: skuChoices,
 	}).Ask(ctx)
@@ -971,6 +1004,7 @@ func (s *promptService) PromptAiDeployment(
 		}
 
 		prompt := ux.NewPrompt(&ux.PromptOptions{
+			Writer:       s.promptWriter,
 			Message:      fmt.Sprintf("Enter deployment capacity for %s (%s)", req.ModelName, sku.Name),
 			DefaultValue: defaultVal,
 			HelpMessage:  hint,
@@ -1101,6 +1135,7 @@ func (s *promptService) PromptAiLocationWithQuota(
 	}
 
 	selectOpts := &ux.SelectOptions{
+		Writer:          s.promptWriter,
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(locations)),
 		EnableFiltering: new(true),
@@ -1180,7 +1215,8 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 	}
 
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
-		Text: fmt.Sprintf("Checking quota availability for %s...", req.ModelName),
+		Writer: s.promptWriter,
+		Text:   fmt.Sprintf("Checking quota availability for %s...", req.ModelName),
 	})
 
 	if err := spinner.Run(ctx, func(ctx context.Context) error {
@@ -1201,6 +1237,7 @@ func (s *promptService) PromptAiModelLocationWithQuota(
 	}
 
 	selectOpts := &ux.SelectOptions{
+		Writer:          s.promptWriter,
 		Message:         message,
 		Choices:         make([]*ux.SelectChoice, len(locations)),
 		EnableFiltering: new(true),

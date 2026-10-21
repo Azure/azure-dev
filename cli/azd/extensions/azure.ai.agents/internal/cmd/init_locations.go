@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -24,7 +25,7 @@ import (
 // promptHarnessRegionsForInit is the temporary harness region policy shared by
 // generated and adopted agents. Return nil here when the service restriction lifts.
 func promptHarnessRegionsForInit(harness string) []string {
-	if harness != "github_copilot_preview" {
+	if !agent_api.IsCopilotHarness(harness) {
 		return nil
 	}
 	return []string{

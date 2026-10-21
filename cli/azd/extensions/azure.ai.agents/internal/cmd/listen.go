@@ -227,12 +227,22 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+// legacyProjectDeploymentsMu serializes the environment read, prompt, and
+// write of AI_PROJECT_DEPLOYMENTS. Each legacy agent service runs predeploy
+// in parallel when an explicit uses graph allows it, and they share one
+// project-wide list. Overlapping handlers can both observe a missing value,
+// prompt separately, and let the last write discard the other selection.
+var legacyProjectDeploymentsMu sync.Mutex
+
 func updateLegacyProjectDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	legacyProjectDeploymentsMu.Lock()
+	defer legacyProjectDeploymentsMu.Unlock()
+
 	deployments, err := collectLegacyProjectDeployments(
 		services,
 		projectRoot,
@@ -250,6 +260,68 @@ func updateLegacyProjectDeployments(
 			"resolving environment for legacy deployments: %w",
 			err,
 		)
+	}
+	response, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	if err != nil {
+		return fmt.Errorf("read environment for legacy deployments: %w", err)
+	}
+	values := map[string]string{}
+	for _, kv := range response.GetKeyValues() {
+		values[kv.GetKey()] = kv.GetValue()
+	}
+	if strings.TrimSpace(values["AI_PROJECT_DEPLOYMENTS"]) != "" {
+		return nil
+	}
+	if !azdext.DetectInteractive().NoPrompt {
+		location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+		if location == "" {
+			location = values["AZURE_LOCATION"]
+		}
+		azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+			TenantId:       values["AZURE_TENANT_ID"],
+			Location:       location,
+		}}
+		resolved := make([]project.Deployment, 0, len(deployments))
+		for _, declaration := range deployments {
+			model, err := azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+				AzureContext: azureContext,
+				DefaultValue: declaration.Model.Name,
+				Filter: &azdext.AiModelFilterOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy deployment model")
+			}
+			if model.GetModel().GetName() == "" {
+				return fmt.Errorf("no model selected for deployment %q", declaration.Name)
+			}
+			response, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+				AzureContext: azureContext,
+				ModelName:    model.GetModel().GetName(),
+				Options: &azdext.AiModelDeploymentOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy model deployment")
+			}
+			selected := response.GetDeployment()
+			if selected.GetModelName() == "" || selected.GetVersion() == "" ||
+				selected.GetSku().GetName() == "" || selected.GetCapacity() <= 0 {
+				return fmt.Errorf("incomplete model selection for deployment %q", declaration.Name)
+			}
+			declaration.Model.Name = selected.GetModelName()
+			declaration.Model.Format = selected.GetFormat()
+			declaration.Model.Version = selected.GetVersion()
+			declaration.Sku.Name = selected.GetSku().GetName()
+			declaration.Sku.Capacity = int(selected.GetCapacity())
+			resolved = append(resolved, declaration)
+		}
+		deployments = resolved
 	}
 	return deploymentEnvUpdate(
 		ctx,
@@ -787,7 +859,12 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 		log.Printf("cleanupAgentState: invalid State Store target for service %q: %v", serviceName, err)
 		return false
 	}
-	if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, target.agentKey); err != nil {
+	store, err := newAgentStateStoreForClient(azdClient)
+	if err != nil {
+		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
+		return false
+	}
+	if err := store.delete(ctx, target.agentKey); err != nil {
 		log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", target.agentKey, err)
 		return false
 	}
@@ -795,21 +872,15 @@ func cleanupAgentState(ctx context.Context, azdClient *azdext.AzdClient, envName
 }
 
 func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, agentKey string) bool {
+	agentKey = normalizeEndpoint(agentKey)
+	store, err := newAgentStateStoreForClient(azdClient)
+	if err != nil {
+		log.Printf("cleanupAgentState: failed to open agent state: %v", err)
+		return false
+	}
 	var failed bool
-	if err := deleteContextValue(ctx, azdClient, "sessions", agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean sessions for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := deleteContextValue(ctx, azdClient, "conversations", agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean conversations for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := newUserConfigResponseStateStore(azdClient).Delete(ctx, agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean current Response for %s: %v", agentKey, err)
-		failed = true
-	}
-	if err := newInvocationStateStore(azdClient).Delete(ctx, agentKey); err != nil {
-		log.Printf("cleanupAgentState: failed to clean current Invocation for %s: %v", agentKey, err)
+	if err := store.delete(ctx, agentKey); err != nil {
+		log.Printf("cleanupAgentState: failed to clean state for %s: %v", agentKey, err)
 		failed = true
 	}
 	// Session keys include the version and /remote suffix. Store selection is
@@ -817,7 +888,7 @@ func cleanupAgentStateForKey(ctx context.Context, azdClient *azdext.AzdClient, a
 	if versionIndex := strings.LastIndex(agentKey, "/versions/"); versionIndex >= 0 &&
 		strings.HasSuffix(agentKey, "/remote") {
 		selectionKey := agentKey[:versionIndex]
-		if err := deleteContextValue(ctx, azdClient, stateStoreConfigField, selectionKey); err != nil {
+		if err := store.delete(ctx, selectionKey); err != nil {
 			log.Printf("cleanupAgentState: failed to clean State Store selection for %s: %v", selectionKey, err)
 			failed = true
 		}

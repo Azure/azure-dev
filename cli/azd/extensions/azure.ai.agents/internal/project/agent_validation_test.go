@@ -42,7 +42,7 @@ func TestValidateAgentServiceDefinitionSupportedKinds(t *testing.T) {
 				"model":        "gpt-4.1-mini",
 				"instructions": "Help the user.",
 				"harness": map[string]any{
-					"type": "github_copilot_preview",
+					"type": "microsoft_copilot_preview",
 				},
 				"memory": map[string]any{
 					"store":          "conversation-memory",
@@ -158,7 +158,7 @@ func TestValidateAgentServiceDefinitionRejectsMalformedKinds(t *testing.T) {
 				"name":         "prompt-agent",
 				"model":        "gpt-4.1-mini",
 				"instructions": "Help.",
-				"harness":      "github_copilot_preview",
+				"harness":      "microsoft_copilot_preview",
 			},
 			wantCode: exterrors.CodeInvalidAgentManifest,
 			want:     "harness must be a block",

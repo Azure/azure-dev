@@ -238,7 +238,7 @@ func telemetryAgentHarness(harness string) string {
 	switch normalized := strings.ToLower(strings.TrimSpace(harness)); normalized {
 	case "":
 		return agentHarnessNone
-	case agent_api.ManagedAgentHarnessGitHubCopilot:
+	case agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot:
 		return normalized
 	default:
 		return agentHarnessOther

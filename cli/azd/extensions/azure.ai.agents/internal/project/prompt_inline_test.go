@@ -84,7 +84,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 		Model:        "gpt-4.1-mini",
 		Instructions: "Be concise.",
 		Harness: &agent_yaml.PromptHarness{
-			Type: "github_copilot_preview",
+			Type: "microsoft_copilot_preview",
 		},
 		Tools:       []any{map[string]any{"type": "code_interpreter"}},
 		ToolChoice:  "auto",
@@ -117,7 +117,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, "gpt-4.1-mini", got.Model)
 	require.Equal(t, "Be concise.", got.Instructions)
 	require.NotNil(t, got.Harness)
-	require.Equal(t, "github_copilot_preview", got.Harness.Type)
+	require.Equal(t, "microsoft_copilot_preview", got.Harness.Type)
 	require.Len(t, got.Tools, 1)
 	require.Equal(t, original.ToolChoice, got.ToolChoice)
 	require.Equal(t, original.Temperature, got.Temperature)
@@ -131,6 +131,44 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	// Never authored: the deploy graph resolves it from the skills/ folder.
 }
 
+func TestPromptAgentLegacyHarnessPreservedThroughServiceAdoption(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	original := agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindPrompt, Name: "legacy-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Tools:           []any{map[string]any{"type": "github_copilot_toolset_preview"}},
+	}
+	props, err := PromptAgentDefinitionToServiceProperties(original)
+	require.NoError(t, err)
+	for _, source := range []string{"inline", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			svc := validationTestService(t, root, source, props.AsMap())
+			provider := &AgentServiceTargetProvider{
+				projectPath: root,
+				serviceConfig: promptService(t, map[string]any{
+					"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
+				}),
+			}
+			require.NoError(t, provider.adoptAndResolveServiceConfig(t.Context(), svc))
+			require.Same(t, svc, provider.serviceConfig)
+			got, err := provider.loadPromptAgentDefinition()
+			require.NoError(t, err)
+			require.Equal(t, "github_copilot_preview", got.Harness.Type)
+			require.Equal(t, original.Tools, got.Tools)
+			request, err := agent_yaml.CreatePromptAgentAPIRequest(got, nil)
+			require.NoError(t, err)
+			definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+			require.True(t, ok)
+			require.Equal(t, "github_copilot_preview", definition.Harness.Type)
+			require.Equal(t, original.Tools, definition.Tools)
+		})
+	}
+}
+
 func TestPromptAgentFromResolvedServiceInlineAndRootRefParity(t *testing.T) {
 	t.Parallel()
 
@@ -140,7 +178,7 @@ name: parity-agent
 model: gpt-4.1-mini
 instructions: Be concise.
 harness:
-  type: github_copilot_preview
+  type: microsoft_copilot_preview
 memory:
   store: conversation-store
   chatModel: gpt-4.1-mini
@@ -151,7 +189,7 @@ memory:
     chatSummaryEnabled: true
     userProfileEnabled: true
 tools:
-  - type: github_copilot_toolset_preview
+  - type: microsoft_copilot_toolset_preview
     defaultConfig:
       enabled: false
     configs:
@@ -175,7 +213,7 @@ policies:
 		"name":         "parity-agent",
 		"model":        "gpt-4.1-mini",
 		"instructions": "Be concise.",
-		"harness":      map[string]any{"type": "github_copilot_preview"},
+		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
 		"memory": map[string]any{
 			"store":          "conversation-store",
 			"chatModel":      "gpt-4.1-mini",
@@ -189,7 +227,7 @@ policies:
 		},
 		"tools": []any{
 			map[string]any{
-				"type":          "github_copilot_toolset_preview",
+				"type":          "microsoft_copilot_toolset_preview",
 				"defaultConfig": map[string]any{"enabled": false},
 				"configs":       []any{map[string]any{"name": "web", "enabled": true}},
 			},
@@ -351,7 +389,7 @@ func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 			props: map[string]any{
 				"kind":    "prompt",
 				"name":    "a",
-				"harness": "github_copilot_preview",
+				"harness": "microsoft_copilot_preview",
 			},
 			wantErr: "harness must be a block",
 		},
@@ -361,7 +399,7 @@ func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 				"kind": "prompt",
 				"name": "a",
 				"harness": map[string]any{
-					"type":          "github_copilot_preview",
+					"type":          "microsoft_copilot_preview",
 					"builtin_tools": map[string]any{"excluded": []any{"shell"}},
 				},
 			},

@@ -37,7 +37,15 @@ azd ai agent state-stores items show "task-456" --store "checkpoints/run-43"
 
 `select` without a name opens a picker with a next-page choice when needed. Under `--no-prompt`, supply a name. Selection is validated before saving.
 
-Only `select` changes the active store. Its name is saved under `extensions.ai-agents.stateStores` in the azd user configuration (`~/.azd/config.json`, or `$AZD_CONFIG_DIR/config.json`). Keys identify the project endpoint and deployed agent name, not the version or protocol. Two local projects targeting the same remote agent share this selection. Item values, ETags, and credentials are not saved as selection state.
+Only `select` changes the active store. Its name is saved in extension-owned state under
+`$AZD_CONFIG_DIR/state/extensions/azure.ai.agents` (or `~/.azd/state/extensions/azure.ai.agents` when
+`AZD_CONFIG_DIR` is unset). Keys identify the project endpoint and deployed agent name, not the version or
+protocol. Two local projects targeting the same remote agent share this selection. Item values, ETags, and
+credentials are not saved as selection state.
+
+When an agent's new record is missing, its previously saved selection is imported once from azd UserConfig.
+Existing new records take precedence. Old configuration values are left unchanged, and deleted local state
+is not imported again. Existing remote stores are not deleted by this migration.
 
 A missing selection or inaccessible store produces an error; azd never automatically creates or switches stores.
 

@@ -34,7 +34,7 @@ import (
 //
 // harness selects the prompt agent flavor. An empty harness scaffolds a plain
 // prompt agent that Foundry runs directly; a non-empty harness
-// ("github_copilot_preview")
+// ("microsoft_copilot_preview" or its legacy alias)
 // scaffolds a managed agent whose Brain+Hand sandbox the platform provisions.
 func runInitManaged(
 	ctx context.Context,

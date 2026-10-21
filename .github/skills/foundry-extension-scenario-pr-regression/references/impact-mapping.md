@@ -21,7 +21,7 @@ Files under `internal/cmd/` map to the command they implement:
 | `internal/cmd/monitor*.go` | `cmd:monitor` | `monitor.go`, `monitor_format.go`. |
 | `internal/cmd/update.go` | `cmd:endpoint` | `update.go` defines `endpoint update`. |
 | `internal/cmd/doctor*.go` | `cmd:doctor` | `doctor.go`, `doctor_format.go`. |
-| `internal/cmd/eval*.go` | `cmd:eval` | `eval.go`, `eval_init.go`, `eval_run.go`, `eval_list.go`, `eval_show.go`, etc. Tier 2 (needs a deployed agent + Foundry endpoint). |
+| `internal/cmd/eval*.go` | `cmd:eval` | Tier 0 migration-only stubs: `eval-migration-guidance` verifies deprecation guidance and non-zero exit without authentication or service requests. |
 | `internal/cmd/optimize*.go` | `cmd:optimize` | `optimize.go`, `optimize_apply.go`, `optimize_status.go`, etc. Tier 2 (submits a cloud optimization job). |
 | `internal/cmd/sample*.go` | `cmd:sample` | `sample.go`, `sample_list.go`. |
 | `internal/cmd/code*.go` | `cmd:code` | `code.go` (code download). |
@@ -70,10 +70,10 @@ From the impacted `cmd:*` set, decide the **highest tier to offer**:
   real Azure resources) but is `parallel-safe`.
 - Offer **Tier 2** only when the change can plausibly affect cloud behavior — i.e. it
   touches `cmd:invoke`, `cmd:sessions`, `cmd:files`, `cmd:monitor`, `cmd:endpoint`,
-  `cmd:show`, `cmd:run`, `cmd:eval`, `cmd:optimize`, `cmd:doctor` provisioned paths,
-  deployment/project code, or the provision/deploy flow. `cmd:eval` and `cmd:optimize`
-  are Tier 2-only (no offline happy path beyond their negative-path validation
-  scenarios). Tier 2 always requires the explicit cost confirmation in
+  `cmd:show`, `cmd:run`, `cmd:optimize`, `cmd:doctor` provisioned paths,
+  deployment/project code, or the provision/deploy flow. `cmd:optimize` has no
+  offline happy path beyond its negative-path validation scenarios. `cmd:eval`
+  only covers deprecated-command migration guidance in Tier 0. Tier 2 always requires the explicit cost confirmation in
   `workflow.md` Step 4.
 - A pure Tier 0 change (e.g. `version.go`, help text, `sample list` formatting) should run
   Tier 0 only.

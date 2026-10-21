@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package eval_api
+package optimize_api
 
 import (
 	"encoding/base64"
@@ -50,16 +50,6 @@ func NewPortalPrefix(projectResourceID string) (*PortalPrefix, error) {
 // EvalRunURL returns the portal URL for an eval run report.
 func (p *PortalPrefix) EvalRunURL(evalID, runID string) string {
 	return fmt.Sprintf("%s/build/evaluations/%s/run/%s", p.prefix, evalID, runID)
-}
-
-// EvaluatorURL returns the portal URL for a generated evaluator.
-func (p *PortalPrefix) EvaluatorURL(evaluatorName, version string) string {
-	return fmt.Sprintf("%s/build/evaluations/catalog/%s/%s", p.prefix, evaluatorName, version)
-}
-
-// DatasetURL returns the portal URL for a dataset.
-func (p *PortalPrefix) DatasetURL(datasetName, version string) string {
-	return fmt.Sprintf("%s/build/data/datasets/%s/%s", p.prefix, datasetName, version)
 }
 
 // OptimizationURL returns the portal URL for an optimization job.

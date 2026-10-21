@@ -403,10 +403,12 @@ when `azure.yaml` does not
 declare an `azure.ai.eval` service. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation
-documentation link, not the evaluation setup guidance. `azd ai agent eval generate` is a
-separate, supported command for this extension's own quick-eval workflow;
-only its hidden `azd ai agent eval init` alias is formally deprecated, in
-favor of `generate`.
+documentation link, not the evaluation setup guidance.
+
+**Deprecated:** `azd ai agent eval` commands only display migration guidance
+and exit non-zero; `--help` remains available. Use `azd ai eval` from
+`azure.ai.evaluations` instead. Old arguments are not forwarded, and legacy
+evaluation configuration is not automatically converted.
 
 `azd ai eval init` scaffolds evaluation configuration; follow the
 [evaluations guide](../azure.ai.evaluations/README.md) for deployment and run steps.

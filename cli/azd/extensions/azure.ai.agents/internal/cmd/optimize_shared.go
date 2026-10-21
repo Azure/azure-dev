@@ -1,39 +1,30 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// eval_helpers.go provides shared utility functions used by both eval and
-// optimize commands, including portal URL construction and path display
-// helpers.
-
 package cmd
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
+	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
 	"go.yaml.in/yaml/v3"
 )
 
-// ProjectEndpointAPIVersion is the default API version for project endpoint calls
-// (optimize, dataset operations).
-const ProjectEndpointAPIVersion = "2025-11-15-preview"
-
 // resolvePortalPrefix reads AZURE_AI_PROJECT_ID from the azd environment and
 // returns a PortalPrefix for building Foundry portal URLs.
 // Returns nil on any failure.
-func resolvePortalPrefix(ctx context.Context, azdClient *azdext.AzdClient, envName string) *eval_api.PortalPrefix {
+func resolvePortalPrefix(ctx context.Context, azdClient *azdext.AzdClient, envName string) *optimize_api.PortalPrefix {
 	if azdClient == nil || envName == "" {
 		return nil
 	}
@@ -45,7 +36,7 @@ func resolvePortalPrefix(ctx context.Context, azdClient *azdext.AzdClient, envNa
 		log.Printf("[debug] could not read AZURE_AI_PROJECT_ID: %v", err)
 		return nil
 	}
-	prefix, err := eval_api.NewPortalPrefix(v.Value)
+	prefix, err := optimize_api.NewPortalPrefix(v.Value)
 	if err != nil {
 		log.Printf("[debug] failed to build portal prefix: %v", err)
 		return nil
@@ -69,7 +60,13 @@ func buildEvalReportURL(ctx context.Context, azdClient *azdext.AzdClient, envNam
 // printPortalLink resolves the portal prefix and prints a portal URL.
 // The buildURL callback receives the resolved prefix and returns the full URL.
 // Best-effort — silently skips on any failure.
-func printPortalLink(ctx context.Context, out io.Writer, azdClient *azdext.AzdClient, envName string, buildURL func(*eval_api.PortalPrefix) string) {
+func printPortalLink(
+	ctx context.Context,
+	out io.Writer,
+	azdClient *azdext.AzdClient,
+	envName string,
+	buildURL func(*optimize_api.PortalPrefix) string,
+) {
 	prefix := resolvePortalPrefix(ctx, azdClient, envName)
 	if prefix == nil {
 		return
@@ -78,7 +75,7 @@ func printPortalLink(ctx context.Context, out io.Writer, azdClient *azdext.AzdCl
 }
 
 // relativeDisplay returns a project-relative path for display purposes.
-// Used by both eval and optimize config confirmation prompts.
+// Used by optimization config confirmation prompts.
 // Returns empty string for empty input.
 func relativeDisplay(absPath, projectDir string) string {
 	if absPath == "" || projectDir == "" {
@@ -90,98 +87,37 @@ func relativeDisplay(absPath, projectDir string) string {
 	return absPath
 }
 
-// reconcileConfigAgent reconciles the agent name and version in a config
-// with the environment-resolved values. Environment takes precedence for both.
-// Version is always resolved from the azd environment (via AGENT_{SVC}_VERSION);
-// stale values in the config are cleared. Returns true if the config was changed.
-// Warnings are written to w (callers pass os.Stderr; tests pass io.Discard).
-func reconcileConfigAgent(w io.Writer, agent *opt_eval.AgentRef, envName, envVersion, configSource string) bool {
-	changed := false
-
-	// --- Name ---
-	if envName != "" && agent.Name != "" && agent.Name != envName {
-		fmt.Fprintf(w, "  %s agent name in %s (%q) differs from environment (%q) \u2014 using environment value\n",
-			color.YellowString("warning:"), configSource, agent.Name, envName)
-		agent.Name = envName
-		changed = true
-	} else if envName != "" && agent.Name == "" {
-		agent.Name = envName
-	}
-
-	// --- Version ---
-	// Environment version always wins. If not set, clear any stale config value
-	// so the backend defaults to "latest".
-	if envVersion != "" && agent.Version != envVersion {
-		agent.Version = envVersion
-		changed = true
-	} else if envVersion == "" && agent.Version != "" {
-		fmt.Fprintf(w, "  %s ignoring stale agent.version %q in %s \u2014 using latest from environment\n",
-			color.YellowString("warning:"), agent.Version, configSource)
-		agent.Version = ""
-		changed = true
-	}
-
-	return changed
-}
-
 // resolveAgentConfig resolves agent configuration from config metadata
 // using a priority chain:
 //
 //  1. existingConfig's agent.config path — if the config references a
 //     metadata.yaml, resolve all fields from it.
 //  2. Default baseline path — try .agent_configs/baseline/metadata.yaml.
-//  3. Nothing found — returns nil; the caller should prompt the user
-//     for an instruction and then call writeBaselineIfNeeded.
+//  3. Nothing found — returns nil; the caller can prompt for baseline fields.
 //
 // The returned AgentConfig contains resolved instruction file path, model,
-// skill_dir, and tools_file. Eval generate uses only instruction fields;
-// optimize also uses skill_dir and tools_file.
+// skill_dir, and tool_file.
 func resolveAgentConfig(
-	existingConfig *opt_eval.Config,
+	existingConfig *optconfig.Config,
 	projectDir string,
-) *opt_eval.AgentConfig {
+) *optconfig.AgentConfig {
 	// Step 1: existing config has a config pointer — resolve from it.
 	if existingConfig != nil && existingConfig.Agent.ConfigFile != "" {
-		ref := opt_eval.AgentRef{ConfigFile: existingConfig.Agent.ConfigFile}
+		ref := optconfig.AgentRef{ConfigFile: existingConfig.Agent.ConfigFile}
 		return ref.ResolveConfig(projectDir)
 	}
 
 	// Step 2: try the default baseline path.
 	if projectDir != "" {
-		relPath := opt_eval.BaselineConfigRelPath()
+		relPath := optconfig.BaselineConfigRelPath()
 		if fileExists(filepath.Join(projectDir, relPath)) {
-			ref := opt_eval.AgentRef{ConfigFile: relPath}
+			ref := optconfig.AgentRef{ConfigFile: relPath}
 			return ref.ResolveConfig(projectDir)
 		}
 	}
 
 	// Step 3: nothing found — caller should prompt and write baseline.
 	return nil
-}
-
-// writeBaselineIfNeeded creates a baseline config when no config was resolved
-// but an instruction is available. Returns the config file relative path
-// (empty if nothing was written).
-func writeBaselineIfNeeded(
-	projectDir, instruction string,
-) string {
-	if projectDir == "" || instruction == "" {
-		return ""
-	}
-	defaultConfigFile := opt_eval.BaselineConfigRelPath()
-	absConfigFile := filepath.Join(projectDir, defaultConfigFile)
-	// Don't overwrite an existing baseline.
-	if fileExists(absConfigFile) {
-		return ""
-	}
-	if err := writeBaselineConfig(projectDir, baselineParams{
-		Instruction: instruction,
-	}); err != nil {
-		fmt.Printf("   warning: failed to write baseline config: %s\n", err)
-		return ""
-	}
-	fmt.Printf("   Baseline:   %s\n", absConfigFile)
-	return defaultConfigFile
 }
 
 // baselineParams holds optional inputs for writing a baseline agent config.
@@ -195,9 +131,9 @@ type baselineParams struct {
 // writeBaselineConfig writes a baseline agent config to .agent_configs/baseline/.
 // It creates metadata.yaml with file pointers and writes instructions.md.
 // When skillDir is empty, it auto-detects a "skills" or "skill" directory.
-// Used by both eval generate and optimize.
+// Used when optimization captures the original agent configuration.
 func writeBaselineConfig(agentProject string, p baselineParams) error {
-	baseDir := filepath.Join(agentProject, opt_eval.AgentConfigsDir, opt_eval.BaselineDir)
+	baseDir := filepath.Join(agentProject, optconfig.AgentConfigsDir, optconfig.BaselineDir)
 	if err := os.MkdirAll(baseDir, 0750); err != nil {
 		return fmt.Errorf("creating baseline directory: %w", err)
 	}
@@ -206,17 +142,17 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 		Model           string `yaml:"model,omitempty"`
 		InstructionFile string `yaml:"instruction_file,omitempty"`
 		SkillDir        string `yaml:"skill_dir,omitempty"`
-		ToolsFile       string `yaml:"tools_file,omitempty"`
+		ToolsFile       string `yaml:"tool_file,omitempty"`
 	}{
 		Model: p.Model,
 	}
 
 	if p.Instruction != "" {
-		instructionPath := filepath.Join(baseDir, opt_eval.InstructionFile)
+		instructionPath := filepath.Join(baseDir, optconfig.InstructionFile)
 		if err := os.WriteFile(instructionPath, []byte(p.Instruction), 0600); err != nil {
 			return fmt.Errorf("writing baseline instructions: %w", err)
 		}
-		meta.InstructionFile = opt_eval.InstructionFile
+		meta.InstructionFile = optconfig.InstructionFile
 	}
 
 	// Resolve skill_dir: use explicit path, or auto-detect from project.
@@ -251,87 +187,13 @@ func writeBaselineConfig(agentProject string, p baselineParams) error {
 		return fmt.Errorf("serializing baseline metadata: %w", err)
 	}
 
-	metaPath := filepath.Join(baseDir, opt_eval.MetadataFile)
+	metaPath := filepath.Join(baseDir, optconfig.MetadataFile)
 	if err := os.WriteFile(metaPath, data, 0600); err != nil {
 		return fmt.Errorf("writing baseline metadata: %w", err)
 	}
 
 	return nil
 }
-
-// loadJSONLFile reads a JSONL file and unmarshals each non-empty line into T.
-// Returns an error if the file cannot be read, a line fails to parse, or no items are found.
-func loadJSONLFile[T any](path string) ([]T, error) {
-	f, err := os.Open(path) //nolint:gosec // path is provided by user for local dataset
-	if err != nil {
-		return nil, fmt.Errorf("failed to open dataset file %s: %w", path, err)
-	}
-	defer f.Close()
-
-	var items []T
-	scanner := bufio.NewScanner(f)
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-		var item T
-		if err := json.Unmarshal([]byte(line), &item); err != nil {
-			return nil, fmt.Errorf("failed to parse dataset line %d: %w", lineNum, err)
-		}
-		items = append(items, item)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading dataset file %s: %w", path, err)
-	}
-	if len(items) == 0 {
-		return nil, fmt.Errorf("dataset file %s contains no items", path)
-	}
-	return items, nil
-}
-
-// statusLabelAndColor maps a raw status to a display label and color function.
-func statusLabelAndColor(status string) (string, func(string, ...any) string) {
-	switch status {
-	case "completed":
-		return "Completed", color.GreenString
-	case "succeeded":
-		return "Succeeded", color.GreenString
-	case "failed":
-		return "Failed", color.RedString
-	case "cancelled", "canceled":
-		return "Cancelled", color.YellowString
-	case "running", "in_progress":
-		return "Running", color.CyanString
-	case "partial":
-		return "Partial", color.YellowString
-	case "":
-		return "No runs", color.HiBlackString
-	default:
-		return status, fmt.Sprintf
-	}
-}
-
-// colorizeStatus returns a colorized status string for display.
-func colorizeStatus(status string) string {
-	label, colorFn := statusLabelAndColor(status)
-	return colorFn(label)
-}
-
-// padColorizedStatus returns a fixed-width colored status string so that
-// tabwriter aligns columns correctly despite ANSI escape sequences.
-func padColorizedStatus(status string) string {
-	const statusWidth = 10 // wide enough for "Completed", "Cancelled", etc.
-	label, colorFn := statusLabelAndColor(status)
-	padded := fmt.Sprintf("%-*s", statusWidth, label)
-	return colorFn(padded)
-}
-
-// ---------------------------------------------------------------------------
-// Shared prompt helpers (used by eval generate and optimize)
-// ---------------------------------------------------------------------------
 
 // selectOtherDeploymentValue is the sentinel value for the "Select another
 // deployment" choice in the model picker.
@@ -446,17 +308,17 @@ func getDeployedModelFromEnv(ctx context.Context, azdClient *azdext.AzdClient, e
 }
 
 // promptDatasetSelection prompts the user to enter a dataset file path or
-// registered dataset name and resolves it. Returns the file path and dataset
+// registered dataset name:version and resolves it. Returns the file path and dataset
 // reference (one will be set, the other empty/nil).
 func promptDatasetSelection(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	agentProject string,
-) (datasetFile string, datasetRef *opt_eval.DatasetRef, err error) {
+) (datasetFile string, datasetRef *optconfig.DatasetRef, err error) {
 	resp, err := azdClient.Prompt().Prompt(ctx, &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
-			Message:        "Dataset file path or registered dataset name",
-			HelpMessage:    "Enter a local .jsonl file path or a registered dataset name",
+			Message:        "Dataset file path or registered dataset name:version",
+			HelpMessage:    "Enter a local .jsonl file path or a registered dataset name:version",
 			IgnoreHintKeys: true,
 		},
 	})
@@ -467,12 +329,20 @@ func promptDatasetSelection(
 	value := strings.TrimSpace(resp.Value)
 	if value == "" {
 		return "", nil, fmt.Errorf(
-			"a dataset is required: use --dataset <file-or-name>, or provide a dataset " +
-				"in your config, or run 'azd ai agent eval generate' to generate one")
+			"a dataset is required: use --dataset <file-or-name:version>, or provide a dataset " +
+				"in your evaluation configuration, or run 'azd ai eval generate' to generate one")
 	}
 
-	if eval_api.IsDatasetName(value) {
-		return "", &opt_eval.DatasetRef{Name: value}, nil
+	return resolveOptimizeDatasetInput(value, agentProject)
+}
+
+func resolveOptimizeDatasetInput(value, agentProject string) (string, *optconfig.DatasetRef, error) {
+	if isDatasetName(value) {
+		name, version, valid := strings.Cut(value, ":")
+		if !valid || name == "" || version == "" {
+			return "", nil, fmt.Errorf("--dataset requires name:version for a registered dataset, or a local JSONL file")
+		}
+		return "", &optconfig.DatasetRef{Name: name, Version: version}, nil
 	}
 
 	resolved, err := resolveLocalDatasetFile(resolveCwdRelative(value), agentProject)
@@ -480,4 +350,67 @@ func promptDatasetSelection(
 		return "", nil, err
 	}
 	return resolved, nil, nil
+}
+
+func isDatasetName(value string) bool {
+	if value == "" || strings.ContainsAny(value, "/\\") {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(value))
+	return ext != ".jsonl" && ext != ".json" && ext != ".csv"
+}
+
+func resolveCwdRelative(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
+func resolveLocalDatasetFile(dataset, agentProject string) (string, error) {
+	if !filepath.IsAbs(dataset) {
+		dataset = filepath.Join(agentProject, dataset)
+	}
+	if _, err := os.Stat(dataset); err != nil {
+		return "", fmt.Errorf("dataset file %q is not accessible: %w", dataset, err)
+	}
+	return dataset, nil
+}
+
+func evaluatorsFromFlags(values []string) optconfig.EvaluatorList {
+	refs := make(optconfig.EvaluatorList, len(values))
+	for i, value := range values {
+		refs[i] = optconfig.EvaluatorRef{Name: value}
+	}
+	return refs
+}
+
+func formatOptimizeTimestamp(ts any) string {
+	var seconds int64
+	switch value := ts.(type) {
+	case int64:
+		seconds = value
+	case float64:
+		seconds = int64(value)
+	case int:
+		seconds = int64(value)
+	case string:
+		if value == "" {
+			return ""
+		}
+		parsed, err := time.Parse(time.RFC3339, value)
+		if err != nil {
+			return value
+		}
+		return parsed.UTC().Format("2006-01-02 15:04:05 UTC")
+	default:
+		return ""
+	}
+	if seconds == 0 {
+		return ""
+	}
+	return time.Unix(seconds, 0).UTC().Format("2006-01-02 15:04:05 UTC")
 }

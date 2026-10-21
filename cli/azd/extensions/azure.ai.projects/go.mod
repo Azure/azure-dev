@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2 v2.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/azure/azure-dev/cli/azd v1.35.1
+	github.com/azure/azure-dev/cli/azd v1.37.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.19.0
 	github.com/spf13/cobra v1.10.2

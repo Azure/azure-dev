@@ -2,7 +2,7 @@
 
 Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
-list/show/create/copy/delete/validate/test, service defaults, doctor, and environment-variable
+list/show/create/copy/delete/validate/test, schema authoring, service defaults, doctor, and environment-variable
 inspection. The remaining CU workflows are in development.
 
 ## Installation
@@ -22,6 +22,9 @@ azd ai cu version
 azd ai cu version --output json
 azd ai cu analyzer list --kind custom --sort-by createdAt -o json
 azd ai cu analyzer validate --schema schema.json --strict --spec -o json
+azd ai cu analyzer schema create -n invoice_v1 --output-file schema.json
+azd ai cu analyzer schema create --type classification -o json
+azd ai cu analyzer schema create --from-sample invoice.pdf --output-file suggested.json
 azd ai cu analyzer show prebuilt-document
 azd ai cu analyzer create invoice_v1 --schema schema.json
 azd ai cu analyzer copy invoice_v1 invoice_v2
@@ -65,6 +68,55 @@ The extension inherits azd global flags instead of defining a second set.
   configuration/service access. Declining confirmation cancels the operation.
   After confirmation, GET verifies existence before DELETE; a failed lookup never
   deletes, and a missing analyzer is an error.
+
+### Analyzer schema authoring
+
+`analyzer schema create` creates an offline starter by default; `--from-template`
+makes that choice explicit. No project, endpoint, sign-in, host RPC, or service
+request is needed. The API version is explicit `--api-version`, process
+`CU_API_VERSION`, then GA. Template mode does not resolve an azd environment,
+read credentials/model mappings, or modify service defaults.
+
+`--name` / `-n` / `-a` defaults to `my_analyzer_v1` and uses the same custom-ID
+rules as analyzer create. There is no positional name. `--modality` accepts
+`document` (default), `image`, `audio`, and `video`, selecting the corresponding
+prebuilt base unless `--base` overrides it. `--type extraction|classification`
+defaults to extraction. Extraction includes the existing scalar, summary,
+classification-field, and table examples; classification uses description-only
+categories and enables segmentation, without creating dependent analyzers.
+Templates match the shared Python core, including the editable model names
+`gpt-5.2` and `text-embedding-3-large`; these are authoring defaults, not
+deployment discovery or a claim that those models are deployed.
+
+`--from-sample` sends exactly one regular local document to
+`prebuilt-documentFieldSchema` using asynchronous analysis. This can incur CU
+cost and requires the normal endpoint/tenant/azd-sign-in configuration. It
+cannot be combined with `--from-template`, classification type, a non-document
+modality, or a base override. Supported suffixes match `cu` / `az cu`: PDF,
+TIFF (`.tiff`), Office/OpenDocument formats, EPUB, TXT, HTML, Markdown, RTF, XML,
+JSON, CSV/TSV, KML, EML, and MSG. URLs, directories, images, audio, video,
+archives, and the unsupported `.tif` alias are rejected before session access.
+
+The first nonempty `schema.valueJson` object across content segments replaces
+the example fields. Missing/null/blank descriptions receive recursive TODO
+placeholders, including object properties and array items. Existing descriptions,
+unknown properties, and exact large numbers survive unchanged. Empty suggestions
+retain the default extraction template with an explicit stderr warning, matching
+the standalone core behavior without adding a Go-only schema property. Service
+warning presence is summarized on stderr; raw warning details are not echoed
+into diagnostics or inserted into the analyzer document.
+
+Default/JSON output is the complete schema. `--output-file` optionally saves
+the same UTF-8 JSON through the shared atomic private-file writer; existing files
+require `--force`. Sample aliases (including hard links), symlinks, special
+files, and unsafe parents are rejected. Output checks run before service access
+and again before saving. Service/preflight failures and cancellation observed
+before publication do not save a schema or emit success-shaped stdout. Input
+readers close before the service session. If stdout fails after a successful
+file publication, the command returns an error but retains that completed file.
+Inherited `-o none` suppresses successful stdout, not explicit file writes or
+warnings. Review the result with `analyzer validate` before `analyzer create`;
+schema authoring itself never creates or replaces an analyzer.
 
 ### Analyzer test
 

@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -32,6 +33,42 @@ type Input struct {
 	URL       string
 	Relative  string
 	identity  fs.FileInfo
+}
+
+// DiscoverFile resolves one regular local file without directory expansion.
+func DiscoverFile(ctx context.Context, value string) (Input, error) {
+	if err := ctx.Err(); err != nil {
+		return Input{}, err
+	}
+	if value == "" || isURL(value) {
+		return Input{}, invalid("invalid_input_file", "Specify a readable regular local file.")
+	}
+	path, err := filepath.Abs(value)
+	if err != nil {
+		return Input{}, invalid("invalid_input_path", "An input path could not be resolved.")
+	}
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return Input{}, invalid("invalid_input_path", "An input path does not exist or could not be resolved.")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return Input{}, invalid("invalid_input_file", "An input must be a readable regular file.")
+	}
+	return Input{Reference: path, Path: path, Relative: filepath.Base(path), identity: info}, nil
+}
+
+// Open verifies discovery identity before returning a caller-owned local reader.
+func (input Input) Open() (*os.File, error) {
+	file, err := os.Open(input.Path)
+	if err != nil {
+		return nil, invalid("input_read_failed", "An input file could not be opened.")
+	}
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || input.identity == nil || !os.SameFile(input.identity, info) {
+		return nil, errors.Join(invalid("input_changed", "An input file changed after discovery."), file.Close())
+	}
+	return file, nil
 }
 
 func invalid(code, message string) error {
@@ -73,20 +110,17 @@ func Discover(ctx context.Context, options InputOptions) ([]Input, error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		canonical, err := filepath.EvalSymlinks(path)
+		input, err := DiscoverFile(ctx, path)
 		if err != nil {
-			return invalid("invalid_input_file", "An input file could not be resolved.")
-		}
-		info, err := os.Stat(canonical)
-		if err != nil || !info.Mode().IsRegular() {
-			return invalid("invalid_input_file", "An input must be a readable regular file.")
+			return err
 		}
 		for _, previous := range result {
-			if previous.Path == canonical || (previous.identity != nil && os.SameFile(previous.identity, info)) {
+			if previous.Path == input.Path || (previous.identity != nil && os.SameFile(previous.identity, input.identity)) {
 				return nil
 			}
 		}
-		result = append(result, Input{Reference: canonical, Path: canonical, Relative: relative, identity: info})
+		input.Relative = relative
+		result = append(result, input)
 		return nil
 	}
 	for _, value := range selected {

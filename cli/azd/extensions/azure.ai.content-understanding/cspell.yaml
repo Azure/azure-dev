@@ -27,3 +27,6 @@ overrides:
   - filename: "internal/cuclient/analysis.go"
     words:
       - notstarted
+  - filename: "internal/schema/author.go"
+    words:
+      - epub

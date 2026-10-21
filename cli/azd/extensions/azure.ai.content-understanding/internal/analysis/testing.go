@@ -63,7 +63,7 @@ func CheckTestReport(path string, inputs []Input, force bool) error {
 		return invalid("invalid_working_directory", "The working directory could not be resolved.")
 	}
 	exists, err := localio.Check(path)
-	if err != nil || aliasesInput(path, inputs, working) {
+	if err != nil || AliasesInput(path, inputs, working) {
 		return invalid("invalid_test_report", "The test report must be a regular file path distinct from all inputs.")
 	}
 	if exists && !force {

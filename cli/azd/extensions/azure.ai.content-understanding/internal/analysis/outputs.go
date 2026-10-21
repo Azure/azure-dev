@@ -165,7 +165,7 @@ func PlanOutputs(inputs []Input, options OutputOptions) (Plan, error) {
 		if err != nil {
 			return Plan{}, invalid("unsafe_output_path", "A result path is inaccessible, a symlink, or not a regular file.")
 		}
-		if aliasesInput(*output.Path, inputs, workingDirectory) {
+		if AliasesInput(*output.Path, inputs, workingDirectory) {
 			return Plan{}, invalid("output_overwrites_input", "A result path must not overwrite any analysis input.")
 		}
 		output.Exists = exists
@@ -176,7 +176,7 @@ func PlanOutputs(inputs []Input, options OutputOptions) (Plan, error) {
 	}
 	if options.Report != "" {
 		exists, err := localio.Check(options.Report)
-		if err != nil || exists || aliasesInput(options.Report, inputs, workingDirectory) {
+		if err != nil || exists || AliasesInput(options.Report, inputs, workingDirectory) {
 			return Plan{}, invalid("invalid_report_path",
 				"The report requires a new regular file path that is not an input.")
 		}
@@ -219,7 +219,8 @@ func pathKey(path, workingDirectory string) string {
 	return absolute
 }
 
-func aliasesInput(path string, inputs []Input, workingDirectory string) bool {
+// AliasesInput detects lexical and physical aliases of discovered local files.
+func AliasesInput(path string, inputs []Input, workingDirectory string) bool {
 	info, err := os.Stat(path)
 	for _, input := range inputs {
 		if input.Path != "" && (pathKey(path, workingDirectory) == pathKey(input.Path, workingDirectory) ||

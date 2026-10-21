@@ -210,14 +210,9 @@ func analyzeOne(
 	}
 	if input.Path != "" {
 		var err error
-		file, err = os.Open(input.Path)
+		file, err = input.Open()
 		if err != nil {
-			return nil, nil, invalid("input_read_failed", "An input file could not be opened.")
-		}
-		info, err := file.Stat()
-		if err != nil || !info.Mode().IsRegular() || input.identity == nil || !os.SameFile(input.identity, info) {
-			closeErr := file.Close()
-			return nil, nil, errors.Join(invalid("input_changed", "An input file changed after discovery."), closeErr)
+			return nil, nil, err
 		}
 		request.Input.Body, request.Input.ContentType = file, "application/octet-stream"
 	}

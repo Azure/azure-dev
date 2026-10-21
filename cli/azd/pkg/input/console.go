@@ -204,6 +204,10 @@ type ConsoleOptions struct {
 	// Nil preserves the historical behavior of allowing empty selections.
 	AllowEmptySelection *bool
 
+	// RequireInput prevents non-terminal confirmations from accepting the default on unanswered EOF.
+	// Enter still accepts the default. No-prompt mode is unchanged.
+	RequireInput bool
+
 	// Prompt-only options
 	IsPassword bool
 }
@@ -1007,6 +1011,9 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	var response bool
 
 	err := c.doInteraction(func(c *AskerConsole) error {
+		if options.RequireInput && !c.noPrompt {
+			return askOnePrompt(survey, &response, false, c.handles.Stdout, c.handles.Stdin, true)
+		}
 		return c.asker(survey, &response)
 	})
 	if err != nil {
@@ -1082,6 +1089,19 @@ func (c *AskerConsole) handleResize(width int32) {
 	c.spinnerLineMu.Unlock()
 }
 
+type interruptSignalWatcher struct {
+	once  sync.Once
+	watch func(*AskerConsole)
+}
+
+func (w *interruptSignalWatcher) install(c *AskerConsole) {
+	w.once.Do(func() {
+		w.watch(c)
+	})
+}
+
+var processInterruptWatcher = &interruptSignalWatcher{watch: watchProcessInterrupt}
+
 func watchTerminalResize(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
@@ -1109,7 +1129,7 @@ func watchTerminalResize(c *AskerConsole) {
 	}
 }
 
-func watchTerminalInterrupt(c *AskerConsole) {
+func watchProcessInterrupt(c *AskerConsole) {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
@@ -1239,8 +1259,8 @@ func NewConsole(
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(consoleWidth())
 		watchTerminalResize(c)
-		watchTerminalInterrupt(c)
 	}
+	processInterruptWatcher.install(c)
 
 	return c
 }

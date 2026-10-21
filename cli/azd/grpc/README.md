@@ -21,6 +21,13 @@ graduate to stable in azd 1.36.0 (October 2026). Their deprecated beta routes
 continue delegating to stable behavior; removing them requires a separately
 approved policy. See the [graduation and SDK migration policy](../docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 
+Deployment preview graduates on the existing stable `ServiceTargetService.Stream`,
+targeting azd 1.37.0. Its `supports_preview` opt-in, preview envelope fields, and
+request/response/result messages retain their beta wire shapes. Beta preview
+members and SDK helpers are deprecated but retained; the generated beta adapter
+delegates to stable behavior without a focused override. The frozen unversioned
+bridge is unchanged. See the [second graduation policy and release tracking](../docs/extensions/contract-versioning.md#october-2026-second-graduation-target-azd-1370).
+
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
 source contract or generated SDK package for new development.

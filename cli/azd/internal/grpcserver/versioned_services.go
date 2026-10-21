@@ -122,13 +122,6 @@ func (s *Server) registerServices() error {
 			override: betaServiceOverrides[BetaExtensionService],
 		}
 	}
-	if serviceTargetService, ok := s.serviceTargetService.(*ServiceTargetService); ok {
-		if _, supplied := betaServiceOverrides[BetaServiceTargetService]; !supplied {
-			betaServiceOverrides[BetaServiceTargetService] = &betaServiceTargetServiceOverride{
-				service: serviceTargetService,
-			}
-		}
-	}
 	if ps, ok := s.projectService.(*projectService); ok {
 		custom := betaServiceOverrides[BetaProjectService]
 		betaServiceOverrides[BetaProjectService] = betaOverrideChain{

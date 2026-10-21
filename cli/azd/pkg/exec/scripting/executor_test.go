@@ -247,6 +247,28 @@ func TestExecuteDirect_ExitCodePropagation(t *testing.T) {
 	assert.Equal(t, 42, execErr.ExitCode)
 }
 
+func TestExecuteDirect_InterruptExit(t *testing.T) {
+	e, err := New(Config{})
+	require.NoError(t, err)
+
+	var cmdErr error
+	if runtime.GOOS == "windows" {
+		cmdErr = e.ExecuteDirect(
+			t.Context(), "cmd", []string{"/c", "exit -1073741510"},
+		)
+	} else {
+		cmdErr = e.ExecuteDirect(
+			t.Context(), "sh", []string{"-c", "kill -INT $$"},
+		)
+	}
+
+	require.Error(t, cmdErr)
+	require.IsType(t, &ExecutionError{}, cmdErr)
+	execErr, ok := errors.AsType[*ExecutionError](cmdErr)
+	require.True(t, ok)
+	assert.True(t, execErr.Interrupted())
+}
+
 func TestExecuteInline_ExitCodePropagation(t *testing.T) {
 	shell := platformShell()
 	e, err := New(Config{Shell: shell})

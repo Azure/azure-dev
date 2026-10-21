@@ -79,3 +79,41 @@ func TestAgentConfiguration(t *testing.T) {
 	assert.True(t, ref.Instruction.IsEmpty())
 	assert.Nil(t, (&AgentRef{}).ResolveConfig(root))
 }
+
+func TestAgentConfiguration_ToolsMetadata(t *testing.T) {
+	t.Parallel()
+	absoluteTools := filepath.Join(t.TempDir(), "absolute-tools.json")
+	for _, tt := range []struct {
+		name, metadata, want string
+	}{
+		{"current key", "tool_file: tools.json\n", "tools.json"},
+		{"legacy key", "tools_file: tools.json\n", "tools.json"},
+		{"current key wins", "tool_file: current.json\ntools_file: previous.json\n", "current.json"},
+		{"empty current key falls back", "tool_file: ''\ntools_file: previous.json\n", "previous.json"},
+		{"absolute legacy path", "tools_file: " + absoluteTools + "\n", absoluteTools},
+		{"empty keys", "tool_file: ''\ntools_file: ''\n", ""},
+		{"missing keys", "model: agent-model\n", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			dir := filepath.Join(root, AgentConfigsDir, BaselineDir)
+			require.NoError(t, os.MkdirAll(dir, 0750))
+			metadataPath := filepath.Join(dir, MetadataFile)
+			require.NoError(t, os.WriteFile(metadataPath, []byte(tt.metadata), 0600))
+			ref := &AgentRef{ConfigFile: BaselineConfigRelPath()}
+
+			cfg := ref.ResolveConfig(root)
+
+			require.NotNil(t, cfg)
+			want := tt.want
+			if want != "" && !filepath.IsAbs(want) {
+				want = filepath.Join(dir, want)
+			}
+			assert.Equal(t, want, cfg.ToolsFile)
+			data, err := os.ReadFile(metadataPath)
+			require.NoError(t, err)
+			assert.Equal(t, tt.metadata, string(data), "reading must not rewrite the metadata")
+		})
+	}
+}

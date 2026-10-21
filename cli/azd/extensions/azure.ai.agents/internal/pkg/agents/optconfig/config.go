@@ -102,6 +102,7 @@ type AgentRef struct {
 
 // ResolveConfig loads the baseline metadata pointed to by ConfigFile without
 // mutating the reference. Metadata paths resolve relative to the metadata file.
+// The tool_file key takes precedence over the older tools_file key.
 func (a *AgentRef) ResolveConfig(projectDir string) *AgentConfig {
 	if a.ConfigFile == "" {
 		return nil
@@ -121,9 +122,13 @@ func (a *AgentRef) ResolveConfig(projectDir string) *AgentConfig {
 		InstructionFile string `yaml:"instruction_file"`
 		SkillDir        string `yaml:"skill_dir"`
 		ToolsFile       string `yaml:"tool_file"`
+		LegacyToolsFile string `yaml:"tools_file"`
 	}
 	if err := yaml.Unmarshal(data, &meta); err != nil {
 		return cfg
+	}
+	if meta.ToolsFile == "" {
+		meta.ToolsFile = meta.LegacyToolsFile
 	}
 	cfg.Model = meta.Model
 	if meta.InstructionFile != "" {

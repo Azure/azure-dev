@@ -107,6 +107,29 @@ func TestMergeAgentBaseline_RuntimeToolsFile(t *testing.T) {
 	}
 }
 
+func TestWriteBaselineConfig_PreservesLegacyToolsReference(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, optconfig.AgentConfigsDir, optconfig.BaselineDir)
+	require.NoError(t, os.MkdirAll(configDir, 0750))
+	metadataPath := filepath.Join(dir, optconfig.BaselineConfigRelPath())
+	require.NoError(t, os.WriteFile(metadataPath, []byte("tools_file: tools.json\n"), 0600))
+	toolsPath := filepath.Join(configDir, "tools.json")
+	require.NoError(t, os.WriteFile(toolsPath, []byte("[]"), 0600))
+
+	cfg := &OptimizeConfig{}
+	mergeAgentBaseline(cfg, dir)
+	require.Equal(t, toolsPath, cfg.ToolsFile)
+	require.NoError(t, writeBaselineConfig(dir, baselineParams{ToolsFile: cfg.ToolsFile}))
+
+	data, err := os.ReadFile(metadataPath)
+	require.NoError(t, err)
+	var metadata map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &metadata))
+	assert.Equal(t, "tools.json", metadata["tool_file"])
+	assert.NotContains(t, metadata, "tools_file")
+}
+
 func TestIsDatasetName(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {

@@ -90,8 +90,10 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		return Execution{}, invalid("invalid_analysis_mode", "Select async or inline analysis.")
 	}
 	result := Execution{Records: make([]Record, len(plan.Outputs))}
+	inputs := make([]Input, len(plan.Outputs))
 	var jobs []int
 	for index, output := range plan.Outputs {
+		inputs[index] = output.Input
 		record := Record{
 			Input: output.Input.Reference, Output: output.Path,
 			Status: "failed", Error: "Analysis was stopped before completion.",
@@ -105,27 +107,7 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 	}
 	workCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	completed := make(chan outcome)
-	var next atomic.Int64
-	var workers sync.WaitGroup
-	for range min(options.Concurrency, len(jobs)) {
-		workers.Go(func() {
-			for workCtx.Err() == nil {
-				position := int(next.Add(1) - 1)
-				if position >= len(jobs) {
-					return
-				}
-				index := jobs[position]
-				payload, usage, err := analyzeOne(workCtx, client, plan.Outputs[index].Input, plan.LLMInput, options)
-				// Always drain started jobs, including cancellation, before closing the service session.
-				completed <- outcome{index: index, payload: payload, usage: usage, err: err}
-			}
-		})
-	}
-	go func() {
-		workers.Wait()
-		close(completed)
-	}()
+	completed := analyzeInputs(workCtx, client, inputs, jobs, plan.LLMInput, options)
 	var publishErr error
 	for item := range completed {
 		record := &result.Records[item.index]
@@ -187,6 +169,33 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		}
 	}
 	return result, nil
+}
+
+func analyzeInputs(
+	ctx context.Context, client cuclient.Client, inputs []Input, jobs []int, llm bool, options RunOptions,
+) <-chan outcome {
+	completed := make(chan outcome)
+	var next atomic.Int64
+	var workers sync.WaitGroup
+	for range min(options.Concurrency, len(jobs)) {
+		workers.Go(func() {
+			for ctx.Err() == nil {
+				position := int(next.Add(1) - 1)
+				if position >= len(jobs) {
+					return
+				}
+				index := jobs[position]
+				payload, usage, err := analyzeOne(ctx, client, inputs[index], llm, options)
+				// Drain all started jobs before closing the service session, including on cancellation.
+				completed <- outcome{index: index, payload: payload, usage: usage, err: err}
+			}
+		})
+	}
+	go func() {
+		workers.Wait()
+		close(completed)
+	}()
+	return completed
 }
 
 func analyzeOne(

@@ -34,6 +34,7 @@ func newAnalyzerCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *c
 	group := &cobra.Command{Use: "analyzer", Short: "Manage Content Understanding analyzers"}
 	group.AddCommand(newAnalyzerValidateCommand(extCtx))
 	group.AddCommand(newAnalyzerCopyCommand(extCtx, open))
+	group.AddCommand(newAnalyzerTestCommand(extCtx, open))
 	for _, action := range []string{"list", "show", "create", "delete"} {
 		options := &analyzerOptions{}
 		cmd := &cobra.Command{Use: action, Args: cobra.NoArgs}

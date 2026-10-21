@@ -2,7 +2,7 @@
 
 Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
-list/show/create/copy/delete/validate, service defaults, doctor, and environment-variable
+list/show/create/copy/delete/validate/test, service defaults, doctor, and environment-variable
 inspection. The remaining CU workflows are in development.
 
 ## Installation
@@ -25,6 +25,8 @@ azd ai cu analyzer validate --schema schema.json --strict --spec -o json
 azd ai cu analyzer show prebuilt-document
 azd ai cu analyzer create invoice_v1 --schema schema.json
 azd ai cu analyzer copy invoice_v1 invoice_v2
+azd ai cu analyzer test invoice_v1 --source ./samples --pattern '*.pdf' --dry-run
+azd ai cu analyzer test -n invoice_v1 --file invoice.pdf --output-file test-report.json
 azd ai cu analyzer delete invoice_v1 --yes --no-prompt
 azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice
 azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json
@@ -63,6 +65,50 @@ The extension inherits azd global flags instead of defining a second set.
   configuration/service access. Declining confirmation cancels the operation.
   After confirmation, GET verifies existence before DELETE; a failed lookup never
   deletes, and a missing analyzer is an error.
+
+### Analyzer test
+
+`analyzer test NAME [INPUTS...]` (or `--name` / `-n` / `-a`) evaluates local
+sample files/directories using asynchronous analysis. Input modes are mutually
+exclusive: positional inputs, repeated `--file`, or repeated `--source`.
+Directory discovery, `--pattern`, `--recursive` / `-r`, ordering, and physical
+file deduplication use the same implementation as `analyze`. URLs and
+analyze-only options such as `--inline`, `--usage`, and result directories are
+not accepted. An explicit analyzer name is required; no configured analyzer
+fallback is used.
+
+The complete structured report matches `cu` / `az cu`: `analyzerId`, `summary`,
+and ordered `samples` with `ok`/`error` status, extracted field values/confidence,
+and safe sample errors. Object children use `Parent.Child`; array-of-object
+children use `Parent[].Child`. The first nonempty field across content segments
+is retained. Zero/false values are populated; recursively empty containers are
+not. Population percentages include failed samples in the denominator.
+Confidence means round to three decimals, percentages to one, and low-confidence
+counts use **strictly less than 0.6**. Missing confidence remains `null`.
+Exact large integers are retained. **This is not an accuracy benchmark**;
+the report includes the same explanatory disclaimer as Python.
+
+For exact existing report parity, service warnings and usage are not included.
+Adding warning output is deferred to a separate cross-frontend contract change;
+this does not change warning preservation in `analyze` or analyzer definitions.
+Default/JSON output is the full report, rather than standalone CU's summary
+table. Use inherited `-o default|json|none`, not standalone `--json`.
+
+`--dry-run` returns `{dryRun,analyzerId,inputs}` completely offline: no project,
+endpoint, sign-in, host/configuration RPC, prompt, service request, directory
+creation, or report write. It still validates inputs/report destinations and
+cannot be combined with `--yes`. `--concurrency` / `-j` defaults to 4 and accepts
+1-16. More than **50 samples** require confirmation, or explicit `--yes` / `-y`;
+`--no-prompt` without `--yes` fails before session/service access.
+
+`--output-file` saves only the structured report, not individual analysis
+results. Existing reports require explicit `--force`; sample aliases,
+symlinks/special files, and unsafe parent paths are rejected even with force.
+Publication uses the shared atomic private-file writer. Partial failures return
+nonzero without success-shaped stdout, while a requested report retains all
+sample outcomes. Cancellation stops pending jobs, drains started requests and
+closes readers, and retains a requested partial report. `-o none` suppresses
+successful stdout, not analysis or report writes.
 
 ### Analyzer copy
 

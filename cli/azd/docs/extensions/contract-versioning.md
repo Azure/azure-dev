@@ -209,9 +209,11 @@ and [current Azure principal](https://github.com/Azure/azure-dev/issues/10437).
 ## October 2026 second graduation (target azd 1.37.0)
 
 The [second batch audit](https://github.com/Azure/azure-dev/issues/10625) records
-deployment preview graduation, targeting host and SDK 1.37.0. The permanent
+deployment preview graduation, shipped in host and SDK 1.37.0 on October 21, 2026.
+The [release](https://github.com/Azure/azure-dev/releases/tag/azure-dev-cli_1.37.0)
+and SDK tag `cli/azd/v1.37.0` point to commit `c49286c2955a7ba5fc13487d960a723687651cc3`. The permanent
 [history](https://github.com/Azure/azure-dev/issues/10436) links both October
-batches. Actual release version/date and merged commit are recorded after shipping.
+batches.
 
 The additive stable surface is `RegisterServiceTargetRequest.supports_preview=2`,
 `ServiceTargetMessage.preview_request=21` and `preview_response=22` in the
@@ -243,10 +245,9 @@ package, publish, deployment state writes, or deploy hooks. Structured
 predeploy/postdeploy messages remain beta-only and are not part of this graduation.
 
 [Consumer migration and release tracking](https://github.com/Azure/azure-dev/issues/10626)
-covers the verified agents/projects consumers. Draft
-[migration PR #10571](https://github.com/Azure/azure-dev/pull/10571) waits for this
-graduation to merge and SDK v1.37.0 to be published. It will then migrate preview
-consumers and pin all nine affected extension modules to v1.37.0 with
+covers the verified agents/projects consumers.
+[Migration PR #10571](https://github.com/Azure/azure-dev/pull/10571) migrates preview
+consumers and pins all nine affected extension modules to the published SDK v1.37.0 with
 `requiredAzdVersion: ">=1.37.0"`, retaining stricter future requirements if needed.
 Do not publish an SDK pin before its version exists or merge local replacements.
 

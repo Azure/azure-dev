@@ -694,12 +694,13 @@ Compatibility:
 --template / -t instead.
 
 Hosted implementation protocols:
---protocol selects protocols implemented by your application, not platform
-translation endpoints. Use --protocol a2a for an A2A hosted agent (1.0),
-with implementation version 1.0.0. Init configures azure.yaml only; it does not
-generate an A2A server or enable subscription-level service features.
-Responses remains the default when no protocol is specified in --no-prompt mode.
-An A2A 0.3 implementation is not offered.
+--protocol selects protocols implemented by your agent, not platform translation
+endpoints. Use --protocol a2a for an A2A hosted agent with implementation version
+1.0.0, the currently supported Foundry hosted definition version. Its public A2A
+wire selector is 1.0 (MAJOR.MINOR), not the definition version. Init configures
+azure.yaml only; it does not generate an A2A server or enable subscription-level
+service features. Responses remains the default when no protocol is specified in
+--no-prompt mode. An A2A 0.3 implementation is not offered.
 
 Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
@@ -1288,7 +1289,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		fmt.Sprintf("Application implementation protocols (%s), not translation endpoints. Can be specified multiple times.",
+		fmt.Sprintf("Agent implementation protocols (%s), not translation endpoints. Can be specified multiple times.",
 			knownProtocolNames()))
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",

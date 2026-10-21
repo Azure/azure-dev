@@ -29,16 +29,18 @@ A2A Version:
 Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
 not a Foundry API version or the deployed agent version selected by --version.
 For plain messages, azd composes the body and A2A-Version header together.
-For an A2A hosted agent, the selected service's A2A 1.0.x implementation
-version normalizes to public version 1.0. Public agentEndpoint.protocols
-configuration enables endpoints only; it does not declare the application's implementation.
-An explicit --a2a-version overrides inference when compatible with the implementation.
-An A2A 0.3-only implementation is unsupported; a separate Responses implementation
-permits translation selection, subject to service support. Future implementation
-versions are not assumed compatible.
+For an A2A hosted agent, implementation version 1.0.0 selects public version 1.0.
+Foundry currently supports only 1.0.0 as a hosted A2A implementation version; the
+MAJOR.MINOR wire selector does not imply other implementation declarations (such as
+1.0.7) are accepted. Public agentEndpoint.protocols enables endpoints only; it does
+not declare the agent's implementation. An explicit --a2a-version overrides inference
+when compatible with the implementation. An A2A 0.3-only implementation is unsupported;
+a separate Responses implementation permits translation selection, subject to service
+support. Future implementation versions are not assumed compatible.
 Without an A2A implementation declaration (including standalone --agent-endpoint
 invokes without a local definition), 1.0 is a convenience default for translation.
-Foundry selects passthrough or translation; passthrough requires service enablement.
+Foundry selects passthrough or translation; passthrough requires A2A endpoint enablement
+in agentEndpoint.protocols. A fresh hosted agent endpoint defaults to Responses-only.
 With --input-file, --a2a-version is always required, even if the agent's YAML
 declares a version. File bytes are sent unchanged as a complete public JSON-RPC
 request. The caller must match the body to the selected header version;

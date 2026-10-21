@@ -381,7 +381,7 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
-| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, A2A-only configuration, and required application-route guidance; no server generation or cloud execution |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, exact 1.0.0 implementation declaration, A2A-only configuration, and required agent-route guidance; no server generation or cloud execution |
 
 The A2A hosted agent init scenario is a configuration-only specification. It is not
 an A2A server sample, deployment verifier, or execution test. Service onboarding
@@ -389,8 +389,11 @@ and region support are required. The init picker has Go unit/mock coverage;
 this interactive scenario has **not** been executed. Do not run it without separate approval.
 Even after approval, stop after local init; do not provision, deploy, invoke, or delete
 retained resources. Init does not enable a subscription-level A2A service feature.
-Application `protocols` declare implementation capabilities; public
-`agentEndpoint.protocols` enablement alone does not establish an A2A implementation.
+Foundry hosted definitions currently support only A2A implementation version `1.0.0`,
+which init writes exactly; the public wire selector is `1.0` (MAJOR.MINOR). Agent
+`protocols` declare implementation capabilities; public `agentEndpoint.protocols`
+enablement alone does not establish an A2A implementation. A2A passthrough also
+requires endpoint enablement; a fresh hosted endpoint defaults to Responses only.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.

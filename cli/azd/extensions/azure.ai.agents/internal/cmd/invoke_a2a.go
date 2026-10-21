@@ -247,7 +247,7 @@ func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *use
 
 // a2aRemote sends the user's message to a deployed Foundry agent using the A2A
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
-// request in the selected dialect. Foundry and the application control session
+// request in the selected dialect. Foundry and the agent control session
 // affinity and task persistence; the CLI does not guarantee cross-request memory.
 func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {

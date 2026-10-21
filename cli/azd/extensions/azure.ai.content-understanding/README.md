@@ -101,3 +101,34 @@ Inline analysis is preview-only; its GA rejection and two-version request/respon
 mapping belong to the upcoming transport tests. Domain input validation does not
 claim wire/API-version conformance. No REST adapter or new public CU command is
 enabled by the contract alone.
+
+### Authenticated HTTP transport
+
+`internal/cuclient.RESTTransport` supplies the HTTP foundation for the upcoming
+REST adapter. It accepts an injected azd-backed `azcore.TokenCredential` and uses
+the `https://cognitiveservices.azure.com/.default` scope without selecting a second
+tenant or identity. API-key authentication is not implemented.
+
+- Endpoints require HTTPS, with no embedded credentials, query, fragment, or
+  operation path. A trailing `/contentunderstanding` is normalized once.
+- Only the two agreed API versions are accepted; the default remains `2025-11-01`.
+- Requests carry the extension/version user agent, JSON accept header, a unique
+  client request ID, and azd trace correlation when available.
+- GET/HEAD requests allow at most two retries under the Azure pipeline policy.
+  Other methods get one attempt, including on 401 authentication challenges.
+  Credentials are acquired once per operation rather than using a bearer policy
+  that can automatically replay a write after a challenge.
+- The default timeout is two minutes per HTTP attempt and can be overridden
+  internally. Caller cancellation propagates to token acquisition, requests, and
+  response reads. The default HTTP client does not follow redirects.
+- Error response bodies are bounded to 64 KiB before `azcore` can buffer them.
+  Errors expose HTTP classification and a syntactically validated service code,
+  not raw service messages, bodies, or authorization values. Oversized/malformed
+  bodies still return an explicit HTTP failure. Valid `Retry-After` values are
+  retained with a maximum of 24 hours.
+- SDK body logging stays disabled; token, cookie, and non-allowlisted query values
+  are redacted by the standard pipeline logging policy.
+
+Tests use fake credentials/transports and local HTTPS servers. They do not call
+Azure or incur service charges. The transport is not yet wired to public CU
+commands, paging, or long-running operation polling.

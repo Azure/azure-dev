@@ -5,9 +5,11 @@ overrides:
     words:
       - exterrors
       - cuclient
+      - contentunderstanding
   - filename: "README.md"
     words:
       - CODEOWNERS
       - chienyuanchang
       - cuclient
       - multimodal
+      - contentunderstanding

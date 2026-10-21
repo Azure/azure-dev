@@ -9,3 +9,5 @@
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,
   and fake-client command tests for the initial GA and preview API baseline.
+- Entra ID HTTP pipeline with validated endpoints/API versions, request correlation,
+  read-only retries, bounded service errors, and offline authentication/redaction tests.

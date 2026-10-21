@@ -39,3 +39,22 @@ transfer_targets: []
 	require.NotNil(t, binding.TransferTargets)
 	require.Empty(t, binding.TransferTargets)
 }
+
+func TestVoiceTelephonyBindingJSONRejectsSnakeCaseTargets(t *testing.T) {
+	var binding VoiceTelephonyBinding
+	err := json.Unmarshal([]byte(`{
+		"provider":"twilio","identifier":"+14255550123","connection":"connection",
+		"transfer_targets":[]
+	}`), &binding)
+	require.ErrorContains(t, err, "use transferTargets")
+}
+
+func TestVoiceTelephonyBindingJSONPreservesExplicitEmptyTargets(t *testing.T) {
+	var binding VoiceTelephonyBinding
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"provider":"twilio","identifier":"+14255550123","connection":"connection",
+		"transferTargets":[]
+	}`), &binding))
+	require.NotNil(t, binding.TransferTargets)
+	require.Empty(t, binding.TransferTargets)
+}

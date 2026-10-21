@@ -1,7 +1,7 @@
 # Azure Content Understanding
 
 Native Go first-party Azure Content Understanding extension.
-This development build provides help, version, metadata, and analyzer
+This development build provides help, version, metadata, analysis, and analyzer
 list/show/create/delete commands. The remaining CU workflows are in development.
 
 ## Installation
@@ -23,6 +23,8 @@ azd ai cu analyzer list --kind custom --sort-by createdAt -o json
 azd ai cu analyzer show prebuilt-document
 azd ai cu analyzer create invoice_v1 --schema schema.json
 azd ai cu analyzer delete invoice_v1 --yes --no-prompt
+azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice
+azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json
 ```
 
 Help, version, and metadata do not require an endpoint, sign-in, or project.
@@ -68,6 +70,75 @@ does not inject persisted environment values or resolve unrelated Key Vault
 references before launch; the extension reads its selected environment through
 scoped RPCs. Inherited process inputs remain available. This preserves source
 precedence and projectless execution, including offline help and metadata.
+
+### Analyze
+
+Input modes are mutually exclusive: positional files/directories/HTTPS URLs,
+repeated `--file`, repeated `--source`, or repeated `--url`. `--pattern` requires
+`--source` and matches the source-relative POSIX path using fnmatch-style
+wildcards (`*` can span directories). `--recursive` / `-r` requires a directory.
+Discovery sorts relative paths within each source, excludes hidden and generated
+result files, skips hidden directories, and does not follow directory symlinks.
+Explicitly selected files are not subject to those discovery exclusions.
+Repeated direct arguments are errors; physical file overlaps, including hard
+links, are deduplicated. Input modes, empty selections, output conflicts, and
+existing-file policy are validated before opening the service session.
+
+`--analyzer` / `-a` overrides the resolved default analyzer. There is no implicit
+fallback analyzer. `--inline` / `-i` requires `2026-06-01-preview` and never falls
+back to asynchronous analysis. Authentication remains Entra-only.
+
+- A single input streams its complete terminal response envelope as JSON,
+  including service warnings, usage when present, and unknown properties.
+  It does not substitute the nested `result` object for the full response.
+- `--output-file` saves exactly one result. `--output-dir` / `-d` preserves
+  source-relative subdirectories. Without either flag, local batches write
+  beside their inputs; batches containing URLs require an output directory.
+  Full results use `.result.json`; LLM views use `.result.md`.
+- Local result-name collisions receive deterministic SHA-256 suffixes.
+  Remote name collisions are errors, not silently renamed outputs. Generated
+  remote names exclude query/fragment data and fit within 240 UTF-8 bytes.
+  HTTPS URLs are passed unchanged to CU, while references and reports redact
+  queries and remove fragments. The extension never downloads remote inputs.
+- `--on-existing error|skip|reanalyze` overrides process `CU_ON_EXISTS`, then
+  defaults to `error`. `skip` makes no analysis request for existing results;
+  `reanalyze` explicitly permits replacement. Invalid or empty policies fail.
+- `--llm-input` implements the Python SDK's default LLM view: ordered YAML front
+  matter, resolved fields and service metadata, warnings excluding internal
+  `LLMStats:` telemetry, document page markers/classification routing, and
+  multi-segment audio/video time ranges. YAML whitespace can differ from Python,
+  but types, content order, and boundaries are retained. Unsupported field
+  types fail explicitly rather than silently dropping extracted data.
+  Files contain plain text; streamed LLM output is a JSON string.
+- `--usage` wraps streamed output as `{"result":...,"usage":...}` and adds usage
+  to successful per-input records. Absent usage is `null`; unknown counters,
+  explicit zeroes, and exact large numbers are retained. Without the flag,
+  successful records have `usage:null`; raw envelope usage remains untouched.
+- `--concurrency` / `-j` defaults to 4 and accepts 1-32. Cancellation stops
+  pending work and cancels in-flight requests. Binary readers close after each
+  request. Attempt timeouts remain distinguishable from malformed responses,
+  including partial bodies at a deadline. Result-publication failures also
+  stop pending work.
+- More than **50 selected inputs** require an azd confirmation (default No),
+  unless `--yes` / `-y` is supplied. `--no-prompt` requires explicit `--yes`
+  above that threshold. As in PR2, selected inputs include skipped results.
+- `--dry-run` returns the analyzer and per-input destination/existing/skip plan,
+  without CU calls, prompts, directory creation, or file writes. It still
+  resolves environment configuration through azd; normal endpoint/tenant and
+  analyzer requirements apply. It cannot be combined with `--yes`.
+- `--report-file` saves a new `cu-cli/analyze-report/v1` report with counts and
+  succeeded/failed/skipped records, including partial failure or cancellation.
+  Reports never overwrite existing files. Input/result/report aliases and
+  incompatible parent/child output paths are rejected before execution.
+  Concurrent completions do not reorder summaries or reports: both retain
+  input-selection order. Any failure returns nonzero, without success-shaped
+  stdout; successful result files and a requested report remain available.
+
+Result/report publication uses private, same-directory temporary files and
+rooted filesystem operations. No-clobber publication is atomic, replacement is
+explicit, symlink/special-file destinations are rejected, and directory identity
+is checked around publication. Temporary files are removed on failure.
+`-o none` suppresses successful stdout, not result/report file writes.
 
 ## Development
 

@@ -19,6 +19,7 @@ import (
 type serviceSession struct {
 	client     cuclient.Client
 	apiVersion string
+	analyzer   string
 	confirm    func(context.Context, string) (bool, error)
 	close      func()
 }
@@ -40,7 +41,8 @@ func openServiceSession(
 		return nil, exterrors.FromError(err)
 	}
 	return &serviceSession{
-		client: client, apiVersion: runtime.Config.APIVersion, close: runtime.Close,
+		client: client, apiVersion: runtime.Config.APIVersion,
+		analyzer: runtime.Config.DefaultAnalyzer, close: runtime.Close,
 		confirm: func(ctx context.Context, message string) (bool, error) {
 			response, err := runtime.Client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{Message: message, DefaultValue: new(false)},

@@ -97,6 +97,9 @@ func readResponse(response *http.Response, statuses ...int) (json.RawMessage, er
 		return nil, malformedResponse()
 	}
 	body, readErr := io.ReadAll(response.Body)
+	if readErr == nil && response.Request != nil {
+		readErr = response.Request.Context().Err()
+	}
 	closeErr := response.Body.Close()
 	if readErr != nil {
 		return nil, transportError(readErr)

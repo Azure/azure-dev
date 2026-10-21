@@ -13,6 +13,7 @@ Examples:
   azd ai cu version --output json
 
 Available Commands:
+  analyze     Analyze local files, directories, or HTTPS URLs
   analyzer    Manage Content Understanding analyzers
   version     Display the extension version
 

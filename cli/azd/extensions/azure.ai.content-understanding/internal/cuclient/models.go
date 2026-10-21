@@ -22,17 +22,17 @@ type Diagnostic struct {
 }
 
 type Usage struct {
-	DocumentPagesMinimal            *int64
-	DocumentPagesBasic              *int64
-	DocumentPagesStandard           *int64
-	DocumentPagesMinimalInline      *int64
-	DocumentPagesBasicInline        *int64
-	DocumentPagesStandardInline     *int64
-	AudioHours                      *float64
-	VideoHours                      *float64
-	ContextualizationTokens         *int64
-	AdvancedContextualizationTokens *int64
-	Tokens                          map[string]int64
+	DocumentPagesMinimal            *int64           `json:"documentPagesMinimal,omitempty"`
+	DocumentPagesBasic              *int64           `json:"documentPagesBasic,omitempty"`
+	DocumentPagesStandard           *int64           `json:"documentPagesStandard,omitempty"`
+	DocumentPagesMinimalInline      *int64           `json:"documentPagesMinimalInline,omitempty"`
+	DocumentPagesBasicInline        *int64           `json:"documentPagesBasicInline,omitempty"`
+	DocumentPagesStandardInline     *int64           `json:"documentPagesStandardInline,omitempty"`
+	AudioHours                      *float64         `json:"audioHours,omitempty"`
+	VideoHours                      *float64         `json:"videoHours,omitempty"`
+	ContextualizationTokens         *int64           `json:"contextualizationTokens,omitempty"`
+	AdvancedContextualizationTokens *int64           `json:"advancedContextualizationTokens,omitempty"`
+	Tokens                          map[string]int64 `json:"tokens,omitempty"`
 }
 
 // JSON retains complete service output, including dynamic schemas and fields,

@@ -6,6 +6,9 @@ overrides:
       - exterrors
       - cuclient
       - contentunderstanding
+      - fnmatch
+      - localio
+      - renderable
   - filename: "README.md"
     words:
       - CODEOWNERS
@@ -14,6 +17,7 @@ overrides:
       - multimodal
       - contentunderstanding
       - projectless
+      - fnmatch
   - filename: "internal/cuclient/polling.go"
     words:
       - notstarted

@@ -62,12 +62,13 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 			cmd.SetErr(&stderr)
 			session, err := openServiceSession(cmd, &azdext.ExtensionContext{}, config.Options{
 				Endpoint: "https://configured.example", TenantID: "configured-tenant",
-				APIVersion: cuclient.PreviewAPIVersion,
+				APIVersion: cuclient.PreviewAPIVersion, DefaultAnalyzer: "configured-analyzer",
 			})
 			require.NoError(t, err)
 			defer session.close()
 			assert.IsType(t, &cuclient.RESTTransport{}, session.client)
 			assert.Equal(t, cuclient.PreviewAPIVersion, session.apiVersion)
+			assert.Equal(t, "configured-analyzer", session.analyzer)
 			confirmed, err := session.confirm(cmd.Context(), "Delete analyzer?")
 			if mode == "missing decision" || mode == "host failure" {
 				require.Error(t, err)

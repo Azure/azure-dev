@@ -1,0 +1,15 @@
+{
+  "schema": "cu-cli/analyze-report/v1",
+  "analyzer": "prebuilt-invoice",
+  "result_view": "full",
+  "counts": {"succeeded": 1, "failed": 0, "skipped": 0, "total": 1},
+  "results": [
+    {
+      "input": "<input>",
+      "status": "succeeded",
+      "analyzer": "prebuilt-invoice",
+      "output": "<output>",
+      "usage": {"documentPagesStandard": 0, "tokens": {"model": 4}, "future": 9007199254740993}
+    }
+  ]
+}

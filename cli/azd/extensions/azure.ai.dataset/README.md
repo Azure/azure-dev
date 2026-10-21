@@ -106,7 +106,7 @@ $ go test ./...
 
 ## Telemetry
 
-Requires azd 1.36.0 or later and uses the stable v1 telemetry API.
+Requires azd 1.37.0 or later and uses the stable v1 telemetry API.
 
 When installed from the official registry, the extension reports the
 `dataset.published` usage event once a dataset version has been written. Its

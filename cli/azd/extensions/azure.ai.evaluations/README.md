@@ -238,7 +238,7 @@ RPC selects the stable path. Other capability failures stop before the root muta
 Without a matching typed acknowledgment, init retains the scaffold and reports
 manual inspection instead of an automatic retry. Inspect the retained eval and
 its root service reference; do not delete preexisting evaluations.
-The minimum supported host version is `>=1.36.0`.
+The minimum supported host version is `>=1.37.0`.
 Canonical beta descriptors are generated into a private registry so this extension
 continues to build against its released SDK pin without local dependency overrides.
 A matching completed-operation acknowledgment can cover rejection before a save,
@@ -1558,7 +1558,7 @@ prints that path on stderr.
 
 ## Telemetry
 
-Requires azd 1.36.0 or later and uses the stable v1 telemetry API.
+Requires azd 1.37.0 or later and uses the stable v1 telemetry API.
 
 When installed from the official registry, the extension reports the
 `init.completed` usage event once `azd ai eval init` has written a scaffold and

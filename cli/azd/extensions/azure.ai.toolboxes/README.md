@@ -2,7 +2,7 @@
 
 Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
-Requires azd 1.36.0 or later.
+Requires azd 1.37.0 or later.
 
 ## Deploy a toolbox through `azure.yaml`
 

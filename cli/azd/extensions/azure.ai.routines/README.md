@@ -2,7 +2,7 @@
 
 Manage Microsoft Foundry Routines from your terminal. (Preview)
 
-Requires azd 1.36.0 or later.
+Requires azd 1.37.0 or later.
 
 ## Extension telemetry API
 

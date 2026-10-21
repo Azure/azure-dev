@@ -64,6 +64,7 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 				Endpoint: "https://configured.example", TenantID: "configured-tenant",
 				APIVersion: cuclient.PreviewAPIVersion, DefaultAnalyzer: "configured-analyzer",
 				ModelDeployments: map[string]string{"gpt-5.2": "configured-deployment"},
+				SubscriptionID:   "selected-subscription", ResourceGroup: "selected-group",
 			})
 			require.NoError(t, err)
 			defer session.close()
@@ -73,6 +74,17 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 			assert.Equal(t, "https://configured.example/contentunderstanding", session.endpoint)
 			assert.Empty(t, session.environment)
 			assert.Equal(t, map[string]string{"gpt-5.2": "configured-deployment"}, session.models)
+			assert.Equal(t, "selected-subscription", session.scope.SubscriptionID)
+			assert.Equal(t, "selected-group", session.scope.ResourceGroup)
+			copyClient, err := session.clientForEndpoint("https://destination.example")
+			require.NoError(t, err)
+			assert.IsType(t, &cuclient.RESTTransport{}, copyClient)
+			_, err = session.clientForEndpoint("http://unsafe.example")
+			require.Error(t, err)
+			cancelled, cancel := context.WithCancel(cmd.Context())
+			cancel()
+			_, err = session.resolveAccount(cancelled, "source-account", "", "")
+			require.ErrorIs(t, err, context.Canceled)
 			confirmed, err := session.confirm(cmd.Context(), "Delete analyzer?")
 			if mode == "missing decision" || mode == "host failure" {
 				require.Error(t, err)

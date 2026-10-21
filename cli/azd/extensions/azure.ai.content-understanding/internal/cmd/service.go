@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"azure.ai.content-understanding/internal/armclient"
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
@@ -17,14 +18,17 @@ import (
 )
 
 type serviceSession struct {
-	client      cuclient.Client
-	apiVersion  string
-	analyzer    string
-	endpoint    string
-	environment string
-	models      map[string]string
-	confirm     func(context.Context, string) (bool, error)
-	close       func()
+	client            cuclient.Client
+	apiVersion        string
+	analyzer          string
+	endpoint          string
+	environment       string
+	models            map[string]string
+	scope             config.ResourceScope
+	resolveAccount    func(context.Context, string, string, string) (armclient.Account, error)
+	clientForEndpoint func(string) (cuclient.Client, error)
+	confirm           func(context.Context, string) (bool, error)
+	close             func()
 }
 
 type sessionFactory func(*cobra.Command, *azdext.ExtensionContext, config.Options) (*serviceSession, error)
@@ -48,6 +52,19 @@ func openServiceSession(
 		analyzer: runtime.Config.DefaultAnalyzer, close: runtime.Close,
 		endpoint: runtime.Config.Endpoint, environment: runtime.Config.Environment,
 		models: runtime.Config.ModelDeployments,
+		scope:  runtime.Config.Scope,
+		resolveAccount: func(ctx context.Context, resource, subscription, group string) (armclient.Account, error) {
+			resolver, err := armclient.NewResolver(runtime.Credential, nil)
+			if err != nil {
+				return armclient.Account{}, err
+			}
+			return resolver.Resolve(ctx, resource, subscription, group, runtime.Config.Scope)
+		},
+		clientForEndpoint: func(endpoint string) (cuclient.Client, error) {
+			return cuclient.NewRESTTransport(endpoint, runtime.Credential, &cuclient.TransportOptions{
+				APIVersion: runtime.Config.APIVersion, Version: Version,
+			})
+		},
 		confirm: func(ctx context.Context, message string) (bool, error) {
 			response, err := runtime.Client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
 				Options: &azdext.ConfirmOptions{Message: message, DefaultValue: new(false)},

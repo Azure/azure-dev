@@ -2,7 +2,7 @@
 
 Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
-list/show/create/delete/validate, service defaults, doctor, and environment-variable
+list/show/create/copy/delete/validate, service defaults, doctor, and environment-variable
 inspection. The remaining CU workflows are in development.
 
 ## Installation
@@ -21,9 +21,10 @@ azd ai cu --help
 azd ai cu version
 azd ai cu version --output json
 azd ai cu analyzer list --kind custom --sort-by createdAt -o json
-azd ai cu analyzer validate --schema schema.json --strict --spec -o json --kind custom --sort-by createdAt -o json
+azd ai cu analyzer validate --schema schema.json --strict --spec -o json
 azd ai cu analyzer show prebuilt-document
 azd ai cu analyzer create invoice_v1 --schema schema.json
+azd ai cu analyzer copy invoice_v1 invoice_v2
 azd ai cu analyzer delete invoice_v1 --yes --no-prompt
 azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice
 azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json
@@ -55,17 +56,63 @@ The extension inherits azd global flags instead of defining a second set.
   must match the resolved API version. Unknown JSON properties and exact numbers
   are retained. Empty invalid containers are rejected, rather than being treated
   as absent; canonical properties take precedence over legacy snake-case aliases.
-  Authoring warnings and the standalone `analyzer validate` workflow remain
-  separate work. Create never replaces an existing analyzer or retries a write.
+  Authoring warnings and the offline `analyzer validate` workflow are separate
+  from create. Create never replaces an existing analyzer or retries a write.
 - `delete` prompts through azd with a default of **No**, unless `--yes` / `-y`
   is supplied. `--no-prompt` (or `AZD_NO_PROMPT=true`) without `--yes` fails before
   configuration/service access. Declining confirmation cancels the operation.
   After confirmation, GET verifies existence before DELETE; a failed lookup never
   deletes, and a missing analyzer is an error.
 
+### Analyzer copy
+
+`analyzer copy SOURCE DESTINATION` also accepts `--source` and `--destination`.
+Specify each ID once; positional arguments retain source/destination slot order.
+Without resource selectors, copy uses the configured CU endpoint and never calls
+ARM. Identical analyzer IDs are rejected on the same resource, but allowed
+between different resources.
+
+For each side, `--source-resource` / `--destination-resource` accepts an account
+name, HTTPS endpoint, or full Cognitive Services account ARM ID. Optional
+`--source-subscription`, `--destination-subscription`, and corresponding
+`--*-resource-group` flags narrow discovery. Full IDs override ambient scope;
+conflicting explicit scope flags are errors. Subscription/group fallback comes
+only from resolved process/selected-environment settings, never an unrelated
+environment or an Azure CLI subprocess. Projectless name/endpoint discovery
+requires a subscription setting or explicit subscription flag.
+
+Resource groups require their corresponding resource selector. A destination
+subscription also requires `--destination-resource`, rather than silently
+ignoring the requested scope. Omit unused flags instead of passing empty values.
+When discovery is requested, the source defaults to the configured endpoint;
+an omitted destination resource means the **resolved source account**, not a
+different configured endpoint. Exact account IDs or name/group pairs use
+read-only ARM GET; other selectors drain bounded account-list pages and reject
+missing/ambiguous matches. ARM uses the same tenant-bound azd identity with the
+management audience, not the CU audience. Discovery never registers providers,
+follows redirects, or forwards credentials to continuation URLs outside the
+original account-list operation.
+
+Cross-resource copy reads the source once, verifies custom content-category
+analyzer dependencies at the destination, and checks that the destination ID is
+absent. Missing dependencies must be copied explicitly; there is no recursive
+copy. Only typed not-found responses count as absence: authorization,
+throttling, and service failures stop the operation. The command then grants
+authorization on the source and submits copy on the destination, including
+source account/region coordinates. Grants are never printed or saved.
+
+Copy never deletes or replaces an analyzer, including a destination created
+between preflight and submission. A conflict recommends a new versioned ID or
+explicit inspection/deletion **at the destination**. Failed results remain
+available for inspection and are not silently cleaned up. Source/destination
+authorization failures identify the relevant side; cross-resource copy
+authorization guidance also covers expired grants. The existing CU transport
+waits for completion, preserves warnings/unknown JSON, honors cancellation,
+and never replays writes.
+
 As in PR2, default human-readable output is pretty-printed, complete JSON rather
 than a summary table. `-o default` and `-o json` preserve the same result shape:
-a list array, a complete show/create analyzer object (including service warnings),
+a list array, a complete show/create/copy analyzer object (including service warnings),
 or `{"deleted":true,"analyzerId":"..."}`. `-o none` suppresses successful result
 output, not the operation, confirmation, or errors. An empty list is `[]`, not
 `null`. Unknown properties and large integers survive serialization. No progress

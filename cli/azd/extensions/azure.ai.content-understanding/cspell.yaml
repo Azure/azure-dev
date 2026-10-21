@@ -5,6 +5,8 @@ overrides:
     words:
       - exterrors
       - cuclient
+      - analyzercopy
+      - armclient
       - contentunderstanding
       - fnmatch
       - localio

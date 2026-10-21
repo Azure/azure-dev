@@ -1086,7 +1086,7 @@ func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
 func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
 	if hasNativeA2A(definition) {
 		fmt.Fprintln(writer, "\nA2A hosted agent (1.0) configured; init does not generate an A2A server.")
-		fmt.Fprintln(writer, "Your application must serve POST /invocations/a2a, "+
+		fmt.Fprintln(writer, "Your agent implementation must serve POST /invocations/a2a, "+
 			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
 	}
 }
@@ -1112,6 +1112,9 @@ var knownProtocols = []protocolInfo{
 	// forward), so new agents default to it, matching the latest-version
 	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
+	// Foundry's hosted definition currently supports only A2A implementation
+	// version 1.0.0. The public A2A-Version wire selector is 1.0 (MAJOR.MINOR); see
+	// https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
 	{Name: "a2a", Version: "1.0.0"},
 }
 
@@ -1197,7 +1200,7 @@ func promptProtocols(
 		Options: &azdext.MultiSelectOptions{
 			Message: "Which protocols does your agent support?",
 			Choices: choices,
-			HelpMessage: "Select protocols implemented by your application, not platform translation endpoints. " +
+			HelpMessage: "Select protocols implemented by your agent, not platform translation endpoints. " +
 				"Use arrow keys to move, space to toggle, enter to confirm",
 		},
 	})

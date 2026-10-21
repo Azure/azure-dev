@@ -546,7 +546,7 @@ func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Chdir(dir)
-			source := []byte("# Existing application; init must not generate an A2A server.\n")
+			source := []byte("# Existing agent implementation; init must not generate an A2A server.\n")
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), source, 0600))
 			const envName = "agent-dev"
 			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{envName: {}}}
@@ -577,7 +577,7 @@ func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
 			require.Equal(t, source, contents)
 			entries, err := os.ReadDir(dir)
 			require.NoError(t, err)
-			require.Len(t, entries, 1, "creating the definition must not generate an application")
+			require.Len(t, entries, 1, "creating the definition must not generate an agent implementation")
 		})
 	}
 }

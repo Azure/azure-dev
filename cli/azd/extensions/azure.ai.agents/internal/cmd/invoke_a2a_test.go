@@ -891,6 +891,8 @@ func TestA2ARequestURL(t *testing.T) {
 
 func TestSelectA2ATargetVersion(t *testing.T) {
 	t.Parallel()
+	// Exercise client-side wire compatibility, not the service's deployment
+	// allowlist. Init emits the supported A2A declaration 1.0.0.
 	for _, tt := range []struct {
 		name, native, explicit string
 		responses              bool

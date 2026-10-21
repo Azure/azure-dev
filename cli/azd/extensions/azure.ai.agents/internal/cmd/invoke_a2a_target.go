@@ -90,7 +90,7 @@ func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explic
 		return "", exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"native A2A 0.3 passthrough is not supported by Foundry",
-			"upgrade the application and its native A2A declaration to 1.0.0; "+
+			"upgrade the agent's A2A implementation and declare version 1.0.0; "+
 				"translation requires an implemented Responses protocol",
 		)
 	}
@@ -111,6 +111,8 @@ func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explic
 
 // nativeA2AWireVersion normalizes declared major.minor[.patch] versions to the
 // major.minor wire selector. Future minor/major dialects are not assumed compatible.
+// This checks wire compatibility, not deployment eligibility: init declares
+// A2A protocol version 1.0.0 for the Foundry hosted-agent definition.
 func nativeA2AWireVersion(declared string) (string, error) {
 	parts := strings.Split(declared, ".")
 	valid := len(parts) == 2 || len(parts) == 3
@@ -129,6 +131,6 @@ func nativeA2AWireVersion(declared string) (string, error) {
 	return "", exterrors.Validation(
 		exterrors.CodeInvalidAgentManifest,
 		fmt.Sprintf("unsupported native A2A version %q in the agent definition", declared),
-		"declare a supported A2A version; native passthrough currently requires A2A 1.0.x",
+		"declare A2A 1.0.0 for deployment; the public A2A wire selector is 1.0",
 	)
 }

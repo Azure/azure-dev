@@ -16,12 +16,13 @@ Compatibility
 --template / -t instead.
 
 Hosted implementation protocols:
---protocol selects protocols implemented by your application, not platform
-translation endpoints. Use --protocol a2a for an A2A hosted agent (1.0),
-with implementation version 1.0.0. Init configures azure.yaml only; it does not
-generate an A2A server or enable subscription-level service features.
-Responses remains the default when no protocol is specified in --no-prompt mode.
-An A2A 0.3 implementation is not offered.
+--protocol selects protocols implemented by your agent, not platform translation
+endpoints. Use --protocol a2a for an A2A hosted agent with implementation version
+1.0.0, the currently supported Foundry hosted definition version. Its public A2A
+wire selector is 1.0 (MAJOR.MINOR), not the definition version. Init configures
+azure.yaml only; it does not generate an A2A server or enable subscription-level
+service features. Responses remains the default when no protocol is specified in
+--no-prompt mode. An A2A 0.3 implementation is not offered.
 
 Voice Agents
 Use --kind prompt-voice to initialize a managed prompt voice agent without
@@ -78,7 +79,7 @@ Flags
       --model string               : For hosted and prompt agents, name of the AI model to deploy. Defaults to 'gpt-5.4-mini' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence except during template adoption, where the flags conflict. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.
   -d, --model-deployment string    : Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts
   -p, --project-id string          : Existing Microsoft Foundry Project Id to initialize your azd environment with
-      --protocol strings           : Application implementation protocols (responses, invocations, invocations_ws, activity, a2a), not translation endpoints. Can be specified multiple times.
+      --protocol strings           : Agent implementation protocols (responses, invocations, invocations_ws, activity, a2a), not translation endpoints. Can be specified multiple times.
       --rai-policy string          : Responsible AI policy for a prompt or managed agent: 'none' to inherit the account's default content filters, a policy name on the selected Foundry account, or a policy's full ARM resource ID. The policy must already exist; azd attaches it, it does not create it. When omitted, you are prompted to pick from the policies on the account; with --no-prompt no policy is attached. Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an azure.yaml project document or a full repository template; declare policies in azure.yaml instead.
       --registry-connection string : Name or ID of an existing Foundry project connection used to pull a private pre-built container image. Requires a pre-built image and is incompatible with code deploy.
       --runtime string             : Runtime for code deploy (e.g., 'python_3_13', 'python_3_14', 'dotnet_10'). Required with --deploy-mode code --no-prompt.

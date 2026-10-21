@@ -565,11 +565,11 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Initializing an A2A hosted agent
 
-For an application that implements A2A 1.0, use the existing-code init flow.
+For an agent implementation that supports A2A 1.0, use the existing-code init flow.
 In the protocol multi-select, select `a2a — A2A hosted agent (1.0)` and deselect
-`responses` if your application does not implement Responses. Responses remains
-selected by default; all other choices, including A2A, start unselected. There is
-no additional version prompt or A2A 0.3 implementation choice.
+`responses` if your agent does not implement Responses. Responses remains selected
+by default; all other choices, including A2A, start unselected. There is no
+additional version prompt or A2A 0.3 implementation choice.
 
 For non-interactive initialization from your source directory:
 
@@ -579,7 +579,7 @@ azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \
   --dep-resolution remote_build --no-prompt
 ```
 
-The selected protocol describes your **application implementation**, not a platform
+The selected protocol describes your **agent implementation**, not a platform
 translation endpoint. Selecting only `a2a` writes this configuration into the hosted
 service (without automatically adding Responses):
 
@@ -597,17 +597,31 @@ services:
       protocols: [a2a]
 ```
 
-You can select additional protocols that your application implements; init composes
-those endpoint protocols without replacing existing authorization schemes or version
+Foundry hosted-agent definitions currently support only A2A implementation version
+`1.0.0`, which init writes exactly. This is distinct from the public A2A wire
+selector `1.0`: the A2A specification defines the `A2A-Version` value as
+MAJOR.MINOR. Normalizing a declaration to that wire selector does not establish
+that other hosted definition values (for example, `1.0` or `1.0.7`) are accepted.
+
+You can select additional protocols that your agent implements; init composes those
+endpoint protocols without replacing existing authorization schemes or version
 selectors. Adopting a sample/project manifest preserves its protocol declarations
 rather than changing them to A2A.
 
-The service's `protocols` list declares application capabilities and implementation
-versions. In contrast, `agentEndpoint.protocols` enables public endpoints; enabling
-`a2a` there does not declare that the application implements A2A.
+The service's `protocols` list declares agent implementation capabilities and
+versions. In contrast, `agentEndpoint.protocols` enables public endpoints; a newly
+created endpoint defaults to Responses only unless A2A is explicitly enabled there.
+A2A passthrough requires A2A endpoint enablement as well as an A2A implementation
+declaration; together, these let Foundry use native A2A passthrough instead of
+translating through Responses. Endpoint enablement alone does not declare that the
+agent implements A2A. The existing [hosted-agent
+A2A endpoint sample](https://github.com/microsoft-foundry/foundry-samples/blob/41299fd5a460a9287e29c8414b1c027906cf5b6f/samples/python/hosted-agents/langgraph/a2a/a2a-executor/azure.yaml)
+illustrates this endpoint configuration with a Responses implementation and both
+Responses/A2A endpoints; it is a translation sample, not native A2A passthrough or
+a new deployment API.
 
 Init writes configuration only; it does **not** generate an A2A server. Your
-application must serve:
+agent implementation must serve:
 
 - `POST /invocations/a2a`
 - `GET /invocations/a2a/.well-known/agent-card.json`
@@ -649,10 +663,12 @@ agent versions. See the pinned [A2A 1.0 versioning specification](https://a2a-pr
 and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
 
 For plain messages, azd composes both the version-specific JSON-RPC body and
-the `A2A-Version` header. For an A2A hosted agent, the selected service's A2A
-implementation version `1.0.x` normalizes to public version `1.0` when
-`--a2a-version` is omitted. Public `agentEndpoint.protocols` enablement is not
-an application implementation declaration and does not drive this inference.
+the `A2A-Version` header. Init-generated A2A hosted agents declare implementation
+version `1.0.0`, which selects public version `1.0` when `--a2a-version` is omitted.
+The public selector uses MAJOR.MINOR, as specified by the A2A versioning section
+linked above; this normalization is not evidence that other hosted implementation
+declarations such as `1.0.7` are accepted. Public `agentEndpoint.protocols` enablement
+is not an agent implementation declaration and does not drive this inference.
 An explicit `--a2a-version` overrides inference when compatible with the
 implementation. An A2A `0.3`-only implementation returns an error; a separate
 Responses implementation permits translation selection, subject to service
@@ -661,7 +677,8 @@ support. Future implementation versions are not assumed compatible.
 Without an A2A implementation declaration, `1.0` is a convenience default for
 translation because azd controls both the body and header. This also applies to
 standalone `--agent-endpoint` invocation without a local definition. Foundry
-selects passthrough or translation; passthrough requires service enablement.
+selects passthrough or translation; passthrough requires A2A enabled in
+`agentEndpoint.protocols`. A newly created endpoint defaults to Responses-only.
 For example, when using the translation convenience default:
 
 ```bash

@@ -11,3 +11,6 @@
   and fake-client command tests for the initial GA and preview API baseline.
 - Entra ID HTTP pipeline with validated endpoints/API versions, request correlation,
   read-only retries, bounded service errors, and offline authentication/redaction tests.
+- Source-pinned local CU Go SDK runtime and extension-owned adapter covering all
+  required analysis, analyzer, copy/authorization, and defaults operations while
+  preserving raw envelopes, exact values, safe polling, and write retry safety.

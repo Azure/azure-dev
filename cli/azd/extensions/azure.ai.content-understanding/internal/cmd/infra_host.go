@@ -183,7 +183,7 @@ func (h *azdInfraHost) Capabilities(
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := cuclient.NewRESTTransport(request.Endpoint, credential, &cuclient.TransportOptions{
+	client, err := cuclient.NewSDKTransport(request.Endpoint, credential, &cuclient.TransportOptions{
 		APIVersion: request.APIVersion, Version: Version,
 	})
 	if err != nil {

@@ -28,12 +28,9 @@ func (c *RESTTransport) Analyze(ctx context.Context, request AnalyzeRequest) (An
 			"inline_requires_preview", "Inline analysis requires the tested preview API version.",
 		)
 	}
-	contentType := request.Input.ContentType
-	if contentType != "" {
-		mediaType, _, err := mime.ParseMediaType(contentType)
-		if err != nil || !strings.Contains(mediaType, "/") || strings.ContainsAny(contentType, "\r\n") {
-			return AnalyzeResponse{}, validationError("invalid_content_type", "Specify a valid input MIME type.")
-		}
+	contentType, err := validateContentType(request.Input.ContentType)
+	if err != nil {
+		return AnalyzeResponse{}, err
 	}
 	action := ":analyze"
 	if request.Input.Body != nil {
@@ -44,7 +41,6 @@ func (c *RESTTransport) Analyze(ctx context.Context, request AnalyzeRequest) (An
 	}
 	path := "/analyzers/" + request.AnalyzerID + action
 	var response *http.Response
-	var err error
 	if request.Input.Body != nil {
 		if contentType == "" {
 			contentType = "application/octet-stream"
@@ -97,6 +93,17 @@ func (c *RESTTransport) Analyze(ctx context.Context, request AnalyzeRequest) (An
 		return AnalyzeResponse{}, err
 	}
 	return AnalyzeResponse{Result: result, Usage: operation.Usage.domain(), JSON: body}, nil
+}
+
+func validateContentType(contentType string) (string, error) {
+	if contentType == "" {
+		return "", nil
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || !strings.Contains(mediaType, "/") || strings.ContainsAny(contentType, "\r\n") {
+		return "", validationError("invalid_content_type", "Specify a valid input MIME type.")
+	}
+	return contentType, nil
 }
 
 func parseAnalysisResult(body json.RawMessage, analyzerID, apiVersion string) (AnalysisResult, error) {

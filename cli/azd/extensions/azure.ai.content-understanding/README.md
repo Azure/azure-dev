@@ -4,8 +4,9 @@ Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
 list/show/create/copy/delete/validate/test, schema authoring, service defaults, doctor,
 environment-variable inspection, infrastructure generation, and generated-project hooks.
-All 16 required command paths are implemented; release readiness and generated Go
-SDK conformance remain separate gates.
+All 16 required command paths are implemented. Production service calls use a
+source-pinned local CU Go SDK module; release readiness and the remaining live
+validation gaps are separate gates.
 
 ## Installation
 
@@ -130,8 +131,8 @@ for native installation, Entra-only authentication, confirmation UX, and truthfu
 versioned-hook support. Intentional safety improvements over the Python prototype
 include full conflict preflight, rejecting unfinished matching deployments,
 scoped hook arguments, literal model-map keys, and cancellation propagation.
-The CU data-plane adapter remains replaceable by the future TypeSpec-generated
-Go SDK; no generated-source comparison is claimed yet.
+The CU data-plane adapter uses the pinned local prototype SDK described under
+[CU client contract](#cu-client-contract). CLI/core workflows remain outside it.
 
 ### Analyzer commands
 
@@ -519,8 +520,12 @@ go test -race ./... -count=1
 go fix ./...
 golangci-lint run ./...
 
+cd sdk/azcontentunderstanding
+go test -race ./... -count=1
+cd ../..
+
 EXTENSION_ID=azure.ai.content-understanding \
-EXTENSION_VERSION=0.0.1 EXTENSION_PLATFORM=linux/amd64 ./build.sh
+EXTENSION_VERSION=0.0.1 EXTENSION_PLATFORM=linux/amd64 bash ./build.sh
 
 # CI unit-test entry point, where PowerShell is available:
 pwsh ./ci-test.ps1
@@ -613,35 +618,36 @@ timeout, and service error categories. Domain types have no azd or Azure SDK
 dependency. Full analyzer/result JSON is retained alongside typed projections to
 preserve dynamic schemas, multimodal fields, and full-result output.
 
-The agreed initial API baseline is `2025-11-01` by default, with explicit
-`2026-06-01-preview` coverage. Transport-specific models will be minimal handwritten
-internal types, not a public SDK. The REST implementation and the future official
-Go SDK adapter will implement the same interface. Accepting arbitrary future
-preview-version strings remains a separate CLI compatibility decision.
+The agreed API baseline is `2025-11-01` by default, with explicit
+`2026-06-01-preview` coverage. `SDKTransport` adapts the local
+`github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding`
+module without exposing SDK types to commands. The module is copied from
+`Azure/azure-sdk-for-go#27810` commit
+`8ff358e8d3410d9bc96b9ed79487a0cad0252fac` and consumed through an intentional
+relative `replace`. See `sdk/azcontentunderstanding/AZD_PROVENANCE.md` for its
+REST-spec provenance and local changes to back-port after azd ships.
 
 The contract is based on the [public CU TypeSpec and versioned OpenAPI specifications](https://github.com/Azure/azure-rest-api-specs/tree/56b13af91ff8d8b5ad706a502e6b4e44e6d57e1f/specification/ai/data-plane/ContentUnderstanding).
 Inline analysis is preview-only; the adapter rejects it locally with the GA
-version. Wire tests cover both versions and supported input/mode combinations.
-Domain input validation alone does not claim wire/API-version conformance.
-Analyzer list/show/create/delete are wired; remaining CU commands are not yet exposed.
+version. Contract tests cover all 12 SDK operations, both versions, and supported
+input/mode combinations. Domain input validation alone does not claim wire or
+live-service conformance.
 
-### Authenticated HTTP transport
+### Authenticated SDK runtime
 
-`internal/cuclient.RESTTransport` implements the extension-owned `Client`
-interface. It accepts an injected azd-backed `azcore.TokenCredential` and uses
+`internal/cuclient.SDKTransport` implements the extension-owned `Client`
+interface over the local SDK. It accepts an injected azd-backed
+`azcore.TokenCredential` and uses
 the `https://cognitiveservices.azure.com/.default` scope without selecting a second
-tenant or identity. API-key authentication is not implemented.
+tenant or identity. The SDK's key constructor is not exposed by the extension.
 
 - Endpoints require HTTPS, with no embedded credentials, query, fragment, or
   operation path. A trailing `/contentunderstanding` is normalized once.
 - Only the two agreed API versions are accepted; the default remains `2025-11-01`.
 - Requests carry the extension/version user agent, JSON accept header, a unique
   client request ID, and azd trace correlation when available.
-- GET/HEAD requests allow at most two retries under the Azure pipeline policy.
-  Other methods get one attempt, including on 401 authentication challenges.
-  Credentials are acquired once per operation rather than using a bearer policy
-  that can automatically replay a write after a challenge.
-  Context-level SDK retry overrides cannot change these operation safety limits.
+- Reads and polling allow at most two retries under the Azure pipeline policy.
+  Write submissions override the policy to disable automatic retries.
 - The default timeout is two minutes per HTTP attempt and can be overridden
   internally. Caller cancellation propagates to token acquisition, requests, and
   response reads. The default HTTP client does not follow redirects.
@@ -650,25 +656,26 @@ tenant or identity. API-key authentication is not implemented.
   not raw service messages, bodies, or authorization values. Oversized/malformed
   bodies still return an explicit HTTP failure. Valid `Retry-After` values are
   retained with a maximum of 24 hours.
-- SDK body logging stays disabled; token, cookie, and non-allowlisted query values
-  are redacted by the standard pipeline logging policy.
+- Failed service and polling envelopes are converted to sanitized
+  `azcore.ResponseError` values without logging service bodies, request URLs,
+  schemas, paths, or customer content.
 
 Tests use fake credentials/transports and local HTTPS servers. They do not call
 Azure or incur service charges. Command tests additionally use injected clients
 and local azd gRPC servers for request mapping, golden output files, confirmation,
 cancellation, metadata launch policy, and safe failures.
 
-### Analyzer REST operations
+### Analyzer SDK operations
 
-The internal REST adapter implements list/get/create/delete, copy authorization,
+The SDK adapter implements list/get/create/delete, copy authorization,
 same-resource and cross-resource copy, and service defaults for both agreed API
 versions.
 
 - Listing drains every page in service order. Filtering/sorting belongs to
   commands. A failed or malformed page is an error, not a partial list.
-- Continuation links must remain on the exact configured HTTPS origin and analyzer
-  collection path, with the selected API version. Relative links are supported;
-  repeated links, traversal, and credential-bearing links are rejected.
+- Continuation links must remain on the exact configured HTTPS origin.
+  Relative links are supported; repeated and credential-bearing links are
+  rejected, and the selected API version is applied consistently.
 - Create and copy explicitly send `allowReplace=false`; no conditional headers or
   automatic write replay are used. Copy source lookup, destination preflight, and
   cross-resource grant orchestration belong to commands.
@@ -676,7 +683,8 @@ versions.
   Pending polls use a one-second interval unless the service supplies a positive
   `Retry-After`. Cancellation/deadlines interrupt both waiting and HTTP requests.
   Success without an embedded result triggers the final analyzer GET.
-- Analyzer JSON is retained without reconstructing schemas or rounding numbers.
+- Analyzer and defaults JSON are retained without reconstructing schemas or
+  rounding numbers.
   Warnings retain nested codes, messages, and targets. Operation failures expose
   safe codes and redacted nested diagnostics, not raw service error text.
 - Optional usage distinguishes absent counters from zero. Usage is taken from
@@ -698,7 +706,7 @@ versions.
   requires HTTP 200 with a terminal result. GA inline requests fail before input
   I/O or authentication; there is no automatic fallback to async.
 - Async submission requires HTTP 202 and a validated operation location on the
-  configured HTTPS origin under `/contentunderstanding/analyzerResults/`. Polls
+  configured HTTPS origin. Polls
   share the analyzer polling implementation, safe GET retries, `Retry-After`, and
   cancellation/deadline behavior. The POST is never automatically replayed.
 - `Succeeded` with warnings is a completed partial result, not a failure.
@@ -717,7 +725,10 @@ versions.
   distinct from explicit zero. Input readers remain caller-owned on success,
   cancellation, and failure; the Azure pipeline may rewind and consume them.
 
-The analysis tests include a local HTTPS binary round trip as well as fake
-transports for the complete version/input/mode matrix, partial results, failures,
-polling, no-replay, stream ownership, and SDK log redaction. No live Azure calls
-are made.
+The local SDK unit suite and adapter tests cover the complete
+version/input/mode matrix, exact raw JSON, failures, polling, no-replay, stream
+ownership, and SDK log redaction. The test suite makes no live Azure calls.
+Prior prototype live evidence covers GA/preview URL, binary and base64 analysis,
+preview inline behavior, analyzer lifecycle and same-resource copy. Successful
+cross-resource authorization/copy and defaults mutation remain live-validation
+gaps with offline contract coverage.

@@ -21,5 +21,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host ""
+Write-Host "Running local Content Understanding SDK unit tests..."
+Push-Location (Join-Path $PSScriptRoot "sdk/azcontentunderstanding")
+try {
+    if (Test-Path $gotestsum) {
+        & $gotestsum --format testname -- ./... -count=1
+    } else {
+        go test ./... -v -count=1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "SDK tests failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+} finally {
+    Pop-Location
+}
+
+Write-Host ""
 Write-Host "All tests passed!" -ForegroundColor Green
 exit 0

@@ -221,12 +221,18 @@ func responseError(response *http.Response) error {
 	if code == "" && decodeErr == nil {
 		code = envelope.Error.Code
 	}
+	return serviceResponseError(
+		response.StatusCode, code, response.Header.Get("Retry-After"),
+	)
+}
+
+func serviceResponseError(statusCode int, code, retryAfterHeader string) error {
 	if !serviceCodePattern.MatchString(code) {
-		code = fmt.Sprintf("http_%d", response.StatusCode)
+		code = fmt.Sprintf("http_%d", statusCode)
 	}
 	kind := ErrorService
 	suggestion := "Check the service configuration and retry."
-	switch response.StatusCode {
+	switch statusCode {
 	case http.StatusBadRequest:
 		kind = ErrorValidation
 	case http.StatusUnauthorized, http.StatusForbidden:
@@ -243,9 +249,9 @@ func responseError(response *http.Response) error {
 		suggestion = "Wait for the service retry interval before trying again."
 	}
 	return &Error{
-		Kind: kind, Code: code, StatusCode: response.StatusCode,
-		Message:    fmt.Sprintf("The Content Understanding request failed (HTTP %d).", response.StatusCode),
-		Suggestion: suggestion, RetryAfter: retryAfter(response.Header.Get("Retry-After"), time.Now()),
+		Kind: kind, Code: code, StatusCode: statusCode,
+		Message:    fmt.Sprintf("The Content Understanding request failed (HTTP %d).", statusCode),
+		Suggestion: suggestion, RetryAfter: retryAfter(retryAfterHeader, time.Now()),
 	}
 }
 

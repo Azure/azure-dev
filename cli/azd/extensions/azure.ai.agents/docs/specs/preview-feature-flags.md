@@ -64,18 +64,15 @@ enabled, err := featureflags.IsEnabled(
 
 `IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host; the helper does not infer selection from ambient `AZD_ENVIRONMENT`.
 
-## Four independent enablement sources
+## Documented enablement methods
 
-A feature is enabled if **any** of these sources opts in:
+The documented ways to opt into a feature are listed below. These opt-ins are additive: any enabling value is sufficient.
 
 | Source | Read | Enabling value |
 | --- | --- | --- |
 | User config | `UserConfig.Get("alpha")` (`azd config set`) | Case-insensitive string `on` only at `alpha.<ID>` |
 | Process environment | Only the declared `EnvVar` | A true value accepted by `strconv.ParseBool` |
 | Selected azd environment | Exact `EnvVar` in raw `.env` values from `Environment.GetValues` (`azd env set`) | A true value accepted by `strconv.ParseBool` |
-| Project service environment | Exact `EnvVar` in each `services[].env` map from `Project.Get` | A true value accepted by `strconv.ParseBool` |
-
-All service hosts count, including non-Foundry services. Service maps stay separate: a true value in any service wins regardless of other services' values or iteration order. These are project-wide opt-ins, not per-service permissions.
 
 The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
 
@@ -88,7 +85,7 @@ Each call captures the declared process value, reads user config, loads the proj
 | Situation | Result |
 | --- | --- |
 | No project, no explicit environment | Skip project and dotenv sources; process and config still apply |
-| Project without a default environment, no explicit selection | Skip dotenv; process, config, and every service still apply |
+| Project without a default environment, no explicit selection | Skip dotenv; process and config still apply |
 | Explicit selection with no project or a missing environment | Return the error; do not fall back to the default |
 | Config/project/dotenv read, decoding, permission, or transport failure | Return an error even when another source enables the feature |
 | Missing config/project/environment response, or malformed config JSON | Return an error rather than treating a failed load as disabled |
@@ -111,6 +108,6 @@ Adoption still needs to settle the final three identities/environment keys, exac
 
 ## Validation
 
-Tests cover all 16 combinations of the four sources, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, every service host and conflicting service order, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
+Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
 
 Run focused tests and vet for `./internal/featureflags`, build the agents module against its pinned azd dependency, and apply the module's formatting/lint rules. No Azure scenario or user auth/config mutation is needed for this mechanism-only change.

@@ -33,5 +33,3 @@ If you are reporting for a bug bounty, more complete reports can contribute to a
 We prefer all communications to be in English.
 
 ## Policy
-
-Microsoft follows the principle of [Coordinated Vulnerability Disclosure](https://www.microsoft.com/msrc/cvd).

@@ -463,7 +463,7 @@ func TestInspectAzureYamlPromptOnly(t *testing.T) {
     host: azure.ai.agent
     kind: prompt
     harness:
-      kind: github_copilot_preview
+      kind: microsoft_copilot_preview
 `), "")
 	require.NoError(t, err)
 	require.True(t, managed.promptOnly())

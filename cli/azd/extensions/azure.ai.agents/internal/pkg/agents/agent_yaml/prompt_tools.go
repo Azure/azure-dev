@@ -13,9 +13,10 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
-const githubCopilotToolsetPreview = "github_copilot_toolset_preview"
+const microsoftCopilotToolsetPreview = "microsoft_copilot_toolset_preview"
+const legacyCopilotToolsetPreview = "github_copilot_toolset_preview"
 
-var githubCopilotBuiltInTools = map[string]struct{}{
+var microsoftCopilotBuiltInTools = map[string]struct{}{
 	"filesystem_read":  {},
 	"filesystem_write": {},
 	"shell":            {},
@@ -52,11 +53,12 @@ var knownPromptToolTypes = map[string]struct{}{
 	"fabric_iq_preview":            {},
 	"file_search":                  {},
 	"function":                     {},
-	githubCopilotToolsetPreview:    {},
+	legacyCopilotToolsetPreview:    {},
 	"image_generation":             {},
 	"local_shell":                  {},
 	"mcp":                          {},
 	"memory_search_preview":        {},
+	microsoftCopilotToolsetPreview: {},
 	"namespace":                    {},
 	"openapi":                      {},
 	"reminder_preview":             {},
@@ -104,13 +106,13 @@ func (p *PromptAgent) ValidateTools() error {
 				"tools[%d] uses tool type %q, which the API no longer defines; use %q instead",
 				i, toolType, replacement)
 		}
-		if toolType == githubCopilotToolsetPreview {
-			if p.HarnessType() != agent_api.ManagedAgentHarnessGitHubCopilot {
+		if isMicrosoftCopilotToolset(toolType) {
+			if !agent_api.IsCopilotHarness(p.HarnessType()) {
 				return fmt.Errorf(
 					"tools[%d] uses %q, which requires harness.type %q",
-					i, toolType, agent_api.ManagedAgentHarnessGitHubCopilot)
+					i, toolType, agent_api.ManagedAgentHarnessMicrosoftCopilot)
 			}
-			if err := validateGitHubCopilotToolset(tool); err != nil {
+			if err := validateMicrosoftCopilotToolset(tool); err != nil {
 				return fmt.Errorf("tools[%d]: %w", i, err)
 			}
 		}
@@ -118,7 +120,11 @@ func (p *PromptAgent) ValidateTools() error {
 	return nil
 }
 
-func validateGitHubCopilotToolset(tool map[string]any) error {
+func isMicrosoftCopilotToolset(toolType string) bool {
+	return toolType == microsoftCopilotToolsetPreview || toolType == legacyCopilotToolsetPreview
+}
+
+func validateMicrosoftCopilotToolset(tool map[string]any) error {
 	if err := rejectUnknownToolFields(tool, "type", "defaultConfig", "configs"); err != nil {
 		return err
 	}
@@ -159,10 +165,10 @@ func validateGitHubCopilotToolset(tool map[string]any) error {
 		if !ok || name == "" {
 			return fmt.Errorf("configs[%d].name must be a non-empty string", i)
 		}
-		if _, valid := githubCopilotBuiltInTools[name]; !valid {
+		if _, valid := microsoftCopilotBuiltInTools[name]; !valid {
 			return fmt.Errorf(
-				"configs[%d].name %q is not a GitHub Copilot built-in tool; supported tools are %s",
-				i, name, strings.Join(slices.Sorted(maps.Keys(githubCopilotBuiltInTools)), ", "))
+				"configs[%d].name %q is not a Microsoft Copilot built-in tool; supported tools are %s",
+				i, name, strings.Join(slices.Sorted(maps.Keys(microsoftCopilotBuiltInTools)), ", "))
 		}
 		if _, duplicate := seen[name]; duplicate {
 			return fmt.Errorf("configs[%d].name %q is duplicated", i, name)
@@ -183,7 +189,8 @@ func promptToolsForAPI(tools []any) []any {
 	mapped := make([]any, len(tools))
 	for i, raw := range tools {
 		tool, ok := raw.(map[string]any)
-		if !ok || tool["type"] != githubCopilotToolsetPreview {
+		toolType, _ := tool["type"].(string)
+		if !ok || !isMicrosoftCopilotToolset(toolType) {
 			mapped[i] = raw
 			continue
 		}

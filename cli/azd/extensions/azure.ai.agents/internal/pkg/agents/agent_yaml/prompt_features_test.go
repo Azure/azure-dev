@@ -72,7 +72,8 @@ func TestPromptAgent_ValidateHarness(t *testing.T) {
 	}{
 		{name: "absent harness is a plain prompt agent", harness: ""},
 		{name: "whitespace is treated as absent", harness: "   "},
-		{name: "current spelling is accepted", harness: "github_copilot_preview"},
+		{name: "current spelling is accepted", harness: "microsoft_copilot_preview"},
+		{name: "legacy spelling is accepted", harness: "github_copilot_preview"},
 		{
 			name:    "unknown harness is left to the service",
 			harness: "some-future-harness",

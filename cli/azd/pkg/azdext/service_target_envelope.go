@@ -77,6 +77,10 @@ func (ops *ServiceTargetEnvelope) GetInnerMessage(msg *ServiceTargetMessage) any
 		return m.EndpointsRequest
 	case *ServiceTargetMessage_EndpointsResponse:
 		return m.EndpointsResponse
+	case *ServiceTargetMessage_PreviewRequest:
+		return m.PreviewRequest
+	case *ServiceTargetMessage_PreviewResponse:
+		return m.PreviewResponse
 	default:
 		// Return nil for unhandled message types
 		return nil

@@ -10,8 +10,28 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAgentInitStepFieldsUseAgentNamespace(t *testing.T) {
+	for _, test := range []struct {
+		field fields.AttributeKey
+		key   string
+	}{
+		{AgentInitStepID, "ext.agent.init.step.id"},
+		{AgentInitStepSequence, "ext.agent.init.step.sequence"},
+		{AgentInitStepDurationMs, "ext.agent.init.step.duration_ms"},
+	} {
+		t.Run(test.key, func(t *testing.T) {
+			require.Equal(t, test.key, string(test.field.Key))
+			require.Equal(t, fields.SystemMetadata, test.field.Classification)
+			require.Equal(t, fields.PerformanceAndHealth, test.field.Purpose)
+			require.Equal(t, "N/A", test.field.Endpoint)
+			require.False(t, test.field.IsMeasurement)
+		})
+	}
+}
 
 // The contract is:
 //  1. fields.go contains valid field declarations.

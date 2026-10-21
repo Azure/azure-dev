@@ -31,3 +31,16 @@ func startProcessTree(cmd *exec.Cmd) (kill func(), _ error) {
 		}
 	}, nil
 }
+
+func isInterruptExit(exitErr *exec.ExitError) bool {
+	if exitErr.ExitCode() == 130 {
+		return true
+	}
+
+	status, ok := exitErr.Sys().(syscall.WaitStatus)
+	return ok && status.Signaled() && status.Signal() == syscall.SIGINT
+}
+
+func isInterruptExitCode(exitCode int) bool {
+	return exitCode == 130
+}

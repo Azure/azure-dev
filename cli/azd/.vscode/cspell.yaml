@@ -275,6 +275,12 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/exec/cmdtree_processes_darwin.go
+    words:
+      - Eproc
+      - Kinfo
+      - procargs
+      - Ucred
   - filename: pkg/tools/dotnet/dotnet.go
     words:
       - PWORD
@@ -584,7 +590,7 @@ overrides:
   - filename: internal/grpcserver/versioned_services_generated.go
     words:
       - generateadapters
-  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go,internal/grpcserver/service_target_service.go}"
     words:
       - legacybridge
   - filename: pkg/azdext/contracts_v1_aliases.go

@@ -20,23 +20,23 @@ import (
 )
 
 var (
-	// InitStepID identifies a fixed business step in agent Init.
-	InitStepID = fields.AttributeKey{
-		Key:            attribute.Key("ext.init.step.id"),
+	// AgentInitStepID identifies a fixed business step in agent Init.
+	AgentInitStepID = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.id"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.PerformanceAndHealth,
 		Endpoint:       "N/A",
 	}
-	// InitStepSequence distinguishes repeated steps within one Init invocation.
-	InitStepSequence = fields.AttributeKey{
-		Key:            attribute.Key("ext.init.step.sequence"),
+	// AgentInitStepSequence distinguishes repeated steps within one Init invocation.
+	AgentInitStepSequence = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.sequence"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.PerformanceAndHealth,
 		Endpoint:       "N/A",
 	}
-	// InitStepDurationMs records elapsed milliseconds as a string property.
-	InitStepDurationMs = fields.AttributeKey{
-		Key:            attribute.Key("ext.duration_ms"),
+	// AgentInitStepDurationMs records elapsed milliseconds as a string property.
+	AgentInitStepDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.duration_ms"),
 		Classification: fields.SystemMetadata,
 		Purpose:        fields.PerformanceAndHealth,
 		Endpoint:       "N/A",

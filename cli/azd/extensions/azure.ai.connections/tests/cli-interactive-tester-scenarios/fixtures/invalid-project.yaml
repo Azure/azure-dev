@@ -1,0 +1,10 @@
+name: connection-authoring-offline
+services:
+  foundry:
+    host: azure.ai.project
+    endpoint: https://example.test/api/projects/offline
+  worker:
+    host: containerapp
+    language: js
+hooks:
+  predeploy: private-parser-value

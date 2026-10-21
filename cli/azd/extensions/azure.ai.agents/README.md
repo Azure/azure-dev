@@ -408,6 +408,12 @@ separate, supported command for this extension's own quick-eval workflow;
 only its hidden `azd ai agent eval init` alias is formally deprecated, in
 favor of `generate`.
 
+`azd ai eval init` scaffolds evaluation configuration; follow the
+[evaluations guide](../azure.ai.evaluations/README.md) for deployment and run steps.
+The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
+use the local service key from `azure.yaml`, which can differ from the deployed
+agent name shown in the endpoint.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

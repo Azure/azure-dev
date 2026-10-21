@@ -2,6 +2,22 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.21 (2026-10-19)
+
+### Features Added
+
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Add Microsoft Copilot preview harness and toolset names while retaining legacy GitHub Copilot definitions.
+
+### Bugs Fixed
+
+- [[#10462]](https://github.com/Azure/azure-dev/pull/10462) Fix hosted-agent resource errors to identify the affected service, effective CPU and memory settings, and deployment retry guidance.
+- [[#10320]](https://github.com/Azure/azure-dev/pull/10320) Fix post-deployment evaluation setup guidance to appear only when no evaluation service is declared and remain visible when local README guidance is shown.
+
+### Other Changes
+
+- [[#10467]](https://github.com/Azure/azure-dev/pull/10467) Move saved agent runtime state to extension-owned files with automatic legacy-state migration and cross-process locking to prevent lost updates.
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Update Copilot requests to use the Microsoft Copilot preview service contract, requiring the corresponding service rollout.
+
 ## 1.0.0-beta.20 (2026-10-15)
 
 ### Features Added

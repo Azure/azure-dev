@@ -4,7 +4,7 @@ This guide covers how to create, build, and publish an extension for the Azure D
 
 ## Overview
 
-azd extensions use a gRPC-based framework to add functionality. Extensions can provide:
+azd extensions use a gRPC-based framework to add functionality. The extension framework is [generally available (GA)](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/); individual extensions you create may still be experimental or pre-release until you publish a stable version. Extensions can provide:
 
 - **Custom commands** — Expose new command groups and commands to azd
 - **Lifecycle events** — Subscribe to project and service lifecycle events (pre/post provision, deploy, etc.)
@@ -139,10 +139,13 @@ multiple handlers and workflow steps are resolved.
   first-party `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`
 - **Deployment preview** — To support `azd deploy --preview`, register the host with
-  `WithBetaServiceTargetPreview` and implement `preview.ServiceTargetPreviewProvider`
-  from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
-  is experimental. A preview runs on a fresh provider without `Initialize` and must not
-  build, deploy, or persist deployment state.
+  `WithServiceTargetPreview` and implement `azdext.ServiceTargetPreviewProvider`
+  using stable `azdext.ServiceConfig` and `azdext.ServiceDeployPreviewResult`.
+  This [stable v1 contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+  targets host and SDK 1.37.0. Once published, pin SDK v1.37.0 or later and set
+  `requiredAzdVersion: ">=1.37.0"`. Deprecated beta APIs remain supported.
+  A preview runs on a fresh provider without `Initialize` and must not build,
+  deploy, or persist deployment state.
 
 ## Detailed Reference
 

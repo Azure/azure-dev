@@ -63,7 +63,11 @@ func CdSuggestions(folder string) []Suggestion {
 	posixPath := shellQuoteCdPath(folder)
 	driveQualified := len(folder) >= 2 && folder[1] == ':' &&
 		((folder[0] >= 'A' && folder[0] <= 'Z') || (folder[0] >= 'a' && folder[0] <= 'z'))
-	if posixPath == folder && !driveQualified && !strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b") {
+	// POSIX cd parses a leading '-' as an option, and cmd.exe cannot cd into a UNC path.
+	optionLike := strings.HasPrefix(folder, "-")
+	unc := strings.HasPrefix(folder, "//") || strings.HasPrefix(folder, `\\`)
+	if posixPath == folder && !driveQualified && !optionLike && !unc &&
+		!strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b") {
 		return []Suggestion{{
 			Command:     "cd " + folder,
 			Description: "enter your new project folder",
@@ -87,7 +91,10 @@ func CdSuggestions(folder string) []Suggestion {
 			Description: "PowerShell: enter your project folder (choose one)",
 		},
 	}
-	if strings.ContainsAny(folder, "%!\"\r\n") {
+	if optionLike {
+		suggestions[0].Command = "cd -- " + posixPath
+	}
+	if unc || strings.ContainsAny(folder, "%!\"\r\n") {
 		suggestions = append(suggestions, Suggestion{
 			Command:     "cmd.exe: use a shell-specific alternative above",
 			Description: "this path cannot be represented safely by a literal cmd.exe cd hint",

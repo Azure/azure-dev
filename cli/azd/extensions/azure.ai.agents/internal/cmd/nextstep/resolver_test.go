@@ -4,7 +4,10 @@
 package nextstep
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -369,6 +372,46 @@ func TestCdSuggestionsUnsafeCmdPath(t *testing.T) {
 			assert.Contains(t, out[2].Description, "cannot be represented safely")
 		})
 	}
+}
+
+func TestCdSuggestionsOptionLikePath(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX cd round trip; Windows shells are covered in resolver_windows_test.go")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+	for _, folder := range []string{"-agent", "-my agent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd -- "+shellQuoteCdPath(folder), out[0].Command)
+
+			root := t.TempDir()
+			target := filepath.Join(root, folder)
+			require.NoError(t, os.Mkdir(target, 0o700))
+			command := exec.Command("sh", "-c", out[0].Command+" && pwd")
+			command.Dir = root
+			output, err := command.Output()
+			require.NoError(t, err)
+			got, err := os.Stat(strings.TrimSpace(string(output)))
+			require.NoError(t, err)
+			want, err := os.Stat(target)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(got, want), "%s", output)
+		})
+	}
+}
+
+func TestCdSuggestionsUNCPath(t *testing.T) {
+	t.Parallel()
+	out := CdSuggestions("//server/share/agent")
+	require.Len(t, out, 3)
+	assert.Equal(t, "cd //server/share/agent", out[0].Command)
+	assert.Equal(t, "Set-Location -LiteralPath '//server/share/agent'", out[1].Command)
+	assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
 }
 
 func TestShellQuoteCdPathRoundTrip(t *testing.T) {

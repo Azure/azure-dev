@@ -26,7 +26,7 @@ func TestCdSuggestionsWindowsShellRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	for _, folder := range []string{
 		"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "my&agent", "my-%PATH%", "my-!PATH!",
-		"@agent", "my,agent", "my^agent",
+		"@agent", "my,agent", "my^agent", "-agent",
 		"Bob\u2018s Agent", "Bob\u2018sAgent", "Bob\u2019s Agent", "Bob\u2019sAgent",
 		"Bob\u201as Agent", "Bob\u201asAgent", "Bob\u201bs Agent", "Bob\u201bsAgent",
 	} {
@@ -48,7 +48,7 @@ func TestCdSuggestionsWindowsShellRoundTrip(t *testing.T) {
 						if !strings.HasPrefix(suggestions[2].Command, "cd ") {
 							t.Skip("cmd.exe cannot safely represent this path")
 						}
-						command = exec.CommandContext(t.Context(), os.Getenv("ComSpec"))
+						command = exec.CommandContext(t.Context(), os.Getenv("ComSpec")) //nolint:gosec // test-only: ComSpec runs controlled fixture commands
 						// cmd.exe does not use standard argv quote escaping.
 						command.SysProcAttr = &syscall.SysProcAttr{
 							CmdLine: `cmd.exe /d /u /v:on /c ` + suggestions[2].Command + " && cd",
@@ -65,7 +65,7 @@ func TestCdSuggestionsWindowsShellRoundTrip(t *testing.T) {
 						}
 						output = []byte(string(utf16.Decode(chars)))
 					}
-					got, err := os.Stat(strings.TrimSpace(string(output)))
+					got, err := os.Stat(strings.TrimSpace(string(output))) //nolint:gosec // test-only: path is the shell round-trip output for a temp dir
 					require.NoError(t, err)
 					want, err := os.Stat(target)
 					require.NoError(t, err)
@@ -84,14 +84,14 @@ func TestCdSuggestionsWindowsAbsolutePath(t *testing.T) {
 	suggestions := CdSuggestions(filepath.ToSlash(target))
 	require.Len(t, suggestions, 3)
 	require.Equal(t, "cd /d \""+filepath.ToSlash(target)+"\"", suggestions[2].Command)
-	command := exec.CommandContext(t.Context(), os.Getenv("ComSpec"))
+	command := exec.CommandContext(t.Context(), os.Getenv("ComSpec")) //nolint:gosec // test-only: ComSpec runs controlled fixture commands
 	command.Dir = root
 	command.SysProcAttr = &syscall.SysProcAttr{
 		CmdLine: `cmd.exe /d /c ` + suggestions[2].Command + " && cd",
 	}
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "%s", output)
-	got, err := os.Stat(strings.TrimSpace(string(output)))
+	got, err := os.Stat(strings.TrimSpace(string(output))) //nolint:gosec // test-only: path is the shell round-trip output for a temp dir
 	require.NoError(t, err)
 	want, err := os.Stat(target)
 	require.NoError(t, err)

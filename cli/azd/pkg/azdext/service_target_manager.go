@@ -23,6 +23,14 @@ var (
 	}
 )
 
+// ServiceTargetPreviewProvider optionally compares desired and deployed state without deployment.
+// Implement it alongside ServiceTargetProvider and register through ExtensionHost.WithServiceTargetPreview.
+// Preview runs on a fresh provider without Initialize. It must not build, package, publish, deploy,
+// or persist deployment state.
+type ServiceTargetPreviewProvider interface {
+	Preview(context.Context, *ServiceConfig) (*ServiceDeployPreviewResult, error)
+}
+
 // ServiceTargetProvider defines the interface for service target logic.
 type ServiceTargetProvider interface {
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error

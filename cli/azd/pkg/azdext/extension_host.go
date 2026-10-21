@@ -106,7 +106,7 @@ type ExtensionHost struct {
 	client *AzdClient
 
 	serviceTargets        []ServiceTargetRegistration
-	previewHosts          map[string]bool
+	previewHosts          map[string]bool // true selects the deprecated beta route
 	frameworkServices     []FrameworkServiceRegistration
 	projectHandlers       []ProjectEventRegistration
 	serviceHandlers       []ServiceEventRegistration
@@ -114,13 +114,14 @@ type ExtensionHost struct {
 	provisioningProviders []ProvisioningProviderRegistration
 	validationChecks      []ValidationCheckRegistration
 
-	serviceTargetManager        serviceTargetRegistrar
-	serviceTargetPreviewManager serviceTargetRegistrar
-	frameworkServiceManager     frameworkServiceRegistrar
-	eventManager                extensionEventManager
-	betaServiceEventManager     betaServiceEventRegistrar
-	provisioningManager         provisioningRegistrar
-	validationManager           *ValidationManager
+	serviceTargetManager            serviceTargetRegistrar
+	serviceTargetPreviewManager     serviceTargetRegistrar
+	betaServiceTargetPreviewManager serviceTargetRegistrar
+	frameworkServiceManager         frameworkServiceRegistrar
+	eventManager                    extensionEventManager
+	betaServiceEventManager         betaServiceEventRegistrar
+	provisioningManager             provisioningRegistrar
+	validationManager               *ValidationManager
 }
 
 // NewExtensionHost creates a new ExtensionHost for the supplied azd client.
@@ -162,6 +163,9 @@ func (er *ExtensionHost) initManagers(extensionId string, brokerLogger *log.Logg
 	if er.serviceTargetPreviewManager == nil {
 		er.serviceTargetPreviewManager = newServiceTargetPreviewManager(extensionId, er.client, brokerLogger)
 	}
+	if er.betaServiceTargetPreviewManager == nil {
+		er.betaServiceTargetPreviewManager = newBetaServiceTargetPreviewManager(extensionId, er.client, brokerLogger)
+	}
 	if er.frameworkServiceManager == nil {
 		er.frameworkServiceManager = NewFrameworkServiceManager(extensionId, er.client, brokerLogger)
 	}
@@ -189,11 +193,27 @@ func (er *ExtensionHost) WithServiceTarget(host string, factory ServiceTargetFac
 	return er
 }
 
+// WithServiceTargetPreview registers a service target like [ExtensionHost.WithServiceTarget] and also
+// opts it into the stable deployment preview used by `azd deploy --preview` in azd 1.37.0 or later.
+// Providers created by the factory must implement ServiceTargetPreviewProvider.
+// Preview runs on a fresh provider without Initialize; the factory is not called during registration.
+// Preview registration is best effort: when azd does not support it, the service target still works normally.
+func (er *ExtensionHost) WithServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
+	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
+	if er.previewHosts == nil {
+		er.previewHosts = map[string]bool{}
+	}
+	er.previewHosts[host] = false
+	return er
+}
+
 // WithBetaServiceTargetPreview registers a service target like [ExtensionHost.WithServiceTarget] and also
-// opts it into the experimental v1beta deployment preview used by `azd deploy --preview`.
+// opts it into the deprecated v1beta deployment preview used by `azd deploy --preview`.
 // Providers created by the factory must implement preview.ServiceTargetPreviewProvider from pkg/azdext/preview.
 // Preview runs on a fresh provider without Initialize; the factory is not called during registration.
 // Preview registration is best effort: when azd does not support it, the service target still works normally.
+//
+// Deprecated: use WithServiceTargetPreview with ServiceTargetPreviewProvider and stable types in azd 1.37.0 or later.
 func (er *ExtensionHost) WithBetaServiceTargetPreview(host string, factory ServiceTargetFactory) *ExtensionHost {
 	er.serviceTargets = append(er.serviceTargets, ServiceTargetRegistration{Host: host, Factory: factory})
 	if er.previewHosts == nil {
@@ -296,7 +316,14 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 
 	// Determine which managers will be active
 	hasServiceTargets := len(er.serviceTargets) > 0
-	hasPreviewServiceTargets := len(er.previewHosts) > 0
+	var hasPreviewServiceTargets, hasBetaPreviewServiceTargets bool
+	for _, beta := range er.previewHosts {
+		if beta {
+			hasBetaPreviewServiceTargets = true
+		} else {
+			hasPreviewServiceTargets = true
+		}
+	}
 	hasFrameworkServices := len(er.frameworkServices) > 0
 	hasEventHandlers := len(er.projectHandlers) > 0 || len(er.serviceHandlers) > 0
 	hasBetaServiceEventHandlers := len(er.betaServiceHandlers) > 0
@@ -310,6 +337,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 		}
 		if hasPreviewServiceTargets {
 			_ = er.serviceTargetPreviewManager.Close()
+		}
+		if hasBetaPreviewServiceTargets {
+			_ = er.betaServiceTargetPreviewManager.Close()
 		}
 		if hasFrameworkServices {
 			_ = er.frameworkServiceManager.Close()
@@ -336,6 +366,9 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 	}
 	if hasPreviewServiceTargets {
 		receivers = append(receivers, er.serviceTargetPreviewManager)
+	}
+	if hasBetaPreviewServiceTargets {
+		receivers = append(receivers, er.betaServiceTargetPreviewManager)
 	}
 	if hasFrameworkServices {
 		receivers = append(receivers, er.frameworkServiceManager)
@@ -404,10 +437,14 @@ func (er *ExtensionHost) Run(ctx context.Context) error {
 			}
 
 			// Preview is optional and registered only after the stable host is owned by this extension.
-			// azd versions without the preview override reject it as a duplicate registration,
+			// Older azd versions reject unsupported preview streams as duplicate registrations,
 			// and normal deployment must keep working there.
-			if er.previewHosts[r.Host] {
-				if err := er.serviceTargetPreviewManager.Register(ctx, r.Factory, r.Host); err != nil {
+			if beta, preview := er.previewHosts[r.Host]; preview {
+				manager := er.serviceTargetPreviewManager
+				if beta {
+					manager = er.betaServiceTargetPreviewManager
+				}
+				if err := manager.Register(ctx, r.Factory, r.Host); err != nil {
 					log.Printf("deployment preview is unavailable for service target '%s': %v", r.Host, err)
 				}
 			}

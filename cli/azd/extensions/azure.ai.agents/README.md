@@ -2,7 +2,7 @@
 
 ## Hosted agent deployment preview
 
-With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 
 ```bash
@@ -191,6 +191,9 @@ is driven through `foundry-extension-scenario-orchestrator`; its setup incurs Az
 cost and is not run automatically.
 
 ## Extension telemetry API
+
+Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
+checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in

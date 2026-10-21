@@ -18,7 +18,6 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -226,12 +225,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 				require.Equal(t, "https://account.services.ai.azure.com/api/projects/project", endpoint)
 				return reader, nil
 			}
-			wire, err := proto.Marshal(service)
-			require.NoError(t, err)
-			betaService := &v1beta.ServiceConfig{}
-			require.NoError(t, proto.Unmarshal(wire, betaService))
-			betaBefore := proto.CloneOf(betaService)
-			result, err := provider.Preview(t.Context(), betaService)
+			result, err := provider.Preview(t.Context(), service)
 			if tc.wantError {
 				require.Error(t, err)
 				require.Nil(t, result)
@@ -298,7 +292,6 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 				require.NotContains(t, recorded, "/azd.extensions.v1.AccountService/LookupTenant")
 			}
 			require.True(t, proto.Equal(before, service))
-			require.True(t, proto.Equal(betaBefore, betaService))
 			require.Nil(t, provider.serviceConfig)
 			require.Nil(t, provider.env)
 			require.Nil(t, provider.credential)
@@ -314,7 +307,7 @@ func TestProviderPreviewWithoutInitializeIsReadOnly(t *testing.T) {
 			require.Equal(t, legacy, persisted)
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
-			_, err = provider.Preview(ctx, betaService)
+			_, err = provider.Preview(ctx, service)
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	}

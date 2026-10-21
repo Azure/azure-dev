@@ -15,9 +15,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 )
 
-// resolveA2ATarget uses the selected service's implementation protocols, not its
-// public endpoint protocols. Foundry remains responsible for dispatch and feature
-// gating. Explicit endpoints have no local target definition to infer from.
+// resolveA2ATarget reads implementation capabilities from the selected local service.
 func (a *InvokeAction) resolveA2ATarget(ctx context.Context, rc *remoteContext) error {
 	if a.endpoint != nil || rc.azdClient == nil || rc.serviceName == "" {
 		return nil
@@ -32,8 +30,7 @@ func (a *InvokeAction) resolveA2ATarget(ctx context.Context, rc *remoteContext) 
 	}
 	hosted, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedService(svc, proj.Path)
 	if err != nil {
-		// Explicit remote invocation must not require a valid local build definition.
-		// If it cannot be inspected, leave capability enforcement to Foundry.
+		// Let Foundry enforce capabilities when the local definition is unavailable.
 		log.Printf("could not inspect local A2A capabilities: %v", err)
 		return nil
 	}
@@ -48,9 +45,7 @@ func (a *InvokeAction) resolveA2ATarget(ctx context.Context, rc *remoteContext) 
 	return nil
 }
 
-// selectA2ATargetVersion validates native capabilities and selects a client wire
-// dialect. A Responses implementation permits translation; merely exposing A2A
-// on the public endpoint does not declare a native implementation.
+// selectA2ATargetVersion checks implementation compatibility and selects a wire dialect.
 func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explicit string) (string, error) {
 	if explicit != "" {
 		if err := validateA2AVersion(explicit); err != nil {
@@ -81,8 +76,7 @@ func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explic
 		}
 	}
 
-	// An unknown native dialect cannot select passthrough, but it does not
-	// invalidate a separately implemented Responses translation interface.
+	// Responses may still support translation when the A2A implementation is unknown.
 	if nativeError != nil && !responses {
 		return "", nativeError
 	}
@@ -104,15 +98,11 @@ func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explic
 	if explicit != "" {
 		return explicit, nil
 	}
-	// Native 0.3 with Responses uses 1.0 translation, just like a target with
-	// no native A2A declaration. File input still requires an explicit flag.
+	// Default eligible generated requests to 1.0.
 	return "1.0", nil
 }
 
-// nativeA2AWireVersion normalizes declared major.minor[.patch] versions to the
-// major.minor wire selector. Future minor/major dialects are not assumed compatible.
-// This checks wire compatibility, not deployment eligibility: init declares
-// A2A protocol version 1.0.0 for the Foundry hosted-agent definition.
+// nativeA2AWireVersion normalizes compatible declarations for wire use, not deployment validation.
 func nativeA2AWireVersion(declared string) (string, error) {
 	parts := strings.Split(declared, ".")
 	valid := len(parts) == 2 || len(parts) == 3

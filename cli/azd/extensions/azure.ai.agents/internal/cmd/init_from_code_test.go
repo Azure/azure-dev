@@ -755,7 +755,7 @@ func TestNativeA2AInitInteractive(t *testing.T) {
 			client := &fakePromptClient{multiSelectFn: func(
 				_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
 			) (*azdext.MultiSelectResponse, error) {
-				require.Contains(t, request.Options.HelpMessage, "not platform translation endpoints")
+				require.Contains(t, request.Options.HelpMessage, "protocols your agent code implements")
 				choices := request.Options.Choices
 				require.Len(t, choices, 5)
 				for i, expected := range []struct{ value, label string }{

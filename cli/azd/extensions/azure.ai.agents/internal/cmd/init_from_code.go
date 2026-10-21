@@ -657,9 +657,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 	}
 
-	// Activity and native A2A need explicit endpoint configuration. Compose the
-	// selected protocols without replacing endpoint auth or version selectors.
-	// Activity retains its existing BotServiceRbac default.
+	// Enable public endpoints without replacing existing auth or routing settings.
 	composeLocalAgentEndpoint(definition)
 
 	// Add model resource if a model was selected
@@ -1051,9 +1049,7 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 	}, false)
 }
 
-// composeLocalAgentEndpoint enables selected implementation protocols without replacing
-// existing endpoint authorization or version selectors. Only from-code init uses
-// this helper: adopted project manifests retain their declared intent.
+// composeLocalAgentEndpoint enables selected endpoints while preserving auth and routing settings.
 func composeLocalAgentEndpoint(definition *agent_yaml.ContainerAgent) {
 	if project.IsActivityProtocol(*definition) {
 		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
@@ -1112,8 +1108,7 @@ var knownProtocols = []protocolInfo{
 	// forward), so new agents default to it, matching the latest-version
 	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
-	// Foundry's hosted definition currently supports only A2A implementation
-	// version 1.0.0. The public A2A-Version wire selector is 1.0 (MAJOR.MINOR); see
+	// Foundry declares 1.0.0; public A2A headers use 1.0.
 	// https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
 	{Name: "a2a", Version: "1.0.0"},
 }
@@ -1200,7 +1195,7 @@ func promptProtocols(
 		Options: &azdext.MultiSelectOptions{
 			Message: "Which protocols does your agent support?",
 			Choices: choices,
-			HelpMessage: "Select protocols implemented by your agent, not platform translation endpoints. " +
+			HelpMessage: "Choose the protocols your agent code implements. " +
 				"Use arrow keys to move, space to toggle, enter to confirm",
 		},
 	})

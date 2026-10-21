@@ -30,10 +30,11 @@ func TestValidateInitLocation(t *testing.T) {
 		"eastus2", "japaneast", "swedencentral", "uksouth",
 		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
 		"canadacentral", "westus2",
+		"westus", "centralus", "eastus2euap",
 	} {
 		require.NoError(t, validateInitLocation(location, allowed))
 	}
-	for _, location := range []string{"eastus", "westus", ""} {
+	for _, location := range []string{"eastus", "westus3", ""} {
 		err := validateInitLocation(location, allowed)
 		require.ErrorContains(t, err, "not supported for this agent setup")
 		require.NoError(t, validateInitLocation(location, nil), "plain prompt must remain unrestricted")
@@ -57,6 +58,9 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 		{name: "explicit unsupported rejected", explicitID: true, restricted: true, location: "eastus", wantError: true},
 		{name: "explicit unknown rejected", explicitID: true, restricted: true, wantError: true},
 		{name: "explicit eastus2 accepted", explicitID: true, restricted: true, location: "eastus2"},
+		{name: "explicit westus accepted", explicitID: true, restricted: true, location: "westus"},
+		{name: "explicit centralus accepted", explicitID: true, restricted: true, location: "centralus"},
+		{name: "explicit eastus2euap accepted", explicitID: true, restricted: true, location: "eastus2euap"},
 		{name: "explicit supported accepted", explicitID: true, restricted: true, location: "japaneast"},
 		{name: "plain explicit unchanged", explicitID: true, location: "eastus"},
 	}
@@ -68,7 +72,7 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 				if !tt.explicitID {
 					secondLocation := "japaneast"
 					if tt.allUnsupported {
-						secondLocation = "westus"
+						secondLocation = "westus3"
 					}
 					projectJSON = fmt.Sprintf(`{"value":[%s,{"id":%q,"location":%q}]}`,
 						projectJSON, projectID+"supported", secondLocation)

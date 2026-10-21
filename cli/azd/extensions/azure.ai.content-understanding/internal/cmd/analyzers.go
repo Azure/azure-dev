@@ -32,6 +32,7 @@ type analyzerOptions struct {
 
 func newAnalyzerCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cobra.Command {
 	group := &cobra.Command{Use: "analyzer", Short: "Manage Content Understanding analyzers"}
+	group.AddCommand(newAnalyzerValidateCommand(extCtx))
 	for _, action := range []string{"list", "show", "create", "delete"} {
 		options := &analyzerOptions{}
 		cmd := &cobra.Command{Use: action, Args: cobra.NoArgs}

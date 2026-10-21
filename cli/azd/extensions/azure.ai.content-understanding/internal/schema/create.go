@@ -16,6 +16,8 @@ import (
 )
 
 var customIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
+var fieldTypes = []string{"array", "boolean", "date", "integer", "json", "number", "object", "string", "time"}
+var fieldMethods = []string{"classify", "extract", "generate"}
 
 // ValidateCustomAnalyzerID applies the create contract, not the broader prebuilt ID syntax.
 func ValidateCustomAnalyzerID(id string) error {
@@ -132,8 +134,7 @@ func field(raw json.RawMessage, path string) error {
 		return invalid(path+".$ref", "References are unsupported; inline the field definition.")
 	}
 	kind, _ := text(definition["type"])
-	allowedTypes := []string{"array", "boolean", "date", "integer", "json", "number", "object", "string", "time"}
-	if !slices.Contains(allowedTypes, kind) {
+	if !slices.Contains(fieldTypes, kind) {
 		return invalid(path+".type",
 			"Specify a field type: array, boolean, date, integer, json, number, object, string, or time.")
 	}
@@ -141,7 +142,7 @@ func field(raw json.RawMessage, path string) error {
 		return err
 	}
 	method, _ := text(definition["method"])
-	if present(definition["method"]) && !slices.Contains([]string{"classify", "extract", "generate"}, method) {
+	if present(definition["method"]) && !slices.Contains(fieldMethods, method) {
 		return invalid(path+".method", "Specify classify, extract, or generate.")
 	}
 	if method == "classify" {

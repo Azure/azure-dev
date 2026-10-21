@@ -2,7 +2,7 @@
 
 Native Go first-party Azure Content Understanding extension.
 This development build provides help, version, metadata, analysis, analyzer
-list/show/create/delete, service defaults, doctor, and environment-variable
+list/show/create/delete/validate, service defaults, doctor, and environment-variable
 inspection. The remaining CU workflows are in development.
 
 ## Installation
@@ -21,6 +21,7 @@ azd ai cu --help
 azd ai cu version
 azd ai cu version --output json
 azd ai cu analyzer list --kind custom --sort-by createdAt -o json
+azd ai cu analyzer validate --schema schema.json --strict --spec -o json --kind custom --sort-by createdAt -o json
 azd ai cu analyzer show prebuilt-document
 azd ai cu analyzer create invoice_v1 --schema schema.json
 azd ai cu analyzer delete invoice_v1 --yes --no-prompt
@@ -144,6 +145,39 @@ rooted filesystem operations. No-clobber publication is atomic, replacement is
 explicit, symlink/special-file destinations are rejected, and directory identity
 is checked around publication. Temporary files are removed on failure.
 `-o none` suppresses successful stdout, not result/report file writes.
+
+### Offline analyzer validation
+
+`analyzer validate SCHEMA` (or `--schema` / `-s`) runs without a project, CU
+endpoint, credential, or host RPC. It does not create, modify, or analyze
+anything. Explicit `--api-version` selects GA or preview; otherwise GA is used,
+matching the shared Python local validator rather than loading service settings.
+
+The default curated checks collect field-level structural errors and authoring
+warnings, including missing/short descriptions, missing completion mappings, and
+nesting deeper than four levels. `--strict` makes warnings fail validation.
+Successful output retains the shared `ok`, `errors`, `warnings`, `strict`, and
+`apiVersion` fields. Failures use the normal structured error channel, without
+success-shaped stdout or rejected schema values in error messages.
+
+`--spec` additionally validates against the embedded CU OpenAPI analyzer
+**create-view** contract. It is truly offline: external references cannot be
+loaded. A missing or invalid bundled contract is an explicit error, not a skipped
+check. As in Python, curated checks alone are not full service-contract
+validation; empty primary aliases follow the shared authoring fallback rules.
+Spec validation always checks the original body.
+
+The JSON files under `internal/schema/specs/` are generated from the shared
+Python snapshot `25d39b30116a840491b7b6f393d6db792b38d4a4`. Each records its
+source URL, original SHA-256, and MIT copyright/license. To regenerate, select
+the versioned `ContentUnderstanding.json`, recursively retain definitions
+reachable from `ContentAnalyzer`, remove read-only properties from each
+definition's required list, and emit a Draft 4 schema referencing that
+definition. Retain all other constraints and reject external references.
+The normalized corpus in `internal/schema/testdata/validation.json` contains
+40 cases generated from that snapshot's curated validator, compared by finding
+paths rather than Python-specific prose. Neither regeneration nor validation
+introduces a Python build or runtime dependency into the extension.
 
 ### Service defaults and diagnostics
 

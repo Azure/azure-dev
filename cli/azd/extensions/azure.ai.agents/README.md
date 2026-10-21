@@ -650,6 +650,11 @@ Invocations. It is separate from `--version`, which continues to select a
 support A2A invocation with `--local`; this is a CLI limitation, not a
 restriction of the A2A protocol.
 
+For Task responses in **both A2A 0.3 and 1.0**, default output prefers answer
+artifacts over generic status messages such as “Done.” Status messages and
+history provide fallback text when no text artifact is present. Use `--output raw`
+to inspect the complete HTTP response and JSON-RPC envelope.
+
 ## Invoke latency diagnostics
 
 Remote Hosted Agent `azd ai agent invoke` calls using Responses or Invocations

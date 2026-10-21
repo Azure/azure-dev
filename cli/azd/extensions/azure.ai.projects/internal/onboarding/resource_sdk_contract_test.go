@@ -18,6 +18,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeferredTelemetryHasNoGateOrExclusiveNetworkReads(t *testing.T) {
+	input := contractPlanInput()
+	input.AgentSubnetID, input.StorageID = "", ""
+	plan, err := BuildPlan(input)
+	require.NoError(t, err)
+	plan.AgentSubnet, plan.Network = Resource{}, nil
+	reads := 0
+	options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+		reads++
+		return nil, fmt.Errorf("unexpected network request: %s %s", request.Method, request.URL.Path)
+	})
+	checker := &sdkResourceChecker{credential: contractCredential{}, options: onboardingARMOptions(options)}
+	fixture := newResourceRuleContractFixture(t)
+	report, sources := checker.networkChecks(t.Context(), plan, &fixture.Cluster, fixture.Pools, nil)
+	require.NoError(t, report.Err())
+	assert.Zero(t, reads, "no S03 or N02 selection leaves no network reads for deferred telemetry")
+	assert.Empty(t, sources)
+	for _, check := range report {
+		assert.NotEqual(t, "N01", check.ID, "deferred telemetry emits neither a gate nor a skipped stub")
+	}
+}
+
 func TestResourceSDKUsesOwningTenantAcrossUniqueSubscriptions(t *testing.T) {
 	for _, tc := range []struct {
 		name, otherTenant string
@@ -168,13 +190,14 @@ func TestResourceSDKI02OnlyChecksReferencedResourcesAndOwningTenants(t *testing.
 					inputs = append(inputs, check)
 					assert.Equal(t, Pass, check.Status, check.Observed)
 				}
-				if check.ID == "N01" && check.Status == Unverified {
+				assert.NotEqual(t, "N01", check.ID, "deferred telemetry checks must not emit any gate")
+				if check.ID == "N02" && check.Status == Unverified {
 					networkUnknown = true
 				}
 			}
 			require.NotEmpty(t, inputs)
 			require.NoError(t, inputs.Err(), "resource evidence must not require subscription/region preview admission")
-			require.True(t, networkUnknown, "removing admission must not relax source-bound network evidence")
+			require.True(t, networkUnknown, "removing admission must not relax applicable hosting-subnet ARM checks")
 		})
 	}
 }

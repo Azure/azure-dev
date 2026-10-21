@@ -196,7 +196,7 @@ project's registry grant. Developer access retains the agent predeploy lifecycle
 not an additional provision-time grant. A future project
 principal remains unknown during conditional-delegation checks.
 
-**This onboarding path is not production-ready.** Supported source-bound N01/S03
+**This onboarding path is not production-ready.** Supported source-bound S03
 and registry-path evidence is not available in the production adapters. N02
 requires only applicable ARM-visible static configuration, not a live-path provider.
 ARM readability, deployment
@@ -222,7 +222,10 @@ applicable ARM delegation, peering state, route tables/routes and associations,
 NSGs/rules, Private Endpoint approval, Private DNS zones/links/records and Storage
 network settings. It does not require workload DNS/TCP probes or proof of hidden
 NVA, custom-DNS, VPN/ExpressRoute or on-premises internal policies and connectivity.
-N01's Storage service-tag and S03's Blob workload-path evidence remain independent.
+N01 platform-telemetry Storage service-tag verification is deferred and is not
+implemented by the client. A future service-owned Storage endpoint/FQDN contract
+could support targeted connectivity verification; that contract is not provided here.
+S03's customer Blob workload-path evidence remains independent.
 Preparation creates only that journaled
 subnet with the `Microsoft.App/environments` delegation; it does not rewrite
 existing subnets, routes, NSGs, peerings, AKS settings, or network policy.

@@ -52,7 +52,7 @@ func TestPipelineContractEveryMandatoryCheckClosesWriteGate(t *testing.T) {
 	}{
 		{ids: []string{
 			"I01", "I02", "I03", "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08", "A09", "A10", "A11",
-			"S01", "S02", "S03", "C01", "N01", "N02",
+			"S01", "S02", "S03", "C01", "N02",
 		}},
 		{ids: []string{"P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09"}, access: true},
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -154,7 +155,7 @@ func TestAgentSubnetScopeUsesARMInventoryNotExternalWorkloadDiscovery(t *testing
 			requests := 0
 			provider := networkEvidenceContract(func(_ context.Context, request NetworkRequest) (NetworkEvidence, error) {
 				requests++
-				require.Contains(t, []string{"N01", "S03", "R06"}, request.CheckID,
+				require.Contains(t, []string{"S03", "R06"}, request.CheckID,
 					"N02 must never request workload/source-bound evidence")
 				evidence := registryPathEvidence(request)
 				switch scenario {
@@ -177,7 +178,12 @@ func TestAgentSubnetScopeUsesARMInventoryNotExternalWorkloadDiscovery(t *testing
 				t.Run(stage, func(t *testing.T) {
 					var report Report
 					if stage == "supplied-preflight" {
-						report, _ = checker.networkChecks(t.Context(), plan, &f.fixture.Cluster, f.fixture.Pools, nil)
+						storage := &armstorage.Account{ID: new(plan.Storage.ID), Properties: &armstorage.AccountProperties{
+							PrimaryEndpoints:    &armstorage.Endpoints{Blob: new("https://customer.blob.core.windows.net/")},
+							PublicNetworkAccess: new(armstorage.PublicNetworkAccessEnabled),
+							NetworkRuleSet:      &armstorage.NetworkRuleSet{DefaultAction: new(armstorage.DefaultActionAllow)},
+						}}
+						report, _ = checker.networkChecks(t.Context(), plan, &f.fixture.Cluster, f.fixture.Pools, storage)
 					} else {
 						forbidN02Reads = true
 						report, _ = checker.VerifyPreparedNetwork(t.Context(), plan, Prepared{
@@ -186,6 +192,7 @@ func TestAgentSubnetScopeUsesARMInventoryNotExternalWorkloadDiscovery(t *testing
 					}
 					var n02 Report
 					for _, check := range report {
+						assert.NotEqual(t, "N01", check.ID)
 						if check.ID == "N02" {
 							n02 = append(n02, check)
 						}
@@ -194,7 +201,7 @@ func TestAgentSubnetScopeUsesARMInventoryNotExternalWorkloadDiscovery(t *testing
 						require.Empty(t, n02, "R06 must not rerun or report N02")
 						if strings.HasPrefix(scenario, "missing ") && scenario != "missing sibling prefix" &&
 							scenario != "missing Service" && scenario != "missing Overlay Pod" {
-							require.Error(t, report.Err(), "independent N01/S03/registry requirements remain enforced")
+							require.Error(t, report.Err(), "independent S03/registry requirements remain enforced")
 						}
 						return
 					}
@@ -203,7 +210,7 @@ func TestAgentSubnetScopeUsesARMInventoryNotExternalWorkloadDiscovery(t *testing
 					case "valid", "missing provider", "missing DNS", "missing routes", "missing policy", "missing TCP":
 						require.NoError(t, n02.Err(), "N02 needs only valid ARM static configuration")
 						if scenario == "missing provider" {
-							require.Error(t, report.Err(), "N01 must still require its supported evidence provider")
+							require.Error(t, report.Err(), "S03 must still require its supported evidence provider")
 						} else {
 							require.Positive(t, requests)
 						}

@@ -233,9 +233,8 @@ func TestN02PlannedSubnetPassesWithoutLiveEvidence(t *testing.T) {
 		case "N02":
 			found = true
 			assert.Equal(t, Pass, check.Status)
-		case "N01":
-			assert.Equal(t, Unverified, check.Status, "N01 is not weakened by static-only N02")
 		}
+		assert.NotEqual(t, "N01", check.ID)
 	}
 	require.True(t, found)
 	for _, request := range f.methods {

@@ -16,7 +16,6 @@ import (
 )
 
 // NetworkRequest binds evidence to the selected source subnets and the precise requirement.
-// N01 uses destination "Storage" (the entire service tag), never the customer's S03 Blob endpoint.
 type NetworkRequest struct {
 	CheckID         string
 	Scope           string
@@ -37,7 +36,6 @@ type NetworkEvidence struct {
 	ConnectivityFailed         bool
 	EffectiveRoutesVerified    bool
 	EffectivePolicyVerified    bool
-	StorageServiceTagCoverage  bool
 	PrivateEndpointDNSVerified bool
 }
 
@@ -80,11 +78,6 @@ func networkEvidenceCheck(
 		return resourceResult(base, Fail, "source-bound existing-workload connectivity evidence reports failure")
 	}
 	switch request.CheckID {
-	case "N01":
-		if !evidence.StorageServiceTagCoverage {
-			base.Missing = "complete outbound TCP 443 Storage service-tag coverage, not one customer Blob endpoint"
-			return base
-		}
 	case "S03":
 		if !evidence.ExistingWorkload || !evidence.DNSVerified || !evidence.TCP443Verified ||
 			private && !evidence.PrivateEndpointDNSVerified {
@@ -197,8 +190,10 @@ func (c *sdkResourceChecker) networkConfiguration(
 	var sources []string
 	var related []netip.Prefix
 	report := Report{}
+	checkSubnet := checkTopology && plan.AgentSubnet.Supplied
+	checkSources := plan.Storage.Supplied
 	var selected *armcontainerservice.AgentPool
-	if cluster != nil {
+	if cluster != nil && (checkSubnet || checkSources) {
 		// The SKU-aware choice is made from the same child resources as A06-A10.
 		id, err := existingResourceID(plan.Cluster.ID, "Microsoft.ContainerService/managedClusters")
 		if err == nil {
@@ -222,8 +217,8 @@ func (c *sdkResourceChecker) networkConfiguration(
 				}
 				continue
 			}
-			checkID := "N01"
-			if checkTopology {
+			checkID := "S03"
+			if checkSubnet {
 				checkID = "N02"
 			}
 			subnet, checks := c.readNetworkSubnet(ctx, subnetID, checkID)
@@ -248,7 +243,7 @@ func (c *sdkResourceChecker) networkConfiguration(
 	if !sourceMetadataKnown {
 		sources = nil
 	}
-	if cluster != nil && cluster.Properties != nil && cluster.Properties.NetworkProfile != nil {
+	if checkSubnet && cluster != nil && cluster.Properties != nil && cluster.Properties.NetworkProfile != nil {
 		n := cluster.Properties.NetworkProfile
 		cidrs := append(slices.Clone(n.PodCidrs), n.ServiceCidrs...)
 		cidrs = append(cidrs, n.PodCidr, n.ServiceCidr)
@@ -267,11 +262,6 @@ func (c *sdkResourceChecker) networkConfiguration(
 			sources = nil
 		}
 	}
-	telemetry := resourceCheck("N01", plan.Cluster.ID, "AKS source subnets allow outbound TCP 443 to Storage service tag")
-	telemetry.Observed = "ARM subnet/NSG/route reads are configuration evidence, not complete Storage-tag path proof"
-	report = append(report, networkEvidenceCheck(ctx, c.evidence.Network, NetworkRequest{
-		CheckID: "N01", Scope: plan.Cluster.ID, SourceSubnetIDs: sources, Destination: "Storage",
-	}, telemetry, false))
 	blob := resourceCheck("S03", plan.Storage.ID, "existing AKS workload resolves and reaches Blob endpoint on TCP 443")
 	if !plan.Storage.Supplied {
 		report = append(report, resourceResult(blob, NotApplicable, "new Storage path is validated during R06"))
@@ -364,7 +354,7 @@ func (c *sdkResourceChecker) networkConfiguration(
 	return report, sources
 }
 
-// VerifyPreparedNetwork verifies independent N01/S03 and registry paths, not N02.
+// VerifyPreparedNetwork verifies independent S03 and registry paths, not N02.
 // Created network resources have their own ARM creation-contract readback in prepareNetwork.
 func (c *sdkResourceChecker) VerifyPreparedNetwork(
 	ctx context.Context, plan Plan, prepared Prepared,

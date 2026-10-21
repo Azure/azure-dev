@@ -377,6 +377,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 		yamlUnchanged bool
 		failKey       string
 		malformed     bool
+		bindingKey    string
 	}{
 		{name: "seed complete YAML"},
 		{name: "seed unchanged", yamlUnchanged: true},
@@ -388,6 +389,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 		{name: "rollback seed", failKey: "AZURE_AI_MODEL_DEPLOYMENT_NAME"},
 		{name: "rollback binding", failKey: synthesis.DeploymentBindingsEnvKey},
 		{name: "reject malformed before mutation", malformed: true},
+		{name: "reset binding case-insensitively", bindingKey: "Chat"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -414,7 +416,11 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 			if test.malformed {
 				envServer.values[projectDeploymentsEnvKey] = "{"
 			}
-			envServer.values[synthesis.DeploymentBindingsEnvKey] = `{"chat":"reused","other":"other"}`
+			bindingKey := test.bindingKey
+			if bindingKey == "" {
+				bindingKey = "chat"
+			}
+			envServer.values[synthesis.DeploymentBindingsEnvKey] = `{"` + bindingKey + `":"reused","other":"other"}`
 			beforeEnv := maps.Clone(envServer.values)
 			envServer.failKey = test.failKey
 			action := &ProjectDeploymentAddAction{
@@ -440,7 +446,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 			require.True(t, present)
 			bindings, err := synthesis.DecodeDeploymentBindings(envServer.values[synthesis.DeploymentBindingsEnvKey])
 			require.NoError(t, err)
-			require.Equal(t, map[string]string{"chat": "chat", "other": "other"}, bindings)
+			require.Equal(t, map[string]string{bindingKey: "chat", "other": "other"}, bindings)
 			if test.initial != nil && len(test.initial) == 0 {
 				assert.Equal(t, []synthesis.Deployment{selected}, deployments)
 			} else {

@@ -376,8 +376,15 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 			fmt.Errorf("set %s: %w", projectDeploymentsEnvKey, err), restoreEnvironment, restoreDeployment,
 		)
 	}
-	if _, bound := bindings[selected.Deployment.Name]; bound {
-		bindings[selected.Deployment.Name] = selected.Deployment.Name
+	bindingKey := ""
+	for name := range bindings {
+		if strings.EqualFold(name, selected.Deployment.Name) {
+			bindingKey = name
+			break
+		}
+	}
+	if bindingKey != "" {
+		bindings[bindingKey] = selected.Deployment.Name
 		encoded, err := synthesis.EncodeDeploymentBindings(bindings)
 		if err != nil {
 			return rollbackProjectDeploymentAdd(err, restoreEnvironment, restoreDeployment)

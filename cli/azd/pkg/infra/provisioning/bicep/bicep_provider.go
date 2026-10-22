@@ -2912,8 +2912,9 @@ func (p *BicepProvider) setProvisionValidationOutcome(
 // Bicep snapshots emit a resolved resource ID rather than the ARM template's scope property.
 func roleAssignmentTargetScope(resource armTemplateResource) string {
 	if resource.ID != "" {
-		const roleAssignmentSegment = "/providers/microsoft.authorization/roleassignments/"
-		if index := strings.LastIndex(strings.ToLower(resource.ID), roleAssignmentSegment); index >= 0 {
+		const roleAssignmentSegment = "/providers/Microsoft.Authorization/roleAssignments/"
+		if index := strings.LastIndex(
+			strings.ToLower(resource.ID), strings.ToLower(roleAssignmentSegment)); index >= 0 {
 			if index == 0 {
 				return "/"
 			}
@@ -2922,6 +2923,36 @@ func roleAssignmentTargetScope(resource armTemplateResource) string {
 	}
 
 	return strings.TrimRight(resource.Scope, "/")
+}
+
+func roleAssignmentScopeUnverifiedResult(
+	principalId string, subscriptionId string, requiredAction string,
+) ProvisionValidationCheckResult {
+	details := []string{
+		"Role assignment permissions at the target scopes were not verified",
+		"The deployment-subscription check does not cover every target scope.",
+	}
+	if principalId == "" {
+		details = append(details,
+			"The current principal could not be determined, so the permission check was skipped.")
+	} else {
+		details = append(details,
+			fmt.Sprintf("%s %s", output.WithGrayFormat("Principal ID:"), principalId))
+	}
+	details = append(details,
+		fmt.Sprintf("%s %s", output.WithGrayFormat("Environment subscription:"), subscriptionId),
+		fmt.Sprintf("%s %s", output.WithGrayFormat("Required permission:"), requiredAction),
+	)
+
+	return ProvisionValidationCheckResult{
+		Severity:     ProvisionValidationCheckWarning,
+		DiagnosticID: "role_assignment_scope_unverified",
+		Message:      strings.Join(details, "\n"),
+		Suggestion: fmt.Sprintf(
+			"Verify that your account has '%s' at the scopes of the role assignments.",
+			requiredAction,
+		),
+	}
 }
 
 // checkRoleAssignmentPermissions is a ProvisionValidationCheckFn that verifies the current principal
@@ -2970,6 +3001,10 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		hasUnverifiedScope = true
 	}
 
+	requiredActions := []string{
+		"Microsoft.Authorization/roleAssignments/write",
+	}
+
 	// Resolve the principal ID in the resource tenant context rather than the user-access
 	// (home) tenant. For B2B/guest users, CurrentPrincipalId returns the home-tenant oid,
 	// which does not match the guest identity in the resource tenant. The assignedTo() role
@@ -2979,11 +3014,12 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	if err != nil {
 		log.Printf(
 			"could not determine current principal, skipping role assignment permission check: %v", err)
+		if hasUnverifiedScope {
+			return []ProvisionValidationCheckResult{
+				roleAssignmentScopeUnverifiedResult("", subscriptionId, requiredActions[0]),
+			}, nil
+		}
 		return nil, nil
-	}
-
-	requiredActions := []string{
-		"Microsoft.Authorization/roleAssignments/write",
 	}
 
 	var results []ProvisionValidationCheckResult
@@ -3049,22 +3085,8 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 	}
 
 	if hasUnverifiedScope {
-		results = append(results, ProvisionValidationCheckResult{
-			Severity:     ProvisionValidationCheckWarning,
-			DiagnosticID: "role_assignment_scope_unverified",
-			Message: fmt.Sprintf(
-				"Role assignment permissions at the target scopes were not verified\n"+
-					"The deployment-subscription check does not cover every target scope.\n"+
-					"%s %s\n%s %s\n%s %s",
-				output.WithGrayFormat("Principal ID:"), principalId,
-				output.WithGrayFormat("Environment subscription:"), subscriptionId,
-				output.WithGrayFormat("Required permission:"), requiredActions[0],
-			),
-			Suggestion: fmt.Sprintf(
-				"Verify that your account has '%s' at the scopes of the role assignments.",
-				requiredActions[0],
-			),
-		})
+		results = append(results,
+			roleAssignmentScopeUnverifiedResult(principalId, subscriptionId, requiredActions[0]))
 	}
 
 	return results, nil

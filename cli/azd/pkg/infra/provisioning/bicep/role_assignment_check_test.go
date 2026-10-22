@@ -81,6 +81,18 @@ func prepareRoleWarningMocks(
 	t *testing.T, mockContext *mocks.MockContext, permission rolePermissionState,
 ) {
 	t.Helper()
+	prepareRoleWarningMocksWithPrincipal(
+		t, mockContext, permission, http.StatusOK, &graphsdk.UserProfile{Id: "principal-123"})
+}
+
+func prepareRoleWarningMocksWithPrincipal(
+	t *testing.T,
+	mockContext *mocks.MockContext,
+	permission rolePermissionState,
+	principalStatus int,
+	userProfile *graphsdk.UserProfile,
+) {
+	t.Helper()
 	mockContext.Container.MustRegisterSingleton(func() *azapi.PermissionsService {
 		return azapi.NewPermissionsService(
 			mockContext.SubscriptionCredentialProvider, mockContext.ArmClientOptions)
@@ -92,8 +104,7 @@ func prepareRoleWarningMocks(
 			cloud.AzurePublic(),
 		)
 	})
-	mockgraphsdk.RegisterMeGetMock(mockContext, http.StatusOK,
-		&graphsdk.UserProfile{Id: "principal-123"})
+	mockgraphsdk.RegisterMeGetMock(mockContext, principalStatus, userProfile)
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
@@ -216,6 +227,28 @@ func TestProvisionValidationWarning_UsesBicepSnapshotResourceID(t *testing.T) {
 	require.Len(t, results, 1)
 	require.Equal(t, "role_assignment_missing", results[0].DiagnosticID)
 	require.True(t, results[0].IsCritical)
+}
+
+func TestProvisionValidationWarning_PreservesUnverifiedScopeWhenPrincipalResolutionFails(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareRoleWarningMocksWithPrincipal(
+		t, mockContext, rolePermissionMissing, http.StatusInternalServerError, nil)
+	provider := newWarningBicepProvider(mockContext)
+
+	results, err := provider.checkRoleAssignmentPermissions(t.Context(), &validationContext{
+		Props: resourcesProperties{HasRoleAssignments: true},
+		SnapshotResources: []armTemplateResource{
+			roleAssignmentSnapshotResource("/subscriptions/other-subscription"),
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "role_assignment_scope_unverified", results[0].DiagnosticID)
+	require.False(t, results[0].IsCritical)
+	require.Contains(t, results[0].Message, "current principal could not be determined")
+	require.NotContains(t, results[0].Message, "Principal ID:")
+	require.Contains(t, results[0].Message, "Environment subscription:")
+	require.Contains(t, results[0].Message, "Required permission:")
 }
 
 func TestProvisionValidationWarning_Confirmation(t *testing.T) {

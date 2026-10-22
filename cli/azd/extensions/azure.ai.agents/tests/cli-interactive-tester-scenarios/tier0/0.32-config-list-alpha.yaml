@@ -1,9 +1,62 @@
-# Tier 0: read-only alpha feature listing; no auth or Azure cost.
+# Tier 0: read-only alpha feature listing with a dedicated config copy, no auth or Azure cost.
 name: "config-list-alpha"
-command: "azd ai agent config list-alpha"
-cwd: "/tmp"
+command: 'AZD_CONFIG_DIR="$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config" azd ai agent config list-alpha'
+cwd: "~/working/azd-agents-t0-config-list-alpha-{instance}"
 tags: ["tier:0", "cmd:config", "cmd:help", "parallel-safe"]
+
+env:
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS: ""
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE: ""
+  AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING: ""
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+
+pre:
+  - run: >-
+      rm -rf -- "$HOME/working/azd-agents-t0-config-list-alpha-{instance}" &&
+      mkdir -p -- "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config"
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+  - run: |
+      set -e
+      if [ -n "$AZD_CONFIG_DIR" ]; then
+        source_config="$AZD_CONFIG_DIR"
+      else
+        source_config="$HOME/.azd"
+      fi
+      cp -a -- "$source_config/." "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config/"
+      python3 - "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config/config.json" <<'PY'
+      import json
+      import pathlib
+      import sys
+
+      path = pathlib.Path(sys.argv[1])
+      if path.exists():
+          with path.open() as stream:
+              data = json.load(stream)
+          data.pop("alpha", None)
+          with path.open("w") as stream:
+              json.dump(data, stream, indent=2)
+              stream.write("\n")
+          with path.open() as stream:
+              json.load(stream)
+      PY
+    cwd: "~/working"
+    name: "copy the real config and extensions and remove all alpha opt-ins"
+
+post:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-t0-config-list-alpha-{instance}"'
+    cwd: "~/working"
+    name: "remove the dedicated config copy and working directory"
+
 goals:
+  - >-
+    Run every listed product command with the same
+    AZD_CONFIG_DIR="$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config"
+    prefix, including the voice process-variable check and help commands.
+    Keep this working directory free of any project.
   - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
   - "Confirm the output lists agents.managed_harness, agents.voice, and agents.long_running as blocks with Name, Description, Status: Off, and an AZD_FOUNDRY_EXT_ENABLE_AGENTS_* Environment variable line, in the layout of 'azd config list-alpha'."
   - "Run 'AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE=true azd ai agent config list-alpha'. Confirm only agents.voice shows Status: On."
@@ -12,5 +65,8 @@ goals:
   - "Run 'azd ai agent config --help' and 'azd ai agent config list-alpha --help'. Confirm both exit with code 0."
   - "Run 'azd ai agent feature list'. Confirm it does not list features."
   - "Confirm the output shows no field or text that names where a feature was turned on."
+  - >-
+    Confirm the real config directory is unchanged, using the caller's nonempty AZD_CONFIG_DIR
+    or otherwise $HOME/.azd. No alpha key may be added or removed in its config.json.
   - "Take a screenshot of the text and JSON output."
   - "Report a finding if a registered feature is missing, a status is wrong, or the command prompts or mutates a project."

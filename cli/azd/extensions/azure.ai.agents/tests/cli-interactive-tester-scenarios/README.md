@@ -345,7 +345,7 @@ in any order, any time.
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
-| `tier0/0.32-config-list-alpha.yaml` | `config list-alpha` text and JSON output for agent alpha features |
+| `tier0/0.32-config-list-alpha.yaml` | `config list-alpha` text and JSON output with an isolated config copy and no inherited alpha opt-ins |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -691,6 +691,8 @@ How they're used here:
   (`1.04-init-from-code`, `1.06-init-deploy-mode-code`) also copy a committed Python
   fixture into the dir so the source exists before the wizard's "Use the code in
   the current directory" flow inspects it (see [Fixtures](#fixtures)).
+- `0.32` uses a `pre` config copy hook that preserves installed extensions and strips alpha keys.
+  A `post` hook removes the dedicated working directory.
 - **`pre` gh-auth guard** — the remote azure.yaml project scenarios (`1.03-init-from-azure-yaml-url`,
   `1.05-init-flag-agent-name`) run `gh auth status` and fail fast if GitHub
   CLI isn't authenticated, because downloading the project file and its sibling
@@ -801,7 +803,8 @@ be run back to back in any order within a tier:
 
 - Tier 0/1 stateful scenarios **pre-wipe** their own `cwd`. Cleanup is pre-wipe
   **only** (no `post` delete), so the generated scaffold stays on disk for
-  inspection after a run while the next run still starts clean.
+  inspection after a run while the next run still starts clean. Scenario `0.32` also removes
+  its config copy and working directory with a `post` hook.
 - Tier 1b scenarios use the prerequisite worker's verified `scaffold_dir` and preserve that
   Tier 1 scaffold, but use an always-run `post` hook to down their isolated Azure resources.
   Cleanup failure is a separate scenario failure and leaves the local environment available

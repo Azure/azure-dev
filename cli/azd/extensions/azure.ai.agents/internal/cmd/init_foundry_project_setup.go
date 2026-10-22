@@ -79,7 +79,7 @@ func configureFoundryProject(
 		if err != nil {
 			return err
 		}
-		if location != "" && !locationAllowed(location, allowedLocations) {
+		if location != "" && !initLocationAllowed(ctx, location, allowedLocations) {
 			return exterrors.Validation(
 				exterrors.CodeLocationMismatch,
 				fmt.Sprintf("configured AZURE_LOCATION %q is not supported for this agent setup", location),
@@ -88,7 +88,7 @@ func configureFoundryProject(
 			)
 		}
 		if noPrompt {
-			if err := validateInitLocation(azureContext.Scope.Location, allowedLocations); err != nil {
+			if err := validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations); err != nil {
 				return err
 			}
 		}

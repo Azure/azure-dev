@@ -1299,6 +1299,7 @@ func finalizeAdoptedProject(
 	if err != nil {
 		return err
 	}
+	ctx = withHarnessRegionPolicy(ctx, manifestInfo.promptHarness)
 	allowedLocations, err := promptHarnessRegionsForInit(ctx, manifestInfo.promptHarness)
 	if err != nil {
 		return err

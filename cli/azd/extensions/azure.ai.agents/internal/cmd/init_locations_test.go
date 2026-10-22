@@ -22,6 +22,7 @@ import (
 )
 
 func TestPromptHarnessRegionsForInit(t *testing.T) {
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2-euap"})
 	previousURL := harnessAgentRegionsURL
 	t.Cleanup(func() { harnessAgentRegionsURL = previousURL })
 	// Preserve any cached result populated by other init tests.
@@ -46,14 +47,59 @@ func TestPromptHarnessRegionsForInit(t *testing.T) {
 		regions, err := promptHarnessRegionsForInit(t.Context(), harness)
 		require.NoError(t, err)
 		require.Equal(t, []string{"newregion"}, regions, "remote data must override the embedded policy")
-		require.NoError(t, validateInitLocation("newregion", regions))
-		require.Error(t, validateInitLocation("japaneast", regions))
+		require.NoError(t, validateInitLocation(t.Context(), "newregion", regions))
+		require.Error(t, validateInitLocation(t.Context(), "japaneast", regions))
 		regions[0] = "mutated"
 	}
 	require.EqualValues(t, 1, hits.Load(), "both harness names share a cache")
 	hosted, err := supportedRegionsForInit(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, []string{"hosted-only"}, hosted, "hosted and harness policies must remain independent")
+}
+
+func TestInternalHarnessRegions_LiveManifest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		body         string
+		fallback     bool
+		wantInternal bool
+	}{
+		{name: "live update", body: `{"regions":[" NewInternal "]}`, wantInternal: true},
+		{name: "empty removes all internal regions", body: `{"regions":[]}`},
+		{name: "malformed falls back", body: `{`, fallback: true},
+		{name: "unavailable falls back", body: "unavailable", fallback: true},
+		{name: "missing list falls back", body: `{}`, fallback: true},
+		{name: "blank entries fall back", body: `{"regions":[" "]}`, fallback: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resetAgentRegionsCache(t, &internalHarnessRegionsCache, nil)
+			var hits atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				hits.Add(1)
+				if tt.body == "unavailable" {
+					w.WriteHeader(http.StatusServiceUnavailable)
+				}
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(server.Close)
+			previous := internalHarnessAgentRegionsURL
+			internalHarnessAgentRegionsURL = server.URL
+			t.Cleanup(func() { internalHarnessAgentRegionsURL = previous })
+			ctx := withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview")
+			public := []string{"japaneast"}
+			require.True(t, initLocationAllowed(ctx, "japaneast", public))
+			require.Zero(t, hits.Load(), "public regions do not require the internal manifest")
+			require.Equal(t, tt.wantInternal, initLocationAllowed(ctx, "newinternal", public))
+			require.Equal(t, tt.fallback, initLocationAllowed(ctx, "eastus2-euap", public))
+			require.EqualValues(t, 1, hits.Load(), "including empty policies, results are cached")
+			err := validateInitLocation(ctx, "unsupported", public)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.NotContains(t, localErr.Suggestion, "newinternal")
+			require.NotContains(t, localErr.Suggestion, "eastus2-euap")
+			require.Equal(t, []string{"japaneast"}, public)
+		})
+	}
 }
 
 func TestPromptHarnessRegionsForInit_Fallback(t *testing.T) {

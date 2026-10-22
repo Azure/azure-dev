@@ -46,6 +46,7 @@ func resolvePromptHarnessTarget(
 	settings *project.PromptAgentSettings,
 	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
+	ctx = withHarnessRegionPolicy(ctx, harness)
 	allowedLocations, err := promptHarnessRegionsForInit(ctx, harness)
 	if err != nil {
 		return nil, false, nil, nil, err
@@ -140,7 +141,7 @@ func resolvePromptHarnessTarget(
 		// the provisioned environment at deploy time.
 		deployment, err := resolvePromptModelDeployment(ctx, azdClient, azureContext, env, flags)
 		if err == nil {
-			err = validateInitLocation(azureContext.Scope.Location, allowedLocations)
+			err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
 		}
 		return deployment, true, nil, cred, err
 	}
@@ -185,7 +186,7 @@ func resolvePromptHarnessTarget(
 		ctx, azdClient, cred, azureContext, env, flags, proj,
 	)
 	if err == nil {
-		err = validateInitLocation(azureContext.Scope.Location, allowedLocations)
+		err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
 	}
 	return deployment, provision, proj, cred, err
 }
@@ -220,7 +221,7 @@ func selectPromptFoundryProject(
 		if err != nil {
 			return nil, err
 		}
-		if err := validateInitLocation(proj.Location, allowedLocations); err != nil {
+		if err := validateInitLocation(ctx, proj.Location, allowedLocations); err != nil {
 			return nil, err
 		}
 		return proj, nil
@@ -253,7 +254,7 @@ func selectPromptFoundryProject(
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
 	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
-		return !locationAllowed(p.Location, allowedLocations)
+		return !initLocationAllowed(ctx, p.Location, allowedLocations)
 	})
 	if len(projects) == 0 {
 		if len(allowedLocations) > 0 {

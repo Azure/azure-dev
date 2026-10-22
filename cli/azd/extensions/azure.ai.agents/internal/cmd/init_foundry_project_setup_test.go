@@ -25,9 +25,10 @@ func (s *projectSetupAccountServer) LookupTenant(
 }
 
 func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2-euap"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
-	for _, location := range []string{"eastus", "japaneast", ""} {
+	for _, location := range []string{"eastus", "japaneast", "", "eastus2-euap"} {
 		t.Run(location, func(t *testing.T) {
 			values := map[string]string{
 				"AZURE_SUBSCRIPTION_ID":         "sub",
@@ -43,7 +44,11 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 			t.Cleanup(func() { client.Close() })
 			azureContext, err := loadAzureContext(t.Context(), client, "test")
 			require.NoError(t, err)
-			_, err = configureFoundryProject(t.Context(), client, azureContext, "test", "", "",
+			if location == "eastus2-euap" {
+				azureContext.Scope.Location = location
+			}
+			_, err = configureFoundryProject(withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"),
+				client, azureContext, "test", "", "",
 				true, true, false, false, allowed)
 			if location == "eastus" {
 				require.ErrorContains(t, err, "configured AZURE_LOCATION")
@@ -55,7 +60,11 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 				}
 				require.Equal(t, location, values["AZURE_LOCATION"])
 			}
-			require.Equal(t, "westus2", values["AZURE_AI_DEPLOYMENTS_LOCATION"])
+			expectedDeploymentLocation := "westus2"
+			if location == "eastus2-euap" {
+				expectedDeploymentLocation = location
+			}
+			require.Equal(t, expectedDeploymentLocation, values["AZURE_AI_DEPLOYMENTS_LOCATION"])
 		})
 	}
 }

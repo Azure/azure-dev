@@ -29,6 +29,9 @@ goals:
     https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-regions.json.
     If the manifest is unavailable, use the harness-agent-regions.json embedded in the build under test.
     Use this policy for every generated and adopted harness check below.
+    Internal harness regions must not appear in region pickers or supported-region
+    guidance in warnings and errors. Existing projects in internal harness regions must
+    appear in project pickers and be accepted when selected or supplied through --project-id.
     Do not create fixtures during this run.
   - >-
     RESOURCE NAMING: if asked for an azd environment name, clear any default and use '{prefix}-picker-{instance}'

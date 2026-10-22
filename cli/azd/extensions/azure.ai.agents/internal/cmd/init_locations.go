@@ -31,8 +31,28 @@ func promptHarnessRegionsForInit(ctx context.Context, harness string) ([]string,
 	return harnessRegionsCache.load(ctx, harnessAgentRegionsURL, embeddedHarnessAgentRegionsJSON)
 }
 
-func validateInitLocation(location string, allowedLocations []string) error {
+type harnessRegionPolicyKey struct{}
+
+func withHarnessRegionPolicy(ctx context.Context, harness string) context.Context {
+	return context.WithValue(ctx, harnessRegionPolicyKey{}, agent_api.IsCopilotHarness(harness))
+}
+
+func initLocationAllowed(ctx context.Context, location string, allowedLocations []string) bool {
+	harness, _ := ctx.Value(harnessRegionPolicyKey{}).(bool)
 	if locationAllowed(location, allowedLocations) {
+		return true
+	}
+	if !harness || strings.TrimSpace(location) == "" {
+		return false
+	}
+	// Accept configured locations and existing projects in internal regions.
+	// Never merge them into the public allowlist used by region pickers and guidance.
+	internal, err := internalHarnessRegionsCache.load(ctx, internalHarnessAgentRegionsURL, embeddedInternalHarnessRegionsJSON)
+	return err == nil && len(internal) > 0 && locationAllowed(location, internal)
+}
+
+func validateInitLocation(ctx context.Context, location string, allowedLocations []string) error {
+	if initLocationAllowed(ctx, location, allowedLocations) {
 		return nil
 	}
 	return exterrors.Validation(
@@ -50,6 +70,9 @@ var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
 var harnessAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
 	"cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-regions.json"
 
+var internalHarnessAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
+	"cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-internal-regions.json"
+
 // embeddedHostedAgentRegionsJSON is the build-time fallback used when the live
 // manifest fetch fails (e.g. transient network issues, restrictive proxies).
 //
@@ -58,6 +81,9 @@ var embeddedHostedAgentRegionsJSON []byte
 
 //go:embed harness-agent-regions.json
 var embeddedHarnessAgentRegionsJSON []byte
+
+//go:embed harness-agent-internal-regions.json
+var embeddedInternalHarnessRegionsJSON []byte
 
 const (
 	hostedAgentRegionsFetchTimeout = 5 * time.Second
@@ -72,11 +98,14 @@ type agentRegionsManifest struct {
 
 var regionsCache agentRegionsCache
 var harnessRegionsCache agentRegionsCache
+var internalHarnessRegionsCache = agentRegionsCache{allowEmpty: true}
 
 type agentRegionsCache struct {
-	mu       sync.Mutex
-	regions  []string
-	inflight *regionsFetch
+	// An empty internal manifest disables internal regions; public policies must be nonempty.
+	allowEmpty bool
+	mu         sync.Mutex
+	regions    []string
+	inflight   *regionsFetch
 }
 
 // regionsFetch coordinates concurrent callers waiting on the same in-flight fetch
@@ -135,10 +164,10 @@ func (cache *agentRegionsCache) load(ctx context.Context, url string, embedded [
 // fetch result is shared. Callers pass context.WithoutCancel(callerCtx).
 func (cache *agentRegionsCache) runRegionsFetch(ctx context.Context, fetch *regionsFetch, url string, embedded []byte) {
 	// The fetch applies its own timeout (hostedAgentRegionsFetchTimeout).
-	regions, err := fetchAgentRegionsFromURL(ctx, http.DefaultClient, url)
+	regions, err := fetchAgentRegionsManifest(ctx, http.DefaultClient, url, cache.allowEmpty)
 
 	if err != nil {
-		if fallback, fbErr := parseAgentRegionsManifest(embedded); fbErr == nil {
+		if fallback, fbErr := parseAgentRegions(embedded, cache.allowEmpty); fbErr == nil {
 			regions = fallback
 			err = nil
 		}
@@ -163,6 +192,10 @@ func parseEmbeddedHostedAgentRegions() ([]string, error) {
 }
 
 func parseAgentRegionsManifest(data []byte) ([]string, error) {
+	return parseAgentRegions(data, false)
+}
+
+func parseAgentRegions(data []byte, allowEmpty bool) ([]string, error) {
 	var manifest agentRegionsManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, err
@@ -173,7 +206,7 @@ func parseAgentRegionsManifest(data []byte) ([]string, error) {
 			regions = append(regions, normalized)
 		}
 	}
-	if len(regions) == 0 {
+	if len(regions) == 0 && (!allowEmpty || manifest.Regions == nil || len(manifest.Regions) > 0) {
 		return nil, fmt.Errorf("manifest contained no valid regions")
 	}
 	return regions, nil
@@ -205,6 +238,10 @@ func supportedModelLocations(ctx context.Context, modelLocations []string) ([]st
 }
 
 func fetchAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url string) ([]string, error) {
+	return fetchAgentRegionsManifest(ctx, httpClient, url, false)
+}
+
+func fetchAgentRegionsManifest(ctx context.Context, httpClient *http.Client, url string, allowEmpty bool) ([]string, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, hostedAgentRegionsFetchTimeout)
 	defer cancel()
 
@@ -234,7 +271,7 @@ func fetchAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url 
 		))
 	}
 
-	regions, err := parseAgentRegionsManifest(body)
+	regions, err := parseAgentRegions(body, allowEmpty)
 	if err != nil {
 		return nil, regionsFetchError(err)
 	}

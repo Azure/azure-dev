@@ -72,7 +72,7 @@ func CdSuggestions(folder string) []Suggestion {
 		!strings.ContainsAny(folder, "\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f") {
 		return []Suggestion{{
 			Command:     "cd " + folder,
-			Description: "enter your new project folder",
+			Description: "enter your project folder",
 		}}
 	}
 
@@ -205,7 +205,7 @@ func ResolveAfterInit(state *State, readmeExists func(relativePath string) bool)
 	out := make([]Suggestion, 0, 4)
 	priority := 5
 
-	// When init created a new project folder, the user's shell is still
+	// When init set up the project in another folder, the user's shell is still
 	// in the original directory. A leading `cd` suggestion lets them
 	// navigate before running any subsequent commands.
 	if state.CreatedFolderDisplay != "" {

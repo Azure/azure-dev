@@ -262,7 +262,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		assert.Equal(t, "cd my-agent", out[0].Command)
-		assert.Equal(t, "enter your new project folder", out[0].Description)
+		assert.Equal(t, "enter your project folder", out[0].Description)
 		assert.Equal(t, 0, out[0].Priority, "cd suggestion should have highest priority")
 		// Next primary is run, trailing is deploy
 		assert.Contains(t, out[1].Command, "azd ai agent run")

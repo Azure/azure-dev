@@ -1691,7 +1691,7 @@ func adoptedAgentNameOverride(flags *initFlags) (string, error) {
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and
-// the display path for the "created folder" next-step hint. An explicit --src
+// the display path for the project folder next-step hint. An explicit --src
 // (or positional directory) wins; otherwise a folder named after the
 // sample's project name is used, falling back to the current directory when the
 // sample has no name.

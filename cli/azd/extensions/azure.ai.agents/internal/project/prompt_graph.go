@@ -164,8 +164,8 @@ func newPromptGraph(
 		// routed through a toolbox of azd's making — the harness already has a
 		// service-owned system toolbox whose name, version and lifecycle the
 		// customer does not manage.
-		if node := toolboxNode(g, managed.Toolboxes, func() (toolboxBuilder, error) {
-			return newFoundryToolboxBuilder(g, settings, credential)
+		if node := toolboxNode(g, managed.Toolboxes, func() (toolboxConnectionEnsurer, error) {
+			return newFoundryToolboxConnections(g, settings, credential)
 		}); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
@@ -173,7 +173,7 @@ func newPromptGraph(
 			g.nodes = append(g.nodes, *node)
 		}
 	} else {
-		if node := skillsShellNode(g, skills, managed.Toolboxes); node != nil {
+		if node := skillsShellNode(g, skills); node != nil {
 			g.nodes = append(g.nodes, *node)
 		}
 	}
@@ -192,6 +192,11 @@ func (g *promptGraph) agentNode() promptNode {
 		Kind: nodeAgent,
 		ID:   g.managed.Name,
 		Validate: func() error {
+			if len(g.managed.Toolboxes) > 0 && g.managed.HarnessType() == "" {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest,
+					"toolboxes: is only available to an agent that names a harness",
+					"add a harness block or remove toolboxes from the prompt agent")
+			}
 			if err := g.managed.ValidateHarnessBlock(); err != nil {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,

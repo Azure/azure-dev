@@ -377,6 +377,15 @@ declare Connection and Toolbox resources as sibling services. Agent runtime
 The legacy singular `toolbox` field is not supported; use `toolboxes` to
 reference local `azure.ai.toolbox` service keys.
 
+For harnessed prompt agents, each Toolbox service key becomes its generated MCP
+`server_label`. To customize approval or tool options, add an MCP entry under
+`tools` with that service key as its `server_label` and omit `server_url`; azd
+fills the deployed endpoint and authenticated connection. An existing MCP entry
+with the exact deployed URL keeps its authored label and options, while azd sets
+its authentication connection. A different explicit URL is not automatically
+repinned: remove it to follow the Toolbox service, or use a distinct label to
+keep it as an independent tool. Conflicting labels fail before connection setup.
+
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An
 effective name comes from the service's `name` after resolving local `$ref`

@@ -17,17 +17,68 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"azureaiagent/internal/exterrors"
 )
 
 var fixture = Feature{
 	ID:     "foundry.fixture",
 	EnvVar: "AZD_FOUNDRY_EXT_ENABLE_TEST_FIXTURE",
+}
+
+func TestCheckEnvironmentFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		nilFlags    bool
+		declareFlag bool
+		args        []string
+		wantError   bool
+	}{
+		{name: "nil flagset", nilFlags: true},
+		{name: "flag absent"},
+		{name: "not changed", declareFlag: true},
+		{name: "changed with name", declareFlag: true, args: []string{"--environment", "selected"}},
+		{name: "changed with empty value", declareFlag: true, args: []string{"--environment", ""}, wantError: true},
+		{name: "changed with whitespace", declareFlag: true, args: []string{"--environment", "  "}, wantError: true},
+		{name: "short flag with name", declareFlag: true, args: []string{"-e", "selected"}},
+		{name: "short flag with empty value", declareFlag: true, args: []string{"-e", ""}, wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var flags *pflag.FlagSet
+			if !tt.nilFlags {
+				flags = pflag.NewFlagSet(tt.name, pflag.ContinueOnError)
+				if tt.declareFlag {
+					flags.StringP("environment", "e", "", "")
+				}
+				require.NoError(t, flags.Parse(tt.args))
+			}
+
+			err := CheckEnvironmentFlag(flags)
+
+			if !tt.wantError {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+			require.Equal(t, "the --environment flag was set to an empty value", localErr.Message)
+			require.Equal(t,
+				"pass an environment name with --environment, or omit the flag to use the default environment",
+				localErr.Suggestion,
+			)
+		})
+	}
 }
 
 func TestIsEnabledValidation(t *testing.T) {
@@ -334,6 +385,7 @@ func TestOnlyCanonicalEnvironmentKey(t *testing.T) {
 	t.Setenv(fixture.EnvVar, "")
 	aliases := map[string]string{
 		"AZD_FOUNDRY_EXT_ENABLE_ALL":           "true",
+		"AZD_ALPHA_ENABLE_AGENTS_VOICE":        "true",
 		"AZD_ALPHA_ENABLE_FOUNDRY_FIXTURE":     "true",
 		"AZD_ALPHA_ENABLE_FOUNDRY.FIXTURE":     "true",
 		"AZD_FOUNDRY_ENABLE_TEST_FIXTURE":      "true",
@@ -342,21 +394,26 @@ func TestOnlyCanonicalEnvironmentKey(t *testing.T) {
 		"AZD_FOUNDRY_EXT_ENABLE_MODELS_OTHER":  "true",
 		"AZD_FOUNDRY_EXT_ENABLE_TEST_FIXTURE_": "true",
 	}
-	for name, value := range aliases {
-		t.Setenv(name, value)
+	for _, feature := range append(All(), fixture) {
+		t.Run(feature.ID, func(t *testing.T) {
+			t.Setenv(feature.EnvVar, "")
+			for name, value := range aliases {
+				t.Setenv(name, value)
+			}
+			client := newMockClient(t)
+			client.expectSources(
+				alphaResponse(t, "off", "on"),
+				projectWithServices(&azdext.ServiceConfig{Host: "containerapp", Environment: maps.Clone(aliases)}),
+				aliases,
+				"selected",
+			)
+
+			enabled, err := isEnabled(t.Context(), client, feature, "selected")
+
+			require.NoError(t, err)
+			require.False(t, enabled)
+		})
 	}
-	client := newMockClient(t)
-	client.expectSources(
-		alphaResponse(t, "off", "off"),
-		projectWithServices(&azdext.ServiceConfig{Host: "containerapp", Environment: maps.Clone(aliases)}),
-		aliases,
-		"",
-	)
-
-	enabled, err := isEnabled(t.Context(), client, fixture, "")
-
-	require.NoError(t, err)
-	require.False(t, enabled)
 }
 
 func TestEnvironmentSelection(t *testing.T) {

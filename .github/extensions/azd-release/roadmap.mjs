@@ -99,6 +99,7 @@ export function releaseRoadmap(snapshot) {
     if (release?.issueState !== "closed" && release?.outcome?.status !== "partial") {
         if (release?.runId && result[4].status !== "complete") {
             result[4].check = "Check version PR";
+            result[4].action = "refresh-live";
         }
     }
     for (const item of result) {

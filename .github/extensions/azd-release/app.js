@@ -34,11 +34,12 @@ function restrict(message, detail = "") {
     $("access-required").hidden = false;
     $("access-message").textContent = message;
     $("access-detail").textContent = detail;
-    for (const id of ["releases", "links", "roadmap", "package-gates", "known-issues", "changelog-requests", "release-errors", "access", "notice"]) {
+    for (const id of ["releases", "links", "roadmap", "package-gates", "known-issues", "changelog-requests", "release-errors", "access", "notice", "observations"]) {
         $(id).replaceChildren();
     }
     for (const id of ["title", "role", "driver", "health", "tracking-status", "next", "updated", "setup",
-        "queue-preview", "queue-phrase", "queue-mode-info", "adopt-error", "package-summary", "package-checked"]) $(id).textContent = "";
+        "queue-preview", "queue-phrase", "queue-mode-info", "adopt-error", "package-summary", "package-checked", "observation-note"]) $(id).textContent = "";
+    $("refresh-live").hidden = true;
     $("check-packages").disabled = true;
     for (const id of ["create", "release", "empty", "queue-action", "link-run", "changelog-setup"]) $(id).hidden = true;
     for (const id of ["queue-dialog", "adopt-dialog"]) if ($(id).open) $(id).close();
@@ -67,6 +68,7 @@ async function refresh() {
     $("loading").hidden = false;
     $("refresh").disabled = true;
     $("refresh").textContent = "Refreshing...";
+    $("refresh-live").disabled = true;
     $("check-changelog").disabled = true;
     document.querySelectorAll("#roadmap button").forEach((button) => { button.disabled = true; });
     try {
@@ -83,6 +85,7 @@ async function refresh() {
         $("content").setAttribute("aria-busy", "false");
         $("refresh").disabled = false;
         $("refresh").textContent = "Refresh";
+        $("refresh-live").disabled = !snapshot?.release || snapshot.restricted || !snapshot.access.github.ready;
         $("check-changelog").disabled = false;
         document.querySelectorAll("#roadmap button").forEach((button) => { button.disabled = false; });
         if (snapshot?.release) renderPackages();
@@ -93,6 +96,7 @@ async function act(action, data) {
     if (working || refreshing || !snapshot?.access.github.ready || snapshot.restricted) return;
     working = true;
     document.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    if (action === "refresh-live") $("refresh-live").textContent = "Refreshing live data...";
     if (action === "check-packages") {
         snapshot.packageReadiness = undefined;
         const step = snapshot.roadmap.find((item) => item.key === "packages");
@@ -103,17 +107,34 @@ async function act(action, data) {
     }
     try {
         const result = await request(action, data);
+        if (action === "refresh-live") {
+            snapshot = result;
+            render();
+            message(result.errors.length
+                ? "Live refresh had errors. Review the messages and timestamps; previous observations are retained as historical evidence."
+                : result.sharing === "saved" ? "Live observations refreshed and saved for teammates."
+                    : "Live observations refreshed locally. Shared tracking was not changed.", result.errors.length > 0);
+            return result;
+        }
         if (action === "check-packages") {
             if (result.runId !== snapshot.pipeline.id || result.source !== snapshot.pipeline.source ||
                 result.cliVersion !== snapshot.release.version || result.msiVersion !== snapshot.pipeline.metadata.msiVersion) {
                 throw new Error("Release identity changed. Refresh before checking package readiness again.");
             }
             snapshot.packageReadiness = result;
+            snapshot.observations ??= [];
+            snapshot.observations = snapshot.observations.filter((entry) => entry.key !== "packages");
+            snapshot.observations.push({
+                key: "packages", name: "Package readiness", observedAt: result.checkedAt,
+                observedBy: result.observedBy ?? snapshot.access.github.login, stale: false, local: !result.shared,
+                lastAttempt: { at: result.checkedAt, failed: false },
+            });
             const step = snapshot.roadmap.find((item) => item.key === "packages");
             Object.assign(step, { status: result.status, detail: result.summary, gates: result.gates });
             renderRoadmap();
             renderPackages();
-            message("Package-readiness check finished. Review each gate; no version markers were changed.");
+            renderObservations();
+            message(`Package-readiness check finished${result.shared ? " and saved for teammates" : " locally"}. Review each gate; no version markers were changed.`);
             return result;
         }
         message(action === "analyze" ? "Read-only analysis requested in this conversation." :
@@ -121,11 +142,22 @@ async function act(action, data) {
         return result;
     } catch (error) {
         message(error.message, true);
-        if (action === "check-packages") {
-            if (error.code === "access_required") {
-                restrict(error.message);
-                return;
+        if (error.code === "access_required") {
+            restrict(error.message);
+            return;
+        }
+        if (action === "refresh-live") {
+            snapshot.liveRefreshFailed = true;
+            snapshot.packageReadiness = null;
+            snapshot.observations = (snapshot.observations ?? []).map((entry) => ({ ...entry, stale: true }));
+            const packages = snapshot.roadmap?.find((step) => step.key === "packages");
+            if (packages) {
+                packages.status = "pending";
+                packages.detail = "Live refresh or sharing failed. Recheck packages before approving version.txt.";
+                packages.gates = (packages.gates ?? []).map((gate) => ({ ...gate, status: "unknown", detail: "Readiness needs a new check." }));
             }
+        }
+        if (action === "check-packages") {
             // Drop prior success even if the check failed before returning individual gates.
             snapshot.packageReadiness = undefined;
             const step = snapshot.roadmap.find((item) => item.key === "packages");
@@ -143,7 +175,8 @@ async function act(action, data) {
     finally {
         working = false;
         document.querySelectorAll("button").forEach((button) => { button.disabled = false; });
-        if (action !== "check-packages") await refresh();
+        if (!["check-packages", "refresh-live"].includes(action)) await refresh();
+        else if (action === "refresh-live" && snapshot) render();
         else if (snapshot?.release) renderPackages();
         else $("check-packages").disabled = true;
     }
@@ -159,13 +192,17 @@ function render() {
     $("access-required").hidden = true;
     $("access-message").textContent = "";
     $("access-detail").textContent = "";
+    $("refresh-live").hidden = !s.release;
+    $("refresh-live").disabled = working || refreshing || !s.release;
+    $("refresh-live").textContent = s.isDriver ? "Refresh live data & share" : "Refresh live data (local)";
     $("access").replaceChildren(...["github", "azure"].map((key) => {
         const access = s.access[key];
-        return node("span", `${key === "github" ? "GitHub" : "Azure DevOps"}: ${access.ready ? "connected" : "action needed"}`,
-            `badge ${access.ready ? "good" : "bad"}`);
+        return node("span", `${key === "github" ? "GitHub" : "Azure DevOps"}: ${access.ready ? "connected" : access.skipped ? "not queried" : "action needed"}`,
+            `badge ${access.ready ? "good" : access.skipped ? "" : "bad"}`);
     }));
-    const accessErrors = Object.values(s.access).filter((a) => !a.ready).map((a) => a.message);
-    $("setup").textContent = accessErrors.join(" ") || `Signed in as ${s.access.github.login}. Access is checked on every refresh.`;
+    const accessErrors = Object.values(s.access).filter((a) => !a.ready && !a.skipped).map((a) => a.message);
+    $("setup").textContent = accessErrors.join(" ") ||
+        `Signed in as ${s.access.github.login}. Saved issue observations do not require Azure login. Refresh live data explicitly to query services.`;
     $("release-errors").replaceChildren(...s.errors.filter((error) => error.source !== "changelog preparation")
         .map((error) => node("p", `${error.source}: ${error.message}`, "error")));
     $("runbook").href = s.runbook;
@@ -234,7 +271,12 @@ function render() {
     $("next").textContent = s.nextStep.message;
     $("queue-action").hidden = !s.nextStep.canQueue;
     $("link-run").hidden = !r.changelogPr || !s.isDriver || !s.access.azure.ready || Boolean(r.runId);
-    $("updated").textContent = `Live read: ${new Date(s.checkedAt).toLocaleString()}. Refresh on demand to check for changes; automatic polling is off.`;
+    $("updated").textContent = `${s.observationSource === "local" ? "Local live read" : "Shared issue view"} loaded: ${new Date(s.checkedAt).toLocaleString()}. ` +
+        (s.liveRefreshFailed ? "Live refresh or sharing failed; this is the previous view, not a fresh verification. " : "") +
+        (!s.observations?.length ? "No shared snapshot has been saved yet; the driver can refresh live data to share the first view. " : "") +
+        `${s.observations?.some((entry) => entry.stale) ? "Some observations are stale or failed. " : ""}` +
+        "Evidence has its own timestamps below. Refresh reloads GitHub; Refresh live data queries services. Automatic polling is off.";
+    renderObservations();
     renderRoadmap();
     renderPackages();
     $("known-issues").replaceChildren(...(s.knownIssues ?? []).map((issue) => {
@@ -266,8 +308,8 @@ function renderPackages() {
         (working ? "Checking package readiness..." : "Not checked. Do not approve version.txt while required package readiness is unknown.");
     $("package-checked").textContent = observation
         ? `${observation.stale ? "Expired observation" : "Checked"}: ${new Date(observation.checkedAt).toLocaleString()}. ` +
-            "Recheck before approval. Observations expire after 10 minutes (evaluated on Refresh) and reset on extension restart."
-        : "An explicit check needs a verified GA publishing run and Azure access. Missing access or tools is unknown, not ready.";
+            "Recheck before approval. Readiness expires after 10 minutes (evaluated on Refresh). Shared observations survive extension restarts."
+        : "Refresh live data to obtain a verified GA run, then check packages with Azure access. Saved observations alone never authorize an action.";
     $("check-packages").textContent = working ? "Checking packages..." : "Check package readiness";
     $("package-gates").replaceChildren(...gates.map((gate) => {
         const card = node("article", undefined, `package-gate ${gate.status ?? "unknown"}`);
@@ -283,6 +325,22 @@ function renderPackages() {
         s.pipeline.metadata.isPublishingGa !== true || !s.access.azure.ready;
 }
 
+function renderObservations() {
+    const entries = snapshot.observations ?? [];
+    $("observation-note").textContent = entries.length
+        ? "Display-only evidence. Stale or failed reads are not current verification. Package checks include the checking machine's local WinGet catalog, not yours."
+        : "No shared snapshot has been saved yet. The driver can select Refresh live data & share; Azure login is not required to read snapshots afterward.";
+    $("observations").replaceChildren(...entries.map((entry) => {
+        const observed = entry.observedAt
+            ? `${new Date(entry.observedAt).toLocaleString()} by @${entry.observedBy}`
+            : "no successful observation";
+        const failure = entry.lastAttempt?.failed
+            ? ` Last attempt failed at ${new Date(entry.lastAttempt.at).toLocaleString()}; earlier data is historical.` : "";
+        return node("li", `${entry.name}: ${observed} (${entry.local ? "local only" : "shared"}${entry.stale ? ", stale" : ""}).${failure}`,
+            entry.stale ? "muted" : "");
+    }));
+}
+
 function renderRoadmap() {
     const r = snapshot.release;
     $("roadmap").replaceChildren(...(snapshot.roadmap ?? []).map((step, index) => {
@@ -294,7 +352,7 @@ function renderRoadmap() {
             node("p", step.detail, "muted"));
         for (const item of step.links) row.append(link(item.label, item.url));
         if (step.checkedAt) {
-            row.append(node("p", `Catalog checked locally: ${new Date(step.checkedAt).toLocaleString()}.`, "muted"));
+            row.append(node("p", `Packages last checked: ${new Date(step.checkedAt).toLocaleString()}.`, "muted"));
         }
         if (step.warning) row.append(node("p", step.warning, "roadmap-warning"));
         if (step.check) {
@@ -312,9 +370,10 @@ function renderRoadmap() {
 
 $("check-packages").onclick = () => act("check-packages", { issueNumber: snapshot.release.issueNumber });
 $("refresh").onclick = refresh;
+$("refresh-live").onclick = () => act("refresh-live", { issueNumber: snapshot.release.issueNumber });
 $("check-changelog").onclick = async () => {
     $("check-changelog").textContent = "Checking changelog PR...";
-    try { await refresh(); }
+    try { await act("refresh-live", { issueNumber: snapshot?.release?.issueNumber }); }
     finally { $("check-changelog").textContent = "Check changelog PR"; }
 };
 $("new").onclick = () => { $("create").hidden = !$("create").hidden; };

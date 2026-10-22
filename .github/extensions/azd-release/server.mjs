@@ -23,6 +23,7 @@ const fields = {
     complete: ["issueNumber", "confirmation"],
     analyze: ["issueNumber"],
     "check-packages": ["issueNumber"],
+    "refresh-live": ["issueNumber"],
     select: ["issueNumber"],
 };
 
@@ -95,6 +96,8 @@ export async function startServer(service, session, issueNumber) {
                 result = await service.prepareQueue(data.issueNumber, data.recordMode);
             } else if (action === "check-packages") {
                 result = await service.checkPackages(data);
+            } else if (action === "refresh-live") {
+                result = await service.refreshLive(data);
             } else {
                 result = await service[action](data);
                 if (action === "create") selection.issueNumber = result.issueNumber;

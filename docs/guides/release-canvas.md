@@ -18,12 +18,18 @@ extensions. The SDK is supplied by the app, so no package installation is needed
 The canvas is for teammates with access to private release tracking, not a public
 release-management service.
 
-Install GitHub CLI, Azure CLI, and the Azure DevOps CLI extension on the machine
-running the agent. Sign in with accounts authorized for the private tracking
-repository and the Azure DevOps `azure-sdk` organization's `internal` project:
+**Following saved progress requires only GitHub CLI** on the machine running the
+agent, signed in with access to the private tracking repository:
 
 ```powershell
 gh auth login --hostname github.com
+```
+
+Install Azure CLI and the Azure DevOps CLI extension only when you need live
+pipeline reads or actions. Sign in with access to the Azure DevOps `azure-sdk`
+organization's `internal` project:
+
+```powershell
 az login --allow-no-subscriptions
 az extension add --name azure-devops
 ```
@@ -53,14 +59,22 @@ package-readiness observations. The renderer discards the prior snapshot, clears
 release data and form inputs, and closes pending dialogs. Failed refreshes hide
 the previous release view until access can be verified again.
 
-After the GitHub gate succeeds, Azure access requires an Azure CLI login, the
+Opening the canvas or selecting **Refresh** stops at GitHub: it loads tracking
+and saved observations without invoking Azure CLI, querying pipeline or public PR
+status, or rechecking packages. Local preparation requests can be displayed
+without rediscovering their PRs. A teammate without Azure login sees the same
+saved roadmap as the driver, with the original observation times and authors.
+
+**Refresh live data & share** is the driver's explicit live-read action; other
+viewers see **Refresh live data (local)**. Azure access for live pipeline reads requires an Azure CLI login, the
 `azure-devops` extension, and successful discovery of exactly one
 `azure-dev - cli` pipeline under `\azure-dev`, pointing to
 `Azure/azure-dev` and `eng/pipelines/release-cli.yml`. No numeric definition ID is
 hardcoded. A login alone does not establish permission to read or queue pipelines.
 
-GitHub tracking remains usable when Azure access is missing; pipeline actions are
-disabled and missing access is displayed rather than interpreted as success.
+On a saved view, the Azure badge says **not queried**, not authentication failed.
+Pipeline actions are disabled until live access is checked. If an explicit live
+read fails, missing access is reported rather than interpreted as success.
 
 This is an application guard, not protection for the publicly available source.
 GitHub and Azure DevOps permissions remain the actual service-side boundaries.
@@ -87,7 +101,7 @@ real release/run state, logs, tokens, signed URLs, or user-local request artifac
    link. If session creation is unavailable, the agent reports the limitation
    rather than silently using the current checkout. A pending or discovered request
    hides the preparation button to avoid launching duplicate work.
-3. Refresh to discover the requested PR using its unique, non-sensitive body
+3. Select **Refresh live data** to discover the requested PR using its unique, non-sensitive body
    marker. Requests are shown only for the selected version in the initiating
    conversation. Select **Link this PR**, or enter an existing changelog PR number
    and select **Verify and link changelog PR**. Linking verifies the public repo,
@@ -105,15 +119,15 @@ real release/run state, logs, tokens, signed URLs, or user-local request artifac
    explicitly. An agent can also open `{ "issueNumber": 123 }` to select a specific
    private tracking issue.
 4. After merging the changelog PR, select **Check changelog PR** in the next-step
-   panel to explicitly recheck it, or select **Refresh**. It detects the merge
+   panel to explicitly recheck it, or select **Refresh live data**. It detects the merge
    automatically, turns the **Changelog** roadmap circle green, and offers
    **Preview publishing pipeline** directly in the top next-step panel to the
    driver. Observers see that the release is waiting for its driver; missing
    access is reported as a blocker. The panel also opens an existing-run dialog.
-   Merge detection is a live observation, not a persisted completion attestation,
-   and does not queue a pipeline or mark publication complete.
+   The driver shares the merge observation for teammates, but it is not a
+   completion attestation and does not queue a pipeline or mark publication complete.
    **Check changelog PR** is hidden until a PR is linked, and after a publishing
-   build is linked or tracking is closed; **Refresh** remains available.
+   build is linked or tracking is closed; both refresh actions remain available.
    Inspect the organization, project, pipeline definition, repository, branch,
    full source SHA, and parameters, then type the confirmation to queue.
    The preview expires after five minutes and is single-use. Changes to `main`
@@ -143,16 +157,69 @@ real release/run state, logs, tokens, signed URLs, or user-local request artifac
    independently establish that all publication requirements are met; publication
    and the original pipeline result can differ after approved manual recovery.
 
-The canvas loads state once when opened and updates after explicit canvas actions.
-Use **Refresh** or **Check changelog PR** to check for external changes on demand.
-The header stays pinned while scrolling, keeping **Refresh** visible. During a
-refresh, the page content is hidden behind a loading spinner and status message;
+The canvas loads saved state once when opened and updates after explicit actions.
+Use **Refresh** to pick up another driver's shared observations and tracking
+changes. Use **Refresh live data**, **Check changelog PR**, or **Check version PR**
+to query external status on demand. The header stays pinned while scrolling,
+keeping both refresh buttons visible. During a saved-state refresh, page content
+is hidden behind a loading spinner and status message;
 it returns when the request finishes, including on failure. Reduced-motion
 preferences disable the spinner's animation without hiding the status message.
 There is no timed polling or refresh when switching back to the page, and no
-background monitor when closed. Read-only
-refresh never writes observations to the issue. A failed refresh hides previous
-evidence; it does not replace missing information with successful defaults.
+background monitor when closed. Saved-state refresh never writes to the issue.
+A failed saved-state refresh hides previous evidence until private access can be
+verified. A failed live read retains historical observations with stale/failed
+labels and separate attempt times; it never substitutes successful defaults.
+
+## Shared observations and freshness
+
+The private tracking issue is also a shared display cache. The first authorized
+driver must select **Refresh live data & share** to populate it. Existing tracking
+issues need no migration, but show **no shared snapshot** until a genuine live
+read has been saved. Package gates need a separate **Check package readiness**.
+
+| Action | Reads and shared effects |
+| --- | --- |
+| Open / Refresh | Fresh private GitHub authorization, tracking, and saved observations only. No Azure login, live status queries, or snapshot writes. |
+| Refresh live data / PR checks, driver | Read current PR/pipeline evidence, revalidate identity and tracking, and append a sanitized observation comment to the private issue. No pipeline or publication mutations. |
+| Refresh live data / PR checks, observer | The same live reads, but local display only; never writes the driver's issue snapshots. Refresh returns to the shared view. |
+| Check package readiness | Fresh Azure run verification and independent package checks. Drivers share sanitized gates; observers retain local results. WinGet refreshes the checking machine's catalog. |
+| Preview, link, queue, or analyze | Perform their own current authorization and identity checks. Saved snapshots are never proof of permission or current run validity. |
+
+Expand **Saved observations and freshness** to see each section's observation
+time, observing GitHub user, shared/local origin, stale status, and latest failed
+attempt. Changelog, run metadata, timeline, WinGet PR, version PR, and package gates
+have independent receipts. Refreshing pipeline status does not make an older
+package check or failed PR read appear new. Shared WinGet evidence describes the
+driver's machine, not the current viewer's local catalog.
+
+Observations become stale after ten minutes, evaluated when rendering a response;
+there is no freshness timer. Older pipeline/PR evidence remains visible as
+historical information. Expired or failed package checks become unknown, not
+ready. Errors retain the previous successful value and its original timestamp
+while recording a separate failed-attempt timestamp. A snapshot write failure is
+reported explicitly, not claimed as shared success or automatically retried.
+Recheck immediately before release approvals.
+
+Observation comments are append-only `azd-release-observation` JSON blocks,
+separate from authoritative `azd-release-state` and `azd-release-event` data.
+Schema version 1 binds sections to the issue, CLI version, changelog PR, and
+linked build, with pipeline-dependent sections additionally bound to source SHA.
+The observing user comes from the comment's GitHub author, not an authored
+permission field. Only issue-author snapshots are accepted. Per-section timestamps
+prevent a slower, older write from replacing a newer observation. Malformed or
+unsupported blocks produce a warning without erasing valid earlier observations.
+Human discussion, the issue body, queue reservations, and milestone attestations
+are not overwritten.
+
+Stored fields are deliberately compact: normalized statuses, validated
+identifiers/versions, distribution flags, and PR identities. URLs are reconstructed
+from validated identities. Raw logs, timeline names, previous-attempt diagnostics,
+free-form errors, gate diagnostics, credentials, signed URLs, permissions, and
+queue-preview tickets are not saved. Failure analysis refetches the live timeline
+and log references after Azure verification instead of using cached diagnostics.
+Append-only snapshots add issue comments; opening still reads the issue's
+paginated history, but no longer repeats slow live service queries.
 
 ## Release roadmap
 
@@ -163,7 +230,7 @@ On narrow panels the line scrolls horizontally.
 
 | Stop | Turns green when |
 | --- | --- |
-| Changelog | The tracked changelog PR is merged. |
+| Changelog | The tracked changelog PR was observed merged. |
 | CI and signing | The linked run reaches a publishing approval in `PublishCLI` or the parallel `PublishInstallers` stage, or evidence shows it passed that approval. |
 | Publishing | The run reaches the final `PublishVersionTxt` approval, or evidence shows it passed that gate. |
 | Package readiness | An explicit, fresh check confirms every required distribution gate below for the exact release versions. A merged PR, successful submission, or disabled submission is not enough. |
@@ -173,7 +240,9 @@ Approval observations come from the linked run's `Checkpoint.Approval` records,
 correlated to their parent stages and current attempts. A queued stage or unrelated
 check does not establish that an approval was reached. Rejected/canceled gates and
 failed stages are red; skipped downstream stages are not treated as failures.
-Missing access or evidence remains gray rather than implying success.
+Missing evidence remains gray rather than implying success. Saved statuses are
+last-known observations, with freshness displayed separately; they do not assert
+that the services are currently reachable.
 The canvas does not display a detailed pipeline job list. Open **Publishing build**
 in the release summary or **Open pipeline** in the roadmap to inspect stages,
 jobs, logs, and approvals in the browser.
@@ -205,24 +274,25 @@ count as ready. These checks inspect distribution evidence: they do not install
 packages, execute Homebrew definitions, download/checksum-test binaries, or prove
 an individual customer's installation will succeed.
 
-Checking is available to authorized drivers and observers once a verified GA
-publishing run is linked, even if that run has failed or unrelated jobs are
+Checking is available to authorized drivers and observers after an explicit live
+refresh verifies access and a GA publishing run is linked, even if that run has failed or unrelated jobs are
 unfinished. Preview releases require separately reviewed policy and are not
 declared ready by this checker. Disabled submission flags do not waive customer
 upgrade readiness: all five gates are still required. Version-increment
 **Check version PR** remains an independent follow-up and does not authorize
 marker updates. Closed or abandoned releases hide the interactive check buttons.
 
-Package checks do not write observations to tracking, request moderation,
-resubmit packages, queue pipelines, publish, or update version markers. Apart
-from refreshing the local WinGet source, they are read-only. **Refresh** rechecks
-pipeline and PR state, but does not rerun package checks. Observations are local
-to the running extension, bound to the tracking issue, run, source, CLI version,
-and MSI version, and expire after ten minutes. Expiration is reevaluated on
-refresh; there is no background timer. Recheck immediately before approval.
-Extension restarts and access loss clear observations. Starting a new check
-clears prior success; failures are displayed independently instead of retaining
-a green stop or hiding another channel's failure.
+Package checks never request moderation, resubmit packages, queue pipelines,
+publish, or update version markers. They refresh the local WinGet source and,
+for the driver, save compact observations to the private issue. **Refresh** loads
+saved gates without rerunning them; **Refresh live data** refreshes pipeline and
+PR status but does not renew package timestamps. Shared observations survive
+extension restarts and are bound to the issue, run, source, CLI version, and MSI
+version. Local-only observer results do not survive restarts or a saved-state
+refresh. Expiration is reevaluated on refresh; there is no background timer.
+Access loss clears local data and hides shared observations, but does not delete
+issue comments. Starting a new package check clears prior displayed success;
+failed reads are shown as unknown, independently of other channels.
 
 Chocolatey is a direct package submission, not a PR workflow. Its package-page
 Review section and linked verifier report provide moderation evidence. A failed
@@ -291,7 +361,8 @@ The current `gh` user's identity is compared with the tracking issue author on
 every mutation. Only that author can link runs or queue publishing in the canvas.
 The legacy milestone/completion backend still validates driver identity, but those
 controls are not displayed; use the private issue for final verification and closure.
-Other team members see a read-only view. This convention does
+The driver also shares observation snapshots; other team members can perform
+local live reads but cannot publish shared snapshots. This convention does
 not replace GitHub/Azure DevOps access control and does not stop authorized users
 from making changes outside the canvas. Driver reassignment is not implemented.
 
@@ -351,7 +422,8 @@ Retries and recovery remain agent-assisted rather than one-click mutations.
 ## Develop and verify
 
 The entry point wires the SDK; `release-service.mjs` contains the workflow,
-`model.mjs` the shared state contract, `known-issues.mjs` the curated historical
+`model.mjs` the authoritative state contract, `observations.mjs` the independent
+shared-display schema and freshness projection, `known-issues.mjs` the curated historical
 incident summaries, `cli.mjs` CLI invocation, and `server.mjs` the loopback HTTP
 boundary. Renderer assets are separate files. No credentials,
 private logs, release state, or production destination settings are checked in.
@@ -359,14 +431,16 @@ private logs, release state, or production destination settings are checked in.
 Run offline tests from the repository root:
 
 ```powershell
-node --test .github\extensions\azd-release\model.test.mjs .github\extensions\azd-release\roadmap.test.mjs .github\extensions\azd-release\release-service.test.mjs .github\extensions\azd-release\server.test.mjs .github\extensions\azd-release\changelog.test.mjs .github\extensions\azd-release\app.test.mjs
+node --test .github\extensions\azd-release\*.test.mjs
 ```
 
 Reload extensions, inspect `azd-release`, inspect its canvas capabilities, open it,
 and invoke `refresh`. Invalid open input and reserved `canvas.*` actions should
 be rejected. The agent-facing `analyze_failure` action returns the investigation
-prompt; only the confirmed iframe button sends a new agent turn. Mutating
-operations are intentionally not exposed as agent-callable canvas actions.
+prompt; only the confirmed iframe button sends a new agent turn. Authoritative
+release-state changes and pipeline mutations are intentionally not exposed as agent-callable canvas
+actions. `refresh` is GitHub-only. `refresh_live` and `check_packages` explicitly
+disclose their observation-comment writes when run by the driver.
 
 Live queuing must be verified separately by an authorized release driver.
 Offline tests do not establish Azure DevOps authentication, API permissions, or

@@ -219,7 +219,7 @@ export function nextStep(snapshot) {
                     : "Tracking is ready. Prepare the changelog with the agent, or link an existing changelog PR for this version.");
     }
     if (!snapshot.changelog) {
-        return step("changelog-unknown", "The changelog PR status could not be read. Refresh or resolve GitHub access before publishing.");
+        return step("changelog-unknown", "No saved changelog PR observation is available. Select Refresh live data to check it before publishing.");
     }
     if (!snapshot.changelog.merged) {
         return step("preparation", snapshot.changelog.state === "closed"
@@ -230,7 +230,7 @@ export function nextStep(snapshot) {
         return step("awaiting-driver", `Changelog PR merged. Waiting for @${release.author} to preview and queue publishing, or link an existing run.`);
     }
     if (!snapshot.access.azure.ready) {
-        return step("azure-access", "Changelog PR merged. Restore Azure DevOps access to preview publishing or link an existing run.");
+        return step("azure-access", "The changelog was observed merged. Select Refresh live data with Azure DevOps access to preview publishing or link an existing run.");
     }
     return step("queue", "Changelog PR merged. Next: choose the test recording mode and preview the publishing pipeline. If a publishing run already exists, link it instead.", true);
 }

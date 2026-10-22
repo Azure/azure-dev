@@ -19,7 +19,7 @@ const session = await joinSession({
     canvases: [createCanvas({
         id: "azd-release",
         displayName: "azd release",
-        description: "Track azd core releases using a private GitHub issue and live Azure DevOps evidence.",
+        description: "Follow shared azd release snapshots from a private issue, with explicit live refresh and deliberate release actions.",
         inputSchema: {
             type: "object",
             properties: { issueNumber: { type: "integer", minimum: 1 } },
@@ -28,13 +28,18 @@ const session = await joinSession({
         actions: [
             {
                 name: "check_packages",
-                description: "Explicitly check all package-readiness gates for the selected release before advertising a new version. Read-only except refreshing the local WinGet source.",
+                description: "Check package readiness with fresh Azure verification. Refreshes local WinGet; the driver saves sanitized observations in the private issue, while observers' checks stay local. No publishing.",
                 handler: (ctx) => service.checkPackages({ issueNumber: panel(ctx.instanceId).selection.issueNumber }),
             },
             {
                 name: "refresh",
-                description: "Check authentication and read the release roadmap, pipeline evidence, and known previous issues.",
+                description: "Verify private GitHub access and load saved release observations. Does not query Azure, recheck public packages, or write tracking.",
                 handler: (ctx) => service.snapshot(panel(ctx.instanceId).selection.issueNumber),
+            },
+            {
+                name: "refresh_live",
+                description: "Explicitly refresh Azure DevOps and PR observations. The release driver saves sanitized snapshots to the private issue; observers get local results only. Does not publish or approve anything.",
+                handler: (ctx) => service.refreshLive({ issueNumber: panel(ctx.instanceId).selection.issueNumber }),
             },
             {
                 name: "analyze_failure",

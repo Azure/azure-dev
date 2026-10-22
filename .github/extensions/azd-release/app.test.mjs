@@ -39,7 +39,7 @@ test("page loads once and refreshes on demand without timers or visibility liste
     await element("refresh").onclick();
     assert.equal(requests, 2);
     await element("check-changelog").onclick();
-    assert.equal(requests, 3);
+    assert.equal(requests, 2, "Inactive release controls must not read live services");
 });
 
 test("new release creates tracking first, then prepares or links its changelog inside that release", async () => {
@@ -164,11 +164,12 @@ test("new release creates tracking first, then prepares or links its changelog i
         for (const id of ["title", "role", "driver", "health", "tracking-status", "next", "queue-preview", "setup"]) {
             assert.equal(element(id).textContent, "", `${id} must not retain prior private state`);
         }
-        for (const id of ["releases", "links", "roadmap", "changelog-requests", "known-issues"]) {
+        for (const id of ["releases", "links", "roadmap", "changelog-requests", "known-issues", "observations"]) {
             assert.deepEqual(element(id).children, [], `${id} must not retain prior private state`);
         }
         assert.equal(element("queue-dialog").open, false);
         assert.equal(element("adopt-dialog").open, false);
+        assert.equal(element("refresh-live").hidden, true);
         assert.deepEqual(element("queue-confirm").values, {});
         await element("create").onsubmit({ preventDefault() {}, target: element("create") });
         assert.equal(actions.length, 3, "A denied view must not dispatch actions from cached UI");
@@ -210,12 +211,18 @@ test("checks every package gate and updates only the readiness view, independent
         };
         snapshot.roadmap = releaseRoadmap(snapshot);
         let reads = 0;
+        let liveReads = 0;
         let catalogChecks = 0;
         let latestVersion = "1.36.100";
         runInNewContext(await readFile(new URL("app.js", import.meta.url), "utf8"), {
             document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
             location: { pathname: "/token/" },
             fetch: async (url, options) => {
+                if (url === "api/refresh-live") {
+                    assert.deepEqual(JSON.parse(options.body), { issueNumber: 42 });
+                    liveReads++;
+                    return { ok: true, json: async () => ({ ...snapshot, sharing: "not-shared", observationSource: "local" }) };
+                }
                 if (url === "api/check-packages") {
                     assert.equal(options.method, "POST");
                     assert.equal(options.headers["X-Azd-Release-Token"], "token");
@@ -291,7 +298,8 @@ test("checks every package gate and updates only the readiness view, independent
         snapshot.roadmap = releaseRoadmap(snapshot);
         await buttons()[0].onclick();
         assert.deepEqual(buttons(), []);
-        assert.equal(reads, 4);
+        assert.equal(reads, 3, "A live refresh must not immediately reload and discard its local result");
+        assert.equal(liveReads, 1);
         assert.equal(catalogChecks, 2);
         for (const removed of ["controls", "evidence", "recorded-progress", "milestone-key", "complete-phrase", "product"]) {
             assert.equal(elements.has(removed), false, `${removed} should not be accessed`);
@@ -506,4 +514,122 @@ test("page keeps the header outside loading content and provides sticky styling 
     assert.match(css, /header\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*z-index:/);
     assert.match(css, /\.spinner\s*\{[^}]*animation:\s*spin/);
     assert.match(css, /prefers-reduced-motion:\s*reduce/);
+});
+
+test("saved views work without Azure, label provenance, and use an explicit live action without discarding its result", async () => {
+    for (const isDriver of [true, false]) {
+        const elements = new Map();
+        const makeElement = () => ({
+            children: [], elements: { releaseVersion: {} },
+            replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); },
+            querySelector: () => ({}), setAttribute() {}, reset() {},
+        });
+        const element = (id) => {
+            if (!elements.has(id)) elements.set(id, makeElement());
+            return elements.get(id);
+        };
+        const at = new Date(Date.now() - 11 * 60_000).toISOString();
+        const state = {
+            access: { github: { ready: true, login: isDriver ? "driver" : "observer" }, azure: { ready: false, skipped: true } },
+            release: { issueNumber: 42, version: "1.2.3", changelogPr: 100, runId: 200, author: "driver", issueState: "open", milestones: {} },
+            releases: [], errors: [], isDriver, checkedAt: new Date().toISOString(),
+            pipeline: { id: 200, source: "a".repeat(40), timeline: [],
+                metadata: { available: true, isPublishingGa: true, cliVersion: "1.2.3", msiVersion: "1.2.400" } },
+            nextStep: { message: "Last observed progress", canQueue: false },
+            observations: [{ key: "run", name: "Pipeline status and metadata", observedAt: at, observedBy: "driver",
+                stale: true, lastAttempt: { at, failed: false } }],
+        };
+        state.roadmap = releaseRoadmap(state);
+        let reads = 0;
+        let liveReads = 0;
+        runInNewContext(await readFile(new URL("app.js", import.meta.url), "utf8"), {
+            document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
+            location: { pathname: "/token/" },
+            fetch: async (url, options) => {
+                if (url === "api/state") {
+                    reads++;
+                    return { ok: true, json: async () => structuredClone(state) };
+                }
+                assert.equal(url, "api/refresh-live");
+                assert.equal(options.method, "POST");
+                assert.deepEqual(JSON.parse(options.body), { issueNumber: 42 });
+                liveReads++;
+                return { ok: true, json: async () => ({
+                    ...structuredClone(state), access: { ...state.access, azure: { ready: true } },
+                    sharing: isDriver ? "saved" : "not-shared", observationSource: isDriver ? "shared" : "local",
+                    observations: [{ ...state.observations[0], stale: false, local: !isDriver }],
+                }) };
+            },
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(reads, 1);
+        assert.equal(liveReads, 0);
+        assert.equal(element("refresh-live").disabled, false);
+        assert.equal(element("refresh-live").textContent, isDriver ? "Refresh live data & share" : "Refresh live data (local)");
+        assert.ok(element("access").children.some((badge) => badge.textContent === "Azure DevOps: not queried" && !/\bbad\b/.test(badge.className)));
+        assert.match(element("setup").textContent, /do not require Azure login/);
+        assert.match(element("observations").children[0].textContent, /by @driver.*shared, stale/);
+        assert.match(element("updated").textContent, /Some observations are stale/);
+        assert.equal(element("check-packages").disabled, true);
+        await element("refresh-live").onclick();
+        assert.equal(liveReads, 1);
+        assert.equal(reads, 1);
+        assert.equal(element("check-packages").disabled, false);
+        assert.match(element("notice").children[0].textContent, isDriver ? /saved for teammates/ : /locally/);
+        assert.match(element("observations").children[0].textContent, isDriver ? /shared/ : /local only/);
+        await element("refresh").onclick();
+        assert.equal(reads, 2);
+        assert.equal(liveReads, 1);
+        assert.equal(element("check-packages").disabled, true);
+    }
+});
+
+test("failed live refresh never claims fresh verification; revoked access clears saved private evidence", async () => {
+    for (const denied of [false, true]) {
+        const elements = new Map();
+        const makeElement = () => ({
+            children: [], elements: { releaseVersion: {} },
+            replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); },
+            querySelector: () => ({}), setAttribute() {}, reset() {}, close() {},
+        });
+        const element = (id) => {
+            if (!elements.has(id)) elements.set(id, makeElement());
+            return elements.get(id);
+        };
+        const at = new Date().toISOString();
+        const state = {
+            access: { github: { ready: true, login: "driver" }, azure: { ready: false, skipped: true } },
+            release: { issueNumber: 42, version: "1.2.3", runId: 200, author: "driver", issueState: "open", milestones: {} },
+            releases: [], errors: [], isDriver: true, checkedAt: at,
+            nextStep: { message: "Saved progress", canQueue: false },
+            observations: [{ key: "run", name: "Pipeline", observedAt: at, observedBy: "driver", stale: false }],
+        };
+        state.roadmap = releaseRoadmap(state);
+        let reads = 0;
+        runInNewContext(await readFile(new URL("app.js", import.meta.url), "utf8"), {
+            document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
+            location: { pathname: "/token/" },
+            fetch: async (url) => {
+                if (url === "api/state") { reads++; return { ok: true, json: async () => state }; }
+                assert.equal(url, "api/refresh-live");
+                return { ok: false, status: denied ? 403 : 400, json: async () => ({
+                    error: denied ? ACCESS_REQUIRED : "Snapshot could not be shared.", code: denied ? "access_required" : "request_failed",
+                }) };
+            },
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        await element("refresh-live").onclick();
+        assert.equal(reads, 1, "Do not overwrite the failure with a successful saved-state reload");
+        if (denied) {
+            assert.equal(element("workspace").hidden, true);
+            assert.equal(element("refresh-live").hidden, true);
+            assert.deepEqual(element("observations").children, []);
+            assert.equal(element("observation-note").textContent, "");
+        } else {
+            assert.match(element("updated").textContent, /previous view, not a fresh verification/);
+            assert.match(element("observations").children[0].textContent, /stale/);
+            assert.equal(element("title").textContent, "azd 1.2.3");
+            assert.match(element("notice").children[0].textContent, /could not be shared/);
+        }
+    }
 });

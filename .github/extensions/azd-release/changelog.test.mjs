@@ -118,3 +118,13 @@ test("version-scoped discovery does not show or fetch other releases' requests",
     assert.equal(searches, 1);
     await assert.rejects(workflow.status("../invalid"), /CLI version/);
 });
+
+test("saved views read local preparation requests without searching GitHub or revalidating public PRs", async (t) => {
+    const { workflow } = await fixture(t);
+    await workflow.start({ releaseVersion: "1.2.3", mode: "new" });
+    workflow.run = async () => assert.fail("Saved views must not query public PR status");
+    const requests = await workflow.status("1.2.3", { live: false });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].status, "waiting");
+    assert.match(requests[0].message, /Refresh live data/);
+});

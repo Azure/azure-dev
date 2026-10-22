@@ -12,8 +12,8 @@
 <body>
   <header>
     <div class="eyebrow">AZURE DEVELOPER CLI / CORE RELEASE</div>
-    <div class="heading"><h1>Release control room</h1><button id="refresh">Refresh</button></div>
-    <p class="muted">Shared progress, live evidence, and deliberate release actions.</p>
+    <div class="heading"><h1>Release control room</h1><button id="refresh">Refresh</button><button id="refresh-live" hidden>Refresh live data</button></div>
+    <p class="muted">Shared observations load from GitHub. Live reads and release actions are explicit.</p>
   </header>
   <div id="loading" class="loading" role="status" aria-live="polite">
     <span class="spinner" aria-hidden="true"></span>
@@ -85,11 +85,16 @@
         <button id="analyze" type="button" hidden disabled>Analyze failure</button>
         <p id="analysis-note" class="muted" hidden>Analysis starts a read-only agent turn in this conversation. No automatic retries, credential changes, or recovery writes.</p>
         <p id="updated" class="muted"></p>
+        <details id="observation-details">
+          <summary>Saved observations and freshness</summary>
+          <p id="observation-note" class="muted"></p>
+          <ul id="observations"></ul>
+        </details>
       </section>
       <section>
         <div class="heading"><h2 id="roadmap-title">Release roadmap</h2><span class="muted">Gray: pending | Green: reached | Red: needs attention</span></div>
         <div class="roadmap-scroll"><ol id="roadmap" aria-labelledby="roadmap-title"></ol></div>
-        <p class="muted">Live evidence, checked on demand. Approvals are reviewed in Azure DevOps; no approval is granted here. The final stop is the version-increment PR, not a publication attestation.</p>
+        <p class="muted">Last observed evidence, with per-section timestamps above. Saved observations are not live authorization. Approvals are reviewed in Azure DevOps; no approval is granted here. The final stop is the version-increment PR, not a publication attestation.</p>
       </section>
       <section id="package-readiness" class="card" aria-labelledby="package-title">
         <h2 id="package-title">Package readiness before version.txt</h2>
@@ -97,7 +102,7 @@
         <div id="package-gates" class="package-gates"></div>
         <button id="check-packages" type="button" disabled>Check package readiness</button>
         <p id="package-checked" class="muted"></p>
-        <p class="muted">Checks WinGet locally, Chocolatey approval and verification, the public Homebrew tap, and versioned downloads. No packages are installed or published, and no markers or shared tracking state are changed. Disabled submissions do not waive readiness checks. This is evidence, not permission to approve or recover a release.</p>
+        <p class="muted">Checks WinGet locally, Chocolatey approval and verification, the public Homebrew tap, and versioned downloads. The driver shares sanitized observations in the private issue; observers' checks stay local. No packages, markers, or milestone attestations are changed. Disabled submissions do not waive readiness checks. This is evidence, not permission to approve or recover a release.</p>
       </section>
       <section class="card" aria-labelledby="known-issues-title">
         <h2 id="known-issues-title">Known previous issues</h2>

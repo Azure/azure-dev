@@ -161,7 +161,7 @@ export async function readPackageReadiness({ run, gh, read = publicPackageRead, 
     return summarizePackages({ cliVersion, msiVersion, checkedAt, gates });
 }
 
-function summarizePackages(observation) {
+export function summarizePackages(observation) {
     const readyCount = observation.gates.filter((gate) => gate.status === "ready").length;
     const ready = readyCount === observation.gates.length;
     return { ...observation, ready,

@@ -68,7 +68,7 @@ export class ChangelogWorkflow {
         ].join("\n");
     }
 
-    async status(releaseVersion) {
+    async status(releaseVersion, { live = true } = {}) {
         if (releaseVersion !== undefined) version(releaseVersion);
         const directory = this.directory();
         let names;
@@ -86,6 +86,11 @@ export class ChangelogWorkflow {
             requireValue(releaseVersion === undefined || request.version === releaseVersion,
                 "The saved changelog request does not match the selected release.");
             const result = { version: request.version, mode: request.mode, createdAt: request.createdAt, status: "waiting" };
+            if (!live) {
+                result.message = "Preparation already requested. Follow the agent conversation, then select Refresh live data to discover its PR.";
+                requests.push(result);
+                continue;
+            }
             try {
                 const marker = `<!-- azd-release-changelog:${request.id} -->`;
                 const prs = await this.run("gh", [

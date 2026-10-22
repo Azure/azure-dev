@@ -13,6 +13,7 @@ test("loopback server serves assets and isolates panels without leaking state to
     const service = {
         requireAccess: async () => ({ login: "driver" }),
         snapshot: async (issueNumber) => ({ issueNumber }),
+        refreshLive: async (data) => { calls.push(data); return { release: { issueNumber: data.issueNumber }, sharing: "saved" }; },
         milestone: async (data) => { calls.push(data); return { recorded: true }; },
         diagnosis: async () => ({ prompt: "Read-only investigation" }),
         prepareQueue: async (issueNumber, recordMode) => ({
@@ -63,6 +64,11 @@ test("loopback server serves assets and isolates panels without leaking state to
         ready: false, gates: [{ key: "choco", status: "blocked" }],
     });
     assert.deepEqual(calls.at(-1), { issueNumber: 42 });
+    assert.equal((await post("refresh-live", { issueNumber: 42, share: false })).status, 400);
+    const live = await post("refresh-live", { issueNumber: 42 });
+    assert.equal(live.status, 200);
+    assert.deepEqual(await live.json(), { release: { issueNumber: 42 }, sharing: "saved" });
+    assert.deepEqual(calls.at(-1), { issueNumber: 42 });
     assert.equal((await post("create", { releaseVersion: "1.37.1", changelogPr: 100 })).status, 400);
     assert.equal((await post("prepare-changelog", { releaseVersion: "1.37.1", mode: "new" })).status, 400);
     assert.equal((await post("create", { releaseVersion: "1.37.1" })).status, 200);
@@ -102,6 +108,7 @@ test("private-repository denial blocks every HTTP action without Azure, tracking
         ["milestone", { issueNumber: 42, key: "build", status: "complete", evidence: "https://github.com/Azure/azure-dev/pull/100" }],
         ["complete", { issueNumber: 42, confirmation: "Complete azd 1.37.1" }],
         ["check-packages", { issueNumber: 42 }],
+        ["refresh-live", { issueNumber: 42 }],
         ["analyze", { issueNumber: 42 }],
     ];
     for (const [action, data] of requests) {

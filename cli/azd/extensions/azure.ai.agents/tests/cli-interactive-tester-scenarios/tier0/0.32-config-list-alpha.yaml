@@ -2,7 +2,7 @@
 name: "config-list-alpha"
 command: "azd ai agent config list-alpha"
 cwd: "/tmp"
-tags: ["tier:0", "cmd:config", "parallel-safe"]
+tags: ["tier:0", "cmd:config", "cmd:help", "parallel-safe"]
 goals:
   - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
   - "Confirm the output lists agents.managed_harness, agents.voice, and agents.long_running as blocks with Name, Description, Status: Off, and an AZD_FOUNDRY_EXT_ENABLE_AGENTS_* Environment variable line, in the layout of 'azd config list-alpha'."

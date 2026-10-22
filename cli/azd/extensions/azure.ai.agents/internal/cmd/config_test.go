@@ -129,9 +129,10 @@ func TestConfigListAlphaKeepsReadErrorChain(t *testing.T) {
 	require.ErrorContains(t, err, "2 of 3")
 	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorIs(t, err, notFound)
-	joined, ok := errors.Unwrap(err).(interface{ Unwrap() []error })
+	require.Equal(t, "could not read the status of 2 of 3 alpha features", err.Error())
+	readErr, ok := errors.AsType[*alphaReadError](err)
 	require.True(t, ok)
-	require.ErrorIs(t, joined.Unwrap()[0], context.Canceled, "cancellation takes precedence")
+	require.ErrorIs(t, readErr.Unwrap()[0], context.Canceled, "cancellation takes precedence")
 }
 
 func TestConfigListAlphaCommandReadsSelectedEnvironment(t *testing.T) {

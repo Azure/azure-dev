@@ -141,13 +141,24 @@ func runConfigListAlpha(ctx context.Context, out io.Writer, format string, read 
 		return err
 	}
 	if len(failures) > 0 {
-		// Keep the read errors so cancellation and structured errors keep
-		// their classification. Cancellation is listed first.
-		return fmt.Errorf("could not read the status of %d of %d alpha features: %w",
-			len(failures), len(items), errors.Join(failures...))
+		return &alphaReadError{total: len(items), causes: failures}
 	}
 	return nil
 }
+
+// alphaReadError reports how many statuses could not be read. The listing
+// already shows each message, so Error stays short while Unwrap keeps the
+// read errors for classification. Cancellation is listed first.
+type alphaReadError struct {
+	total  int
+	causes []error
+}
+
+func (e *alphaReadError) Error() string {
+	return fmt.Sprintf("could not read the status of %d of %d alpha features", len(e.causes), e.total)
+}
+
+func (e *alphaReadError) Unwrap() []error { return e.causes }
 
 // writeAlphaFeatures writes one block per feature in the layout of
 // `azd config list-alpha`, plus the environment variable.

@@ -1,4 +1,4 @@
-# Tier 0: alpha feature listing with isolated extension data, no auth or Azure cost.
+# Tier 0: isolated alpha feature listing, no auth or Azure cost.
 # cspell:ignore shutil rglob copytree
 name: "config-list-alpha"
 command: 'AZD_CONFIG_DIR="$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config" azd ai agent config list-alpha'

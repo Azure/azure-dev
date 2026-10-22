@@ -124,9 +124,14 @@ export function releaseState(issue, comments) {
             milestones[event.key] = { status: event.status, evidence: evidenceUrl(event.evidence) };
         } else if (event.type === "outcome") {
             requireValue(event.status === "partial", "Unsupported release outcome.");
+            requireValue(event.resolution === undefined || event.resolution === "mitigated-errors",
+                "Unsupported partial-release resolution.");
             const successorVersion = event.successorVersion === undefined ? null : version(event.successorVersion);
             requireValue(successorVersion !== state.version, "The successor must be a different release version.");
+            requireValue(event.resolution !== "mitigated-errors" || successorVersion === null,
+                "A mitigated release cannot also specify an abandonment successor.");
             outcome = { status: event.status, successorVersion };
+            if (event.resolution) outcome.resolution = event.resolution;
         } else {
             throw new ReleaseError("invalid_state", "Unknown release event; update the extension before writing.");
         }
@@ -179,7 +184,8 @@ export function pipelineHealth(build, timeline) {
 }
 
 export function publicationStatus(release) {
-    if (release.outcome?.status === "partial") return "partially published; abandoned";
+    if (release.outcome?.status === "partial") return release.outcome.resolution === "mitigated-errors"
+        ? "partially completed; mitigated errors" : "partially published; abandoned";
     if (release.issueState === "closed") return release.closureReason === "completed"
         ? "driver recorded completion" : "closed without verified completion";
     const recorded = Object.values(release.milestones).filter((m) => m?.status === "complete").length;
@@ -191,6 +197,11 @@ export function nextStep(snapshot) {
     if (!release) return { stage: "tracking", message: "Create release tracking to follow the changelog and publishing run.", canQueue: false };
     const step = (stage, message, canQueue = false) => ({ stage, message, canQueue });
     if (release.outcome?.status === "partial") {
+        if (release.outcome.resolution === "mitigated-errors") {
+            return step("partial", "Tracking closed as partially completed with mitigated errors. " +
+                "Pipeline health and unfinished steps remain unchanged. Read the private issue for manual recovery and pending follow-ups; " +
+                "closure is not proof that those actions completed. No further release actions are available here.");
+        }
         return step("partial", "This irregular release was abandoned with partial publication. Existing artifacts are retained; " +
             "do not retry this run or advance its remaining approvals." +
             (release.outcome.successorVersion ? ` The planned successor is azd ${release.outcome.successorVersion}, tracked as a new release.` : ""));

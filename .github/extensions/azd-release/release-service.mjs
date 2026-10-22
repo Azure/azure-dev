@@ -108,7 +108,9 @@ export class ReleaseService {
         requireValue(identity.login.toLowerCase() === release.author.toLowerCase(),
             "Only the tracking issue's author can change this release. You are following in read-only mode.", "read_only");
         requireValue(release.outcome?.status !== "partial",
-            "This release was abandoned with partial publication. Start a new release instead.");
+            release.outcome?.resolution === "mitigated-errors"
+                ? "This release was closed as partially completed with mitigated errors. No further release actions are available."
+                : "This release was abandoned with partial publication. Start a new release instead.");
         requireValue(release.issueState === "open", "This release is closed. No release actions are available.");
         return release;
     }
@@ -742,5 +744,6 @@ function identityIsDriver(release, identity) {
 function sameRelease(left, right) {
     return left.issueNumber === right.issueNumber && left.version === right.version &&
         left.changelogPr === right.changelogPr && left.runId === right.runId && left.author === right.author &&
-        left.issueState === right.issueState && left.outcome?.status === right.outcome?.status;
+        left.issueState === right.issueState && left.outcome?.status === right.outcome?.status &&
+        left.outcome?.resolution === right.outcome?.resolution;
 }

@@ -339,6 +339,16 @@ successor release. External channels can still finish publishing independently.
 Closed issues without an explicit partial outcome or GitHub's `completed` closure
 reason are shown as closed without verified completion rather than successful.
 
+For a release retained with mitigated errors rather than abandoned, use
+`{"schema":1,"type":"outcome","status":"partial","resolution":"mitigated-errors"}`
+inside the same event block, then close tracking with a comment explaining the
+disposition. Do not specify an abandonment successor for this outcome. The canvas
+shows **Partially completed - mitigated errors** and keeps failed or unfinished
+roadmap stops unchanged. Driver actions remain blocked even if tracking is reopened.
+Record manual recovery and remaining follow-ups separately; distinguish verified
+completion from work still in progress. Closing tracking is not evidence that
+version markers were updated, PRs merged, or pipeline failures repaired.
+
 ## Known previous issues
 
 Below the roadmap, this read-only section summarizes two recorded azd 1.36.0

@@ -337,6 +337,16 @@ test("checks every package gate and updates only the readiness view, independent
         assert.equal(element("check-changelog").hidden, true);
         assert.deepEqual(buttons(), []);
         assert.deepEqual(snapshot.roadmap.map((stop) => stop.status), priorStatuses);
+        snapshot.release.outcome = { status: "partial", resolution: "mitigated-errors" };
+        snapshot.release.closureReason = "completed";
+        snapshot.nextStep = nextStep(snapshot);
+        await element("refresh").onclick();
+        assert.equal(element("tracking-status").textContent, "Partially completed - mitigated errors");
+        assert.match(element("releases").children[0].textContent, /partial \/ mitigated errors/);
+        assert.match(element("next").textContent, /pending follow-ups/);
+        assert.equal(element("queue-action").hidden, true);
+        assert.equal(element("check-packages").hidden, true);
+        assert.deepEqual(snapshot.roadmap.map((stop) => stop.status), priorStatuses);
 });
 
 test("page omits the detailed pipeline section but retains failure analysis near the release summary", async () => {

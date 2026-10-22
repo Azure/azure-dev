@@ -208,7 +208,8 @@ function render() {
     $("runbook").href = s.runbook;
     $("releases").replaceChildren(...s.releases.map((issue) => {
         const state = issue.number === s.release?.issueNumber && s.release.outcome?.status === "partial"
-            ? "partial / abandoned" : issue.closureReason === "not_planned" ? "closed / not completed" : issue.state;
+            ? s.release.outcome.resolution === "mitigated-errors" ? "partial / mitigated errors" : "partial / abandoned"
+            : issue.closureReason === "not_planned" ? "closed / not completed" : issue.state;
         const option = node("option", `#${issue.number} ${issue.title} (${state})`);
         option.value = issue.number;
         option.selected = issue.number === s.release?.issueNumber;
@@ -263,7 +264,9 @@ function render() {
             `https://github.com/Azure/azure-dev/pull/${r.changelogPr}`));
     if (r.runId) $("links").append(link(`Publishing build ${r.runId}`,
         `https://dev.azure.com/azure-sdk/internal/_build/results?buildId=${r.runId}`));
-    $("tracking-status").textContent = partial ? "Partially completed - abandoned" : r.issueState === "closed"
+    $("tracking-status").textContent = partial
+        ? r.outcome.resolution === "mitigated-errors" ? "Partially completed - mitigated errors" : "Partially completed - abandoned"
+        : r.issueState === "closed"
         ? r.closureReason === "completed" ? "Closed - completion recorded" : "Closed without verified completion"
         : "In progress";
     $("health").textContent = s.pipelineHealth;

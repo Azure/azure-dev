@@ -193,6 +193,28 @@ test("unknown closure outcomes and invalid abandonment events never imply succes
     for (const data of [
         { status: "complete" }, { status: "partial", successorVersion: "../invalid" },
         { status: "partial", successorVersion: "1.37.0" }, { status: "partial", successorVersion: null },
+        { status: "partial", resolution: "success" },
+        { status: "partial", resolution: "mitigated-errors", successorVersion: "1.37.1" },
     ]) assert.throws(() => releaseState(issue(), [event(1, { type: "outcome", ...data })]));
     assert.equal(releaseState(issue(), [event(1, { type: "outcome", status: "partial" })]).outcome.successorVersion, null);
+});
+
+test("mitigated partial closure preserves pipeline failures and does not attest pending manual recovery", () => {
+    const comments = [
+        event(1, { type: "run", runId: 200 }),
+        event(2, { type: "outcome", status: "partial", resolution: "mitigated-errors" }),
+    ];
+    for (const state of ["open", "closed"]) {
+        const release = releaseState({ ...issue(), state, state_reason: "completed" }, comments);
+        assert.equal(release.outcome.resolution, "mitigated-errors");
+        assert.equal(publicationStatus(release), "partially completed; mitigated errors");
+        assert.equal(pipelineHealth({ result: "failed" }, []), "failed");
+        assert.ok(Object.values(release.milestones).every((milestone) => milestone === null));
+        const next = nextStep({ release, pipelineHealth: "failed", isDriver: true });
+        assert.equal(next.canQueue, false);
+        assert.match(next.message, /pending follow-ups/);
+        assert.doesNotMatch(next.message, /abandoned/);
+    }
+    assert.equal(releaseState(issue(), comments.map((comment) =>
+        ({ ...comment, user: { login: "observer" } }))).outcome, null);
 });

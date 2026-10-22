@@ -115,6 +115,20 @@ test("invalid local inputs cause no authentication or persisted mutations", asyn
     assert.deepEqual(writes, []);
 });
 
+test("mitigated partial closure blocks driver mutations even when tracking is reopened", async () => {
+    const { service, release, writes } = fixture();
+    release.outcome = { status: "partial", resolution: "mitigated-errors" };
+    for (const action of [
+        () => service.prepareQueue(42),
+        () => service.adopt({ issueNumber: 42, runId: 200 }),
+        () => service.complete({ issueNumber: 42, confirmation: "Complete azd 1.37.0" }),
+        () => service.milestone({
+            issueNumber: 42, key: "markers", status: "complete", evidence: "https://github.com/Azure/azure-dev/pull/100",
+        }),
+    ]) await assert.rejects(action(), /partially completed with mitigated errors/);
+    assert.deepEqual(writes, []);
+});
+
 test("queue requires a fresh, one-use preview, exact confirmation, and the same main SHA", async () => {
     const { service, writes } = fixture();
     await assert.rejects(service.queue({ issueNumber: 42, ticket: "missing" }), /expired/);

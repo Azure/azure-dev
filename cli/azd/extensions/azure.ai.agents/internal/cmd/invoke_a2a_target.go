@@ -5,10 +5,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -34,6 +37,14 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 	}
 	hosted, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedService(svc, proj.Path)
 	if err != nil {
+		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
+			localErr.Category == azdext.LocalErrorCategoryValidation {
+			// Loaded but invalid definitions are different from unavailable source references.
+			switch localErr.Code {
+			case exterrors.CodeInvalidAgentManifest, exterrors.CodeInvalidServiceConfig:
+				return err
+			}
+		}
 		// Let Foundry enforce capabilities when the local definition is unavailable.
 		log.Printf("could not inspect local A2A capabilities: %v", err)
 		return nil

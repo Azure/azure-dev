@@ -962,12 +962,13 @@ func TestNormalizeA2AWireVersion(t *testing.T) {
 
 func TestHostedA2ARemoteTarget(t *testing.T) {
 	for _, tt := range []struct {
-		name, native, explicit, wantError string
-		inputFile                         string
-		fileBacked                        bool
-		missingRef                        bool
-		responsesOnly                     bool
-		responses, prompt, noDefinition   bool
+		name, explicit, wantError, wantCode string
+		native                              any
+		inputFile                           string
+		fileBacked                          bool
+		missingRef                          bool
+		responsesOnly                       bool
+		responses, prompt, noDefinition     bool
 	}{
 		{name: "inline A2A hosted agent", native: "1.0.0"},
 		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
@@ -985,6 +986,12 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 		{name: "Responses-only defers to Foundry", responsesOnly: true},
 		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
 		{name: "file-backed native", native: "1.0.0", fileBacked: true},
+		{name: "numeric inline version rejected before send", native: 0.3,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
+		{name: "boolean inline version rejected before send", native: true,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
+		{name: "numeric reference version rejected before send", native: 0.3, fileBacked: true,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
 		{name: "A2A 0.3 rejected before send", native: "0.3.0", wantError: "version 0.3 is not supported"},
 		{name: "malformed rejected before send", native: "latest", wantError: "malformed A2A version"},
 		{name: "explicit conflict before send", native: "1.0.0", explicit: "0.3",
@@ -1010,8 +1017,8 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 				properties = map[string]any{}
 			}
 			if tt.fileBacked {
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "native.yaml"), []byte(
-					"kind: hosted\nname: deployed-agent\nprotocols:\n  - protocol: a2a\n    version: 1.0.0\n"), 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "native.yaml"), fmt.Appendf(nil,
+					"kind: hosted\nname: deployed-agent\nprotocols:\n  - protocol: a2a\n    version: %v\n", tt.native), 0600))
 				properties = map[string]any{"$ref": "./native.yaml"}
 			}
 			if tt.missingRef {
@@ -1067,6 +1074,12 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
+				if tt.wantCode != "" {
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected a structured local error")
+					assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+					assert.Equal(t, tt.wantCode, localErr.Code)
+				}
 				assert.Zero(t, sends)
 			} else {
 				require.NoError(t, err)

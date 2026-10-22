@@ -40,6 +40,7 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 	return validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion())
 }
 
+// validateHostedA2ACompatibility requires one supported A2A declaration matching the selected request dialect.
 func validateHostedA2ACompatibility(protocols []agent_yaml.ProtocolVersionRecord, requested string) error {
 	var declared string
 	for _, record := range protocols {

@@ -508,6 +508,7 @@ type helpersPromptServer struct {
 	lastSelect  *azdext.SelectRequest
 	lastPrompt  *azdext.PromptRequest
 	promptValue string
+	selectErr   error
 }
 
 type helpersFailingEnvironmentServer struct {
@@ -543,6 +544,9 @@ func (s *helpersPromptServer) Select(
 ) (*azdext.SelectResponse, error) {
 	s.selectCalls.Add(1)
 	s.lastSelect = req
+	if s.selectErr != nil {
+		return nil, s.selectErr
+	}
 	idx := s.selectIndex
 	return &azdext.SelectResponse{Value: &idx}, nil
 }

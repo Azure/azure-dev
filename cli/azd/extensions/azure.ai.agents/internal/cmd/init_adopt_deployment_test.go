@@ -7,6 +7,9 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"os"
+	"path/filepath"
+	"strconv"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -15,6 +18,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -38,22 +43,17 @@ func (s *adoptedReplacementEnvironment) SetValue(
 
 func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 	for _, test := range []struct {
-		name     string
-		failKey  string
-		multiple bool
-		wantErr  string
+		name    string
+		failKey string
+		wantErr string
 	}{
-		{"conflict before writes", "", true, "cannot tell which"},
-		{"default write failure", "AZURE_AI_MODEL_DEPLOYMENT_NAME", false, "environment write failed"},
-		{"list write failure", projectDeploymentsEnvKey, false, "environment write failed"},
-		{"bindings write failure", synthesis.DeploymentBindingsEnvKey, false, "environment write failed"},
-		{"success", "", false, ""},
+		{"default write failure", "AZURE_AI_MODEL_DEPLOYMENT_NAME", "environment write failed"},
+		{"list write failure", projectDeploymentsEnvKey, "environment write failed"},
+		{"bindings write failure", synthesis.DeploymentBindingsEnvKey, "environment write failed"},
+		{"success", "", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			declared := []project.Deployment{adoptedTestDeployment("template-chat", "gpt-4o")}
-			if test.multiple {
-				declared = append(declared, adoptedTestDeployment("embedding", "text-embedding-3-small"))
-			}
 			list, err := project.EncodeProjectDeploymentsEnv(declared)
 			require.NoError(t, err)
 			raw := []any{}
@@ -79,13 +79,10 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 			}
 			before := maps.Clone(env.values)
 			client := newHelpersTestAzdClient(t, server, &helpersPromptServer{}, env)
-			err = replaceAdoptedTemplateDeployment(t.Context(), client, "test", "existing", true)
+			err = replaceAdoptedTemplateDeployment(t.Context(), client, "test", "existing", "template-chat")
 			if test.wantErr != "" {
 				require.ErrorContains(t, err, test.wantErr)
 				require.Equal(t, before, env.values)
-				if test.multiple {
-					require.Zero(t, env.writes)
-				}
 				return
 			}
 			require.NoError(t, err)
@@ -133,22 +130,26 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 
 	t.Run("single declared deployment writes empty list", func(t *testing.T) {
 		value, write, err := planAdoptedDeploymentReplacement(
-			[]project.Deployment{chat}, "", "other-4o", false, noChoice(t),
+			[]project.Deployment{chat}, "", "template-chat",
 		)
 		require.NoError(t, err)
 		require.True(t, write)
 		require.Empty(t, decodedNames(t, value))
 	})
 
-	t.Run("several declared deployments prompt and keep the rest", func(t *testing.T) {
+	t.Run("several declared deployments prompt during selection and keep the rest", func(t *testing.T) {
 		var offered []string
-		value, write, err := planAdoptedDeploymentReplacement(
-			[]project.Deployment{chat, embed}, "", "other-4o", false,
+		replaced, err := selectAdoptedDeploymentReplacement(
+			[]project.Deployment{chat, embed}, "other-4o", false,
 			func(existing string, names []string) (string, error) {
 				require.Equal(t, "other-4o", existing)
 				offered = names
 				return "template-chat", nil
 			},
+		)
+		require.NoError(t, err)
+		value, write, err := planAdoptedDeploymentReplacement(
+			[]project.Deployment{chat, embed}, "", replaced,
 		)
 		require.NoError(t, err)
 		require.True(t, write)
@@ -160,10 +161,9 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 	})
 
 	t.Run("several declared deployments with no prompt fail", func(t *testing.T) {
-		_, write, err := planAdoptedDeploymentReplacement(
-			[]project.Deployment{chat, embed}, "", "other-4o", true, noChoice(t),
+		_, err := selectAdoptedDeploymentReplacement(
+			[]project.Deployment{chat, embed}, "other-4o", true, noChoice(t),
 		)
-		require.False(t, write)
 		localErr, ok := errors.AsType[*azdext.LocalError](err)
 		require.True(t, ok)
 		require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
@@ -177,8 +177,7 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 		})
 		require.NoError(t, err)
 		value, write, err := planAdoptedDeploymentReplacement(
-			[]project.Deployment{chat, embed}, existingList, "other-4o", false,
-			func(string, []string) (string, error) { return "template-chat", nil },
+			[]project.Deployment{chat, embed}, existingList, "template-chat",
 		)
 		require.NoError(t, err)
 		require.True(t, write)
@@ -186,7 +185,7 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 	})
 
 	t.Run("no declared deployments leave the environment unchanged", func(t *testing.T) {
-		value, write, err := planAdoptedDeploymentReplacement(nil, "", "other-4o", true, noChoice(t))
+		value, write, err := planAdoptedDeploymentReplacement(nil, "", "")
 		require.NoError(t, err)
 		require.False(t, write)
 		require.Empty(t, value)
@@ -222,11 +221,182 @@ func TestAdoptedTemplateDeploymentsExpandsEnvironment(t *testing.T) {
 	require.Equal(t, 9, deployments[0].Sku.Capacity)
 	value, write, err := planAdoptedDeploymentReplacement(
 		append([]project.Deployment{adoptedTestDeployment("replaced", "gpt-4o")}, deployments...),
-		"", "existing", false, func(string, []string) (string, error) { return "replaced", nil },
+		"", "replaced",
 	)
 	require.NoError(t, err)
 	require.True(t, write)
 	remaining, _, err := project.DecodeProjectDeploymentsEnv(value)
 	require.NoError(t, err)
 	require.Equal(t, deployments, remaining)
+}
+
+func TestValidateInitModelSelectors(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		flags    initFlags
+		adopting bool
+		code     string
+		flag     string
+	}{
+		{"neither", initFlags{}, true, "", ""},
+		{"deployment alone", initFlags{modelDeployment: "existing", modelDeploymentExplicit: true}, true, "", ""},
+		{"model alone", initFlags{model: "gpt-4o", modelExplicit: true}, true, "", ""},
+		{"empty deployment", initFlags{modelDeploymentExplicit: true}, true,
+			exterrors.CodeInvalidParameter, "--model-deployment"},
+		{"whitespace deployment", initFlags{modelDeployment: " \t", modelDeploymentExplicit: true}, true,
+			exterrors.CodeInvalidParameter, "--model-deployment"},
+		{"empty model", initFlags{modelExplicit: true}, true, exterrors.CodeInvalidParameter, "--model"},
+		{"whitespace model", initFlags{model: " \t", modelExplicit: true}, true,
+			exterrors.CodeInvalidParameter, "--model"},
+		{"both", initFlags{modelDeployment: "existing", model: "gpt-4o",
+			modelDeploymentExplicit: true, modelExplicit: true}, true,
+			exterrors.CodeConflictingArguments, "--model-deployment and --model"},
+		{"non-adopt precedence preserved", initFlags{modelDeployment: "existing", model: "gpt-4o",
+			modelDeploymentExplicit: true, modelExplicit: true}, false, "", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateInitModelSelectors(&test.flags, test.adopting)
+			if test.code == "" {
+				require.NoError(t, err)
+				return
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, test.code, localErr.Code)
+			require.Contains(t, localErr.Message, test.flag)
+			require.Contains(t, localErr.Suggestion, "--model-deployment")
+			require.Contains(t, localErr.Suggestion, "--model")
+			// No client is available, so reaching any project or Azure operation would fail.
+			err = finalizeAdoptedProject(t.Context(), &test.flags, nil, "test", "", false,
+				"renamed-agent", TemplateTypeAzureYaml)
+			require.EqualError(t, err, localErr.Error())
+		})
+	}
+}
+
+func TestInitModelSelectorsValidateExplicitFlagsBeforeClientCreation(t *testing.T) {
+	for _, args := range [][]string{
+		{"--model-deployment="},
+		{"-d", " \t"},
+		{"--model="},
+		{"--model", " \t"},
+		{"--template", "azure.yaml", "--model-deployment", "existing", "--model", "gpt-4o"},
+	} {
+		t.Run(args[0]+args[len(args)-1], func(t *testing.T) {
+			cmd := newInitCommand(&azdext.ExtensionContext{})
+			cmd.SetContext(t.Context())
+			require.NoError(t, cmd.ParseFlags(args))
+			err := cmd.RunE(cmd, nil)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+			require.Contains(t, localErr.Message, "--model")
+		})
+	}
+}
+
+func TestAdoptedDeploymentPreflightBeforeMutations(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		noPrompt  bool
+		promptErr error
+		code      string
+	}{
+		{"ambiguous headless selection", true, nil, exterrors.CodeConflictingArguments},
+		{"cancelled interactive selection", false, status.Error(codes.Canceled, "cancelled"), ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "azure.yaml")
+			content := []byte("name: unchanged\n")
+			require.NoError(t, os.WriteFile(path, content, 0600))
+			server := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root,
+				Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: project.FoundryProjectHost,
+						AdditionalProperties: mustStruct(t, map[string]any{"deployments": []any{
+							map[string]any{"name": "chat"}, map[string]any{"name": "embed"},
+						}})},
+				},
+			}}
+			env := &adoptedReplacementEnvironment{promptEnvironmentServer: promptEnvironmentServer{
+				values: map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unchanged"},
+			}}
+			before := maps.Clone(env.values)
+			prompt := &helpersPromptServer{selectErr: test.promptErr}
+			client := newHelpersTestAzdClient(t, server, prompt, env)
+			flags := &initFlags{modelDeployment: "existing", noPrompt: test.noPrompt}
+			_, err := preflightAdoptedDeploymentReplacement(t.Context(), client, "test", flags)
+			require.Error(t, err)
+			// Provider/agent writes and Azure services are intentionally unimplemented.
+			err = finalizeAdoptedProject(t.Context(), flags, client, "test", "", false,
+				"renamed-agent", TemplateTypeAzureYaml)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			if test.code != "" {
+				require.Equal(t, test.code, localErr.Code)
+				require.Zero(t, prompt.selectCalls.Load())
+			} else {
+				require.Equal(t, exterrors.CodeCancelled, localErr.Code)
+				require.EqualValues(t, 2, prompt.selectCalls.Load())
+			}
+			require.Zero(t, env.writes)
+			require.Equal(t, before, env.values)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+		})
+	}
+}
+
+func TestAdoptedDeploymentPreflightAndApply(t *testing.T) {
+	for _, count := range []int{0, 1, 2} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			raw := []any{}
+			for _, name := range []string{"chat", "embed"}[:count] {
+				raw = append(raw, map[string]any{"name": name})
+			}
+			server := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+					"project": {Host: project.FoundryProjectHost,
+						AdditionalProperties: mustStruct(t, map[string]any{"deployments": raw})},
+				},
+			}}
+			env := &adoptedReplacementEnvironment{promptEnvironmentServer: promptEnvironmentServer{
+				values: map[string]string{},
+			}}
+			prompt := &helpersPromptServer{selectIndex: 1}
+			client := newHelpersTestAzdClient(t, server, prompt, env)
+			replaced, err := preflightAdoptedDeploymentReplacement(t.Context(), client, "test",
+				&initFlags{modelDeployment: "existing", noPrompt: count < 2})
+			require.NoError(t, err)
+			require.Zero(t, env.writes)
+			want := []string{"", "chat", "embed"}[count]
+			require.Equal(t, want, replaced)
+			calls := prompt.selectCalls.Load()
+			if count == 2 {
+				require.EqualValues(t, 1, calls)
+				require.Equal(t, `Which template deployment does "existing" replace?`, prompt.lastSelect.Options.Message)
+			} else {
+				require.Zero(t, calls)
+			}
+			// Authoring can change the environment between selection and apply.
+			current, err := project.EncodeProjectDeploymentsEnv([]project.Deployment{
+				adoptedTestDeployment("chat", "gpt-4o"), adoptedTestDeployment("embed", "embedding"),
+				adoptedTestDeployment("authored", "gpt-4o"),
+			})
+			require.NoError(t, err)
+			env.values[projectDeploymentsEnvKey] = current
+			require.NoError(t, replaceAdoptedTemplateDeployment(t.Context(), client, "test", "existing", replaced))
+			require.Equal(t, calls, prompt.selectCalls.Load())
+			require.Equal(t, "existing", env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
+			expected := [][]string{{"chat", "embed", "authored"}, {"embed", "authored"}, {"chat", "authored"}}[count]
+			require.Equal(t, expected, decodedNames(t, env.values[projectDeploymentsEnvKey]))
+			if replaced != "" {
+				bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
+				require.NoError(t, err)
+				require.Equal(t, map[string]string{replaced: "existing"}, bindings)
+			}
+		})
+	}
 }

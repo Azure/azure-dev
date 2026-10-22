@@ -814,6 +814,9 @@ func runInitFromAzureYaml(
 	httpClient *http.Client,
 	content []byte,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	projectName := foundryProjectName(content)
 	recordInitProjectContent(ctx, content)
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
@@ -894,6 +897,9 @@ func runInitFromAzdTemplate(
 	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	targetDir := strings.TrimSpace(flags.src)
 	if targetDir == "" {
 		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
@@ -1232,6 +1238,14 @@ func finalizeAdoptedProject(
 	agentNameOverride string,
 	templateType string,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
+	replacedDeployment, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, envName, flags)
+	if err != nil {
+		return err
+	}
+
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
@@ -1451,6 +1465,7 @@ func finalizeAdoptedProject(
 			result.Credential,
 			result.FoundryProject,
 			flags,
+			replacedDeployment,
 		); err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("initialization was cancelled")
@@ -1519,6 +1534,28 @@ func adoptedProjectAddNoPrompt(flags *initFlags) bool {
 	return flags.noPrompt || strings.TrimSpace(flags.modelDeployment) != ""
 }
 
+func validateInitModelSelectors(flags *initFlags, adopting bool) error {
+	suggestion := "pass an existing deployment name with --model-deployment, or use --model to deploy a new model"
+	if flags.modelDeploymentExplicit && strings.TrimSpace(flags.modelDeployment) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model-deployment was set to an empty value", suggestion,
+		)
+	}
+	if flags.modelExplicit && strings.TrimSpace(flags.model) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model was set to an empty value", suggestion,
+		)
+	}
+	if adopting && strings.TrimSpace(flags.modelDeployment) != "" && strings.TrimSpace(flags.model) != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--model-deployment and --model cannot be used together",
+			"use --model-deployment to reuse an existing deployment, or --model to deploy a new model",
+		)
+	}
+	return nil
+}
+
 func validateAdoptedModelDeploymentTarget(
 	flags *initFlags,
 	projectInfo *FoundryProjectInfo,
@@ -1572,6 +1609,7 @@ func configureAdoptedExistingDeployment(
 	credential azcore.TokenCredential,
 	projectInfo *FoundryProjectInfo,
 	flags *initFlags,
+	replacedDeployment string,
 ) error {
 	requested := strings.TrimSpace(flags.modelDeployment)
 	if requested == "" {
@@ -1609,7 +1647,7 @@ func configureAdoptedExistingDeployment(
 		)
 	}
 	if err := replaceAdoptedTemplateDeployment(
-		ctx, azdClient, envName, selected.Name, flags.noPrompt,
+		ctx, azdClient, envName, selected.Name, replacedDeployment,
 	); err != nil {
 		return err
 	}

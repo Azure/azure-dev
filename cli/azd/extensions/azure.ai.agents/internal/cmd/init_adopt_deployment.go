@@ -26,24 +26,19 @@ const projectDeploymentsEnvKey = "AI_PROJECT_DEPLOYMENTS"
 // deployment replaces.
 type adoptedDeploymentChooser func(existing string, declared []string) (string, error)
 
-// replaceAdoptedTemplateDeployment drops the template deployment that
-// --model-deployment replaces from this environment's AI_PROJECT_DEPLOYMENTS,
-// so provisioning does not create it. azure.yaml is not changed.
-func replaceAdoptedTemplateDeployment(
+func readAdoptedDeploymentState(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	envName string,
-	existing string,
-	noPrompt bool,
-) error {
+) ([]project.Deployment, map[string]string, error) {
 	response, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("reading adopted project deployments: %w", err)
+		return nil, nil, fmt.Errorf("reading adopted project deployments: %w", err)
 	}
 	values := map[string]string{}
 	envResponse, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
-		return fmt.Errorf("reading environment for adopted deployments: %w", err)
+		return nil, nil, fmt.Errorf("reading environment for adopted deployments: %w", err)
 	}
 	for _, kv := range envResponse.GetKeyValues() {
 		values[kv.GetKey()] = kv.GetValue()
@@ -51,12 +46,22 @@ func replaceAdoptedTemplateDeployment(
 	declared, err := adoptedTemplateDeployments(
 		response.GetProject().GetServices(), response.GetProject().GetPath(), values,
 	)
-	if err != nil {
-		return err
+	return declared, values, err
+}
+
+func preflightAdoptedDeploymentReplacement(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	flags *initFlags,
+) (string, error) {
+	existing := strings.TrimSpace(flags.modelDeployment)
+	if existing == "" {
+		return "", nil
 	}
-	replaced := ""
-	if len(declared) > 0 {
-		replaced = declared[0].Name
+	declared, _, err := readAdoptedDeploymentState(ctx, azdClient, envName)
+	if err != nil {
+		return "", err
 	}
 	choose := func(existing string, names []string) (string, error) {
 		choices := make([]*azdext.SelectChoice, 0, len(names))
@@ -70,13 +75,31 @@ func replaceAdoptedTemplateDeployment(
 			},
 		})
 		if err != nil {
-			return "", err
+			if exterrors.IsCancellation(err) {
+				return "", exterrors.Cancelled("initialization with --model-deployment was cancelled")
+			}
+			return "", exterrors.FromPrompt(err, "failed to select the template deployment for --model-deployment")
 		}
-		replaced = names[selected.GetValue()]
-		return replaced, nil
+		return names[selected.GetValue()], nil
+	}
+	return selectAdoptedDeploymentReplacement(declared, existing, flags.noPrompt, choose)
+}
+
+// replaceAdoptedTemplateDeployment applies the preselected replacement using
+// current environment values. azure.yaml is not changed and no prompt is shown.
+func replaceAdoptedTemplateDeployment(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	envName string,
+	existing string,
+	replaced string,
+) error {
+	declared, values, err := readAdoptedDeploymentState(ctx, azdClient, envName)
+	if err != nil {
+		return err
 	}
 	value, write, err := planAdoptedDeploymentReplacement(
-		declared, values[projectDeploymentsEnvKey], existing, noPrompt, choose,
+		declared, values[projectDeploymentsEnvKey], replaced,
 	)
 	if err != nil {
 		return err
@@ -116,16 +139,14 @@ func replaceAdoptedTemplateDeployment(
 }
 
 // planAdoptedDeploymentReplacement returns the AI_PROJECT_DEPLOYMENTS value
-// without the template deployment that existing replaces. The environment's
+// without the preselected template deployment. The environment's
 // list is kept when set; otherwise the template list is the starting point.
 func planAdoptedDeploymentReplacement(
 	declared []project.Deployment,
 	envValue string,
-	existing string,
-	noPrompt bool,
-	choose adoptedDeploymentChooser,
+	replaced string,
 ) (string, bool, error) {
-	if len(declared) == 0 {
+	if replaced == "" {
 		return "", false, nil
 	}
 	current, present, err := project.DecodeProjectDeploymentsEnv(envValue)
@@ -136,28 +157,6 @@ func planAdoptedDeploymentReplacement(
 		current = declared
 	}
 
-	replaced := declared[0].Name
-	if len(declared) > 1 {
-		names := make([]string, 0, len(declared))
-		for _, deployment := range declared {
-			names = append(names, deployment.Name)
-		}
-		if noPrompt {
-			return "", false, exterrors.Validation(
-				exterrors.CodeConflictingArguments,
-				fmt.Sprintf(
-					"--model-deployment %q cannot tell which template deployment it replaces (%s)",
-					existing, strings.Join(names, ", "),
-				),
-				"run `azd ai agent init` without --no-prompt to choose",
-			)
-		}
-		replaced, err = choose(existing, names)
-		if err != nil {
-			return "", false, err
-		}
-	}
-
 	remaining := slices.DeleteFunc(slices.Clone(current), func(deployment project.Deployment) bool {
 		return strings.EqualFold(deployment.Name, replaced)
 	})
@@ -166,6 +165,35 @@ func planAdoptedDeploymentReplacement(
 		return "", false, err
 	}
 	return value, true, nil
+}
+
+func selectAdoptedDeploymentReplacement(
+	declared []project.Deployment,
+	existing string,
+	noPrompt bool,
+	choose adoptedDeploymentChooser,
+) (string, error) {
+	if len(declared) == 0 {
+		return "", nil
+	}
+	if len(declared) > 1 {
+		names := make([]string, 0, len(declared))
+		for _, deployment := range declared {
+			names = append(names, deployment.Name)
+		}
+		if noPrompt {
+			return "", exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				fmt.Sprintf(
+					"--model-deployment %q cannot tell which template deployment it replaces (%s)",
+					existing, strings.Join(names, ", "),
+				),
+				"run `azd ai agent init` without --no-prompt to choose",
+			)
+		}
+		return choose(existing, names)
+	}
+	return declared[0].Name, nil
 }
 
 // adoptedTemplateDeployments returns the deployments declared on the adopted

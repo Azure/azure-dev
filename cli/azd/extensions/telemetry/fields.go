@@ -20,6 +20,28 @@ import (
 )
 
 var (
+	// AgentInitStepID identifies a fixed business step in agent Init.
+	AgentInitStepID = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.id"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentInitStepSequence distinguishes repeated steps within one Init invocation.
+	AgentInitStepSequence = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.sequence"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+	// AgentInitStepDurationMs records elapsed milliseconds as a string property.
+	AgentInitStepDurationMs = fields.AttributeKey{
+		Key:            attribute.Key("ext.agent.init.step.duration_ms"),
+		Classification: fields.SystemMetadata,
+		Purpose:        fields.PerformanceAndHealth,
+		Endpoint:       "N/A",
+	}
+
 	// DemoMode records the fixed mode used by the demo extension telemetry example.
 	DemoMode = fields.AttributeKey{
 		Key:            attribute.Key("ext.demo.mode"),

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/pkg/projectconfig"
 	projectpkg "azureaiagent/internal/project"
@@ -119,9 +120,9 @@ func newAgentServiceAddCommandWithClientFactory(
 		Long: `Add or update a file-backed Agent service in the current project's azure.yaml.
 
 <name> is the azure.yaml service key, not the Foundry agent name. --file must
-refer to a direct YAML or JSON definition for a prompt, hosted (including code
-deployment), voice, or prompt-voice Agent. The service's root $ref resolves
-from the directory containing azure.yaml.
+refer to a direct YAML or JSON definition for a prompt or hosted (including code
+deployment) Agent. The service's root $ref resolves from the directory
+containing azure.yaml.` + agentServiceAddVoiceHelp + `
 
 The command validates locally and writes through azd's project API only. It
 does not authenticate to Azure, create remote resources, copy source files,
@@ -192,7 +193,7 @@ project tree. Deploy it with
 				out:          cmd.OutOrStdout(),
 				errOut:       cmd.ErrOrStderr(),
 			}
-			return action.Run(cmd.Context())
+			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}
 
@@ -210,6 +211,7 @@ project tree. Deploy it with
 		"Override the Agent service's project directory.",
 	)
 	_ = cmd.MarkFlagRequired("file")
+	previewHelp(cmd, featureflags.Voice, []string{agentServiceAddVoiceHelp}, nil)
 
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -217,6 +219,11 @@ project tree. Deploy it with
 		Default:       "default",
 	})
 }
+
+// agentServiceAddVoiceHelp is removed from help while voice is off.
+const agentServiceAddVoiceHelp = `
+
+Voice and prompt-voice Agent definitions are also supported.`
 
 func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 	if a.projectClient == nil {
@@ -324,6 +331,9 @@ func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 		a.flags.serviceName,
 	)
 	if err != nil {
+		return err
+	}
+	if err := requireDefinitionPreviewFeatures(ctx, definition.ResolvedProperties); err != nil {
 		return err
 	}
 	dependencies, err := planAgentServiceUses(

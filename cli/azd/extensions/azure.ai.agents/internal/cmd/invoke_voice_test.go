@@ -58,6 +58,7 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 				},
 			}}
 			server := grpc.NewServer()
+			azdext.RegisterUserConfigServiceServer(server, hostedOptInConfigServer{})
 			azdext.RegisterProjectServiceServer(server, project)
 			azdext.RegisterPromptServiceServer(server, &helpersPromptServer{})
 			azdext.RegisterEnvironmentServiceServer(server, &testEnvironmentServiceServer{
@@ -129,7 +130,7 @@ func TestVoiceInvocationGuidance(t *testing.T) {
 					},
 				}}
 				client := newHelpersTestAzdClient(t, project, &helpersPromptServer{})
-				// No environment/auth service is registered: both paths must stop before reaching it.
+				// Stop before authentication.
 				_, _, err = resolveAgentProtocol(t.Context(), client, "", true)
 				require.ErrorIs(t, err, errVoiceInvocationUnsupported)
 				localErr, ok := errors.AsType[*azdext.LocalError](err)

@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -675,8 +676,8 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new prompt, hosted, or voice agent project.
+		Short: fmt.Sprintf("Initialize a new agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new agent project.
 
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
@@ -693,32 +694,7 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
-Voice Agents:
-Use --kind prompt-voice to initialize a managed prompt voice agent without
-source code or container scaffolding.
-The managed model defaults to gpt-realtime and does not require a model deployment.
---voice sets the output voice only when creating a new prompt voice agent through
---kind prompt-voice or the interactive voice option.
-Edit azure.yaml to customize existing voice settings.
-
-New prompt voice initialization does not use source directories or code/container
-settings. Explicit --src (including a positional directory), --protocol,
---deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
-the voice path. Use --model for the managed voice model; --model-deployment and
-prompt-only or registry options are not supported by this voice initialization.
-
-Prompt voice services support modelType: managed or self_deployed (bring your own model
-deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
-conversationEngine.type: hosted_agent and conversationEngine.name to reference
-the hosted target service in azure.yaml. The old modelType: hosted_agent and
-targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
-azure.yaml containing both the hosted target and the voice wrapper.
-Configure advanced settings in azure.yaml.
-Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
-the voice WebSocket endpoint with a Voice Live client.
-
-Agent Names:
+` + initVoiceHelp + `Agent Names:
 The agent name written to azure.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -739,14 +715,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
 
-  # Initialize a managed prompt voice agent
-  azd ai agent init --kind prompt-voice --agent-name support-voice
-
-  # Initialize a prompt voice agent with an explicit realtime model and voice
-  azd ai agent init --kind prompt-voice --agent-name support-voice \
-    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
-
-  # Non-interactive code deploy (CI/CD)
+` + initVoiceExamples + `  # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
     --deploy-mode code --runtime python_3_13 --entry-point app.py
 
@@ -836,6 +805,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			if cmd.Flags().Changed("harness") && strings.TrimSpace(flags.harness) == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidParameter,
+					"--harness cannot be empty",
+					"omit --harness or use --harness none for a plain prompt agent",
+				)
+			}
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
 			}
@@ -849,6 +825,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 				if cached {
 					cachedExplicitAzureYaml = content
+					root := filepath.Dir(flags.templatePointer)
+					if err := requireManifestPreviewFeatures(ctx, azdClient, content, root); err != nil {
+						return err
+					}
 				}
 			}
 			sourceValidated := false
@@ -904,6 +884,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
+			var projectResponse *azdext.GetProjectResponse
+			var projectErr error
+			if !userProvidedTemplate {
+				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireProjectPreviewFeatures(ctx, azdClient, projectResponse.GetProject()); err != nil {
+						return err
+					}
+					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+						return err
+					}
+				}
+			}
+
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
 			}
@@ -953,16 +947,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
 				return err
-			}
-
-			// Project().Get discovers a parent azd project even when init runs
-			// from one of its subdirectories. Validate configured agent services
-			// before any generated init path can prompt or mutate the project.
-			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-			if projectErr == nil && projectResponse.GetProject() != nil {
-				if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
-					return err
-				}
 			}
 
 			switch {
@@ -1245,22 +1229,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
+		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
-		"Foundry Azure Container Registry connection name to use for an existing project; "+
-			"incompatible with code deploy, --image, and prompt-voice agents")
+		acrConnectionUsage+", --image, and prompt-voice agents")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
+	modelUsage := fmt.Sprintf(
+		"For hosted and prompt agents, name of the AI model to deploy. "+
+			"Defaults to '%s' during interactive model selection; "+
+			"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
+			"--model-deployment takes precedence.",
+		defaultAgentModel,
+	)
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		fmt.Sprintf(
-			"For hosted and prompt agents, name of the AI model to deploy. "+
-				"Defaults to '%s' during interactive model selection; "+
-				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
-				"service-hosted model (default: gpt-realtime); no model deployment is created.",
-			defaultAgentModel,
-		))
+		modelUsage+" For new managed prompt voice agents, selects the "+
+			"service-hosted model (default: gpt-realtime); no model deployment is created.")
 
 	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "",
 		"Path or supported GitHub URI to an azure.yaml project document")
@@ -1274,7 +1260,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.description, "description", "",
 		"Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.")
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
+		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
@@ -1323,6 +1309,17 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
 			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
 	_ = cmd.Flags().MarkHidden("harness")
+	previewFlag(cmd, "harness", featureflags.ManagedHarness,
+		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
+	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
+	previewFlagUsage(cmd, "kind", featureflags.Voice,
+		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
+			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
+			"With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment.")
+	previewFlag(cmd, "voice", featureflags.Voice)
+	previewFlagUsage(cmd, "acr-connection", featureflags.Voice, acrConnectionUsage+" and --image")
+	previewFlagUsage(cmd, "model", featureflags.Voice, modelUsage)
+	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+
@@ -2762,3 +2759,40 @@ func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle str
 
 	return msg
 }
+
+// initVoiceHelp and initVoiceExamples are removed from help while voice is off.
+const initVoiceHelp = `Voice Agents:
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding.
+The managed model defaults to gpt-realtime and does not require a model deployment.
+--voice sets the output voice only when creating a new prompt voice agent through
+--kind prompt-voice or the interactive voice option.
+Edit azure.yaml to customize existing voice settings.
+
+New prompt voice initialization does not use source directories or code/container
+settings. Explicit --src (including a positional directory), --protocol,
+--deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
+the voice path. Use --model for the managed voice model; --model-deployment and
+prompt-only or registry options are not supported by this voice initialization.
+
+Prompt voice services support modelType: managed or self_deployed (bring your own model
+deployment), audio input/output, structured inputs, tools, greeting, avatar,
+handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+conversationEngine.type: hosted_agent and conversationEngine.name to reference
+the hosted target service in azure.yaml. The old modelType: hosted_agent and
+targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
+azure.yaml containing both the hosted target and the voice wrapper.
+Configure advanced settings in azure.yaml.
+Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
+the voice WebSocket endpoint with a Voice Live client.
+
+`
+
+const initVoiceExamples = `  # Initialize a managed prompt voice agent
+  azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  # Initialize a prompt voice agent with an explicit realtime model and voice
+  azd ai agent init --kind prompt-voice --agent-name support-voice \
+    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
+
+`

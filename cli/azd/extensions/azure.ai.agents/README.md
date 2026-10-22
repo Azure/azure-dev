@@ -1,5 +1,58 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Preview feature opt-ins
+
+Three capabilities are off by default. Each one is turned on separately.
+
+| Feature ID | Scope | Environment variable |
+| --- | --- | --- |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` |
+
+Turn on a feature in user config or in the selected azd environment:
+
+```bash
+azd config set alpha.agents.managed_harness on
+azd config set alpha.agents.voice on
+azd config set alpha.agents.long_running on
+
+# Or turn it on in the selected environment:
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS true
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
+```
+
+Setting the matching process variable to `true` also turns the feature on.
+Opt-ins combine with OR. A false value never overrides a true value elsewhere.
+`alpha.all` and unrelated config keys, including `agents.hosted`, do not turn
+these features on. Ordinary hosted and plain prompt agents need no opt-in.
+
+While a feature is off, its flags, commands, and help sections are hidden from
+help. This covers `invoke --long-running`, `invoke --no-wait`, the
+`invocations` group, `init --voice`, and the `prompt-voice` choice of
+`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+`feature_not_enabled` error that names the commands above.
+
+Checks cover preview flags on init and invoke, `agent add` definitions,
+existing and staged project definitions, the selected service for invoke, run,
+and optimize deploy, provisioning, and package, publish, and deploy. The init
+picker omits voice while it is off. Template catalogs do not identify
+capabilities, so templates are checked after staging and before adoption.
+
+### Enforcement limits
+
+- An explicit HTTP `--agent-endpoint` stays unclassified. The extension does
+  not query its remote definition, so the managed harness check does not cover
+  that route. The long-running check still applies. Text invoke does not
+  accept voice WebSocket endpoints.
+- Read and cleanup commands stay available with features off. This includes
+  show, endpoint show, invocations show, follow, and cancel, delete, and down.
+- These checks do not govern requests from the evaluations or routines
+  extensions.
+
+See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
 ## Hosted agent deployment preview
 
 With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry

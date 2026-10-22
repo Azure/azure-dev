@@ -18,7 +18,7 @@ func NewRootCommand() *cobra.Command {
 		Name: "agent",
 		Use:  "agent <command> [options]",
 		Short: fmt.Sprintf(
-			"Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. %s",
+			"Ship agents with Microsoft Foundry from your terminal. %s",
 			color.YellowString("(Preview)"),
 		),
 	})
@@ -48,6 +48,9 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
+		if err := enforcePreviewFeatures(cmd, extCtx.Environment); err != nil {
+			return err
+		}
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {
 		case "deploy", "init", "listen", "metadata", "version":
@@ -68,6 +71,11 @@ func NewRootCommand() *cobra.Command {
 	// Show the ASCII art banner above the default help text for the root command
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		// Help runs without the root pre-run, so preview visibility is
+		// resolved here from the parsed flags and the azd host.
+		applyPreviewVisibility(rootCmd, previewHelpStates(
+			helpContext(cmd), previewHelpEnvironment(cmd, extCtx),
+		))
 		if cmd == rootCmd {
 			printBanner(cmd.OutOrStdout())
 		}

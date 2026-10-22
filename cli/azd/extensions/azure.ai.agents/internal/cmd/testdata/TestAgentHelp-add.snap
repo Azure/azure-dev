@@ -1,9 +1,11 @@
 Add or update a file-backed Agent service in the current project's azure.yaml.
 
 <name> is the azure.yaml service key, not the Foundry agent name. --file must
-refer to a direct YAML or JSON definition for a prompt, hosted (including code
-deployment), voice, or prompt-voice Agent. The service's root $ref resolves
-from the directory containing azure.yaml.
+refer to a direct YAML or JSON definition for a prompt or hosted (including code
+deployment) Agent. The service's root $ref resolves from the directory
+containing azure.yaml.
+
+Voice and prompt-voice Agent definitions are also supported.
 
 The command validates locally and writes through azd's project API only. It
 does not authenticate to Azure, create remote resources, copy source files,

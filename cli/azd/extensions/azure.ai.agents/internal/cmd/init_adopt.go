@@ -850,6 +850,9 @@ func runInitFromAzureYaml(
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
+	if err := requireStagedPreviewFeatures(ctx, azdClient, stagingDir); err != nil {
+		return err
+	}
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
@@ -997,7 +1000,10 @@ func preflightAzdTemplate(
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return err
+	}
+	return requireStagedPreviewFeatures(ctx, azdClient, stagingDir)
 }
 
 func stageAzdTemplateRepository(

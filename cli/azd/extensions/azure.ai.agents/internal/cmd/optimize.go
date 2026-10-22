@@ -55,6 +55,9 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 		defer azdClient.Close()
 
 		svc, project, svcErr := resolveAgentService(ctx, azdClient, flagValue, noPrompt)
+		if isServiceGateError(svcErr) {
+			return nil, svcErr
+		}
 		if svcErr == nil && svc != nil && project != nil {
 			agentProject := filepath.Join(project.Path, svc.RelativePath)
 			serviceKey := toServiceKey(svc.Name)

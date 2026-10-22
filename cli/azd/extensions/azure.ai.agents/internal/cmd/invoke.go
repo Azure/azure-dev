@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/telemetry"
 
@@ -113,14 +114,7 @@ redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
 
-Voice Agents:
-For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
-For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
-'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
-hosted agent protocols such as responses, invocations, and a2a.
-
-Request Body:
+` + invokeVoiceHelp + `Request Body:
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
@@ -167,13 +161,7 @@ and the summary. This is independent of the global --debug logging flag.
 Local, prompt-agent, and a2a invokes do not collect platform latency.
 Explicit --debug-latency=true is rejected for these routes; omit the flag
 or use --debug-latency=false.
-Raw output includes the returned headers without a formatted latency summary.
-
-Long-running Invocations:
-Use --long-running with the Responses protocol to start work that continues running in
-the service if this command disconnects. The command remains attached until the work
-finishes. Add --no-wait to return after azd receives the Response ID.
-This option does not provide crash recovery or automatic reconnection.`,
+Raw output includes the returned headers without a formatted latency summary.` + invokeLongRunningHelp,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -200,13 +188,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
-
-  # Start background work and remain attached until it finishes
-  azd ai agent invoke --long-running "Run the long task"
-
-  # Start background work and return after its Response ID is received
-  azd ai agent invoke --long-running --no-wait "Run the long task"
-
+` + invokeLongRunningExamples[0] + invokeLongRunningExamples[1] + `
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -452,8 +434,39 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Default:       outputDefault,
 	})
 
+	gateAgentServices(cmd)
+	previewFlag(cmd, "long-running", featureflags.LongRunning)
+	previewFlag(cmd, "no-wait", featureflags.LongRunning)
+	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
+	previewHelp(cmd, featureflags.Voice, []string{invokeVoiceHelp}, nil)
+
 	return cmd
 }
+
+const invokeVoiceHelp = `Voice Agents:
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
+
+`
+
+const invokeLongRunningHelp = `
+
+Long-running Invocations:
+Use --long-running with the Responses protocol to start work that continues running in
+the service if this command disconnects. The command remains attached until the work
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`
+
+var invokeLongRunningExamples = []string{`
+  # Start background work and remain attached until it finishes
+  azd ai agent invoke --long-running "Run the long task"
+`, `
+  # Start background work and return after its Response ID is received
+  azd ai agent invoke --long-running --no-wait "Run the long task"
+`}
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
 	if flags.version == "" && !cmd.Flags().Changed("version") {
@@ -549,6 +562,13 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if a.flags.longRunning && a.flags.protocol != "" && a.flags.protocol != "responses" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("--long-running is not supported with the %s protocol", a.flags.protocol),
+			"use a deployed Responses agent or remove --long-running",
+		)
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -582,6 +602,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if a.flags.longRunning || a.flags.noWait {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--long-running and --no-wait are not supported for prompt agents",
+					"remove these flags or invoke a hosted Responses agent",
+				)
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -625,6 +652,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	if a.flags.local {
+		if err := a.selectLocalService(ctx); err != nil {
+			return err
+		}
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)

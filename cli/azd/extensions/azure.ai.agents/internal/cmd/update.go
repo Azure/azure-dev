@@ -54,7 +54,7 @@ service in azure.yaml, directly or through its explicit root $ref, and patches
 the existing agent with those values. No new agent version is created.
 
 The hosted agent must already exist (i.e., it must have been previously deployed).
-Prompt, voice, and workflow agents do not support endpoint/card updates.`,
+Only hosted agents support endpoint/card updates.`,
 		Example: `  # Update endpoint/card for the default agent service
   azd ai agent endpoint update
 

@@ -17,6 +17,7 @@ import (
 )
 
 func TestAgentHelp(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true
@@ -78,6 +79,7 @@ func TestAgentHelp(t *testing.T) {
 }
 
 func TestAgentHelpColor(t *testing.T) {
+	setPreviewProcess(t, "true")
 	previous := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = previous })
@@ -104,6 +106,7 @@ func TestAgentHelpColor(t *testing.T) {
 }
 
 func TestInitHelpUsesTemplateFlag(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true

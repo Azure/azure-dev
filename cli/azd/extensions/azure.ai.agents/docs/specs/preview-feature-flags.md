@@ -5,18 +5,24 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Internal opt-in mechanism, the feature registry, and design. No command adoption in this change.
+- **Scope:** Independent, default-off managed-harness, voice, and long-running invocation gates.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension, without adding an azd core feature registry or public extension SDK API. The adoption scope is limited to **managed harness agents**, **voice agents**, and **long-running agent invocation**. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the Microsoft Foundry agents extension, without adding an azd core feature registry or public extension SDK API. General hosted agents and plain prompt functionality are not gated. The three features are declared in the shared registry described below.
+
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands. The obsolete `agents.hosted` opt-in does not enable any of these gates.
 
 ## Ownership and code organization
 
 ```text
 azure.ai.agents/
 ├── internal/
-│   ├── cmd/                       # Command discovery and runtime callers
-│   ├── project/                   # Project/service integration callers
+│   ├── cmd/
+│   │   ├── root.go                # One pre-run check and the help hook
+│   │   └── preview_features.go    # Annotations, enforcement, help hiding
+│   ├── project/
+│   │   └── preview_features.go    # Definition classification and checks
 │   └── featureflags/
+│       ├── agents.go              # Require, environment binding, process read
 │       ├── featureflags.go        # Validation, source reads, evaluation
 │       ├── featureflags_test.go   # Source combinations and regressions
 │       ├── registry.go            # Every declared feature and All
@@ -76,6 +82,63 @@ enabled, err := featureflags.IsEnabled(
 
 `IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
 
+`IsEnabled` itself never reads `AZD_ENVIRONMENT`. The root pre-run binds the parsed `ExtensionContext.Environment` into the command context with `WithEnvironment`. That value already falls back to `AZD_ENVIRONMENT` in the SDK. `Require` passes `Environment(ctx)` to `IsEnabled`. That is the bound value when present, including an explicit empty value. Otherwise it is `AZD_ENVIRONMENT`, which azd sets for lifecycle callbacks.
+
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The selected environment and the service gate marker are the only flag-related context values.
+
+## Central enforcement
+
+Enforcement has two layers. Each layer has one check.
+
+**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It then calls `enforcePreviewFeatures` once for the executing command. The existing debug logging and telemetry steps keep their order. A command without a preview annotation and without a set preview flag makes no host reads.
+
+| Annotation | Placed on | Effect |
+| --- | --- | --- |
+| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
+| `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview` | Only the listed values require the feature. The flag stays visible |
+| `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
+| `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
+| `previewHelp(cmd, feature, long, examples)` | `init` voice section and examples, `invoke` voice and long-running sections and examples, voice notes in `add`, `delete`, and `endpoint show` | The blocks are removed from help while off |
+| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `init --acr-connection`, `init --model` | The flag keeps working. Its usage text is swapped for one that omits the feature while off |
+| `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy` | Marks the context so the shared service selector classifies every selected agent service |
+
+**Service layer.** The shared selector `resolveAgentService` and the deployed-name fallback call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the running command carries `gateAgentServices`. Show, delete, endpoint show, invocations, eval, and other selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors (deployed-name lookup, optimize project fallback, protocol resolution) return it unchanged.
+
+**Lifecycle layer.** The service target has one gate, `prepareGatedOperation`, used by `GetTargetResource`, `Package`, `Publish`, and `Deploy`. `Initialize` and `Endpoints` stay outside the gate so read and cleanup flows work. The `preprovision` and `predeploy` handlers call the same project classification before they write environment values or project settings.
+
+### Direct checks that remain
+
+These entry points classify content that only exists at run time, so an annotation cannot express them.
+
+| Call site | Why it stays direct |
+| --- | --- |
+| `init` existing project and explicit local `azure.yaml` | The services come from a file read during the command |
+| `init` staged template adoption (`runInitFromAzureYaml`, `preflightAzdTemplate`) | The definition exists only after staging |
+| `init` picker (`promptInitMode`) | Discovery only. It omits the voice choice while voice is off |
+| `agent add` | The definition comes from `--file` content |
+| `invoke --local` (`selectLocalService`) | Local invoke does not select a service otherwise. It calls the gated selector |
+| `optimize deploy` remote definition | The definition is fetched from the service before a new version is created |
+
+## Help hiding
+
+`NewRootCommand` builds the tree without an azd client, and help rendering skips `PersistentPreRunE`. The root help function therefore resolves feature states when help is shown. Cobra has already parsed flags, so `-e` is honored. Without `-e`, `AZD_ENVIRONMENT` is used. The same evaluator reads user config, the process environment, and the selected azd environment through a client created at that moment with a ten second bound. When `AZD_SERVER` is absent or a read fails, help falls back to the process value only. Help never fails because of a flag read. The states are applied to the whole tree once (`Hidden` on commands and flags, usage text swaps, and help block removal) before the default help renders.
+
+Trade-offs:
+
+- Help makes a few host reads. Commands that run without `--help` pay nothing extra unless a preview flag or annotation applies.
+- Extension metadata and shell completion are built from the static tree, so they still list preview flags and the `invocations` group. azd caches metadata, so it cannot follow a per-environment state.
+- Hidden commands and flags still parse and run. Hiding is discovery only. Enforcement is the pre-run check.
+- `--harness` stays hidden in all states, as on `main`.
+
+For example, either of these enables voice:
+
+```bash
+azd config set alpha.agents.voice on
+azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
+```
+
+The [README](../../README.md#preview-feature-opt-ins) lists the equivalent commands for all three capabilities.
+
 ## Documented enablement methods
 
 The documented ways to opt into a feature are listed below. These opt-ins are additive: any enabling value is sufficient.
@@ -85,6 +148,8 @@ The documented ways to opt into a feature are listed below. These opt-ins are ad
 | User config | `UserConfig.Get("alpha")` (`azd config set`) | Case-insensitive string `on` only at `alpha.<ID>` |
 | Process environment | Only the declared `EnvVar` | A true value accepted by `strconv.ParseBool` |
 | Selected azd environment | Exact `EnvVar` in raw `.env` values from `Environment.GetValues` (`azd env set`) | A true value accepted by `strconv.ParseBool` |
+
+Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second interpretation of service fields.
 
 The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
 
@@ -110,18 +175,24 @@ There is no global cache, process environment mutation, output, configuration wr
 
 ## Adoption boundary and trade-offs
 
-Command discovery and runtime enforcement are separate caller responsibilities. A future discovery check may hide a preview-only command, but that alone cannot gate preview flags on existing commands, project/service flows, or direct invocation paths. Runtime callers must check the selected capability before its side effects and forward the actual environment selection. No command registration, command behavior, or runtime gate changes in this PR.
+Discovery and runtime enforcement are separate. Help hides disabled commands, flags, and sections. The init picker omits the voice option when disabled. Managed harness has no separate picker. Template catalogs lack capability metadata, so catalog entries remain visible. Their staged effective definitions are checked before adoption instead of inferring capabilities from template names.
 
-Only the three registered capabilities are candidates for adoption. Agents-private checks do **not** automatically intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Runtime checks cover explicit init flags, existing/local/staged manifests, `agent add`, selected-service invocation and local run, preprovision/predeploy callbacks, package/publish/deploy/resource selection, and optimize deployment. Inline definitions and root/field `$ref` includes use the existing resolver. Locally identifiable disabled inputs fail before authentication or project/environment writes. Optimize deployment also checks the definition it already fetches before creating a new version.
+
+### Enforcement limits
+
+An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
+
+Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. There is no state migration or automatic enablement. Agents-private checks do **not** intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 The small API deliberately returns only an enablement decision and error, not a source report or policy object. OR semantics avoid accidental disabling by unrelated scopes, at the cost of having no local override for an existing opt-in. Exact optional-error matching avoids swallowing real failures but remains coupled to the existing host error contract.
 
-The registry settles the three identities and environment keys. Exact command and runtime check locations and disabled-feature guidance belong with the behavior changes that adopt them.
+Disabled capabilities return the structured `feature_not_enabled` compatibility error with the exact per-feature config/environment enable commands. Explicit preview inputs are rejected rather than silently dropped. Enabling one capability does not enable another.
 
 ## Validation
 
-Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
+Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation. Registry tests cover declaration rules, the stable copy returned by `All`, and `Lookup`.
 
-Registry tests cover declaration rules, the stable copy returned by `All`, and `Lookup`.
+Command regressions run through the root command so the central pre-run applies. They cover which parsed flags and values require which feature, inherited command annotations, service gate placement, independent gates, obsolete hosted opt-in isolation, selected-environment forwarding for enforcement and help, help hiding per feature with a process fallback, hidden commands that stay reachable, staged manifests, local invocation, deployed-name fallback, unchanged inputs on rejection, ordinary flows, and retained read access. Help snapshots cover the full surface with every feature on and the default surface with every feature off. A walk over every command with every feature off rejects help text that names a disabled preview.
 
-Run focused tests and vet for `./internal/featureflags`, build the agents module against its pinned azd dependency, and apply the module's formatting/lint rules. No Azure scenario or user auth/config mutation is needed for this mechanism-only change.
+Run offline tests, build, vet, and scoped lint against the pinned SDK. Tier 0 scenarios cover the hidden and enabled help states.

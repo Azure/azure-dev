@@ -703,7 +703,10 @@ func newServiceTargetTestClient(
 	}
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+	} else {
+		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
+	registerPreviewFeaturesOn(srv)
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -786,6 +789,13 @@ func (s *stubInitializeEnvServer) GetValue(
 	return &azdext.KeyValueResponse{Value: "00000000-0000-0000-0000-000000000000"}, nil
 }
 
+// GetValues returns an empty dotenv for the Hosted Agent opt-in read.
+func (s *stubInitializeEnvServer) GetValues(
+	context.Context, *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	return &azdext.KeyValueListResponse{}, nil
+}
+
 type stubAccountServer struct {
 	azdext.UnimplementedAccountServiceServer
 }
@@ -805,6 +815,7 @@ func newInitializeTestClient(t *testing.T, projectRoot string) *azdext.AzdClient
 	})
 	azdext.RegisterEnvironmentServiceServer(srv, &stubInitializeEnvServer{})
 	azdext.RegisterAccountServiceServer(srv, &stubAccountServer{})
+	azdext.RegisterUserConfigServiceServer(srv, &previewConfigServer{alpha: previewFeaturesOn})
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)

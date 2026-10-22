@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -34,12 +35,11 @@ func newEndpointShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [name]",
 		Short: "Show callable endpoints or hosted endpoint/card configuration.",
-		Long: `Show endpoint information for a hosted, prompt, or voice agent.
+		Long: `Show endpoint information for an agent.
 
 Hosted agents display live protocols, version selector (traffic split),
 authorization schemes, and agent card (A2A discovery). Prompt agents display
-their deployed Responses endpoint. Voice agents display their deployed WebSocket
-endpoint.`,
+their deployed Responses endpoint.` + endpointShowVoiceHelp,
 		Example: `  # Show endpoint config (auto-resolves from azure.yaml)
   azd ai agent endpoint show
 
@@ -72,9 +72,14 @@ endpoint.`,
 		AllowedValues: []string{"json", "table"},
 		Default:       "table",
 	})
+	previewHelp(cmd, featureflags.Voice, []string{endpointShowVoiceHelp}, nil)
 
 	return cmd
 }
+
+// endpointShowVoiceHelp is removed from help while voice is off.
+const endpointShowVoiceHelp = ` Voice agents display their deployed
+WebSocket endpoint.`
 
 func runEndpointShow(
 	ctx context.Context,

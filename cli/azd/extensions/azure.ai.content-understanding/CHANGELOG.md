@@ -37,7 +37,17 @@
   query-key and CU-host regressions. Native rejects unsafe imports, including
   REDACTED credential markers, rather than implementing a recording scrubber.
   Keep this stricter replacement unapproved and UTF-8 artifact normalization
-  distinct from byte-return API equivalence; 38 cases evidenced, 759 pending.
+  distinct from byte-return API equivalence.
+- Map all 19 per-cassette source hygiene cases to exact native fixture subtests
+  and isolated private-marker/secret-assignment controls. Cover quoted and
+  whitespace-separated eight-character values and Python Unicode matching
+  behavior; distinguish normalized JSON checks from source YAML and keep the
+  stricter REDACTED policy unapproved.
+- Map four source recording-helper cases to full source-executed controls and
+  exact import-set checks. Pin three code hashes and expected cassette names;
+  reject missing/duplicate/extra files and non-placeholder request origins.
+  Keep scrubber/REDACTED/UTF-8 artifact differences unapproved. Totals:
+  61 cases evidenced, 736 pending.
 - Context-free help, version, and command-tree metadata.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,

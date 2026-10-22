@@ -13,7 +13,7 @@ source:
 readiness: 'in-progress: pending/evidenced rows are not approved parity'
 hygiene:
   file: testdata/parity/hygiene_scenarios.json
-  sha256: ee047ed267cebf45c6267a60d8009c76b38cefed3a84fafd57baaff3992ea3af
+  sha256: 152c411c6fbfb2eeabd42735c2825272dca6af54f68d56ce364820f03e421b76
 capabilities:
 - id: 1
   source_paths:
@@ -2282,51 +2282,320 @@ cases:
 - source: tests/playback/test_live_analyzer_copy.py::test_live_same_resource_copy_through_azd_adapter
   state: pending
 - source: tests/playback/test_recording.py::test_committed_recordings_are_complete_and_sanitized
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Source-executed completeness test pins all 19 expected original YAML names. Native compares that exact set with
+    the inventory and actual JSON files, rejecting missing/duplicate/extra imports or files. Every imported interaction must
+    use the exact placeholder HTTPS origin; full provenance/digests and recursive header/response hygiene remain enforced.
+    Negative drift/origin controls cover failures independently. Go checks reviewed normalized JSON rather than original YAML
+    and omits credential metadata instead of allowing REDACTED headers. These stricter artifact differences require review;
+    no recording scrubber, production-redaction or live equivalence is claimed.
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedImportCompleteness
+  - internal/cmd/hygiene_playback_test.go::TestRecordedImportCompletenessRejectsDrift
+  - internal/cmd/hygiene_playback_test.go::TestRecordedRequestOrigins
 - source: tests/playback/test_recording.py::test_request_scrubber_removes_host_headers_and_sas_values
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Full raw/scrubbed controls captured by executing this exact pinned source helper case, with code hashes and an
+    explicit UTF-8 round-trip before artifact-text adaptation. Native regressions verify every source-oracle postcondition,
+    reject both raw and REDACTED scrubbed artifacts, and accepts an independent reviewed native control. Existing isolated
+    header/query/host regressions prevent simultaneous leaks from hiding missed assertions. This is a proposed stricter import-review/CI
+    replacement, not an automatic recording scrubber or in-memory bytes-return equivalence. No production-redaction or live
+    evidence; approval remains open.
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/scrub-request-headers-sas
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneIndependentMarkers
 - source: tests/playback/test_recording.py::test_response_scrubber_removes_host_and_sensitive_query[False]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Full raw/scrubbed controls captured by executing this exact pinned source helper case, with code hashes and an
+    explicit UTF-8 round-trip before artifact-text adaptation. Native regressions verify every source-oracle postcondition,
+    reject both raw and REDACTED scrubbed artifacts, and accepts an independent reviewed native control. Existing isolated
+    header/query/host regressions prevent simultaneous leaks from hiding missed assertions. This is a proposed stricter import-review/CI
+    replacement, not an automatic recording scrubber or in-memory bytes-return equivalence. No production-redaction or live
+    evidence; approval remains open.
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/scrub-response-text
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneIndependentMarkers
 - source: tests/playback/test_recording.py::test_response_scrubber_removes_host_and_sensitive_query[True]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Full raw/scrubbed controls captured by executing this exact pinned source helper case, with code hashes and an
+    explicit UTF-8 round-trip before artifact-text adaptation. Native regressions verify every source-oracle postcondition,
+    reject both raw and REDACTED scrubbed artifacts, and accepts an independent reviewed native control. Existing isolated
+    header/query/host regressions prevent simultaneous leaks from hiding missed assertions. This is a proposed stricter import-review/CI
+    replacement, not an automatic recording scrubber or in-memory bytes-return equivalence. No production-redaction or live
+    evidence; approval remains open.
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/scrub-response-bytes
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneIndependentMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_batch]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyze_batch
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_prebuilt_invoice_json]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyze_prebuilt_invoice_json
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_single]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyze_single
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_create]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_create
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_delete]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_delete
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_list]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_list
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_show]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_show
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_test]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_test
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_create]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/classifier_route_create
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_delete]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/classifier_route_delete
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_show]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/classifier_route_show
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[defaults_get]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/defaults_get
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[doctor]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/doctor
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[route_target_create]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/route_target_create
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[route_target_delete]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/route_target_delete
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[schema_suggest]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/schema_suggest
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_create]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/template_analyzer_create
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_delete]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/template_analyzer_delete
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_show]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Exact source cassette identity maps to its source-hashed normalized native JSON import. The native fixture loader
+    checks provenance/digests and recursively rejects every source private marker and secret-assignment family, including
+    quote/whitespace separators, eight-character values and Python Unicode whitespace/IGNORECASE behavior. Independent single-marker
+    regressions prevent a second leak from hiding a missed assertion. Native deliberately also rejects REDACTED credential
+    markers and adds stricter key/host/query guards. This checks the reviewed normalized JSON artifact, not the original YAML
+    in Go CI or a recording-time scrubber; source pytest separately checks all original cassettes. Declared import normalizations,
+    manual content/schema review and replacement approval remain explicit; no production-redaction, live or installed-host
+    evidence is claimed.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/template_analyzer_show
+  - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-directory-writes-results]
   state: pending
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-prebuilt-invoice-json]

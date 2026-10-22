@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 38
+approval. Approved rows require an explicit review reference. Currently 61
 source cases have recorded-command or proposed hygiene-replacement evidence,
-759 remain pending, and none is approved. Passing the structural checks does
+736 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -913,7 +913,7 @@ output and the independent Python starter fallback.
 
 `TestRecordedHygieneScenarios` maps all 11 exact pinned source hygiene cases,
 including apostrophes in URL paths/query values and four UTF-8 byte-body cases.
-The source-executed full raw/scrubbed controls and two source-code hashes live
+The source-executed full raw/scrubbed controls and source-code hashes live
 in `testdata/parity/hygiene_scenarios.json`, pinned by the ledger's SHA256.
 These synthetic unsafe controls are not service recordings or a twentieth
 cassette. UTF-8 bytes are canonicalized to artifact text only after an exact
@@ -928,6 +928,36 @@ sensitive headers, all 18 sensitive query keys (including blank/REDACTED
 values), customer CU hosts, encoded/nested URLs and malformed queries without
 depending on a second leak to fail. This is an evidenced but unapproved
 stricter replacement, not an automatic scrubber or a production logging change.
+
+The 19 per-cassette Python artifact-hygiene cases map separately to exact
+`TestRecordedFixtureHygiene/<cassette-name>` references and
+`TestRecordedSourceArtifactMarkers`. Besides all source private markers, these
+checks reject quote/whitespace-separated secret values at the source's
+eight-character boundary, including Python Unicode whitespace and special
+case-folding behavior. Native intentionally also rejects REDACTED values.
+Independent nested-value controls exercise each marker without another leak;
+ordinary public controls remain accepted. The ledger rejects missing fixture
+subtests or invented output-format suffixes. Go checks the reviewed normalized
+JSON imports and their pinned original-YAML hashes, not original YAML contents
+in CI; source pytest checks the originals separately. All 19 imports remain
+unchanged, and these stricter artifact dispositions still require approval.
+
+Four additional source helper cases have explicit replacement evidence:
+three exact raw/scrubbed controls under `TestRecordedScrubberHelpers` and the
+complete/sanitized recording-set check under `TestRecordedImportCompleteness`.
+The schema-v2 hygiene control asset retains all 11 original scenarios, the
+three helpers, three source-code hashes and all 19 expected source YAML names.
+Verify every helper oracle assertion before rejecting raw and REDACTED
+artifacts and accepting a separate reviewed native control. The bytes helper
+adds one UTF-8 artifact-text adaptation, not an in-memory bytes-return API.
+
+Compare the expected source set with both the inventory and actual imported
+JSON files; reject missing/duplicate/extra entries. Every imported request
+must use the exact placeholder HTTPS origin, without user information or a
+port. Negative controls also reject other hosts, lookalikes and malformed URLs.
+These checks supplement full provenance/digest/header/response hygiene; they
+do not turn native import rejection into Python's recording-time scrubber or
+make normalized JSON checks equivalent to checking original YAML in Go CI.
 
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.

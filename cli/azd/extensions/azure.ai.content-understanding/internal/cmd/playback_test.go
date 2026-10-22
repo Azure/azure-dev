@@ -159,6 +159,7 @@ func loadRecordedFixture(t *testing.T, name string) recordedFixture {
 		seen := map[int]bool{}
 		last := -1
 		for _, interaction := range fixture.Interactions {
+			require.NoError(t, recordingRequestOrigin(interaction.Request.URL))
 			require.Greater(t, interaction.SourceIndex, last)
 			require.Less(t, interaction.SourceIndex, fixture.Source.InteractionCount)
 			last = interaction.SourceIndex
@@ -550,11 +551,25 @@ var recordingPrivateText = regexp.MustCompile(
 var recordingSecretText = regexp.MustCompile(
 	`(?i)(authorization|api[-_]?key|subscription[-_]?key|client_secret|password|token|sig|` +
 		`ocp-apim-subscription-key|set-cookie|x-ms-client-request-id|x-ms-request-id)\s*["']?\s*[:=]`)
+var recordingSecretValueText = regexp.MustCompile(
+	`(?i)(api[-_]?key|authorization|sig|subscription[-_]?key)` +
+		`["'=:\s\v\x{001c}-\x{001f}\x{0085}\p{Z}]+[A-Za-z0-9%+/_-]{8,}`)
+
+// Python's Unicode IGNORECASE also folds dotted and dotless I.
+var recordingCaseFold = strings.NewReplacer("\u0130", "i", "\u0131", "i")
 var recordingURLText = regexp.MustCompile(`(?i)https?://[^\s"\\]+`)
 var recordingSensitiveQuery = map[string]bool{
 	"api-key": true, "code": true, "se": true, "sig": true, "si": true, "sip": true,
 	"skoid": true, "sks": true, "skt": true, "sktid": true, "skv": true, "sp": true,
 	"spr": true, "sr": true, "srt": true, "st": true, "subscription-key": true, "sv": true,
+}
+
+func recordingRequestOrigin(raw string) error {
+	link, err := url.Parse(raw)
+	if err != nil || link.Scheme != "https" || link.Host != "sanitized.services.ai.azure.com" || link.User != nil {
+		return errors.New("Recording request does not use the reviewed placeholder HTTPS origin.")
+	}
+	return nil
 }
 
 func recordingHygiene(data []byte) error {
@@ -566,7 +581,9 @@ func recordingHygiene(data []byte) error {
 	inspect = func(value any) error {
 		switch value := value.(type) {
 		case string:
-			if recordingPrivateText.MatchString(value) || recordingSecretText.MatchString(value) {
+			folded := recordingCaseFold.Replace(value)
+			if recordingPrivateText.MatchString(folded) || recordingSecretText.MatchString(folded) ||
+				recordingSecretValueText.MatchString(folded) {
 				return errors.New("Recording contains private or credential-like content; manual review required.")
 			}
 			for _, text := range recordingURLText.FindAllString(value, -1) {

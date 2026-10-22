@@ -149,7 +149,7 @@ func validateParityInventory(inventory parityInventory) error {
 			return fmt.Errorf("mapped case lacks Go evidence %s", row.Source)
 		}
 		for _, reference := range row.GoTests {
-			if err := validateGoTestReference(reference); err != nil {
+			if err := validateGoTestReference(reference, inventory.Recordings); err != nil {
 				return fmt.Errorf("%s: %w", row.Source, err)
 			}
 		}
@@ -255,7 +255,7 @@ func validateParityInventory(inventory parityInventory) error {
 	return nil
 }
 
-func validateGoTestReference(reference string) error {
+func validateGoTestReference(reference string, recordings []parityRecording) error {
 	file, name, found := strings.Cut(reference, "::")
 	if !found || path.Clean(file) != file || !strings.HasPrefix(file, "internal/") || strings.Contains(file, `\`) ||
 		path.IsAbs(file) || !strings.HasSuffix(file, "_test.go") {
@@ -273,6 +273,10 @@ func validateGoTestReference(reference string) error {
 		}
 		exists := false
 		switch {
+		case file == "internal/cmd/playback_test.go" && function == "TestRecordedFixtureHygiene":
+			exists = !hasFormat && slices.ContainsFunc(recordings, func(row parityRecording) bool {
+				return row.Name == scenario
+			})
 		case file == "internal/cmd/playback_test.go" && function == "TestRecordedServiceCommands":
 			for _, row := range recordedCommandCases {
 				exists = exists || row.name == scenario
@@ -304,6 +308,8 @@ func validateGoTestReference(reference string) error {
 			}
 		case file == "internal/cmd/hygiene_playback_test.go" && function == "TestRecordedHygieneScenarios":
 			exists = slices.Contains(recordedHygieneNames, scenario)
+		case file == "internal/cmd/hygiene_playback_test.go" && function == "TestRecordedScrubberHelpers":
+			exists = !hasFormat && slices.Contains(recordedScrubberNames, scenario)
 		default:
 			return fmt.Errorf("subtest evidence requires a checked scenario registry: %s", reference)
 		}
@@ -391,6 +397,24 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/playback_test.go::TestRecordedServiceCommands/missing"}
 		}},
+		{"missing fixture subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/playback_test.go::TestRecordedFixtureHygiene/missing"}
+		}},
+		{"fixture subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/playback_test.go::TestRecordedFixtureHygiene/analyzer_list/json"}
+		}},
+		{"missing scrubber helper", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/missing"}
+		}},
+		{"scrubber helper format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/scrub-response-text/json",
+			}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inventory := loadParityInventory(t)
@@ -407,7 +431,7 @@ func TestParityReadinessDoesNotApproveEvidence(t *testing.T) {
 		inventory.Cases[index].State = "evidenced"
 	}
 	require.ErrorContains(t, parityReadiness(inventory), "797 evidenced but unapproved cases")
-	require.Error(t, validateGoTestReference("../outside_test.go::TestUnsafe"))
+	require.Error(t, validateGoTestReference("../outside_test.go::TestUnsafe", inventory.Recordings))
 }
 
 func TestParityReadinessRequiresAllApprovals(t *testing.T) {

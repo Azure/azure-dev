@@ -22,7 +22,7 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 	case "prompt":
 		harness, _ := definition["harness"].(map[string]any)
 		harnessType, _ := harness["type"].(string)
-		if agent_api.IsCopilotHarness(harnessType) {
+		if agent_api.IsCopilotHarness(strings.TrimSpace(harnessType)) {
 			return featureflags.ManagedHarness
 		}
 	case "voice", "prompt-voice":

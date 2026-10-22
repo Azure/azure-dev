@@ -122,7 +122,7 @@ func TestInitCommand_ForceFlag(t *testing.T) {
 	if flag.DefValue != "false" {
 		t.Fatalf("expected --force default false, got %q", flag.DefValue)
 	}
-	expectedUsage := "Allow existing agent service configurations to be overwritten. " +
+	expectedUsage := "Allow existing hosted or voice agent service configurations to be overwritten. " +
 		"With --no-prompt, pre-consent when init requires overwrite confirmation."
 	if flag.Usage != expectedUsage {
 		t.Fatalf("expected --force usage %q, got %q", expectedUsage, flag.Usage)

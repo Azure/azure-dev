@@ -1,0 +1,19 @@
+# Tier 0 (offline) — prompt init rejects explicitly supplied hosted-only flags.
+name: "init-prompt-rejects-hosted-flags"
+command: "azd ai agent init --kind prompt --runtime= --deploy-mode code --no-prompt"
+cwd: "~/working/azd-agents-init-flag-contract-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-init-flag-contract-{instance}"
+    cwd: "~/working"
+    name: "reset working dir"
+
+goals:
+  - "Confirm init exits non-zero with an error identifying prompt init and both conflicting flags, --runtime and --deploy-mode. The explicitly empty --runtime= must not be treated as omitted."
+  - "Confirm there are no interactive prompts, authentication attempts, template downloads, or created/modified project files."
+  - "Take a screenshot of the final error output."
+  - "Report a finding if either flag is silently ignored, the command succeeds, or authentication, prompts, downloads, or project side effects start before the conflict is reported."

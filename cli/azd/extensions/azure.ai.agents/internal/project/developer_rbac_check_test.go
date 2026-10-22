@@ -86,7 +86,9 @@ func newRBACClient(t *testing.T, env *rbacEnvironmentServer, account *rbacAccoun
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
-		require.NoError(t, <-done)
+		if serveErr := <-done; serveErr != nil {
+			require.ErrorIs(t, serveErr, grpc.ErrServerStopped)
+		}
 	})
 	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
 	require.NoError(t, err)

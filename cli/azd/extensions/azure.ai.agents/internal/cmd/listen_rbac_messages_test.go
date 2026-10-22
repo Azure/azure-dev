@@ -165,7 +165,9 @@ func TestAgentRBACMessages(t *testing.T) {
 	go func() { serverDone <- server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
-		require.NoError(t, <-serverDone)
+		if serveErr := <-serverDone; serveErr != nil {
+			require.ErrorIs(t, serveErr, grpc.ErrServerStopped)
+		}
 	})
 	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
 	require.NoError(t, err)

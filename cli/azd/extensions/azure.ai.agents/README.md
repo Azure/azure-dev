@@ -410,8 +410,10 @@ deployment exit code, and deployment errors still fail the command.
 
 This covers Foundry User checks and failed automatic assignment, hosted-agent
 role-assignment-write checks, and Container Registry access checks (including
-classic and ABAC role guidance). Warnings that a check could not be completed
-are also retained. Prompt and voice agents keep only the applicable Foundry
+classic and ABAC role guidance). Incomplete checks that already emitted a warning
+are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
+`LookupTenant` failure, or credential construction failure remain silent.
+Prompt and voice agents keep only the applicable Foundry
 checks; hosted-only checks and the existing skip behavior are unchanged.
 
 For automation, use `--no-prompt --output json` and consume the host's `messages`
@@ -423,7 +425,7 @@ safe status information, not raw response bodies or credentials.
 
 This does not retain every extension log or hook message, and it does not change
 the read-only `azd deploy --preview` path, which skips deployment hooks.
-The opt-in [RBAC warning scenario](tests/cli-interactive-tester-scenarios/tier2/2.20-deploy-rbac-warnings.yaml)
+The opt-in [RBAC warning scenario](tests/cli-interactive-tester-scenarios/tier2/2.17b-deploy-rbac-warnings.yaml)
 requires an externally prepared restricted test identity and explicit Azure cost
 consent through `foundry-extension-scenario-orchestrator`; it is not run automatically.
 

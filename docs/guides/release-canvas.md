@@ -49,7 +49,7 @@ Release controls stay hidden. Once access is restored, **Refresh** retries the g
 
 Backend actions also require fresh private-repository proof; hiding controls is
 not the authorization mechanism. Loss of access clears local queue previews and
-catalog observations. The renderer discards the prior snapshot, clears displayed
+package-readiness observations. The renderer discards the prior snapshot, clears displayed
 release data and form inputs, and closes pending dialogs. Failed refreshes hide
 the previous release view until access can be verified again.
 
@@ -166,7 +166,7 @@ On narrow panels the line scrolls horizontally.
 | Changelog | The tracked changelog PR is merged. |
 | CI and signing | The linked run reaches a publishing approval in `PublishCLI` or the parallel `PublishInstallers` stage, or evidence shows it passed that approval. |
 | Publishing | The run reaches the final `PublishVersionTxt` approval, or evidence shows it passed that gate. |
-| WinGet package | An explicit local catalog check finds the expected `Microsoft.Azd` package version. Merging the WinGet PR is not enough. |
+| Package readiness | An explicit, fresh check confirms every required distribution gate below for the exact release versions. A merged PR, successful submission, or disabled submission is not enough. |
 | Version increment | The linked run's generated `cli-version-increment-<buildId>` PR from `azure-sdk/azure-dev` to `Azure/azure-dev` main is merged. Review, approve, and merge it in GitHub. |
 
 Approval observations come from the linked run's `Checkpoint.Approval` records,
@@ -178,36 +178,69 @@ The canvas does not display a detailed pipeline job list. Open **Publishing buil
 in the release summary or **Open pipeline** in the roadmap to inspect stages,
 jobs, logs, and approvals in the browser.
 
-**Check WinGet catalog** refreshes the local `winget` source, then reads the
-available versions of the exact `Microsoft.Azd` package. It shows the latest
-reported version, the expected package version read from the matching PR's
-version manifest and checked against release metadata, and when the catalog was checked. The
-expected **MSI/package version** is not the CLI version. A newer catalog version
-does not substitute for the expected version: the expected version must actually
-appear in the available-version list.
+### Required gates before announcing a version
 
-The catalog button appears after a matching WinGet PR is discovered, even while
-ESRP or unrelated publishing jobs are unfinished, or when publishing reaches the
-final approval. A matching PR is required before running the check. Version
-increment's **Check version PR** appears after the preceding stages and local
-catalog check complete (or metadata explicitly disables WinGet submission).
-Completed stops and closed releases hide these buttons.
+**Check package readiness** checks all five distribution gates independently.
+Results appear in the **Package readiness before version.txt** cards, with
+expected versions, ready/blocked/unknown states, public evidence links, and a
+timestamp. The button updates this section and the roadmap without hiding or
+refreshing the full canvas. Checks remain available after a successful check so
+the operator can recheck immediately before approval.
 
-Catalog checks are explicit and local to the machine running the extension;
-they do not write evidence to the tracking issue. **Refresh** rechecks PR and
-pipeline state but does not invoke WinGet, and shows any previously checked
-catalog result with its timestamp. Catalog observations reset when the extension
-restarts and are not reused for a different run or expected version. A failed
-catalog check clears the previous result and reports the error instead of
-retaining a green stop. Missing WinGet, source-refresh failures, malformed output,
-and PR search/access errors are reported explicitly. If WinGet submission is
-disabled by metadata, the stop stays gray with a policy note.
+| Gate | Required evidence |
+| --- | --- |
+| WinGet | Refresh the local `winget` source and find the exact `Microsoft.Azd` MSI/package version in its available-version list. A newer version or merged PR does not substitute. |
+| Chocolatey | The exact `azd` MSI/package version has `IsApproved=true`, passing validation, and passing installation verification in public feed metadata. Submission or exact-version query success alone is insufficient. |
+| Homebrew cask | Public `Azure/homebrew-azd` main has the exact CLI version, expected versioned macOS/Linux download definitions, and architecture checksums in `Casks/azd.rb`. |
+| Homebrew formula | The same checks for `Formula/azd.rb`, including all four platform/architecture download URLs. |
+| Standalone, MSI, DEB and RPM | The public, non-draft GA GitHub release contains all 11 expected assets, including the Windows ARM64 alpha archive. Each corresponding immutable, versioned public-storage URL responds to HEAD with the same positive size. |
 
-The WinGet stop warns: **Do not approve next step until the local WinGet catalog
-reports the expected version. Merging the PR is not enough.**
-Approvals are still performed in Azure DevOps; the canvas neither grants them nor
-technically blocks an authorized approver outside it. Version-increment PR
-discovery may succeed earlier in parallel, but remains the last stop in the line.
+The expected **MSI/package version** comes from verified run metadata and is not
+the CLI version. A WinGet PR is useful context but is not required to perform the
+check. Chocolatey and Homebrew checks work without installing their CLIs. Missing
+WinGet on a non-Windows host leaves that gate unknown while the other checks
+still run. Public reads have timeouts and size bounds; unavailable services,
+malformed metadata, unexpected definitions, and download size mismatches never
+count as ready. These checks inspect distribution evidence: they do not install
+packages, execute Homebrew definitions, download/checksum-test binaries, or prove
+an individual customer's installation will succeed.
+
+Checking is available to authorized drivers and observers once a verified GA
+publishing run is linked, even if that run has failed or unrelated jobs are
+unfinished. Preview releases require separately reviewed policy and are not
+declared ready by this checker. Disabled submission flags do not waive customer
+upgrade readiness: all five gates are still required. Version-increment
+**Check version PR** remains an independent follow-up and does not authorize
+marker updates. Closed or abandoned releases hide the interactive check buttons.
+
+Package checks do not write observations to tracking, request moderation,
+resubmit packages, queue pipelines, publish, or update version markers. Apart
+from refreshing the local WinGet source, they are read-only. **Refresh** rechecks
+pipeline and PR state, but does not rerun package checks. Observations are local
+to the running extension, bound to the tracking issue, run, source, CLI version,
+and MSI version, and expire after ten minutes. Expiration is reevaluated on
+refresh; there is no background timer. Recheck immediately before approval.
+Extension restarts and access loss clear observations. Starting a new check
+clears prior success; failures are displayed independently instead of retaining
+a green stop or hiding another channel's failure.
+
+Chocolatey is a direct package submission, not a PR workflow. Its package-page
+Review section and linked verifier report provide moderation evidence. A failed
+verifier can reflect a feed outage before installation, not an MSI defect. If
+verification or approval requires action by an account the release team does not
+control, document public evidence in an issue and coordinate with that account
+owner or Chocolatey operators; the canvas does not assume the driver can rerun
+verification. See [Chocolatey's moderation guidance](https://docs.chocolatey.org/en-us/community-repository/moderation/).
+The pipeline's existing `Wait-ChocoPackage.ps1` only checks exact-version
+`choco info` output, so this canvas deliberately applies a stronger approval and
+verification gate.
+
+**Do not approve version.txt or advertise a new version while any required gate
+is blocked or unknown.** All-green package evidence is not release permission:
+review pipeline health, approvals, the runbook, and any recovery policy separately.
+The canvas neither changes pipeline gate conditions nor technically blocks an
+authorized approver outside it. Version-increment PR discovery may succeed in
+parallel, but remains the last stop in the line.
 Neither a green roadmap nor merged follow-up PRs automatically close tracking.
 The original seven evidence categories remain compatible with existing tracking
 issues, but their controls are not shown. Final publication must still be verified

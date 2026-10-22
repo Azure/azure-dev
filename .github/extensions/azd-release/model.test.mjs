@@ -35,7 +35,7 @@ test("merge advances next-step guidance without enabling observer, reserved, or 
     assert.equal(nextStep(snapshot).stage, "reconcile");
     assert.equal(nextStep(snapshot).canQueue, false);
     snapshot.release.runId = 200;
-    assert.equal(nextStep(snapshot).stage, "publishing");
+    assert.equal(nextStep(snapshot).stage, "packages");
     assert.equal(nextStep(snapshot).canQueue, false);
     snapshot.pipelineHealth = "failed";
     assert.equal(nextStep(snapshot).stage, "investigation");

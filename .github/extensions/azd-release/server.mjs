@@ -22,7 +22,7 @@ const fields = {
     milestone: ["issueNumber", "key", "status", "evidence"],
     complete: ["issueNumber", "confirmation"],
     analyze: ["issueNumber"],
-    "check-winget": ["issueNumber"],
+    "check-packages": ["issueNumber"],
     select: ["issueNumber"],
 };
 
@@ -93,8 +93,8 @@ export async function startServer(service, session, issueNumber) {
                 result = { requested: true };
             } else if (action === "prepare-queue") {
                 result = await service.prepareQueue(data.issueNumber, data.recordMode);
-            } else if (action === "check-winget") {
-                result = await service.checkWinget(data);
+            } else if (action === "check-packages") {
+                result = await service.checkPackages(data);
             } else {
                 result = await service[action](data);
                 if (action === "create") selection.issueNumber = result.issueNumber;

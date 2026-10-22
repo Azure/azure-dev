@@ -91,6 +91,14 @@
         <div class="roadmap-scroll"><ol id="roadmap" aria-labelledby="roadmap-title"></ol></div>
         <p class="muted">Live evidence, checked on demand. Approvals are reviewed in Azure DevOps; no approval is granted here. The final stop is the version-increment PR, not a publication attestation.</p>
       </section>
+      <section id="package-readiness" class="card" aria-labelledby="package-title">
+        <h2 id="package-title">Package readiness before version.txt</h2>
+        <p id="package-summary" class="callout" role="status" aria-live="polite"></p>
+        <div id="package-gates" class="package-gates"></div>
+        <button id="check-packages" type="button" disabled>Check package readiness</button>
+        <p id="package-checked" class="muted"></p>
+        <p class="muted">Checks WinGet locally, Chocolatey approval and verification, the public Homebrew tap, and versioned downloads. No packages are installed or published, and no markers or shared tracking state are changed. Disabled submissions do not waive readiness checks. This is evidence, not permission to approve or recover a release.</p>
+      </section>
       <section class="card" aria-labelledby="known-issues-title">
         <h2 id="known-issues-title">Known previous issues</h2>
         <p class="muted">Recorded release incidents and the workarounds used. These are historical references, not a diagnosis of this release. Read the linked issue before taking action; recovery still requires explicit approval.</p>

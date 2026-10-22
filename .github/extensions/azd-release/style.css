@@ -71,6 +71,12 @@ p { margin: 8px 0 14px; }
 .roadmap-stop button { font-size: 12px; }
 .roadmap-warning { font-size: 12px; font-weight: 600; border-left: 2px solid var(--true-color-blue, #0969da); padding-left: 6px; }
 .known-issue + .known-issue { margin-top: 22px; border-top: 1px solid var(--border-color-default, #d1d9e0); padding-top: 12px; }
+.package-gates { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 16px 0; }
+.package-gate { border: 1px solid var(--border-color-default, #d1d9e0); border-radius: 6px; padding: 12px; overflow-wrap: anywhere; }
+.package-gate h3 { margin: 0 0 8px; }
+.package-gate p { font-size: 12px; }
+.package-gate.ready { border-left: 3px solid var(--true-color-blue, #0969da); }
+.package-gate.blocked { border-left: 3px solid var(--true-color-red, #cf222e); }
 .badge { border: 1px solid var(--border-color-default, #d1d9e0); border-radius: 20px; padding: 3px 9px; font-size: 11px; }
 .good { color: var(--true-color-blue, #0969da); }
 .bad, .error { color: var(--true-color-red, #cf222e); }

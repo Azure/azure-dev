@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { currentRecords, releaseRoadmap } from "./roadmap.mjs";
 import { timelineSummary } from "./model.mjs";
+import { packageGates } from "./packages.mjs";
 
 const stage = (identifier, state = "pending", result = null, attempt = 1, id = identifier) =>
     ({ id, identifier, type: "Stage", state, result, attempt });
@@ -16,7 +17,7 @@ const approval = (parent, state = "inProgress", result = null, attempt = 1) => [
 const fixture = (timeline = []) => ({
     release: { runId: 200, changelogPr: 100 },
     changelog: { merged: true, state: "closed" },
-    pipeline: { status: "inProgress", timeline, metadata: { available: true, msiVersion: "1.37.100", submitWingetPackage: true } },
+    pipeline: { status: "inProgress", timeline, metadata: { available: true, isPublishingGa: true, msiVersion: "1.37.100", submitWingetPackage: true } },
 });
 const statuses = (snapshot) => releaseRoadmap(snapshot).map((step) => step.status);
 
@@ -96,7 +97,7 @@ test("new stage attempts invalidate earlier approvals and failures, retaining se
         record.id !== "PublishInstallers-approve-1")))[1], "pending");
 });
 
-test("merged WinGet PRs alone stay pending; only catalog availability completes that stop", () => {
+test("merged WinGet PRs and a local catalog result alone cannot satisfy package readiness", () => {
     const snapshot = fixture();
     const pr = (number, state, merged = false) => ({ number, state, merged, url: `https://github.com/microsoft/winget-pkgs/pull/${number}` });
     snapshot.followups = {
@@ -104,28 +105,26 @@ test("merged WinGet PRs alone stay pending; only catalog availability completes 
         version: { prs: [pr(3, "open")] },
     };
     assert.deepEqual(statuses(snapshot).slice(3), ["pending", "pending"]);
-    assert.match(releaseRoadmap(snapshot)[3].warning, /local WinGet catalog.*Merging the PR is not enough/);
-    assert.match(releaseRoadmap(snapshot)[3].detail, /Expected package version \(WinGet PR\): 1\.37\.100/);
+    assert.match(releaseRoadmap(snapshot)[3].detail, /all distribution gates/);
+    assert.equal(releaseRoadmap(snapshot)[3].title, "Package readiness");
+    assert.equal(releaseRoadmap(snapshot)[3].gates.length, 5);
     snapshot.followups.winget.catalog = {
         expectedVersion: "1.37.100", latestVersion: "1.36.100", available: false,
         checkedAt: "2026-10-21T06:00:00Z",
     };
     assert.equal(statuses(snapshot)[3], "pending");
-    assert.match(releaseRoadmap(snapshot)[3].detail, /Latest local catalog version: 1\.36\.100/);
     snapshot.followups.winget.catalog.latestVersion = "1.37.100";
     snapshot.followups.winget.catalog.available = true;
-    assert.equal(statuses(snapshot)[3], "complete");
-    assert.equal(releaseRoadmap(snapshot)[3].checkedAt, "2026-10-21T06:00:00Z");
+    assert.equal(statuses(snapshot)[3], "pending");
     snapshot.followups.winget.catalog.expectedVersion = "1.36.100";
     assert.equal(statuses(snapshot)[3], "pending");
     snapshot.followups.version.prs[0] = pr(3, "closed");
     assert.equal(statuses(snapshot)[4], "failed");
     snapshot.followups.winget = { error: "Could not check WinGet PR: access unavailable" };
     assert.equal(statuses(snapshot)[3], "pending");
-    assert.match(releaseRoadmap(snapshot)[3].detail, /access unavailable/);
     snapshot.pipeline.metadata.submitWingetPackage = false;
     assert.equal(statuses(snapshot)[3], "pending");
-    assert.match(releaseRoadmap(snapshot)[3].detail, /disabled/);
+    assert.equal(releaseRoadmap(snapshot)[3].gates.length, 5, "Disabled submission does not waive customer readiness");
 });
 
 test("real Stage -> Phase -> Job -> Task ancestry retains running jobs and failed task diagnosis", () => {
@@ -152,21 +151,21 @@ test("real Stage -> Phase -> Job -> Task ancestry retains running jobs and faile
     assert.equal(currentRecords(timelineSummary(duplicateTaskNames)).filter((record) => record.type === "Task").length, 2);
 });
 
-test("catalog and version checks appear only at their active stop and disappear after completion or closure", () => {
+test("version PR checks remain independent of publishing health and disappear after completion or closure", () => {
     const snapshot = fixture();
     const checks = () => releaseRoadmap(snapshot).filter((step) => step.check).map((step) => step.check);
-    assert.deepEqual(checks(), []);
+    assert.deepEqual(checks(), ["Check version PR"]);
     snapshot.pipeline.timeline = [stage("PublishCLI"), ...approval("PublishCLI")];
-    assert.deepEqual(checks(), []);
+    assert.deepEqual(checks(), ["Check version PR"]);
     snapshot.pipeline.timeline = [stage("PublishVersionTxt"), ...approval("PublishVersionTxt")];
-    assert.deepEqual(checks(), ["Check WinGet catalog"]);
+    assert.deepEqual(checks(), ["Check version PR"]);
     snapshot.followups = {
         winget: { expectedVersion: "1.37.100", prs: [{ number: 1, state: "closed", merged: false }] },
         version: { prs: [{ number: 2, state: "open", merged: false }] },
     };
-    assert.deepEqual(checks(), ["Check WinGet catalog"]);
+    assert.deepEqual(checks(), ["Check version PR"]);
     snapshot.followups.winget.prs[0].merged = true;
-    assert.deepEqual(checks(), ["Check WinGet catalog"]);
+    assert.deepEqual(checks(), ["Check version PR"]);
     snapshot.followups.winget.catalog = {
         expectedVersion: "1.37.100", latestVersion: "1.37.100", available: true,
     };
@@ -178,28 +177,42 @@ test("catalog and version checks appear only at their active stop and disappear 
     assert.deepEqual(checks(), []);
     snapshot.release.issueState = "open";
     snapshot.pipeline.timeline = [stage("PublishCLI", "completed", "failed")];
-    assert.deepEqual(checks(), []);
+    assert.deepEqual(checks(), ["Check version PR"]);
 });
 
-test("a discovered WinGet PR allows checking the catalog while ESRP or unrelated publishing jobs are unfinished", () => {
+test("all-gate readiness is independent of unrelated pipeline failures and cannot reuse a different run", () => {
     const snapshot = fixture([stage("PublishCLI", "inProgress")]);
     snapshot.followups = {
         winget: { expectedVersion: "1.37.100", prs: [{ number: 1, state: "closed", merged: true }] },
     };
     for (const result of [null, "failed"]) {
         snapshot.pipeline.timeline[0].result = result;
-        const winget = releaseRoadmap(snapshot)[3];
-        assert.equal(winget.status, "pending");
-        assert.equal(winget.check, "Check WinGet catalog");
-        assert.equal(winget.action, "check-winget");
+        const packages = releaseRoadmap(snapshot)[3];
+        assert.equal(packages.status, "pending");
+        assert.equal(packages.check, undefined);
+        assert.equal(packages.gates.length, 5);
     }
+    const gates = packageGates("1.37.0", "1.37.100").map((gate) => ({ ...gate, status: "ready" }));
+    snapshot.pipeline.id = 200;
+    snapshot.pipeline.source = "a".repeat(40);
+    snapshot.pipeline.metadata.cliVersion = "1.37.0";
+    snapshot.packageReadiness = {
+        cliVersion: "1.37.0", msiVersion: "1.37.100", source: snapshot.pipeline.source,
+        runId: 200, checkedAt: new Date().toISOString(), ready: true, status: "complete", summary: "5/5 ready.", gates,
+    };
+    assert.equal(releaseRoadmap(snapshot)[3].status, "complete");
+    assert.equal(releaseRoadmap(snapshot)[2].status, "failed");
+    snapshot.pipeline.id = 201;
+    assert.equal(releaseRoadmap(snapshot)[3].status, "pending");
     snapshot.release.issueState = "closed";
     assert.equal(releaseRoadmap(snapshot)[3].check, undefined);
 });
 
-test("a run with WinGet submission disabled skips that check when reaching follow-ups", () => {
+test("disabled WinGet submission does not skip the package-readiness gate", () => {
     const snapshot = fixture([stage("PublishVersionTxt"), ...approval("PublishVersionTxt")]);
     snapshot.pipeline.metadata.submitWingetPackage = false;
     assert.deepEqual(releaseRoadmap(snapshot).filter((step) => step.check).map((step) => step.check),
         ["Check version PR"]);
+    assert.equal(releaseRoadmap(snapshot)[3].status, "pending");
+    assert.equal(releaseRoadmap(snapshot)[3].gates[0].key, "winget");
 });

@@ -18,9 +18,9 @@ test("loopback server serves assets and isolates panels without leaking state to
         prepareQueue: async (issueNumber, recordMode) => ({
             issueNumber, parameters: { AzureRecordMode: recordMode },
         }),
-        checkWinget: async (data) => {
+        checkPackages: async (data) => {
             calls.push(data);
-            return { expectedVersion: "1.37.100", latestVersion: "1.36.100", available: false };
+            return { ready: false, gates: [{ key: "choco", status: "blocked" }] };
         },
         create: async (data) => { calls.push(data); return { issueNumber: 44 }; },
         prepareChangelog: async (data) => { calls.push(data); return { requested: true }; },
@@ -56,11 +56,11 @@ test("loopback server serves assets and isolates panels without leaking state to
     assert.equal(preview.status, 200);
     assert.deepEqual(await preview.json(), { issueNumber: 42, parameters: { AzureRecordMode: "playback" } });
     assert.equal((await post("queue", { issueNumber: 42, ticket: "preview", recordMode: "live" })).status, 400);
-    assert.equal((await post("check-winget", { issueNumber: 42, expectedVersion: "1.37.0" })).status, 400);
-    const catalog = await post("check-winget", { issueNumber: 42 });
+    assert.equal((await post("check-packages", { issueNumber: 42, expectedVersion: "1.37.0" })).status, 400);
+    const catalog = await post("check-packages", { issueNumber: 42 });
     assert.equal(catalog.status, 200);
     assert.deepEqual(await catalog.json(), {
-        expectedVersion: "1.37.100", latestVersion: "1.36.100", available: false,
+        ready: false, gates: [{ key: "choco", status: "blocked" }],
     });
     assert.deepEqual(calls.at(-1), { issueNumber: 42 });
     assert.equal((await post("create", { releaseVersion: "1.37.1", changelogPr: 100 })).status, 400);
@@ -101,7 +101,7 @@ test("private-repository denial blocks every HTTP action without Azure, tracking
         ["queue", { issueNumber: 42, ticket: "preview", confirmation: "Queue azd 1.37.1" }],
         ["milestone", { issueNumber: 42, key: "build", status: "complete", evidence: "https://github.com/Azure/azure-dev/pull/100" }],
         ["complete", { issueNumber: 42, confirmation: "Complete azd 1.37.1" }],
-        ["check-winget", { issueNumber: 42 }],
+        ["check-packages", { issueNumber: 42 }],
         ["analyze", { issueNumber: 42 }],
     ];
     for (const [action, data] of requests) {

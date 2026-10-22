@@ -27,6 +27,11 @@ const session = await joinSession({
         },
         actions: [
             {
+                name: "check_packages",
+                description: "Explicitly check all package-readiness gates for the selected release before advertising a new version. Read-only except refreshing the local WinGet source.",
+                handler: (ctx) => service.checkPackages({ issueNumber: panel(ctx.instanceId).selection.issueNumber }),
+            },
+            {
                 name: "refresh",
                 description: "Check authentication and read the release roadmap, pipeline evidence, and known previous issues.",
                 handler: (ctx) => service.snapshot(panel(ctx.instanceId).selection.issueNumber),

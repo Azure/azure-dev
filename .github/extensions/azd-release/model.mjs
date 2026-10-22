@@ -203,7 +203,8 @@ export function nextStep(snapshot) {
     if (release.runId) {
         return snapshot.pipelineHealth === "failed"
             ? step("investigation", "A pipeline failure needs investigation. Analyze it before considering any retry or recovery.")
-            : step("publishing", "Follow the release roadmap. Refresh to check approvals and PRs; use the runbook for publication verification.");
+            : step("packages", "Check every package-readiness gate before approving version.txt or announcing a new version. " +
+                "Pipeline approvals and final publication verification remain separate.");
     }
     if (release.intent) {
         return step("reconcile", "Queue intent is reserved, but no run is linked. Inspect Azure DevOps and link the existing run. Do not queue again.");

@@ -13,13 +13,14 @@ import {
 } from "./model.mjs";
 import { currentRecords, releaseRoadmap } from "./roadmap.mjs";
 import { KNOWN_ISSUES } from "./known-issues.mjs";
-import { readWingetCatalog } from "./winget.mjs";
+import { readPackageReadiness, publicPackageRead, currentPackageReadiness } from "./packages.mjs";
 
 export class ReleaseService {
-    constructor(run = cli) {
+    constructor(run = cli, read = publicPackageRead) {
         this.run = run;
+        this.read = read;
         this.tickets = new Map();
-        this.wingetCatalogs = new Map();
+        this.packageChecks = new Map();
         this.busy = false;
     }
 
@@ -53,7 +54,7 @@ export class ReleaseService {
         try { return await this.githubAccess(); }
         catch (error) {
             this.tickets.clear();
-            this.wingetCatalogs.clear();
+            this.packageChecks.clear();
             const blocked = new ReleaseError("access_required", ACCESS_REQUIRED);
             blocked.cause = error;
             throw blocked;
@@ -445,20 +446,28 @@ export class ReleaseService {
         return { expectedVersion: packageVersion, prs: candidates.filter(Boolean).sort((a, b) => a.number - b.number) };
     }
 
-    async checkWinget({ issueNumber }) {
+    async checkPackages({ issueNumber }) {
         positiveInt(issueNumber, "Tracking issue");
-        this.wingetCatalogs.delete(issueNumber);
-        const snapshot = await this.snapshot(issueNumber);
-        requireValue(!snapshot.restricted, ACCESS_REQUIRED, "access_required");
-        const metadata = snapshot.pipeline?.metadata;
-        const winget = snapshot.followups?.winget;
-        requireValue(metadata?.available && metadata.submitWingetPackage,
-            "Verified release metadata with WinGet submission enabled is required to check the catalog.");
-        requireValue(winget?.prs?.length > 0 && winget.expectedVersion === metadata.msiVersion,
-            "A matching WinGet package PR is required to identify the expected catalog version. Refresh or inspect GitHub.");
-        const catalog = await readWingetCatalog(this.run, winget.expectedVersion);
-        this.wingetCatalogs.set(issueNumber, { ...catalog, runId: snapshot.pipeline.id });
-        return catalog;
+        await this.requireAccess();
+        this.packageChecks.delete(issueNumber);
+        const release = await this.load(issueNumber);
+        requireValue(release.runId, "Link a verified publishing run before checking package readiness.");
+        const access = await this.azureAccess();
+        const build = await this.build(release, access.definitionId, release.runId);
+        const metadata = await this.metadata(release.runId);
+        requireValue(metadata.available && metadata.cliVersion === release.version && metadata.isPublishingGa === true,
+            "Package readiness requires verified GA release metadata matching this tracked version. Review preview-release policy separately.");
+        const observation = await readPackageReadiness({
+            run: this.run, gh: (path) => this.gh(path), read: this.read, metadata,
+        });
+        // Revalidate access and identity before retaining observations from a long-running check.
+        await this.requireAccess();
+        const current = await this.load(issueNumber);
+        requireValue(current.runId === release.runId && current.version === release.version,
+            "The tracked release changed during the check. Refresh before continuing.");
+        const result = { ...observation, runId: build.id, source: build.sourceVersion };
+        this.packageChecks.set(issueNumber, result);
+        return result;
     }
 
     async versionPrs(runId) {
@@ -564,11 +573,7 @@ export class ReleaseService {
         snapshot.pipelineHealth = release.runId && !build ? "unknown / access or identity unavailable" : pipelineHealth(build, timeline);
         if (snapshot.pipeline) {
             snapshot.followups = await this.followups(snapshot.pipeline);
-            const catalog = this.wingetCatalogs.get(release.issueNumber);
-            if (snapshot.followups.winget && catalog?.runId === snapshot.pipeline.id &&
-                catalog.expectedVersion === snapshot.pipeline.metadata.msiVersion) {
-                snapshot.followups.winget.catalog = catalog;
-            }
+            snapshot.packageReadiness = currentPackageReadiness(this.packageChecks.get(release.issueNumber), snapshot.pipeline);
         }
         snapshot.roadmap = releaseRoadmap(snapshot);
         snapshot.nextStep = nextStep(snapshot);

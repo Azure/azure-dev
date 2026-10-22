@@ -34,11 +34,12 @@ function restrict(message, detail = "") {
     $("access-required").hidden = false;
     $("access-message").textContent = message;
     $("access-detail").textContent = detail;
-    for (const id of ["releases", "links", "roadmap", "known-issues", "changelog-requests", "release-errors", "access", "notice"]) {
+    for (const id of ["releases", "links", "roadmap", "package-gates", "known-issues", "changelog-requests", "release-errors", "access", "notice"]) {
         $(id).replaceChildren();
     }
     for (const id of ["title", "role", "driver", "health", "tracking-status", "next", "updated", "setup",
-        "queue-preview", "queue-phrase", "queue-mode-info", "adopt-error"]) $(id).textContent = "";
+        "queue-preview", "queue-phrase", "queue-mode-info", "adopt-error", "package-summary", "package-checked"]) $(id).textContent = "";
+    $("check-packages").disabled = true;
     for (const id of ["create", "release", "empty", "queue-action", "link-run", "changelog-setup"]) $(id).hidden = true;
     for (const id of ["queue-dialog", "adopt-dialog"]) if ($(id).open) $(id).close();
     for (const id of ["create", "link-changelog", "adopt", "queue-confirm"]) $(id).reset();
@@ -50,7 +51,11 @@ async function request(action, data) {
         body: JSON.stringify(data),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error);
+    if (!response.ok) {
+        const error = new Error(result.error);
+        error.code = response.status === 403 ? "access_required" : result.code;
+        throw error;
+    }
     return result;
 }
 
@@ -80,6 +85,7 @@ async function refresh() {
         $("refresh").textContent = "Refresh";
         $("check-changelog").disabled = false;
         document.querySelectorAll("#roadmap button").forEach((button) => { button.disabled = false; });
+        if (snapshot?.release) renderPackages();
     }
 }
 
@@ -87,14 +93,48 @@ async function act(action, data) {
     if (working || refreshing || !snapshot?.access.github.ready || snapshot.restricted) return;
     working = true;
     document.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+    if (action === "check-packages") {
+        snapshot.packageReadiness = undefined;
+        const step = snapshot.roadmap.find((item) => item.key === "packages");
+        Object.assign(step, { status: "pending", detail: "Checking package readiness..." });
+        step.gates = step.gates.map((gate) => ({ ...gate, status: "unknown", detail: "Checking..." }));
+        renderRoadmap();
+        renderPackages();
+    }
     try {
         const result = await request(action, data);
+        if (action === "check-packages") {
+            if (result.runId !== snapshot.pipeline.id || result.source !== snapshot.pipeline.source ||
+                result.cliVersion !== snapshot.release.version || result.msiVersion !== snapshot.pipeline.metadata.msiVersion) {
+                throw new Error("Release identity changed. Refresh before checking package readiness again.");
+            }
+            snapshot.packageReadiness = result;
+            const step = snapshot.roadmap.find((item) => item.key === "packages");
+            Object.assign(step, { status: result.status, detail: result.summary, gates: result.gates });
+            renderRoadmap();
+            renderPackages();
+            message("Package-readiness check finished. Review each gate; no version markers were changed.");
+            return result;
+        }
         message(action === "analyze" ? "Read-only analysis requested in this conversation." :
-            action === "check-winget" ? "Local WinGet catalog refreshed and checked." :
-                action === "create" ? "Release tracking created. Prepare or link its changelog inside the release." : "Action completed.");
+            action === "create" ? "Release tracking created. Prepare or link its changelog inside the release." : "Action completed.");
         return result;
     } catch (error) {
         message(error.message, true);
+        if (action === "check-packages") {
+            if (error.code === "access_required") {
+                restrict(error.message);
+                return;
+            }
+            // Drop prior success even if the check failed before returning individual gates.
+            snapshot.packageReadiness = undefined;
+            const step = snapshot.roadmap.find((item) => item.key === "packages");
+            step.status = "pending";
+            step.detail = "Package check failed. Refresh and check again before version.txt approval.";
+            step.gates = step.gates.map((gate) => ({ ...gate, status: "unknown", detail: step.detail }));
+            renderRoadmap();
+            renderPackages();
+        }
         if (action === "adopt") {
             $("adopt-error").textContent = error.message;
             $("adopt-error").hidden = false;
@@ -103,7 +143,9 @@ async function act(action, data) {
     finally {
         working = false;
         document.querySelectorAll("button").forEach((button) => { button.disabled = false; });
-        await refresh();
+        if (action !== "check-packages") await refresh();
+        else if (snapshot?.release) renderPackages();
+        else $("check-packages").disabled = true;
     }
 }
 
@@ -193,28 +235,8 @@ function render() {
     $("queue-action").hidden = !s.nextStep.canQueue;
     $("link-run").hidden = !r.changelogPr || !s.isDriver || !s.access.azure.ready || Boolean(r.runId);
     $("updated").textContent = `Live read: ${new Date(s.checkedAt).toLocaleString()}. Refresh on demand to check for changes; automatic polling is off.`;
-    $("roadmap").replaceChildren(...(s.roadmap ?? []).map((step, index) => {
-        const row = node("li", undefined, `roadmap-stop ${step.status}`);
-        const circle = node("span", step.status === "complete" ? "\u2713" : step.status === "failed" ? "!" : String(index + 1), "roadmap-circle");
-        circle.setAttribute("aria-hidden", "true");
-        row.append(circle, node("h3", step.title),
-            node("span", step.status === "complete" ? "Reached" : step.status === "failed" ? "Needs attention" : "Pending", "roadmap-status"),
-            node("p", step.detail, "muted"));
-        for (const item of step.links) row.append(link(item.label, item.url));
-        if (step.checkedAt) {
-            row.append(node("p", `Catalog checked locally: ${new Date(step.checkedAt).toLocaleString()}.`, "muted"));
-        }
-        if (step.warning) row.append(node("p", step.warning, "roadmap-warning"));
-        if (step.check) {
-            const check = node("button", step.check);
-            check.type = "button";
-            check.onclick = step.action
-                ? () => act(step.action, { issueNumber: r.issueNumber })
-                : refresh;
-            row.append(check);
-        }
-        return row;
-    }));
+    renderRoadmap();
+    renderPackages();
     $("known-issues").replaceChildren(...(s.knownIssues ?? []).map((issue) => {
         const item = node("article", undefined, "known-issue");
         item.append(node("h3", issue.title),
@@ -235,6 +257,60 @@ function render() {
     $("adopt").querySelector("button").disabled = !r.changelogPr || !s.isDriver || !s.access.azure.ready || Boolean(r.runId);
 }
 
+function renderPackages() {
+    const s = snapshot;
+    if (!s?.release || s.restricted) return;
+    const observation = s.packageReadiness;
+    const gates = s.roadmap?.find((step) => step.key === "packages")?.gates ?? [];
+    $("package-summary").textContent = observation?.summary ??
+        (working ? "Checking package readiness..." : "Not checked. Do not approve version.txt while required package readiness is unknown.");
+    $("package-checked").textContent = observation
+        ? `${observation.stale ? "Expired observation" : "Checked"}: ${new Date(observation.checkedAt).toLocaleString()}. ` +
+            "Recheck before approval. Observations expire after 10 minutes (evaluated on Refresh) and reset on extension restart."
+        : "An explicit check needs a verified GA publishing run and Azure access. Missing access or tools is unknown, not ready.";
+    $("check-packages").textContent = working ? "Checking packages..." : "Check package readiness";
+    $("package-gates").replaceChildren(...gates.map((gate) => {
+        const card = node("article", undefined, `package-gate ${gate.status ?? "unknown"}`);
+        card.append(node("h3", gate.name),
+            node("p", `Expected: ${gate.expectedVersion || "awaiting release metadata"}`),
+            node("strong", gate.status === "ready" ? "Ready" : gate.status === "blocked" ? "Blocked" : "Unknown / not checked"),
+            node("p", gate.detail ?? "Not checked."),
+            link("Public evidence", gate.url));
+        return card;
+    }));
+    $("check-packages").hidden = s.release.issueState === "closed" || s.release.outcome?.status === "partial";
+    $("check-packages").disabled = working || refreshing || !s.pipeline?.metadata?.available ||
+        s.pipeline.metadata.isPublishingGa !== true || !s.access.azure.ready;
+}
+
+function renderRoadmap() {
+    const r = snapshot.release;
+    $("roadmap").replaceChildren(...(snapshot.roadmap ?? []).map((step, index) => {
+        const row = node("li", undefined, `roadmap-stop ${step.status}`);
+        const circle = node("span", step.status === "complete" ? "\u2713" : step.status === "failed" ? "!" : String(index + 1), "roadmap-circle");
+        circle.setAttribute("aria-hidden", "true");
+        row.append(circle, node("h3", step.title),
+            node("span", step.status === "complete" ? "Reached" : step.status === "failed" ? "Needs attention" : "Pending", "roadmap-status"),
+            node("p", step.detail, "muted"));
+        for (const item of step.links) row.append(link(item.label, item.url));
+        if (step.checkedAt) {
+            row.append(node("p", `Catalog checked locally: ${new Date(step.checkedAt).toLocaleString()}.`, "muted"));
+        }
+        if (step.warning) row.append(node("p", step.warning, "roadmap-warning"));
+        if (step.check) {
+            const check = node("button", step.check);
+            check.type = "button";
+            check.disabled = working || refreshing;
+            check.onclick = step.action
+                ? () => act(step.action, { issueNumber: r.issueNumber })
+                : refresh;
+            row.append(check);
+        }
+        return row;
+    }));
+}
+
+$("check-packages").onclick = () => act("check-packages", { issueNumber: snapshot.release.issueNumber });
 $("refresh").onclick = refresh;
 $("check-changelog").onclick = async () => {
     $("check-changelog").textContent = "Checking changelog PR...";

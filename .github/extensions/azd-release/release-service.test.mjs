@@ -241,7 +241,7 @@ test("denied private-repository access never starts Azure checks or reads releas
         service.load = async () => assert.fail("A selected issue must not be read");
         service.changelog = { status: async () => assert.fail("Local request artifacts must not be read") };
         service.tickets.set("preview", { source });
-        service.wingetCatalogs.set(42, { expectedVersion: "1.37.100" });
+        service.packageChecks.set(42, { msiVersion: "1.37.100" });
         const snapshot = await service.snapshot(42);
         assert.equal(snapshot.restricted, true);
         assert.equal(snapshot.access.github.ready, false);
@@ -253,7 +253,7 @@ test("denied private-repository access never starts Azure checks or reads releas
             assert.equal(Object.hasOwn(snapshot, key), false, key);
         }
         assert.equal(service.tickets.size, 0);
-        assert.equal(service.wingetCatalogs.size, 0);
+        assert.equal(service.packageChecks.size, 0);
         await assert.rejects(service.driver(42), { code: "access_required" });
         await assert.rejects(service.diagnosis(42), { code: "access_required" });
     }
@@ -579,10 +579,10 @@ test("snapshot exposes approval checkpoints and follow-up roadmap to observers w
     assert.deepEqual(writes, []);
 });
 
-test("observers explicitly check a local catalog without writes; refresh never invokes WinGet or reuses another run's check", async () => {
+test("observers check independent package gates without writes; refresh never reruns checks or reuses another release identity", async () => {
     const { service, release, writes } = fixture();
     release.runId = 200;
-    const metadata = { available: true, cliVersion: "1.37.0", msiVersion: "1.37.100", submitWingetPackage: true };
+    const metadata = { available: true, cliVersion: "1.37.0", msiVersion: "1.37.100", isPublishingGa: true };
     const calls = [];
     let latestVersion = "1.36.100";
     let fail = false;
@@ -597,6 +597,7 @@ test("observers explicitly check a local catalog without writes; refresh never i
         { id: "final", identifier: "PublishVersionTxt", type: "Stage", state: "completed", result: "succeeded" },
     ] });
     service.metadata = async () => ({ ...metadata });
+    service.read = async () => { throw new ReleaseError("package_read_failed", "Public service unavailable."); };
     service.followups = async () => ({
         winget: { expectedVersion: metadata.msiVersion, prs: [{ number: 1, state: "closed", merged: true }] },
         version: { prs: [] },
@@ -612,49 +613,78 @@ test("observers explicitly check a local catalog without writes; refresh never i
     assert.equal(initial.isDriver, false);
     assert.equal(initial.roadmap[3].status, "pending");
     assert.equal(calls.length, 0);
-    await service.checkWinget({ issueNumber: 42 });
+    const first = await service.checkPackages({ issueNumber: 42 });
     const older = await service.snapshot(42);
-    assert.equal(older.followups.winget.catalog.latestVersion, "1.36.100");
-    assert.equal(older.roadmap[3].status, "pending");
+    assert.match(older.packageReadiness.gates[0].detail, /latest local catalog: 1.36.100/);
+    assert.equal(older.roadmap[3].status, "failed");
+    assert.equal(first.gates[1].status, "unknown");
     assert.equal(calls.length, 2);
     latestVersion = "1.37.100";
-    await service.checkWinget({ issueNumber: 42 });
+    await service.checkPackages({ issueNumber: 42 });
     const available = await service.snapshot(42);
-    assert.equal(available.roadmap[3].status, "complete");
+    assert.equal(available.packageReadiness.gates[0].status, "ready");
+    assert.equal(available.packageReadiness.ready, false, "A good WinGet result cannot hide unresolved other channels");
+    assert.equal(available.roadmap[3].status, "pending");
     assert.equal(available.roadmap[4].check, "Check version PR");
     assert.equal(calls.length, 4);
     release.runId = 201;
-    assert.equal((await service.snapshot(42)).followups.winget.catalog, undefined);
+    assert.equal((await service.snapshot(42)).packageReadiness, undefined);
     release.runId = 200;
     metadata.msiVersion = "1.38.100";
-    assert.equal((await service.snapshot(42)).followups.winget.catalog, undefined);
+    assert.equal((await service.snapshot(42)).packageReadiness, undefined);
     metadata.msiVersion = "1.37.100";
     fail = true;
-    await assert.rejects(service.checkWinget({ issueNumber: 42 }), /source update failed/);
+    const failure = await service.checkPackages({ issueNumber: 42 });
     const failed = await service.snapshot(42);
-    assert.equal(failed.followups.winget.catalog, undefined);
+    assert.equal(failure.gates[0].status, "unknown");
+    assert.match(failure.gates[0].detail, /source update failed/);
+    assert.equal(failed.packageReadiness.gates[0].status, "unknown");
     assert.equal(failed.roadmap[3].status, "pending");
     assert.deepEqual(writes, []);
 });
 
-test("catalog checks reject unverified PR/version inputs before invoking WinGet", async () => {
+test("package checks reject invalid inputs, absent runs, preview policy and mismatched metadata before public checks", async () => {
     const service = new ReleaseService(async () => assert.fail("No commands expected"));
-    service.snapshot = async () => assert.fail("Invalid local input must not read state");
-    await assert.rejects(service.checkWinget({ issueNumber: 0 }), /positive integer/);
-    for (const snapshot of [
-        {},
-        { pipeline: { metadata: { available: false } } },
-        { pipeline: { metadata: { available: true, submitWingetPackage: false } } },
-        {
-            pipeline: { metadata: { available: true, submitWingetPackage: true, msiVersion: "1.37.100" } },
-            followups: { winget: { prs: [] } },
-        },
-        {
-            pipeline: { metadata: { available: true, submitWingetPackage: true, msiVersion: "1.37.100" } },
-            followups: { winget: { expectedVersion: "1.37.0", prs: [{ number: 1 }] } },
-        },
+    service.githubAccess = async () => assert.fail("Invalid local input must not authenticate");
+    await assert.rejects(service.checkPackages({ issueNumber: 0 }), /positive integer/);
+    service.githubAccess = async () => ({ login: "observer" });
+    service.load = async () => ({ version: "1.37.0" });
+    await assert.rejects(service.checkPackages({ issueNumber: 42 }), /Link a verified publishing run/);
+    service.load = async () => ({ version: "1.37.0", runId: 200 });
+    service.azureAccess = async () => ({ definitionId: 9 });
+    service.build = async () => ({ id: 200, sourceVersion: source });
+    for (const metadata of [
+        { available: false },
+        { available: true, cliVersion: "1.37.0", isPublishingGa: false },
+        { available: true, cliVersion: "1.38.0", isPublishingGa: true },
     ]) {
-        service.snapshot = async () => snapshot;
-        await assert.rejects(service.checkWinget({ issueNumber: 42 }), /metadata|matching WinGet package PR/);
+        service.metadata = async () => metadata;
+        await assert.rejects(service.checkPackages({ issueNumber: 42 }), /verified GA release metadata/);
+    }
+});
+
+test("tracking changes or private access loss during package checks cannot retain observations", async () => {
+    for (const accessLoss of [false, true]) {
+        const { service, release } = fixture();
+        release.runId = 200;
+        let checks = 0;
+        service.githubAccess = async () => {
+            checks++;
+            if (accessLoss && checks > 1) throw new Error("Access revoked");
+            return { login: "observer" };
+        };
+        service.build = async () => ({ id: 200, sourceVersion: source });
+        service.metadata = async () => ({
+            available: true, isPublishingGa: true, cliVersion: release.version, msiVersion: "1.37.100",
+        });
+        service.gh = async () => ({});
+        service.run = async (_file, args) => args[0] === "source" ? "" : "Found azd [Microsoft.Azd]\nVersion\n-----\n1.37.100";
+        service.read = async () => {
+            if (!accessLoss) release.runId = 201;
+            throw new Error("Unavailable");
+        };
+        await assert.rejects(service.checkPackages({ issueNumber: 42 }),
+            accessLoss ? /requires access/ : /changed during the check/);
+        assert.equal(service.packageChecks.size, 0);
     }
 });

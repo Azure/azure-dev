@@ -8,6 +8,7 @@ import { runInNewContext } from "node:vm";
 import { releaseRoadmap } from "./roadmap.mjs";
 import { KNOWN_ISSUES } from "./known-issues.mjs";
 import { nextStep, ACCESS_REQUIRED } from "./model.mjs";
+import { packageGates } from "./packages.mjs";
 
 test("page loads once and refreshes on demand without timers or visibility listeners", async () => {
     const elements = new Map();
@@ -187,7 +188,7 @@ test("new release creates tracking first, then prepares or links its changelog i
         assert.equal(element("queue-dialog").open, false);
 });
 
-test("renders catalog requirements and expected/latest versions; catalog button checks WinGet rather than PR merge", async () => {
+test("checks every package gate and updates only the readiness view, independently of PR merge and pipeline health", async () => {
         const elements = new Map();
         const makeElement = (tag) => ({
             tag, children: [], value: "", elements: { releaseVersion: {}, changelogPr: {} },
@@ -215,17 +216,21 @@ test("renders catalog requirements and expected/latest versions; catalog button 
             document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
             location: { pathname: "/token/" },
             fetch: async (url, options) => {
-                if (url === "api/check-winget") {
+                if (url === "api/check-packages") {
                     assert.equal(options.method, "POST");
                     assert.equal(options.headers["X-Azd-Release-Token"], "token");
                     assert.deepEqual(JSON.parse(options.body), { issueNumber: 42 });
                     catalogChecks++;
-                    snapshot.followups.winget.catalog = {
-                        expectedVersion: "1.37.100", latestVersion, available: latestVersion === "1.37.100",
-                        checkedAt: new Date().toISOString(),
+                    const ready = latestVersion === "1.37.100";
+                    const result = {
+                        cliVersion: "1.37.0", msiVersion: "1.37.100", runId: 200, source: "source",
+                        ready, status: ready ? "complete" : "failed", summary: ready ? "5/5 ready." : "4/5 ready. Do not approve version.txt.",
+                        checkedAt: new Date().toISOString(), gates: packageGates("1.37.0", "1.37.100").map((gate) => ({
+                            ...gate, status: gate.key === "winget" && !ready ? "blocked" : "ready",
+                            detail: gate.key === "winget" ? `Expected: 1.37.100; latest local catalog: ${latestVersion}.` : "Verified.",
+                        })),
                     };
-                    snapshot.roadmap = releaseRoadmap(snapshot);
-                    return { ok: true, json: async () => snapshot.followups.winget.catalog };
+                    return { ok: true, json: async () => result };
                 }
                 assert.equal(url, "api/state");
                 assert.equal(options.method, undefined);
@@ -238,7 +243,7 @@ test("renders catalog requirements and expected/latest versions; catalog button 
         const stops = element("roadmap").children;
         assert.equal(stops.length, 5);
         assert.deepEqual(stops.map((stop) => stop.children.find((child) => child.tag === "h3").textContent),
-            ["Changelog", "CI and signing", "Publishing", "WinGet package", "Version increment"]);
+            ["Changelog", "CI and signing", "Publishing", "Package readiness", "Version increment"]);
         assert.equal(stops[0].className, "roadmap-stop complete");
         assert.ok(element("links").children.some((child) => child.textContent === "Publishing build 200" &&
             child.href === "https://dev.azure.com/azure-sdk/internal/_build/results?buildId=200"));
@@ -246,13 +251,16 @@ test("renders catalog requirements and expected/latest versions; catalog button 
         assert.equal(elements.has("pipeline-info"), false);
         assert.equal(element("analyze").hidden, true);
         assert.ok(stops[3].children.some((child) => child.href === snapshot.followups.winget.prs[0].url));
-        assert.ok(stops[3].children.some((child) => /local WinGet catalog.*Merging the PR is not enough/.test(child.textContent)));
+        assert.match(element("package-summary").textContent, /Not checked.*Do not approve/);
+        assert.equal(element("package-gates").children.length, 5);
         const buttons = () => element("roadmap").children.flatMap((stop) =>
             stop.children.filter((child) => child.tag === "button"));
-        assert.deepEqual(buttons(), []);
+        assert.deepEqual(buttons().map((button) => button.textContent), ["Check version PR"]);
+        assert.equal(element("check-packages").disabled, true);
         snapshot.pipeline = {
             status: "inProgress", source: "source",
-            metadata: { available: true, msiVersion: "1.37.100", submitWingetPackage: true },
+            id: 200,
+            metadata: { available: true, cliVersion: "1.37.0", msiVersion: "1.37.100", submitWingetPackage: true, isPublishingGa: true },
             timeline: [{
                 id: "final", identifier: "PublishVersionTxt", type: "Stage", state: "completed",
                 result: "succeeded", attempt: 1, previousAttempts: [],
@@ -260,26 +268,30 @@ test("renders catalog requirements and expected/latest versions; catalog button 
         };
         snapshot.roadmap = releaseRoadmap(snapshot);
         await element("refresh").onclick();
-        assert.deepEqual(buttons().map((button) => button.textContent), ["Check WinGet catalog"]);
+        assert.deepEqual(buttons().map((button) => button.textContent), ["Check version PR"]);
+        assert.equal(element("check-packages").disabled, false);
         snapshot.followups.winget.prs[0].merged = true;
         snapshot.roadmap = releaseRoadmap(snapshot);
         await element("refresh").onclick();
-        assert.deepEqual(buttons().map((button) => button.textContent), ["Check WinGet catalog"]);
+        assert.deepEqual(buttons().map((button) => button.textContent), ["Check version PR"]);
         assert.equal(catalogChecks, 0);
-        await buttons()[0].onclick();
-        assert.deepEqual(buttons().map((button) => button.textContent), ["Check WinGet catalog"]);
-        assert.equal(element("roadmap").children[3].className, "roadmap-stop pending");
-        assert.ok(element("roadmap").children[3].children.some((child) =>
-            /Expected package version \(WinGet PR\): 1\.37\.100.*Latest local catalog version: 1\.36\.100/.test(child.textContent)));
+        const beforeCheckReads = reads;
+        const releaseLinks = element("links").children;
+        await element("check-packages").onclick();
+        assert.equal(reads, beforeCheckReads, "Package checks must not refresh the full state");
+        assert.equal(element("links").children, releaseLinks, "Unrelated UI stays in place");
+        assert.equal(element("roadmap").children[3].className, "roadmap-stop failed");
+        assert.ok(element("package-gates").children[0].children.some((child) =>
+            /Expected: 1\.37\.100; latest local catalog: 1\.36\.100/.test(child.textContent)));
         latestVersion = "1.37.100";
-        await buttons()[0].onclick();
+        await element("check-packages").onclick();
         assert.equal(element("roadmap").children[3].className, "roadmap-stop complete");
         assert.deepEqual(buttons().map((button) => button.textContent), ["Check version PR"]);
         snapshot.followups.version = { prs: [{ number: 124, state: "closed", merged: true }] };
         snapshot.roadmap = releaseRoadmap(snapshot);
         await buttons()[0].onclick();
         assert.deepEqual(buttons(), []);
-        assert.equal(reads, 6);
+        assert.equal(reads, 4);
         assert.equal(catalogChecks, 2);
         for (const removed of ["controls", "evidence", "recorded-progress", "milestone-key", "complete-phrase", "product"]) {
             assert.equal(elements.has(removed), false, `${removed} should not be accessed`);
@@ -327,6 +339,68 @@ test("page omits the detailed pipeline section but retains failure analysis near
     assert.match(html, /Known previous issues/);
     assert.match(html, /historical references, not a diagnosis/);
     assert.match(html, /<dialog id="adopt-dialog"/);
+});
+
+test("a package recheck clears previous success immediately; failed reads and access loss cannot retain a green view", async () => {
+    for (const denied of [false, true]) {
+        const elements = new Map();
+        const makeElement = (tag) => ({
+            tag, children: [], elements: { releaseVersion: {} },
+            replaceChildren(...children) { this.children = children; },
+            append(...children) { this.children.push(...children); },
+            querySelector: () => ({}), setAttribute() {}, reset() {}, close() { this.open = false; },
+        });
+        const element = (id) => {
+            if (!elements.has(id)) elements.set(id, makeElement());
+            return elements.get(id);
+        };
+        const state = {
+            access: { github: { ready: true, login: "observer" }, azure: { ready: true } },
+            release: { version: "1.2.3", runId: 200, issueNumber: 42, author: "driver", issueState: "open", milestones: {} },
+            releases: [], errors: [], nextStep: { message: "Review readiness", canQueue: false },
+            pipeline: { id: 200, source: "a".repeat(40), timeline: [],
+                metadata: { available: true, isPublishingGa: true, cliVersion: "1.2.3", msiVersion: "1.2.400" } },
+            packageReadiness: {
+                cliVersion: "1.2.3", msiVersion: "1.2.400", runId: 200, source: "a".repeat(40),
+                checkedAt: new Date().toISOString(), status: "complete", ready: true, summary: "5/5 ready.",
+                gates: packageGates("1.2.3", "1.2.400").map((gate) => ({ ...gate, status: "ready" })),
+            },
+        };
+        state.roadmap = releaseRoadmap(state);
+        let complete;
+        let stateReads = 0;
+        runInNewContext(await readFile(new URL("app.js", import.meta.url), "utf8"), {
+            document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
+            location: { pathname: "/token/" },
+            fetch: async (url) => {
+                if (url === "api/state") { stateReads++; return { ok: true, json: async () => state }; }
+                assert.equal(url, "api/check-packages");
+                return new Promise((resolve) => { complete = resolve; });
+            },
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(element("roadmap").children[3].className, "roadmap-stop complete");
+        const pending = element("check-packages").onclick();
+        assert.equal(element("roadmap").children[3].className, "roadmap-stop pending");
+        assert.match(element("package-summary").textContent, /Checking/);
+        assert.equal(element("check-packages").disabled, true);
+        complete({ ok: false, status: denied ? 403 : 400, json: async () => ({
+            error: denied ? ACCESS_REQUIRED : "Pipeline could not be read.", code: denied ? "access_required" : "request_failed",
+        }) });
+        await pending;
+        assert.equal(stateReads, 1, "No full canvas refresh after a package check");
+        if (denied) {
+            assert.equal(element("workspace").hidden, true);
+            assert.deepEqual(element("package-gates").children, []);
+            assert.equal(element("package-summary").textContent, "");
+            assert.equal(element("check-packages").disabled, true);
+        } else {
+            assert.match(element("package-summary").textContent, /Not checked/);
+            assert.equal(element("roadmap").children[3].className, "roadmap-stop pending");
+            assert.ok(element("package-gates").children.every((card) => card.className.includes("unknown")));
+            assert.equal(element("check-packages").disabled, false);
+        }
+    }
 });
 
 test("changelog check disappears after linking a build or completing tracking", async () => {

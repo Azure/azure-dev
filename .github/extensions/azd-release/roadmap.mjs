@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import { buildUrl } from "./model.mjs";
+import { currentPackageReadiness, packageGates } from "./packages.mjs";
 
 export function currentRecords(records) {
     const latest = new Map();
@@ -65,22 +66,14 @@ export function releaseRoadmap(snapshot) {
         return step(key, title, status, detail,
             prs.map((pr) => ({ label: `PR #${pr.number} (${pr.merged ? "merged" : pr.state})`, url: pr.url })), extra);
     };
-    const winget = followups.winget;
-    const expectedVersion = winget?.expectedVersion ?? pipeline?.metadata?.msiVersion;
-    const catalog = expectedVersion && winget?.catalog?.expectedVersion === expectedVersion ? winget.catalog : undefined;
-    const wingetStep = prStep("winget", "WinGet package", winget, "");
-    wingetStep.status = catalog?.available ? "complete" : wingetStep.status === "failed" ? "failed" : "pending";
-    wingetStep.detail = expectedVersion
-        ? `Expected package version${winget?.prs?.length ? " (WinGet PR)" : " (release metadata)"}: ${expectedVersion}. ` +
-            (catalog ? `Latest local catalog version: ${catalog.latestVersion}. ` +
-                (catalog.available ? "The expected version is available." : "The expected version is not listed yet.")
-                : "The local WinGet catalog has not been checked.")
-        : "Waiting for release metadata to identify the package version.";
-    if (winget?.error) wingetStep.detail += ` ${winget.error}`;
-    if (!winget?.error && winget?.prs?.length === 0) wingetStep.detail += " No matching WinGet PR was found yet.";
-    if (wingetStep.status === "failed") wingetStep.detail += " Matching PRs closed without merging; inspect GitHub.";
-    if (catalog) wingetStep.checkedAt = catalog.checkedAt;
-    wingetStep.warning = "Do not approve next step until the local WinGet catalog reports the expected version. Merging the PR is not enough.";
+    const readiness = currentPackageReadiness(snapshot.packageReadiness, pipeline);
+    const packages = step("packages", "Package readiness", readiness?.status ?? "pending",
+        readiness?.summary ?? "Check all distribution gates below before version.txt approval. A merged PR or successful package submission is not enough.",
+        (followups.winget?.prs ?? []).map((pr) => ({
+            label: `WinGet PR #${pr.number} (${pr.merged ? "merged" : pr.state})`, url: pr.url,
+        })), {
+            gates: readiness?.gates ?? packageGates(release?.version ?? "", pipeline?.metadata?.msiVersion),
+        });
     const result = [
         step("changelog", "Changelog", changelog?.merged ? "complete" :
             changelog?.state === "closed" ? "failed" : "pending",
@@ -99,24 +92,12 @@ export function releaseRoadmap(snapshot) {
         waiting(finalGate) ? "Release publishing reached the version.txt approval." :
             finalReached ? "Pipeline passed the version.txt approval." :
                 "Waiting for release publishing to reach the final version.txt approval.", buildLink),
-        wingetStep,
+        packages,
         prStep("version", "Version increment", followups.version,
             release?.runId ? "Waiting for the pipeline's version-increment PR." : "Link a publishing run to find its version-increment PR."),
     ];
-    if (pipeline?.metadata?.available && !pipeline.metadata.submitWingetPackage) {
-        result[3] = step("winget", "WinGet package", "pending",
-            "WinGet submission is disabled in this run's metadata; no PR is expected. Verify the release policy before the next approval.",
-            []);
-    }
     if (release?.issueState !== "closed" && release?.outcome?.status !== "partial") {
-        const publishingReached = result.slice(0, 3).every((item) => item.status === "complete");
-        const wingetDisabled = pipeline?.metadata?.available && !pipeline.metadata.submitWingetPackage;
-        const wingetReached = publishingReached || (pipeline?.metadata?.available && winget?.prs?.length > 0);
-        if (!wingetDisabled && wingetReached && result[3].status !== "complete") {
-            result[3].check = "Check WinGet catalog";
-            result[3].action = "check-winget";
-        } else if (publishingReached && (wingetDisabled || result[3].status === "complete") &&
-            result[4].status !== "complete") {
+        if (release?.runId && result[4].status !== "complete") {
             result[4].check = "Check version PR";
         }
     }

@@ -140,6 +140,9 @@ The CU data-plane adapter uses the pinned local prototype SDK described under
   `--sort-by analyzerId|createdAt|lastModifiedAt`. Filtering/sorting is local after
   all service pages have completed. Date sorting is chronological, missing dates
   sort first, and equal keys retain service order.
+  Service-returned legacy/internal IDs are preserved, including IDs longer than
+  64 characters or containing `@`; request-ID restrictions are not applied to list
+  results. Validation of user-supplied request IDs is unchanged.
 - `show`, `create`, and `delete` require exactly one analyzer name: positional,
   `--name`, `-n`, or `-a`. Positional and named forms cannot be combined.
 - `create` requires `--schema` / `-s`. Custom IDs use 1-64 ASCII letters,
@@ -286,6 +289,8 @@ copy. Only typed not-found responses count as absence: authorization,
 throttling, and service failures stop the operation. The command then grants
 authorization on the source and submits copy on the destination, including
 source account/region coordinates. Grants are never printed or saved.
+The grant's informational `source` path is optional; target-resource binding and
+expiry parsing remain mandatory even when that path is absent.
 
 Copy never deletes or replaces an analyzer, including a destination created
 between preflight and submission. A conflict recommends a new versioned ID or
@@ -792,9 +797,18 @@ The local SDK unit suite and adapter tests cover the supported
 version/input/mode matrix, exact raw JSON, failures, polling, no-replay, stream
 ownership, and SDK log redaction. The test suite makes no live Azure calls.
 Prior prototype live evidence covers GA/preview URL, binary and base64 analysis,
-preview inline behavior, analyzer lifecycle and same-resource copy. Successful
-cross-resource authorization/copy and defaults mutation remain live-validation
-gaps with offline contract coverage.
+preview inline behavior, analyzer lifecycle and same-resource copy.
+
+Separate authorized Linux/amd64 installed-host validation with official azd
+1.37.0 and GA API `2025-11-01` confirms Entra-backed list/show/create/delete and
+cross-subscription, cross-region authorization/copy, including ready state and
+schema equality at the destination. Live list results include legacy/internal
+identifiers. The response-fix verification used owned temporary analyzers,
+verified deletion on both resources, and performed no analysis or defaults writes.
+An earlier installed-host run also confirmed a synthetic single-page custom
+analysis, a single-sample prebuilt analyzer test, and defaults mutation/read-back
+with complete snapshot restoration. These bounded runs do not establish broader
+RBAC coverage, preview behavior, Windows/macOS runtime, or release readiness.
 
 ### Native testing and recorded playback
 
@@ -1065,8 +1079,8 @@ copy/defaults mutation, accuracy, release approval or signing/registry evidence.
 | Safe deterministic outputs | `internal/analysis`: policies, aliases, parent/report collisions, every real-SHA fallback length and exhaustion, reordered plans, UTF-8 byte budgets and complete previews | Platform-specific path execution |
 | Analysis orchestration | `internal/analysis`: async/inline local/URL requests, complete envelopes/usage, saved JSON/LLM/report golden outputs, partial failures, bounded workers, cancellation and reader closure | Authorized live service and installed-host evidence |
 | Structural authoring validation | `internal/schema`: compact validation vectors, complete ordered safe findings, diagnostic-path privacy, aliases, PrepareDefinition, bundled versioned contracts | Review material native/Python diagnostic and policy differences |
-| Service requests and results | `internal/cmd`, `internal/cuclient` and the local SDK: strict production-SDK playback, no network fallback, full ordered interactions/results, binary contracts and redaction | Preview/error/cancellation service evidence; live auth/RBAC and copy/defaults mutation |
-| Host and release integration | Existing command/generated-project and host-contract tests | Installed-host, PowerShell, Windows/macOS runtime, signing/registry/release ownership (Tasks 6.1/6.2) |
+| Service requests and results | `internal/cmd`, `internal/cuclient` and the local SDK: strict production-SDK playback, no network fallback, full ordered interactions/results, binary contracts and redaction | Additional preview/error/cancellation service evidence and broader auth/RBAC coverage |
+| Host and release integration | Existing command/generated-project and host-contract tests; separate Linux installed-host validation | Windows/macOS installed-host and PowerShell runtime, signing/registry/release ownership (Tasks 6.1/6.2) |
 
 ```bash
 # Native behavior tests, command integration and strict SDK-backed playback.

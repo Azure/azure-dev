@@ -250,6 +250,55 @@ func TestListAnalyzersPaging(t *testing.T) {
 	assert.Empty(t, items)
 }
 
+func TestListAnalyzersPreservesServiceIdentifiers(t *testing.T) {
+	for _, version := range []string{DefaultAPIVersion, PreviewAPIVersion} {
+		t.Run(version, func(t *testing.T) {
+			legacyID := strings.Repeat("a", 65)
+			internalID := strings.Repeat("b", 80) + "@2025-11-01"
+			first := fmt.Sprintf(`{"analyzerId":%q,"status":"ready","future":9007199254740993}`, legacyID)
+			second := fmt.Sprintf(`{"analyzerId":%q,"status":"failed"}`, internalID)
+			client := newWireClient(t, version,
+				wireStep{
+					method: http.MethodGet, path: "/analyzers",
+					response: `{"value":[` + first + `],"nextLink":"?nextLink=second"}`,
+				},
+				wireStep{
+					method: http.MethodGet, path: "/analyzers", query: url.Values{"nextLink": {"second"}},
+					response: `{"value":[` + second + `,{"analyzerId":"custom","status":"ready"}]}`,
+				},
+			)
+			items, err := client.ListAnalyzers(t.Context())
+			require.NoError(t, err)
+			require.Len(t, items, 3)
+			assert.Equal(t, []string{legacyID, internalID, "custom"}, []string{items[0].ID, items[1].ID, items[2].ID})
+			assert.JSONEq(t, first, string(items[0].JSON))
+			assert.Contains(t, string(items[0].JSON), "9007199254740993")
+			assert.JSONEq(t, second, string(items[1].JSON))
+		})
+	}
+}
+
+func TestGrantCopyAuthorizationWithoutSource(t *testing.T) {
+	for _, version := range []string{DefaultAPIVersion, PreviewAPIVersion} {
+		t.Run(version, func(t *testing.T) {
+			client := newWireClient(t, version, wireStep{
+				method: http.MethodPost, path: "/analyzers/custom:grantCopyAuthorization",
+				contentType: "application/json",
+				body:        `{"targetAzureResourceId":"/target","targetRegion":"westus2"}`,
+				response: `{"targetAzureResourceId":"/target","targetRegion":"westus2",` +
+					`"expiresAt":"2027-01-01T00:00:00Z"}`,
+			})
+			result, err := client.GrantCopyAuthorization(t.Context(), GrantCopyAuthorizationRequest{
+				AnalyzerID: "custom", TargetAzureResourceID: "/target", TargetRegion: "westus2",
+			})
+			require.NoError(t, err)
+			assert.Empty(t, result.Source)
+			assert.Equal(t, "/target", result.TargetAzureResourceID)
+			assert.Equal(t, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), result.ExpiresAt)
+		})
+	}
+}
+
 func TestListAnalyzersRejectsUnsafeContinuation(t *testing.T) {
 	for _, link := range []string{
 		"https://other.test/contentunderstanding/analyzers?nextLink=private-token",
@@ -301,6 +350,14 @@ func TestAnalyzerOperationsValidateBeforeHTTP(t *testing.T) {
 		run  func(Client) error
 	}{
 		{"get", func(c Client) error { _, err := c.GetAnalyzer(t.Context(), "../private-token"); return err }},
+		{"get_long_id", func(c Client) error {
+			_, err := c.GetAnalyzer(t.Context(), strings.Repeat("a", 65))
+			return err
+		}},
+		{"get_internal_id", func(c Client) error {
+			_, err := c.GetAnalyzer(t.Context(), "custom@internal")
+			return err
+		}},
 		{"delete", func(c Client) error { return c.DeleteAnalyzer(t.Context(), "") }},
 		{"create", func(c Client) error {
 			_, err := c.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{AnalyzerID: "custom", Definition: []byte(`null`)})
@@ -427,6 +484,7 @@ func TestAnalyzerMalformedResponses(t *testing.T) {
 	}
 	for _, body := range []string{
 		`{}`, `{"value":null}`, `{"value":[null]}`, `{"value":[{}]}`, `{"value":[],"nextLink":5}`, "null", "{",
+		`{"value":[{"analyzerId":"","status":"ready"}]}`, `{"value":[{"analyzerId":"custom"}]}`,
 	} {
 		t.Run("list/"+body, func(t *testing.T) {
 			client := newWireClient(t, DefaultAPIVersion, wireStep{
@@ -452,6 +510,8 @@ func TestAnalyzerMalformedResponses(t *testing.T) {
 	for _, body := range []string{
 		"null", `{}`, `{"source":"source","targetAzureResourceId":"/other","expiresAt":"2027-01-01T00:00:00Z"}`,
 		`{"source":"source","targetAzureResourceId":"/target","expiresAt":"invalid"}`,
+		`{"targetAzureResourceId":"/other","expiresAt":"2027-01-01T00:00:00Z"}`,
+		`{"targetAzureResourceId":"/target","expiresAt":"invalid"}`,
 	} {
 		t.Run("grant/"+body, func(t *testing.T) {
 			client := newWireClient(t, DefaultAPIVersion, wireStep{

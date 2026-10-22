@@ -87,7 +87,8 @@ func parseAnalyzer(body json.RawMessage, expectedID string) (Analyzer, error) {
 	if err := decodeWire(body, &wire); err != nil {
 		return Analyzer{}, err
 	}
-	if ValidateAnalyzerID(wire.ID) != nil || wire.Status == "" || (expectedID != "" && wire.ID != expectedID) {
+	// Service-returned IDs can include legacy/internal identifiers outside request ID limits.
+	if wire.ID == "" || wire.Status == "" || (expectedID != "" && wire.ID != expectedID) {
 		return Analyzer{}, malformedResponse()
 	}
 	return Analyzer{

@@ -82,8 +82,8 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 							require.NoError(t, json.NewDecoder(request.Body).Decode(&grant))
 							assert.Equal(t, map[string]string{
 								"targetAzureResourceId": targetID, "targetRegion": "westus"}, grant)
-							body = `{"source":"private-grant-secret","targetAzureResourceId":"` + targetID +
-								`","expiresAt":"2099-01-01T00:00:00Z"}`
+							body = `{"targetAzureResourceId":"` + targetID +
+								`","targetRegion":"westus","expiresAt":"2099-01-01T00:00:00Z"}`
 						case "POST target.example/contentunderstanding/analyzers/destination:copy":
 							var copyBody map[string]string
 							require.NoError(t, json.NewDecoder(request.Body).Decode(&copyBody))

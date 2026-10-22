@@ -156,7 +156,7 @@ func (c *SDKTransport) GrantCopyAuthorization(
 		return CopyAuthorization{}, sdkDomainError(err)
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, value.ExpiresAt)
-	if err != nil || value.Source == "" || value.TargetAzureResourceID != request.TargetAzureResourceID ||
+	if err != nil || value.TargetAzureResourceID != request.TargetAzureResourceID ||
 		expiresAt.IsZero() {
 		return CopyAuthorization{}, malformedResponse()
 	}

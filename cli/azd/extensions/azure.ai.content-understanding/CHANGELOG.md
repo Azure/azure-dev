@@ -160,6 +160,10 @@
 
 ### Bugs Fixed
 
+- Preserve legacy/internal analyzer IDs in service list responses without
+  weakening request-ID validation.
+- Accept copy authorization responses without the optional informational
+  `source` path while retaining target-resource and expiry validation.
 - Guard all local outputs with verified directory ownership/permissions/ACLs,
   private staging, identity-checked cleanup, and atomic no-clobber publication.
   Reject unsafe shared or unsupported output locations without changing user permissions.

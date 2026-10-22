@@ -962,12 +962,15 @@ func TestNormalizeA2AWireVersion(t *testing.T) {
 func TestHostedA2ARemoteTarget(t *testing.T) {
 	for _, tt := range []struct {
 		name, native, explicit, wantError string
+		inputFile                         string
 		fileBacked                        bool
 		missingRef                        bool
 		responsesOnly                     bool
 		responses, prompt, noDefinition   bool
 	}{
 		{name: "inline A2A hosted agent", native: "1.0.0"},
+		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
+			wantError: "requires an explicit --a2a-version"},
 		{name: "A2A with Responses", native: "1.0.0", responses: true},
 		{name: "Responses cannot translate", native: "1.0.0", responses: true, explicit: "0.3",
 			wantError: "does not match the hosted-agent declaration"},
@@ -1048,8 +1051,14 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 				}
 			}))
 			defer server.Close()
+			message := "hello"
+			if tt.inputFile != "" {
+				message = ""
+			}
 			action := &InvokeAction{
-				flags:      &invokeFlags{protocol: "a2a", message: "hello", a2aVersion: tt.explicit},
+				flags: &invokeFlags{
+					protocol: "a2a", message: message, a2aVersion: tt.explicit, inputFile: tt.inputFile,
+				},
 				credential: responseTestCredential{}, noPrompt: true,
 				resolvedRemoteContext: &remoteContext{
 					name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,

@@ -36,7 +36,8 @@ help. This covers `invoke --long-running`, `invoke --no-wait`, the
 
 Checks cover preview flags on init and invoke, `agent add` definitions,
 existing and staged project definitions, the selected service for invoke, run,
-and optimize deploy, provisioning, and package, publish, and deploy. The init
+optimize deploy, optimize apply, and endpoint update, provisioning, and package,
+publish, and deploy. The init
 picker omits voice while it is off. Template catalogs do not identify
 capabilities, so templates are checked after staging and before adoption.
 

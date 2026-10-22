@@ -79,6 +79,7 @@ Only hosted agents support endpoint/card updates.`,
 	}
 
 	cmd.Flags().BoolVar(&flags.force, "force", false, "Skip confirmation prompts for breaking changes")
+	gateAgentServices(cmd)
 
 	return cmd
 }

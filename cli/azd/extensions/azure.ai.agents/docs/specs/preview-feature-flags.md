@@ -100,7 +100,7 @@ Enforcement has two layers. Each layer has one check.
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
 | `previewHelp(cmd, feature, long, examples)` | `init` voice section and examples, `invoke` voice and long-running sections and examples, voice notes in `add`, `delete`, and `endpoint show` | The blocks are removed from help while off |
 | `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `init --acr-connection`, `init --model` | The flag keeps working. Its usage text is swapped for one that omits the feature while off |
-| `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy` | Marks the context so the shared service selector classifies every selected agent service |
+| `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy`, `optimize apply`, `endpoint update` | Marks the context so the shared service selector classifies every selected agent service |
 
 **Service layer.** The shared selector `resolveAgentService` and the deployed-name fallback call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the running command carries `gateAgentServices`. Show, delete, endpoint show, invocations, eval, and other selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors (deployed-name lookup, optimize project fallback, protocol resolution) return it unchanged.
 
@@ -177,7 +177,7 @@ There is no global cache, process environment mutation, output, configuration wr
 
 Discovery and runtime enforcement are separate. Help hides disabled commands, flags, and sections. The init picker omits the voice option when disabled. Managed harness has no separate picker. Template catalogs lack capability metadata, so catalog entries remain visible. Their staged effective definitions are checked before adoption instead of inferring capabilities from template names.
 
-Runtime checks cover explicit init flags, existing/local/staged manifests, `agent add`, selected-service invocation and local run, preprovision/predeploy callbacks, package/publish/deploy/resource selection, and optimize deployment. Inline definitions and root/field `$ref` includes use the existing resolver. Locally identifiable disabled inputs fail before authentication or project/environment writes. Optimize deployment also checks the definition it already fetches before creating a new version.
+Runtime checks cover explicit init flags, existing/local/staged manifests, `agent add`, selected-service invocation and local run, optimize apply and endpoint update service selection, preprovision/predeploy callbacks, package/publish/deploy/resource selection, and optimize deployment. Inline definitions and root/field `$ref` includes use the existing resolver. Locally identifiable disabled inputs fail before authentication or project/environment writes. Optimize deployment also checks the definition it already fetches before creating a new version.
 
 ### Enforcement limits
 

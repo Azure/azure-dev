@@ -93,6 +93,7 @@ After applying, run 'azd deploy' to deploy the optimized agent version.`,
 	cmd.Flags().StringVar(&flags.agent, "agent", "", "Agent service name from azure.yaml (auto-detected if only one exists)")
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
+	gateAgentServices(cmd)
 
 	return cmd
 }

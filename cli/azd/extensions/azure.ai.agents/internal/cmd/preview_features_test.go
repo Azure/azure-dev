@@ -343,6 +343,41 @@ func TestPreviewOptimizeDeployRejectsLocalHarnessBeforeAuth(t *testing.T) {
 	env.mu.Unlock()
 }
 
+func TestPreviewMutationCommandsRejectDisabledServices(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		definition map[string]any
+		args       []string
+		feature    string
+	}{
+		{"endpoint update", map[string]any{
+			"kind": "hosted", "protocols": []any{map[string]any{"protocol": "invocations_ws"}},
+		}, []string{"endpoint", "update", "agent"}, "agents.voice"},
+		{"optimize apply", map[string]any{
+			"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
+		}, []string{"optimize", "apply", "--agent", "agent", "--candidate", "candidate-test"}, "agents.managed_harness"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearPreviewProcess(t)
+			root := t.TempDir()
+			t.Chdir(root)
+			props, err := structpb.NewStruct(tc.definition)
+			require.NoError(t, err)
+			config := &azdext.ProjectConfig{Path: root, Services: map[string]*azdext.ServiceConfig{
+				"agent": {Name: "agent", Host: AiAgentHost, AdditionalProperties: props},
+			}}
+			before := proto.CloneOf(config)
+			startPreviewCommandServer(t, nil, config, nil)
+			_, err = executeRoot(t, append([]string{"-e", "selected-env"}, tc.args...)...)
+			require.ErrorContains(t, err, tc.feature)
+			require.True(t, proto.Equal(before, config))
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Empty(t, entries, "disabled previews must not write project files")
+		})
+	}
+}
+
 func TestPreviewExplicitLocalTemplateBeforeAuth(t *testing.T) {
 	clearPreviewProcess(t)
 	root := t.TempDir()

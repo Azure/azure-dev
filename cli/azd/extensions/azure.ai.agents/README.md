@@ -2,7 +2,7 @@
 
 ## Hosted agent deployment preview
 
-With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 
 ```bash
@@ -192,6 +192,9 @@ cost and is not run automatically.
 
 ## Extension telemetry API
 
+Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
+checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
 `internal/telemetry`:
@@ -228,13 +231,12 @@ contains only bounded classifications (including a container mode for hosted age
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
-| `ext.agent.harness` | `none`, `github_copilot_preview`, `microsoft_copilot_preview`, `other` | Resolved prompt-agent harness classification; preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other`. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 | `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
-reports one row for each distinct kind, harness, and container mode; it does
+reports one row for each distinct classification; it does
 not count individual agents or prove a deployment succeeded. `build` includes
 both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
@@ -403,10 +405,12 @@ when `azure.yaml` does not
 declare an `azure.ai.eval` service. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation
-documentation link, not the evaluation setup guidance. `azd ai agent eval generate` is a
-separate, supported command for this extension's own quick-eval workflow;
-only its hidden `azd ai agent eval init` alias is formally deprecated, in
-favor of `generate`.
+documentation link, not the evaluation setup guidance.
+
+**Deprecated:** `azd ai agent eval` commands only display migration guidance
+and exit non-zero; `--help` remains available. Use `azd ai eval` from
+`azure.ai.evaluations` instead. Old arguments are not forwarded, and legacy
+evaluation configuration is not automatically converted.
 
 `azd ai eval init` scaffolds evaluation configuration; follow the
 [evaluations guide](../azure.ai.evaluations/README.md) for deployment and run steps.
@@ -596,6 +600,23 @@ The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
 
+## Initializing a Project
+
+When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
+with `cd <folder>` before the provisioning command, even if that folder already
+existed. Run the `cd` command first: init does not change your shell's working
+directory. Initializing in the current directory does not need a `cd` hint.
+
+For paths requiring shell-specific quoting, the block labels alternatives for
+POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
+shell, then continue with the remaining steps. If cmd.exe cannot safely express
+the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+Drive-qualified paths also show these alternatives so cmd.exe switches drives.
+PowerShell alternatives preserve both straight and smart apostrophes literally.
+Paths containing smart double quotes also use the shell-specific alternatives.
+The same applies to paths starting with a Unicode dash that PowerShell treats
+as a parameter prefix.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -685,78 +706,6 @@ Hosted Agent Service environment variable names must start with a letter or
 underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
-
-## Microsoft Copilot harness built-in tools
-
-The `microsoft_copilot_preview` harness currently requires a Foundry project in one of
-these regions: `eastus2`, `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
-`germanywestcentral`, `canadacentral`, or `westus2`.
-
-The harness block selects the managed runtime and contains only its type.
-Configure built-in tools through the prompt agent's top-level `tools` list:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    kind: prompt
-    name: my-agent
-    model: gpt-5-mini
-    instructions: Use web research when requested.
-    harness:
-      type: microsoft_copilot_preview
-    skills:
-      - local-review
-      - name: published-review
-        version: "2"
-    tools:
-      - type: microsoft_copilot_toolset_preview
-        defaultConfig:
-          enabled: false
-        configs:
-          - name: web
-            enabled: true
-```
-
-Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
-and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
-`configs` override individual tools. Skills are declared in the top-level
-`skills` list. Harness compute and idle settings are service-managed.
-
-New definitions use `microsoft_copilot_preview` and `microsoft_copilot_toolset_preview`,
-with the backend feature gate `MicrosoftCopilot=V1Preview`. Existing definitions
-using `github_copilot_preview` or `github_copilot_toolset_preview` remain supported
-and retain their legacy values.
-
-The string form (`local-review`) requires a matching locally deployed skill;
-deploy the local skill dependency with `azd deploy --all` to supply its version.
-The object form (`published-review`) pins an existing Foundry skill to the
-specified published version. Authored pins take precedence over locally resolved
-versions. azd does not automatically resolve remote default versions, and rejects
-conflicting authored versions for the same skill. You do not need to specify a
-`type` field: azd adds the API discriminator automatically.
-
-Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
-Foundry API's snake_case fields during deployment:
-
-```yaml
-toolChoice: auto
-temperature: 0
-topP: 0.9
-text:
-  format:
-    type: json_object
-reasoning:
-  effort: low
-structuredInputs:
-  user_context:
-    description: Additional invocation context
-    required: false
-```
-
-Nested tool definitions remain API-owned and use the field names documented by
-the corresponding Foundry tool contract.
 
 ## Prompt agent memory
 

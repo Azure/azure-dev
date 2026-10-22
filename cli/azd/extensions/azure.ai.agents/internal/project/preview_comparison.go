@@ -19,7 +19,7 @@ import (
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -60,7 +60,7 @@ type previewInputs struct {
 
 func comparePreviewRequest(
 	service string, desired *agent_api.CreateAgentRequest, existing *agent_api.AgentObject, inputs previewInputs,
-) (*v1beta.ServiceDeployPreviewResult, error) {
+) (*azdext.ServiceDeployPreviewResult, error) {
 	after, err := previewRequestState(desired)
 	if err != nil {
 		return nil, previewConfigurationError()
@@ -393,7 +393,7 @@ func redactPreviewURLs(value string) string {
 	})
 }
 
-func previewResponse(result agentPreviewResult) (*v1beta.ServiceDeployPreviewResult, error) {
+func previewResponse(result agentPreviewResult) (*azdext.ServiceDeployPreviewResult, error) {
 	var message bytes.Buffer
 	if err := writeAgentPreview(&message, result); err != nil {
 		return nil, err
@@ -410,7 +410,7 @@ func previewResponse(result agentPreviewResult) (*v1beta.ServiceDeployPreviewRes
 	if err != nil {
 		return nil, fmt.Errorf("cannot encode deployment preview fields")
 	}
-	return &v1beta.ServiceDeployPreviewResult{Message: message.String(), Data: fields}, nil
+	return &azdext.ServiceDeployPreviewResult{Message: message.String(), Data: fields}, nil
 }
 
 func writeAgentPreview(writer io.Writer, result agentPreviewResult) error {

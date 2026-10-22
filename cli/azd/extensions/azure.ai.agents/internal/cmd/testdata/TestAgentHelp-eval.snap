@@ -1,17 +1,12 @@
-Create and run quick evals for an agent.
+Command "eval" is deprecated, use 'azd ai eval --help' from 'azure.ai.evaluations' instead
+The legacy agent evaluation workflow has been removed. This command only provides migration guidance.
 
-Generate an eval config and dataset, run evaluations, and inspect the results.
-Use 'azd ai agent eval update' to upload changes to local evaluators and datasets.
+Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use 'azd ai eval --help'. Legacy evaluation configuration and arguments are not automatically converted.
+
+Invocations fail without authentication, service requests, or changes to project or environment files. No arguments are forwarded to the new commands.
 
 Usage
-  azd ai agent eval [command]
-
-Available Commands
-  generate : Generate a local eval suite for a deployed agent.
-  list     : List evaluations for the current project.
-  run      : Execute an evaluation run from eval.yaml.
-  show     : Show an eval definition, run history, or run details.
-  update   : Update evaluators and datasets from local files.
+  azd ai agent eval [flags]
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -22,8 +17,5 @@ Global Flags
   -o, --output string      : The output format (default "default")
 
 Examples
-  Generate an eval suite and run it
-    azd ai agent eval generate
-    azd ai agent eval run
-
-Use azd ai agent eval [command] --help to view examples and more information about a specific command.
+    azd extension install azure.ai.evaluations
+    azd ai eval --help

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 
 	azdext "github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -25,9 +25,9 @@ func writeAgentConfigDir(t *testing.T, configsDir, name, instruction string, ski
 	dir := filepath.Join(configsDir, name)
 	require.NoError(t, os.MkdirAll(dir, 0750))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, opt_eval.MetadataFile),
-		[]byte("instruction_file: "+opt_eval.InstructionFile+"\n"), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, opt_eval.InstructionFile), []byte(instruction), 0600))
+		filepath.Join(dir, optconfig.MetadataFile),
+		[]byte("instruction_file: "+optconfig.InstructionFile+"\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, optconfig.InstructionFile), []byte(instruction), 0600))
 	for rel, content := range skills {
 		p := filepath.Join(dir, rel)
 		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0750))
@@ -39,41 +39,41 @@ func TestAdvanceBaselineToCandidate_ReplacesBaseline(t *testing.T) {
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
 
 	// Baseline holds the original config plus a stale skill file that the
 	// candidate no longer has; it must not survive the swap.
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original instructions",
-		map[string]string{filepath.Join(opt_eval.SkillsDir, "old.md"): "old skill"})
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original instructions",
+		map[string]string{filepath.Join(optconfig.SkillsDir, "old.md"): "old skill"})
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized instructions",
-		map[string]string{filepath.Join(opt_eval.SkillsDir, "new.md"): "new skill"})
+		map[string]string{filepath.Join(optconfig.SkillsDir, "new.md"): "new skill"})
 
 	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "job-1"))
 
-	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
+	baselineDir := filepath.Join(configsDir, optconfig.BaselineDir)
 
 	// Baseline now carries the candidate's instructions.
-	got, err := os.ReadFile(filepath.Join(baselineDir, opt_eval.InstructionFile))
+	got, err := os.ReadFile(filepath.Join(baselineDir, optconfig.InstructionFile))
 	require.NoError(t, err)
 	assert.Equal(t, "optimized instructions", string(got))
 
 	// The candidate's skill replaced the stale baseline skill (clean replace).
-	_, err = os.Stat(filepath.Join(baselineDir, opt_eval.SkillsDir, "new.md"))
+	_, err = os.Stat(filepath.Join(baselineDir, optconfig.SkillsDir, "new.md"))
 	assert.NoError(t, err)
-	_, err = os.Stat(filepath.Join(baselineDir, opt_eval.SkillsDir, "old.md"))
+	_, err = os.Stat(filepath.Join(baselineDir, optconfig.SkillsDir, "old.md"))
 	assert.True(t, os.IsNotExist(err), "stale baseline skill should be removed")
 
 	// The previous baseline is archived (not deleted) as baseline_<job-id>.
 	archived, err := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir+"_job-1", optconfig.InstructionFile))
 	require.NoError(t, err)
 	assert.Equal(t, "original instructions", string(archived))
-	_, err = os.Stat(filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.SkillsDir, "old.md"))
+	_, err = os.Stat(filepath.Join(configsDir, optconfig.BaselineDir+"_job-1", optconfig.SkillsDir, "old.md"))
 	assert.NoError(t, err, "archived baseline should retain its original files")
 
 	// The candidate directory is copied, not moved — it must still exist so the
 	// deploy pipeline can read it.
-	_, err = os.Stat(filepath.Join(configsDir, "candidate_abc", opt_eval.InstructionFile))
+	_, err = os.Stat(filepath.Join(configsDir, "candidate_abc", optconfig.InstructionFile))
 	assert.NoError(t, err)
 
 	// No leftover staging directories.
@@ -88,23 +88,23 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionPreserved(t *testing.T) {
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
 
 	// A stale archive from a previous deploy of the same job already exists.
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir+"_job-1", "stale archive", nil)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "current baseline", nil)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir+"_job-1", "stale archive", nil)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "current baseline", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized instructions", nil)
 
 	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "job-1"))
 
 	// The first archive for the job remains the original rollback snapshot.
 	archived, err := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir+"_job-1", optconfig.InstructionFile))
 	require.NoError(t, err)
 	assert.Equal(t, "stale archive", string(archived))
 
 	baseline, err := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
 	require.NoError(t, err)
 	assert.Equal(t, "optimized instructions", string(baseline))
 }
@@ -113,14 +113,14 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionRestoresCurrentBaselineOnPro
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir+"_job-1", "original baseline", nil)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "current baseline", nil)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir+"_job-1", "original baseline", nil)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "current baseline", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
 
 	rename := func(oldPath, newPath string) error {
 		if strings.Contains(filepath.Base(oldPath), ".baseline-stage-") &&
-			newPath == filepath.Join(configsDir, opt_eval.BaselineDir) {
+			newPath == filepath.Join(configsDir, optconfig.BaselineDir) {
 			return assert.AnError
 		}
 		return os.Rename(oldPath, newPath)
@@ -130,12 +130,12 @@ func TestAdvanceBaselineToCandidate_ArchiveCollisionRestoresCurrentBaselineOnPro
 	require.ErrorIs(t, err, assert.AnError)
 
 	baseline, readErr := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
 	require.NoError(t, readErr)
 	assert.Equal(t, "current baseline", string(baseline))
 
 	archive, readErr := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1", opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir+"_job-1", optconfig.InstructionFile))
 	require.NoError(t, readErr)
 	assert.Equal(t, "original baseline", string(archive))
 }
@@ -144,14 +144,14 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
 
 	promotionFailed := false
 	rename := func(oldPath, newPath string) error {
-		if filepath.Base(oldPath) != opt_eval.BaselineDir &&
-			newPath == filepath.Join(configsDir, opt_eval.BaselineDir) &&
+		if filepath.Base(oldPath) != optconfig.BaselineDir &&
+			newPath == filepath.Join(configsDir, optconfig.BaselineDir) &&
 			!promotionFailed {
 			promotionFailed = true
 			return assert.AnError
@@ -169,23 +169,23 @@ func TestAdvanceBaselineToCandidate_RestoresBaselineWhenPromotionFails(t *testin
 	require.ErrorIs(t, err, assert.AnError)
 
 	baseline, readErr := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+		filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
 	require.NoError(t, readErr)
 	assert.Equal(t, "original", string(baseline))
-	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
+	assert.NoDirExists(t, filepath.Join(configsDir, optconfig.BaselineDir+"_job-1"))
 }
 
 func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *testing.T) {
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
 
 	promotionFailed := false
 	rename := func(oldPath, newPath string) error {
-		if newPath == filepath.Join(configsDir, opt_eval.BaselineDir) {
+		if newPath == filepath.Join(configsDir, optconfig.BaselineDir) {
 			if !promotionFailed {
 				promotionFailed = true
 				return assert.AnError
@@ -217,8 +217,8 @@ func TestAdvanceBaselineToCandidate_RemovesPartialBaselineWhenRestoreFails(t *te
 	require.ErrorContains(t, err, "restoring rollback: restore rename failed")
 	require.ErrorContains(t, err, "copying rollback: restore copy failed")
 	require.ErrorContains(t, err, "partial baseline removed")
-	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir))
-	assert.NoDirExists(t, filepath.Join(configsDir, opt_eval.BaselineDir+"_job-1"))
+	assert.NoDirExists(t, filepath.Join(configsDir, optconfig.BaselineDir))
+	assert.NoDirExists(t, filepath.Join(configsDir, optconfig.BaselineDir+"_job-1"))
 	assert.DirExists(t, filepath.Join(configsDir, "candidate_abc"))
 
 	entries, readErr := os.ReadDir(configsDir)
@@ -237,21 +237,21 @@ func TestAdvanceBaselineToCandidate_NoJobIDRemovesBaseline(t *testing.T) {
 	t.Parallel()
 
 	serviceDir := t.TempDir()
-	configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_abc", "optimized", nil)
 
 	// An unsafe job ID falls back to removal — no archive is created.
 	require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_abc", "../evil"))
 
-	got, err := os.ReadFile(filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+	got, err := os.ReadFile(filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
 	require.NoError(t, err)
 	assert.Equal(t, "optimized", string(got))
 
 	entries, err := os.ReadDir(configsDir)
 	require.NoError(t, err)
 	for _, e := range entries {
-		assert.NotContains(t, e.Name(), opt_eval.BaselineDir+"_", "no archive should be created")
+		assert.NotContains(t, e.Name(), optconfig.BaselineDir+"_", "no archive should be created")
 	}
 }
 
@@ -272,12 +272,12 @@ func TestAdvanceBaselineToCandidate_NoOps(t *testing.T) {
 		t.Parallel()
 		serviceDir := t.TempDir()
 		// Baseline exists but the candidate does not — leave baseline untouched.
-		configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
-		writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+		configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
+		writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original", nil)
 
 		require.NoError(t, advanceBaselineToCandidate(configsDir, "candidate_missing", "job-1"))
 
-		got, err := os.ReadFile(filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile))
+		got, err := os.ReadFile(filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile))
 		require.NoError(t, err)
 		assert.Equal(t, "original", string(got))
 	})
@@ -285,7 +285,7 @@ func TestAdvanceBaselineToCandidate_NoOps(t *testing.T) {
 	t.Run("candidate path is a file", func(t *testing.T) {
 		t.Parallel()
 		serviceDir := t.TempDir()
-		configsDir := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+		configsDir := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
 		require.NoError(t, os.MkdirAll(configsDir, 0750))
 		require.NoError(t, os.WriteFile(
 			filepath.Join(configsDir, "candidate_file"),
@@ -332,7 +332,7 @@ func TestBaselineAdvancementDir(t *testing.T) {
 	svcA := &azdext.ServiceConfig{Name: "a", RelativePath: "svc-a"}
 	assert.Equal(
 		t,
-		filepath.Join(root, "svc-a", opt_eval.AgentConfigsDir),
+		filepath.Join(root, "svc-a", optconfig.AgentConfigsDir),
 		baselineAdvancementDir(root, svcA),
 	)
 
@@ -348,7 +348,7 @@ func TestBaselineAdvancementDir_RejectsAgentConfigsSymlinkEscape(t *testing.T) {
 	serviceDir := filepath.Join(root, "svc")
 	require.NoError(t, os.MkdirAll(serviceDir, 0750))
 	outside := t.TempDir()
-	link := filepath.Join(serviceDir, opt_eval.AgentConfigsDir)
+	link := filepath.Join(serviceDir, optconfig.AgentConfigsDir)
 	if err := os.Symlink(outside, link); err != nil {
 		if errors.Is(err, os.ErrPermission) || os.IsPermission(err) ||
 			strings.Contains(strings.ToLower(err.Error()), "privilege") {
@@ -366,7 +366,7 @@ func TestBaselineAdvancementDir_CanonicalizesInProjectSymlink(t *testing.T) {
 
 	root := t.TempDir()
 	realServiceDir := filepath.Join(root, "real-service")
-	configsDir := filepath.Join(realServiceDir, opt_eval.AgentConfigsDir)
+	configsDir := filepath.Join(realServiceDir, optconfig.AgentConfigsDir)
 	require.NoError(t, os.MkdirAll(configsDir, 0750))
 	link := filepath.Join(root, "linked-service")
 	if err := os.Symlink(realServiceDir, link); err != nil {
@@ -384,8 +384,8 @@ func TestBaselineAdvancementDir_CanonicalizesInProjectSymlink(t *testing.T) {
 }
 
 func TestAdvanceBaselineToCandidate_SerializesSharedConfigsDir(t *testing.T) {
-	configsDir := filepath.Join(t.TempDir(), opt_eval.AgentConfigsDir)
-	writeAgentConfigDir(t, configsDir, opt_eval.BaselineDir, "original", nil)
+	configsDir := filepath.Join(t.TempDir(), optconfig.AgentConfigsDir)
+	writeAgentConfigDir(t, configsDir, optconfig.BaselineDir, "original", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_a", "candidate a", nil)
 	writeAgentConfigDir(t, configsDir, "candidate_b", "candidate b", nil)
 
@@ -444,7 +444,7 @@ func TestAdvanceBaselineToCandidate_SerializesSharedConfigsDir(t *testing.T) {
 	}
 
 	baseline, err := os.ReadFile(
-		filepath.Join(configsDir, opt_eval.BaselineDir, opt_eval.InstructionFile),
+		filepath.Join(configsDir, optconfig.BaselineDir, optconfig.InstructionFile),
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "candidate b", string(baseline))

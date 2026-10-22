@@ -4,6 +4,8 @@ Manage [Microsoft Foundry](https://learn.microsoft.com/azure/ai-services/) **ski
 (reusable behavioral guidelines an agent can attach at runtime) directly from your
 terminal.
 
+Requires azd 1.37.0 or later.
+
 ## Extension telemetry API
 
 Extension code can report best-effort usage events through the shared

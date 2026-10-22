@@ -8,14 +8,58 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
+
+type inspectorUsageServer struct {
+	azdext.UnimplementedTelemetryServiceServer
+	requests chan *azdext.ReportUsageRequest
+}
+
+func (s *inspectorUsageServer) ReportUsage(
+	_ context.Context, req *azdext.ReportUsageRequest,
+) (*azdext.ReportUsageResponse, error) {
+	s.requests <- req
+	return &azdext.ReportUsageResponse{Accepted: false}, nil
+}
+
+func TestNewUsageReporterUsesStableRPC(t *testing.T) {
+	recorder := &inspectorUsageServer{requests: make(chan *azdext.ReportUsageRequest, 1)}
+	server := grpc.NewServer()
+	require.Equal(t, "azd.extensions.v1.TelemetryService", azdext.TelemetryService_ServiceDesc.ServiceName)
+	azdext.RegisterTelemetryServiceServer(server, recorder)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	report, closeClient := newUsageReporter(t.Context())
+	t.Cleanup(closeClient)
+	require.NotNil(t, report)
+	report(foundryTelemetry.Event{Name: "inspector.funnel.stage", Attributes: map[string]string{
+		"stage": "ui_ready", "outcome": "succeeded",
+	}})
+	select {
+	case req := <-recorder.requests:
+		require.Equal(t, "inspector.funnel.stage", req.GetEventName())
+		require.Equal(t, map[string]string{"stage": "ui_ready", "outcome": "succeeded"}, req.GetAttributes())
+	default:
+		t.Fatal("usage event did not reach the stable telemetry service")
+	}
+}
 
 func TestUsageReporterForwardsEventWithCommandContext(t *testing.T) {
 	ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(

@@ -598,6 +598,23 @@ The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
 
+## Initializing a Project
+
+When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
+with `cd <folder>` before the provisioning command, even if that folder already
+existed. Run the `cd` command first: init does not change your shell's working
+directory. Initializing in the current directory does not need a `cd` hint.
+
+For paths requiring shell-specific quoting, the block labels alternatives for
+POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
+shell, then continue with the remaining steps. If cmd.exe cannot safely express
+the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+Drive-qualified paths also show these alternatives so cmd.exe switches drives.
+PowerShell alternatives preserve both straight and smart apostrophes literally.
+Paths containing smart double quotes also use the shell-specific alternatives.
+The same applies to paths starting with a Unicode dash that PowerShell treats
+as a parameter prefix.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the

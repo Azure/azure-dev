@@ -245,7 +245,7 @@ func (a *initAction) initializeGymOpenEnv(target rleInitTarget) error {
 		return err
 	}
 
-	config, err := project.LoadRleConfig(sessionDir)
+	config, err := project.ReadRleConfig(sessionDir)
 	if err != nil {
 		return err
 	}

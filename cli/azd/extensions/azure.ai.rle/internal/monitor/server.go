@@ -76,6 +76,7 @@ func RunJob(
 type source struct {
 	snapshot *rollouts.Snapshot
 	jobID    string
+	heading  string
 	index    *jobIndex
 	reader   rollouts.Reader
 	run      *runArtifacts
@@ -118,7 +119,9 @@ func serve(ctx context.Context, src source, noBrowser bool, out, errOut io.Write
 	// watch, so they are named differently: only a job has steps, metrics and a
 	// run log behind it.
 	heading := "Rollout monitor"
-	if src.jobID != "" {
+	if src.heading != "" {
+		heading = src.heading
+	} else if src.jobID != "" {
 		// The count is where the list starts, not where it ends: a running job
 		// keeps recording, and the page picks the new ones up as they land.
 		if src.index != nil {

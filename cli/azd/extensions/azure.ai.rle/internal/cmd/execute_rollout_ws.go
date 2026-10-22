@@ -148,10 +148,15 @@ func (c *rleClient) executeRolloutWebSocketURL(
 	if err != nil {
 		return "", fmt.Errorf("create Execute Rollout WebSocket URL: %w", err)
 	}
-	if !strings.EqualFold(endpoint.Scheme, "https") {
+	if !strings.EqualFold(endpoint.Scheme, "https") &&
+		!(c.allowInsecureLoopbackURL && isLoopbackURL(endpoint)) {
 		return "", errors.New("RLE service authentication requires an HTTPS Foundry project endpoint")
 	}
-	endpoint.Scheme = "wss"
+	if strings.EqualFold(endpoint.Scheme, "https") {
+		endpoint.Scheme = "wss"
+	} else {
+		endpoint.Scheme = "ws"
+	}
 	query := endpoint.Query()
 	query.Set("api-version", foundryAPIVersion)
 	endpoint.RawQuery = query.Encode()

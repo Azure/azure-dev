@@ -357,6 +357,41 @@ func TestInitNoPromptUsesPositionalNameAsSampleAndFolder(t *testing.T) {
 	}
 }
 
+func TestInitNormalizesLegacySampleMissingHarnessSubtype(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	oldLoad := loadRleSampleCatalogFunc
+	loadRleSampleCatalogFunc = func() (rleSampleCatalog, error) {
+		return &testRleSampleCatalog{
+			t:                  t,
+			sampleNames:        []string{"math_rl"},
+			expectedSampleName: "math_rl",
+			expectedFolderName: "math_rl_recipe",
+			legacyManifest:     true,
+		}, nil
+	}
+	t.Cleanup(func() {
+		loadRleSampleCatalogFunc = oldLoad
+	})
+
+	noPrompt := true
+	command := newInitCommand(&noPrompt)
+	command.SetArgs([]string{"math_rl_recipe", "--sample", "math_rl"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := project.LoadRleConfig(filepath.Join(tempDir, "math_rl_recipe"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Harness.Type != project.RleTypeGym ||
+		config.Harness.Subtype != project.RleSubtypeOpenEnv {
+		t.Fatalf("expected Gym/OpenEnv harness, got %s/%s", config.Harness.Type, config.Harness.Subtype)
+	}
+}
+
 func TestInitNoPromptRequiresPositionalSampleName(t *testing.T) {
 	command := NewRootCommand()
 	command.SetArgs([]string{"init", "--no-prompt"})
@@ -440,6 +475,7 @@ type testRleSampleCatalog struct {
 	sampleNames        []string
 	expectedSampleName string
 	expectedFolderName string
+	legacyManifest     bool
 }
 
 func (c *testRleSampleCatalog) SampleNames() []string {
@@ -471,7 +507,7 @@ func (c *testRleSampleCatalog) Copy(
 	if err := os.WriteFile(filepath.Join(sessionDir, "server", "Dockerfile"), []byte("FROM scratch\n"), 0600); err != nil {
 		return "", err
 	}
-	if err := project.WriteRleConfig(sessionDir, project.RleConfig{
+	config := project.RleConfig{
 		Rle: project.RleManifest{
 			Name:    sampleName,
 			Version: project.DefaultRleVersion,
@@ -480,7 +516,13 @@ func (c *testRleSampleCatalog) Copy(
 			Type:    project.RleTypeGym,
 			Subtype: project.RleSubtypeOpenEnv,
 		},
-	}); err != nil {
+	}
+	if c.legacyManifest {
+		legacyConfig := "[rle]\nname = \"" + sampleName + "\"\nversion = \"1.0.0\"\n\n[harness]\ntype = \"gym\"\n"
+		if err := os.WriteFile(filepath.Join(sessionDir, project.RleConfigFile), []byte(legacyConfig), 0600); err != nil {
+			return "", err
+		}
+	} else if err := project.WriteRleConfig(sessionDir, config); err != nil {
 		return "", err
 	}
 	return sessionDir, nil

@@ -33,8 +33,9 @@ type rleTrainFlags struct {
 }
 
 type trainAction struct {
-	cmd   *cobra.Command
-	flags *rleTrainFlags
+	cmd       *cobra.Command
+	flags     *rleTrainFlags
+	rleConfig project.RleConfig
 }
 
 // newTrainCommand submits a reinforcement fine-tuning job that uses a published RLE
@@ -137,6 +138,7 @@ func (a *trainAction) resolveTrainSettings() (map[string]any, error) {
 	a.flags.trainingFile = trainingFile
 	a.flags.validationFile = validationFile
 	a.flags.suffix = suffix
+	a.rleConfig = config
 	return options, nil
 }
 
@@ -259,7 +261,7 @@ func (a *trainAction) Run() error {
 		}
 	}
 
-	request := buildFinetuneJobRequest(a.flags, trainingFileID, validationFileID, trainingOptions)
+	request := buildFinetuneJobRequest(a.flags, trainingFileID, validationFileID, a.rleConfig)
 
 	if _, err := fmt.Fprintf(
 		a.cmd.OutOrStdout(),
@@ -458,14 +460,29 @@ func buildFinetuneJobRequest(
 	flags *rleTrainFlags,
 	trainingFileID string,
 	validationFileID string,
-	options map[string]any,
+	config project.RleConfig,
 ) finetuneJobCreationRequest {
+	schemaVersion := ""
+	if config.SchemaVersion != nil {
+		schemaVersion = *config.SchemaVersion
+	}
+	rendererName := ""
+	if config.Model != nil && config.Model.RendererName != nil {
+		rendererName = *config.Model.RendererName
+	}
 	rleEnvironment := finetuneRleEnvironmentConfig{
 		Name:    flags.rleName,
 		Version: flags.rleVersion,
-	}
-	if len(options) > 0 {
-		rleEnvironment.Hyperparameters = options
+		Harness: finetuneRleHarnessConfig{
+			Type:    config.Harness.Type,
+			Subtype: config.Harness.Subtype,
+		},
+		SchemaVersion: schemaVersion,
+		Model: finetuneRleModelConfig{
+			RendererName: rendererName,
+		},
+		Train:   config.Train,
+		Rollout: config.Rollout,
 	}
 
 	request := finetuneJobCreationRequest{

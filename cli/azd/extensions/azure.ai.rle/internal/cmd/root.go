@@ -95,6 +95,7 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 		newSkillCommand(),
 		newRolloutCommand(),
 		newMonitorCommand(),
+		newHeliosMonitorCommand(),
 		newPublishCommand(),
 		newRunCommand(),
 	}

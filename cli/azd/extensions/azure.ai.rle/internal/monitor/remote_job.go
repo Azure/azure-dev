@@ -38,6 +38,7 @@ const (
 	watchExpiry = 30 * time.Second
 	// A forced refresh answers when its cycle finishes, or after this long.
 	refreshWaitLimit = 45 * time.Second
+	metricTailOnly   = time.Duration(1<<63 - 1)
 )
 
 // Reasons automatic polling stopped, reported to the page as "paused".
@@ -130,7 +131,8 @@ type remoteJob struct {
 	watched   []string
 	watchedAt time.Time
 
-	metricCursor pageCursor
+	metricCursor    pageCursor
+	metricReconcile *pageCursor
 	// rolloutScan is the scan in progress, if a refresh left one unfinished.
 	// rolloutsReconciled is when the last completed scan started.
 	rolloutScan        *rolloutScan
@@ -150,13 +152,21 @@ type rolloutScan struct {
 }
 
 func newRemoteJob(source JobSource, jobID string) *remoteJob {
-	return &remoteJob{
+	job := &remoteJob{
 		source: source, jobID: jobID,
 		force: make(chan chan struct{}, 1), resultSlots: make(chan struct{}, 4),
 		metrics: map[int64]json.RawMessage{}, entries: map[string]JobRollout{}, readAt: map[string]time.Time{},
 		states:       map[string]pollState{},
 		metricCursor: newPageCursor(time.Minute),
 	}
+	if tailSource, ok := source.(MetricTailSource); ok {
+		start := tailSource.MetricTailStart(time.Now())
+		job.metricCursor = newPageCursor(metricTailOnly)
+		job.metricCursor.watermark, job.metricCursor.floor = start, start
+		reconcile := newPageCursor(time.Minute)
+		job.metricReconcile = &reconcile
+	}
+	return job
 }
 
 // RunRemoteJob serves API-backed training data without creating a local mirror.
@@ -164,10 +174,27 @@ func RunRemoteJob(ctx context.Context, reader JobSource, jobID string, noBrowser
 	return serve(ctx, source{jobID: jobID, remote: newRemoteJob(reader, jobID)}, noBrowser, out, errOut)
 }
 
+// RunHeliosJob serves Helios telemetry through the existing RLE monitor dashboard.
+func RunHeliosJob(ctx context.Context, reader JobSource, runID string, noBrowser bool, out, errOut io.Writer) error {
+	return serve(ctx, source{
+		jobID: runID, heading: fmt.Sprintf("Helios monitor dashboard for %s", runID),
+		remote: newRemoteJob(reader, runID),
+	}, noBrowser, out, errOut)
+}
+
 func (j *remoteJob) run(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	j.refresh(ctx, time.Now(), false)
+	var historyStopped chan struct{}
+	if j.metricReconcile != nil {
+		historyStopped = make(chan struct{})
+		go func() {
+			defer close(historyStopped)
+			j.runMetricHistory(ctx)
+		}()
+		defer func() { <-historyStopped }()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -179,6 +206,38 @@ func (j *remoteJob) run(ctx context.Context) {
 			j.refresh(ctx, time.Now(), false)
 		}
 	}
+}
+
+func (j *remoteJob) runMetricHistory(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		j.reconcileMetricHistory(ctx, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (j *remoteJob) reconcileMetricHistory(ctx context.Context, now time.Time) {
+	j.mu.Lock()
+	paused := j.paused != ""
+	j.mu.Unlock()
+	if paused {
+		return
+	}
+	j.poll(ctx, now, "metric history", time.Minute, func() error {
+		return j.readMetricReconciliation(ctx, now)
+	})
+	j.mu.Lock()
+	if j.metricReconcile.seen != nil {
+		state := j.states["metric history"]
+		state.Next = now.Add(10 * time.Second)
+		j.states["metric history"] = state
+	}
+	j.mu.Unlock()
 }
 
 func (j *remoteJob) poll(ctx context.Context, now time.Time, name string, interval time.Duration, read func() error) {
@@ -245,6 +304,9 @@ func (j *remoteJob) refresh(ctx context.Context, now time.Time, force bool) {
 			j.states[key] = state
 		}
 		j.metricCursor.completed, j.rolloutsReconciled = time.Time{}, time.Time{}
+		if j.metricReconcile != nil {
+			j.metricReconcile.completed = time.Time{}
+		}
 		if !j.terminalAt.IsZero() {
 			j.terminalAt = now
 		}
@@ -316,41 +378,97 @@ func (j *remoteJob) refresh(ctx context.Context, now time.Time, force bool) {
 			return
 		}
 	}
-	if !j.metricCursor.completed.Before(settled) && !j.rolloutsReconciled.Before(settled) {
+	metricReconciled := j.metricCursor.completed
+	if j.metricReconcile != nil {
+		metricReconciled = j.metricReconcile.completed
+	}
+	if !metricReconciled.Before(settled) && !j.rolloutsReconciled.Before(settled) {
 		j.paused = pausedCompleted
 	}
 }
 
 func (j *remoteJob) readMetrics(ctx context.Context, now time.Time) error {
-	p := &j.metricCursor
-	p.begin(now)
+	return j.readMetricsWithCursor(ctx, now, &j.metricCursor)
+}
+
+func (j *remoteJob) readMetricReconciliation(ctx context.Context, now time.Time) error {
+	return j.readMetricsWithCursor(ctx, now, j.metricReconcile)
+}
+
+func (j *remoteJob) readMetricsWithCursor(ctx context.Context, now time.Time, p *pageCursor) error {
 	for range pagesPerRefresh {
-		page, err := j.source.Metrics(ctx, p.start, p.token)
+		j.mu.Lock()
+		p.begin(now)
+		start, token := p.start, p.token
+		j.mu.Unlock()
+		page, err := j.source.Metrics(ctx, start, token)
 		if err != nil {
+			j.mu.Lock()
 			p.reset() // Restart at the committed watermark.
+			j.mu.Unlock()
 			return err
 		}
 		rows := make(map[int64]json.RawMessage, len(page.Data))
+		maximums := make(map[int64]int64, len(page.Data))
 		for _, raw := range page.Data {
 			var row struct {
-				Step *int64 `json:"step"`
+				Step      *int64     `json:"step"`
+				EventTime *time.Time `json:"event_time"`
 			}
 			if err := json.Unmarshal(raw, &row); err != nil || row.Step == nil || *row.Step < 0 {
+				j.mu.Lock()
 				p.reset()
+				j.mu.Unlock()
 				return errors.New("metric row is missing a nonnegative integer step")
 			}
 			rows[*row.Step] = raw
-			p.maximum = max(p.maximum, *row.Step)
+			maximums[*row.Step] = *row.Step
+			if p == &j.metricCursor && j.metricReconcile != nil &&
+				row.EventTime != nil && !row.EventTime.IsZero() {
+				maximums[*row.Step] = row.EventTime.UnixMicro()
+			}
 		}
 		j.mu.Lock()
-		maps.Copy(j.metrics, rows)
-		j.trimMetrics()
-		j.mu.Unlock()
+		for _, maximum := range maximums {
+			p.maximum = max(p.maximum, maximum)
+		}
+		for step, raw := range rows {
+			if existing, ok := j.metrics[step]; ok {
+				merged, err := mergeMetricRows(existing, raw)
+				if err != nil {
+					p.reset()
+					j.mu.Unlock()
+					return err
+				}
+				raw = merged
+			}
+			j.metrics[step] = raw
+		}
 		if done, err := p.advance(page.Next, now); done || err != nil {
+			j.trimMetrics()
+			j.mu.Unlock()
 			return err
 		}
+		j.trimMetrics()
+		j.mu.Unlock()
 	}
 	return nil
+}
+
+func mergeMetricRows(existing, incoming json.RawMessage) (json.RawMessage, error) {
+	var current, update map[string]json.RawMessage
+	if err := json.Unmarshal(existing, &current); err != nil {
+		return nil, fmt.Errorf("decode cached metric row: %w", err)
+	}
+	if err := json.Unmarshal(incoming, &update); err != nil {
+		return nil, fmt.Errorf("decode metric row update: %w", err)
+	}
+	maps.Copy(current, update)
+	merged, err := json.Marshal(current)
+	if err != nil {
+		return nil, fmt.Errorf("encode merged metric row: %w", err)
+	}
+	return merged, nil
 }
 
 // trimMetrics evicts the oldest steps beyond the row and byte bounds, and moves
@@ -370,7 +488,11 @@ func (j *remoteJob) trimMetrics() {
 	}
 	if evicted {
 		j.limited = true
-		j.metricCursor.floor = keys[0] - 1
+		cursor := &j.metricCursor
+		if j.metricReconcile != nil {
+			cursor = j.metricReconcile
+		}
+		cursor.floor = keys[0] - 1
 	}
 }
 

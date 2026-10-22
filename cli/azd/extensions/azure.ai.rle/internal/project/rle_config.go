@@ -146,8 +146,8 @@ func (v semanticVersion) String() string {
 	return fmt.Sprintf("%d.%d.%d", v.major, v.minor, v.patch)
 }
 
-// LoadRleConfig reads and validates rle.toml from dir.
-func LoadRleConfig(dir string) (RleConfig, error) {
+// ReadRleConfig reads rle.toml from dir without normalizing it.
+func ReadRleConfig(dir string) (RleConfig, error) {
 	path := filepath.Join(dir, RleConfigFile)
 	// #nosec G304 -- dir is the selected project directory and the file name is fixed.
 	data, err := os.ReadFile(path)
@@ -161,6 +161,15 @@ func LoadRleConfig(dir string) (RleConfig, error) {
 	var config RleConfig
 	if err := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(&config); err != nil {
 		return RleConfig{}, invalidRleConfigError(fmt.Sprintf("Could not parse %s: %v", RleConfigFile, err))
+	}
+	return config, nil
+}
+
+// LoadRleConfig reads and validates rle.toml from dir.
+func LoadRleConfig(dir string) (RleConfig, error) {
+	config, err := ReadRleConfig(dir)
+	if err != nil {
+		return RleConfig{}, err
 	}
 	return NormalizeRleConfig(config)
 }

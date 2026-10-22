@@ -522,6 +522,18 @@ is created. Foundry rollouts are text-level: they carry no token ids and are
 never trainable. Add `--loom` to run the eval on a Loom session instead.
 `--sequence-id` and `--renderer` configure Loom, so they are rejected for a Foundry eval.
 
+For local control-plane development, keep `FOUNDRY_PROJECT_ENDPOINT` set to the
+project that owns the Loom session and set `RLE_LOCAL_ENDPOINT` to the running
+local RLE workspace route:
+
+```powershell
+$env:RLE_LOCAL_ENDPOINT = "http://localhost:5080/rle/v1.0/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.MachineLearningServices/workspaces/<workspace>"
+azd ai rle rollout --model Qwen/Qwen3-32B --task-file .\task.json
+```
+
+The override is used only by `rollout`. For safety, HTTP is accepted only for a
+loopback host and the endpoint must include the complete workspace route.
+
 The rollout itself travels over RLE's Execute Rollout WebSocket rather than the
 HTTP API. The Foundry data-plane gateway ends an Execute Rollout HTTP request
 after roughly 120 seconds, which is shorter than a real Harness rollout, so a
@@ -783,6 +795,28 @@ Only `succeeded`, `failed`, and `cancelled` are treated as terminal job statuses
 matching the fine-tuning API v1 contract.
 `RLE_TRAIN_ENDPOINT` does not
 affect status polling, including the monitor opened by `train`.
+
+### Helios Monitor Dashboard
+
+Open the same embedded dashboard for an RLE rollout exported to a Helios run:
+
+```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+azd ai rle helios-monitor --run-id rle-helios-reviewed-20261014T192404Z
+```
+
+`helios-monitor` is separate from `monitor`; the existing saved-rollout and RLE
+job behavior is unchanged. The command reads the Helios run's paged metrics and
+traces directly through the Foundry project endpoint, keeps only the existing
+bounded in-memory monitor cache, and creates no local run mirror.
+
+The Rollouts tab represents each root Helios trace as one rollout. Opening a row
+reads that trace's spans and reconstructs the captured turns, messages, tool
+calls, token counts, reward, and graph statistics for the existing rollout
+detail views. The Summary uses Helios metric points; the exported
+`rollout.reward` metric feeds the dashboard's reward chart. Helios has no
+terminal run-status API, so polling continues until Ctrl+C. Use `--no-browser`
+to print the loopback link without opening it.
 
 ### Facade monitoring (endpoint override)
 

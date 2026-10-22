@@ -80,8 +80,9 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 		status   string
 	}{
 		{
-			name: "Foundry account default", endpoint: "https://account.openai.azure.com",
-			format: "default", status: "cancelled",
+			name:     "Foundry project default",
+			endpoint: "https://account.services.ai.azure.com/api/projects/project",
+			format:   "default", status: "cancelled",
 		},
 		{
 			name: "environment override", env: "https://facade.example.com",
@@ -105,7 +106,10 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 				client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
 					calls++
 					if request.Method != http.MethodPost ||
-						request.URL.Path != finetuneJobsPath+"/"+realMonitorJobID+"/cancel" {
+						!strings.HasSuffix(
+							request.URL.Path,
+							finetuneJobsPath+"/"+realMonitorJobID+"/cancel",
+						) {
 						t.Fatalf("unexpected request: %s %s", request.Method, request.URL.Path)
 					}
 					return &http.Response{

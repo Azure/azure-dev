@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,9 +31,10 @@ const (
 )
 
 type rleClient struct {
-	baseUrl    string
-	credential azcore.TokenCredential
-	httpClient *http.Client
+	baseUrl                  string
+	credential               azcore.TokenCredential
+	httpClient               *http.Client
+	allowInsecureLoopbackURL bool
 }
 
 var createRleClient = newRleClient
@@ -208,6 +210,12 @@ func newRleClientWithCredential(endpoint string, credential azcore.TokenCredenti
 	}
 }
 
+func newLocalRleClientWithCredential(endpoint string, credential azcore.TokenCredential) *rleClient {
+	client := newRleClientWithCredential(endpoint, credential)
+	client.allowInsecureLoopbackURL = true
+	return client
+}
+
 func (c *rleClient) createV1Environment(
 	ctx context.Context,
 	request v1EnvironmentRequest,
@@ -333,7 +341,8 @@ func (c *rleClient) doWithHeaders(
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-	if !strings.EqualFold(req.URL.Scheme, "https") {
+	if !strings.EqualFold(req.URL.Scheme, "https") &&
+		!(c.allowInsecureLoopbackURL && isLoopbackURL(req.URL)) {
 		return errors.New("RLE service authentication requires an HTTPS Foundry project endpoint")
 	}
 	authorization, err := c.authorizationHeader(ctx)
@@ -374,6 +383,15 @@ func (c *rleClient) doWithHeaders(
 	}
 
 	return nil
+}
+
+func isLoopbackURL(endpoint *url.URL) bool {
+	host := strings.TrimSpace(endpoint.Hostname())
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	address := net.ParseIP(host)
+	return address != nil && address.IsLoopback()
 }
 
 func (c *rleClient) authorizationHeader(ctx context.Context) (string, error) {

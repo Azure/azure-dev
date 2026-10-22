@@ -28,6 +28,9 @@ examples:
   - name: rollout
     description: Execute one Loom-backed rollout of a published RLE environment (provisions and tears down the Loom session for you; --model falls back to rle.toml's defaults.model.name).
     usage: azd ai rle rollout [environment-name] [--version <major.minor.patch>] [--model <loom-base-model>] --task <json>
+  - name: helios monitor
+    description: Open the RLE dashboard with live metrics and traces read from a Helios run.
+    usage: azd ai rle helios-monitor --run-id <helios-run-id>
   - name: list
     description: List RLE environments in a Foundry project.
     usage: azd ai rle list

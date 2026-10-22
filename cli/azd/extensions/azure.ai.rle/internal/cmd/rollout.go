@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 	"azure.ai.rle/internal/project"
 	"azure.ai.rle/internal/rollouts"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -57,8 +59,9 @@ type rolloutTarget struct {
 }
 
 const (
-	rolloutLoraRank    = 16
-	rolloutLoomTimeout = 600 * time.Second
+	rolloutLoraRank        = 16
+	rolloutLoomTimeout     = 600 * time.Second
+	rleLocalEndpointEnvVar = "RLE_LOCAL_ENDPOINT"
 )
 
 func newRolloutCommand() *cobra.Command {
@@ -421,7 +424,7 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 	if err != nil {
 		return rolloutTarget{}, nil, err
 	}
-	client, err := createRleClient(projectEndpoint)
+	client, err := createRolloutRleClient(projectEndpoint)
 	if err != nil {
 		return rolloutTarget{}, nil, err
 	}
@@ -431,6 +434,80 @@ func (a *rolloutAction) resolveTarget() (rolloutTarget, *rleClient, error) {
 		version:         version,
 		isGymOpenEnv:    isGymOpenEnv(localConfig.Harness),
 	}, client, nil
+}
+
+func createRolloutRleClient(projectEndpoint string) (*rleClient, error) {
+	localEndpoint := strings.TrimSpace(os.Getenv(rleLocalEndpointEnvVar))
+	if localEndpoint == "" {
+		return createRleClient(projectEndpoint)
+	}
+
+	normalizedEndpoint, err := normalizeLocalRleEndpoint(localEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Azure credential: %w", err)
+	}
+	return newLocalRleClientWithCredential(normalizedEndpoint, credential), nil
+}
+
+func normalizeLocalRleEndpoint(raw string) (string, error) {
+	endpoint, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", invalidLocalRleEndpointError("invalid local RLE endpoint URL")
+	}
+	if endpoint.Scheme != "http" && endpoint.Scheme != "https" {
+		return "", invalidLocalRleEndpointError("local RLE endpoint must use http or https")
+	}
+	if !isLoopbackURL(endpoint) {
+		return "", invalidLocalRleEndpointError("local RLE endpoint must use a loopback host")
+	}
+	if endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
+		return "", invalidLocalRleEndpointError(
+			"local RLE endpoint must not contain credentials, a query, or a fragment",
+		)
+	}
+
+	segments := strings.Split(strings.Trim(endpoint.EscapedPath(), "/"), "/")
+	if len(segments) != 10 ||
+		segments[0] != "rle" ||
+		segments[1] != "v1.0" ||
+		segments[2] != "subscriptions" ||
+		segments[4] != "resourceGroups" ||
+		segments[6] != "providers" ||
+		segments[7] != "Microsoft.MachineLearningServices" ||
+		segments[8] != "workspaces" {
+		return "", invalidLocalRleEndpointError(
+			"local RLE endpoint must end at the workspace route",
+		)
+	}
+	for _, index := range []int{3, 5, 9} {
+		value, unescapeErr := url.PathUnescape(segments[index])
+		if unescapeErr != nil || strings.TrimSpace(value) == "" {
+			return "", invalidLocalRleEndpointError(
+				"local RLE endpoint contains an invalid workspace route segment",
+			)
+		}
+	}
+
+	endpoint.Path = strings.TrimRight(endpoint.Path, "/")
+	endpoint.RawPath = ""
+	return endpoint.String(), nil
+}
+
+func invalidLocalRleEndpointError(message string) error {
+	return &azdext.LocalError{
+		Message:  message,
+		Code:     "rle_invalid_local_endpoint",
+		Category: azdext.LocalErrorCategoryUser,
+		Suggestion: fmt.Sprintf(
+			"Set %s=http://localhost:5080/rle/v1.0/subscriptions/<subscription-id>/"+
+				"resourceGroups/<resource-group>/providers/Microsoft.MachineLearningServices/workspaces/<workspace>.",
+			rleLocalEndpointEnvVar,
+		),
+	}
 }
 
 func isGymOpenEnv(harness project.RleHarnessManifest) bool {

@@ -194,8 +194,8 @@ func stubFinetuneClientEndpoint(t *testing.T, endpoint string) {
 	t.Setenv(rleTrainEndpointEnvVar, "")
 	originalCreateFinetuneClient := createFinetuneClient
 	createFinetuneClient = func(actualEndpoint string) (*finetuneClient, error) {
-		if actualEndpoint != "https://account.openai.azure.com" {
-			t.Fatalf("expected the Foundry account endpoint, got %q", actualEndpoint)
+		if actualEndpoint != "https://account.services.ai.azure.com/api/projects/project-from-env" {
+			t.Fatalf("expected the Foundry project endpoint, got %q", actualEndpoint)
 		}
 		return testFinetuneClientForServer(t, endpoint), nil
 	}

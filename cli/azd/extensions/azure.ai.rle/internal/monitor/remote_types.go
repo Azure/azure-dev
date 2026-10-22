@@ -47,6 +47,12 @@ type JobSource interface {
 	Status(context.Context) (string, error)
 }
 
+// MetricTailSource lets a source keep recent metrics current while the monitor
+// independently reconciles older history.
+type MetricTailSource interface {
+	MetricTailStart(time.Time) int64
+}
+
 // ReadError preserves service status, throttling, and correlation IDs without
 // exposing response bodies.
 type ReadError struct {

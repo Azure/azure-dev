@@ -83,6 +83,40 @@ func TestRleClientRefusesAuthenticationOverHTTP(t *testing.T) {
 	}
 }
 
+func TestLocalRleClientAllowsAuthenticatedLoopbackHTTP(t *testing.T) {
+	credential := &testTokenCredential{}
+	client := newLocalRleClientWithCredential("http://127.0.0.1:5080", credential)
+	client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Scheme != "http" || request.URL.Host != "127.0.0.1:5080" {
+			t.Fatalf("unexpected local URL %s", request.URL)
+		}
+		if got := request.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Fatalf("expected bearer token, got %q", got)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	if err := client.do(t.Context(), http.MethodGet, environmentCollectionPath, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocalRleClientStillRejectsNonLoopbackHTTP(t *testing.T) {
+	client := newLocalRleClientWithCredential(
+		"http://rle.internal.example:5080",
+		&testTokenCredential{},
+	)
+
+	err := client.do(t.Context(), http.MethodGet, environmentCollectionPath, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "requires an HTTPS") {
+		t.Fatalf("expected HTTPS authentication error, got %v", err)
+	}
+}
+
 func TestRleClientPreservesEnvironmentRequest(t *testing.T) {
 	client := newRleClientWithCredential(
 		"https://account.services.ai.azure.com/api/projects/project",

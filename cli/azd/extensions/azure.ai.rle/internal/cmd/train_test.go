@@ -31,7 +31,7 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 		model:      "Qwen/Qwen3-32B",
 	}
 
-	request := buildFinetuneJobRequest(flags, "file-training", "", nil)
+	request := buildFinetuneJobRequest(flags, "file-training", "", testFinetuneRleConfig(nil))
 
 	if request.Model != "Qwen/Qwen3-32B" {
 		t.Fatalf("expected model to map from flags, got %q", request.Model)
@@ -40,7 +40,7 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 		t.Fatalf("expected training_file to be set, got %q", request.TrainingFile)
 	}
 	if request.TrainingType != finetuneTrainingTypeGlobalStandard {
-		t.Fatalf("expected GlobalStandard training type, got %d", request.TrainingType)
+		t.Fatalf("expected GlobalStandard training type, got %q", request.TrainingType)
 	}
 	if request.Method == nil || request.Method.Type != finetuneMethodTypeRleEnvironment {
 		t.Fatalf("expected rl_environment method, got %#v", request.Method)
@@ -48,8 +48,12 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	if request.Method.RleEnvironment.Name != "code_rl" || request.Method.RleEnvironment.Version != "1.0.0" {
 		t.Fatalf("expected rl_environment name/version from flags, got %#v", request.Method.RleEnvironment)
 	}
-	if request.Method.RleEnvironment.MaxEpisodeSteps != nil {
-		t.Fatal("expected max_episode_steps to be omitted when not provided")
+	if request.Method.RleEnvironment.Model.RendererName != "qwen3_ext" {
+		t.Fatalf("expected resolved renderer, got %#v", request.Method.RleEnvironment.Model)
+	}
+	if request.Method.RleEnvironment.Rollout == nil ||
+		request.Method.RleEnvironment.Rollout.GymOpenEnv == nil {
+		t.Fatalf("expected resolved rollout contract, got %#v", request.Method.RleEnvironment.Rollout)
 	}
 	if request.ValidationFile != nil || request.Suffix != nil {
 		t.Fatal("expected optional fields to be omitted when not provided")
@@ -62,7 +66,7 @@ func TestBuildFinetuneJobRequestUsesRleEnvironmentMethod(t *testing.T) {
 	if !strings.Contains(string(data), `"training_file":"file-training"`) {
 		t.Fatalf("expected training_file in JSON, got %s", data)
 	}
-	if !strings.Contains(string(data), `"trainingType":1`) {
+	if !strings.Contains(string(data), `"trainingType":"GlobalStandard"`) {
 		t.Fatalf("expected GlobalStandard trainingType in JSON, got %s", data)
 	}
 }
@@ -75,7 +79,7 @@ func TestBuildFinetuneJobRequestIncludesOptionalFields(t *testing.T) {
 		suffix:     "custom-suffix",
 	}
 
-	request := buildFinetuneJobRequest(flags, "file-abc", "file-def", nil)
+	request := buildFinetuneJobRequest(flags, "file-abc", "file-def", testFinetuneRleConfig(nil))
 
 	if request.TrainingFile != "file-abc" {
 		t.Fatalf("expected training_file to be set, got %q", request.TrainingFile)
@@ -191,9 +195,8 @@ func TestFinetuneEndpointRejectsInvalidFoundryHost(t *testing.T) {
 	}
 }
 
-// Without an endpoint override, commands derive the fine-tuning endpoint from
-// the Foundry project account.
-func TestResolveFinetuneEndpointDefaultsToTheFoundryAccount(t *testing.T) {
+// Without an endpoint override, commands use the project-scoped OpenAI endpoint.
+func TestResolveFinetuneEndpointDefaultsToTheFoundryProject(t *testing.T) {
 	t.Setenv(rleTrainEndpointEnvVar, "")
 
 	endpoint, err := resolveFinetuneEndpoint(
@@ -202,8 +205,8 @@ func TestResolveFinetuneEndpointDefaultsToTheFoundryAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoint != "https://account.openai.azure.com" {
-		t.Fatalf("expected Foundry account endpoint, got %q", endpoint)
+	if endpoint != "https://account.services.ai.azure.com/api/projects/project" {
+		t.Fatalf("expected Foundry project endpoint, got %q", endpoint)
 	}
 }
 
@@ -256,11 +259,18 @@ func testFinetuneClientHeaders(t *testing.T, wantOverride string) {
 		if got := request.Header.Get("azureai-project-is-default"); got != "true" {
 			t.Fatalf("expected azureai-project-is-default=true, got %q", got)
 		}
-		if request.Header.Get(executeRolloutHeader) != "foundry-user-token" {
-			t.Fatal("expected the separate Foundry user token in aml-user-token")
+		if request.Header.Get(executeRolloutHeader) != "" {
+			t.Fatal("project-scoped fine-tuning must not forward a second user token")
 		}
 		if got := request.Header.Get(rleEnvOverrideHeader); got != wantOverride {
 			t.Fatalf("expected %s=%q, got %q", rleEnvOverrideHeader, wantOverride, got)
+		}
+		var body finetuneJobCreationRequest
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model != "Qwen/Qwen3-32B" {
+			t.Fatalf("expected direct fine-tuning request, got %#v", body)
 		}
 		return &http.Response{
 			StatusCode: http.StatusCreated,
@@ -269,15 +279,14 @@ func testFinetuneClientHeaders(t *testing.T, wantOverride string) {
 		}, nil
 	})
 
-	job, err := client.createJob(t.Context(), finetuneJobCreationRequest{}, "myproject")
+	job, err := client.createJob(t.Context(), finetuneJobCreationRequest{Model: "Qwen/Qwen3-32B"}, "myproject")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Id != "ftjob-1" || job.Status != "queued" {
 		t.Fatalf("expected decoded job response, got %#v", job)
 	}
-	if len(credential.scopes) != 2 || credential.scopes[0] != foundryTokenScope ||
-		credential.scopes[1] != finetuneTokenScope {
+	if len(credential.scopes) != 1 || credential.scopes[0] != finetuneTokenScope {
 		t.Fatalf("expected fine-tuning token scope %q, got %v", finetuneTokenScope, credential.scopes)
 	}
 }
@@ -296,7 +305,7 @@ func (c *finetuneSubmissionCredential) GetToken(
 		if c.err != nil || c.empty {
 			return azcore.AccessToken{}, c.err
 		}
-		return azcore.AccessToken{Token: "foundry-user-token", ExpiresOn: time.Now().Add(time.Hour)}, nil // #nosec G101 -- Fake token used only by the test credential.
+		return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil // #nosec G101 -- Fake token used only by the test credential.
 	}
 	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
@@ -374,8 +383,8 @@ func TestTrainActionUploadsLocalFileBeforeSubmittingJob(t *testing.T) {
 
 	originalCreateClient := createFinetuneClient
 	createFinetuneClient = func(endpoint string) (*finetuneClient, error) {
-		if endpoint != "https://account.openai.azure.com" {
-			t.Fatalf("expected the Foundry account endpoint, got %q", endpoint)
+		if endpoint != "https://account.services.ai.azure.com/api/projects/project" {
+			t.Fatalf("expected the Foundry project endpoint, got %q", endpoint)
 		}
 		return client, nil
 	}
@@ -681,18 +690,24 @@ func TestTrainNoFollowExitsImmediatelyWithoutMonitoringOrStreaming(t *testing.T)
 	}
 }
 
-func TestTrainingOptionsReachTheRleEnvironmentBlock(t *testing.T) {
+func TestTrainingOptionsReachTheResolvedTrainBlock(t *testing.T) {
 	flags := &rleTrainFlags{rleName: "math_rl", rleVersion: "1.0.6", model: "qwen3-32b-1"}
-	options := map[string]any{"learning_rate": 2e-5, "max_steps": float64(50)}
+	config := testFinetuneRleConfig(&project.RleTrainDefaults{
+		Grpo: &project.RleGrpoDefaults{
+			LearningRate: new(2e-5),
+			MaxSteps:     new(50),
+		},
+	})
 
-	request := buildFinetuneJobRequest(flags, "file-training", "", options)
+	request := buildFinetuneJobRequest(flags, "file-training", "", config)
 
-	if request.Method.RleEnvironment.Hyperparameters["max_steps"] != float64(50) {
+	if request.Method.RleEnvironment.Train.Grpo.MaxSteps == nil ||
+		*request.Method.RleEnvironment.Train.Grpo.MaxSteps != 50 {
 		t.Fatalf("expected max_steps to reach the request, got %#v",
-			request.Method.RleEnvironment.Hyperparameters)
+			request.Method.RleEnvironment.Train)
 	}
 
-	// The service reads options from method.rl_environment.hyperparameters, so a
+	// The service reads options from method.rl_environment.train.grpo, so a
 	// rename in the payload would silently stop applying them.
 	encoded, err := json.Marshal(request)
 	if err != nil {
@@ -701,14 +716,16 @@ func TestTrainingOptionsReachTheRleEnvironmentBlock(t *testing.T) {
 	var wire struct {
 		Method struct {
 			RleEnvironment struct {
-				Hyperparameters map[string]any `json:"hyperparameters"`
+				Train struct {
+					Grpo map[string]any `json:"grpo"`
+				} `json:"train"`
 			} `json:"rl_environment"`
 		} `json:"method"`
 	}
 	if err := json.Unmarshal(encoded, &wire); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if wire.Method.RleEnvironment.Hyperparameters["learning_rate"] != 2e-5 {
+	if wire.Method.RleEnvironment.Train.Grpo["learning_rate"] != 2e-5 {
 		t.Fatalf("options did not survive the wire shape: %s", encoded)
 	}
 }
@@ -716,7 +733,7 @@ func TestTrainingOptionsReachTheRleEnvironmentBlock(t *testing.T) {
 func TestNoTrainingOptionsLeavesTheRequestUnchanged(t *testing.T) {
 	flags := &rleTrainFlags{rleName: "math_rl", rleVersion: "1.0.6", model: "qwen3-32b-1"}
 
-	request := buildFinetuneJobRequest(flags, "file-training", "", nil)
+	request := buildFinetuneJobRequest(flags, "file-training", "", testFinetuneRleConfig(nil))
 
 	encoded, err := json.Marshal(request)
 	if err != nil {
@@ -724,6 +741,26 @@ func TestNoTrainingOptionsLeavesTheRequestUnchanged(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "hyperparameters") {
 		t.Fatalf("absent options must not add the field: %s", encoded)
+	}
+}
+
+func testFinetuneRleConfig(train *project.RleTrainDefaults) project.RleConfig {
+	schemaVersion := project.CurrentRleManifestSchemaVersion
+	rendererName := "qwen3_ext"
+	modelResponseField := "response"
+	return project.RleConfig{
+		SchemaVersion: &schemaVersion,
+		Harness: project.RleHarnessManifest{
+			Type:    project.RleTypeGym,
+			Subtype: project.RleSubtypeOpenEnv,
+		},
+		Model: &project.RleModelDefaults{RendererName: &rendererName},
+		Train: train,
+		Rollout: &project.RleRolloutDefaults{
+			GymOpenEnv: &project.RleGymOpenEnvDefaults{
+				ModelResponseField: &modelResponseField,
+			},
+		},
 	}
 }
 

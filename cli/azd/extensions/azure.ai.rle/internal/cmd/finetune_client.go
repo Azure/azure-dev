@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.rle/internal/project"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -28,8 +29,8 @@ import (
 // and service/AzureOpenAI.Api/Controllers/Base/FineTuningControllerBase.cs (ControllerName = "fine_tuning").
 const finetuneJobsPath = "/openai/v1/fine_tuning/jobs"
 
-// finetuneTokenScope is the Cognitive Services / Azure OpenAI resource scope.
-const finetuneTokenScope = "https://cognitiveservices.azure.com/.default" //nolint:gosec // OAuth scope, not a credential
+// finetuneTokenScope is the Foundry project data-plane scope.
+const finetuneTokenScope = foundryTokenScope
 
 // finetuneMethodTypeRleEnvironment selects the RL-environment fine-tuning method: the
 // named RLE, not a grader, supplies the reward signal. This method is currently hidden
@@ -42,7 +43,7 @@ const finetuneMethodTypeRleEnvironment = "rl_environment"
 // finetuneTrainingTypeGlobalStandard is the V1 FineTuningJobCreation.TrainingType enum value
 // required for Loom-backed RL-environment jobs. If omitted, the service defaults to Standard
 // and does not auto-select Loom execution.
-const finetuneTrainingTypeGlobalStandard = 1
+const finetuneTrainingTypeGlobalStandard = "GlobalStandard"
 
 type finetuneClient struct {
 	baseUrl    string
@@ -53,13 +54,22 @@ type finetuneClient struct {
 var createFinetuneClient = newFinetuneClient
 
 type finetuneRleEnvironmentConfig struct {
-	Name            string `json:"name"`
-	Version         string `json:"version"`
-	MaxEpisodeSteps *int   `json:"max_episode_steps,omitempty"`
+	Name          string                      `json:"name"`
+	Version       string                      `json:"version"`
+	Harness       finetuneRleHarnessConfig    `json:"harness"`
+	SchemaVersion string                      `json:"schema_version"`
+	Model         finetuneRleModelConfig      `json:"model"`
+	Train         *project.RleTrainDefaults   `json:"train"`
+	Rollout       *project.RleRolloutDefaults `json:"rollout"`
+}
 
-	// Training options for the run. The service owns the vocabulary and validates
-	// per recipe, so these are forwarded as given rather than typed here.
-	Hyperparameters map[string]any `json:"hyperparameters,omitempty"`
+type finetuneRleHarnessConfig struct {
+	Type    project.RleType    `json:"type"`
+	Subtype project.RleSubtype `json:"subtype"`
+}
+
+type finetuneRleModelConfig struct {
+	RendererName string `json:"renderer_name"`
 }
 
 type finetuneMethodRequest struct {
@@ -72,7 +82,7 @@ type finetuneMethodRequest struct {
 type finetuneJobCreationRequest struct {
 	Model          string                 `json:"model"`
 	TrainingFile   string                 `json:"training_file,omitempty"`
-	TrainingType   int                    `json:"trainingType"`
+	TrainingType   string                 `json:"trainingType"`
 	ValidationFile *string                `json:"validation_file,omitempty"`
 	Suffix         *string                `json:"suffix,omitempty"`
 	Method         *finetuneMethodRequest `json:"method,omitempty"`
@@ -192,31 +202,16 @@ func newFinetuneClientWithCredential(endpoint string, credential azcore.TokenCre
 	}
 }
 
-// createJob submits a fine-tuning job. azureAIProject identifies the Foundry project that
-// owns the named RLE; the service only reads FoundryAIProjectName from a proxy-only header,
-// so a direct caller instead sends azureai-project plus azureai-project-is-default=true
-// (see finetunesapi FineTuningControllerBase.cs, the FoundryProxyTransform fallback path).
+// createJob submits a fine-tuning job through the project-scoped OpenAI endpoint.
 func (c *finetuneClient) createJob(
 	ctx context.Context,
 	request finetuneJobCreationRequest,
 	azureAIProject string,
 ) (*finetuneJobResource, error) {
-	// Foundry evaluation saves this assertion for OBO authentication. It needs
-	// the Foundry audience, not the Cognitive Services request token.
-	userToken, err := c.credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{foundryTokenScope},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("acquire Foundry evaluation user token: %w", err)
-	}
-	if strings.TrimSpace(userToken.Token) == "" {
-		return nil, errors.New("Foundry evaluation user token is empty")
-	}
 	var result finetuneJobResource
 	headers := map[string]string{
 		"azureai-project":            azureAIProject,
 		"azureai-project-is-default": "true",
-		executeRolloutHeader:         userToken.Token,
 	}
 	// Development aid: lets the team pin the RLE environment a job runs against.
 	if override := strings.TrimSpace(os.Getenv(rleEnvOverrideEnvVar)); override != "" {
@@ -370,6 +365,9 @@ func (c *finetuneClient) authorizationHeader(ctx context.Context) (string, error
 	})
 	if err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(token.Token) == "" {
+		return "", errors.New("Foundry access token is empty")
 	}
 	return "Bearer " + token.Token, nil
 }

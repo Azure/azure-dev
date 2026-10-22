@@ -24,14 +24,13 @@ const (
 )
 
 // resolveFinetuneEndpoint picks the fine-tuning API the RLE commands talk to:
-// RLE_TRAIN_ENDPOINT, else the endpoint derived from
-// the Foundry project. Train, jobs and cancel share it; monitoring uses the
-// Foundry project URL directly for fine-tuning status and RLE persistence reads.
+// RLE_TRAIN_ENDPOINT, else the Foundry project endpoint. Train, jobs, cancel,
+// monitoring, and RLE persistence reads all use the project-scoped data plane.
 func resolveFinetuneEndpoint(projectEndpoint string) (string, error) {
 	if raw := strings.TrimSpace(os.Getenv(rleTrainEndpointEnvVar)); raw != "" {
 		return normalizeFinetuneEndpoint(raw)
 	}
-	return finetuneEndpointFromFoundryProject(projectEndpoint)
+	return normalizeFinetuneEndpoint(projectEndpoint)
 }
 
 func finetuneEndpointFromFoundryProject(projectEndpoint string) (string, error) {
@@ -79,9 +78,12 @@ func normalizeFinetuneEndpoint(raw string) (string, error) {
 
 func invalidFinetuneEndpointError(message string) error {
 	return &azdext.LocalError{
-		Message:    message,
-		Code:       "rle_invalid_train_endpoint",
-		Category:   azdext.LocalErrorCategoryUser,
-		Suggestion: fmt.Sprintf("Set %s=https://<resource>.openai.azure.com.", rleTrainEndpointEnvVar),
+		Message:  message,
+		Code:     "rle_invalid_train_endpoint",
+		Category: azdext.LocalErrorCategoryUser,
+		Suggestion: fmt.Sprintf(
+			"Set %s=https://<account>.services.ai.azure.com/api/projects/<project>.",
+			rleTrainEndpointEnvVar,
+		),
 	}
 }

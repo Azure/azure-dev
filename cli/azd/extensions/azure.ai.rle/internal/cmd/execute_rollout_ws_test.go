@@ -33,6 +33,22 @@ func TestExecuteRolloutWebSocketURLUsesTheGatewayForwardedAlias(t *testing.T) {
 	}
 }
 
+func TestExecuteRolloutWebSocketURLAllowsLocalLoopback(t *testing.T) {
+	client := newLocalRleClientWithCredential(
+		"http://localhost:5080/rle/v1.0/subscriptions/sub/resourceGroups/rg/providers/"+
+			"Microsoft.MachineLearningServices/workspaces/ws",
+		&testTokenCredential{},
+	)
+
+	endpoint, err := client.executeRolloutWebSocketURL("code_rl", "1.0.0", "abc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(endpoint, "ws://localhost:5080/") {
+		t.Fatalf("expected loopback ws URL, got %s", endpoint)
+	}
+}
+
 // The gateway only forwards the upgrade on the OpenEnv instance template, so the rollout
 // path this replaces must not reappear in the URL.
 func TestExecuteRolloutWebSocketURLDoesNotUseTheUnregisteredRolloutPath(t *testing.T) {
@@ -191,13 +207,13 @@ func TestExecuteRolloutOverWebSocketReturnsTheCompletedFrame(t *testing.T) {
 				t.Errorf("payload rollout ID %q disagrees with header %q", request.RolloutID, header.RolloutID)
 			}
 			return executeRolloutFrameHeader{
-					Type:      executeRolloutFrameCompleted,
-					RolloutID: header.RolloutID,
-				}, map[string]any{
-					"rollout_id": header.RolloutID,
-					"reward":     1.0,
-					"success":    true,
-				}
+				Type:      executeRolloutFrameCompleted,
+				RolloutID: header.RolloutID,
+			}, map[string]any{
+				"rollout_id": header.RolloutID,
+				"reward":     1.0,
+				"success":    true,
+			}
 		},
 	)
 	var observed string
@@ -226,12 +242,12 @@ func TestExecuteRolloutOverWebSocketMapsAnErrorFrameToAnRleError(t *testing.T) {
 		t,
 		func(header executeRolloutFrameHeader, _ []byte) (executeRolloutFrameHeader, any) {
 			return executeRolloutFrameHeader{
-					Type:      executeRolloutFrameError,
-					RolloutID: header.RolloutID,
-				}, map[string]string{
-					"code":    "EnvironmentNotFound",
-					"message": "The environment version was not found.",
-				}
+				Type:      executeRolloutFrameError,
+				RolloutID: header.RolloutID,
+			}, map[string]string{
+				"code":    "EnvironmentNotFound",
+				"message": "The environment version was not found.",
+			}
 		},
 	)
 	stubExecuteRolloutDialer(t, server.URL, nil)

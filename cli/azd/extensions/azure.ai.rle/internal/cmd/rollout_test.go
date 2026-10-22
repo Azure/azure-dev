@@ -136,6 +136,7 @@ func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	second, err := newRolloutID()
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +146,32 @@ func TestNewRolloutIDReturnsUniqueHexValues(t *testing.T) {
 	}
 	if first == second {
 		t.Fatal("expected distinct rollout ids across calls")
+	}
+}
+
+func TestNormalizeLocalRleEndpointAcceptsWorkspaceLoopbackRoute(t *testing.T) {
+	endpoint, err := normalizeLocalRleEndpoint(
+		"http://localhost:5080/rle/v1.0/subscriptions/00000000-0000-0000-0000-000000000000/" +
+			"resourceGroups/test-rg/providers/Microsoft.MachineLearningServices/workspaces/test-ws/",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasSuffix(endpoint, "/") {
+		t.Fatalf("expected trailing slash to be removed, got %q", endpoint)
+	}
+}
+
+func TestNormalizeLocalRleEndpointRejectsNonLoopbackOrIncompleteRoutes(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://rle.example.com:5080/rle/v1.0/subscriptions/sub/resourceGroups/rg/" +
+			"providers/Microsoft.MachineLearningServices/workspaces/ws",
+		"http://localhost:5080",
+		"http://localhost:5080/rle/v1.0/subscriptions/sub/resourceGroups/rg",
+	} {
+		if _, err := normalizeLocalRleEndpoint(endpoint); err == nil {
+			t.Fatalf("expected %q to be rejected", endpoint)
+		}
 	}
 }
 

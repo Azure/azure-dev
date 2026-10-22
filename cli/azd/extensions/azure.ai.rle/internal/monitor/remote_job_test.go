@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,6 +37,15 @@ type memoryJobSource struct {
 	metrics              func(int64, string) (JobPage[json.RawMessage], error)
 	rollouts             func(string) (JobPage[JobRollout], error)
 	detail               func(string) (JobRollout, error)
+}
+
+type tailMemoryJobSource struct {
+	*memoryJobSource
+	start int64
+}
+
+func (s *tailMemoryJobSource) MetricTailStart(time.Time) int64 {
+	return s.start
 }
 
 func newMemoryJobSource() *memoryJobSource {
@@ -232,6 +242,124 @@ func TestRemoteMetricPagingKeepsWatermarkFixedAndRecovers(t *testing.T) {
 	}
 	if len(j.metrics) != 3 || j.metricCursor.watermark != 7 {
 		t.Fatal("late step lost")
+	}
+}
+
+func TestRemoteMetricPagesMergeFieldsForTheSameStep(t *testing.T) {
+	reader := newMemoryJobSource()
+	reader.metrics = func(_ int64, token string) (JobPage[json.RawMessage], error) {
+		if token == "" {
+			return JobPage[json.RawMessage]{
+				Data: []json.RawMessage{json.RawMessage(`{"step":3,"rollout.response_tokens":27}`)},
+				Next: "next",
+			}, nil
+		}
+		return JobPage[json.RawMessage]{
+			Data: []json.RawMessage{json.RawMessage(`{"step":3,"rollout.reward":1}`)},
+		}, nil
+	}
+	j := newRemoteJob(reader, remoteTestJob)
+	if err := j.readMetrics(t.Context(), remoteTestTime); err != nil {
+		t.Fatal(err)
+	}
+	var row map[string]any
+	if err := json.Unmarshal(j.metrics[3], &row); err != nil {
+		t.Fatal(err)
+	}
+	if row["rollout.response_tokens"] != float64(27) || row["rollout.reward"] != float64(1) {
+		t.Fatalf("page boundary dropped metric fields: %#v", row)
+	}
+}
+
+func TestRemoteMetricTailAdvancesDuringLongReconciliation(t *testing.T) {
+	const tailStart = int64(100)
+	var liveStep atomic.Int64
+	liveStep.Store(101)
+	historyStarted := make(chan struct{})
+	historyRelease := make(chan struct{})
+	reader := &tailMemoryJobSource{memoryJobSource: newMemoryJobSource(), start: tailStart}
+	reader.metrics = func(after int64, token string) (JobPage[json.RawMessage], error) {
+		switch {
+		case after >= tailStart:
+			data := []json.RawMessage{}
+			step := liveStep.Load()
+			if step > after {
+				data = append(data, json.RawMessage(fmt.Sprintf(`{"step":%d,"live":true}`, step)))
+			}
+			return JobPage[json.RawMessage]{
+				Data: data,
+			}, nil
+		case after == -1:
+			if token != "" {
+				t.Fatalf("unexpected history token: %q", token)
+			}
+			close(historyStarted)
+			<-historyRelease
+			return JobPage[json.RawMessage]{
+				Data: []json.RawMessage{json.RawMessage(`{"step":0,"history":true}`)},
+			}, nil
+		default:
+			t.Fatalf("unexpected metric cursor: after=%d token=%q", after, token)
+			return JobPage[json.RawMessage]{}, nil
+		}
+	}
+	j := newRemoteJob(reader, remoteTestJob)
+	now := remoteTestTime
+	j.refresh(t.Context(), now, false)
+	historyDone := make(chan struct{})
+	go func() {
+		defer close(historyDone)
+		j.reconcileMetricHistory(t.Context(), now)
+	}()
+	<-historyStarted
+	defer func() {
+		close(historyRelease)
+		<-historyDone
+	}()
+
+	liveStep.Store(102)
+	refreshDone := make(chan struct{})
+	go func() {
+		defer close(refreshDone)
+		j.refresh(t.Context(), now.Add(10*time.Second), false)
+	}()
+	select {
+	case <-refreshDone:
+	case <-time.After(time.Second):
+		t.Fatal("live metric tail was blocked by the stalled history reconciliation")
+	}
+	if _, ok := j.metrics[102]; !ok {
+		t.Fatal("live metric tail did not cache the new step")
+	}
+}
+
+func TestRemoteMetricTailAdvancesByEventTimeInsteadOfTrainingStep(t *testing.T) {
+	tailStart := remoteTestTime.Add(-time.Minute).UnixMicro()
+	reader := &tailMemoryJobSource{memoryJobSource: newMemoryJobSource(), start: tailStart}
+	reader.metrics = func(after int64, token string) (JobPage[json.RawMessage], error) {
+		if after != tailStart || token != "" {
+			t.Fatalf("unexpected metric cursor: after=%d token=%q", after, token)
+		}
+		return JobPage[json.RawMessage]{Data: []json.RawMessage{
+			json.RawMessage(fmt.Sprintf(
+				`{"step":7,"event_time":%q,"loss":1.25}`,
+				remoteTestTime.Format(time.RFC3339Nano),
+			)),
+		}}, nil
+	}
+	j := newRemoteJob(reader, remoteTestJob)
+	if err := j.readMetrics(t.Context(), remoteTestTime); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := j.metrics[7]; !ok {
+		t.Fatal("training-step row was not cached by its step")
+	}
+	if j.metricCursor.watermark != remoteTestTime.UnixMicro() {
+		t.Fatalf(
+			"tail cursor=%d, want event time %d",
+			j.metricCursor.watermark,
+			remoteTestTime.UnixMicro(),
+		)
 	}
 }
 

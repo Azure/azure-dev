@@ -119,6 +119,14 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 			"harness": map[string]any{"type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},
 		{"legacy harness", map[string]any{"kind": "prompt",
 			"harness": map[string]any{"type": "github_copilot_preview"}}, featureflags.ManagedHarness},
+		{"managed harness with whitespace", map[string]any{
+			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
+			"harness": map[string]any{"type": " \tmicrosoft_copilot_preview\r\n "},
+		}, featureflags.ManagedHarness},
+		{"legacy harness with whitespace", map[string]any{
+			"kind": "prompt", "name": "agent", "model": "gpt-4.1-mini", "instructions": "Be helpful.",
+			"harness": map[string]any{"type": " \tgithub_copilot_preview\r\n "},
+		}, featureflags.ManagedHarness},
 		{"voice", map[string]any{"kind": "voice"}, featureflags.Voice},
 		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Voice},
 		{"hosted voice bridge", map[string]any{"kind": "hosted",

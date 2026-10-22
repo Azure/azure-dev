@@ -37,6 +37,8 @@ func TestInstalledHostOffline(t *testing.T) {
 
 	work := filepath.Join(t.TempDir(), "host smoke 空白")
 	require.NoError(t, os.Mkdir(work, 0o700))
+	coverage := filepath.Join(work, "coverage")
+	require.NoError(t, os.Mkdir(coverage, 0o700))
 	environment := []string{}
 	for _, value := range os.Environ() {
 		key, _, _ := strings.Cut(value, "=")
@@ -52,6 +54,7 @@ func TestInstalledHostOffline(t *testing.T) {
 	environment = append(environment,
 		"HOME="+work, "USERPROFILE="+work, "AZD_CONFIG_DIR="+filepath.Join(work, "config"),
 		"AZURE_CONFIG_DIR="+filepath.Join(work, "azure"), "AZD_COLLECT_TELEMETRY=no",
+		"GOCOVERDIR="+coverage,
 		"HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1",
 		"ALL_PROXY=http://127.0.0.1:1", "NO_PROXY=localhost,127.0.0.1,::1")
 	run := func(success bool, args ...string) []byte {

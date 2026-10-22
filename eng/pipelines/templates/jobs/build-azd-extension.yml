@@ -21,9 +21,6 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
-  - name: InstalledHostSmokeScript
-    type: string
-    default: ''
   - name: PublishToRegistry
     type: string
     default: stable
@@ -99,18 +96,6 @@ jobs:
             -SourceVersion $(Build.SourceVersion)
           workingDirectory: ${{ parameters.AzdExtensionDirectory }}
         displayName: Build Go Binary (for release)
-
-      - ${{ if and(not(parameters.SkipTests), ne(parameters.InstalledHostSmokeScript, ''), in(parameters.NameSuffix, 'Windows', 'Mac')) }}:
-        - task: PowerShell@2
-          displayName: Offline installed-host smoke (azd 1.37.0)
-          inputs:
-            pwsh: true
-            targetType: filePath
-            filePath: ${{ parameters.AzdExtensionDirectory }}/${{ parameters.InstalledHostSmokeScript }}
-            arguments: >-
-              -BinaryPath $(BuildTarget)
-              -Version $(EXT_VERSION)
-            workingDirectory: ${{ parameters.AzdExtensionDirectory }}
 
       - bash: chmod +x $(BuildTarget)
         condition: and(succeeded(), eq(variables['SetExecutableBit'], 'true'))

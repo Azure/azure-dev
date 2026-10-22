@@ -1,3 +1,5 @@
+$ErrorActionPreference = 'Stop'
+
 $gopath = go env GOPATH
 $gotestsumBinary = "gotestsum"
 if ($IsWindows) {
@@ -36,6 +38,18 @@ try {
     }
 } finally {
     Pop-Location
+}
+
+if ($env:AZURE_DEV_CI_OS -in @('win', 'mac')) {
+    if ([string]::IsNullOrWhiteSpace($env:BUILDTARGET) -or [string]::IsNullOrWhiteSpace($env:EXT_VERSION)) {
+        throw "Installed-host smoke requires the pipeline's BUILDTARGET and EXT_VERSION."
+    }
+    Write-Host ""
+    Write-Host "Running offline installed-host smoke..."
+    & "$PSScriptRoot/ci-smoke.ps1" -BinaryPath (Join-Path $PSScriptRoot $env:BUILDTARGET) -Version $env:EXT_VERSION
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
 }
 
 Write-Host ""

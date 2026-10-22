@@ -563,18 +563,20 @@ Like [Foundry agents](../azure.ai.agents/) and
   Python supplies feature/edge-case references, not a second implementation
   framework or a source-test migration quota.
 
-CU opts into offline installed-host smoke in the shared release pipeline's
-`Windows` and `Mac` jobs, after the release binary is built. The
+CU runs offline installed-host smoke from its existing `ci-test.ps1` entry point
+in the shared release pipeline's `Windows` and `Mac` jobs. The
 `ci-smoke.ps1` entry point downloads official azd 1.37.0, verifies its pinned
 archive SHA-256, and runs `TestInstalledHostOffline` against that existing binary.
+It reuses the pipeline's coverage-instrumented test binary and records coverage
+in a temporary directory; it does not rebuild or claim signed-release evidence.
 The test uses temporary host configuration, removes inherited Azure/CU settings,
 and blocks remote HTTP(S) through an unavailable proxy. It checks local-registry
 install/list, help, exact version JSON, strict offline schema validation from a
 path containing spaces and Unicode, invalid-input failure, and uninstall/source
 cleanup. It does not sign in, deploy, analyze documents, or change CU defaults.
-Other extensions do not opt in, and Linux/ARM cross-build jobs do not repeat this
+No shared-template changes are needed, and Linux/ARM jobs do not repeat this
 smoke. Actual platform execution remains required evidence, not a claim made by
-adding the CI step.
+adding the test entry point.
 
 The generated-project suite also executes the PowerShell launcher, checking
 arguments, success/failure exit codes, missing azd, and paths with spaces.

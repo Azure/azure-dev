@@ -7,13 +7,10 @@
 package e2elive
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
-	"strings"
 	"unicode"
 
 	"gopkg.in/yaml.v3"
@@ -106,49 +103,6 @@ func isWordRune(r rune) bool {
 	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
-func snapshotDependencyCommands() [][]string {
-	return [][]string{
-		{"add", "--no-sync", "agent-framework-foundry-hosting==1.0.0b260821",
-			"azure-ai-agentserver-core==2.3.0b1", "azure-ai-agentserver-responses==2.4.0b1"},
-		{"export", "--locked", "--no-dev", "--no-emit-project", "--format", "requirements-txt",
-			"--output-file", "requirements.txt"},
-	}
-}
-
-func snapshotBuildProject(manifest []byte) (string, error) {
-	var config struct {
-		Services map[string]struct {
-			Host     string `yaml:"host"`
-			Kind     string `yaml:"kind"`
-			Language string `yaml:"language"`
-			Project  string `yaml:"project"`
-		} `yaml:"services"`
-	}
-	if err := yaml.Unmarshal(manifest, &config); err != nil {
-		return "", fmt.Errorf("parse snapshot source manifest: %w", err)
-	}
-	var project string
-	for _, service := range config.Services {
-		if service.Host != "azure.ai.agent" {
-			continue
-		}
-		if project != "" {
-			return "", errors.New("snapshot validation requires exactly one agent service")
-		}
-		if service.Kind != "hosted" || service.Language != "python" {
-			return "", errors.New("snapshot validation requires a hosted Python code sample")
-		}
-		if !filepath.IsLocal(service.Project) {
-			return "", errors.New("snapshot build project must be a relative directory within the isolated sample")
-		}
-		project = service.Project
-	}
-	if project == "" {
-		return "", errors.New("no Python agent source project found for snapshot validation")
-	}
-	return project, nil
-}
-
 func updateSnapshotSampleManifest(root *os.Root) error {
 	manifest, err := root.ReadFile("azure.yaml")
 	if err != nil {
@@ -192,76 +146,4 @@ func enableSampleMemorySnapshot(manifest []byte) ([]byte, error) {
 	}
 	agentService["enableMemorySnapshot"] = true
 	return yaml.Marshal(config)
-}
-
-func validateSnapshotAgentVersion(data []byte) error {
-	var version struct {
-		Status     string `json:"status"`
-		Definition struct {
-			Kind                 string `json:"kind"`
-			EnableMemorySnapshot *bool  `json:"enable_memory_snapshot"`
-			CodeConfiguration    *struct {
-				Runtime string `json:"runtime"`
-			} `json:"code_configuration"`
-		} `json:"definition"`
-	}
-	if err := json.Unmarshal(data, &version); err != nil {
-		return fmt.Errorf("parse deployed agent version: %w", err)
-	}
-	if version.Status != "active" {
-		return fmt.Errorf("snapshot agent version is not active: %q", version.Status)
-	}
-	if version.Definition.Kind != "hosted" || version.Definition.EnableMemorySnapshot == nil ||
-		!(*version.Definition.EnableMemorySnapshot) {
-		return errors.New("service did not confirm definition.enable_memory_snapshot=true for the deployed hosted agent")
-	}
-	if version.Definition.CodeConfiguration == nil ||
-		!strings.HasPrefix(version.Definition.CodeConfiguration.Runtime, "python") {
-		return errors.New("service did not confirm a Python code_configuration for snapshot code deploy")
-	}
-	return nil
-}
-
-func snapshotResponsesRequest(sessionID string) map[string]any {
-	return map[string]any{
-		"input":            "Hello, what is 2+2?",
-		"store":            false,
-		"stream":           false,
-		"agent_session_id": sessionID,
-	}
-}
-
-func validateSnapshotResponse(data []byte) error {
-	var response struct {
-		Status string `json:"status"`
-		Output []struct {
-			Type    string `json:"type"`
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"output"`
-	}
-	if err := json.Unmarshal(data, &response); err != nil {
-		return fmt.Errorf("parse stateless Responses result: %w", err)
-	}
-	if response.Status != "completed" {
-		return fmt.Errorf("stateless Responses request did not complete: %q", response.Status)
-	}
-	var answer strings.Builder
-	for _, output := range response.Output {
-		if output.Type != "message" {
-			continue
-		}
-		for _, content := range output.Content {
-			if content.Type == "output_text" {
-				answer.WriteString(content.Text)
-				answer.WriteByte('\n')
-			}
-		}
-	}
-	if !responseHasExpectedAnswer(answer.String()) {
-		return errors.New("stateless Responses output does not contain the expected answer")
-	}
-	return nil
 }

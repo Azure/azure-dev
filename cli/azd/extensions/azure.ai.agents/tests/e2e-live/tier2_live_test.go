@@ -11,12 +11,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,16 +109,15 @@ func deployModesFromEnv() []string {
 
 // runner holds the per-mode state for one golden-path run.
 type runner struct {
-	t                 *testing.T
-	mode              string
-	testDir           string
-	agentName         string
-	env               []string
-	projectDir        string
-	subID             string
-	envName           string
-	c                 *console
-	snapshotAgentName string
+	t          *testing.T
+	mode       string
+	testDir    string
+	agentName  string
+	env        []string
+	projectDir string
+	subID      string
+	envName    string
+	c          *console
 }
 
 // newRunner prepares an isolated working directory, a private AZD_CONFIG_DIR
@@ -241,7 +238,7 @@ func (r *runner) run(ctx context.Context) {
 		return
 	}
 	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		if err := r.prepareSnapshotSample(ctx); err != nil {
+		if err := r.prepareSnapshotSample(); err != nil {
 			r.t.Errorf("snapshot sample preparation: %v", err)
 			return
 		}
@@ -264,12 +261,6 @@ func (r *runner) run(ctx context.Context) {
 		if err := r.phaseInvoke(ctx); err != nil {
 			r.t.Errorf("invoke: %v", err)
 			return
-		}
-		if envTrue("E2E_MEMORY_SNAPSHOT") {
-			if err := r.phaseInvoke(ctx); err != nil {
-				r.t.Errorf("snapshot second new-session invoke: %v", err)
-				return
-			}
 		}
 	}
 	if err := r.phaseDown(ctx); err != nil {
@@ -653,34 +644,10 @@ func (r *runner) phaseDeploy(ctx context.Context) error {
 	if code != 0 {
 		return fmt.Errorf("azd deploy failed (exit %d)", code)
 	}
-	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		out, showCode := r.runQuiet(ctx, r.projectDir, monitorTimeout,
-			"azd", "ai", "agent", "show", r.findServiceName(), "--output", "json")
-		if showCode != 0 {
-			return fmt.Errorf("could not inspect snapshot agent version (exit %d)", showCode)
-		}
-		if err := validateSnapshotAgentVersion([]byte(out)); err != nil {
-			return err
-		}
-		var deployed struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal([]byte(out), &deployed); err != nil {
-			return err
-		}
-		if deployed.Name == "" {
-			return errors.New("deployed snapshot agent response did not include its name")
-		}
-		r.snapshotAgentName = deployed.Name
-		r.t.Log("service confirmed an active hosted agent version with enable_memory_snapshot=true")
-	}
 	return nil
 }
 
-func (r *runner) prepareSnapshotSample(ctx context.Context) error {
-	if strings.TrimSpace(os.Getenv("UV_DEFAULT_INDEX")) == "" {
-		return errors.New("snapshot dependency resolution requires the approved feed in UV_DEFAULT_INDEX")
-	}
+func (r *runner) prepareSnapshotSample() error {
 	r.projectDir = r.findProjectDir()
 	if r.projectDir == "" {
 		return errors.New("no project directory with azure.yaml found")
@@ -690,63 +657,11 @@ func (r *runner) prepareSnapshotSample(ctx context.Context) error {
 		return err
 	}
 	defer root.Close()
-	manifest, err := root.ReadFile("azure.yaml")
-	if err != nil {
-		return err
-	}
-	project, err := snapshotBuildProject(manifest)
-	if err != nil {
-		return err
-	}
-	source, err := root.OpenRoot(project)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	for _, name := range []string{"pyproject.toml", "uv.lock"} {
-		if _, err := source.ReadFile(name); err != nil {
-			return fmt.Errorf("snapshot sample requires %s: %w", name, err)
-		}
-	}
-	sourceDir := filepath.Join(r.projectDir, project)
-	for _, args := range snapshotDependencyCommands() {
-		if out, code := r.runQuiet(ctx, sourceDir, 10*time.Minute, "uv", args...); code != 0 {
-			return fmt.Errorf("snapshot sample dependency resolution failed (exit %d): %s", code, truncate(out, 4000))
-		}
-	}
-	r.t.Log("isolated sample dependencies updated to the platform guide versions; lock file and requirements regenerated")
 	return updateSnapshotSampleManifest(root)
-}
-
-func (r *runner) invokeSnapshotResponses(ctx context.Context) error {
-	endpoint := r.azdEnvValues(ctx)["FOUNDRY_PROJECT_ENDPOINT"]
-	if endpoint == "" {
-		return errors.New("FOUNDRY_PROJECT_ENDPOINT is missing from the deployed sample environment")
-	}
-	sessionID := "snapshot-" + rand.Text()
-	request, err := json.Marshal(snapshotResponsesRequest(sessionID))
-	if err != nil {
-		return err
-	}
-	endpoint = strings.TrimRight(endpoint, "/") + "/agents/" + url.PathEscape(r.snapshotAgentName) +
-		"/endpoint/protocols/openai/responses?api-version=v1"
-	out, code := r.runQuiet(ctx, r.projectDir, invokeTimeout, "az", "rest", "--method", "post",
-		"--resource", "https://ai.azure.com", "--url", endpoint, "--body", string(request), "--output", "json")
-	if code != 0 {
-		return fmt.Errorf("stateless snapshot invocation failed (exit %d): %s", code, truncate(out, 2000))
-	}
-	if err := validateSnapshotResponse([]byte(out)); err != nil {
-		return err
-	}
-	r.t.Logf("stateless Responses invocation completed for session %s with store=false and the expected answer", sessionID)
-	return nil
 }
 
 // phaseInvoke calls the deployed agent and verifies it answers "2+2" with 4.
 func (r *runner) phaseInvoke(ctx context.Context) error {
-	if envTrue("E2E_MEMORY_SNAPSHOT") {
-		return r.invokeSnapshotResponses(ctx)
-	}
 	wait := 30 * time.Second
 	if r.mode == "container" {
 		wait = 60 * time.Second

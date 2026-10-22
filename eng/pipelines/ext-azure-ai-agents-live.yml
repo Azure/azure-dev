@@ -126,21 +126,6 @@ extends:
             steps:
               - checkout: self
 
-              - ${{ if eq(parameters.memorySnapshot, true) }}:
-                  - task: UsePythonVersion@0
-                    displayName: Select Python for snapshot sample dependencies
-                    inputs:
-                      versionSpec: '3.13'
-                  - template: /eng/common/pipelines/templates/steps/python-auth-dev-feed.yml
-                    parameters:
-                      EnableTwineAuth: false
-                      DisableAdditionalIndexes: true
-                  - bash: python -m pip install --disable-pip-version-check uv==0.11.7
-                    displayName: Install sample dependency tooling
-                    env:
-                      PIP_INDEX_URL: $(PIP_INDEX_URL)
-                      PIP_EXTRA_INDEX_URL: ""
-
               - template: /eng/pipelines/templates/steps/setup-go.yml
 
               # Live build — NO `-tags=record`, so the CLI/extension talk to real
@@ -367,9 +352,6 @@ extends:
                   E2E_TEMPLATE_URL: ${{ parameters.templateURL }}
                   ${{ if eq(parameters.memorySnapshot, true) }}:
                     E2E_MEMORY_SNAPSHOT: "true"
-                    PIP_INDEX_URL: $(PIP_INDEX_URL)
-                    UV_DEFAULT_INDEX: $(UV_DEFAULT_INDEX)
-                    UV_KEYRING_PROVIDER: disabled
                   ${{ else }}:
                     E2E_MEMORY_SNAPSHOT: "false"
                   E2E_USE_AZ_CLI_AUTH: "true"

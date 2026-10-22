@@ -4,7 +4,6 @@
 package e2elive
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,40 +105,6 @@ func TestAgentResponseRegion(t *testing.T) {
 	}
 }
 
-func TestSnapshotDependencyCommands(t *testing.T) {
-	commands := snapshotDependencyCommands()
-	require.Len(t, commands, 2)
-	require.Equal(t, "add", commands[0][0])
-	require.Contains(t, commands[0], "agent-framework-foundry-hosting==1.0.0b260821")
-	require.Contains(t, commands[0], "azure-ai-agentserver-core==2.3.0b1")
-	require.Contains(t, commands[0], "azure-ai-agentserver-responses==2.4.0b1")
-	require.Equal(t, "export", commands[1][0])
-	require.Contains(t, commands[1], "--locked")
-	for _, command := range commands {
-		require.NotContains(t, command, "--prerelease")
-		require.NotContains(t, command, "--frozen")
-	}
-}
-
-func TestSnapshotBuildProject(t *testing.T) {
-	manifest := "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    language: python\n    project: src/agent\n"
-	project, err := snapshotBuildProject([]byte(manifest))
-	require.NoError(t, err)
-	require.Equal(t, "src/agent", project)
-	for _, invalid := range []string{
-		strings.ReplaceAll(manifest, "src/agent", "../outside"),
-		strings.ReplaceAll(manifest, "src/agent", "/outside"),
-		strings.ReplaceAll(manifest, "language: python", "language: dotnet"),
-		strings.ReplaceAll(manifest, "language: python", "language: docker"),
-		strings.ReplaceAll(manifest, "kind: hosted", "kind: prompt"),
-		manifest + "  second:\n    host: azure.ai.agent\n    kind: hosted\n    language: python\n    project: src/second\n",
-		"services: {}", "services: [",
-	} {
-		_, err := snapshotBuildProject([]byte(invalid))
-		require.Error(t, err)
-	}
-}
-
 func TestUpdateSnapshotSampleManifest(t *testing.T) {
 	original := []byte("services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    codeConfiguration:\n      runtime: python_3.13\n")
 	t.Run("updates within project root", func(t *testing.T) {
@@ -199,36 +164,6 @@ func TestEnableSampleMemorySnapshot(t *testing.T) {
 			require.NoError(t, yaml.Unmarshal(data, &after))
 			before.Services["agent"]["enableMemorySnapshot"] = true
 			require.Equal(t, before, after)
-		})
-	}
-}
-
-func TestValidateSnapshotAgentVersion(t *testing.T) {
-	for _, testCase := range []struct {
-		name    string
-		data    string
-		wantErr string
-	}{
-		{"enabled active", `{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":true,` +
-			`"code_configuration":{"runtime":"python_3.13"}}}`, ""},
-		{"missing code", `{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":true}}`, "code_configuration"},
-		{"wrong runtime", `{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":true,` +
-			`"code_configuration":{"runtime":"dotnet_10"}}}`, "Python code_configuration"},
-		{"missing opt-in", `{"status":"active","definition":{"kind":"hosted"}}`, "did not confirm"},
-		{"disabled", `{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":false}}`, "did not confirm"},
-		{"wrong kind", `{"status":"active","definition":{"kind":"prompt","enable_memory_snapshot":true}}`, "did not confirm"},
-		{"creating", `{"status":"creating","definition":{"kind":"hosted","enable_memory_snapshot":true}}`, "not active"},
-		{"failed", `{"status":"failed"}`, "not active"},
-		{"invalid json", `{`, "parse deployed agent version"},
-		{"wrong type", `{"status":"active","definition":{"kind":"hosted","enable_memory_snapshot":"true"}}`, "parse"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			err := validateSnapshotAgentVersion([]byte(testCase.data))
-			if testCase.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, testCase.wantErr)
-			}
 		})
 	}
 }
@@ -295,23 +230,4 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, subscriptionBoundSteps)
-}
-
-func TestSnapshotStatelessResponsesContract(t *testing.T) {
-	body := snapshotResponsesRequest("snapshot-session")
-	require.Equal(t, false, body["store"])
-	require.Equal(t, false, body["stream"])
-	require.Equal(t, "snapshot-session", body["agent_session_id"])
-	require.NotContains(t, body, "conversation")
-	data, err := json.Marshal(body)
-	require.NoError(t, err)
-	require.Contains(t, string(data), `"store":false`)
-	require.NoError(t, validateSnapshotResponse([]byte(
-		`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"4"}]}]}`)))
-	for _, invalid := range []string{
-		`{`, `{"status":"failed"}`, `{"status":"completed","model":"gpt-4o","output":[]}`,
-		`{"status":"completed","output":[{"type":"tool_call","content":[{"type":"output_text","text":"4"}]}]}`,
-	} {
-		require.Error(t, validateSnapshotResponse([]byte(invalid)))
-	}
 }

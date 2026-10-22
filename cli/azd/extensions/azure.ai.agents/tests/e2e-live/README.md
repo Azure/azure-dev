@@ -76,12 +76,13 @@ builds `azd` + the extension and runs `go test -run TestTier2Live` inside an
 - **Manual:** queue the pipeline and pick `deployModes` = `both` / `code` /
   `container`.
 
-### Memory snapshot sample validation
+### Snapshot opt-in deploy/invoke compatibility
 
-This opt-in reuses the existing Python Responses **code deploy** flow. It does
-not create an ACR, build images, or grant roles. It uses the platform guide's
-SDK versions, but is not its container-image test. Ordinary code/container runs
-and scheduled runs remain unchanged with `memorySnapshot=false`.
+The GitHub test workflow runs builds, Tier 0 offline checks, and Tier 1 playback;
+it does not deploy or invoke real agents. This ADO live pipeline already tests
+`init -> provision -> deploy -> invoke -> down` against Azure. Its optional
+snapshot case checks only that the existing code deploy and invoke flow still
+works after adding `enableMemorySnapshot: true`. Ordinary runs are unchanged.
 
 Queue the live pipeline at the intended commit with:
 
@@ -89,7 +90,7 @@ Queue the live pipeline at the intended commit with:
 | --- | --- |
 | `memorySnapshot` | `true` |
 | `deployModes` | `code`; snapshot runs reject `container` and `both` |
-| `templateURL` | Pinned stateless Python Responses sample with `pyproject.toml` and `uv.lock` |
+| `templateURL` | Pinned code sample already compatible with snapshot-enabled hosting |
 | `subscriptionId` | Explicit preview-approved subscription ID |
 | `serviceConnection` | Identity with management and Foundry data access to the target |
 | `location` | Preview-approved region; subscription approval alone is insufficient |
@@ -98,30 +99,19 @@ The pipeline verifies the requested subscription before init and binds azd and
 cleanup to it, without falling back to the connection's default. Ordinary runs
 may omit `subscriptionId` to retain that default.
 
-Before provisioning, CI uses Python 3.13, uv `0.11.7`, and the authenticated Azure
-Artifacts feed to prepare only its isolated sample copy. The Agent Framework
-Responses `01-basic` sample retains hosting `1.0.0b260821` and receives these pins:
+CI changes only the isolated sample's snapshot setting, preserving its other
+configuration and dependencies. It verifies `AZD_AGENT_SKIP_ACR=true`, then uses
+the same `azd deploy` and `azd ai agent invoke` steps, retries, response checks,
+and cleanup as the ordinary live test. Deployment must exit successfully and
+the invocation must return the expected answer. Activation waiting is owned by
+the existing deployment implementation; snapshot capture can need longer.
 
-```text
-azure-ai-agentserver-core==2.3.0b1
-azure-ai-agentserver-responses==2.4.0b1
-```
-
-CI regenerates the lockfile and `requirements.txt`, preserves `codeConfiguration`,
-and sets `enableMemorySnapshot: true`. It requires init to have set
-`AZD_AGENT_SKIP_ACR=true` before creating resources. Local runs also need
-`UV_DEFAULT_INDEX` set to the approved feed. Existing user projects are unchanged.
-
-Success requires `azd deploy` to return an active hosted version with Python code
-configuration and the snapshot opt-in confirmed by the service, followed by two
-successful Responses requests in distinct sessions with `store:false`.
-Authenticated `az rest` sends those requests because `azd ai agent invoke
---input-file` does not accept arbitrary raw Responses fields. Cleanup always runs.
-
-Source dependency pins are not evidence of the managed runtime's installed
-packages. This test does not cover .NET, container-image qualification, idle
-replacement, filesystem durability, or cold-start performance. Application
-Insights and its optional `before-snapshot` check are not automated.
+The sample owner must supply compatible SDK versions and documented scenario
+support. CI does not install or rewrite SDK dependencies. It does not separately
+inspect version JSON, send custom REST requests, create a second session test,
+or verify capture/restore, hooks, durability, or cold-start performance. The
+product PR's configuration and API-mapping tests cover parameter transmission.
+Passing this case establishes deploy/invoke compatibility, not snapshot behavior.
 
 Logs are published as `tier2-live-logs-<BuildId>-<JobAttempt>`.
 

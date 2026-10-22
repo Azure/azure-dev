@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"azureaiagent/internal/exterrors"
@@ -172,11 +173,21 @@ func flagNeedsFeature(flag *pflag.Flag) bool {
 
 type serviceGateKey struct{}
 
+var previewValidators sync.Map
+
+// validateBeforePreview registers a pure local check to run only when the gate would reject.
+func validateBeforePreview(cmd *cobra.Command, fn func(*cobra.Command, []string) error) {
+	previewValidators.Store(cmd, fn)
+}
+
 // enforcePreviewFeatures runs once from the root PersistentPreRunE. It binds
 // the selected environment for nested checks, marks commands that classify
-// agent services, and rejects disabled preview commands and flags.
-func enforcePreviewFeatures(cmd *cobra.Command, environmentName string) error {
+// agent services, and rejects disabled preview commands and flags. Local
+// argument errors take precedence only when a preview check would fail.
+func enforcePreviewFeatures(cmd *cobra.Command, args []string, environmentName string) error {
+	environmentErr := featureflags.CheckEnvironmentFlag(cmd.Flags())
 	ctx := featureflags.WithEnvironment(cmd.Context(), environmentName)
+	ctx = featureflags.WithEnvironmentError(ctx, environmentErr)
 	if cmd.Annotations[serviceGateAnnotation] != "" {
 		ctx = context.WithValue(ctx, serviceGateKey{}, true)
 	}
@@ -185,6 +196,17 @@ func enforcePreviewFeatures(cmd *cobra.Command, environmentName string) error {
 	features := requiredPreviewFeatures(cmd)
 	if len(features) == 0 {
 		return nil
+	}
+	reject := func(gateErr error) error {
+		if validator, ok := previewValidators.Load(cmd); ok {
+			if err := validator.(func(*cobra.Command, []string) error)(cmd, args); err != nil {
+				return err
+			}
+		}
+		return gateErr
+	}
+	if environmentErr != nil {
+		return reject(environmentErr)
 	}
 	client, err := azdext.NewAzdClient()
 	if err != nil {
@@ -195,7 +217,7 @@ func enforcePreviewFeatures(cmd *cobra.Command, environmentName string) error {
 	defer client.Close()
 	for _, feature := range features {
 		if err := featureflags.Require(ctx, client, feature); err != nil {
-			return err
+			return reject(err)
 		}
 	}
 	return nil
@@ -244,7 +266,7 @@ func previewHelpEnvironment(cmd *cobra.Command, extCtx *azdext.ExtensionContext)
 func previewHelpStates(ctx context.Context, environmentName string) map[string]bool {
 	states := map[string]bool{}
 	var client *azdext.AzdClient
-	if os.Getenv("AZD_SERVER") != "" {
+	if featureflags.EnvironmentError(ctx) == nil && os.Getenv("AZD_SERVER") != "" {
 		if created, err := azdext.NewAzdClient(); err == nil {
 			client = created
 			defer client.Close()

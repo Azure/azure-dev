@@ -25,8 +25,12 @@ azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
 
 Setting the matching process variable to `true` also turns the feature on.
 Opt-ins combine with OR. A false value never overrides a true value elsewhere.
-`alpha.all` and unrelated config keys, including `agents.hosted`, do not turn
-these features on. Ordinary hosted and plain prompt agents need no opt-in.
+
+`azd config set alpha.all on` and `AZD_ALPHA_ENABLE_<NAME>` variables such as
+`AZD_ALPHA_ENABLE_AGENTS_VOICE` do not turn these previews on.
+Each preview needs its own `alpha.agents.<name>` key or its
+`AZD_FOUNDRY_EXT_ENABLE_*` variable. Unrelated keys such as `agents.hosted`
+do not turn them on. Ordinary hosted and plain prompt agents need no opt-in.
 
 ### Check feature status
 
@@ -834,7 +838,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization is available without a private-preview environment switch.
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 

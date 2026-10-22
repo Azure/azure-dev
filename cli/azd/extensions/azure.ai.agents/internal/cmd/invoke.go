@@ -211,40 +211,17 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			// The inherited global --output flag is parsed and validated by the
-			// extension SDK (see azdext.RegisterFlagOptions below). Snapshot the
-			// resolved value into our flags struct so the rest of this action
-			// reads a single field.
-			flags.outputFmt = extCtx.OutputFormat
-
-			switch len(args) {
-			case 2:
-				flags.name = args[0]
-				flags.message = args[1]
-			case 1:
-				// Single arg could be a name (when -f is used) or a message
-				if flags.inputFile != "" {
-					flags.name = args[0]
-				} else {
-					flags.message = args[0]
-				}
-			case 0:
-				// Only valid when -f is provided
+			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+			if err := validateInvokeArgs(cmd, flags); err != nil {
+				return err
 			}
-
+			flags.version = strings.TrimSpace(flags.version)
 			action := &InvokeAction{
 				flags:                flags,
 				noPrompt:             extCtx.NoPrompt,
 				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
 			}
-
-			// Agent-endpoint structural conflicts are surfaced first so the user sees
-			// the precise reason their invocation cannot proceed.
 			if flags.agentEndpoint != "" {
-				if err := validateAgentEndpointFlags(cmd, flags); err != nil {
-					return err
-				}
 				parsed, err := parseAgentEndpoint(flags.agentEndpoint)
 				if err != nil {
 					return err
@@ -253,109 +230,11 @@ Raw output includes the returned headers without a formatted latency summary.` +
 				flags.name = parsed.AgentName
 				action.endpoint = parsed
 			}
-
-			if flags.inputFile != "" && flags.message != "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --input-file and a message argument together",
-					"provide either a message argument or --input-file, not both",
-				)
-			}
-			if flags.inputFile == "" && flags.message == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"a message argument or --input-file is required",
-					"provide a message as a positional argument, or use --input-file/-f to send a file",
-				)
-			}
-
-			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
-				return err
-			}
-
-			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--conversation-id cannot be empty",
-					"provide a valid conversation ID or omit --conversation-id",
-				)
-			}
-
-			if flags.forceNewConversation() && flags.conversation != "" {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"cannot use conversation reset flags with --conversation-id",
-					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
-				)
-			}
-
-			if flags.protocol != "" {
-				p := agent_api.AgentProtocol(flags.protocol)
-				if !p.IsInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations, a2a",
-					)
-				}
-				if flags.local && !p.IsLocalInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
-						"omit --local to invoke the deployed agent, "+
-							"or use --protocol responses/invocations for local invocation",
-					)
-				}
-			}
-
 			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 			if err != nil {
 				return err
 			}
-			// A2A routes through a translating proxy with its own fixed header
-			// set and does not propagate x-client-* to the agent, so accepting
-			// the flag there would silently drop the headers.
-			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--client-header is not supported with the a2a protocol",
-					"the a2a protocol does not forward x-client-* headers to the agent; "+
-						"use --protocol responses or invocations to send client headers",
-				)
-			}
 			action.clientHeaders = clientHeaders
-
-			if flags.noWait && !flags.longRunning {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"--no-wait requires --long-running",
-					"add --long-running or remove --no-wait",
-				)
-			}
-			if flags.longRunning {
-				if cmd.Flags().Changed("timeout") {
-					return exterrors.Validation(
-						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --long-running",
-						"remove --timeout; background Responses remain attached until completion or interruption",
-					)
-				}
-				if flags.local {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--long-running is supported only for remote Responses agents",
-						"remove --local and invoke a deployed Responses agent",
-					)
-				}
-				if flags.outputFmt == outputRaw {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --long-running",
-						"remove --output raw so azd can save the Response identity",
-					)
-				}
-			}
-
 			return action.Run(ctx)
 		},
 	}
@@ -435,6 +314,10 @@ Raw output includes the returned headers without a formatted latency summary.` +
 	})
 
 	gateAgentServices(cmd)
+	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
+		resolved := resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+		return validateInvokeArgs(cmd, &resolved)
+	})
 	previewFlag(cmd, "long-running", featureflags.LongRunning)
 	previewFlag(cmd, "no-wait", featureflags.LongRunning)
 	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
@@ -467,6 +350,128 @@ var invokeLongRunningExamples = []string{`
   # Start background work and return after its Response ID is received
   azd ai agent invoke --long-running --no-wait "Run the long task"
 `}
+
+func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) invokeFlags {
+	flags.outputFmt = outputFormat
+	switch len(args) {
+	case 2:
+		flags.name, flags.message = args[0], args[1]
+	case 1:
+		if flags.inputFile != "" {
+			flags.name = args[0]
+		} else {
+			flags.message = args[0]
+		}
+	}
+	return flags
+}
+
+func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
+	flags := *input
+	if flags.agentEndpoint != "" {
+		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
+			return err
+		}
+		parsed, err := parseAgentEndpoint(flags.agentEndpoint)
+		if err != nil {
+			return err
+		}
+		flags.protocol = string(parsed.Protocol)
+		flags.name = parsed.AgentName
+	}
+	if flags.inputFile != "" && flags.message != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"cannot use --input-file and a message argument together",
+			"provide either a message argument or --input-file, not both",
+		)
+	}
+	if flags.inputFile == "" && flags.message == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a message argument or --input-file is required",
+			"provide a message as a positional argument, or use --input-file/-f to send a file",
+		)
+	}
+	if err := validateInvokeVersionFlags(cmd, &flags); err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--conversation-id cannot be empty",
+			"provide a valid conversation ID or omit --conversation-id",
+		)
+	}
+	if flags.forceNewConversation() && flags.conversation != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use conversation reset flags with --conversation-id",
+			"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
+		)
+	}
+	if flags.protocol != "" {
+		p := agent_api.AgentProtocol(flags.protocol)
+		if !p.IsInvocable() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
+				"supported protocols are: responses, invocations, a2a",
+			)
+		}
+		if flags.local && !p.IsLocalInvocable() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
+				"omit --local to invoke the deployed agent, "+
+					"or use --protocol responses/invocations for local invocation",
+			)
+		}
+	}
+	clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+	if err != nil {
+		return err
+	}
+	if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
+	}
+	if flags.noWait && !flags.longRunning {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--no-wait requires --long-running",
+			"add --long-running or remove --no-wait",
+		)
+	}
+	if flags.longRunning {
+		if cmd.Flags().Changed("timeout") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--timeout cannot be used with --long-running",
+				"remove --timeout; background Responses remain attached until completion or interruption",
+			)
+		}
+		if flags.local {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--long-running is supported only for remote Responses agents",
+				"remove --local and invoke a deployed Responses agent",
+			)
+		}
+		if flags.outputFmt == outputRaw {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--output raw is not supported with --long-running",
+				"remove --output raw so azd can save the Response identity",
+			)
+		}
+	}
+	return nil
+}
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
 	if flags.version == "" && !cmd.Flags().Changed("version") {

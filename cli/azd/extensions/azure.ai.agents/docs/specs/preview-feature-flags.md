@@ -49,6 +49,8 @@ type Feature struct {
     Description string
 }
 
+func CheckEnvironmentFlag(flags *pflag.FlagSet) error
+
 func IsEnabled(
     ctx context.Context,
     client *azdext.AzdClient,
@@ -59,6 +61,10 @@ func IsEnabled(
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
+
+Callers must call `CheckEnvironmentFlag(cmd.Flags())` before `IsEnabled` and before any source read. An explicit empty or whitespace only `-e/--environment` selection is invalid. The check returns a validation error with code `invalid_parameter`. It returns nil for a nil flag set, an absent flag, an omitted flag, or a nonempty selection.
+
+Pass the parsed `azdext.ExtensionContext.Environment` unchanged to `IsEnabled`. An empty name means the flag was omitted and lets the host select the project default. A nonempty name is passed to `Environment.GetValues`, so an explicit selection takes precedence over the project default. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
 
 ## Feature registry
 
@@ -73,6 +79,9 @@ func Lookup(id string) (Feature, bool)
 Each ID starts with `agents.`. Each environment key is `AZD_FOUNDRY_EXT_ENABLE_` plus the ID in upper case with dots replaced by underscores. Tests enforce both rules, unique IDs and keys, and a nonempty description. The helper still reads `EnvVar` as declared and never derives it at run time.
 
 ```go
+if err := featureflags.CheckEnvironmentFlag(cmd.Flags()); err != nil {
+    return err
+}
 enabled, err := featureflags.IsEnabled(
     extCtx.Context(),
     azdClient,
@@ -81,17 +90,17 @@ enabled, err := featureflags.IsEnabled(
 )
 ```
 
-`IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
+`IsEnabled` returns a bound environment validation error first. It then rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator.
 
-`IsEnabled` itself never reads `AZD_ENVIRONMENT`. The root pre-run binds the parsed `ExtensionContext.Environment` into the command context with `WithEnvironment`. That value already falls back to `AZD_ENVIRONMENT` in the SDK. `Require` passes `Environment(ctx)` to `IsEnabled`. That is the bound value when present, including an explicit empty value. Otherwise it is `AZD_ENVIRONMENT`, which azd sets for lifecycle callbacks.
+`IsEnabled` itself never reads `AZD_ENVIRONMENT`. The root pre-run binds the parsed `ExtensionContext.Environment` with `WithEnvironment` and the result of `CheckEnvironmentFlag` with `WithEnvironmentError`. The SDK falls back to `AZD_ENVIRONMENT` when the flag is omitted. `Require` returns the bound validation error before any source read. An explicit empty or whitespace only value cannot fall back to the default environment. Otherwise `Require` passes `Environment(ctx)` to `IsEnabled`. Without a bound value, it uses `AZD_ENVIRONMENT`, which azd sets for lifecycle callbacks.
 
-`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The selected environment and the service gate marker are the only flag-related context values.
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The context holds the selected environment, its validation error, and the service gate marker.
 
 ## Central enforcement
 
 Enforcement has two layers. Each layer has one check.
 
-**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It then calls `enforcePreviewFeatures` once for the executing command. The existing debug logging and telemetry steps keep their order. A command without a preview annotation and without a set preview flag makes no host reads.
+**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It calls `enforcePreviewFeatures` for the executing command with its args. Whenever the gate would reject, it first runs the command's local argument checks from `validateBeforePreview` so local conflicts are reported before `feature_not_enabled` or an empty environment error. These checks use only flags and args, with no source reads or state changes. The existing debug logging and telemetry steps keep their order. The gate makes no host reads for a command without a preview annotation or a set preview flag. A bound environment error only fails commands that perform a preview check.
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
@@ -122,7 +131,7 @@ These entry points classify content that only exists at run time, so an annotati
 
 ## Help hiding
 
-`NewRootCommand` builds the tree without an azd client, and help rendering skips `PersistentPreRunE`. The root help function therefore resolves feature states when help is shown. Cobra has already parsed flags, so `-e` is honored. Without `-e`, `AZD_ENVIRONMENT` is used. The same evaluator reads user config, the process environment, and the selected azd environment through a client created at that moment with a ten second bound. When `AZD_SERVER` is absent or a read fails, help falls back to the process value only. Help never fails because of a flag read. The states are applied to the whole tree once (`Hidden` on commands and flags, usage text swaps, and help block removal) before the default help renders.
+`NewRootCommand` builds the tree without an azd client, and help rendering skips `PersistentPreRunE`. The root help function resolves feature states when help is shown. Cobra has already parsed flags, so `-e` is honored. Without `-e`, `AZD_ENVIRONMENT` is used. An explicit empty or whitespace only selection uses process values only and makes no host reads. For other selections, the evaluator reads user config, the process environment, and the selected azd environment through a client created at that moment with a ten second bound. When `AZD_SERVER` is absent or a read fails, help falls back to the process value only. Help never fails because of a flag read. The states are applied to the whole tree once (`Hidden` on commands and flags, usage text swaps, and help block removal) before the default help renders.
 
 Trade-offs:
 
@@ -158,9 +167,13 @@ The documented ways to opt into a feature are listed below. These opt-ins are ad
 
 Manifest decoding reuses the existing service decoder used by `agent add`, rather than maintaining a second interpretation of service fields.
 
-The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
+Unrelated config keys cannot enable a preview or cancel an opt-in from another source.
 
-False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace. Booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`. Values such as `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle, `AZD_ALPHA_ENABLE_*` alias, or experimentation default.
+False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace. Booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`. Values such as `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle or experimentation default.
+
+### Relation to azd alpha features
+
+Agents previews reuse the `alpha.<id>` config key shape for `azd config set`, but are not part of the azd alpha feature set. Neither `alpha.all` nor `AZD_ALPHA_ENABLE_<NAME>`, such as `AZD_ALPHA_ENABLE_AGENTS_VOICE`, turns them on. Each preview must be turned on with its own `alpha.agents.<name>` key or its `AZD_FOUNDRY_EXT_ENABLE_*` variable. Each preview is chosen on its own, so a global switch cannot opt a user into a preview they did not choose. Core azd alpha feature behavior is unchanged.
 
 ## Reads, optional scopes, and errors
 

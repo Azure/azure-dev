@@ -4,17 +4,278 @@
 package cmd
 
 import (
+	"errors"
+	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+func TestPreviewEmptyEnvironment(t *testing.T) {
+	for _, value := range []string{"", " \t "} {
+		for _, flag := range []string{"--environment", "-e"} {
+			t.Run(flag+"/"+value, func(t *testing.T) {
+				clearPreviewProcess(t)
+				t.Setenv("AZD_ENVIRONMENT", "default-env")
+				t.Setenv(featureflags.LongRunning.EnvVar, "true")
+				_, env := startPreviewCommandServer(t, nil, nil, nil)
+				_, err := executeRoot(t, "invoke", "--long-running", flag, value, "hi")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "%v", err)
+				require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+				require.Contains(t, localErr.Message, "--environment")
+				require.Zero(t, env.reads.Load())
+
+				_, err = executeRoot(t, "version", flag, value)
+				require.NoError(t, err)
+				require.Zero(t, env.reads.Load())
+
+				root := NewRootCommand()
+				root.AddCommand(&cobra.Command{
+					Use: "nested",
+					RunE: func(cmd *cobra.Command, _ []string) error {
+						before := env.reads.Load()
+						err := featureflags.Require(cmd.Context(), nil, featureflags.Voice)
+						require.Equal(t, before, env.reads.Load())
+						return err
+					},
+				})
+				root.SetArgs([]string{"nested", flag, value})
+				err = root.Execute()
+				nestedErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "%v", err)
+				require.Equal(t, exterrors.CodeInvalidParameter, nestedErr.Code)
+			})
+		}
+	}
+}
+
+func TestPreviewHelpEmptyEnvironmentUsesOnlyProcess(t *testing.T) {
+	for _, value := range []string{"", " \t "} {
+		t.Run(value, func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Setenv("AZD_ENVIRONMENT", "default-env")
+			t.Setenv(featureflags.Voice.EnvVar, "true")
+			_, env := startPreviewCommandServer(t, map[string]any{
+				"agents": map[string]any{"long_running": "on"},
+			}, nil, nil)
+			text, err := executeRoot(t, "invoke", "--environment", value, "--help")
+			require.NoError(t, err)
+			require.Contains(t, text, "Voice Agents")
+			require.NotContains(t, text, "--long-running")
+			require.Zero(t, env.reads.Load())
+		})
+	}
+}
+
+func TestPreviewLocalValidationPrecedesGate(t *testing.T) {
+	for _, tc := range []struct {
+		args    []string
+		code    string
+		message string
+	}{
+		{[]string{"invoke", "--no-wait", "hi"}, exterrors.CodeConflictingArguments,
+			"--no-wait requires --long-running"},
+		{[]string{"invoke", "--long-running", "--local", "hi"}, exterrors.CodeInvalidParameter,
+			"--long-running is supported only for remote Responses agents"},
+		{[]string{"invoke", "--long-running", "--timeout", "5", "hi"}, exterrors.CodeConflictingArguments,
+			"--timeout cannot be used with --long-running"},
+		{[]string{"invoke", "--protocol", "bogus", "--long-running", "hi"}, exterrors.CodeInvalidParameter,
+			`unsupported protocol "bogus" for invocation`},
+		{[]string{"invoke", "--long-running", "--output", "raw", "hi"}, exterrors.CodeInvalidParameter,
+			"--output raw is not supported with --long-running"},
+		{[]string{"init", "--voice", "x", "--kind", "hosted"}, exterrors.CodeInvalidParameter,
+			"--voice is only supported when creating a new prompt voice agent"},
+		{[]string{"init", "--kind", "prompt-voice", "--deploy-mode", "code"}, exterrors.CodeConflictingArguments,
+			"new prompt voice agents cannot use these init inputs: --deploy-mode"},
+		{[]string{"init", "--voice", "x", "-t", "a.yaml", "-m", "b.yaml"}, exterrors.CodeConflictingArguments,
+			"cannot pass both --template and deprecated --manifest"},
+		{[]string{"init", "--kind", "prompt-voice"}, exterrors.CodeInvalidParameter,
+			"--kind prompt-voice requires --agent-name"},
+		{[]string{"init", "--kind", "hosted", "--harness", "microsoft_copilot_preview"},
+			exterrors.CodeInvalidParameter, "--harness is only valid with --kind prompt"},
+		{[]string{"init", "--kind", "prompt", "--harness", "microsoft_copilot_preview", "--deploy-mode", "bogus"},
+			exterrors.CodeInvalidParameter, "invalid --deploy-mode value \"bogus\"; must be 'container' or 'code'"},
+		{[]string{"init", "--kind", "prompt-voice", "--agent-name", "agent", "--infra=bogus"},
+			exterrors.CodeInvalidParameter, `unsupported --infra value "bogus"`},
+		{[]string{"invoke", "--no-wait", "--environment", "", "hi"}, exterrors.CodeConflictingArguments,
+			"--no-wait requires --long-running"},
+		{[]string{"invoke", "--long-running", "hi"}, exterrors.CodeFeatureNotEnabled,
+			`preview feature "agents.long_running" is disabled`},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			clearPreviewProcess(t)
+			for _, feature := range featureflags.All() {
+				require.NoError(t, os.Unsetenv(feature.EnvVar))
+			}
+			t.Chdir(t.TempDir())
+			_, env := startPreviewCommandServer(t, nil, nil, nil)
+			_, err := executeRoot(t, tc.args...)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "%v", err)
+			require.Equal(t, tc.code, localErr.Code)
+			if tc.message != "" {
+				require.Equal(t, tc.message, localErr.Message)
+			}
+			if slices.Contains(tc.args, "--environment") {
+				require.Zero(t, env.reads.Load())
+			}
+			entries, err := os.ReadDir(".")
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
+}
+
+func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		required        bool
+		enabled         bool
+		readError       bool
+		environmentArgs []string
+		wantCalls       int
+	}{
+		{name: "no feature"},
+		{name: "no feature with empty environment", environmentArgs: []string{"--environment", ""}},
+		{name: "enabled", required: true, enabled: true},
+		{name: "disabled", required: true, wantCalls: 1},
+		{name: "source read error", required: true, enabled: true, readError: true, wantCalls: 1},
+		{name: "empty environment", required: true, enabled: true,
+			environmentArgs: []string{"--environment", ""}, wantCalls: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearPreviewProcess(t)
+			_, env := startPreviewCommandServer(t, nil, nil, nil)
+			if tc.readError {
+				env.err = errors.New("cannot read environment")
+			}
+			if tc.enabled {
+				t.Setenv(featureflags.Voice.EnvVar, "true")
+			}
+			localErr := errors.New("local validation failed")
+			calls, preRuns, runs := 0, 0, 0
+			command := &cobra.Command{
+				Use:     "check",
+				PreRunE: func(*cobra.Command, []string) error { preRuns++; return nil },
+				RunE:    func(*cobra.Command, []string) error { runs++; return nil },
+			}
+			if tc.required {
+				previewCommand(command, featureflags.Voice)
+			}
+			validateBeforePreview(command, func(*cobra.Command, []string) error {
+				calls++
+				return localErr
+			})
+			root := &cobra.Command{
+				Use: "root",
+				PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+					return enforcePreviewFeatures(cmd, args, "selected-env")
+				},
+			}
+			root.PersistentFlags().String("environment", "", "")
+			root.AddCommand(command)
+			root.SetArgs(append([]string{"check"}, tc.environmentArgs...))
+			err := root.ExecuteContext(t.Context())
+			if tc.wantCalls > 0 {
+				require.ErrorIs(t, err, localErr)
+				require.Zero(t, preRuns)
+				require.Zero(t, runs)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, 1, preRuns)
+				require.Equal(t, 1, runs)
+			}
+			require.Equal(t, tc.wantCalls, calls)
+		})
+	}
+}
+
+func TestPreviewInitVoiceEnabledSkipsLocalValidator(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Setenv(featureflags.Voice.EnvVar, "true")
+	startPreviewCommandServer(t, nil, nil, nil)
+	root := NewRootCommand()
+	command, _, err := root.Find([]string{"init"})
+	require.NoError(t, err)
+	require.Nil(t, command.PreRunE)
+	calls, runs := 0, 0
+	validateBeforePreview(command, func(*cobra.Command, []string) error {
+		calls++
+		return errors.New("preview validator must not run")
+	})
+	command.RunE = func(*cobra.Command, []string) error { runs++; return nil }
+	root.SetArgs([]string{"init", "--kind", "prompt-voice", "--agent-name", "voice-agent"})
+	require.NoError(t, root.ExecuteContext(t.Context()))
+	require.Zero(t, calls)
+	require.Equal(t, 1, runs)
+}
+
+func TestPreviewLocalValidatorsPreserveFlags(t *testing.T) {
+	invoke := newInvokeCommand(nil)
+	require.NoError(t, invoke.ParseFlags([]string{"--version", " 3 "}))
+	flags := invokeFlags{message: "hi", version: " 3 ", clientHeaders: []string{"x-client-test: value"}}
+	before := flags
+	for range 2 {
+		require.NoError(t, validateInvokeArgs(invoke, &flags))
+		require.Equal(t, before, flags)
+		value, err := invoke.Flags().GetString("version")
+		require.NoError(t, err)
+		require.Equal(t, " 3 ", value)
+		require.True(t, invoke.Flags().Changed("version"))
+	}
+
+	init := newInitCommand(nil)
+	require.NoError(t, init.ParseFlags([]string{"--kind", "prompt-voice", "--agent-name", " agent "}))
+	initFlags := initFlags{kind: kindFlagPromptVoice, agentName: " agent "}
+	initBefore := initFlags
+	for range 2 {
+		require.NoError(t, validateInitPreviewArgs(init, nil, initFlags))
+		require.Equal(t, initBefore, initFlags)
+		value, err := init.Flags().GetString("agent-name")
+		require.NoError(t, err)
+		require.Equal(t, " agent ", value)
+		require.True(t, init.Flags().Changed("agent-name"))
+	}
+}
+
+func TestInitPreviewValidationDefersUnresolvedPaths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "positional template",
+			args: []string{"--kind", "prompt-voice", "azure.yaml"},
+		},
+		{
+			name: "infra may eject before kind checks",
+			args: []string{"--kind", "hosted", "--harness", "microsoft_copilot_preview", "--infra", "bicep"},
+		},
+		{
+			name: "infra may eject before template checks",
+			args: []string{"--template", "azure.yaml", "--kind", "prompt-voice", "--infra", "terraform"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := newInitCommand(nil)
+			require.NoError(t, command.ParseFlags(tc.args))
+			validator, ok := previewValidators.Load(command)
+			require.True(t, ok)
+			require.NoError(t, validator.(func(*cobra.Command, []string) error)(command, command.Flags().Args()))
+		})
+	}
+}
 
 func TestRequiredPreviewFeatures(t *testing.T) {
 	none := []featureflags.Feature(nil)

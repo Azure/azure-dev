@@ -2,7 +2,7 @@
 name: "preview-help-visibility"
 command: "azd ai agent init --help"
 cwd: "/tmp"
-tags: ["tier:0", "cmd:init", "cmd:invoke", "cmd:help", "parallel-safe"]
+tags: ["tier:0", "cmd:init", "cmd:invoke", "cmd:add", "cmd:delete", "cmd:show", "cmd:endpoint", "cmd:invocations", "cmd:help", "parallel-safe"]
 goals:
   - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
   - "With no preview opt-ins, confirm init help does not list --voice or --harness, the --kind text names only 'hosted' and 'prompt', and there is no Voice Agents section or prompt-voice example."

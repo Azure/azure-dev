@@ -85,8 +85,12 @@ func planToolboxAttachments(
 			tools[i] = maps.Clone(tool)
 		}
 	}
-	seen := map[string]bool{}
-	var attachments []toolboxAttachment
+	type endpointGroup struct {
+		services   []string
+		attachment toolboxAttachment
+	}
+	var groups []endpointGroup
+	byEndpoint := map[string]int{}
 	for _, ref := range refs {
 		service := strings.TrimSpace(ref.Name)
 		endpoint, err := siblingToolboxEndpoint(service, projectEndpoint, env)
@@ -105,11 +109,20 @@ func planToolboxAttachments(
 					service, redactURLForDiagnostic(endpoint), err),
 				"redeploy the toolbox service or check its configured endpoint")
 		}
-		if seen[endpoint] {
+		if i, exists := byEndpoint[endpoint]; exists {
+			if !slices.Contains(groups[i].services, service) {
+				groups[i].services = append(groups[i].services, service)
+			}
 			continue
 		}
-		seen[endpoint] = true
-		index, err := toolboxToolIndex(tools, service, endpoint)
+		byEndpoint[endpoint] = len(groups)
+		groups = append(groups, endpointGroup{services: []string{service},
+			attachment: toolboxAttachment{name: name, version: version, endpoint: endpoint}})
+	}
+	var attachments []toolboxAttachment
+	for _, group := range groups {
+		service, endpoint := group.services[0], group.attachment.endpoint
+		index, err := toolboxToolIndex(tools, group.services, endpoint)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -125,9 +138,9 @@ func planToolboxAttachments(
 		if _, authored := tool["require_approval"]; !authored {
 			tool["require_approval"] = "always"
 		}
-		attachments = append(attachments, toolboxAttachment{
-			name: name, version: version, endpoint: endpoint, toolIndex: index,
-		})
+		attachment := group.attachment
+		attachment.toolIndex = index
+		attachments = append(attachments, attachment)
 	}
 	if err := validateUniqueMcpServerLabels(tools); err != nil {
 		return nil, nil, err
@@ -135,28 +148,36 @@ func planToolboxAttachments(
 	return tools, attachments, nil
 }
 
-func toolboxToolIndex(tools []any, service, endpoint string) (int, error) {
-	// Exact endpoints take precedence over service-key placeholders. An explicit
-	// URL is never repinned just because its label happens to match a service.
-	for i, raw := range tools {
-		if tool, ok := raw.(map[string]any); ok && tool["type"] == "mcp" && tool["server_url"] == endpoint {
-			return i, nil
-		}
-	}
+func toolboxToolIndex(tools []any, services []string, endpoint string) (int, error) {
+	// Consider every alias before deduplicating the endpoint. Multiple authored
+	// entries are ambiguous; never silently drop one or merge its options.
+	index := -1
 	for i, raw := range tools {
 		tool, ok := raw.(map[string]any)
-		if !ok || tool["type"] != "mcp" || tool["server_label"] != service {
+		if !ok || tool["type"] != "mcp" {
 			continue
 		}
-		if existing, _ := tool["server_url"].(string); strings.TrimSpace(existing) != "" {
+		label, _ := tool["server_label"].(string)
+		existing, _ := tool["server_url"].(string)
+		sameService := slices.Contains(services, strings.TrimSpace(label))
+		if existing != endpoint && !sameService {
+			continue
+		}
+		if strings.TrimSpace(existing) != "" && existing != endpoint {
 			return -1, exterrors.Validation(exterrors.CodeInvalidAgentManifest,
 				fmt.Sprintf("MCP tool %q declares server_url %q, which conflicts with toolbox endpoint %q",
-					service, redactURLForDiagnostic(existing), redactURLForDiagnostic(endpoint)),
+					label, redactURLForDiagnostic(existing), redactURLForDiagnostic(endpoint)),
 				"remove server_url to use the deployed toolbox endpoint, or give the explicit MCP tool a distinct server_label")
 		}
-		return i, nil
+		if index != -1 {
+			return -1, exterrors.Validation(exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("multiple authored MCP entries apply to toolbox services %q at endpoint %q",
+					services, redactURLForDiagnostic(endpoint)),
+				"keep one MCP entry for the shared endpoint with the desired label and options")
+		}
+		index = i
 	}
-	return -1, nil
+	return index, nil
 }
 
 func validateUniqueMcpServerLabels(tools []any) error {

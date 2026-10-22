@@ -385,6 +385,9 @@ with the exact deployed URL keeps its authored label and options, while azd sets
 its authentication connection. A different explicit URL is not automatically
 repinned: remove it to follow the Toolbox service, or use a distinct label to
 keep it as an independent tool. Conflicting labels fail before connection setup.
+References to the same endpoint share one attachment. Configure at most one MCP
+entry for that endpoint or its service keys; competing overrides are rejected
+before connection setup rather than silently merging their options.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An

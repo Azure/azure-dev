@@ -40,6 +40,24 @@ func TestPlanToolboxAttachments(t *testing.T) {
 			wantLabels: []string{"one", "two"}},
 		{name: "duplicate endpoint", refs: []string{"one", "two"}, endpoints: []string{toolboxTestURL, toolboxTestURL},
 			wantLabels: []string{"one"}},
+		{name: "duplicate endpoint with later placeholder", refs: []string{"one", "two"},
+			endpoints: []string{toolboxTestURL, toolboxTestURL},
+			tools: []any{map[string]any{"type": "mcp", "server_label": "two",
+				"require_approval": "never", "allowed_tools": []string{"web_search"}}}, wantLabels: []string{"two"}},
+		{name: "duplicate endpoint with first placeholder", refs: []string{"two", "one"},
+			endpoints:  []string{toolboxTestURL, toolboxTestURL},
+			tools:      []any{map[string]any{"type": "mcp", "server_label": "two", "require_approval": "never"}},
+			wantLabels: []string{"two"}},
+		{name: "duplicate endpoint with two placeholders", refs: []string{"one", "two"},
+			endpoints: []string{toolboxTestURL, toolboxTestURL},
+			tools: []any{map[string]any{"type": "mcp", "server_label": "one", "require_approval": "always"},
+				map[string]any{"type": "mcp", "server_label": "two", "require_approval": "never"}},
+			wantError: "multiple authored MCP entries"},
+		{name: "exact URL and separate placeholder", refs: []string{"one", "two"},
+			endpoints: []string{toolboxTestURL, toolboxTestURL},
+			tools: []any{map[string]any{"type": "mcp", "server_label": "search", "server_url": toolboxTestURL},
+				map[string]any{"type": "mcp", "server_label": "two", "require_approval": "never"}},
+			wantError: "multiple authored MCP entries"},
 		{name: "preserve authored alias and options", refs: []string{"tools"}, endpoints: []string{toolboxTestURL},
 			tools: []any{map[string]any{"type": "mcp", "server_label": "search", "server_url": toolboxTestURL,
 				"require_approval": "never", "allowed_tools": []string{"web_search"}}}, wantLabels: []string{"search"}},
@@ -93,6 +111,50 @@ func TestPlanToolboxAttachments(t *testing.T) {
 					require.Equal(t, "always", tool["require_approval"])
 				}
 			}
+		})
+	}
+}
+
+func TestToolboxNodeSharedEndpointOverrides(t *testing.T) {
+	for _, ambiguous := range []bool{false, true} {
+		t.Run(map[bool]string{false: "later placeholder", true: "two placeholders"}[ambiguous], func(t *testing.T) {
+			managed := &agent_yaml.PromptAgent{Tools: []any{
+				map[string]any{"type": "mcp", "server_label": "two", "require_approval": "never"},
+			}}
+			if ambiguous {
+				managed.Tools = append(managed.Tools, map[string]any{"type": "mcp", "server_label": "one"})
+			}
+			client := &fakeToolboxConnectionsClient{endpoint: toolboxTestProject,
+				connections: map[string]azure.ToolboxConnectionProperties{}}
+			g := &promptGraph{managed: managed, env: map[string]string{
+				envkey.ToolboxMCPEndpoint("one"): toolboxTestURL,
+				envkey.ToolboxMCPEndpoint("two"): toolboxTestURL,
+			}}
+			factoryCalls := 0
+			node := toolboxNode(g, []agent_yaml.ToolboxReference{{Name: "one"}, {Name: "two"}},
+				func() (toolboxConnectionEnsurer, error) {
+					factoryCalls++
+					return &foundryToolboxConnections{client: client, endpoint: toolboxTestProject}, nil
+				})
+			err := node.Resolve(t.Context())
+			if ambiguous {
+				require.ErrorContains(t, err, "multiple authored MCP entries")
+				require.Zero(t, factoryCalls, "ambiguous overrides must fail before connection setup")
+				require.Zero(t, client.puts)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, managed.Tools, 1)
+			tool, ok := managed.Tools[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "two", tool["server_label"])
+			require.Equal(t, "never", tool["require_approval"])
+			require.Equal(t, toolboxTestURL, tool["server_url"])
+			require.NotEmpty(t, tool["project_connection_id"])
+			require.Equal(t, 1, client.puts)
+			require.NoError(t, node.Resolve(t.Context()))
+			require.Len(t, managed.Tools, 1)
+			require.Equal(t, 1, client.puts, "redeployment must reuse the shared connection")
 		})
 	}
 }

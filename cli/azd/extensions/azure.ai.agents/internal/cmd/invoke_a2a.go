@@ -89,14 +89,11 @@ func validateA2AVersion(version string) error {
 	return err
 }
 
-// a2aProtocolVersion returns the effective dialect, independently of the deployed
-// agent version. File input still requires an explicit flag, even when resolved.
+// a2aProtocolVersion selects the explicit dialect or the plain-message default.
+// File input requires an explicit flag before this selection is used.
 func (a *InvokeAction) a2aProtocolVersion() string {
 	if a.flags.a2aVersion != "" {
 		return a.flags.a2aVersion
-	}
-	if a.resolvedA2AVersion != "" {
-		return a.resolvedA2AVersion
 	}
 	return "1.0"
 }

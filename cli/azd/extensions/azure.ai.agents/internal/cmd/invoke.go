@@ -86,7 +86,6 @@ type InvokeAction struct {
 	clientHeaders         http.Header
 	invocationsTransport  http.RoundTripper
 	protocolServiceName   string
-	resolvedA2AVersion    string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
 	resolvedBodyLabel     string

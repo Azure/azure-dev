@@ -102,15 +102,14 @@ func TestInvokeA2AVersionCommandValidation(t *testing.T) {
 func TestA2AProtocolVersion(t *testing.T) {
 	t.Parallel()
 
-	for _, tt := range []struct{ name, explicit, resolved, want string }{
-		{"default", "", "", "1.0"},
-		{"explicit", "0.3", "", "0.3"},
-		{"resolved", "", "0.3", "0.3"},
-		{"explicit takes precedence", "0.3", "1.0", "0.3"},
+	for _, tt := range []struct{ name, explicit, want string }{
+		{"default", "", "1.0"},
+		{"explicit 0.3", "0.3", "0.3"},
+		{"explicit 1.0", "1.0", "1.0"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			a := &InvokeAction{flags: &invokeFlags{a2aVersion: tt.explicit}, resolvedA2AVersion: tt.resolved}
+			a := &InvokeAction{flags: &invokeFlags{a2aVersion: tt.explicit}}
 			require.Equal(t, tt.want, a.a2aProtocolVersion())
 		})
 	}
@@ -120,20 +119,15 @@ func TestBuildA2ARequestBody_ValidatesVersion(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name, explicit, resolved, file, wantError string
+		name, explicit, file, wantError string
 	}{
-		{"invalid explicit", "2.0", "", "", "invalid --a2a-version"},
-		{"invalid resolved", "", "2.0", "", "invalid --a2a-version"},
-		{"invalid explicit despite resolved", "2.0", "1.0", "", "invalid --a2a-version"},
-		{"file missing explicit", "", "", "missing.json", "requires an explicit --a2a-version"},
-		{"file with manifest version", "", "1.0", "missing.json", "requires an explicit --a2a-version"},
-		{"file with legacy manifest version", "", "0.3", "missing.json", "requires an explicit --a2a-version"},
+		{"invalid explicit", "2.0", "", "invalid --a2a-version"},
+		{"file missing explicit", "", "missing.json", "requires an explicit --a2a-version"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := &InvokeAction{
-				flags:              &invokeFlags{message: "hello", inputFile: tt.file, a2aVersion: tt.explicit},
-				resolvedA2AVersion: tt.resolved,
+				flags: &invokeFlags{message: "hello", inputFile: tt.file, a2aVersion: tt.explicit},
 			}
 			_, _, err := a.buildA2ARequestBody()
 			require.ErrorContains(t, err, tt.wantError)
@@ -160,28 +154,24 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
-		name, explicit, resolved, method, role string
-		part                                   map[string]any
-		configuration                          map[string]any
+		name, explicit, method, role string
+		part                         map[string]any
+		configuration                map[string]any
 	}{
-		{"default", "", "", "SendMessage", "ROLE_USER",
+		{"default", "", "SendMessage", "ROLE_USER",
 			map[string]any{"text": "Hello!"},
 			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
-		{"1.0", "1.0", "", "SendMessage", "ROLE_USER",
+		{"1.0", "1.0", "SendMessage", "ROLE_USER",
 			map[string]any{"text": "Hello!"},
 			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
-		{"0.3", "0.3", "", "message/send", "user",
-			map[string]any{"kind": "text", "text": "Hello!"},
-			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text/plain"}}},
-		{"explicit wins", "0.3", "1.0", "message/send", "user",
+		{"0.3", "0.3", "message/send", "user",
 			map[string]any{"kind": "text", "text": "Hello!"},
 			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text/plain"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := &InvokeAction{
-				flags:              &invokeFlags{message: "Hello!", a2aVersion: tt.explicit},
-				resolvedA2AVersion: tt.resolved,
+				flags: &invokeFlags{message: "Hello!", a2aVersion: tt.explicit},
 			}
 			body, label, err := a.buildA2ARequestBody()
 			require.NoError(t, err)

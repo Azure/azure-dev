@@ -25,6 +25,11 @@ normalized:
 generated_projects:
   file: testdata/parity/generated_projects.json
   sha256: 91842a6caacf0db13d103c6eac918a66caf2bfabedde0f0bb12e967f9f14af6f
+capability_source:
+  file: testdata/parity/source_capabilities.yaml
+  sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
+  source_path: tests/parity/capability_dispositions.yaml
+  license: MIT
 capabilities:
 - id: 1
   source_paths:
@@ -1827,67 +1832,408 @@ cases:
 - source: tests/parity/test_all_dispositions.py::test_hosted_frontends_use_the_same_candidate_core
   state: pending
 - source: tests/parity/test_capability_dispositions.py::test_capability_dispositions_are_complete
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityInventory
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_capability_dispositions_are_unique
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityUniqueness
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-10]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-10
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-11]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-11
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-12]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-12
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-13]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-13
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-14]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-14
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-15]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-15
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-16]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-16
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-17]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-17
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-18]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-18
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-19]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-19
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-1]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-1
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-20]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-20
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-21]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-21
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-22]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-22
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-23]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-23
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-24]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-24
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-25]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-25
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-26]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-26
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-27]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-27
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-28]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-28
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-29]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-29
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-2]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-2
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-3]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-3
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-4]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-4
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-5]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-5
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-6]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-6
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-7]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-7
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-8]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-8
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-9]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for the exact source capability-disposition manifest contract: ordered IDs 1-29, 16 extension/11
+    environment/one removed-helper/one host-update counts, unique source paths and extension targets, and all four ordered
+    source fields including aliases and exact host targets. Pin byte-identical source YAML/MIT provenance with immutable code/ledger
+    digest and LF policy; reject source-reference/identity/order/path/target/classification drift. Native review state/approval
+    is excluded from the source projection and remains unchanged. This structural source case does not execute runtime dispositions,
+    host workflows, removed-helper replacements, live authentication or approve any capability. Runtime tests and approvals
+    stay open.'
+  go_tests:
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-9
+  - internal/cmd/capability_manifest_test.go::TestSourceCapabilityManifestRejectsDrift
 - source: tests/parity/test_generated_projects.py::test_generated_bash_hook_delegates_to_hidden_command[azure-cli]
   state: evidenced
   disposition: equivalent

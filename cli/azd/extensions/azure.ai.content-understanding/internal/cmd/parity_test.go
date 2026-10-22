@@ -80,6 +80,12 @@ type parityInventory struct {
 		SourcePath string `yaml:"source_path"`
 		License    string `yaml:"license"`
 	} `yaml:"scenario_source"`
+	CapabilitySource struct {
+		File       string `yaml:"file"`
+		SHA256     string `yaml:"sha256"`
+		SourcePath string `yaml:"source_path"`
+		License    string `yaml:"license"`
+	} `yaml:"capability_source"`
 	Normalized struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
@@ -134,6 +140,9 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	if inventory.Source.CaseCount != 797 || len(inventory.Cases) != inventory.Source.CaseCount {
 		return fmt.Errorf("source case count differs from pinned collection")
+	}
+	if err := validateCapabilityManifest(inventory); err != nil {
+		return err
 	}
 	nodes, modules := map[string]bool{}, map[string]bool{}
 	ordered := make([]string, 0, len(inventory.Cases))
@@ -310,6 +319,10 @@ func validateGoTestReference(reference string, inventory parityInventory) error 
 		}
 		exists := false
 		switch {
+		case file == "internal/cmd/capability_manifest_test.go" && function == "TestSourceCapabilityContracts":
+			for _, capability := range inventory.Capabilities {
+				exists = exists || !hasFormat && scenario == fmt.Sprintf("row-%d", capability.ID)
+			}
 		case file == "internal/cmd/generated_project_parity_test.go" &&
 			(function == "TestGeneratedProjectTreeParity" || function == "TestGeneratedBashHookParity"):
 			exists = !hasFormat && slices.Contains(generatedProjectFrontends, scenario)
@@ -493,6 +506,24 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{
 				"internal/cmd/generated_project_parity_test.go::TestGeneratedBashHookParity/core/json",
+			}
+		}},
+		{"missing source capability subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-30",
+			}
+		}},
+		{"source capability subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-1/json",
+			}
+		}},
+		{"padded source capability subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-01",
 			}
 		}},
 	} {

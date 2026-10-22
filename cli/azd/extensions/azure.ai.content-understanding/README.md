@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 97
+approval. Approved rows require an explicit review reference. Currently 128
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project evidence, 700 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project evidence, 669 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1022,6 +1022,24 @@ canonical hidden command; those two mappings are equivalent but unapproved.
 PowerShell source cases remain pending because `pwsh` is unavailable. POSIX
 fake-host execution is not installed-host/live or Windows runtime evidence.
 
+All 31 source capability-disposition manifest tests also have structural
+evidence. `testdata/parity/source_capabilities.yaml` is the byte-identical
+source YAML, pinned by an immutable code/ledger digest with source path/MIT
+metadata and LF checkout. Compare all four source fields in order: ID,
+source-path list (including aliases), target and classification. Check IDs
+1-29, the 16/11/1/1 classification counts and unique source paths/extension
+targets. Keep native review state/approval outside this source projection.
+
+Twenty-four negative controls reject source-reference, row/order, source-path,
+alias, target and classification drift; checked row references reject unknown
+IDs, padded IDs and invented output formats. Four controls reproduced prior
+validator acceptance of incorrect paths/targets/alias order before the new
+checks were wired into normal CI. Metadata-independence tests allow legitimate
+review updates without changing any source facts. This proves manifest
+structure only, not runtime dispositions or host-helper/update workflows.
+All 29 capability approvals and the separate runtime/core source cases remain
+pending. Existing cassette/scenario evidence states are unchanged.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1029,7 +1047,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

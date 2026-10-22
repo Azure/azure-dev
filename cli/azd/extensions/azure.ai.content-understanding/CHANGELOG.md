@@ -63,6 +63,13 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map 31 source capability-disposition manifest cases to immutable original YAML
+  and exact ordered ID/source-path/target/classification contracts. Verify
+  classification counts and uniqueness; reject path/alias/target/identity drift
+  with 24 controls and checked row references. Keep review metadata separate
+  from source facts. This is structural evidence, not runtime/host workflow
+  equivalence or approval. Totals: 128 cases evidenced, 669 pending; prior
+  assets, capability/scenario review states and all approvals are unchanged.
 - Map four source generated-project cases to complete ten-file tree/written-set
   checks and actual Bash hook delegation for both Python origins. Preserve all
   source hashes/choices/arguments and explicit native README/config-key-order

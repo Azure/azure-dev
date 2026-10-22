@@ -40,7 +40,7 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 	return validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion())
 }
 
-// validateHostedA2ACompatibility requires one supported A2A declaration matching the selected request dialect.
+// validateHostedA2ACompatibility validates a declared A2A dialect against hosted support and the request.
 func validateHostedA2ACompatibility(protocols []agent_yaml.ProtocolVersionRecord, requested string) error {
 	var declared string
 	for _, record := range protocols {
@@ -61,11 +61,8 @@ func validateHostedA2ACompatibility(protocols []agent_yaml.ProtocolVersionRecord
 		declared = version
 	}
 	if declared == "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"the hosted agent does not declare an A2A implementation",
-			"implement A2A 1.0 and declare it in the selected service's protocols",
-		)
+		// Foundry owns routing when no A2A implementation is declared.
+		return nil
 	}
 	if declared != "1.0" {
 		return exterrors.Validation(

@@ -897,7 +897,7 @@ func TestValidateHostedA2ACompatibility(t *testing.T) {
 		versions  []string
 		wantError string
 	}{
-		{name: "missing", wantError: "does not declare an A2A implementation"},
+		{name: "no A2A declaration defers to Foundry"},
 		{name: "major minor", versions: []string{"1.0"}},
 		{name: "deployment version", versions: []string{"1.0.0"}},
 		{name: "compatible patch", versions: []string{"1.0.7"}},
@@ -930,7 +930,7 @@ func TestValidateHostedA2ACompatibility(t *testing.T) {
 						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "responses", Version: "ignored"})
 					}
 					wantError := tt.wantError
-					if wantError == "" && requested == "0.3" {
+					if wantError == "" && len(tt.versions) > 0 && requested == "0.3" {
 						wantError = "does not match the hosted-agent declaration"
 					}
 					err := validateHostedA2ACompatibility(protocols, requested)
@@ -981,10 +981,8 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 		{name: "prompt definition bypass", prompt: true, explicit: "0.3"},
 		{name: "missing definition bypass", noDefinition: true, explicit: "0.3"},
 		{name: "missing local reference still invokes", missingRef: true},
-		{name: "Responses-only rejects default", responsesOnly: true,
-			wantError: "does not declare an A2A implementation"},
-		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3",
-			wantError: "does not declare an A2A implementation"},
+		{name: "Responses-only defers to Foundry", responsesOnly: true},
+		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
 		{name: "file-backed native", native: "1.0.0", fileBacked: true},
 		{name: "A2A 0.3 rejected before send", native: "0.3.0", wantError: "version 0.3 is not supported"},
 		{name: "malformed rejected before send", native: "latest", wantError: "malformed A2A version"},

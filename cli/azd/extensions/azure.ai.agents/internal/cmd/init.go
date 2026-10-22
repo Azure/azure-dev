@@ -1308,6 +1308,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
 	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
+	previewFlag(cmd, "protocol", featureflags.Voice, "invocations_ws")
+	previewFlagUsage(cmd, "protocol", featureflags.Voice,
+		"Protocols supported by the agent ("+strings.Join(protocolNames(false), ", ")+"). Can be specified multiple times.")
 	previewFlagUsage(cmd, "kind", featureflags.Voice,
 		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
 			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
@@ -1373,10 +1376,8 @@ func validateInitPreviewArgs(cmd *cobra.Command, args []string, flags initFlags)
 		if err := validateFastPathAgentName(&flags, isPromptVoice); err != nil {
 			return err
 		}
-		if flags.image != "" {
-			if _, err := validateExplicitProtocols(flags.protocols); err != nil {
-				return err
-			}
+		if _, err := validateExplicitProtocols(flags.protocols); err != nil {
+			return err
 		}
 	}
 	if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {

@@ -161,6 +161,13 @@ func requiredPreviewFeatures(cmd *cobra.Command) []featureflags.Feature {
 func flagNeedsFeature(flag *pflag.Flag) bool {
 	value := strings.TrimSpace(flag.Value.String())
 	if values := flag.Annotations[featureValuesAnnotation]; len(values) > 0 {
+		if slice, ok := flag.Value.(pflag.SliceValue); ok {
+			return slices.ContainsFunc(slice.GetSlice(), func(value string) bool {
+				return slices.ContainsFunc(values, func(candidate string) bool {
+					return strings.EqualFold(strings.TrimSpace(value), candidate)
+				})
+			})
+		}
 		return slices.ContainsFunc(values, func(candidate string) bool {
 			return strings.EqualFold(value, candidate)
 		})
@@ -380,8 +387,8 @@ func requireDefinitionPreviewFeatures(ctx context.Context, definition map[string
 	return project.RequireDefinitionFeatures(ctx, client, definition)
 }
 
-// selectLocalService selects the project service for a local invoke so the
-// service gate classifies it. Projects without agent services are skipped.
+// selectLocalService selects a service for local preview checks.
+// Without an explicit selector, projects with no agents are skipped.
 func (a *InvokeAction) selectLocalService(ctx context.Context) error {
 	client, err := azdext.NewAzdClient()
 	if err != nil {
@@ -400,7 +407,14 @@ func (a *InvokeAction) selectLocalService(ctx context.Context) error {
 	if response.GetProject() == nil {
 		return fmt.Errorf("loading project for local preview classification: missing project response")
 	}
-	if len(response.Project.GetServices()) == 0 {
+	hasAgent := false
+	for _, service := range response.Project.GetServices() {
+		if service.GetHost() == AiAgentHost {
+			hasAgent = true
+			break
+		}
+	}
+	if !hasAgent && a.serviceNameSelector() == "" {
 		return nil
 	}
 	service, _, err := resolveAgentService(ctx, client, a.serviceNameSelector(), a.noPrompt)

@@ -10,14 +10,18 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -60,7 +64,7 @@ func (s *previewTestEnvironment) GetValues(
 }
 
 func startPreviewCommandServer(
-	t *testing.T, alpha map[string]any, config *azdext.ProjectConfig, prompts *helpersPromptServer,
+	t *testing.T, alpha map[string]any, config *azdext.ProjectConfig, prompts azdext.PromptServiceServer,
 ) (*azdext.AzdClient, *previewTestEnvironment) {
 	t.Helper()
 	if config == nil {
@@ -89,6 +93,270 @@ func startPreviewCommandServer(
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 	return client, env
+}
+
+func TestPreviewLocalResponsesWithWebOnlyProject(t *testing.T) {
+	clearPreviewProcess(t)
+	t.Chdir(t.TempDir())
+	startPreviewCommandServer(t, nil, &azdext.ProjectConfig{
+		Services: map[string]*azdext.ServiceConfig{"web": {Name: "web", Host: "appservice"}},
+	}, nil)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		require.Equal(t, "/responses", r.URL.Path)
+		require.Equal(t, http.MethodPost, r.Method)
+		var body map[string]any
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "hello", body["input"])
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"resp_local","status":"completed","output":[]}`)
+	}))
+	t.Cleanup(server.Close)
+	_, port, err := net.SplitHostPort(server.Listener.Addr().String())
+	require.NoError(t, err)
+	_, err = captureStdout(t, func() error {
+		_, invokeErr := executeRoot(t, "invoke", "--local", "--protocol", "responses", "--port", port, "hello")
+		return invokeErr
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, requests.Load())
+	_, err = executeRoot(t, "invoke", "--local", "--protocol", "responses", "--port", port,
+		"missing", "hello")
+	require.ErrorContains(t, err, "no azure.ai.agent service")
+	require.EqualValues(t, 1, requests.Load())
+}
+
+func TestPreviewHostedProtocolsRejectBeforeAuthOrWrites(t *testing.T) {
+	for _, route := range []string{"image", "code"} {
+		for _, protocols := range [][]string{
+			{"--protocol", "invocations_ws"},
+			{"--protocol", "responses,invocations_ws"},
+			{"--protocol", "responses", "--protocol", "invocations_ws"},
+		} {
+			t.Run(route+"/"+strings.Join(protocols, "_"), func(t *testing.T) {
+				clearPreviewProcess(t)
+				root := t.TempDir()
+				t.Chdir(root)
+				startPreviewCommandServer(t, map[string]any{"agents": map[string]any{
+					"managed_harness": "on", "long_running": "on",
+				}}, nil, nil)
+				args := []string{"init", "--no-prompt", "--agent-name", "test-agent"}
+				if route == "image" {
+					args = append(args, "--image", "registry.example.com/agent:v1")
+				} else {
+					require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0600))
+					args = append(args, "--src", root, "--deploy-mode", "code",
+						"--runtime", "python_3_13", "--entry-point", "main.py")
+				}
+				args = append(args, protocols...)
+				_, err := executeRoot(t, args...)
+				require.ErrorContains(t, err, featureflags.Voice.ID)
+				entries, err := os.ReadDir(root)
+				require.NoError(t, err)
+				if route == "image" {
+					require.Empty(t, entries)
+				} else {
+					require.Len(t, entries, 1)
+					require.Equal(t, "main.py", entries[0].Name())
+				}
+			})
+		}
+	}
+}
+
+func TestPreviewHostedProtocolValidationPrecedesGate(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--image", "invalid", "--agent-name", "agent"}, "registry/image"},
+		{[]string{"--image", "registry.example.com/agent:v1"}, "--agent-name"},
+		{[]string{"--protocol", "unknown"}, "unknown protocol"},
+	} {
+		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
+			clearPreviewProcess(t)
+			t.Chdir(t.TempDir())
+			startPreviewCommandServer(t, nil, nil, nil)
+			args := append([]string{"init", "--no-prompt", "--protocol", "invocations_ws"}, tc.args...)
+			_, err := executeRoot(t, args...)
+			require.ErrorContains(t, err, tc.want)
+			require.NotContains(t, err.Error(), "is disabled")
+		})
+	}
+}
+
+func TestPreviewHostedProtocolPreRun(t *testing.T) {
+	clearPreviewProcess(t)
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			alpha := map[string]any{"all": "on"}
+			if enabled {
+				alpha["agents"] = map[string]any{"voice": "on"}
+			}
+			_, env := startPreviewCommandServer(t, alpha, nil, nil)
+			for _, protocols := range [][]string{
+				nil, {"--protocol", "responses"}, {"--protocol", "invocations"},
+				{"--protocol", "activity"}, {"--protocol", "invocations_ws"},
+				{"--protocol", "responses,invocations_ws"},
+				{"--protocol", "responses", "--protocol", "invocations_ws"},
+			} {
+				root := NewRootCommand()
+				cmd, _, err := root.Find([]string{"init"})
+				require.NoError(t, err)
+				cmd.SetContext(t.Context())
+				require.NoError(t, cmd.ParseFlags(protocols))
+				before := env.reads.Load()
+				err = enforcePreviewFeatures(cmd, nil, "selected")
+				if !strings.Contains(strings.Join(protocols, ","), "invocations_ws") {
+					require.NoError(t, err)
+					require.Empty(t, requiredPreviewFeatures(cmd))
+					require.Equal(t, before, env.reads.Load())
+				} else if enabled {
+					require.NoError(t, err)
+					require.Equal(t, []featureflags.Feature{featureflags.Voice}, requiredPreviewFeatures(cmd))
+				} else {
+					require.ErrorContains(t, err, featureflags.Voice.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestPreviewLocalServicePreservesProjectErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		server *helpersProjectServer
+		want   string
+	}{
+		{"permission denied", &helpersProjectServer{err: status.Error(codes.PermissionDenied, "project denied")},
+			"project denied"},
+		{"nil project", &helpersProjectServer{}, "missing project response"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearPreviewProcess(t)
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, tc.server)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(server.Stop)
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			t.Setenv("AZD_ACCESS_TOKEN", "test-token")
+			action := &InvokeAction{flags: &invokeFlags{}}
+			require.ErrorContains(t, action.selectLocalService(t.Context()), tc.want)
+		})
+	}
+}
+
+type protocolSelectionServer struct {
+	azdext.UnimplementedPromptServiceServer
+	selectProtocols func(*azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error)
+}
+
+func (s *protocolSelectionServer) MultiSelect(
+	_ context.Context, request *azdext.MultiSelectRequest,
+) (*azdext.MultiSelectResponse, error) {
+	return s.selectProtocols(request)
+}
+
+func TestPreviewHostedProtocolPickerBeforeMutation(t *testing.T) {
+	for _, route := range []string{"image", "code"} {
+		for _, enabled := range []bool{false, true} {
+			t.Run(route+"/"+strconv.FormatBool(enabled), func(t *testing.T) {
+				clearPreviewProcess(t)
+				root := t.TempDir()
+				t.Chdir(root)
+				var calls atomic.Int32
+				prompts := &protocolSelectionServer{selectProtocols: func(req *azdext.MultiSelectRequest) (
+					*azdext.MultiSelectResponse, error,
+				) {
+					calls.Add(1)
+					var names []string
+					for _, choice := range req.Options.Choices {
+						names = append(names, choice.Value)
+						require.Equal(t, choice.Value == "responses", choice.Selected)
+					}
+					if enabled {
+						require.Equal(t, []string{"responses", "invocations", "invocations_ws", "activity"}, names)
+					} else {
+						require.Equal(t, []string{"responses", "invocations", "activity"}, names)
+					}
+					return nil, status.Error(codes.Canceled, "stop before project setup")
+				}}
+				value := "off"
+				if enabled {
+					value = "on"
+				}
+				client, _ := startPreviewCommandServer(t, map[string]any{
+					"agents": map[string]any{"voice": value},
+				}, nil, prompts)
+				flags := &initFlags{agentName: "agent"}
+				if route == "image" {
+					flags.image = "registry.example.com/agent:v1"
+				} else {
+					require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0600))
+					flags.src = root
+				}
+				action := &InitFromCodeAction{azdClient: client, flags: flags, sourceValidated: true}
+				err := action.Run(t.Context())
+				require.ErrorContains(t, err, "protocol selection was cancelled")
+				require.EqualValues(t, 1, calls.Load())
+				require.Nil(t, action.projectConfig)
+				require.Nil(t, action.environment)
+				entries, err := os.ReadDir(root)
+				require.NoError(t, err)
+				require.Len(t, entries, map[string]int{"image": 0, "code": 1}[route])
+			})
+		}
+	}
+}
+
+func TestPreviewHostedProtocolSelection(t *testing.T) {
+	clearPreviewProcess(t)
+	for _, explicit := range [][]string{nil, {"responses"}, {"invocations"}, {"activity"}, {"responses", "invocations"}} {
+		records, err := selectHostedProtocols(t.Context(), nil, true, explicit)
+		require.NoError(t, err, "ordinary explicit/default protocols need no feature reads")
+		require.NotEmpty(t, records)
+	}
+	for _, enabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
+			alpha := map[string]any{}
+			if enabled {
+				alpha["agents"] = map[string]any{"voice": "on"}
+			}
+			prompts := &protocolSelectionServer{selectProtocols: func(*azdext.MultiSelectRequest) (
+				*azdext.MultiSelectResponse, error,
+			) {
+				return &azdext.MultiSelectResponse{Values: []*azdext.MultiSelectChoice{
+					{Value: "invocations_ws", Selected: true},
+				}}, nil
+			}}
+			client, env := startPreviewCommandServer(t, alpha, nil, prompts)
+			ctx := featureflags.WithEnvironment(t.Context(), "selected")
+			records, err := selectHostedProtocols(ctx, client, false, nil)
+			if enabled {
+				require.NoError(t, err)
+				require.Equal(t, []agent_yaml.ProtocolVersionRecord{
+					{Protocol: "invocations_ws", Version: "2.0.0"},
+				}, records)
+			} else {
+				require.ErrorContains(t, err, "unexpected protocol")
+			}
+			_, err = selectHostedProtocols(ctx, client, true, []string{"responses", "invocations_ws"})
+			if enabled {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, featureflags.Voice.ID)
+			}
+			env.mu.Lock()
+			require.Equal(t, "selected", env.selected)
+			env.err = status.Error(codes.PermissionDenied, "selection source failure")
+			env.mu.Unlock()
+			_, err = selectHostedProtocols(ctx, client, false, nil)
+			require.ErrorContains(t, err, "selection source failure")
+		})
+	}
 }
 
 func clearPreviewProcess(t *testing.T) {

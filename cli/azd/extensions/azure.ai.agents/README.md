@@ -44,7 +44,12 @@ Checks cover preview flags on init and invoke, `agent add` definitions,
 existing and staged project definitions, the selected service for invoke, run,
 optimize deploy, optimize apply, and endpoint update, provisioning, and package,
 publish, and deploy. The init
-picker omits voice while it is off. Template catalogs do not identify
+picker omits voice while it is off. Hosted init also omits `invocations_ws`
+from protocol help and selection while voice is off. Explicit `--protocol`
+values, including repeated flags and comma-separated lists, require the voice
+opt-in for `invocations_ws`. Protocol selection completes before project or
+environment creation; ordinary protocols and the no-prompt Responses default
+need no additional feature read. Template catalogs do not identify
 capabilities, so templates are checked after staging and before adoption.
 
 ### Enforcement limits

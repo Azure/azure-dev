@@ -104,11 +104,11 @@ Enforcement has two layers. Each layer has one check.
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
 | `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
-| `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview` | Only the listed values require the feature. The flag stays visible |
+| `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol invocations_ws` | Only the listed values require the feature, including entries in repeated or comma-separated slice flags. The flag stays visible |
 | `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
 | `previewHelp(cmd, feature, long, examples)` | `init` voice section and examples, `invoke` voice and long-running sections and examples, voice notes in `add`, `delete`, and `endpoint show` | The blocks are removed from help while off |
-| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `init --acr-connection`, `init --model` | The flag keeps working. Its usage text is swapped for one that omits the feature while off |
+| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `init --protocol`, `init --acr-connection`, `init --model` | The flag keeps working. Its usage text is swapped for one that omits the feature while off |
 | `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy`, `optimize apply`, `endpoint update` | Marks the context so the shared service selector classifies every selected agent service |
 
 **Service layer.** The shared selector `resolveAgentService` and the deployed-name fallback call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the running command carries `gateAgentServices`. Show, delete, endpoint show, invocations, eval, and other selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors (deployed-name lookup, optimize project fallback, protocol resolution) return it unchanged.
@@ -124,6 +124,7 @@ These entry points classify content that only exists at run time, so an annotati
 | `init` existing project and explicit local `azure.yaml` | The services come from a file read during the command |
 | `init` staged template adoption (`runInitFromAzureYaml`, `preflightAzdTemplate`) | The definition exists only after staging |
 | `init` picker (`promptInitMode`) | Discovery only. It omits the voice choice while voice is off |
+| Hosted `init` protocol picker | It omits `invocations_ws` while voice is off and validates the selection before creating a project or environment. Explicit ordinary protocols and the no-prompt Responses default need no feature read |
 | `agent add` | The definition comes from `--file` content |
 | `invoke --local` (`selectLocalService`) | Local invoke does not select a service otherwise. It calls the gated selector |
 | `optimize deploy` remote definition | The definition is fetched from the service before a new version is created |

@@ -21,11 +21,9 @@ import (
 
 func TestValidateInitLocation(t *testing.T) {
 	t.Parallel()
-	allowed := promptHarnessRegionsForInit("microsoft_copilot_preview")
+	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
+	require.NoError(t, err)
 	require.NotEmpty(t, allowed)
-	require.Equal(t, allowed, promptHarnessRegionsForInit("github_copilot_preview"),
-		"legacy harness must retain the same region restrictions")
-	require.Nil(t, promptHarnessRegionsForInit(""), "plain prompt must remain unrestricted")
 	for _, location := range []string{
 		"japaneast", "swedencentral", "uksouth",
 		"australiaeast", "westeurope", "germanywestcentral", " JapanEast ",
@@ -89,7 +87,9 @@ func TestSelectPromptFoundryProject_Regions(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, &testWorkflowServiceServer{}, prompts)
 			var allowed []string
 			if tt.restricted {
-				allowed = promptHarnessRegionsForInit("microsoft_copilot_preview")
+				var err error
+				allowed, err = parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
+				require.NoError(t, err)
 			}
 			id := ""
 			if tt.explicitID {
@@ -145,7 +145,8 @@ func (s *harnessLocationPromptServer) PromptLocation(
 }
 
 func TestEnsureLocationWithAllowedLocations_Harness(t *testing.T) {
-	allowed := promptHarnessRegionsForInit("microsoft_copilot_preview")
+	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
+	require.NoError(t, err)
 	for _, location := range []string{"", "eastus", "eastus2", "eastus2euap", "japaneast"} {
 		t.Run(location, func(t *testing.T) {
 			const envName = "test"

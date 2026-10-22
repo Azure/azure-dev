@@ -46,7 +46,10 @@ func resolvePromptHarnessTarget(
 	settings *project.PromptAgentSettings,
 	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
-	allowedLocations := promptHarnessRegionsForInit(harness)
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, harness)
+	if err != nil {
+		return nil, false, nil, nil, err
+	}
 	azureContext, err := loadAzureContext(ctx, azdClient, env.Name)
 	if err != nil {
 		return nil, false, nil, nil, err

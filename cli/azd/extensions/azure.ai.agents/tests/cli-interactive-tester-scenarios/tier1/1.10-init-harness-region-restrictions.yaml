@@ -25,9 +25,10 @@ goals:
     Before answering product prompts, use read-only Azure queries to identify the seeded projects in
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
-    $existing_deployment for subsequent commands. Allowed region IDs are exactly australiaeast,
-    canadacentral, centralus, germanywestcentral, japaneast, swedencentral, uksouth, westeurope,
-    westus, westus2.
+    $existing_deployment for subsequent commands. Read the current allowed region IDs from
+    https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-regions.json.
+    If the manifest is unavailable, use the harness-agent-regions.json embedded in the build under test.
+    Use this policy for every generated and adopted harness check below.
     Do not create fixtures during this run.
   - >-
     RESOURCE NAMING: if asked for an azd environment name, clear any default and use '{prefix}-picker-{instance}'
@@ -65,7 +66,7 @@ goals:
     `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-recovery-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none --model {model}`.
     At 'Select a Foundry project to host your agent and model', choose 'Create a new Foundry project'.
-    The initial location picker must offer only the ten allowed region IDs available to the subscription (display labels may be friendly names)
+    The initial location picker must offer only the manifest's allowed region IDs available to the subscription (display labels may be friendly names)
     and must exclude the seeded disallowed region. Take a screenshot and select '{region}'.
   - >-
     At "Model '{model}' is selected.", choose "Use '{model}'". Expect the model-unavailable recovery flow.
@@ -96,7 +97,7 @@ goals:
     From the scenario root, create and enter a fresh 'adopt-new' subdirectory and run
     `azd ai agent init --template ../template/azure.yaml`. If asked for an environment name, use
     '{prefix}-adopt-new-{instance}'. Select the provided tenant and '{subscription}' if requested.
-    Choose to create a new Foundry project. Confirm the location picker offers only the ten allowed region
+    Choose to create a new Foundry project. Confirm the location picker offers only the manifest's allowed region
     IDs available to the subscription and excludes the seeded disallowed region. Take a screenshot, then cancel before choosing a location.
   - >-
     From the scenario root, create and enter a fresh 'adopt-id' subdirectory and run

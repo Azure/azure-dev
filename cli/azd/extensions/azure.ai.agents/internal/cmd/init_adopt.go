@@ -24,6 +24,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
@@ -206,7 +207,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
 				harness, _ := svcMap["harness"].(map[string]any)
-				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+				if harnessType, _ := harness["type"].(string); agent_api.IsCopilotHarness(harnessType) {
 					info.promptHarness = harnessType
 				}
 			} else {
@@ -1298,7 +1299,10 @@ func finalizeAdoptedProject(
 	if err != nil {
 		return err
 	}
-	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, manifestInfo.promptHarness)
+	if err != nil {
+		return err
+	}
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)

@@ -25,6 +25,8 @@ func (s *projectSetupAccountServer) LookupTenant(
 }
 
 func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
+	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
+	require.NoError(t, err)
 	for _, location := range []string{"eastus", "japaneast", ""} {
 		t.Run(location, func(t *testing.T) {
 			values := map[string]string{
@@ -42,7 +44,7 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 			azureContext, err := loadAzureContext(t.Context(), client, "test")
 			require.NoError(t, err)
 			_, err = configureFoundryProject(t.Context(), client, azureContext, "test", "", "",
-				true, true, false, false, promptHarnessRegionsForInit("microsoft_copilot_preview"))
+				true, true, false, false, allowed)
 			if location == "eastus" {
 				require.ErrorContains(t, err, "configured AZURE_LOCATION")
 				require.Equal(t, location, values["AZURE_LOCATION"])

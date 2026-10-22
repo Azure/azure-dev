@@ -100,7 +100,7 @@ enabled, err := featureflags.IsEnabled(
 
 Enforcement has two layers. Each layer has one check.
 
-**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It calls `enforcePreviewFeatures` for the executing command with its args. Whenever the gate would reject, it first runs the command's local argument checks from `validateBeforePreview` so local conflicts are reported before `feature_not_enabled` or an empty environment error. These checks use only flags and args, with no source reads or state changes. The existing debug logging and telemetry steps keep their order. The gate makes no host reads for a command without a preview annotation or a set preview flag. A bound environment error only fails commands that perform a preview check.
+**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It calls `enforcePreviewFeatures` for the executing command with its args. Whenever the gate would reject, it first runs the command's local argument checks from `validateBeforePreview` so local conflicts are reported before `feature_not_enabled` or an empty environment error. These checks use only flags and args, with no source reads or state changes. The existing debug logging and telemetry steps keep their order. The gate makes no host reads for a command without a preview annotation or a set preview flag. A bound environment error only fails commands that perform a preview check or carry `rejectEmptyEnvironmentAnnotation`.
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
@@ -153,7 +153,7 @@ The [README](../../README.md#preview-feature-opt-ins) lists the equivalent comma
 
 `azd ai agent config list-alpha` mirrors `azd config list-alpha`. It prints every feature from `All` as a block with `Name`, `Description`, `Status` (`On` or `Off`), and `Environment variable`. It calls `IsEnabled` once per feature with the environment selected by `-e`, so the status matches what enforcement sees. It prints no source for an opt-in because the API returns only a decision.
 
-An explicit empty environment is rejected before any source is read.
+An explicit empty environment is rejected before any source is read. The root pre-run rejects it before the project read for telemetry.
 
 The default text output prints `Status: Unknown` and an `Error` line for a feature whose status cannot be read. `--output json` prints `{"features":[...]}` with `name`, `description`, `status`, `envVar`, and an `error` field when the read failed. Both formats list every feature before the command exits with an error that counts the failed reads. The command is read only and needs no authentication.
 

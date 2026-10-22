@@ -9,8 +9,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRootCommandInvokeAcceptsEmptyEnvironment(t *testing.T) {
+	clearPreviewProcess(t)
+	_, env := startPreviewCommandServer(t, nil, nil, nil)
+	root := NewRootCommand()
+	invoke, _, err := root.Find([]string{"invoke"})
+	require.NoError(t, err)
+	ran := false
+	invoke.RunE = func(*cobra.Command, []string) error {
+		ran = true
+		return nil
+	}
+	root.SetArgs([]string{"invoke", "-e", "", "hello"})
+
+	require.NoError(t, root.ExecuteContext(t.Context()))
+	require.True(t, ran)
+	require.Positive(t, env.reads.Load(), "project telemetry should still read the project")
+}
 
 func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 	cmd := NewRootCommand()

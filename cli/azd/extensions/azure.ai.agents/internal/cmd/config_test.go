@@ -195,17 +195,29 @@ func TestConfigListAlphaRejectsEmptyEnvironment(t *testing.T) {
 			t.Run(flag+"/"+value, func(t *testing.T) {
 				clearPreviewProcess(t)
 				t.Setenv("AZD_ENVIRONMENT", "default-env")
+				_, env := startPreviewCommandServer(t, nil, nil, nil)
 
 				text, err := executeRoot(t, "config", "list-alpha", flag, value)
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
 				require.True(t, ok, "%v", err)
 				require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
 				require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-				require.Contains(t, localErr.Message, "--environment")
+				require.Equal(t, "the --environment flag was set to an empty value", localErr.Message)
 				require.Empty(t, text)
+				require.Zero(t, env.reads.Load(), "no project read or telemetry report should reach the host")
 			})
 		}
 	}
+}
+
+func TestConfigListAlphaHelpAcceptsEmptyEnvironment(t *testing.T) {
+	clearPreviewProcess(t)
+	_, env := startPreviewCommandServer(t, nil, nil, nil)
+
+	text, err := executeRoot(t, "config", "list-alpha", "-e", "", "--help")
+	require.NoError(t, err)
+	require.Contains(t, text, "Display the list of agent features in alpha stage")
+	require.Zero(t, env.reads.Load())
 }
 
 func TestFeatureCommandRemoved(t *testing.T) {

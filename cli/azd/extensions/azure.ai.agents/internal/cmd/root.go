@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const rejectEmptyEnvironmentAnnotation = "azure.ai.agents/reject-empty-environment"
+
 func NewRootCommand() *cobra.Command {
 	rootCmd, extCtx := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{
 		Name: "agent",
@@ -51,6 +53,11 @@ func NewRootCommand() *cobra.Command {
 		setupDebugLogging(cmd.Flags())
 		if err := enforcePreviewFeatures(cmd, args, extCtx.Environment); err != nil {
 			return err
+		}
+		if cmd.Annotations[rejectEmptyEnvironmentAnnotation] == "true" {
+			if err := featureflags.EnvironmentError(cmd.Context()); err != nil {
+				return err
+			}
 		}
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {

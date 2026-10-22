@@ -79,12 +79,10 @@ listing every feature.`,
 
   # Turn on a specific alpha feature
   azd config set alpha.<feature-name> on`,
-		Args: cobra.NoArgs,
+		Annotations: map[string]string{rejectEmptyEnvironmentAnnotation: "true"},
+		Args:        cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if err := featureflags.CheckEnvironmentFlag(cmd.Flags()); err != nil {
-				return err
-			}
 			client, err := azdext.NewAzdClient()
 			if err != nil {
 				return fmt.Errorf("connecting to azd to read alpha features: %w", err)

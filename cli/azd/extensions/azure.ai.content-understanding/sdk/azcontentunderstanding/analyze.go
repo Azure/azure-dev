@@ -28,20 +28,26 @@ func validateAnalyze(body AnalyzeRequest) error {
 
 // BeginAnalyze submits JSON inputs. PollUntilDone accepts a Frequency of one second
 // for interactive use; nil polling options use the azcore default.
-func (c *Client) BeginAnalyze(ctx context.Context, analyzerID string, body AnalyzeRequest) (*runtime.Poller[AnalyzeResponse], error) {
+func (c *Client) BeginAnalyze(
+	ctx context.Context, analyzerID string, body AnalyzeRequest,
+) (*runtime.Poller[AnalyzeResponse], error) {
 	return c.beginAnalyze(ctx, analyzerID, body, nil, "")
 }
 
 // BeginAnalyzeBinary submits binary input. The content type defaults to application/octet-stream.
 // The stream must support seeking so the pipeline can determine its length.
-func (c *Client) BeginAnalyzeBinary(ctx context.Context, analyzerID string, body io.ReadSeekCloser, contentType string) (*runtime.Poller[AnalyzeResponse], error) {
+func (c *Client) BeginAnalyzeBinary(
+	ctx context.Context, analyzerID string, body io.ReadSeekCloser, contentType string,
+) (*runtime.Poller[AnalyzeResponse], error) {
 	if body == nil {
 		return nil, errors.New("binary input is required")
 	}
 	return c.beginAnalyze(ctx, analyzerID, AnalyzeRequest{}, body, contentType)
 }
 
-func (c *Client) beginAnalyze(ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string) (*runtime.Poller[AnalyzeResponse], error) {
+func (c *Client) beginAnalyze(
+	ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string,
+) (*runtime.Poller[AnalyzeResponse], error) {
 	resp, err := c.analyze(ctx, analyzerID, input, binary, contentType, false)
 	if err != nil {
 		return nil, err
@@ -55,14 +61,18 @@ func (c *Client) AnalyzeInline(ctx context.Context, analyzerID string, body Anal
 }
 
 // AnalyzeBinaryInline analyzes binary input without polling. Requires a preview API version.
-func (c *Client) AnalyzeBinaryInline(ctx context.Context, analyzerID string, body io.ReadSeekCloser, contentType string) (AnalyzeResponse, error) {
+func (c *Client) AnalyzeBinaryInline(
+	ctx context.Context, analyzerID string, body io.ReadSeekCloser, contentType string,
+) (AnalyzeResponse, error) {
 	if body == nil {
 		return AnalyzeResponse{}, errors.New("binary input is required")
 	}
 	return c.analyzeInline(ctx, analyzerID, AnalyzeRequest{}, body, contentType)
 }
 
-func (c *Client) analyzeInline(ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string) (AnalyzeResponse, error) {
+func (c *Client) analyzeInline(
+	ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string,
+) (AnalyzeResponse, error) {
 	if c.apiVersion == APIVersionGA {
 		return AnalyzeResponse{}, errors.New("inline analysis requires a preview API version")
 	}
@@ -90,7 +100,10 @@ func (c *Client) analyzeInline(ctx context.Context, analyzerID string, input Ana
 	return decodeResponse[AnalyzeResponse](resp)
 }
 
-func (c *Client) analyze(ctx context.Context, analyzerID string, input AnalyzeRequest, binary io.ReadSeekCloser, contentType string, inline bool) (*http.Response, error) {
+func (c *Client) analyze(
+	ctx context.Context, analyzerID string, input AnalyzeRequest,
+	binary io.ReadSeekCloser, contentType string, inline bool,
+) (*http.Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

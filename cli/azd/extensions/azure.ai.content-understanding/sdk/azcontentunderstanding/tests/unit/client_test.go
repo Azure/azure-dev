@@ -39,7 +39,12 @@ func testClient(t *testing.T, apiVersion string, handler http.HandlerFunc) (*sdk
 	return client, server
 }
 
-const succeededAnalysis = `{"id":"op1","status":"Succeeded","usage":{"documentPagesMinimal":0,"tokens":{"large":9007199254740993}},"result":{"analyzerId":"prebuilt-layout","stringEncoding":"codePoint","contents":[{"kind":"document","markdown":"你好 🌍","fields":{"Amount":{"type":"integer","valueInteger":9007199254740993}}}],"future":true},"unknown":{"retained":true}}`
+const succeededAnalysis = `{"id":"op1","status":"Succeeded",` +
+	`"usage":{"documentPagesMinimal":0,"tokens":{"large":9007199254740993}},` +
+	`"result":{"analyzerId":"prebuilt-layout","stringEncoding":"codePoint",` +
+	`"contents":[{"kind":"document","markdown":"你好 🌍",` +
+	`"fields":{"Amount":{"type":"integer","valueInteger":9007199254740993}}}],` +
+	`"future":true},"unknown":{"retained":true}}`
 
 func TestAnalysisPaths(t *testing.T) {
 	for _, binary := range []bool{false, true} {
@@ -87,14 +92,17 @@ func TestAnalysisPaths(t *testing.T) {
 						_, _ = io.WriteString(w, succeededAnalysis)
 						return
 					}
-					w.Header().Set("Operation-Location", server.URL+"/contentunderstanding/analyzerResults/op1?api-version="+sdk.APIVersionPreview)
+					w.Header().Set("Operation-Location",
+						server.URL+"/contentunderstanding/analyzerResults/op1?api-version="+sdk.APIVersionPreview)
 					w.WriteHeader(http.StatusAccepted)
 					_, _ = io.WriteString(w, `{"status":"Running"}`)
 				})
 				server = srv
 				var got sdk.AnalyzeResponse
 				var err error
-				input := sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://storage.test/a.pdf?sig=a%2Bb%3D&sp=r"}}}
+				input := sdk.AnalyzeRequest{
+					Inputs: []sdk.AnalysisInput{{URL: "https://storage.test/a.pdf?sig=a%2Bb%3D&sp=r"}},
+				}
 				if inline {
 					if binary {
 						got, err = client.AnalyzeBinaryInline(t.Context(), "prebuilt-layout", streamingBody("input"), "")
@@ -178,7 +186,9 @@ func TestInlineErrorsAndValidation(t *testing.T) {
 			client, _ := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, payload)
 			})
-			_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
+			_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{
+				Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+			})
 			require.Error(t, err)
 			if strings.Contains(payload, "InvalidContent") {
 				var responseErr *azcore.ResponseError
@@ -188,11 +198,15 @@ func TestInlineErrorsAndValidation(t *testing.T) {
 			}
 		})
 	}
-	client, _ := testClient(t, "", func(w http.ResponseWriter, r *http.Request) { t.Error("invalid request reached transport") })
+	client, _ := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
+		t.Error("invalid request reached transport")
+	})
 	_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{})
 	require.ErrorContains(t, err, "preview")
 	for _, body := range []sdk.AnalyzeRequest{
-		{}, {Inputs: []sdk.AnalysisInput{{}}}, {Inputs: []sdk.AnalysisInput{{URL: "https://example.test", Data: []byte("both")}}},
+		{},
+		{Inputs: []sdk.AnalysisInput{{}}},
+		{Inputs: []sdk.AnalysisInput{{URL: "https://example.test", Data: []byte("both")}}},
 	} {
 		_, err := client.BeginAnalyze(t.Context(), "a", body)
 		require.Error(t, err)
@@ -210,7 +224,8 @@ func TestDefaultsAndServiceErrors(t *testing.T) {
 		switch count {
 		case 1:
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":{"code":"InvalidRequest","message":"DefaultsNotSet","innererror":{"code":"DefaultsNotSet"}}}`)
+			_, _ = io.WriteString(w,
+				`{"error":{"code":"InvalidRequest","message":"DefaultsNotSet","innererror":{"code":"DefaultsNotSet"}}}`)
 		case 2:
 			assert.Equal(t, "PATCH", r.Method)
 			assert.Equal(t, "application/merge-patch+json", r.Header.Get("Content-Type"))
@@ -263,7 +278,8 @@ func TestAnalyzerLifecycleAndPaging(t *testing.T) {
 		case r.URL.Query().Get("skip") == "1":
 			_, _ = io.WriteString(w, `{"value":[{"analyzerId":"b"}]}`)
 		default:
-			_, _ = io.WriteString(w, `{"value":[{"analyzerId":"a"}],"nextLink":"`+server.URL+`/contentunderstanding/analyzers?skip=1&api-version=2025-11-01"}`)
+			_, _ = io.WriteString(w, `{"value":[{"analyzerId":"a"}],"nextLink":"`+server.URL+
+				`/contentunderstanding/analyzers?skip=1&api-version=2025-11-01"}`)
 		}
 	})
 	server = srv
@@ -385,13 +401,16 @@ func TestCopyRequests(t *testing.T) {
 			data, err := io.ReadAll(r.Body)
 			assert.NoError(t, err)
 			assert.JSONEq(t, `{"targetAzureResourceId":"/subscriptions/target","targetRegion":"westus"}`, string(data))
-			_, _ = io.WriteString(w, `{"source":"source","targetAzureResourceId":"/subscriptions/target","expiresAt":"2026-10-21T23:00:00Z"}`)
+			_, _ = io.WriteString(w,
+				`{"source":"source","targetAzureResourceId":"/subscriptions/target","expiresAt":"2026-10-21T23:00:00Z"}`)
 		case strings.HasSuffix(r.URL.Path, ":copy"):
 			assert.True(t, grantSeen)
 			assert.Equal(t, "false", r.URL.Query().Get("allowReplace"))
 			data, err := io.ReadAll(r.Body)
 			assert.NoError(t, err)
-			assert.JSONEq(t, `{"sourceAnalyzerId":"a","sourceAzureResourceId":"/subscriptions/source","sourceRegion":"eastus"}`, string(data))
+			assert.JSONEq(t,
+				`{"sourceAnalyzerId":"a","sourceAzureResourceId":"/subscriptions/source","sourceRegion":"eastus"}`,
+				string(data))
 			w.Header().Set("Operation-Location", server.URL+"/contentunderstanding/analyzers/b/operations/1")
 			w.WriteHeader(http.StatusCreated)
 			_, _ = io.WriteString(w, `{"analyzerId":"b","status":"Creating"}`)
@@ -420,7 +439,8 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 			var server *httptest.Server
 			client, srv := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
-					w.Header().Set("Operation-Location", server.URL+"/contentunderstanding/analyzerResults/op?api-version=2025-11-01")
+					w.Header().Set("Operation-Location",
+						server.URL+"/contentunderstanding/analyzerResults/op?api-version=2025-11-01")
 					w.WriteHeader(http.StatusAccepted)
 					_, _ = io.WriteString(w, `{"status":"Running"}`)
 					return
@@ -430,7 +450,9 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 					`"details":[{"code":"private value"}]}]}}`)
 			})
 			server = srv
-			poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
+			poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
+				Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+			})
 			require.NoError(t, err)
 			_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
 			var operationErr *sdk.OperationError
@@ -508,7 +530,9 @@ func TestContinuationOriginAndCancellation(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"status":"Running"}`)
 	})
-	_, err = client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
+	_, err = client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
+		Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+	})
 	require.ErrorContains(t, err, "resource endpoint")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -532,12 +556,20 @@ func TestBearerAuthAndConstructorValidation(t *testing.T) {
 	}))
 	defer server.Close()
 	credential := &testCredential{}
-	client, err := sdk.NewClient(server.URL, credential, &sdk.ClientOptions{ClientOptions: azcore.ClientOptions{Transport: server.Client()}})
+	client, err := sdk.NewClient(server.URL, credential, &sdk.ClientOptions{
+		ClientOptions: azcore.ClientOptions{Transport: server.Client()},
+	})
 	require.NoError(t, err)
 	_, err = client.GetDefaults(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"https://cognitiveservices.azure.com/.default"}, credential.scopes)
-	for _, endpoint := range []string{"", "http://example.test", "https://user:pass@example.test", "https://example.test/path", "https://example.test?key=x"} {
+	for _, endpoint := range []string{
+		"",
+		"http://example.test",
+		"https://user:pass@example.test",
+		"https://example.test/path",
+		"https://example.test?key=x",
+	} {
 		_, err := sdk.NewClientWithKeyCredential(endpoint, azcore.NewKeyCredential("key"), nil)
 		require.Error(t, err)
 	}
@@ -610,7 +642,9 @@ func TestPollingHonorsRetryAfterAndDeadline(t *testing.T) {
 		_, _ = io.WriteString(w, `{"status":"Running"}`)
 	})
 	server = srv
-	poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}}})
+	poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
+		Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+	})
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
@@ -628,7 +662,8 @@ func TestAPIVersionOverridesApplyToContinuations(t *testing.T) {
 				calls++
 				assert.Equal(t, sdk.APIVersionPreview, r.URL.Query().Get("api-version"))
 				if calls == 1 {
-					_, _ = io.WriteString(w, `{"value":[],"nextLink":"`+server.URL+`/contentunderstanding/analyzers?api-version=2025-11-01"}`)
+					_, _ = io.WriteString(w, `{"value":[],"nextLink":"`+server.URL+
+						`/contentunderstanding/analyzers?api-version=2025-11-01"}`)
 				} else {
 					_, _ = io.WriteString(w, `{"value":[]}`)
 				}

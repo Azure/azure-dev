@@ -78,8 +78,10 @@ func NewClientWithKeyCredential(endpoint string, credential *azcore.KeyCredentia
 
 func newClient(endpoint string, auth policy.Policy, options *ClientOptions) (*Client, error) {
 	u, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return nil, errors.New("endpoint must be an absolute HTTPS resource URL without a path, query, credentials or fragment")
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
+		u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return nil, errors.New("endpoint must be an absolute HTTPS resource URL " +
+			"without a path, query, credentials or fragment")
 	}
 	opts := ClientOptions{}
 	if options != nil {
@@ -157,7 +159,9 @@ func (c *Client) noWriteRetry(ctx context.Context) context.Context {
 	return policy.WithRetryOptions(ctx, options)
 }
 
-func (c *Client) request(ctx context.Context, method, path string, query url.Values, body []byte, contentType string) (*policy.Request, error) {
+func (c *Client) request(
+	ctx context.Context, method, path string, query url.Values, body []byte, contentType string,
+) (*policy.Request, error) {
 	u, err := url.Parse(c.endpoint + "/contentunderstanding" + path)
 	if err != nil {
 		return nil, err
@@ -260,7 +264,9 @@ func decodeResponse[T any](resp *http.Response) (T, error) {
 	return result, nil
 }
 
-func (c *Client) jsonRequest(ctx context.Context, method, path string, query url.Values, body any, contentType string) (*policy.Request, error) {
+func (c *Client) jsonRequest(
+	ctx context.Context, method, path string, query url.Values, body any, contentType string,
+) (*policy.Request, error) {
 	var payload []byte
 	var err error
 	if body != nil {

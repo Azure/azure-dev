@@ -13,6 +13,8 @@ The parent module selects its existing Azure SDK dependency versions. In
 particular, it continues to use `azcore` v1.23.3; the copied module does not
 require an `azcore` upgrade or downgrade.
 The copied module's Go directive is aligned with the repository's Go 1.26.4 baseline.
+Source and unit-test line wrapping follows the extension's 125-character lint limit;
+this formatting does not change SDK behavior or test payloads.
 
 ## Local changes to disposition after azd ships
 

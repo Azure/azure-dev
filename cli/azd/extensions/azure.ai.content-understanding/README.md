@@ -556,8 +556,8 @@ Like [Foundry agents](../azure.ai.agents/) and
   structured extension errors; no independent Python runtime or profile store.
 - The standard manifest, version file, changelog, developer build scripts,
   shared CI build wrapper, lint configuration and shared extension release
-  pipeline. CI runs both extension tests and the separately versioned local SDK
-  module's tests. CODEOWNERS confirmation and release publication remain separate
+  pipeline. CI runs tests, lint, and Go modernization checks for both the extension
+  and the separately versioned local SDK module. CODEOWNERS confirmation and release publication remain separate
   owner/release gates, not inferred from local tests.
 - Native Go unit tests, typed fakes and SDK-backed command integration tests.
   Python supplies feature/edge-case references, not a second implementation
@@ -601,7 +601,11 @@ golangci-lint run ./...
 
 cd sdk/azcontentunderstanding
 go test -race ./... -count=1
+go fix ./...
+golangci-lint run ./...
 cd ../..
+
+cspell lint '**/*.go' '**/*.md' --config ./cspell.yaml --no-progress
 
 EXTENSION_ID=azure.ai.content-understanding \
 EXTENSION_VERSION=0.0.1 EXTENSION_PLATFORM=linux/amd64 bash ./build.sh

@@ -46,7 +46,8 @@ func (c *Client) NewListAnalyzersPager() *runtime.Pager[ListAnalyzersResponse] {
 					return ListAnalyzersResponse{}, err
 				}
 				next = req.Raw().URL.ResolveReference(next)
-				if next.Scheme != req.Raw().URL.Scheme || !strings.EqualFold(next.Host, req.Raw().URL.Host) || next.User != nil {
+				if next.Scheme != req.Raw().URL.Scheme ||
+					!strings.EqualFold(next.Host, req.Raw().URL.Host) || next.User != nil {
 					return ListAnalyzersResponse{}, errors.New("analyzer nextLink must remain on the resource endpoint")
 				}
 				next.Host = req.Raw().URL.Host
@@ -67,7 +68,9 @@ func (c *Client) NewListAnalyzersPager() *runtime.Pager[ListAnalyzersResponse] {
 
 // BeginCreateAnalyzer creates an analyzer without replacing an existing definition.
 // definition is an analyzer JSON object; unknown schema/config properties are retained.
-func (c *Client) BeginCreateAnalyzer(ctx context.Context, analyzerID string, definition json.RawMessage) (*runtime.Poller[AnalyzerResponse], error) {
+func (c *Client) BeginCreateAnalyzer(
+	ctx context.Context, analyzerID string, definition json.RawMessage,
+) (*runtime.Poller[AnalyzerResponse], error) {
 	ctx = c.noWriteRetry(ctx)
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(definition, &object); err != nil || object == nil {
@@ -109,7 +112,9 @@ func (c *Client) DeleteAnalyzer(ctx context.Context, analyzerID string) error {
 // BeginCopyAnalyzer starts a same-resource or cross-resource copy without replacement.
 // For cross-resource copy call this method on the destination client after granting
 // authorization on the source client.
-func (c *Client) BeginCopyAnalyzer(ctx context.Context, analyzerID string, body CopyAnalyzerRequest) (*runtime.Poller[AnalyzerResponse], error) {
+func (c *Client) BeginCopyAnalyzer(
+	ctx context.Context, analyzerID string, body CopyAnalyzerRequest,
+) (*runtime.Poller[AnalyzerResponse], error) {
 	ctx = c.noWriteRetry(ctx)
 	if body.SourceAnalyzerID == "" {
 		return nil, errors.New("source analyzer ID is required")
@@ -118,7 +123,9 @@ func (c *Client) BeginCopyAnalyzer(ctx context.Context, analyzerID string, body 
 	if err != nil {
 		return nil, err
 	}
-	req, err := c.jsonRequest(ctx, http.MethodPost, path+":copy", url.Values{"allowReplace": {"false"}}, body, "application/json")
+	req, err := c.jsonRequest(
+		ctx, http.MethodPost, path+":copy", url.Values{"allowReplace": {"false"}}, body, "application/json",
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +137,9 @@ func (c *Client) BeginCopyAnalyzer(ctx context.Context, analyzerID string, body 
 }
 
 // GrantCopyAuthorization permits a destination resource to copy this source analyzer.
-func (c *Client) GrantCopyAuthorization(ctx context.Context, analyzerID string, body GrantCopyAuthorizationRequest) (CopyAuthorization, error) {
+func (c *Client) GrantCopyAuthorization(
+	ctx context.Context, analyzerID string, body GrantCopyAuthorizationRequest,
+) (CopyAuthorization, error) {
 	ctx = c.noWriteRetry(ctx)
 	if body.TargetAzureResourceID == "" {
 		return CopyAuthorization{}, errors.New("target Azure resource ID is required")

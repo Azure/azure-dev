@@ -4,6 +4,11 @@
 
 ### Features Added
 
+- Simplify remaining command tests into native Go contracts: remove Python
+  type/node assertions, cross-frontend observation wrappers, duplicate
+  generated-project executions and review-state validation. Retain complete
+  native request/output/error assertions, asset provenance and all 19 strict
+  SDK playback recordings. No production behavior changes.
 - Align the CLI-only extension with native azd conventions used by Foundry
   agents/projects. Migrate copy, schema, analyzer-test and generated-project
   integration tests to the production SDK adapter, remove the unused parallel

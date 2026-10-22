@@ -15,28 +15,25 @@ scenario_source:
   license: MIT
 normalized:
   file: testdata/parity/normalized_adapter.json
-  sha256: 1f2213e2893464fe50ccff36ec52f3b8d4f5544a740d426dc06ba9c508225157
+  sha256: 3721730c9eb34c079b88ae6ff5877e47931816cee16e4c0176b66aa3fcdd795f
 generated_projects:
   file: testdata/parity/generated_projects.json
-  sha256: 91842a6caacf0db13d103c6eac918a66caf2bfabedde0f0bb12e967f9f14af6f
+  sha256: c7d082403067a78a200e2625d0995aa21ed3464e582b41a6aed2427fbe27b7cb
 core_show_bindings:
   file: testdata/parity/core_show_bindings.json
-  sha256: b0928c34a2bb6e8dfaa1f2a3a860e82ed3cb1a23c8b13c7bb980c515b32e14b3
-core_delete_binding:
-  file: testdata/parity/core_delete_binding.json
-  sha256: 4adf30a8776cf80b4f5ef12717ddb16d942a25d18c19b4d159cd2c6ea5749862
+  sha256: 1331dd95dc8a06d0b4b114a9945d41e7ad717a9eba5cf5a25d8d323fb1b17153
 core_create_binding:
   file: testdata/parity/core_create_binding.json
-  sha256: 46e4a185bfd8c1bc50757f56cb0aaf57af8c559f49343c9cddfa3958d0dcd3a6
+  sha256: df1f3e740cf19678b1bc483c1fa0052b40a1896295f42e8394d6410ff2b67a8a
 core_test_binding:
   file: testdata/parity/core_test_binding.json
-  sha256: 250777da541a8b2fe2c263b9c6c1665e25ac1f2ae779b9cce98b80f65d1c0e19
+  sha256: 2d1d60ccc65a149d7c02e90f5e873f6b3c2321ed0996a7a5f5ed6cc0e3ae0b0c
 core_validate_binding:
   file: testdata/parity/core_validate_binding.json
-  sha256: 16582bf80cb34237371d8cee178f27621df8f936d516d9489893ffb3dc67b014
+  sha256: 12a8030c1db05ee04a0b3d6936425c386d50dafeeddba317af7abb18eb33f4fc
 core_copy_binding:
   file: testdata/parity/core_copy_binding.json
-  sha256: 59b4f7791e82573357e12515b1ae0e78aa5d3bf1f8f8235c7340d9fe714b2255
+  sha256: 042903978dbfe103e324e1ba4d692806cecbfc1b6bbbfc71ce1490fee52eb1f9
 capability_source:
   file: testdata/parity/source_capabilities.yaml
   sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
@@ -48,177 +45,148 @@ capabilities:
   - az cu analyze
   target: azd ai cu analyze
   classification: extension-path
-  state: pending
 - id: 2
   source_paths:
   - az cu analyzer list
   target: azd ai cu analyzer list
   classification: extension-path
-  state: pending
 - id: 3
   source_paths:
   - az cu analyzer show
   target: azd ai cu analyzer show
   classification: extension-path
-  state: pending
 - id: 4
   source_paths:
   - az cu analyzer create
   target: azd ai cu analyzer create
   classification: extension-path
-  state: pending
 - id: 5
   source_paths:
   - az cu analyzer copy
   target: azd ai cu analyzer copy
   classification: extension-path
-  state: pending
 - id: 6
   source_paths:
   - az cu analyzer delete
   target: azd ai cu analyzer delete
   classification: extension-path
-  state: pending
 - id: 7
   source_paths:
   - az cu analyzer validate
   target: azd ai cu analyzer validate
   classification: extension-path
-  state: pending
 - id: 8
   source_paths:
   - az cu analyzer test
   target: azd ai cu analyzer test
   classification: extension-path
-  state: pending
 - id: 9
   source_paths:
   - az cu analyzer schema create
   target: azd ai cu analyzer schema create
   classification: extension-path
-  state: pending
 - id: 10
   source_paths:
   - az cu defaults show
   target: azd ai cu defaults show
   classification: extension-path
-  state: pending
 - id: 11
   source_paths:
   - az cu defaults set
   target: azd ai cu defaults set
   classification: extension-path
-  state: pending
 - id: 12
   source_paths:
   - az cu profile show
   target: azd env get-values plus azd env config get cu
   classification: environment-mapping
-  state: pending
 - id: 13
   source_paths:
   - az cu profile list
   target: azd env list
   classification: environment-mapping
-  state: pending
 - id: 14
   source_paths:
   - az cu profile get
   target: azd env get-value or azd env config get
   classification: environment-mapping
-  state: pending
 - id: 15
   source_paths:
   - az cu profile set
   target: azd env set, azd env set-secret, or azd env config set
   classification: environment-mapping
-  state: pending
 - id: 16
   source_paths:
   - az cu profile unset
   target: azd env config unset; environment-value removal requires host support
   classification: environment-mapping
-  state: pending
 - id: 17
   source_paths:
   - az cu profile create
   target: azd env new
   classification: environment-mapping
-  state: pending
 - id: 18
   source_paths:
   - az cu profile delete
   target: azd env remove
   classification: environment-mapping
-  state: pending
 - id: 19
   source_paths:
   - az cu profile copy
   target: optional nonsecret import with secret re-entry
   classification: environment-mapping
-  state: pending
 - id: 20
   source_paths:
   - az cu profile rename
   target: optional create, copy, select, and remove workflow
   classification: environment-mapping
-  state: pending
 - id: 21
   source_paths:
   - az cu profile set-active
   target: azd env select; per-command selection uses -e/--environment
   classification: environment-mapping
-  state: pending
 - id: 22
   source_paths:
   - az cu profile sync-defaults
   target: azd ai cu defaults set --from-environment
   classification: environment-mapping
-  state: pending
 - id: 23
   source_paths:
   - cu profile _has-values
   target: generated hooks query environment values and config through the host
   classification: removed-helper
-  state: pending
 - id: 24
   source_paths:
   - az cu env-var list
   target: azd ai cu env-var list
   classification: extension-path
-  state: pending
 - id: 25
   source_paths:
   - az cu doctor
   target: azd ai cu doctor
   classification: extension-path
-  state: pending
 - id: 26
   source_paths:
   - az cu infra generate
   target: azd ai cu infra generate
   classification: extension-path
-  state: pending
 - id: 27
   source_paths:
   - az cu infra _models
   - cu _infra-models
   target: azd ai cu infra _models
   classification: extension-path
-  state: pending
 - id: 28
   source_paths:
   - az cu infra _postprovision-v1
   - cu _infra-postprovision-v1
   target: azd ai cu infra _postprovision-v1
   classification: extension-path
-  state: pending
 - id: 29
   source_paths:
   - cu upgrade
   target: azd extension update azure.ai.content-understanding
   classification: host-owned-update
-  state: pending
 scenarios:
 - id: 1
   name: analyze-single-file-markdown
@@ -226,42 +194,36 @@ scenarios:
   mode: playback
   recordings:
   - analyze_single
-  state: evidenced
 - id: 2
   name: analyze-directory-writes-results
   kind: command
   mode: playback
   recordings:
   - analyze_batch
-  state: evidenced
 - id: 3
   name: analyze-prebuilt-invoice-json
   kind: command
   mode: playback
   recordings:
   - analyze_prebuilt_invoice_json
-  state: evidenced
 - id: 4
   name: analyzer-list-json
   kind: command
   mode: playback
   recordings:
   - analyzer_list
-  state: evidenced
 - id: 5
   name: analyzer-list-custom-sorted
   kind: command
   mode: playback
   recordings:
   - analyzer_list
-  state: evidenced
 - id: 6
   name: analyzer-list-created-at
   kind: command
   mode: playback
   recordings:
   - analyzer_list
-  state: evidenced
 - id: 7
   name: analyzer-create-show-delete
   kind: command
@@ -270,26 +232,22 @@ scenarios:
   - analyzer_create
   - analyzer_show
   - analyzer_delete
-  state: evidenced
 - id: 8
   name: analyzer-copy-same-resource
   kind: command
   mode: live-only
   recordings: []
-  state: pending
 - id: 9
   name: analyzer-copy-cross-resource
   kind: command
   mode: live-only
   recordings: []
-  state: pending
 - id: 10
   name: analyzer-test-field-report
   kind: command
   mode: playback
   recordings:
   - analyzer_test
-  state: evidenced
 - id: 11
   name: template-analyzer-create-show-delete
   kind: command
@@ -298,7 +256,6 @@ scenarios:
   - template_analyzer_create
   - template_analyzer_show
   - template_analyzer_delete
-  state: evidenced
 - id: 12
   name: classifier-routing-lifecycle
   kind: command
@@ -309,21 +266,18 @@ scenarios:
   - classifier_route_show
   - classifier_route_delete
   - route_target_delete
-  state: evidenced
 - id: 13
   name: doctor-connectivity
   kind: command
   mode: playback
   recordings:
   - doctor
-  state: evidenced
 - id: 14
   name: defaults-show-json
   kind: command
   mode: playback
   recordings:
   - defaults_get
-  state: evidenced
 - id: 15
   name: schema-template-validate-lifecycle
   kind: command
@@ -332,80 +286,67 @@ scenarios:
   - analyzer_create
   - analyzer_show
   - analyzer_delete
-  state: evidenced
 - id: 16
   name: schema-create-from-sample
   kind: command
   mode: playback
   recordings:
   - schema_suggest
-  state: evidenced
 - id: 17
   name: scrub-request-sas-basic
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 18
   name: scrub-request-sas-apostrophe-path
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 19
   name: scrub-request-sas-apostrophe-query
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 20
   name: scrub-response-sas-basic-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 21
   name: scrub-response-sas-apostrophe-path-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 22
   name: scrub-response-sas-apostrophe-query-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 23
   name: scrub-response-sas-basic-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 24
   name: scrub-response-sas-apostrophe-path-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 25
   name: scrub-response-sas-apostrophe-query-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 26
   name: scrub-response-host-and-query
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 - id: 27
   name: scrub-response-bytes-payload
   kind: hygiene
   mode: offline
   recordings: []
-  state: evidenced
 recordings:
 - name: defaults_get
   file: testdata/playback/defaults_get.json

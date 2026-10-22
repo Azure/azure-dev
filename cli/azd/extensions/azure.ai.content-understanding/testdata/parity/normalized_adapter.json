@@ -14,303 +14,59 @@
       "packages/core/src/cu_cli_core/operations/analyzers.py": "d560482e133c92eba8b3447d6618f0a6f28388a99dd8a1ed8b33eda877189399",
       "packages/azd-extension/src/azd_cu/runtime.py": "9633def12b2f867edafcaa63319859d4c08234f9cd6fb51b1da59f336432c55a",
       "packages/azure-cli-extension/azext_content_understanding/_analyzers.py": "84d2e7a7a4aacd1228c385482bee9b62f58b7041a6da0002406a526973c27dcc"
-    },
-    "runtime": {
-      "python": "3.14.4",
-      "azure-ai-contentunderstanding": "1.2.0b3",
-      "azure-core": "1.39.0"
     }
   },
-  "normalizations": [
-    "Execute the exact source tests and assert complete Azure/azd observations and fake-client backend calls equal. Preserve all request/result/warning/error fields and declared host differences.",
-    "Native uses production SDKTransport with strict synthetic HTTP responses derived from those source fake-client calls, not service recordings. A delegating observer captures real SDK results/name operands plus parsed local kind/sort/yes flags; no fake results or network fallback. Source fake analyzers omit status. Inject only status:ready into synthetic native wire analyzers and complete native expected list/backend results; retain original source observations unchanged. The unadapted source models must fail existing native wire validation; never loosen production.",
-    "Conflict remains a proposed difference: source usage/message/null hint versus native validation/safe message/actionable hint and explicit code. Preserve both complete errors. Default/JSON outputs are compared in full; output-none is a separate quiet-output contract. Dummy Entra/session injection does not prove live authentication, RBAC or installed-host behavior."
-  ],
-  "cases": [
-    {
-      "name": "list",
-      "source": "tests/parity/test_request_result_parity.py::test_analyzer_list_has_normalized_request_and_result_parity",
-      "azure": {
-        "observation": {
-          "request": {
-            "kind": "all",
-            "sort_by": "analyzerId"
-          },
-          "result": [
-            {
-              "analyzerId": "alpha",
-              "description": "A"
-            },
-            {
-              "analyzerId": "zeta",
-              "description": "Z"
-            }
-          ],
-          "warnings": [],
-          "error": null
+  "data": {
+    "list_response": {
+      "value": [
+        {
+          "analyzerId": "zeta",
+          "description": "Z",
+          "status": "ready"
         },
-        "calls": [
-          {
-            "operation": "list",
-            "args": [],
-            "result": [
-              {
-                "analyzerId": "zeta",
-                "description": "Z"
-              },
-              {
-                "analyzerId": "alpha",
-                "description": "A"
-              }
-            ]
-          }
-        ]
-      },
-      "azd": {
-        "observation": {
-          "request": {
-            "kind": "all",
-            "sort_by": "analyzerId"
-          },
-          "result": [
-            {
-              "analyzerId": "alpha",
-              "description": "A"
-            },
-            {
-              "analyzerId": "zeta",
-              "description": "Z"
-            }
-          ],
-          "warnings": [],
-          "error": null
-        },
-        "calls": [
-          {
-            "operation": "list",
-            "args": [],
-            "result": [
-              {
-                "analyzerId": "zeta",
-                "description": "Z"
-              },
-              {
-                "analyzerId": "alpha",
-                "description": "A"
-              }
-            ]
-          }
-        ]
-      },
-      "native": {
-        "observation": {
-          "request": {
-            "kind": "all",
-            "sort_by": "analyzerId"
-          },
-          "result": [
-            {
-              "analyzerId": "alpha",
-              "description": "A",
-              "status": "ready"
-            },
-            {
-              "analyzerId": "zeta",
-              "description": "Z",
-              "status": "ready"
-            }
-          ],
-          "warnings": [],
-          "error": null
-        },
-        "calls": [
-          {
-            "operation": "list",
-            "args": [],
-            "result": [
-              {
-                "analyzerId": "zeta",
-                "description": "Z",
-                "status": "ready"
-              },
-              {
-                "analyzerId": "alpha",
-                "description": "A",
-                "status": "ready"
-              }
-            ]
-          }
-        ]
-      },
-      "differences": {
-        "syntax": [],
-        "presentation": [
-          "Azure CLI may render table output; azd emits structured JSON."
-        ]
-      },
-      "native_error_code": ""
+        {
+          "analyzerId": "alpha",
+          "description": "A",
+          "status": "ready"
+        }
+      ]
     },
-    {
-      "name": "delete",
-      "source": "tests/parity/test_request_result_parity.py::test_analyzer_delete_named_and_positional_forms_have_parity",
-      "azure": {
-        "observation": {
-          "request": {
-            "name": "invoice-v1",
-            "yes": true
-          },
-          "result": {
-            "deleted": true,
-            "analyzerId": "invoice-v1"
-          },
-          "warnings": [],
-          "error": null
-        },
-        "calls": [
-          {
-            "operation": "get",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": {
-              "analyzerId": "invoice-v1",
-              "description": "existing"
-            }
-          },
-          {
-            "operation": "delete",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": null
-          }
-        ]
+    "list_result": [
+      {
+        "analyzerId": "alpha",
+        "description": "A",
+        "status": "ready"
       },
-      "azd": {
-        "observation": {
-          "request": {
-            "name": "invoice-v1",
-            "yes": true
-          },
-          "result": {
-            "deleted": true,
-            "analyzerId": "invoice-v1"
-          },
-          "warnings": [],
-          "error": null
-        },
-        "calls": [
-          {
-            "operation": "get",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": {
-              "analyzerId": "invoice-v1",
-              "description": "existing"
-            }
-          },
-          {
-            "operation": "delete",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": null
-          }
-        ]
-      },
-      "native": {
-        "observation": {
-          "request": {
-            "name": "invoice-v1",
-            "yes": true
-          },
-          "result": {
-            "deleted": true,
-            "analyzerId": "invoice-v1"
-          },
-          "warnings": [],
-          "error": null
-        },
-        "calls": [
-          {
-            "operation": "get",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": {
-              "analyzerId": "invoice-v1",
-              "description": "existing",
-              "status": "ready"
-            }
-          },
-          {
-            "operation": "delete",
-            "args": [
-              "invoice-v1"
-            ],
-            "result": null
-          }
-        ]
-      },
-      "differences": {
-        "syntax": [
-          "Azure uses --name while azd accepts a positional analyzer name."
-        ],
-        "presentation": []
-      },
-      "native_error_code": ""
+      {
+        "analyzerId": "zeta",
+        "description": "Z",
+        "status": "ready"
+      }
+    ],
+    "delete_analyzer": {
+      "analyzerId": "invoice-v1",
+      "description": "existing",
+      "status": "ready"
     },
-    {
-      "name": "conflicting-delete",
-      "source": "tests/parity/test_request_result_parity.py::test_conflicting_delete_operands_have_normalized_error_parity",
-      "azure": {
-        "observation": {
-          "request": null,
-          "result": null,
-          "warnings": [],
-          "error": {
-            "category": "usage",
-            "message": "provide name only once; --name cannot be combined with ANALYZER_NAME.",
-            "hint": null,
-            "status_code": null
-          }
+    "delete_result": {
+      "deleted": true,
+      "analyzerId": "invoice-v1"
+    },
+    "missing_list_status": {
+      "value": [
+        {
+          "analyzerId": "zeta",
+          "description": "Z"
         },
-        "calls": []
-      },
-      "azd": {
-        "observation": {
-          "request": null,
-          "result": null,
-          "warnings": [],
-          "error": {
-            "category": "usage",
-            "message": "provide name only once; --name cannot be combined with ANALYZER_NAME.",
-            "hint": null,
-            "status_code": null
-          }
-        },
-        "calls": []
-      },
-      "native": {
-        "observation": {
-          "request": null,
-          "result": null,
-          "warnings": [],
-          "error": {
-            "category": "validation",
-            "message": "Specify the analyzer name only once.",
-            "hint": "Use a positional name or --name, not both.",
-            "status_code": null
-          }
-        },
-        "calls": []
-      },
-      "differences": {
-        "syntax": [],
-        "presentation": []
-      },
-      "native_error_code": "conflicting_analyzer_name"
+        {
+          "analyzerId": "alpha",
+          "description": "A"
+        }
+      ]
+    },
+    "missing_get_status": {
+      "analyzerId": "invoice-v1",
+      "description": "existing"
     }
-  ]
+  }
 }

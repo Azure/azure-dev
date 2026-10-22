@@ -195,23 +195,3 @@ func TestSourceCapabilityManifestRejectsDrift(t *testing.T) {
 		})
 	}
 }
-
-func TestSourceCapabilityReviewMetadataIsSeparate(t *testing.T) {
-	inventory := loadParityInventory(t)
-	before := slices.Clone(inventory.Capabilities)
-	for index := range inventory.Capabilities {
-		inventory.Capabilities[index].State = "evidenced"
-	}
-	require.NoError(t, validateParityInventory(inventory))
-	for index := range inventory.Capabilities {
-		inventory.Capabilities[index].State = "approved"
-		inventory.Capabilities[index].Approval = "test-only review reference"
-	}
-	require.NoError(t, validateParityInventory(inventory))
-	for index := range inventory.Capabilities {
-		require.Equal(t, before[index].ID, inventory.Capabilities[index].ID)
-		require.Equal(t, before[index].SourcePaths, inventory.Capabilities[index].SourcePaths)
-		require.Equal(t, before[index].Target, inventory.Capabilities[index].Target)
-		require.Equal(t, before[index].Classification, inventory.Capabilities[index].Classification)
-	}
-}

@@ -24,8 +24,6 @@ type parityCapability struct {
 	SourcePaths    []string `yaml:"source_paths"`
 	Target         string   `yaml:"target"`
 	Classification string   `yaml:"classification"`
-	State          string   `yaml:"state"`
-	Approval       string   `yaml:"approval"`
 }
 
 type parityScenario struct {
@@ -34,8 +32,6 @@ type parityScenario struct {
 	Kind       string   `yaml:"kind"`
 	Mode       string   `yaml:"mode"`
 	Recordings []string `yaml:"recordings"`
-	State      string   `yaml:"state"`
-	Approval   string   `yaml:"approval"`
 }
 
 type parityRecording struct {
@@ -69,7 +65,6 @@ type parityInventory struct {
 	Normalized          parityAsset        `yaml:"normalized"`
 	GeneratedProjects   parityAsset        `yaml:"generated_projects"`
 	CoreShowBindings    parityAsset        `yaml:"core_show_bindings"`
-	CoreDeleteBinding   parityAsset        `yaml:"core_delete_binding"`
 	CoreCreateBinding   parityAsset        `yaml:"core_create_binding"`
 	CoreTestBinding     parityAsset        `yaml:"core_test_binding"`
 	CoreValidateBinding parityAsset        `yaml:"core_validate_binding"`
@@ -97,22 +92,6 @@ func sha256Text(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func parityState(state, approval string) error {
-	switch state {
-	case "pending", "evidenced":
-		if approval != "" {
-			return fmt.Errorf("non-approved row carries approval")
-		}
-	case "approved":
-		if strings.TrimSpace(approval) == "" {
-			return fmt.Errorf("approved row lacks review evidence")
-		}
-	default:
-		return fmt.Errorf("unknown parity state %q", state)
-	}
-	return nil
-}
-
 func validateParityInventory(inventory parityInventory) error {
 	if inventory.SchemaVersion != 1 || inventory.Source.Commit != paritySourceCommit ||
 		inventory.Source.Repository != "microsoft-foundry/content-understanding-cli" {
@@ -121,8 +100,8 @@ func validateParityInventory(inventory parityInventory) error {
 	for name, asset := range map[string]parityAsset{
 		"hygiene_scenarios": inventory.Hygiene, "normalized_adapter": inventory.Normalized,
 		"generated_projects": inventory.GeneratedProjects, "core_show_bindings": inventory.CoreShowBindings,
-		"core_delete_binding": inventory.CoreDeleteBinding, "core_create_binding": inventory.CoreCreateBinding,
-		"core_test_binding": inventory.CoreTestBinding, "core_validate_binding": inventory.CoreValidateBinding,
+		"core_create_binding": inventory.CoreCreateBinding,
+		"core_test_binding":   inventory.CoreTestBinding, "core_validate_binding": inventory.CoreValidateBinding,
 		"core_copy_binding": inventory.CoreCopyBinding,
 	} {
 		if asset.File != "testdata/parity/"+name+".json" {
@@ -141,9 +120,6 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	root := NewRootCommand()
 	for _, row := range inventory.Capabilities {
-		if err := parityState(row.State, row.Approval); err != nil {
-			return err
-		}
 		if row.Classification == "extension-path" {
 			command, remaining, err := root.Find(strings.Fields(strings.TrimPrefix(row.Target, "azd ai cu ")))
 			if err != nil || command == root || len(remaining) != 0 {
@@ -153,11 +129,6 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
-	}
-	for _, row := range inventory.Scenarios {
-		if err := parityState(row.State, row.Approval); err != nil {
-			return err
-		}
 	}
 	imports := map[string]bool{}
 	for _, row := range inventory.Recordings {
@@ -197,9 +168,6 @@ func TestParityFixtureInventoryRejectsInvalidMetadata(t *testing.T) {
 		{"recording digest", func(i *parityInventory) { i.Recordings[0].SHA256 = "changed" }},
 		{"source digest", func(i *parityInventory) { i.Recordings[0].SourceSHA256 = strings.Repeat("x", 64) }},
 		{"duplicate import", func(i *parityInventory) { i.Recordings = append(i.Recordings, i.Recordings[0]) }},
-		{"unsupported state", func(i *parityInventory) { i.Capabilities[0].State = "changed" }},
-		{"missing approval", func(i *parityInventory) { i.Scenarios[0].State = "approved" }},
-		{"unexpected approval", func(i *parityInventory) { i.Scenarios[0].Approval = "review" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inventory := loadParityInventory(t)

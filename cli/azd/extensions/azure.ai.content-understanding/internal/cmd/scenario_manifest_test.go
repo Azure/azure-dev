@@ -169,8 +169,7 @@ func TestRecordedScenarioManifestRejectsDrift(t *testing.T) {
 			row := &i.Scenarios[11]
 			row.Recordings[0], row.Recordings[1] = row.Recordings[1], row.Recordings[0]
 		}},
-		{"pending scenario references missing cassette", func(i *parityInventory) {
-			i.Scenarios[15].State = "pending"
+		{"scenario references missing cassette", func(i *parityInventory) {
 			i.Scenarios[15].Recordings = []string{"missing"}
 		}},
 		{"unowned import", func(i *parityInventory) { i.Recordings = i.Recordings[1:] }},
@@ -183,23 +182,5 @@ func TestRecordedScenarioManifestRejectsDrift(t *testing.T) {
 			require.Error(t, validateScenarioManifest(inventory))
 			require.Error(t, validateParityInventory(inventory))
 		})
-	}
-}
-
-func TestRecordedScenarioReviewMetadataIsSeparate(t *testing.T) {
-	inventory := loadParityInventory(t)
-	before := slices.Clone(inventory.Scenarios)
-	for index := range inventory.Scenarios {
-		inventory.Scenarios[index].State = "pending"
-	}
-	require.NoError(t, validateParityInventory(inventory))
-	for index := range inventory.Scenarios {
-		inventory.Scenarios[index].State = "approved"
-		inventory.Scenarios[index].Approval = "test-only review reference"
-	}
-	require.NoError(t, validateParityInventory(inventory))
-	for index := range inventory.Scenarios {
-		require.Equal(t, before[index].Name, inventory.Scenarios[index].Name)
-		require.Equal(t, before[index].Recordings, inventory.Scenarios[index].Recordings)
 	}
 }

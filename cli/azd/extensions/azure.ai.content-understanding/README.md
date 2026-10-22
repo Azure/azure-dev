@@ -808,8 +808,12 @@ capability mappings, scenarios, and recordings. It is not a source-test ledger
 or release-approval gate. The exhaustive source-node inventory, AST/subtest
 registry, five input/planning/schema/analysis captures and count-based release
 gate have been removed. Useful boundary assertions now live beside the owning
-Go code; smaller existing reference vectors remain where they add useful
-command-binding, generated-project, or normalization coverage.
+Go code. Command fixtures retain native payloads and source/license provenance,
+not Python types, pytest node IDs or frontend observations. Direct Go tables
+cover command bindings, outputs and errors; generated-project tests exercise
+the native generator once, without duplicate Python-frontend labels.
+Fixture inventories contain asset metadata, not review state or approvals;
+human review remains separate from test execution.
 
 All nineteen source recordings are imported under `testdata/playback/`:
 `defaults_get`, `analyzer_list`, `analyze_single`, `analyze_batch`, and
@@ -987,195 +991,71 @@ make normalized JSON checks equivalent to checking original YAML in Go CI.
 All 29 source scenario-manifest cases have separate structural evidence.
 `testdata/parity/source_scenarios.yaml` is a byte-for-byte copy of the pinned
 source manifest, with source path/MIT provenance, an immutable digest checked
-in code and the ledger, and LF checkout policy. Compare the ledger's ordered
+in code and the inventory, and LF checkout policy. Compare the inventory's ordered
 five-field projection (ID, name, kind, mode, recording list) exactly against
-that source. Review state and approval are native metadata outside this
-contract. Preserve shared cassettes across scenarios, but reject renamed,
+that source. Review state and approval are kept outside the test inventory.
+Preserve shared cassettes across scenarios, but reject renamed,
 reordered, duplicate or incorrectly associated scenario/recording entries.
 
 The native tests retain all 27 exact per-name contracts, 16 command/11 hygiene
 counts, 14 playback/two live-only/11 offline counts, and the exact union of 19
 inventory/on-disk cassette identities. Twenty-one negative controls cover
 source-reference and manifest drift, including missing cassette references
-even when a scenario is pending. Checked subtest references reject unknown
-names and invented formats. These are manifest facts only: structural checks
+without using review state. These are manifest facts only: structural checks
 for the two live-only rows do not execute copy, and hygiene-row shape checks
-do not prove a native scrubber. Existing scenario evidence and approval states
-are unchanged.
+do not prove a native scrubber. Passing them does not approve a scenario.
 
-The three source normalized-adapter tests also have exact checked mappings.
-`testdata/parity/normalized_adapter.json` retains complete equal Azure/Python
-azd observations and fake-client calls from executing the original tests,
-nine source-code hashes, runtime/MIT provenance and declared host differences.
-`TestNormalizedAdapterParity` delegates to production `SDKTransport`; it captures
-actual SDK results/name operands and projects parsed local kind/sort/yes flags.
-This is a test-only typed request projection, not Python request-builder
-implementation equivalence. Strict synthetic HTTP responses derive from the
-source fake-client calls; this asset is not a twentieth service recording.
+### Native command and generated-project contracts
 
-Source list/get fake models omit `status`, which existing native wire validation
-requires. Preserve the original source objects and inject only `status: ready`
-into the separately declared native wire models and complete expected native
-list/backend results. Negative tests verify the unadapted source models fail
-with `malformed_response`, without a subsequent DELETE or output. Do not weaken
-production validation to accommodate source mocks.
+`internal/cmd/analyzer_*contract_test.go` uses ordinary Go tables and the
+production `SDKTransport`. Reused JSON fixtures retain complete native payloads
+and source commit/file-digest/MIT provenance. They do not define Python types,
+pytest nodes, frontend observations or review states as Go runtime contracts.
+No Python execution or sibling checkout is needed.
 
-All three mappings are unapproved differences. For conflicting delete operands,
-retain the source `usage` category/message/null hint versus native `validation`,
-safe message/actionable hint and `conflicting_analyzer_name` code. Compare full
-requests/results/warnings/errors and backend order across 24 default/explicit
-flag, positional/alias and output-mode invocations. Default/JSON output is
-compared in full; quiet output has a separate no-output contract. Conflict
-validation must occur before session/credential/HTTP/prompt activity. These
-offline tests do not establish live authentication, RBAC or installed hosts.
+- List tests compare complete sorted output for default/explicit kind/sort
+  flags. Delete tests cover positional/name aliases, preflight GET then empty
+  204 DELETE, full acknowledgement, no prompting and quiet output. Conflicting
+  operands fail before opening a session. Missing-status models fail with
+  `malformed_response`, without output or a subsequent DELETE.
+- Show tests cover positional/name aliases, trimmed names and full results;
+  conflicting/missing names expose safe category/code/message/hint with no
+  session, credential, HTTP, prompt or output.
+- Create tests retain schema aliases and private absolute paths containing
+  spaces, complete SDK definitions with unknown metadata/exact integers,
+  no-replacement PUT and complete results. Invalid IDs fail before reading a
+  schema or opening a session.
+- Analyzer-test contracts retain default concurrency, SDK mode/content type,
+  full binary bytes, complete envelopes/results and saved/stdout reports.
+  Readers close, input bytes remain unchanged and missing samples fail locally.
+- Validate tests cover positional/schema aliases, clean/warning/strict/
+  malformed/missing-file cases and complete outputs/errors. Invalid auth/service
+  environment markers are ignored; no session opens or extra files appear.
+- Same-resource copy tests cover both operand forms, success/existing
+  destination/missing source, full ordered reads, exact no-replacement requests
+  and complete results or safe errors. They forbid account discovery, client
+  switching, authorization grants, prompts and copy POSTs after failed preflight.
 
-Four generated-project source cases also have checked evidence for the core
-and Azure Python origins: complete golden trees and actual Bash delegation.
-`testdata/parity/generated_projects.json` retains all ten source path/hash
-expectations, canonical choices, observed Bash arguments, four source-file
-hashes and MIT/runtime provenance. Both labels exercise the same native
-`infra.Materialize`, not separate native frontends. Compare the complete
-written/on-disk file sets, source CRLF-to-LF hashes and the Bash owner-execute bit.
+The fixtures with `core_*_binding` names are reduced native contract vectors,
+not executable source-binding oracles. Typed SDK spies remain only where they
+check actual Go requests, results or reader ownership. Duplicate delete
+acknowledgement cases are covered by the shared list/delete contract suite.
 
-Keep two explicit tree differences: native Go/Entra-only README content and
-Go's sorted JSON config keys versus source insertion order. Pin their native
-hashes alongside the original source hashes; additionally compare the entire
-parsed config JSON, without selecting keys. Both tree mappings remain
-unapproved differences. Execute the generated Bash hook against a local fake
-azd and compare full ordered arguments with both source observations and the
-canonical hidden command; those two mappings are equivalent but unapproved.
-PowerShell source cases remain pending because `pwsh` is unavailable. POSIX
-fake-host execution is not installed-host/live or Windows runtime evidence.
+`internal/cmd/generated_project_test.go` checks the full written/on-disk file
+set, CRLF-to-LF golden hashes, parsed config JSON and the Bash executable bit.
+Its choices use the native `infra.Choices` type. The golden tree retains the
+documented native README/config adaptations and their source provenance.
+The generated Bash hook executes against a local fake azd and must pass the
+complete ordered hidden-command arguments. Neither test repeats execution
+under labels for Python frontends that do not exist in the native extension.
 
-All 31 source capability-disposition manifest tests also have structural
-evidence. `testdata/parity/source_capabilities.yaml` is the byte-identical
-source YAML, pinned by an immutable code/ledger digest with source path/MIT
-metadata and LF checkout. Compare all four source fields in order: ID,
-source-path list (including aliases), target and classification. Check IDs
-1-29, the 16/11/1/1 classification counts and unique source paths/extension
-targets. Keep native review state/approval outside this source projection.
-
-Twenty-four negative controls reject source-reference, row/order, source-path,
-alias, target and classification drift; checked row references reject unknown
-IDs, padded IDs and invented output formats. Four controls reproduced prior
-validator acceptance of incorrect paths/targets/alias order before the new
-checks were wired into normal CI. Metadata-independence tests allow legitimate
-review updates without changing any source facts. This proves manifest
-structure only, not runtime dispositions or host-helper/update workflows.
-All 29 capability approvals and the separate runtime/core source cases remain
-pending. Existing cassette/scenario evidence states are unchanged.
-
-Five exact core analyzer-show binding tests now have command-path evidence.
-`testdata/parity/core_show_bindings.json` retains seven complete original
-observations: parsed inputs, bound/typed results, Python result types and
-exception type/messages, plus four source hashes and positional-classification
-provenance. Execute the original assertions when producing the oracle.
-
-`TestCoreShowBindingParity` runs 45 positional/name/-n/-a/output variants through
-actual Cobra commands and production `SDKTransport`. A delegating observer
-projects the resolved SDK name into the complete source name request, including
-trimmed named input. Strict synthetic GETs compare full SDK results and
-default/JSON output; quiet output is separately empty. Source core tests make
-no HTTP calls and produce no analyzer definition: native response data is
-explicitly synthetic, not another service recording.
-
-Retain source dictionary/typed-request class identity and standalone-shortcut
-classification as source facts, not Go implementation identity. Preserve raw source binding
-exceptions separately from native safe validation category/message/hint/code.
-Conflict/missing-name errors must precede any session, credential, HTTP or
-prompt activity and produce no output. All five mappings remain unapproved
-differences. No live/installed-host/authentication equivalence is established.
-Also, the 29 source tests named runtime-disposition evidence only check registry
-membership; their names are not evidence of service execution.
-
-The shared core delete-binding parameter adds one source mapping, not twelve.
-`testdata/parity/core_delete_binding.json` retains both original complete
-bindings, result types, four source hashes and classification/MIT provenance.
-`TestCoreDeleteBindingParity` runs 12 native name/positional/alias/output
-variants, reusing the analyzer-form generator and delegating name observer.
-Verify actual SDK names and full GET model followed by empty-204 DELETE,
-complete bound-name projection and full deletion acknowledgement. Explicit
-`--yes --no-prompt` must avoid prompting; quiet output is separately empty.
-Source core binding performs no HTTP, confirmation or CLI result generation:
-the native analyzer/acknowledgement are synthetic. Type/surface/confirmation/
-host seams remain an unapproved difference, not live deletion evidence.
-
-The shared core create-binding parameter adds one source mapping, not 24.
-`testdata/parity/core_create_binding.json` retains both complete original
-parsed/bound observations, dictionary/path types, four hashes and source
-classification/MIT provenance. Source binding accepts `invoice-v1` but never
-reads `schema.json`, validates a custom ID or calls HTTP. Native custom-create
-validation rejects hyphens: `TestCoreCreateSourceNameRejected` verifies all 12
-original-name variants fail before session creation, even without a schema
-file. Production validation is unchanged.
-
-`TestCoreCreateBindingParity` uses only the explicit synthetic `invoice_v1`
-adaptation for 12 successful positional/name/-n/-a/output variants and both
-schema flag spellings. Read a complete synthetic schema from a private absolute
-path containing spaces; check the exact parsed path before projecting only
-that fixture path to source `schema.json`. Compare actual SDK name/definition,
-strict no-replacement PUT JSON including unknown metadata/exact integer,
-one immediate-ready response and full native output; quiet output is empty.
-Schemas/service results are synthetic, not source results or a new cassette.
-ID/path/type/host differences remain unapproved; no live-create claim.
-
-The shared analyzer-test binding parameter adds one source mapping, not 24.
-`testdata/parity/core_test_binding.json` retains both complete parsed/bound
-observations, dictionary types, four hashes and classification/MIT provenance.
-`TestCoreAnalyzerTestBindingParity` verifies unchanged `invoice-v1` and parsed
-default concurrency 4 without overriding the flag. Its 12 successful native
-variants add one explicitly synthetic sample under a private spaced path.
-Compare actual SDK name/mode/content type/full bytes, strict binary POST with
-202/immediate-success body and valid operation location, complete SDK envelope
-and nested result, and complete saved/stdout reports including exact integer,
-confidence/nulls/statistics/disclaimer. The reader closes and input stays
-unchanged; quiet output is empty. Verify the actual sample path before reusing
-the fixture-only report-path projection. Both positional and --file samples run.
-
-Source binding only resolves name/default concurrency: it has no sample bytes,
-service calls or report. `TestCoreAnalyzerTestBindingRequiresSamples` verifies
-12 source-only argument variants fail local discovery before session creation.
-Synthetic input/service/report data is not source output, another recording,
-valid-PDF/accuracy evidence or four-worker performance proof. Python type,
-sample/path/report and host seams remain unapproved; no live billing occurs.
-
-The shared validate-binding parameter adds one source mapping, not 45.
-`testdata/parity/core_validate_binding.json` retains both complete named/
-positional Path observations and types, four hashes and classification/MIT
-provenance. `TestCoreValidateBindingParity` runs 45 offline variants:
---schema/-s/positional, three output modes and five synthetic schema cases.
-Observe actual Cobra arguments/flags while delegating unchanged validation;
-verify the exact private spaced absolute path before projecting only that
-fixture path to source schema.json. Compare complete clean/warning output,
-strict-warning/malformed/read errors including category/message/hint/code,
-and separately empty quiet/error output. Invalid service/auth environment
-markers must be ignored, no service session may open, input bytes stay
-unchanged and no extra files appear.
-
-Source binding only binds schema.json; it reads no schema or emits validation
-results/errors. Native synthetic schema/output/error cases do not prove
-Python validator or service equivalence. Path/type/syntax/diagnostic/report/
-host seams remain unapproved differences; no cassette or live call is added.
-
-The shared analyzer-copy binding parameter adds one source mapping, not 18.
-`testdata/parity/core_copy_binding.json` retains both complete parsed/bound/type
-observations, four binding-file hashes and a fifth copy-operation reference.
-The spec and operation establish that `dev`/`prod` are analyzer IDs, not
-profiles; separate profile-copy and cross-resource cases remain pending.
-`TestCoreCopyBindingParity` preserves both IDs across named/positional/output
-variants and three synthetic same-resource cases: success, existing destination
-and missing source. Verify actual binding, ordered full GET models/404s,
-complete SDK copy request with empty cross-resource coordinates, strict
-no-replacement POST/body and full immediate-ready result/output including
-exact integer. Quiet output is empty; preflight failures expose full typed
-service error/code/status/hint and must prevent any copy POST.
-
-Reject account discovery, client switching, grants and prompts. Source binding
-performs no HTTP or analyzer/error output. Native HTTP/models/results/errors
-are synthetic, not source service outputs or a new recording. Python type,
-surface/service-error/host seams remain unapproved. Both live-only copy
-scenarios stay pending; no real copy, cross-resource authorization, auth/RBAC
-or installed-host equivalence is established.
+Capability/scenario snapshots still check source facts, command mappings and
+recording ownership; they contain no review-state/approval machinery. Strict
+SDK playback, hygiene, exact-number comparisons and network denial are
+unchanged. Synthetic command fixtures are not additional service recordings.
+PowerShell, installed-host, platform and authorized live evidence remain
+separate; these offline tests do not establish authentication/RBAC, live
+copy/defaults mutation, accuracy, release approval or signing/registry evidence.
 
 ### Behavior and risk coverage
 

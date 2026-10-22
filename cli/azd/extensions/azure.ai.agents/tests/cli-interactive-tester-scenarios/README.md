@@ -352,9 +352,8 @@ They do not require a deployed long-running agent or add Tier 2 provisioning dep
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
 
-The Tier 0 A2A version scenario checks help and offline validation only. It does not
-exercise translation or native A2A execution, or verify file bytes on the wire. The
-shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
+The Tier 0 A2A scenario checks help and local flag validation, not wire behavior
+or hosted-agent execution. The shared Tier 2 agent is Responses-only.
 
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
@@ -378,6 +377,11 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted-agent picker, A2A-only YAML, and required routes; no cloud execution |
+
+The A2A hosted-agent init scenario checks local configuration only; its fixture is
+not an A2A server. It has not been executed and requires separate approval. Stop
+after init: do not provision, deploy, invoke, or delete retained resources.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.

@@ -131,10 +131,11 @@ A2A Version:
 Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
 not a Foundry API version or the deployed agent version selected by --version.
 For plain messages, azd composes the body and A2A-Version header together,
-so 1.0 is a convenience default. With --input-file, --a2a-version is always
-required, even if native A2A agent YAML declares a version. File bytes are
-sent unchanged as a complete public JSON-RPC request. The caller must match
-the body to the selected header version; azd does not infer the version.
+using 1.0 as a convenience default. A declared hosted A2A implementation must
+support 1.0 and match the requested version, regardless of other protocols.
+Without an A2A declaration, Foundry enforces target support.
+With --input-file, --a2a-version is always required; YAML does not select it.
+File bytes are sent unchanged and must match the selected version.
 Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.
 Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
 requests, use --output raw to stream unparsed SSE events.
@@ -145,10 +146,11 @@ instead of Foundry. This CLI does not support a2a with --local; this is a
 CLI limitation, not a restriction of the A2A protocol.
 
 Sessions & Identity:
-Sessions are persisted per-agent — consecutive invokes reuse the same
-session automatically. Pass --new-session to force a reset.
+Azd saves returned session IDs when possible. Pass --new-session to discard the saved ID.
+A2A hosted-agent routing is service-controlled; saved IDs do not guarantee process
+affinity or task retrieval.
 
-Use --version to invoke a specific deployed agent version. When provided,
+Use --version to request a specific deployed agent version. When provided,
 azd creates or reuses a hosted agent session backed by that version.
 
 For agents configured with header-based isolation, pass --user-identity
@@ -162,8 +164,8 @@ ignored for remote requests.
 Use --client-header to send custom x-client-* request headers in "Name: Value"
 format (repeatable). The responses and invocations protocols forward the
 x-client-* header family to the agent; other header names are rejected, and
-the flag is not supported with the a2a protocol (which does not propagate
-x-client-* headers). For identity headers use --user-identity or --call-id.
+azd does not yet support this flag with the a2a protocol.
+For identity headers use --user-identity or --call-id.
 
 Response Output:
 Use --output raw (or -o raw) to dump the unmodified server response (status
@@ -359,14 +361,12 @@ This option does not provide crash recovery or automatic reconnection.`,
 			if err != nil {
 				return err
 			}
-			// A2A routes through a translating proxy with its own fixed header
-			// set and does not propagate x-client-* to the agent, so accepting
-			// the flag there would silently drop the headers.
+			// Reject headers that a2aRemote does not send.
 			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
 				return exterrors.Validation(
 					exterrors.CodeInvalidParameter,
 					"--client-header is not supported with the a2a protocol",
-					"the a2a protocol does not forward x-client-* headers to the agent; "+
+					"azd does not yet send custom headers with a2a; "+
 						"use --protocol responses or invocations to send client headers",
 				)
 			}
@@ -416,7 +416,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 			"Auto-detected from deployment data or the agent definition; "+
 			"pass --protocol when it cannot be determined.")
 	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
-		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
+		"Public A2A version: 0.3 or 1.0. Generated messages use 1.0 when omitted; "+
+			"required with --input-file.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -655,7 +656,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--client-header is not supported with the a2a protocol",
-			"the a2a protocol does not forward x-client-* headers to the agent; "+
+			"azd does not yet send custom headers with a2a; "+
 				"use --protocol responses or invocations to send client headers",
 		)
 	}

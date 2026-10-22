@@ -4,8 +4,10 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +25,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
+	"azureaiagent/internal/pkg/agents/agent_yaml"
 )
 
 // Version validation and builders.
@@ -431,7 +434,7 @@ func TestApplyA2ARequestHeaders(t *testing.T) {
 	}
 }
 
-// Responses, errors, and local guard.
+// Responses and errors.
 
 func TestExtractA2AText(t *testing.T) {
 	t.Parallel()
@@ -626,6 +629,318 @@ func TestA2ARequestURL(t *testing.T) {
 		}
 	})
 }
+
+// A2A hosted capabilities and target validation.
+
+func TestValidateHostedA2ACompatibility(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		versions  []string
+		wantError string
+	}{
+		{name: "no A2A declaration defers to Foundry"},
+		{name: "major minor", versions: []string{"1.0"}},
+		{name: "deployment version", versions: []string{"1.0.0"}},
+		{name: "compatible patch", versions: []string{"1.0.7"}},
+		{name: "duplicate normalized", versions: []string{"1.0", "1.0.0", "1.0.7"}},
+		{name: "conflicting", versions: []string{"1.0.0", "0.3.0"}, wantError: "conflicting A2A versions"},
+		{name: "conflicting unsupported", versions: []string{"0.2", "2.0"}, wantError: "conflicting A2A versions"},
+		{name: "legacy", versions: []string{"0.3.0"}, wantError: "version 0.3 is not supported"},
+		{name: "old", versions: []string{"0.2"}, wantError: "version 0.2 is not supported"},
+		{name: "future minor", versions: []string{"1.1.0"}, wantError: "version 1.1 is not supported"},
+		{name: "future major", versions: []string{"2.0.0"}, wantError: "version 2.0 is not supported"},
+		{name: "empty", versions: []string{""}, wantError: "malformed A2A version"},
+		{name: "malformed", versions: []string{"latest"}, wantError: "malformed A2A version"},
+		{name: "negative patch", versions: []string{"1.0.-1"}, wantError: "malformed A2A version"},
+		{name: "extra component", versions: []string{"1.0.0.0"}, wantError: "malformed A2A version"},
+		{name: "leading zero", versions: []string{"01.0"}, wantError: "malformed A2A version"},
+		{name: "signed", versions: []string{"+1.0"}, wantError: "malformed A2A version"},
+		{name: "whitespace", versions: []string{" 1.0"}, wantError: "malformed A2A version"},
+		{name: "valid then malformed", versions: []string{"1.0", "latest"}, wantError: "malformed A2A version"},
+		{name: "malformed then valid", versions: []string{"latest", "1.0"}, wantError: "malformed A2A version"},
+	} {
+		for _, responses := range []bool{false, true} {
+			for _, requested := range []string{"1.0", "0.3"} {
+				t.Run(fmt.Sprintf("%s/responses=%t/requested=%s", tt.name, responses, requested), func(t *testing.T) {
+					t.Parallel()
+					protocols := []agent_yaml.ProtocolVersionRecord{{Protocol: "other", Version: "ignored"}}
+					for _, version := range tt.versions {
+						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: version})
+					}
+					if responses {
+						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "responses", Version: "ignored"})
+					}
+					wantError := tt.wantError
+					if wantError == "" && len(tt.versions) > 0 && requested == "0.3" {
+						wantError = "does not match the hosted-agent declaration"
+					}
+					err := validateHostedA2ACompatibility(protocols, requested)
+					if wantError != "" {
+						require.ErrorContains(t, err, wantError)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestNormalizeA2AWireVersion(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ declared, want string }{
+		{"1.0", "1.0"}, {"1.0.7", "1.0"}, {"0.3.0", "0.3"}, {"1.1.0", "1.1"}, {"2.0", "2.0"},
+	} {
+		t.Run(tt.declared, func(t *testing.T) {
+			t.Parallel()
+			got, err := normalizeA2AWireVersion(tt.declared)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestHostedA2ARemoteTarget(t *testing.T) {
+	for _, tt := range []struct {
+		name, explicit, wantError, wantCode string
+		native                              any
+		inputFile                           string
+		fileBacked                          bool
+		missingRef                          bool
+		responsesOnly                       bool
+		responses, prompt, noDefinition     bool
+	}{
+		{name: "inline A2A hosted agent", native: "1.0.0"},
+		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
+			wantError: "requires an explicit --a2a-version"},
+		{name: "A2A with Responses", native: "1.0.0", responses: true},
+		{name: "Responses cannot translate", native: "1.0.0", responses: true, explicit: "0.3",
+			wantError: "does not match the hosted-agent declaration"},
+		{name: "Responses cannot rescue unsupported", native: "0.3", responses: true,
+			wantError: "version 0.3 is not supported"},
+		{name: "Responses cannot rescue malformed", native: "latest", responses: true,
+			wantError: "malformed A2A version"},
+		{name: "prompt definition bypass", prompt: true, explicit: "0.3"},
+		{name: "missing definition bypass", noDefinition: true, explicit: "0.3"},
+		{name: "missing local reference still invokes", missingRef: true},
+		{name: "Responses-only defers to Foundry", responsesOnly: true},
+		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
+		{name: "file-backed native", native: "1.0.0", fileBacked: true},
+		{name: "numeric inline version rejected before send", native: 0.3,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
+		{name: "boolean inline version rejected before send", native: true,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
+		{name: "numeric reference version rejected before send", native: 0.3, fileBacked: true,
+			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
+		{name: "A2A 0.3 rejected before send", native: "0.3.0", wantError: "version 0.3 is not supported"},
+		{name: "malformed rejected before send", native: "latest", wantError: "malformed A2A version"},
+		{name: "explicit conflict before send", native: "1.0.0", explicit: "0.3",
+			wantError: "does not match the hosted-agent declaration"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			properties := map[string]any{
+				"kind": "hosted", "name": "deployed-agent",
+				"protocols":     []any{map[string]any{"protocol": "a2a", "version": tt.native}},
+				"agentEndpoint": map[string]any{"protocols": []any{"a2a"}},
+			}
+			if tt.responses {
+				properties["protocols"] = []any{
+					map[string]any{"protocol": "a2a", "version": tt.native},
+					map[string]any{"protocol": "responses", "version": "2.0.0"},
+				}
+			}
+			if tt.prompt {
+				properties = map[string]any{"kind": "prompt", "name": "deployed-agent", "model": "test-model"}
+			}
+			if tt.noDefinition {
+				properties = map[string]any{}
+			}
+			if tt.fileBacked {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "native.yaml"), fmt.Appendf(nil,
+					"kind: hosted\nname: deployed-agent\nprotocols:\n  - protocol: a2a\n    version: %v\n", tt.native), 0600))
+				properties = map[string]any{"$ref": "./native.yaml"}
+			}
+			if tt.missingRef {
+				properties = map[string]any{"$ref": "./missing.yaml"}
+			}
+			if tt.responsesOnly {
+				properties["protocols"] = []any{map[string]any{"protocol": "responses", "version": "2.0.0"}}
+			}
+			wireVersion := "1.0"
+			if tt.explicit != "" {
+				wireVersion = tt.explicit
+			}
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: dir,
+				Services: map[string]*azdext.ServiceConfig{"target": {
+					Name: "target", Host: AiAgentHost, AdditionalProperties: mustStruct(t, properties),
+				}},
+			}}
+			address := newInvokeRemoteContextTestAzdServer(t, project, &testEnvironmentServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			defer client.Close()
+			var sends int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sends++
+				assert.Equal(t, wireVersion, r.Header.Get("A2A-Version"))
+				assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				if wireVersion == "0.3" {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":`+
+						`{"artifacts":[{"parts":[{"text":"native-mock-result"}]}]}}`)
+				} else {
+					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+						`{"artifacts":[{"parts":[{"text":"native-mock-result"}]}]}}}`)
+				}
+			}))
+			defer server.Close()
+			message := "hello"
+			if tt.inputFile != "" {
+				message = ""
+			}
+			action := &InvokeAction{
+				flags: &invokeFlags{
+					protocol: "a2a", message: message, a2aVersion: tt.explicit, inputFile: tt.inputFile,
+				},
+				credential: responseTestCredential{}, noPrompt: true,
+				resolvedRemoteContext: &remoteContext{
+					name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
+					apiVersion: "v1", azdClient: client,
+				},
+			}
+			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				if tt.wantCode != "" {
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected a structured local error")
+					assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+					assert.Equal(t, tt.wantCode, localErr.Code)
+				}
+				assert.Zero(t, sends)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, 1, sends)
+				assert.Equal(t, wireVersion, action.a2aProtocolVersion())
+				assert.Contains(t, output, "native-mock-result")
+			}
+		})
+	}
+}
+
+func TestA2ATargetServiceLookupFailure(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancelled=%t", cancelled), func(t *testing.T) {
+			client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0"}, noPrompt: true}
+			rc := &remoteContext{serviceName: "a2a-agent", azdClient: client}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if cancelled {
+				cancel()
+			}
+
+			err := action.validateA2ATarget(ctx, rc)
+			if cancelled {
+				require.ErrorIs(t, err, context.Canceled)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestA2ARemoteServiceLookupFailureStillInvokes(t *testing.T) {
+	client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+	var sends int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends++
+		assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+		assert.Equal(t, "1.0", r.Header.Get("A2A-Version"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+			`{"artifacts":[{"parts":[{"text":"lookup-failure-result"}]}]}}}`)
+	}))
+	defer server.Close()
+	action := &InvokeAction{
+		flags:      &invokeFlags{protocol: "a2a", message: "hello", a2aVersion: "1.0"},
+		credential: responseTestCredential{}, noPrompt: true,
+		resolvedRemoteContext: &remoteContext{
+			name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
+			apiVersion: "v1", azdClient: client,
+		},
+	}
+
+	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+	require.NoError(t, err)
+	assert.Equal(t, 1, sends)
+	assert.Contains(t, output, "lookup-failure-result")
+}
+
+func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		endpoint  bool
+		noClient  bool
+		noService bool
+		version   string
+		deployed  string
+		session   string
+		wantError bool
+	}{
+		{name: "explicit endpoint ignores project definition", endpoint: true},
+		{name: "explicit session ignores project definition", session: "existing-session", version: "2", deployed: "2"},
+		{name: "no local client", noClient: true},
+		{name: "no selected service", noService: true},
+		{name: "historical agent version", version: "1", deployed: "2"},
+		{name: "unknown deployed agent version", version: "1"},
+		{name: "current version matches deployed", version: "2", deployed: "2", wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// A readable unsupported definition makes accidental inspection fail.
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{"a2a-agent": {
+					Name: "a2a-agent", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted", "name": "deployed-agent",
+						"protocols": []any{map[string]any{"protocol": "a2a", "version": "0.3"}},
+					}),
+				}},
+			}}
+			address := newInvokeRemoteContextTestAzdServer(t, project, &testEnvironmentServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			defer client.Close()
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0", session: tt.session}, noPrompt: true}
+			if tt.endpoint {
+				action.endpoint = &parsedAgentEndpoint{}
+			}
+			rc := &remoteContext{
+				serviceName: "a2a-agent", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
+			}
+			if tt.noClient {
+				rc.azdClient = nil
+			}
+			if tt.noService {
+				rc.serviceName = ""
+			}
+			err = action.validateA2ATarget(t.Context(), rc)
+			if tt.wantError {
+				require.ErrorContains(t, err, "A2A hosted-agent version 0.3 is not supported by Foundry")
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, "1.0", action.a2aProtocolVersion())
+		})
+	}
+}
+
+// Local guard.
 
 // TestA2ALocal_NotSupported verifies A2A fails fast for local invocation.
 func TestA2ALocal_NotSupported(t *testing.T) {

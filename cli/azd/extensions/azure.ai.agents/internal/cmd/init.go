@@ -693,6 +693,10 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
+Hosted protocols:
+Use --protocol a2a if your agent code serves A2A 1.0 directly. Init declares
+version 1.0.0 and enables its A2A endpoint; it does not generate an A2A server.
+
 Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
 source code or container scaffolding.

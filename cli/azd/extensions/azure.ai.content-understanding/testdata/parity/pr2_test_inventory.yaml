@@ -28,6 +28,12 @@ generated_projects:
 core_show_bindings:
   file: testdata/parity/core_show_bindings.json
   sha256: b0928c34a2bb6e8dfaa1f2a3a860e82ed3cb1a23c8b13c7bb980c515b32e14b3
+core_delete_binding:
+  file: testdata/parity/core_delete_binding.json
+  sha256: 4adf30a8776cf80b4f5ef12717ddb16d942a25d18c19b4d159cd2c6ea5749862
+core_create_binding:
+  file: testdata/parity/core_create_binding.json
+  sha256: 46e4a185bfd8c1bc50757f56cb0aaf57af8c559f49343c9cddfa3958d0dcd3a6
 capability_source:
   file: testdata/parity/source_capabilities.yaml
   sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
@@ -1103,9 +1109,31 @@ cases:
   go_tests:
   - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-shared-forms
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path1-canonical1-shortcut1-expected1]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact shared-create source parameter and both assertions; preserve complete parsed/name/schema binding
+    observations, source Path/result types and four hashes. Source binding accepts invoice-v1 but native create rejects hyphens;
+    verify original-ID rejection before session creation and explicitly adapt only the synthetic success ID to invoice_v1
+    without changing source objects or production validation. Materialize separate synthetic schema.json in a private spaced
+    path; verify exact parsed path before fixture-only projection to source schema.json. Compare actual SDK name/full definition,
+    strict PUT/allowReplace=false, exact integer, full ready result/output and separate quiet mode across 12 success/12 rejection
+    variants. Source never reads schema bytes or calls HTTP; native schemas/results are synthetic, not source outputs or another
+    recording. ID/path/type/host adaptations remain unapproved differences; no live creation.
+  go_tests:
+  - internal/cmd/core_create_parity_test.go::TestCoreCreateBindingParity
+  - internal/cmd/core_create_parity_test.go::TestCoreCreateSourceNameRejected
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path2-canonical2-shortcut2-expected2]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Execute this exact shared-delete source parameter including both original assertions and retain both complete
+    parsed/bound/type observations with four source hashes. Native SDK-backed commands verify positional/name/-n/-a variants,
+    actual SDK name operands, full GET model then empty-204 DELETE order, complete bound-name projection and native deletion
+    output. Explicit --yes/--no-prompt must avoid prompting; compare default/JSON results in full and quiet mode separately.
+    Source binding makes no HTTP calls/confirmation or CLI deletion result: native models/results are synthetic, not source
+    outputs or recordings. Python type/surface identity and native host/confirmation seams remain unapproved differences;
+    no live deletion.'
+  go_tests:
+  - internal/cmd/core_delete_parity_test.go::TestCoreDeleteBindingParity
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path3-canonical3-shortcut3-expected3]
   state: pending
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path4-canonical4-shortcut4-expected4]

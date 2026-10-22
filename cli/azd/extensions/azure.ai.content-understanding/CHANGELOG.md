@@ -63,6 +63,22 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map one exact shared-create core parameter to both original name/schema
+  bindings, dictionary/path types and four hashes. Verify 12 original-name
+  rejections before session creation; explicitly use synthetic invoice_v1 for
+  12 successful SDK-backed variants without relaxing custom-ID validation.
+  Verify spaced schema paths/both flags, full definition/no-replacement PUT,
+  exact integer, complete immediate-ready result/output and empty quiet output.
+  Native schema/results are synthetic; ID/path/type/host differences remain
+  unapproved. Totals: 135 cases evidenced, 662 pending; no new cassette or
+  live creation.
+- Map one exact shared-delete core parameter to both source bindings and 12
+  SDK-backed native name/positional/alias/output variants. Reuse analyzer-form
+  and name-observer helpers; verify full GET then empty-204 DELETE order,
+  complete name projection, full deletion acknowledgement and no prompt under
+  explicit confirmation. Keep native outputs synthetic and type/surface/host
+  differences unapproved. Totals: 134 cases evidenced, 663 pending; source
+  variants are not counted as additional source cases.
 - Map five exact core analyzer-show binding cases to seven complete original
   input/result/type/error observations and 45 SDK-backed native command variants.
   Verify trimmed names, full synthetic results, separate quiet output and

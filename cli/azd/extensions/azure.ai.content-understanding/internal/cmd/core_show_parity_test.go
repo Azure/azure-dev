@@ -140,8 +140,8 @@ func (o *coreShowObserver) GetAnalyzer(ctx context.Context, name string) (cuclie
 	return result, nil
 }
 
-func coreShowForms(input coreShowInput) [][]string {
-	base := []string{"analyzer", "show"}
+func coreAnalyzerForms(action string, input coreShowInput) [][]string {
+	base := []string{"analyzer", action}
 	if input.Positional != nil {
 		base = append(base, *input.Positional)
 	}
@@ -161,7 +161,7 @@ func TestCoreShowBindingParity(t *testing.T) {
 	for _, row := range oracle.Cases {
 		t.Run(row.Name, func(t *testing.T) {
 			for index, call := range row.Calls {
-				for variant, args := range coreShowForms(call.Parsed) {
+				for variant, args := range coreAnalyzerForms("show", call.Parsed) {
 					for _, format := range []string{"default", "json", "none"} {
 						t.Run(fmt.Sprintf("%d/%d/%s", index, variant, format), func(t *testing.T) {
 							executeCoreShowBinding(t, oracle.NativeResponse, row, call, args, format)

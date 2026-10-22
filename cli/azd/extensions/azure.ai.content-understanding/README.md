@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 133
+approval. Approved rows require an explicit review reference. Currently 135
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project/core-binding evidence, 664 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project/core-binding evidence, 662 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1063,6 +1063,37 @@ differences. No live/installed-host/authentication equivalence is established.
 Also, the 29 source tests named runtime-disposition evidence only check registry
 membership; their names are not evidence of service execution.
 
+The shared core delete-binding parameter adds one source mapping, not twelve.
+`testdata/parity/core_delete_binding.json` retains both original complete
+bindings, result types, four source hashes and classification/MIT provenance.
+`TestCoreDeleteBindingParity` runs 12 native name/positional/alias/output
+variants, reusing the analyzer-form generator and delegating name observer.
+Verify actual SDK names and full GET model followed by empty-204 DELETE,
+complete bound-name projection and full deletion acknowledgement. Explicit
+`--yes --no-prompt` must avoid prompting; quiet output is separately empty.
+Source core binding performs no HTTP, confirmation or CLI result generation:
+the native analyzer/acknowledgement are synthetic. Type/surface/confirmation/
+host seams remain an unapproved difference, not live deletion evidence.
+
+The shared core create-binding parameter adds one source mapping, not 24.
+`testdata/parity/core_create_binding.json` retains both complete original
+parsed/bound observations, dictionary/path types, four hashes and source
+classification/MIT provenance. Source binding accepts `invoice-v1` but never
+reads `schema.json`, validates a custom ID or calls HTTP. Native custom-create
+validation rejects hyphens: `TestCoreCreateSourceNameRejected` verifies all 12
+original-name variants fail before session creation, even without a schema
+file. Production validation is unchanged.
+
+`TestCoreCreateBindingParity` uses only the explicit synthetic `invoice_v1`
+adaptation for 12 successful positional/name/-n/-a/output variants and both
+schema flag spellings. Read a complete synthetic schema from a private absolute
+path containing spaces; check the exact parsed path before projecting only
+that fixture path to source `schema.json`. Compare actual SDK name/definition,
+strict no-replacement PUT JSON including unknown metadata/exact integer,
+one immediate-ready response and full native output; quiet output is empty.
+Schemas/service results are synthetic, not source results or a new cassette.
+ID/path/type/host differences remain unapproved; no live-create claim.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1070,7 +1101,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

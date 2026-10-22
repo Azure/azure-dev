@@ -98,6 +98,14 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"core_show_bindings"`
+	CoreDeleteBinding struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_delete_binding"`
+	CoreCreateBinding struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_create_binding"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -261,6 +269,26 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	if sha256Text(bindings) != inventory.CoreShowBindings.SHA256 {
 		return fmt.Errorf("core show binding oracle digest mismatch")
+	}
+	if inventory.CoreDeleteBinding.File != "testdata/parity/core_delete_binding.json" {
+		return fmt.Errorf("invalid core delete binding oracle path")
+	}
+	deletion, err := os.ReadFile(filepath.Join("../..", inventory.CoreDeleteBinding.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(deletion) != inventory.CoreDeleteBinding.SHA256 {
+		return fmt.Errorf("core delete binding oracle digest mismatch")
+	}
+	if inventory.CoreCreateBinding.File != "testdata/parity/core_create_binding.json" {
+		return fmt.Errorf("invalid core create binding oracle path")
+	}
+	creation, err := os.ReadFile(filepath.Join("../..", inventory.CoreCreateBinding.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(creation) != inventory.CoreCreateBinding.SHA256 {
+		return fmt.Errorf("core create binding oracle digest mismatch")
 	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
@@ -470,6 +498,10 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"generated project path", func(i *parityInventory) { i.GeneratedProjects.File = "../generated_projects.json" }},
 		{"core show binding digest", func(i *parityInventory) { i.CoreShowBindings.SHA256 = strings.Repeat("0", 64) }},
 		{"core show binding path", func(i *parityInventory) { i.CoreShowBindings.File = "../core_show_bindings.json" }},
+		{"core delete binding digest", func(i *parityInventory) { i.CoreDeleteBinding.SHA256 = strings.Repeat("0", 64) }},
+		{"core delete binding path", func(i *parityInventory) { i.CoreDeleteBinding.File = "../core_delete_binding.json" }},
+		{"core create binding digest", func(i *parityInventory) { i.CoreCreateBinding.SHA256 = strings.Repeat("0", 64) }},
+		{"core create binding path", func(i *parityInventory) { i.CoreCreateBinding.File = "../core_create_binding.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}

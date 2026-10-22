@@ -292,10 +292,10 @@ before choosing or approving field names.
   `cli/azd/internal/tracing/fields/fields.go` (this file holds the field/key definitions; within the
   same package `features.go` holds feature-name attribute values and `domains.go` the Azure
   host-domain table). Every field MUST set a `Classification` (e.g. `SystemMetadata`,
-  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`; never emit
-  `CustomerContent`) and a `Purpose` (`FeatureInsight` / `BusinessInsight` /
+  `OrganizationalIdentifiableInformation`, `EndUserPseudonymizedInformation`) and a
+  `Purpose` (`FeatureInsight` / `BusinessInsight` /
   `PerformanceAndHealth`); telemetry metadata also includes the optional `Endpoint` and
-  `IsMeasurement` members.
+  `IsMeasurement` members. Do not add new `CustomerContent` collection.
 - **First-party extension field** — keep the runtime `ReportUsage` map key as a string literal or
   same-package compile-time constant and declare its final `ext.*` name as an exported
   `AttributeKey` in `cli/azd/extensions/telemetry/fields.go`. Declarations are shared by final key
@@ -315,11 +315,12 @@ before choosing or approving field names.
   `AttributeKey` declarations; raw literal keys bypass that contract and are rejected by
   `TestNoRawTelemetryAttributes` (`cli/azd/cmd/telemetry_test.go`). Dynamic `ext.*` keys are the
   only sanctioned exception.
-- **Hash user-derived values** with `fields.StringHashed` / `fields.StringSliceHashed`
-  (`cli/azd/internal/tracing/fields/key.go`). Hash anything that embeds a user-chosen name, path,
-  repo URL, or project / env / service / layer identifier (e.g. `exegraph.step.name`, `hooks.name`).
-  Emit raw only for fixed enums or compile-time literals (the key itself must
-  still be a `fields.AttributeKey`, per **Emit** above).
+- **Follow the field's hashing and omission rules.** Use `fields.StringHashed` /
+  `fields.StringSliceHashed` (`cli/azd/internal/tracing/fields/key.go`) where hashing is required.
+  Preserve documented raw-value exceptions and omission rules in the
+  [schema's hashing reference](../../docs/specs/metrics-audit/telemetry-schema.md#hashing).
+  Prefer counts or fixed categories to customer-derived names; ask a maintainer when the
+  supported inputs or classification are unclear.
 
 **2. Documentation — keep all of these in sync**
 
@@ -332,9 +333,9 @@ before choosing or approving field names.
   enum values.
 - `docs/specs/metrics-audit/feature-telemetry-matrix.md` — command→telemetry inventory: update the
   command's row (and/or the Cross-Cutting Subsystems table) and the ✅/⚠️/❌ coverage flags.
-- `docs/specs/metrics-audit/privacy-review-checklist.md` — if the field is hashed (always or
-  conditionally), add it to the matching hashing table, and copy the **PR Checklist Template** into
-  your PR description.
+- `docs/specs/metrics-audit/privacy-review-checklist.md`. Follow the contributor checklist and
+  copy its **PR checklist template** into your PR description. Update the checklist when the
+  process changes; keep per-field hashing rules in `telemetry-schema.md`.
 
 **3. Tests**
 
@@ -344,8 +345,16 @@ before choosing or approving field names.
 
 **4. Privacy & downstream**
 
-- A privacy review is required for any new field/event, any classification/purpose change, or any
-  removal of hashing — see the triggers in `privacy-review-checklist.md`.
+- Assess every telemetry change against the approved collection and handling scope using the
+  [privacy review checklist](../../docs/specs/metrics-audit/privacy-review-checklist.md).
+  A new field or event does not automatically require a separate formal review. Have a maintainer
+  confirm existing coverage or identify the required additional review before uncovered collection
+  begins.
+- For code review, follow the checklist's
+  [reviewer guidance](../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers)
+  and ask a maintainer to assess coverage when it is unclear.
+- Record implementation, metadata deployment, and downstream verification separately, with owners
+  for any follow-up.
 - If the field is queried downstream, coordinate Kusto-function / cooked-table / dashboard updates
   per the recurring process in `docs/specs/metrics-audit/audit-process.md`.
 

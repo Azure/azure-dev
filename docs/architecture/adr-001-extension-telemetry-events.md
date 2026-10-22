@@ -72,7 +72,7 @@ records events from extensions admitted to the official registry.**
   service on the extension gRPC API.
 - Only eligible official-registry installations are recorded. Attribute values
   are authored by the extension and are not inspected at runtime, so admission
-  and privacy review remain separate requirements.
+  and [privacy approval coverage](../specs/metrics-audit/privacy-review-checklist.md) remain separate requirements.
 - A dropped event is not an error. An extension outside the official registry,
   and one past the event budget, get `Accepted: false` and no span. Reporting is
   best effort, so an author runs the same code path during local development as
@@ -86,7 +86,9 @@ records events from extensions admitted to the official registry.**
 Removing the runtime allowlist does not remove content responsibility.
 Extension telemetry is subject to the same rules as core telemetry: fields are
 source-declared, documented, correctly classified, never carry customer
-content, and go through privacy review. Repository validation provides the
+content, and stay within approved collection and handling. Follow the
+[privacy checklist](../specs/metrics-audit/privacy-review-checklist.md) for changes.
+Repository validation provides the
 developer hard stop; official-registry admission remains the runtime gate.
 
 ## Consequences
@@ -103,9 +105,7 @@ developer hard stop; official-registry admission remains the runtime gate.
   `extension.event`, then read `ext.*` from `customDimensions`. The previous
   one-key-per-call shape required stitching several spans together to
   reconstruct a single logical event.
-- Everything reaching the pipeline came from an extension that passed registry
-  admission, so the privacy story for `ext.*` is the extension review that
-  admission already requires.
+- Recorded events come from extensions that passed registry admission.
 
 **More difficult**
 

@@ -78,7 +78,7 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			},
 			{
 				fields.ErrExtensionCauseTypes, "error.extension.cause_types",
-				fields.EndUserPseudonymizedInformation, fields.PerformanceAndHealth,
+				fields.SystemMetadata, fields.PerformanceAndHealth,
 			},
 			{
 				fields.MapperSourceType, "mapper.source.type",
@@ -93,6 +93,33 @@ func TestTelemetryFieldConstants(t *testing.T) {
 			require.Equal(t, tt.expectedName, string(tt.key.Key))
 			require.Equal(t, tt.expectedClass, tt.key.Classification)
 			require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+		}
+	})
+
+	t.Run("PrivacyClassificationCorrections", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			key             fields.AttributeKey
+			expectedName    string
+			expectedClass   fields.Classification
+			expectedPurpose fields.Purpose
+		}{
+			{fields.TenantIdKey, "ad.tenant.id", fields.OrganizationalIdentifiableInformation, fields.BusinessInsight},
+			{fields.EnvNameKey, "env.name", fields.OrganizationalIdentifiableInformation, fields.FeatureInsight},
+			{fields.ProjectNameKey, "project.name", fields.OrganizationalIdentifiableInformation, fields.FeatureInsight},
+			{fields.ExeGraphStepNameKey, "exegraph.step.name", fields.CustomerContent, fields.PerformanceAndHealth},
+			{fields.ExeGraphStepDepsKey, "exegraph.step.deps", fields.CustomerContent, fields.PerformanceAndHealth},
+			{fields.PackBuilderImage, "pack.builder.image", fields.CustomerContent, fields.FeatureInsight},
+			{fields.PackBuilderTag, "pack.builder.tag", fields.CustomerContent, fields.FeatureInsight},
+		}
+		for _, tt := range tests {
+			t.Run(tt.expectedName, func(t *testing.T) {
+				require.Equal(t, tt.expectedName, string(tt.key.Key))
+				require.Equal(t, tt.expectedClass, tt.key.Classification)
+				require.Equal(t, tt.expectedPurpose, tt.key.Purpose)
+				require.Equal(t, "N/A", tt.key.Endpoint)
+				require.False(t, tt.key.IsMeasurement)
+			})
 		}
 	})
 

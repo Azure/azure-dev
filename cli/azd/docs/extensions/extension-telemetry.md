@@ -231,12 +231,16 @@ complete-looking one. The per-invocation budget behaves differently: see
 
 ## Your responsibility for content
 
-`azd` does not inspect your values at runtime. Privacy review and the content
-rules below remain your responsibility as the extension author:
+`azd` does not inspect your values at runtime. As the extension author, describe
+the values you send and enforce their allowed range in your code. Use the
+[privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md)
+to confirm classification and approval coverage with a maintainer.
 
-- **Never send customer content.** No file paths, resource names, connection
-  strings, prompts, URLs, or anything a user typed. If you are unsure whether a
-  value qualifies as customer content, always assume that it does to be safe.
+- **Never send customer content or secrets, even as hashes.** Do not report
+  prompts, file contents, connection strings, raw error text, or free-form input.
+  Prefer fixed categories or counts to names, paths, and URLs. If an identifier
+  is needed, ask a maintainer to confirm its classification and handling before
+  collecting it.
 - **Keep values low cardinality.** Prefer a small enum such as
   `code | container | unknown`. Unbounded values make the data expensive and
   unusable for aggregation.
@@ -244,8 +248,6 @@ rules below remain your responsibility as the extension author:
   each event and attribute means and why you need it.
 - **Declare every attribute** in `extensions/telemetry/fields.go` with the
   classification, purpose, and endpoint that match its actual semantics.
-- **Get a privacy review** as part of reviewing your extension, following the
-  [telemetry privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
 
 ## When the call returns an error
 

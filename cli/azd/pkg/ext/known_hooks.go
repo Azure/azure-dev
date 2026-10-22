@@ -9,9 +9,7 @@ import (
 )
 
 // knownHookNames is the set of built-in azd lifecycle hook names.
-// Extension-defined hooks (and any user-defined names) are NOT included here;
-// those are hashed before being emitted in telemetry to avoid leaking
-// user-chosen identifiers via the `hooks.name` attribute.
+// Unknown names are omitted from telemetry, even when the runtime accepts them.
 //
 // It is unexported and accessed only through IsKnownHookName / HookNameAttribute
 // so the allowlist cannot be mutated from outside the package — an external
@@ -20,39 +18,40 @@ import (
 //
 // See https://github.com/Azure/azure-dev/issues/7348 for tracking.
 var knownHookNames = map[string]bool{
-	"prebuild":      true,
-	"postbuild":     true,
-	"predeploy":     true,
-	"postdeploy":    true,
-	"predown":       true,
-	"postdown":      true,
-	"prepackage":    true,
-	"postpackage":   true,
-	"preprovision":  true,
-	"postprovision": true,
-	"prepublish":    true,
-	"postpublish":   true,
-	"prerestore":    true,
-	"postrestore":   true,
-	"preup":         true,
-	"postup":        true,
+	"prebuild":        true,
+	"postbuild":       true,
+	"predeploy":       true,
+	"postdeploy":      true,
+	"predown":         true,
+	"postdown":        true,
+	"preinfracreate":  true,
+	"postinfracreate": true,
+	"preinfradelete":  true,
+	"postinfradelete": true,
+	"prepackage":      true,
+	"postpackage":     true,
+	"preprovision":    true,
+	"postprovision":   true,
+	"prepublish":      true,
+	"postpublish":     true,
+	"prerestore":      true,
+	"postrestore":     true,
+	"preup":           true,
+	"postup":          true,
 }
 
 // IsKnownHookName reports whether name is one of the built-in azd lifecycle
-// hook names. Extension- or project-author-defined names return false and are
-// hashed before emission in telemetry.
+// hook names, including the schema-defined infra command aliases.
 func IsKnownHookName(name string) bool {
 	return knownHookNames[name]
 }
 
-// HookNameAttribute returns the telemetry attribute for the `hooks.name` field.
-// Built-in lifecycle hook names are emitted raw; any other (user- or
-// extension-defined) name is hashed via fields.StringHashed so identifiers are
-// not leaked. The allowlist check happens before hashing so the common path
-// does no unnecessary SHA-256 work.
-func HookNameAttribute(name string) attribute.KeyValue {
+// HookNameAttribute returns a telemetry attribute only for a known lifecycle name.
+// Callers must omit the attribute when the second result is false.
+func HookNameAttribute(name string) (attribute.KeyValue, bool) {
 	if IsKnownHookName(name) {
-		return fields.HooksNameKey.String(name)
+		return fields.HooksNameKey.String(name), true
 	}
-	return fields.StringHashed(fields.HooksNameKey, name)
+	var omitted attribute.KeyValue
+	return omitted, false
 }

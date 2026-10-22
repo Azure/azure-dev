@@ -159,8 +159,9 @@ var (
 	// Tenant ID of the principal.
 	TenantIdKey = AttributeKey{
 		Key:            attribute.Key("ad.tenant.id"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        BusinessInsight,
+		Endpoint:       "N/A",
 	}
 	// The type of account. See AccountTypeUser for all possible options.
 	AccountTypeKey = AttributeKey{
@@ -194,8 +195,9 @@ var (
 	// Hashed project name. Could be used as an indicator for number of different azd projects.
 	ProjectNameKey = AttributeKey{
 		Key:            attribute.Key("project.name"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 	// The collection of hashed service hosts in the project.
 	ProjectServiceHostsKey = AttributeKey{
@@ -247,8 +249,9 @@ var (
 	// Hashed environment name
 	EnvNameKey = AttributeKey{
 		Key:            attribute.Key("env.name"),
-		Classification: SystemMetadata,
+		Classification: OrganizationalIdentifiableInformation,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 )
 
@@ -843,11 +846,12 @@ var (
 	// ExeGraphStepNameKey records the step name within an exegraph.step span.
 	// Hashed: step names embed user-chosen service or layer names from
 	// azure.yaml (e.g., "deploy-<svc.Name>", "<layer.Name>"); emit via
-	// fields.StringHashed.
+	// fields.StringHashed. Hashing does not change the CustomerContent classification.
 	ExeGraphStepNameKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.name"),
-		Classification: SystemMetadata,
+		Classification: CustomerContent,
 		Purpose:        PerformanceAndHealth,
+		Endpoint:       "N/A",
 	}
 
 	// ExeGraphStepDepsKey records the dependency list for a step.
@@ -855,8 +859,9 @@ var (
 	// identifiers; emit via fields.StringSliceHashed.
 	ExeGraphStepDepsKey = AttributeKey{
 		Key:            attribute.Key("exegraph.step.deps"),
-		Classification: SystemMetadata,
+		Classification: CustomerContent,
 		Purpose:        PerformanceAndHealth,
+		Endpoint:       "N/A",
 	}
 
 	// ExeGraphStepTagsKey records the tags for a step. Tags are a fixed
@@ -969,7 +974,7 @@ var (
 	// types as hashes because the extension controls their contents.
 	ErrExtensionCauseTypes = AttributeKey{
 		Key:            attribute.Key("error.extension.cause_types"),
-		Classification: EndUserPseudonymizedInformation,
+		Classification: SystemMetadata,
 		Purpose:        PerformanceAndHealth,
 	}
 
@@ -1091,18 +1096,20 @@ var (
 
 // Pack related fields
 var (
-	// The builder image used. Hashed when a user-defined image is used.
+	// The builder image used. Hashed when user-defined; classified for the custom-value path.
 	PackBuilderImage = AttributeKey{
 		Key:            attribute.Key("pack.builder.image"),
-		Classification: SystemMetadata,
+		Classification: CustomerContent,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 
-	// The tag of the builder image used. Hashed when a user-defined image is used.
+	// The builder image tag. Hashed when user-defined; shares the image's classification.
 	PackBuilderTag = AttributeKey{
 		Key:            attribute.Key("pack.builder.tag"),
-		Classification: SystemMetadata,
+		Classification: CustomerContent,
 		Purpose:        FeatureInsight,
+		Endpoint:       "N/A",
 	}
 )
 

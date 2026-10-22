@@ -1,6 +1,6 @@
 # Azure Developer CLI Documentation
 
-> Internal documentation for contributors and AI coding agents working on the Azure Developer CLI (`azd`).
+> Documentation for contributors and coding agents working on the Azure Developer CLI (`azd`).
 
 For end-user documentation, see [aka.ms/azd](https://aka.ms/azd). For template examples, see [awesome-azd](https://azure.github.io/awesome-azd/).
 
@@ -23,6 +23,7 @@ Task-oriented how-tos for common contributor workflows.
 - [Creating an Extension](guides/creating-an-extension.md) — How to build and publish an azd extension
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging
 - [Feature Telemetry Guide](guides/feature-telemetry.md) — End-to-end guide for instrumenting telemetry in new features
+- [Telemetry privacy checklist](specs/metrics-audit/privacy-review-checklist.md). Contributor steps, maintainer approval coverage, and PR review guidance
 - [Telemetry Overview](guides/telemetry-overview.md) — Product-facing overview of azd telemetry metrics
 
 ## Reference

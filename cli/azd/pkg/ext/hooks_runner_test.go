@@ -1399,13 +1399,14 @@ func TestIsKnownHookName(t *testing.T) {
 		"prebuild", "postbuild", "predeploy", "postdeploy", "predown", "postdown",
 		"prepackage", "postpackage", "preprovision", "postprovision", "prepublish",
 		"postpublish", "prerestore", "postrestore", "preup", "postup",
+		"preinfracreate", "postinfracreate", "preinfradelete", "postinfradelete",
 	}
 	for _, name := range known {
 		assert.True(t, IsKnownHookName(name), "%q should be a known lifecycle hook", name)
 	}
 
 	// Empty, bare commands, non-lifecycle hooks, and differently-cased names are not
-	// on the allowlist and therefore must be hashed before emission.
+	// on the allowlist and therefore must not be emitted.
 	notKnown := []string{"", "build", "deploy", "preinit", "postinit", "contoso-custom", "PreBuild"}
 	for _, name := range notKnown {
 		assert.False(t, IsKnownHookName(name), "%q should not be a known lifecycle hook", name)
@@ -1415,26 +1416,22 @@ func TestIsKnownHookName(t *testing.T) {
 func TestHookNameAttribute(t *testing.T) {
 	// Built-in lifecycle hook names are emitted raw to preserve analytical value.
 	t.Run("known emitted raw", func(t *testing.T) {
-		attr := HookNameAttribute("predeploy")
+		attr, ok := HookNameAttribute("predeploy")
+		require.True(t, ok)
 		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
 		assert.Equal(t, "predeploy", attr.Value.AsString())
 	})
 
-	// User- or extension-defined names are hashed (case-insensitive SHA-256) so they
-	// cannot leak user-chosen identifiers via telemetry.
-	t.Run("unknown hashed", func(t *testing.T) {
+	t.Run("unknown omitted", func(t *testing.T) {
 		const custom = "Contoso-Custom-Hook"
-		attr := HookNameAttribute(custom)
-		assert.Equal(t, string(fields.HooksNameKey.Key), string(attr.Key))
-		assert.Equal(t, fields.CaseInsensitiveHash(custom), attr.Value.AsString())
-		assert.NotEqual(t, custom, attr.Value.AsString(), "raw value must not be emitted")
-		assert.Len(t, attr.Value.AsString(), 64, "sha-256 digest is 64 hex chars")
+		attr, ok := HookNameAttribute(custom)
+		assert.False(t, ok)
+		assert.False(t, attr.Valid())
 	})
 }
 
 // TestSetHookSpanAttributes verifies the hooks.name span attribute is emitted raw
-// for built-in lifecycle hooks and hashed for user- or extension-defined hook
-// names, guarding against privacy regressions.
+// for built-in lifecycle hooks and omitted for unknown names.
 func TestSetHookSpanAttributes(t *testing.T) {
 	t.Run("known hook name emitted raw", func(t *testing.T) {
 		span := &mocktracing.Span{}
@@ -1444,14 +1441,17 @@ func TestSetHookSpanAttributes(t *testing.T) {
 		assert.Equal(t, "project", hookSpanAttr(t, span, fields.HooksTypeKey.Key).AsString())
 	})
 
-	t.Run("custom hook name hashed", func(t *testing.T) {
+	t.Run("custom hook name omitted", func(t *testing.T) {
 		const custom = "contoso-custom-hook"
 		span := &mocktracing.Span{}
 		setHookSpanAttributes(span, custom, "service")
 
-		nameVal := hookSpanAttr(t, span, fields.HooksNameKey.Key)
-		assert.Equal(t, fields.CaseInsensitiveHash(custom), nameVal.AsString())
-		assert.NotEqual(t, custom, nameVal.AsString(), "raw value must not be emitted")
+		for _, attr := range span.Attributes {
+			assert.NotEqual(t, fields.HooksNameKey.Key, attr.Key)
+			assert.NotContains(t, attr.Value.Emit(), custom)
+			assert.NotContains(t, attr.Value.Emit(), fields.CaseInsensitiveHash(custom))
+		}
+		assert.Equal(t, "service", hookSpanAttr(t, span, fields.HooksTypeKey.Key).AsString())
 	})
 }
 

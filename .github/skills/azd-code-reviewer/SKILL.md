@@ -32,6 +32,10 @@ Use whatever PR metadata, diff, and changed-file list the harness provides. In a
 
 If added files are under a top-level path in `cli/azd/extensions/` that did not exist before the PR, load [new-extension.md](new-extension.md) and apply its onboarding review. An added `extension.yaml` is enough to trigger the new-extension review because a dependency-only extension pack may have no module or entry point.
 
+If the diff changes telemetry collection or declarations, read the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers) and the maintainer's coverage decision in the PR.
+This applies even when filenames do not contain `telemetry`, such as changes to `ReportUsage` calls or fixed event values.
+Apply the Observability Expert checks from `reviewers.md`.
+
 ### Step 3: Apply review lenses
 
 Load [reviewers.md](reviewers.md) and apply each of the 9 fixed lenses to the diff. Then scan the changed files for the domain signals listed in `reviewers.md` and apply matching domain lenses. Each lens produces zero or more findings in the structured format defined in `reviewers.md`.

@@ -8,6 +8,8 @@
 > (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
 > internal maintainers.
 
+Changing collection? Start with the [privacy review checklist](../specs/metrics-audit/privacy-review-checklist.md).
+
 ## Data Shape
 
 Microsoft-bound azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution
@@ -362,7 +364,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `hooks.name` | string | Hook name (e.g., `preprovision`, `postdeploy`). Custom hooks are SHA-256 hashed. |
+| `hooks.name` | string | Matched built-in lifecycle name, including infra command aliases. Unknown names and their hashes are not recorded; `hooks run` also omits names with no matching hook. |
 | `hooks.type` | string | Scope: `project`, `service`, or `layer` |
 | `hooks.kind` | string | Executor: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
 </details>
@@ -541,8 +543,9 @@ classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
 is a decision about those fields, not a default for the whole `ext.*` class.
 Repository validation blocks undeclared or dynamically keyed
 attributes before release. Extension authors remain responsible for keeping
-values low cardinality and free of customer content, and for having them
-privacy reviewed with their extension.
+values low cardinality and free of customer content, and within their approved
+collection and handling scope. Use the [privacy checklist](../specs/metrics-audit/privacy-review-checklist.md)
+to assess payload changes.
 
 Only eligible official-registry installations produce these spans. Other
 installations receive a normal response without recording an event, as does
@@ -631,8 +634,8 @@ The first-run middleware is not currently registered, so these fields are not em
 | `exegraph.provision_concurrency` | measurement | Resolved provision phase concurrency limit for `up` and `provision`; `0` means no dedicated phase limit |
 | `exegraph.deploy_concurrency` | measurement | Resolved combined publish/deploy phase concurrency limit for `up` and `deploy`; `0` means no dedicated phase limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
-| `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
-| `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
+| `exegraph.step.name` | string | Step name, **SHA-256 hashed**, classified CustomerContent because it embeds user-defined service/layer names from `azure.yaml` |
+| `exegraph.step.deps` | string[] | Step dependencies, **SHA-256 hashed**, classified CustomerContent for the same reason |
 | `exegraph.step.tags` | string[] | Step tags (fixed internal vocabulary; emitted raw) |
 | `exegraph.step.timeout_s` | measurement | Per-step timeout in seconds, if set |
 </details>
@@ -642,8 +645,8 @@ The first-run middleware is not currently registered, so these fields are not em
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `pack.builder.image` | string | Builder image name |
-| `pack.builder.tag` | string | Builder image tag |
+| `pack.builder.image` | string | Builder image name, classified CustomerContent; hashed when user-defined, raw for the built-in default |
+| `pack.builder.tag` | string | Builder image tag, classified CustomerContent; hashed when user-defined, raw for the built-in default |
 </details>
 
 <details>
@@ -837,7 +840,9 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 ### Hashed Fields and Template Joins
 
-Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them. (`hooks.name` is also hashed except for built-in lifecycle hook names.)
+Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission. Hashing does not change CustomerContent into SystemMetadata and does not prevent matching known candidate values. Only recognized, matched lifecycle names are recorded in `hooks.name`; unknown inputs are omitted rather than hashed.
+
+`ad.tenant.id`, `project.name` and `env.name` are classified OrganizationalIdentifiableInformation. The execution-step name/dependency and builder image/tag keys are classified CustomerContent. Their emission is unchanged by the classification correction; effective downstream filtering requires the corresponding metadata deployment. Extension cause-type labels remain bounded hashes and are classified SystemMetadata, not end-user identifiers.
 
 To resolve template IDs to human-readable names, join with a template lookup table using the hashed ID.
 

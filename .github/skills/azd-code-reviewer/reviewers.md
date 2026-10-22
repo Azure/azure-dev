@@ -1,3 +1,5 @@
+<!-- cspell:ignore runbooks -->
+
 # Reviewers
 
 Definitions for the 9 fixed specialist lenses and dynamic domain detection rules.
@@ -321,6 +323,7 @@ If there are no {domain}-specific concerns, contribute no findings.
 
 When applying the Observability Expert lens to telemetry field changes:
 
+- Follow the [privacy checklist's reviewer guidance](../../../docs/specs/metrics-audit/privacy-review-checklist.md#for-reviewers), which covers the actual values and the maintainer's coverage decision.
 - For new or renamed extension fields, apply the
   [attribute naming rules](../../../cli/azd/docs/extensions/extension-telemetry.md#name-attributes-for-their-scope).
 - Verify every new or modified exported, package-level `fields.AttributeKey` sets non-empty

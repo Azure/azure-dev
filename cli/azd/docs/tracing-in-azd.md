@@ -4,8 +4,10 @@
 
 ## Overview
 
-`azd` uses [OpenTelemetry](https://opentelemetry.io/docs/concepts/signals/traces/) to collect **anonymous usage information** and **success metrics**.
+`azd` uses [OpenTelemetry](https://opentelemetry.io/docs/concepts/signals/traces/) to collect usage, performance, and reliability telemetry.
 Internally, `azd` defines its own wrapper package — [`cli/azd/internal/tracing`](../../azd/internal/tracing) — which simplifies working with the standard OpenTelemetry library.
+
+Start with the [privacy review checklist](../../../docs/specs/metrics-audit/privacy-review-checklist.md) before changing what is collected.
 
 All `azd` commands automatically create a **root command event** with a namespace prefix of `cmd.` (for example, `cmd.provision`, `cmd.up`, etc.).
 
@@ -67,7 +69,7 @@ You can set attributes in different ways depending on scope:
 Example:
 
 ```go
-tracing.SetUsageAttributes(fields.EnvName.StringHashed(envName))
+tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, envName))
 ```
 
 This example sets a usage attribute to be included in the root command event.
@@ -121,7 +123,7 @@ validation succeeds.
 
 | Attribute | Description | Example |
 | --------- | ----------- | ------- |
-| `hooks.name` | Hook name. The `azd hooks run` root command hashes unknown hook names before recording usage attributes; `hooks.exec` child spans record the resolved hook name. | `predeploy` |
+| `hooks.name` | Matched built-in lifecycle name only. `azd hooks run` omits unmatched names; all hook spans omit unknown names and their hashes. | `predeploy` |
 | `hooks.type` | Hook run scope. | `project`, `layer`, or `service` |
 | `hooks.kind` | Executor kind used to run the hook. | `sh`, `pwsh`, `python`, `js`, `ts`, or `dotnet` |
 
@@ -207,7 +209,7 @@ These example PRs include adding both new spans and events and can be used as re
 
 * Keep attribute names **consistent and descriptive**. Follow OpenTelemetry naming best practices. Use constants from `fields.go`.
 * Always **end spans** and **set status** for the ones you start; otherwise, they appear as incomplete traces.
-* Avoid logging any user data. Traces are collected anonymously.
+* Do not attach customer content or secrets. Before adding identifiers, have a maintainer confirm their classification and handling. Follow the [privacy review checklist](../../../docs/specs/metrics-audit/privacy-review-checklist.md) and the field's documented hashing rules.
 * Use trace logs locally to verify correctness before merging changes.
 
 ---

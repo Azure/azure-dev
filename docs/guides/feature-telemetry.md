@@ -15,7 +15,8 @@ Telemetry is not a separate system — it's part of the feature. When you ship a
 - Engineering can't diagnose failures in production
 - Dashboards show gaps that require scrambling to fill later
 
-This guide covers the instrumentation side — defining events, fields, and wiring them into your code.
+This guide covers defining events, fields, and wiring them into your code.
+Start with the [privacy review checklist](../specs/metrics-audit/privacy-review-checklist.md): explain the question you want to answer and the values you plan to send.
 
 > Microsoft-internal data pipelines (GDPR classification, Kusto functions, Power BI reports) are documented separately for internal maintainers.
 
@@ -64,8 +65,7 @@ Every field must have:
 2. **A classification** — what kind of data is this (see [Data Classifications](#data-classifications))
 3. **A purpose** — why are we collecting it (see [Purposes](#purposes))
 4. **`IsMeasurement: true`** if the value is numeric (goes to the `Measurements` column, not `Properties`)
-5. **`Endpoint`** (optional) — an identifier-type tag to set when the value is a known endpoint
-   identifier; leave unset otherwise
+5. **`Endpoint`**, when required by the classification and declaration contract. It is an identifier-type tag, not a network address; ask a maintainer which type applies.
 
 ```go
 // In fields.go — add your field keys
@@ -87,33 +87,25 @@ var (
 )
 ```
 
-### Data Classifications
+### Data classifications
 
-| Classification | Use When |
-|----------------|----------|
-| `SystemMetadata` | Non-personal system/config data (most common) |
-| `EndUserPseudonymizedInformation` | User identifiers that are hashed (e.g., machine ID) |
-| `OrganizationalIdentifiableInformation` | Org identifiers (subscription ID, tenant ID) |
-| `PublicPersonalData` | Data the user made public |
-| `CallstackOrException` | Stack traces or error details |
-| `CustomerContent` | User-created content — highest sensitivity, avoid if possible |
+Use the schema's [classification reference](../specs/metrics-audit/telemetry-schema.md#data-classifications) and [privacy concepts](../specs/metrics-audit/telemetry-schema.md#privacy-concepts).
+Propose a classification based on the actual values, not their string type or hashing.
+Ask a maintainer if the value is a name or identifier, or if no classification clearly fits.
 
 ### Purposes
 
-| Purpose | Use When |
-|---------|----------|
-| `FeatureInsight` | Understanding feature adoption and usage patterns |
-| `BusinessInsight` | Business metrics (users, orgs, growth) |
-| `PerformanceAndHealth` | Performance, errors, reliability |
+Use the schema's [purpose reference](../specs/metrics-audit/telemetry-schema.md#purposes) to choose why the field is needed.
 
-### Hashing Sensitive Values
+### Hashing values
 
-If your field contains user-generated names or identifiers, **hash it**:
+Follow the field's [hashing and omission rules](../specs/metrics-audit/telemetry-schema.md#hashing).
+Hashing is not a way to make customer content acceptable. For an existing field that requires hashing:
 
 ```go
 // In your code, use StringHashed instead of regular attribute setting
 tracing.SetUsageAttributes(
-    fields.StringHashed(fields.MyFeatureNameKey, userProvidedName),
+    fields.StringHashed(fields.EnvNameKey, envName),
 )
 ```
 
@@ -122,15 +114,8 @@ tracing.SetUsageAttributes(
 > [!IMPORTANT]
 > **Always emit through a `fields.AttributeKey` method — never a raw `attribute.*` call with a literal key.**
 > Use `fields.MyFeatureStrategyKey.String(v)`, not `attribute.String("myfeature.strategy", v)`.
-> The GDPR classification tool discovers fields by statically scanning `fields.go` for exported
-> `AttributeKey` variables and reading their `Classification`/`Purpose`. A raw `attribute.*` call
-> with a literal key is invisible to that scan, so the property still flows to App Insights but its
-> data-catalog row stays **Unclassified / `Complete=false`**. The `TestNoRawTelemetryAttributes` guard
-> (`cli/azd/cmd/telemetry_test.go`) fails the build on raw string-literal keys in
-> product code. Dynamic, non-fixed keys chosen at runtime (the open-ended `ext.*` extension path)
-> are the only exception to this core scan. First-party extension `ext.*` keys with fixed values are
-> still governed: they are declared in a separate inventory, `cli/azd/extensions/telemetry/fields.go`,
-> and verified by `go test ./extensions/telemetry` rather than by `TestNoRawTelemetryAttributes`.
+> Metadata comes from the [field declarations](../specs/metrics-audit/telemetry-schema.md#field-declaration-contract), not arbitrary instrumentation calls.
+> Core tests reject raw literal keys. First-party extension `ext.*` keys have their own declarations and `go test ./extensions/telemetry` check.
 
 ### For Command Actions
 
@@ -200,12 +185,10 @@ This maps to result codes like `ext.service.arm.500` in telemetry. See `cli/azd/
 
 Add your new events and fields to the canonical schema reference. This document is the source of truth for what telemetry azd collects and is reviewed during privacy audits.
 
-## Step 5: Privacy Review
+## Step 5: Check privacy and approval coverage
 
-Every new field must have correct `Classification` and `Purpose` values:
-
-- If your field has sensitivity higher than `SystemMetadata`, consult the [Privacy Review Checklist](../specs/metrics-audit/privacy-review-checklist.md)
-- If you're adding `CustomerContent` or unhashed PII, a formal privacy review is required before merge
+Follow the [privacy review checklist](../specs/metrics-audit/privacy-review-checklist.md) and copy its PR template.
+The author describes the changed values; a maintainer records whether existing approval covers them and coordinates any required formal review.
 
 ## Step 6: Product Review
 

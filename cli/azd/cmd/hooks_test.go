@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -230,6 +232,102 @@ func Test_HooksRunAction_SetsTelemetryTypeForLayer(t *testing.T) {
 	}
 
 	require.Equal(t, "layer", hookType)
+}
+
+func Test_HooksRunAction_HookNameTelemetry(t *testing.T) {
+	tests := []struct {
+		name          string
+		hookName      string
+		configured    bool
+		scope         string
+		wantName      bool
+		wantExecution bool
+	}{
+		{"ProjectHook", "predeploy", true, "project", true, true},
+		{"LayerHook", "preprovision", true, "layer", true, true},
+		{"ServiceHook", "postdeploy", true, "service", true, true},
+		{"InfraAlias", "preinfracreate", true, "project", true, true},
+		{"KnownButUnmatched", "predeploy", false, "project", false, false},
+		{"UnknownAndUnmatched", "private-customer-hook", false, "project", false, false},
+		{"UnknownButConfigured", "private-customer-hook", true, "project", false, true},
+		{"SkippedLayer", "preprovision", true, "skipped-layer", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracing.ResetUsageAttributesForTest()
+			t.Cleanup(tracing.ResetUsageAttributesForTest)
+			recorder := tracetest.NewSpanRecorder()
+			provider := tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder))
+
+			mockContext := mocks.NewMockContext(t.Context())
+			registerHookExecutors(mockContext)
+			env := environment.NewWithValues("test", nil)
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+			config := &project.ProjectConfig{
+				Name: "test", Path: t.TempDir(), Services: map[string]*project.ServiceConfig{},
+			}
+			flags := &hooksRunFlags{}
+			hooks := project.HooksConfig{}
+			if tt.configured {
+				hooks[tt.hookName] = []*ext.HookConfig{{
+					Shell: string(language.HookKindBash), Run: "echo hook",
+				}}
+			}
+			switch tt.scope {
+			case "layer", "skipped-layer":
+				config.Infra.Layers = []provisioning.Options{{Name: "core", Path: ".", Hooks: hooks}}
+				flags.layer = "core"
+				if tt.scope == "skipped-layer" {
+					config.Infra.Layers = append(config.Infra.Layers, provisioning.Options{Name: "other", Path: "."})
+					flags.layer = "other"
+				}
+			case "service":
+				config.Services["api"] = &project.ServiceConfig{
+					Name: "api", Project: config, RelativePath: ".", Hooks: hooks,
+				}
+				flags.service = "api"
+			default:
+				config.Hooks = hooks
+			}
+			executions := 0
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return true
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				executions++
+				return exec.NewRunResult(0, "", ""), nil
+			})
+			action := &hooksRunAction{
+				projectConfig: config, env: env, envManager: envManager,
+				importManager: project.NewImportManager(nil), commandRunner: mockContext.CommandRunner,
+				console: mockContext.Console, flags: flags, args: []string{tt.hookName},
+				serviceLocator: mockContext.Container,
+			}
+			ctx, span := provider.Tracer("test").Start(*mockContext.Context, "cmd.hooks.run")
+			_, err := action.Run(ctx)
+			span.SetAttributes(tracing.GetUsageAttributes()...)
+			span.End()
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantExecution, executions > 0)
+
+			foundName := false
+			require.NotEmpty(t, recorder.Ended())
+			for _, recorded := range recorder.Ended() {
+				for _, attr := range recorded.Attributes() {
+					if attr.Key == fields.HooksNameKey.Key {
+						foundName = true
+						assert.True(t, tt.wantName, "unexpected hook-name attribute on %s", recorded.Name())
+						assert.Equal(t, tt.hookName, attr.Value.AsString())
+					}
+					if !tt.wantName {
+						assert.NotContains(t, attr.Value.Emit(), tt.hookName)
+						assert.NotContains(t, attr.Value.Emit(), fields.CaseInsensitiveHash(tt.hookName))
+					}
+				}
+			}
+			assert.Equal(t, tt.wantName, foundName)
+		})
+	}
 }
 
 func Test_HooksRunAction_RejectsServiceAndLayerTogether(t *testing.T) {

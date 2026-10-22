@@ -120,10 +120,6 @@ const (
 	hookContextService hookContextType = "service"
 )
 
-// The built-in hook-name allowlist lives in `pkg/ext/known_hooks.go`. Both this
-// command and the hooks runner call `ext.HookNameAttribute` so the raw-vs-hashed
-// decision for the telemetry `hooks.name` field stays in a single place.
-
 func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	hookName := hra.args[0]
 
@@ -144,11 +140,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		hookType = "service"
 	}
 
-	// Log known hook names raw; hash unknown names to avoid logging arbitrary user input.
-	tracing.SetUsageAttributes(
-		ext.HookNameAttribute(hookName),
-		fields.HooksTypeKey.String(hookType),
-	)
+	tracing.SetUsageAttributes(fields.HooksTypeKey.String(hookType))
 
 	// Command title
 	hra.console.MessageUxItem(ctx, &ux.MessageTitle{
@@ -275,6 +267,10 @@ func (hra *hooksRunAction) processHooks(
 	for idx, hook := range hooks {
 		if err := hra.prepareHook(hookName, hook); err != nil {
 			return err
+		}
+
+		if nameAttr, ok := ext.HookNameAttribute(hookName); ok {
+			tracing.SetUsageAttributes(nameAttr)
 		}
 
 		hra.console.Message(ctx, output.WithBold("%s hook %d/%d:", contextType, idx+1, len(hooks)))

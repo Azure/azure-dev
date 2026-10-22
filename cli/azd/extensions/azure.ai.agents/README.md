@@ -193,7 +193,9 @@ cost and is not run automatically.
 ## Extension telemetry API
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
-checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+The service `predeploy` listener uses the existing beta structured-message API
+to retain RBAC warnings; `postdeploy` and project listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -398,6 +400,34 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd deploy <service>` deploys the selected `azure.ai.agent` service.
 - `azd deploy --all` deploys all services, with ordering defined by `uses`.
 - `azd up` provisions and deploys the project.
+
+### Retained developer RBAC warnings
+
+With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
+check remain in the final `azd deploy` / `azd up` output, including when a later
+deployment step fails. They are non-blocking: a warning does not change the
+deployment exit code, and deployment errors still fail the command.
+
+This covers Foundry User checks and failed automatic assignment, hosted-agent
+role-assignment-write checks, and Container Registry access checks (including
+classic and ABAC role guidance). Warnings that a check could not be completed
+are also retained. Prompt and voice agents keep only the applicable Foundry
+checks; hosted-only checks and the existing skip behavior are unchanged.
+
+For automation, use `--no-prompt --output json` and consume the host's `messages`
+entries. Each retained warning has `kind: warning`, `extensionId:
+azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
+`suggestion`. Messages are scoped to each service invocation, not deduplicated
+across services. No new prompt is introduced. Transport diagnostics include only
+safe status information, not raw response bodies or credentials.
+
+This does not retain every extension log or hook message, and it does not change
+the read-only `azd deploy --preview` path, which skips deployment hooks.
+The opt-in [RBAC warning scenario](tests/cli-interactive-tester-scenarios/tier2/2.20-deploy-rbac-warnings.yaml)
+requires an externally prepared restricted test identity and explicit Azure cost
+consent through `foundry-extension-scenario-orchestrator`; it is not run automatically.
+
+### Deployment guidance
 
 After a successful deployment, endpoint guidance recommends the standalone
 `azd extension install azure.ai.evaluations` followed by `azd ai eval init`

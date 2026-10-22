@@ -29,7 +29,7 @@ Dependency direction is `internal/cmd` or `internal/project` → `internal/featu
 
 The package belongs to the `azureaiagent` module and is imported as `azureaiagent/internal/featureflags`. Go's `internal` boundary excludes other extension modules. It requires neither a new module nor a root-module replacement or dependency upgrade to expose the helper.
 
-The host-sentinel compatibility tests import the pinned azd environment packages. Their transitive dependencies require indirect entries for `heredoc/v2`, `azblob`, and `azfile` in this module. The azd requirement stays at `v1.35.1`.
+The host-sentinel compatibility tests import the pinned azd environment packages. Their transitive dependencies require indirect entries for `heredoc/v2`, `azblob`, and `azfile` in this module. The azd requirement is `v1.37.0`.
 
 Keep validation, reads, and small evaluation helpers together in one implementation file. Splitting them into a loader framework or generic source abstraction would add indirection without another implementation to support. The registry is a plain list of declarations, not a plugin system.
 

@@ -85,11 +85,15 @@ listing every feature.`,
 			ctx := cmd.Context()
 			client, err := azdext.NewAzdClient()
 			if err != nil {
-				return fmt.Errorf("connecting to azd to read alpha features: %w", err)
+				err = fmt.Errorf("connecting to azd to read alpha features: %w", err)
+			} else {
+				defer client.Close()
 			}
-			defer client.Close()
 			environmentName := featureflags.Environment(ctx)
 			read := func(ctx context.Context, feature featureflags.Feature) (bool, error) {
+				if err != nil {
+					return false, err
+				}
 				return featureflags.IsEnabled(ctx, client, feature, environmentName)
 			}
 			return runConfigListAlpha(ctx, cmd.OutOrStdout(), extCtx.OutputFormat, read)

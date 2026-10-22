@@ -46,6 +46,7 @@ const (
 var (
 	errNoProject                  = errors.New("no project exists; to create a new project, run `azd init`")
 	errDefaultEnvironmentNotFound = errors.New("default environment not found")
+	errEnvironmentNotFound        = errors.New("environment not found")
 )
 
 type azdClient interface {
@@ -76,6 +77,7 @@ func CheckEnvironmentFlag(flags *pflag.FlagSet) error {
 // Pass ExtensionContext.Environment to honor -e/--environment.
 // An empty environmentName means the flag was omitted and uses the project default, if one exists.
 // Loading failures are returned even when another source enables it.
+// WithInitScope permits exact absence of scopes init can create.
 func IsEnabled(
 	ctx context.Context,
 	client *azdext.AzdClient,
@@ -101,6 +103,7 @@ func isEnabled(
 	feature Feature,
 	environmentName string,
 ) (bool, error) {
+	initializing, _ := ctx.Value(initScopeKey{}).(bool)
 	enabled := envEnabled(os.Getenv(feature.EnvVar))
 
 	configResponse, err := client.UserConfig().Get(ctx, &azdext.GetUserConfigRequest{Path: alphaKey})
@@ -120,7 +123,7 @@ func isEnabled(
 
 	projectResponse, err := client.Project().Get(ctx, &azdext.EmptyRequest{})
 	switch {
-	case err != nil && environmentName == "" && isAbsentScope(err, errNoProject):
+	case err != nil && (environmentName == "" || initializing) && isAbsentScope(err, errNoProject):
 		// Without a project, neither local scope is available.
 		return enabled, nil
 	case err != nil:
@@ -135,6 +138,8 @@ func isEnabled(
 	switch {
 	case err != nil && environmentName == "" && isAbsentScope(err, errDefaultEnvironmentNotFound):
 		// A project need not have a default environment.
+	case err != nil && initializing && environmentName != "" && isAbsentScope(err, errEnvironmentNotFound):
+		// Init can create the selected named environment.
 	case err != nil:
 		return false, fmt.Errorf("reading azd environment %q for feature %q: %w", environmentName, feature.ID, err)
 	case valuesResponse == nil:

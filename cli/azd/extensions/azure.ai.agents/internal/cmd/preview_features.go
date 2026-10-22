@@ -195,6 +195,9 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string, environmentName s
 	environmentErr := featureflags.CheckEnvironmentFlag(cmd.Flags())
 	ctx := featureflags.WithEnvironment(cmd.Context(), environmentName)
 	ctx = featureflags.WithEnvironmentError(ctx, environmentErr)
+	if cmd.Name() == "init" {
+		ctx = featureflags.WithInitScope(ctx)
+	}
 	if cmd.Annotations[serviceGateAnnotation] != "" {
 		ctx = context.WithValue(ctx, serviceGateKey{}, true)
 	}

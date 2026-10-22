@@ -15,6 +15,13 @@ import (
 
 type environmentKey struct{}
 type environmentErrorKey struct{}
+type initScopeKey struct{}
+
+// WithInitScope permits reads before init creates its local scopes.
+// It preserves the selected name and genuine source errors.
+func WithInitScope(ctx context.Context) context.Context {
+	return context.WithValue(ctx, initScopeKey{}, true)
+}
 
 // WithEnvironment preserves the SDK environment for nested calls.
 func WithEnvironment(ctx context.Context, name string) context.Context {

@@ -2913,7 +2913,8 @@ func (p *BicepProvider) setProvisionValidationOutcome(
 // role assignments. The PermissionsService is resolved lazily via the service locator so it
 // is only instantiated when actually needed.
 // A missing permission is critical only when a snapshot assignment explicitly targets
-// the subscription scope checked here; other scopes remain advisory.
+// the subscription scope checked here. A successful subscription check also covers child
+// scopes through RBAC inheritance; other scopes remain advisory because they are not verified.
 //
 // For B2B/guest users, the principal's object ID differs between the home tenant and the
 // resource tenant. This check resolves the principal ID in the resource tenant context
@@ -2926,14 +2927,32 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		return nil, nil
 	}
 
-	var permissionsService *azapi.PermissionsService
-	if err := p.serviceLocator.Resolve(&permissionsService); err != nil {
-		log.Printf(
-			"could not resolve PermissionsService, skipping role assignment permission check: %v", err)
-		return nil, nil
-	}
-
 	subscriptionId := p.env.GetSubscriptionId()
+	subscriptionScope := "/subscriptions/" + subscriptionId
+	subscriptionScopePrefix := strings.ToLower(subscriptionScope) + "/"
+	hasSubscriptionScope := false
+	hasSubscriptionChildScope := false
+	hasUnverifiedScope := false
+	hasSnapshotRoleAssignment := false
+	for _, resource := range valCtx.SnapshotResources {
+		if !strings.EqualFold(resource.Type, "Microsoft.Authorization/roleAssignments") {
+			continue
+		}
+
+		hasSnapshotRoleAssignment = true
+		scope := strings.TrimRight(resource.Scope, "/")
+		switch {
+		case strings.EqualFold(scope, subscriptionScope):
+			hasSubscriptionScope = true
+		case strings.HasPrefix(strings.ToLower(scope), subscriptionScopePrefix):
+			hasSubscriptionChildScope = true
+		default:
+			hasUnverifiedScope = true
+		}
+	}
+	if !hasSnapshotRoleAssignment {
+		hasUnverifiedScope = true
+	}
 
 	// Resolve the principal ID in the resource tenant context rather than the user-access
 	// (home) tenant. For B2B/guest users, CurrentPrincipalId returns the home-tenant oid,
@@ -2951,73 +2970,88 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		"Microsoft.Authorization/roleAssignments/write",
 	}
 
-	hasPermission, err := permissionsService.HasRequiredPermissions(
-		ctx, subscriptionId, principalId, requiredActions,
-	)
-	if err != nil {
-		log.Printf("error checking role assignment permissions, skipping check: %v", err)
-		return nil, nil
+	var results []ProvisionValidationCheckResult
+	hasSubscriptionPermission := false
+	if hasSubscriptionScope || hasSubscriptionChildScope {
+		var permissionsService *azapi.PermissionsService
+		if err := p.serviceLocator.Resolve(&permissionsService); err != nil {
+			log.Printf(
+				"could not resolve PermissionsService, skipping role assignment permission check: %v", err)
+		} else {
+			hasPermission, err := permissionsService.HasRequiredPermissions(
+				ctx, subscriptionId, principalId, requiredActions,
+			)
+			if err != nil {
+				log.Printf("error checking role assignment permissions, skipping check: %v", err)
+			} else if hasPermission.HasPermission {
+				hasSubscriptionPermission = true
+				if hasPermission.Conditional {
+					results = append(results, ProvisionValidationCheckResult{
+						Severity:     ProvisionValidationCheckWarning,
+						DiagnosticID: "role_assignment_conditional",
+						Message: fmt.Sprintf(
+							"Principal %s has conditional role"+
+								" assignment permissions on"+
+								" subscription %s\n"+
+								"An ABAC condition may restrict"+
+								" which roles can be assigned."+
+								" The deployment may fail if the"+
+								" condition does not permit the"+
+								" specific role assignments in"+
+								" the template.",
+							output.WithHighLightFormat(
+								"(%s)", principalId),
+							output.WithHighLightFormat(subscriptionId),
+						),
+					})
+				}
+			} else if hasSubscriptionScope {
+				results = append(results, ProvisionValidationCheckResult{
+					Severity:     ProvisionValidationCheckWarning,
+					IsCritical:   true,
+					DiagnosticID: "role_assignment_missing",
+					Message: fmt.Sprintf(
+						"Missing role assignment permissions\n%s\n%s %s\n%s %s\n%s %s",
+						output.WithWarningFormat("Deployment will likely fail."),
+						output.WithGrayFormat("Principal ID:"), principalId,
+						output.WithGrayFormat("Subscription:"), subscriptionId,
+						output.WithGrayFormat("Required permission:"), requiredActions[0],
+					),
+					Suggestion: fmt.Sprintf(
+						"Ensure you have the 'Role Based Access Control Administrator', "+
+							"'User Access Administrator', 'Owner', or a custom role "+
+							"with '%s' assigned to your account.",
+						requiredActions[0],
+					),
+				})
+			}
+		}
 	}
 
-	if !hasPermission.HasPermission {
-		subscriptionScope := "/subscriptions/" + subscriptionId
-		isCritical := slices.ContainsFunc(valCtx.SnapshotResources, func(resource armTemplateResource) bool {
-			return strings.EqualFold(resource.Type, "Microsoft.Authorization/roleAssignments") &&
-				strings.EqualFold(strings.TrimRight(resource.Scope, "/"), subscriptionScope)
-		})
-		message := "Missing role assignment permissions"
-		scopeMessage := output.WithWarningFormat("Deployment will likely fail.")
-		suggestion := fmt.Sprintf(
-			"Ensure you have the 'Role Based Access Control Administrator', "+
-				"'User Access Administrator', 'Owner', or a custom role "+
-				"with '%s' assigned to your account.",
-			requiredActions[0],
-		)
-		if !isCritical {
-			message = "Role assignment permissions at the target scopes were not verified"
-			scopeMessage = "Permissions may be granted at a different scope."
-			suggestion = fmt.Sprintf(
-				"Verify that your account has '%s' at the scopes of the role assignments.",
-				requiredActions[0],
-			)
-		}
-		return []ProvisionValidationCheckResult{{
+	if hasSubscriptionChildScope && !hasSubscriptionPermission {
+		hasUnverifiedScope = true
+	}
+
+	if hasUnverifiedScope {
+		results = append(results, ProvisionValidationCheckResult{
 			Severity:     ProvisionValidationCheckWarning,
-			IsCritical:   isCritical,
-			DiagnosticID: "role_assignment_missing",
+			DiagnosticID: "role_assignment_scope_unverified",
 			Message: fmt.Sprintf(
-				"%s\n%s\n%s %s\n%s %s\n%s %s",
-				message, scopeMessage,
+				"Role assignment permissions at the target scopes were not verified\n"+
+					"The deployment-subscription check does not cover every target scope.\n"+
+					"%s %s\n%s %s\n%s %s",
 				output.WithGrayFormat("Principal ID:"), principalId,
-				output.WithGrayFormat("Subscription:"), subscriptionId,
+				output.WithGrayFormat("Environment subscription:"), subscriptionId,
 				output.WithGrayFormat("Required permission:"), requiredActions[0],
 			),
-			Suggestion: suggestion,
-		}}, nil
-	}
-
-	if hasPermission.Conditional {
-		return []ProvisionValidationCheckResult{{
-			Severity:     ProvisionValidationCheckWarning,
-			DiagnosticID: "role_assignment_conditional",
-			Message: fmt.Sprintf(
-				"Principal %s has conditional role"+
-					" assignment permissions on"+
-					" subscription %s\n"+
-					"An ABAC condition may restrict"+
-					" which roles can be assigned."+
-					" The deployment may fail if the"+
-					" condition does not permit the"+
-					" specific role assignments in"+
-					" the template.",
-				output.WithHighLightFormat(
-					"(%s)", principalId),
-				output.WithHighLightFormat(subscriptionId),
+			Suggestion: fmt.Sprintf(
+				"Verify that your account has '%s' at the scopes of the role assignments.",
+				requiredActions[0],
 			),
-		}}, nil
+		})
 	}
 
-	return nil, nil
+	return results, nil
 }
 
 // checkReservedResourceNames inspects predicted resource names and warns when a

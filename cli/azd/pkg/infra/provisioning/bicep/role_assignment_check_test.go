@@ -34,6 +34,14 @@ import (
 
 type warningSubscriptionResolver struct{}
 
+type rolePermissionState int
+
+const (
+	rolePermissionMissing rolePermissionState = iota
+	rolePermissionGranted
+	rolePermissionConditional
+)
+
 func newWarningBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 	return &BicepProvider{
 		env: environment.NewWithValues("test-env", map[string]string{
@@ -57,7 +65,7 @@ func (warningSubscriptionResolver) GetSubscription(
 }
 
 func prepareRoleWarningMocks(
-	t *testing.T, mockContext *mocks.MockContext, conditional bool,
+	t *testing.T, mockContext *mocks.MockContext, permission rolePermissionState,
 ) {
 	t.Helper()
 	mockContext.Container.MustRegisterSingleton(func() *azapi.PermissionsService {
@@ -78,19 +86,22 @@ func prepareRoleWarningMocks(
 		return request.Method == http.MethodGet &&
 			strings.HasSuffix(request.URL.Path, "/providers/Microsoft.Authorization/roleAssignments")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		if !conditional {
+		if permission == rolePermissionMissing {
 			return mocks.CreateHttpResponseWithBody(request, http.StatusOK,
 				map[string]any{"value": []any{}})
+		}
+		properties := map[string]any{
+			"roleDefinitionId": "/subscriptions/SUBSCRIPTION_ID/providers/" +
+				"Microsoft.Authorization/roleDefinitions/role-id",
+		}
+		if permission == rolePermissionConditional {
+			properties["condition"] = "test condition"
 		}
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK,
 			map[string]any{
 				"value": []any{
 					map[string]any{
-						"properties": map[string]any{
-							"roleDefinitionId": "/subscriptions/SUBSCRIPTION_ID/providers/" +
-								"Microsoft.Authorization/roleDefinitions/role-id",
-							"condition": "test condition",
-						},
+						"properties": properties,
 					},
 				},
 			})
@@ -114,14 +125,26 @@ func prepareRoleWarningMocks(
 }
 
 func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
-	for _, conditional := range []bool{false, true} {
-		name := "missing"
-		if conditional {
-			name = "conditional"
-		}
-		t.Run(name, func(t *testing.T) {
+	tests := []struct {
+		name           string
+		permission     rolePermissionState
+		wantDiagnostic string
+		wantCritical   bool
+	}{
+		{
+			name: "missing", permission: rolePermissionMissing,
+			wantDiagnostic: "role_assignment_missing", wantCritical: true,
+		},
+		{name: "granted", permission: rolePermissionGranted},
+		{
+			name: "conditional", permission: rolePermissionConditional,
+			wantDiagnostic: "role_assignment_conditional",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(t.Context())
-			prepareRoleWarningMocks(t, mockContext, conditional)
+			prepareRoleWarningMocks(t, mockContext, tt.permission)
 			provider := newWarningBicepProvider(mockContext)
 
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(),
@@ -132,13 +155,15 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 					}},
 				})
 			require.NoError(t, err)
+			if tt.wantDiagnostic == "" {
+				require.Empty(t, results)
+				return
+			}
 			require.Len(t, results, 1)
 			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
-			require.Equal(t, !conditional, results[0].IsCritical)
-			if conditional {
-				require.Equal(t, "role_assignment_conditional", results[0].DiagnosticID)
-			} else {
-				require.Equal(t, "role_assignment_missing", results[0].DiagnosticID)
+			require.Equal(t, tt.wantCritical, results[0].IsCritical)
+			require.Equal(t, tt.wantDiagnostic, results[0].DiagnosticID)
+			if tt.permission == rolePermissionMissing {
 				require.Contains(t, results[0].Message, "Principal ID:")
 				require.Contains(t, results[0].Message, "principal-123")
 				require.Contains(t, results[0].Message, "Subscription:")
@@ -171,6 +196,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 		wantEOF     bool
 		wantSummary string
 		wantOutcome string
+		permission  rolePermissionState
 	}{
 		{
 			name: "critical automation", critical: true, noPrompt: true,
@@ -184,6 +210,13 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 		},
 		{
 			name: "cross-subscription automation", roleScope: new("/subscriptions/other-subscription"), noPrompt: true,
+			wantDefault: true, wantSummary: "1 warning found.",
+			wantOutcome: provisionValidationOutcomeWarningsAccepted,
+		},
+		{
+			name:      "cross-subscription automation with environment permission",
+			roleScope: new("/subscriptions/other-subscription"), noPrompt: true,
+			permission:  rolePermissionGranted,
 			wantDefault: true, wantSummary: "1 warning found.",
 			wantOutcome: provisionValidationOutcomeWarningsAccepted,
 		},
@@ -287,7 +320,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 			t.Setenv("AZD_BICEP_TOOL_PATH", "mock-bicep")
 			mockContext := mocks.NewMockContext(t.Context())
-			prepareRoleWarningMocks(t, mockContext, false)
+			prepareRoleWarningMocks(t, mockContext, tt.permission)
 			provider := newWarningBicepProvider(mockContext)
 
 			resources := make([]armTemplateResource, 0, 2)
@@ -381,34 +414,114 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 
 func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 	tests := []struct {
-		name     string
-		scopes   []string
-		critical bool
+		name            string
+		scopes          []string
+		permission      rolePermissionState
+		wantDiagnostics []string
+		wantCritical    []bool
 	}{
-		{name: "deployment subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"}, critical: true},
-		{name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"}, critical: true},
-		{name: "cross subscription", scopes: []string{"/subscriptions/other-subscription"}},
-		{name: "resource group", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"}},
-		{name: "resource", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"}},
-		{name: "tenant", scopes: []string{"/"}},
-		{name: "management group", scopes: []string{"/providers/Microsoft.Management/managementGroups/group"}},
-		{name: "unknown", scopes: []string{""}},
-		{name: "unresolved", scopes: []string{"[subscription().id]"}},
-		{name: "no snapshot"},
 		{
-			name:     "checked and unchecked scopes",
-			scopes:   []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
-			critical: true,
+			name: "deployment subscription", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"},
+			wantDiagnostics: []string{"role_assignment_missing"}, wantCritical: []bool{true},
+		},
+		{
+			name: "deployment subscription granted", scopes: []string{"/subscriptions/SUBSCRIPTION_ID"},
+			permission: rolePermissionGranted,
+		},
+		{
+			name: "case insensitive", scopes: []string{"/SUBSCRIPTIONS/subscription_id/"},
+			wantDiagnostics: []string{"role_assignment_missing"}, wantCritical: []bool{true},
+		},
+		{
+			name: "cross subscription", scopes: []string{"/subscriptions/other-subscription"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name:   "cross subscription with environment permission",
+			scopes: []string{"/subscriptions/other-subscription"}, permission: rolePermissionGranted,
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name: "resource group", scopes: []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name:       "resource group with environment permission",
+			scopes:     []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"},
+			permission: rolePermissionGranted,
+		},
+		{
+			name:       "resource group with conditional environment permission",
+			scopes:     []string{"/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"},
+			permission: rolePermissionConditional,
+			wantDiagnostics: []string{
+				"role_assignment_conditional",
+			},
+			wantCritical: []bool{false},
+		},
+		{
+			name:            "resource",
+			scopes:          []string{"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Storage/storageAccounts/a"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name: "tenant", scopes: []string{"/"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name:            "management group",
+			scopes:          []string{"/providers/Microsoft.Management/managementGroups/group"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name: "unknown", scopes: []string{""},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name: "unresolved", scopes: []string{"[subscription().id]"},
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name:            "no snapshot",
+			wantDiagnostics: []string{"role_assignment_scope_unverified"}, wantCritical: []bool{false},
+		},
+		{
+			name:            "checked and unchecked scopes",
+			scopes:          []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			wantDiagnostics: []string{"role_assignment_missing", "role_assignment_scope_unverified"},
+			wantCritical:    []bool{true, false},
+		},
+		{
+			name:       "checked and unchecked scopes with environment permission",
+			scopes:     []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			permission: rolePermissionGranted,
+			wantDiagnostics: []string{
+				"role_assignment_scope_unverified",
+			},
+			wantCritical: []bool{false},
+		},
+		{
+			name:       "checked and unchecked scopes with conditional permission",
+			scopes:     []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID"},
+			permission: rolePermissionConditional,
+			wantDiagnostics: []string{
+				"role_assignment_conditional", "role_assignment_scope_unverified",
+			},
+			wantCritical: []bool{false, false},
 		},
 		{
 			name:   "multiple unchecked scopes",
 			scopes: []string{"/subscriptions/other-subscription", "/subscriptions/SUBSCRIPTION_ID/resourceGroups/rg"},
+			wantDiagnostics: []string{
+				"role_assignment_scope_unverified",
+			},
+			wantCritical: []bool{false},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(t.Context())
-			prepareRoleWarningMocks(t, mockContext, false)
+			prepareRoleWarningMocks(t, mockContext, tt.permission)
 			provider := newWarningBicepProvider(mockContext)
 			valCtx := &validationContext{Props: resourcesProperties{HasRoleAssignments: true}}
 			for _, scope := range tt.scopes {
@@ -418,15 +531,19 @@ func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 			}
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(), valCtx)
 			require.NoError(t, err)
-			require.Len(t, results, 1)
-			require.Equal(t, ProvisionValidationCheckWarning, results[0].Severity)
-			require.Equal(t, tt.critical, results[0].IsCritical)
-			if tt.critical {
-				require.Contains(t, results[0].Message, "Deployment will likely fail")
-			} else {
-				require.NotContains(t, results[0].Message, "Deployment will likely fail")
-				require.Contains(t, results[0].Message, "target scopes were not verified")
-				require.Contains(t, results[0].Suggestion, "at the scopes of the role assignments")
+			require.Len(t, results, len(tt.wantDiagnostics))
+			for i, diagnostic := range tt.wantDiagnostics {
+				require.Equal(t, ProvisionValidationCheckWarning, results[i].Severity)
+				require.Equal(t, diagnostic, results[i].DiagnosticID)
+				require.Equal(t, tt.wantCritical[i], results[i].IsCritical)
+				switch diagnostic {
+				case "role_assignment_missing":
+					require.Contains(t, results[i].Message, "Deployment will likely fail")
+				case "role_assignment_scope_unverified":
+					require.NotContains(t, results[i].Message, "Deployment will likely fail")
+					require.Contains(t, results[i].Message, "target scopes were not verified")
+					require.Contains(t, results[i].Suggestion, "at the scopes of the role assignments")
+				}
 			}
 		})
 	}

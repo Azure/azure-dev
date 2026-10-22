@@ -6,6 +6,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 
 	"azure.ai.content-understanding/internal/infra"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,7 +79,7 @@ func TestGeneratedProjectTree(t *testing.T) {
 
 func TestGeneratedBashHookArguments(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("POSIX azd stub; Windows hook runtime evidence remains pending")
+		t.Skip("POSIX launcher; PowerShell launcher is tested separately")
 	}
 	executable, err := exec.LookPath("bash")
 	require.NoError(t, err)
@@ -100,4 +102,62 @@ func TestGeneratedBashHookArguments(t *testing.T) {
 	actual := strings.Split(strings.TrimSuffix(string(recorded), "\n"), "\n")
 	require.Equal(t, []string{"ai", "cu", "infra", "_postprovision-v1"}, actual)
 	require.Equal(t, fixture.HookArguments, actual)
+}
+
+func TestGeneratedPowerShellHook(t *testing.T) {
+	executable, err := exec.LookPath("pwsh")
+	if runtime.GOOS != "windows" && err != nil {
+		t.Skip("PowerShell is required; this test is mandatory on Windows CI")
+	}
+	require.NoError(t, err)
+	for _, row := range []struct {
+		name    string
+		exit    int
+		missing bool
+	}{
+		{name: "success"},
+		{name: "failure", exit: 37},
+		{name: "missing azd", exit: 1, missing: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			project, fixture := materializeContractProject(t)
+			bin := filepath.Join(t.TempDir(), "fake host with spaces")
+			require.NoError(t, os.Mkdir(bin, 0o700))
+			log := filepath.Join(t.TempDir(), "arguments.txt")
+			if !row.missing {
+				name := "azd"
+				stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CU_TEST_LOG\"\nexit \"$CU_TEST_EXIT\"\n"
+				if runtime.GOOS == "windows" {
+					name = "azd.cmd"
+					stub = "@echo off\r\n@echo %*> \"%CU_TEST_LOG%\"\r\n@exit /b %CU_TEST_EXIT%\r\n"
+				}
+				// #nosec G306 -- Private executable test host.
+				require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte(stub), 0o700))
+			}
+			command := exec.CommandContext(t.Context(), executable, // #nosec G204 -- Test shell.
+				"-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+				"-File", "hooks/postprovision.ps1")
+			command.Dir = project
+			command.Env = append(os.Environ(), "PATH="+bin, "CU_TEST_LOG="+log,
+				fmt.Sprintf("CU_TEST_EXIT=%d", row.exit))
+			output, err := command.CombinedOutput()
+			if row.exit == 0 {
+				require.NoError(t, err, string(output))
+			} else {
+				var exit *exec.ExitError
+				require.ErrorAs(t, err, &exit, string(output))
+				assert.Equal(t, row.exit, exit.ExitCode(), string(output))
+			}
+			if row.missing {
+				assert.Contains(t, string(output), "Postprovision requires azd")
+				_, err := os.Stat(log)
+				require.ErrorIs(t, err, os.ErrNotExist)
+				return
+			}
+			require.Empty(t, output)
+			recorded, err := os.ReadFile(log) // #nosec G304 -- Private fake-host argument log.
+			require.NoError(t, err)
+			require.Equal(t, fixture.HookArguments, strings.Fields(string(recorded)))
+		})
+	}
 }

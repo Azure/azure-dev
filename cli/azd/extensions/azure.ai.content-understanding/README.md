@@ -563,6 +563,25 @@ Like [Foundry agents](../azure.ai.agents/) and
   Python supplies feature/edge-case references, not a second implementation
   framework or a source-test migration quota.
 
+CU opts into offline installed-host smoke in the shared release pipeline's
+`Windows` and `Mac` jobs, after the release binary is built. The
+`ci-smoke.ps1` entry point downloads official azd 1.37.0, verifies its pinned
+archive SHA-256, and runs `TestInstalledHostOffline` against that existing binary.
+The test uses temporary host configuration, removes inherited Azure/CU settings,
+and blocks remote HTTP(S) through an unavailable proxy. It checks local-registry
+install/list, help, exact version JSON, strict offline schema validation from a
+path containing spaces and Unicode, invalid-input failure, and uninstall/source
+cleanup. It does not sign in, deploy, analyze documents, or change CU defaults.
+Other extensions do not opt in, and Linux/ARM cross-build jobs do not repeat this
+smoke. Actual platform execution remains required evidence, not a claim made by
+adding the CI step.
+
+The generated-project suite also executes the PowerShell launcher, checking
+arguments, success/failure exit codes, missing azd, and paths with spaces.
+PowerShell is required on Windows; elsewhere this test runs when `pwsh` is
+available. This launcher test uses a fake host and does not prove live
+postprovision model setup or configuration.
+
 CU declares only custom-command and metadata capabilities. Agents/projects
 service-target, provisioning, lifecycle and MCP capabilities are not required
 for this command-only extension. Generated CU project hooks invoke normal azd
@@ -584,6 +603,9 @@ cd ../..
 
 EXTENSION_ID=azure.ai.content-understanding \
 EXTENSION_VERSION=0.0.1 EXTENSION_PLATFORM=linux/amd64 bash ./build.sh
+
+# Offline installed-host smoke on Windows/macOS, using an existing release binary:
+pwsh ./ci-smoke.ps1 -BinaryPath ./azure-ai-content-understanding-windows-amd64.exe -Version 0.0.1
 
 # CI unit-test entry point, where PowerShell is available:
 pwsh ./ci-test.ps1

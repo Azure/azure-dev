@@ -8,6 +8,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: InstalledHostSmokeScript
+    type: string
+    default: ''
   - name: PublishToRegistry
     type: string
     default: stable
@@ -22,6 +25,7 @@ stages:
       AzdExtensionId: ${{ parameters.AzdExtensionId }}
       AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
       SkipTests: ${{ parameters.SkipTests }}
+      InstalledHostSmokeScript: ${{ parameters.InstalledHostSmokeScript }}
       PublishToRegistry: ${{ parameters.PublishToRegistry }}
       BuildMatrix:
         Windows:

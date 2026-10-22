@@ -8,6 +8,9 @@ parameters:
   - name: SkipTests
     type: boolean
     default: false
+  - name: InstalledHostSmokeScript
+    type: string
+    default: ''
   - name: PublishToRegistry
     type: string
     default: stable
@@ -90,6 +93,7 @@ stages:
               Variables: ${{ build.value.Variables }}
               AzdExtensionDirectory: ${{ parameters.AzdExtensionDirectory }}
               SkipTests: ${{ parameters.SkipTests }}
+              InstalledHostSmokeScript: ${{ parameters.InstalledHostSmokeScript }}
               PublishToRegistry: ${{ parameters.PublishToRegistry }}
 
       - ${{ each build in parameters.CrossBuildMatrix }}:

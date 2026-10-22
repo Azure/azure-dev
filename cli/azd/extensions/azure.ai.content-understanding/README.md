@@ -781,9 +781,10 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 138
+approval. Approved rows require an explicit review reference. Currently 344
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project/core-binding evidence, 659 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project/core-binding/input/output-planning/schema/analysis evidence,
+453 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1152,6 +1153,139 @@ surface/service-error/host seams remain unapproved. Both live-only copy
 scenarios stay pending; no real copy, cross-resource authorization, auth/RBAC
 or installed-host equivalence is established.
 
+The complete discovery/redaction portion of the source input-planning suite
+adds 58 exact case mappings from 29 original test functions.
+`testdata/parity/input_discovery.json` retains complete call arguments,
+structured/scalar results and types, typed errors/category/message/hint/status/
+details/context, five code hashes, and exact pre-call file contents/directories/
+symbolic and hard links. Every original Python assertion runs during capture;
+source discovery must leave its fixture tree unchanged. Only the verified
+pytest temporary root is normalized.
+
+`TestInputDiscoveryParity` reconstructs the complete tree and runs real native
+`analysis.Discover`/`RedactURL` in an isolated working directory without any
+network or service client. Compare full selected-input order, canonical paths,
+unchanged raw URLs, redacted display references, relative names and complete
+native errors. Read and close actual native inputs to probe sizes, byte totals
+and extension counts, then compare the entire unchanged fixture tree including
+link identity. These statistics are explicit reader-derived probes, not native
+planner fields. Source mode/origin/source-root/skipped records and Python
+result identity remain visible in source observations but are not native API
+fields; safe error/malformed-URL redaction differences remain unapproved.
+Each case has a unique checked Go subtest reference. Digest/path drift,
+unknown case references and nonexistent output-format variants are rejected;
+review approval remains separate from source/control integrity.
+
+This asset contains public source synthetic SAS/user-info/error controls, not
+service recordings or deployable configuration. Never send its URLs anywhere.
+`TestInputDiscoveryControlsAreNotRecordings` verifies the unchanged recording
+hygiene scanner rejects the asset as a cassette and it is absent from imported
+recordings. No hygiene matcher/import is relaxed. Output planning is covered
+separately below; Windows-specific behavior/symlink privileges, installed host
+and live execution remain separate evidence gates.
+
+`testdata/parity/output_planning.json` adds 83 exact output-planning case
+mappings across 16 complete source functions and 97 original calls. Capture
+every original assertion, full typed input plans/arguments, execution plans/
+types/errors and five source hashes. Retain each pre-call tree, including
+test-authored existing result contents between repeated calls; normalize only
+the verified temporary root and assert source planning creates no files.
+
+`TestOutputPlanningParity` converts captured source input plans at the typed
+output-planner boundary. Local files use real discovery/readers with checked
+source-root-relative paths and sizes; remote inputs use real discovery and
+retain their complete URLs. This does not replay original selection flags or
+claim native mode/origin/skipped/statistics identity. Run real native
+`PlanOutputs` against every exact pre-call tree and compare complete output/
+input/path/exists/skipped/policy/format/report projections and full errors.
+Check actual UTF-8 byte lengths in over-budget cases. Compare all 43 successful
+native-only full `Preview` probes separately, without claiming Python dry-run
+or CLI-output equivalence. All trees remain unchanged.
+
+An explicit behavior difference is preserved: Python plans existing outputs
+under error policy using flags; native immediately raises `result_exists`.
+Keep all three such native failures and complete original source success
+plans, without relaxing production safety. Diagnostic/reference/type/preview
+differences remain unapproved. The unchanged cassette hygiene scanner rejects
+this public synthetic URL/file-content control asset as a recording.
+
+The initial output batch left six hash/injection/platform cases explicitly
+deferred. Its immutable asset retains that historical record; five now have
+separate evidence below, not inferred equivalence or an N/A disposition.
+
+`testdata/parity/local_output_hashes.json` retains five original local-hash
+cases/seven calls with every assertion, full typed observations/errors,
+original hashed names/lengths, true reference hashes versus observed forced
+digests, exact trees and five source hashes. Scoped deterministic capture
+roots keep original root-dependent values reproducible without persisting
+private absolute roots. Capture/file hashing stays bound to the original
+SHA function even while Python globally overrides it.
+
+`TestLocalOutputHashParity` uses real native SHA with explicit reference/root
+bindings and named expected-path templates. Adapt only eight declared
+exhaustion-neighbor paths/relative names, never arbitrary file contents or
+source observations. Verify both fully reserved cases fail, complete success
+plans/errors/native-only previews match, reordered reference/path maps remain
+identical in the same native root, and every tree/source observation remains
+unchanged. Sixteen additional synthetic native-only probes check reservations
+0 through 7 and exact fallback lengths 8, 16, 24, 32, 40, 48, 56 and 64 hex
+digits before exhaustion.
+
+Python's injected-digest names use 8/16 digits; the native replacement uses
+real SHA-256 with 8/8 digits. This is an explicit unapproved replacement, not
+proof of a forced full native SHA collision. No production hook/algorithm,
+source assertion or previous fixture/review state is changed.
+The input-planning module now has **146/147 cases mapped**; only its
+Windows-only case-insensitive collision case remains pending. All planning
+batches, previous cassettes, live/installed-host/platform evidence and reviewer
+approvals remain distinct.
+
+`testdata/parity/schema_validation.json` captures all 31 original structural
+validator cases and 32 complete call/constant observations, including exact
+arguments, ordered findings, result/tuple types, allowed values and six pinned
+source/spec hashes. Original assertions run unchanged; input guards detect
+mutation. `TestSchemaValidationParity` replays original JSON/text through real
+`schema.Validate` with service-spec validation disabled, honors explicit source
+API versions, and separately probes preview behavior for unspecified versions.
+Compare complete native safe diagnostics/order and actual diagnostic paths.
+Both validators reject empty content categories; no production fix is needed.
+
+Safe messages, sorted field traversal and tuple/helper identity differences
+remain unapproved. The pinned-version helper uses real `PrepareDefinition`,
+checking the full normalized body and explicitly projecting empty native
+version to source null. Ten native-only type probes exercise nine accepted
+types and invalid `datetime`; they do not invent an exported enum or add source
+cases. The source `$ref` rejection is a pinned CLI structural policy, not a
+claim about current service support. These public controls are not recordings,
+live validation, command/host equivalence or reviewer approval.
+
+`testdata/parity/core_analysis.json` captures all 29 original shared-core
+analysis cases and 42 calls, including full pre/post arguments and job
+mutations, results/types/typed errors, fake-client requests, custom-run and
+callback outcomes, unchanged file/link trees and seven source hashes.
+Only verified temporary roots and concurrent event ordering outside the
+source contract are normalized; complete values and multiplicity remain
+visible, not a claim about source completion order.
+
+`TestCoreAnalysisParity` uses real discovery, output planning and execution.
+Compare complete plans, all records, full raw envelopes, usage fallback,
+safe errors, exact native JSON files and unchanged inputs. Thirty-nine
+source-derived contract-client calls exercise async/inline, binary/URL,
+usage, bounded concurrency and per-job failure isolation. First-wave
+barriers measure the native worker bound, and actual file readers must close.
+These are contract fakes, not SDK transport or service recording evidence.
+
+Native combines planning/collision handling and canonicalizes first-kept
+references; it rejects missing files instead of Python's realpath fallback.
+Source helper objects become full native envelopes; custom source runners
+use explicit native-only files and a `sourceRunnerResult` wrapper, while
+callback observations remain source-only rather than an invented native API.
+Native-only batch result files retain every payload, with declared native
+JSON escaping/formatting. Preserve all these replacements/differences as
+unapproved. Public synthetic SAS controls remain rejected as recordings.
+No production behavior, prior assets/reviews, live authorization or
+host/platform/performance gate is changed.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1159,7 +1293,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate|CoreAnalyzerTest|CoreValidate|CoreCopy)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate|CoreAnalyzerTest|CoreValidate|CoreCopy|InputDiscovery|OutputPlanning|LocalOutputHash|SchemaValidationParity|CoreAnalysis)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

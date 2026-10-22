@@ -13,6 +13,11 @@ cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_create_bi
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_test_binding.json text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_validate_binding.json text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_copy_binding.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/input_discovery.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/output_planning.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/local_output_hashes.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/schema_validation.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_analysis.json text eol=lf
 cli/azd/**/*.ts text eol=lf
 *.txt text eol=lf
 *.snap text eol=lf

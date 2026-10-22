@@ -118,6 +118,26 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"core_copy_binding"`
+	InputDiscovery struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"input_discovery"`
+	OutputPlanning struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"output_planning"`
+	LocalOutputHashes struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"local_output_hashes"`
+	SchemaValidation struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"schema_validation"`
+	CoreAnalysis struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_analysis"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -332,6 +352,56 @@ func validateParityInventory(inventory parityInventory) error {
 	if sha256Text(copying) != inventory.CoreCopyBinding.SHA256 {
 		return fmt.Errorf("core copy binding oracle digest mismatch")
 	}
+	if inventory.InputDiscovery.File != "testdata/parity/input_discovery.json" {
+		return fmt.Errorf("invalid input discovery oracle path")
+	}
+	discovery, err := os.ReadFile(filepath.Join("../..", inventory.InputDiscovery.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(discovery) != inventory.InputDiscovery.SHA256 {
+		return fmt.Errorf("input discovery oracle digest mismatch")
+	}
+	if inventory.OutputPlanning.File != "testdata/parity/output_planning.json" {
+		return fmt.Errorf("invalid output planning oracle path")
+	}
+	planning, err := os.ReadFile(filepath.Join("../..", inventory.OutputPlanning.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(planning) != inventory.OutputPlanning.SHA256 {
+		return fmt.Errorf("output planning oracle digest mismatch")
+	}
+	if inventory.LocalOutputHashes.File != "testdata/parity/local_output_hashes.json" {
+		return fmt.Errorf("invalid local output hash oracle path")
+	}
+	localHashes, err := os.ReadFile(filepath.Join("../..", inventory.LocalOutputHashes.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(localHashes) != inventory.LocalOutputHashes.SHA256 {
+		return fmt.Errorf("local output hash oracle digest mismatch")
+	}
+	if inventory.SchemaValidation.File != "testdata/parity/schema_validation.json" {
+		return fmt.Errorf("invalid schema validation oracle path")
+	}
+	schemaValidation, err := os.ReadFile(filepath.Join("../..", inventory.SchemaValidation.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(schemaValidation) != inventory.SchemaValidation.SHA256 {
+		return fmt.Errorf("schema validation oracle digest mismatch")
+	}
+	if inventory.CoreAnalysis.File != "testdata/parity/core_analysis.json" {
+		return fmt.Errorf("invalid core analysis oracle path")
+	}
+	coreAnalysis, err := os.ReadFile(filepath.Join("../..", inventory.CoreAnalysis.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(coreAnalysis) != inventory.CoreAnalysis.SHA256 {
+		return fmt.Errorf("core analysis oracle digest mismatch")
+	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
 	}
@@ -405,6 +475,31 @@ func validateGoTestReference(reference string, inventory parityInventory) error 
 		switch {
 		case file == "internal/cmd/core_show_parity_test.go" && function == "TestCoreShowBindingParity":
 			exists = !hasFormat && slices.Contains(coreShowNames, scenario)
+		case file == "internal/cmd/input_discovery_parity_test.go" && function == "TestInputDiscoveryParity":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Cases, func(row parityCase) bool {
+				return strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") &&
+					scenario == inputPlanningSubtest(row.Source)
+			})
+		case file == "internal/cmd/output_planning_parity_test.go" && function == "TestOutputPlanningParity":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Cases, func(row parityCase) bool {
+				return strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") &&
+					scenario == inputPlanningSubtest(row.Source)
+			})
+		case file == "internal/cmd/local_output_hash_parity_test.go" && function == "TestLocalOutputHashParity":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Cases, func(row parityCase) bool {
+				return strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") &&
+					scenario == inputPlanningSubtest(row.Source)
+			})
+		case file == "internal/cmd/schema_validation_parity_test.go" && function == "TestSchemaValidationParity":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Cases, func(row parityCase) bool {
+				return strings.HasPrefix(row.Source, "packages/core/tests/test_schema_validation.py::") &&
+					scenario == sourceParitySubtest(row.Source)
+			})
+		case file == "internal/cmd/core_analysis_parity_test.go" && function == "TestCoreAnalysisParity":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Cases, func(row parityCase) bool {
+				return strings.HasPrefix(row.Source, "packages/core/tests/test_analysis.py::") &&
+					scenario == sourceParitySubtest(row.Source)
+			})
 		case file == "internal/cmd/capability_manifest_test.go" && function == "TestSourceCapabilityContracts":
 			for _, capability := range inventory.Capabilities {
 				exists = exists || !hasFormat && scenario == fmt.Sprintf("row-%d", capability.ID)
@@ -554,6 +649,81 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		}},
 		{"core copy binding digest", func(i *parityInventory) { i.CoreCopyBinding.SHA256 = strings.Repeat("0", 64) }},
 		{"core copy binding path", func(i *parityInventory) { i.CoreCopyBinding.File = "../core_copy_binding.json" }},
+		{"input discovery digest", func(i *parityInventory) { i.InputDiscovery.SHA256 = strings.Repeat("0", 64) }},
+		{"input discovery path", func(i *parityInventory) { i.InputDiscovery.File = "../input_discovery.json" }},
+		{"output planning digest", func(i *parityInventory) { i.OutputPlanning.SHA256 = strings.Repeat("0", 64) }},
+		{"output planning path", func(i *parityInventory) { i.OutputPlanning.File = "../output_planning.json" }},
+		{"local output hash digest", func(i *parityInventory) { i.LocalOutputHashes.SHA256 = strings.Repeat("0", 64) }},
+		{"local output hash path", func(i *parityInventory) { i.LocalOutputHashes.File = "../local_output_hashes.json" }},
+		{"schema validation digest", func(i *parityInventory) { i.SchemaValidation.SHA256 = strings.Repeat("0", 64) }},
+		{"schema validation path", func(i *parityInventory) { i.SchemaValidation.File = "../schema_validation.json" }},
+		{"core analysis digest", func(i *parityInventory) { i.CoreAnalysis.SHA256 = strings.Repeat("0", 64) }},
+		{"core analysis path", func(i *parityInventory) { i.CoreAnalysis.File = "../core_analysis.json" }},
+		{"core analysis subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			i.Cases[0].GoTests = []string{coreAnalysisGoTest + "/not-a-source-case"}
+		}},
+		{"core analysis format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			for _, row := range i.Cases {
+				if strings.HasPrefix(row.Source, "packages/core/tests/test_analysis.py::") {
+					i.Cases[0].GoTests = []string{coreAnalysisGoTest + "/" + sourceParitySubtest(row.Source) + "/json"}
+					break
+				}
+			}
+		}},
+		{"schema validation subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			i.Cases[0].GoTests = []string{schemaValidationGoTest + "/not-a-source-case"}
+		}},
+		{"schema validation format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			for _, row := range i.Cases {
+				if strings.HasPrefix(row.Source, "packages/core/tests/test_schema_validation.py::") {
+					i.Cases[0].GoTests = []string{schemaValidationGoTest + "/" + sourceParitySubtest(row.Source) + "/json"}
+					break
+				}
+			}
+		}},
+		{"local output hash subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			i.Cases[0].GoTests = []string{localHashGoTest + "/not-a-source-case"}
+		}},
+		{"local output hash format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			for _, row := range i.Cases {
+				if strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") {
+					i.Cases[0].GoTests = []string{localHashGoTest + "/" + inputPlanningSubtest(row.Source) + "/json"}
+					break
+				}
+			}
+		}},
+		{"output planning subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			i.Cases[0].GoTests = []string{outputPlanningGoTest + "/not-a-source-case"}
+		}},
+		{"output planning output format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			for _, row := range i.Cases {
+				if strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") {
+					i.Cases[0].GoTests = []string{outputPlanningGoTest + "/" + inputPlanningSubtest(row.Source) + "/json"}
+					break
+				}
+			}
+		}},
+		{"input discovery subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			i.Cases[0].GoTests = []string{discoveryGoTest + "/not-a-source-case"}
+		}},
+		{"input discovery output format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "control"
+			for _, row := range i.Cases {
+				if strings.HasPrefix(row.Source, "packages/core/tests/test_input_planning.py::") {
+					i.Cases[0].GoTests = []string{discoveryGoTest + "/" + inputPlanningSubtest(row.Source) + "/json"}
+					break
+				}
+			}
+		}},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}

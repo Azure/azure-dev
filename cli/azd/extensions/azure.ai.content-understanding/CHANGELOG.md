@@ -63,6 +63,62 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map all 29 source shared-core analysis cases/42 original calls with full
+  pre/post arguments/job mutations/results/types/typed errors/client requests/
+  runner/callback outcomes/unchanged trees and seven source hashes.
+  Normalize only verified roots and unordered concurrent event observations.
+  Real native discovery/planning/execution verifies full plans/records/raw
+  payloads/usage/errors/owned JSON files and closed readers across 39
+  source-derived contract-fake calls; barriers measure native worker bounds.
+  Preserve combined planning, canonical references, missing-file rejection,
+  helper/runner/callback/persistence/format replacements as unapproved.
+  Synthetic SAS controls stay rejected as recordings; no SDK/service/live/
+  host/platform/approval equivalence or production change.
+  Totals: 344 evidenced, 453 pending; previous assets/reviews are unchanged.
+- Map all 31 source structural schema-validation cases with 32 full original
+  observations/assertions, ordered findings/types/enums and six source/spec
+  hashes. Replay real native validation with spec checks disabled, explicit
+  source versions and separately labeled preview/type probes; compare full
+  safe diagnostics/order/paths and unchanged inputs. Both validators reject
+  empty content categories. Preserve safe-message/field-order/tuple/helper
+  differences and real PrepareDefinition replacement as unapproved, without
+  changing production or claiming service `$ref`/live/host equivalence.
+  Totals: 315 evidenced, 482 pending; all reviewer and runtime gates remain open.
+- Map the five remaining local-hash cases/seven source calls, retaining all
+  original assertions/full typed observations/hashed names/lengths/trees/five
+  hashes and true versus forced digests. Bind capture hashing before the
+  Python global hash override. Use explicit native root/SHA templates and only
+  eight declared neighbor-path adaptations; compare complete plans/errors/
+  native-only previews, same-root reordered mappings and unchanged source/
+  filesystem observations. Sixteen additional native-only probes verify all
+  8..64-hex-digit fallback lengths; full exhaustion fails. Preserve Python
+  forced 8/16 versus native real-SHA 8/8 names as an unapproved replacement,
+  without production hooks or a claimed forced native SHA collision.
+  Totals: 284 evidenced, 513 pending; input planning is 146/147 mapped, with
+  its Windows-only case and all live/host/platform/review gates still open.
+- Map 83 exact output-planning cases/16 complete functions with 97 original
+  source calls/assertions/full typed plans/errors/five hashes and exact
+  pre-call trees, including test-authored existing-result contents. Replay
+  real native PlanOutputs through an explicit typed-input adapter using actual
+  discovery/readers/checked relative paths; compare full plans/errors and
+  43 native-only full Preview probes without file mutations. Measure actual
+  UTF-8 filename budgets. Preserve three source existing-error-policy plans
+  versus immediate native result_exists errors and unapproved safe diagnostic/
+  reference/type/preview differences. Synthetic controls stay outside cassettes
+  and remain rejected by the unchanged hygiene scanner. Six hash/injection/
+  Windows cases remain deferred. Totals: 279 evidenced, 518 pending; previous
+  assets/review states and all live/host/platform gates are unchanged.
+- Map all 58 discovery/redaction cases from 29 pinned input-planning functions
+  to real native discovery/redaction with every original source assertion,
+  complete source calls/results/errors/types, five hashes and exact fixture
+  contents/directories/symbolic/hard links. Compare full input ordering/paths/
+  raw URLs/redacted references, complete native errors and reader-derived
+  size/byte/extension probes; preserve source/native fixture trees.
+  Keep source-only planner metadata and safe diagnostic/redaction differences
+  explicit and unapproved. Public synthetic SAS/user-info controls stay outside
+  recordings and are rejected by the unchanged cassette hygiene scanner.
+  Totals: 196 evidenced, 601 pending; 89 output-planning cases and all
+  approval/live/host/platform gates remain separate.
 - Map one exact analyzer-copy binding parameter to two complete source
   observations, four binding hashes and a copy-operation semantic reference.
   Clarify dev/prod are analyzer IDs, not profiles, and preserve them across 18

@@ -1,0 +1,2823 @@
+{
+  "schema_version": 1,
+  "role": "public-source-test-controls-not-service-recordings",
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "python": "3.14.4",
+    "platform": "Linux",
+    "files": {
+      "packages/core/tests/test_input_planning.py": "1965941b79e4cd8a15b2cbf8bc2cf247792040186679691f44657ea3dbaf28f6",
+      "packages/core/src/cu_cli_core/input_planning.py": "238a8d743385fbb20b1b336ae7aa2b1f92d16669b4a64393b983f866978e1af8",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/errors.py": "c0309966086ca146ab738ee4d9daef6d36b161001451dcfbb1cfd67710b518c4",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    },
+    "functions": [
+      "test_positional_files_preserve_order_and_measure_content",
+      "test_https_url_is_preserved_without_local_file_access",
+      "test_sas_url_preserves_query_parameters",
+      "test_named_urls_preserve_selection_order",
+      "test_named_url_requires_an_absolute_https_url",
+      "test_duplicate_named_urls_are_rejected_without_echoing_query",
+      "test_redact_input_reference_hides_secrets_from_malformed_urls",
+      "test_invalid_url_port_is_rejected_without_echoing_query",
+      "test_existing_https_colon_filename_remains_a_local_input",
+      "test_windows_drive_spelling_is_not_treated_as_url",
+      "test_unsupported_url_has_actionable_error",
+      "test_named_local_input_rejects_https_url_with_named_hint",
+      "test_url_over_service_length_limit_is_rejected",
+      "test_named_files_require_literal_files",
+      "test_positional_directory_is_nonrecursive_by_default",
+      "test_recursive_source_is_sorted_by_source_relative_path",
+      "test_pattern_filters_every_named_source",
+      "test_selection_modes_are_rejected_before_discovery",
+      "test_positional_wildcard_has_actionable_error",
+      "test_direct_duplicate_arguments_are_rejected",
+      "test_relative_absolute_and_symlink_overlap_is_silently_deduplicated",
+      "test_hardlink_overlap_from_sources_is_silently_deduplicated",
+      "test_recursive_is_rejected_for_named_files",
+      "test_unknown_extension_is_selected_without_local_rejection",
+      "test_directory_discovery_excludes_hidden_and_generated_files",
+      "test_recursive_discovery_excludes_hidden_paths_and_generated_files",
+      "test_explicit_files_allow_hidden_and_generated_files",
+      "test_empty_discovery_is_an_error",
+      "test_hidden_only_discovery_names_skipped_file"
+    ],
+    "case_count": 58
+  },
+  "boundaries": [
+    "Execute every original assertion in the complete 29-function/58-case discovery and redaction portion of the pinned input-planning suite. Capture full call arguments, dataclass/scalar result, result type, typed error/message/hint and pre-call filesystem contents/link identity. Verify source discovery leaves the complete fixture tree unchanged. Normalize only the verified pytest temporary root to $TMP; native replays in an isolated private working directory.",
+    "Native calls real analysis.Discover/RedactURL offline, preserving full input order/path/raw URL/redacted reference/relative path. Derive size/extension/byte totals through actual native input readers, not fabricated planner fields. Rebuild exact UTF-8 file bytes, directories, symbolic and hard links; compare full selected inputs and complete typed native errors. Raw URL preservation and redacted display references are distinct assertions. This is not an SDK/network replay.",
+    "Source mode/origin/source-root/skipped records and Python typed-result identity remain preserved in source observations but are not exposed by native Discover. Native statistics are explicit reader-derived probes, not matching planner result types. Keep exact safe native error and malformed-URL redaction differences; do not weaken production behavior to reproduce source diagnostics. All 58 mappings remain unapproved differences.",
+    "This control asset intentionally contains public source synthetic SAS/user-info/error markers. It is not a service cassette or deployable configuration; never send its URLs anywhere. No recording hygiene matcher or cassette import is relaxed. All source files/hashes and complete control data are reviewed locally. Platform-specific source cases and symlink privileges do not establish Windows runtime/installed-host/live evidence. Output planning's 89 cases remain separate; existing fixtures/reviews/live gates stay unchanged."
+  ],
+  "cases": [
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[files]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/input.pdf",
+                "$TMP/input.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "input.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--file was provided more than once for: $TMP/input.pdf",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "duplicate_input",
+            "message": "The same direct input was specified more than once.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "$TMP/input.pdf",
+                "$TMP/input.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "input.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "positional input was provided more than once for: $TMP/input.pdf",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "duplicate_input",
+            "message": "The same direct input was specified more than once.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[sources]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source",
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--source was provided more than once for: $TMP/source",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "duplicate_input",
+            "message": "The same direct input was specified more than once.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_directory_discovery_excludes_hidden_and_generated_files",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/.hidden.pdf",
+              "kind": "file",
+              "content": ".hidden.pdf",
+              "sha256": "8e034e2761bb82590c3a1e7151ebd0738d3581a464af3294b6157589c7515f54",
+              "size": 11
+            },
+            {
+              "path": "source/report.pdf.result.json",
+              "kind": "file",
+              "content": "report.pdf.result.json",
+              "sha256": "f95760289b5b271e871cb1d1cbc553d01ec461d0f722b17f7b5ea73498e578c8",
+              "size": 22
+            },
+            {
+              "path": "source/report.pdf.result.md",
+              "kind": "file",
+              "content": "report.pdf.result.md",
+              "sha256": "46c37e54eced2c3540dedab47779972ac810ab10e6524ba4a33b368cc0aaa4ba",
+              "size": 20
+            },
+            {
+              "path": "source/visible.brandnew",
+              "kind": "file",
+              "content": "visible.brandnew",
+              "sha256": "a6de7e63457359e595d30d8a3f4b5cbda93d5d6b03c2fcd18658292e80401f61",
+              "size": 16
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/visible.brandnew",
+                "source_root": "$TMP/source",
+                "relative_path": "visible.brandnew",
+                "origin": "named-source",
+                "size_bytes": 16,
+                "url": null
+              }
+            ],
+            "mode": "named-sources",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 16,
+            "extension_counts": {
+              ".brandnew": 1
+            },
+            "skipped": [
+              {
+                "path": "$TMP/source/.hidden.pdf",
+                "reason": "hidden file skipped"
+              }
+            ]
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/visible.brandnew",
+                "url": "",
+                "reference": "$TMP/source/visible.brandnew",
+                "relative": "visible.brandnew",
+                "size_bytes": 16
+              }
+            ],
+            "total_bytes": 16,
+            "extension_counts": {
+              ".brandnew": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_duplicate_named_urls_are_rejected_without_echoing_query",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test/document.pdf?sig=duplicate-secret",
+                "https://example.test/document.pdf?sig=duplicate-secret"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--url was provided more than once for: https://example.test/document.pdf?REDACTED",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "duplicate_input",
+            "message": "The same direct input was specified more than once.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_empty_discovery_is_an_error",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "input selection did not find any files.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "empty_inputs",
+            "message": "No input files matched the selection.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_existing_https_colon_filename_remains_a_local_input",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "$TMP/https:invoice.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "https:invoice.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/https:invoice.pdf",
+                "source_root": "$TMP",
+                "relative_path": "https:invoice.pdf",
+                "origin": "positional-file",
+                "size_bytes": 5,
+                "url": null
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/https:invoice.pdf",
+                "url": "",
+                "reference": "$TMP/https:invoice.pdf",
+                "relative": "https:invoice.pdf",
+                "size_bytes": 5
+              }
+            ],
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[.hidden.pdf]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/.hidden.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": ".hidden.pdf",
+              "kind": "file",
+              "content": ".hidden.pdf",
+              "sha256": "8e034e2761bb82590c3a1e7151ebd0738d3581a464af3294b6157589c7515f54",
+              "size": 11
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/.hidden.pdf",
+                "source_root": "$TMP",
+                "relative_path": ".hidden.pdf",
+                "origin": "named-file",
+                "size_bytes": 11,
+                "url": null
+              }
+            ],
+            "mode": "named-files",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 11,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/.hidden.pdf",
+                "url": "",
+                "reference": "$TMP/.hidden.pdf",
+                "relative": ".hidden.pdf",
+                "size_bytes": 11
+              }
+            ],
+            "total_bytes": 11,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[report.pdf.result.json]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/report.pdf.result.json"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "report.pdf.result.json",
+              "kind": "file",
+              "content": "report.pdf.result.json",
+              "sha256": "f95760289b5b271e871cb1d1cbc553d01ec461d0f722b17f7b5ea73498e578c8",
+              "size": 22
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/report.pdf.result.json",
+                "source_root": "$TMP",
+                "relative_path": "report.pdf.result.json",
+                "origin": "named-file",
+                "size_bytes": 22,
+                "url": null
+              }
+            ],
+            "mode": "named-files",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 22,
+            "extension_counts": {
+              ".json": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/report.pdf.result.json",
+                "url": "",
+                "reference": "$TMP/report.pdf.result.json",
+                "relative": "report.pdf.result.json",
+                "size_bytes": 22
+              }
+            ],
+            "total_bytes": 22,
+            "extension_counts": {
+              ".json": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[report.pdf.result.md]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/report.pdf.result.md"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "report.pdf.result.md",
+              "kind": "file",
+              "content": "report.pdf.result.md",
+              "sha256": "46c37e54eced2c3540dedab47779972ac810ab10e6524ba4a33b368cc0aaa4ba",
+              "size": 20
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/report.pdf.result.md",
+                "source_root": "$TMP",
+                "relative_path": "report.pdf.result.md",
+                "origin": "named-file",
+                "size_bytes": 20,
+                "url": null
+              }
+            ],
+            "mode": "named-files",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 20,
+            "extension_counts": {
+              ".md": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/report.pdf.result.md",
+                "url": "",
+                "reference": "$TMP/report.pdf.result.md",
+                "relative": "report.pdf.result.md",
+                "size_bytes": 20
+              }
+            ],
+            "total_bytes": 20,
+            "extension_counts": {
+              ".md": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_hardlink_overlap_from_sources_is_silently_deduplicated",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/first",
+                "$TMP/second"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "first",
+              "kind": "directory"
+            },
+            {
+              "path": "first/input.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            },
+            {
+              "path": "second",
+              "kind": "directory"
+            },
+            {
+              "path": "second/same.pdf",
+              "kind": "hardlink",
+              "target": "first/input.pdf"
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/first/input.pdf",
+                "source_root": "$TMP/first",
+                "relative_path": "input.pdf",
+                "origin": "named-source",
+                "size_bytes": 5,
+                "url": null
+              }
+            ],
+            "mode": "named-sources",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/first/input.pdf",
+                "url": "",
+                "reference": "$TMP/first/input.pdf",
+                "relative": "input.pdf",
+                "size_bytes": 5
+              }
+            ],
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_hidden_only_discovery_names_skipped_file",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/.DS_Store",
+              "kind": "file",
+              "content": "metadata",
+              "sha256": "45447b7afbd5e544f7d0f1df0fccd26014d9850130abd3f020b89ff96b82079f",
+              "size": 8
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "input selection did not find any analyzable files. Skipped during discovery: $TMP/source/.DS_Store (hidden file skipped).",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "empty_inputs",
+            "message": "No input files matched the selection.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_https_url_is_preserved_without_local_file_access[positional-positional-positional-url]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "https://storage.example.test/container/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": {
+            "inputs": [
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "sample.pdf",
+                "origin": "positional-url",
+                "size_bytes": null,
+                "url": "https://storage.example.test/container/sample.pdf"
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 0,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "",
+                "url": "https://storage.example.test/container/sample.pdf",
+                "reference": "https://storage.example.test/container/sample.pdf",
+                "relative": "sample.pdf",
+                "size_bytes": null
+              }
+            ],
+            "total_bytes": 0,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_https_url_is_preserved_without_local_file_access[urls-named-urls-named-url]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://storage.example.test/container/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": {
+            "inputs": [
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "sample.pdf",
+                "origin": "named-url",
+                "size_bytes": null,
+                "url": "https://storage.example.test/container/sample.pdf"
+              }
+            ],
+            "mode": "named-urls",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 0,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "",
+                "url": "https://storage.example.test/container/sample.pdf",
+                "reference": "https://storage.example.test/container/sample.pdf",
+                "relative": "sample.pdf",
+                "size_bytes": null
+              }
+            ],
+            "total_bytes": 0,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_invalid_url_port_is_rejected_without_echoing_query[positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "https://example.test:not-a-port/input.pdf?sig=secret"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input is not a valid URL: https://example.test:not-a-port/input.pdf?REDACTED",
+            "hint": "provide an absolute HTTPS URL such as https://host/path/file.pdf.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_invalid_url_port_is_rejected_without_echoing_query[urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test:not-a-port/input.pdf?sig=secret"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url is not a valid URL: https://example.test:not-a-port/input.pdf?REDACTED",
+            "hint": "provide an absolute HTTPS URL such as https://host/path/file.pdf.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_files_require_literal_files",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--file must identify a file: $TMP/source",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_file",
+            "message": "--file must name a regular file, not a directory.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_local_input_rejects_https_url_with_named_hint[files]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "https://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--file accepts local files only.",
+            "hint": "pass an HTTPS URL with --url instead.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Use --url or a positional argument for HTTPS inputs.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_local_input_rejects_https_url_with_named_hint[sources]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "https://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--source accepts local directories only.",
+            "hint": "pass an HTTPS URL with --url instead.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Use --url or a positional argument for HTTPS inputs.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[empty]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                ""
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url must identify an absolute HTTPS URL.",
+            "hint": "use --file for local files or --source for local directories.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "empty_input",
+            "message": "Input paths and URLs must not be empty.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[local]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "./document.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url must identify an absolute HTTPS URL.",
+            "hint": "use --file for local files or --source for local directories.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[relative-url]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "example.test/document.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url must identify an absolute HTTPS URL.",
+            "hint": "use --file for local files or --source for local directories.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[windows-path]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "C:\\documents\\document.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url must identify an absolute HTTPS URL.",
+            "hint": "use --file for local files or --source for local directories.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_named_urls_preserve_selection_order",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test/video.mp4?sig=first%2Btoken",
+                "https://example.test/document.pdf?sig=second%3Dtoken"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": {
+            "inputs": [
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "video.mp4",
+                "origin": "named-url",
+                "size_bytes": null,
+                "url": "https://example.test/video.mp4?sig=first%2Btoken"
+              },
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "document.pdf",
+                "origin": "named-url",
+                "size_bytes": null,
+                "url": "https://example.test/document.pdf?sig=second%3Dtoken"
+              }
+            ],
+            "mode": "named-urls",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1,
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "",
+                "url": "https://example.test/video.mp4?sig=first%2Btoken",
+                "reference": "https://example.test/video.mp4?REDACTED",
+                "relative": "video.mp4",
+                "size_bytes": null
+              },
+              {
+                "path": "",
+                "url": "https://example.test/document.pdf?sig=second%3Dtoken",
+                "reference": "https://example.test/document.pdf?REDACTED",
+                "relative": "document.pdf",
+                "size_bytes": null
+              }
+            ],
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1,
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_pattern_filters_every_named_source",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/first",
+                "$TMP/second"
+              ],
+              "pattern": "*.pdf"
+            }
+          },
+          "filesystem": [
+            {
+              "path": "first",
+              "kind": "directory"
+            },
+            {
+              "path": "first/a.pdf",
+              "kind": "file",
+              "content": "a",
+              "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+              "size": 1
+            },
+            {
+              "path": "first/a.txt",
+              "kind": "file",
+              "content": "a",
+              "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+              "size": 1
+            },
+            {
+              "path": "second",
+              "kind": "directory"
+            },
+            {
+              "path": "second/b.pdf",
+              "kind": "file",
+              "content": "b",
+              "sha256": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+              "size": 1
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/first/a.pdf",
+                "source_root": "$TMP/first",
+                "relative_path": "a.pdf",
+                "origin": "named-source",
+                "size_bytes": 1,
+                "url": null
+              },
+              {
+                "path": "$TMP/second/b.pdf",
+                "source_root": "$TMP/second",
+                "relative_path": "b.pdf",
+                "origin": "named-source",
+                "size_bytes": 1,
+                "url": null
+              }
+            ],
+            "mode": "named-sources",
+            "recursive": false,
+            "pattern": "*.pdf",
+            "total_bytes": 2,
+            "extension_counts": {
+              ".pdf": 2
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/first/a.pdf",
+                "url": "",
+                "reference": "$TMP/first/a.pdf",
+                "relative": "a.pdf",
+                "size_bytes": 1
+              },
+              {
+                "path": "$TMP/second/b.pdf",
+                "url": "",
+                "reference": "$TMP/second/b.pdf",
+                "relative": "b.pdf",
+                "size_bytes": 1
+              }
+            ],
+            "total_bytes": 2,
+            "extension_counts": {
+              ".pdf": 2
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_positional_directory_is_nonrecursive_by_default",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "$TMP/source"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/b.pdf",
+              "kind": "file",
+              "content": "b",
+              "sha256": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+              "size": 1
+            },
+            {
+              "path": "source/nested",
+              "kind": "directory"
+            },
+            {
+              "path": "source/nested/a.pdf",
+              "kind": "file",
+              "content": "a",
+              "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+              "size": 1
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/b.pdf",
+                "source_root": "$TMP/source",
+                "relative_path": "b.pdf",
+                "origin": "positional-source",
+                "size_bytes": 1,
+                "url": null
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 1,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/b.pdf",
+                "url": "",
+                "reference": "$TMP/source/b.pdf",
+                "relative": "b.pdf",
+                "size_bytes": 1
+              }
+            ],
+            "total_bytes": 1,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_positional_files_preserve_order_and_measure_content",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "$TMP/second.xyz",
+                "$TMP/first.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "first.pdf",
+              "kind": "file",
+              "content": "1",
+              "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+              "size": 1
+            },
+            {
+              "path": "second.xyz",
+              "kind": "file",
+              "content": "22",
+              "sha256": "785f3ec7eb32f30b90cd0fcf3657d388b5ff4297f2f9716ff66e9b69c05ddd09",
+              "size": 2
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/second.xyz",
+                "source_root": "$TMP",
+                "relative_path": "second.xyz",
+                "origin": "positional-file",
+                "size_bytes": 2,
+                "url": null
+              },
+              {
+                "path": "$TMP/first.pdf",
+                "source_root": "$TMP",
+                "relative_path": "first.pdf",
+                "origin": "positional-file",
+                "size_bytes": 1,
+                "url": null
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 3,
+            "extension_counts": {
+              ".pdf": 1,
+              ".xyz": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/second.xyz",
+                "url": "",
+                "reference": "$TMP/second.xyz",
+                "relative": "second.xyz",
+                "size_bytes": 2
+              },
+              {
+                "path": "$TMP/first.pdf",
+                "url": "",
+                "reference": "$TMP/first.pdf",
+                "relative": "first.pdf",
+                "size_bytes": 1
+              }
+            ],
+            "total_bytes": 3,
+            "extension_counts": {
+              ".pdf": 1,
+              ".xyz": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_positional_wildcard_has_actionable_error",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "*.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "wildcard patterns aren't accepted as positional inputs: *.pdf",
+            "hint": "Use --source with --pattern, for example: --source . --pattern \"*.pdf\"",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "input_wildcard",
+            "message": "Use --source with --pattern instead of a wildcard input path.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_recursive_discovery_excludes_hidden_paths_and_generated_files",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source"
+              ],
+              "recursive": true
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/.hidden",
+              "kind": "directory"
+            },
+            {
+              "path": "source/.hidden/nested.pdf",
+              "kind": "file",
+              "content": "nested.pdf",
+              "sha256": "82c116e4ecbd4e41f60623286ba2765248c954ce904d294bc0f7ba0c024dd7d8",
+              "size": 10
+            },
+            {
+              "path": "source/visible",
+              "kind": "directory"
+            },
+            {
+              "path": "source/visible/.hidden.pdf",
+              "kind": "file",
+              "content": ".hidden.pdf",
+              "sha256": "8e034e2761bb82590c3a1e7151ebd0738d3581a464af3294b6157589c7515f54",
+              "size": 11
+            },
+            {
+              "path": "source/visible/nested.pdf",
+              "kind": "file",
+              "content": "nested.pdf",
+              "sha256": "82c116e4ecbd4e41f60623286ba2765248c954ce904d294bc0f7ba0c024dd7d8",
+              "size": 10
+            },
+            {
+              "path": "source/visible/nested.pdf.result.json",
+              "kind": "file",
+              "content": "nested.pdf.result.json",
+              "sha256": "7a29d2c49bb46d473de7cfda682a3fd908d2f31b35bc975c19e2e63b33302977",
+              "size": 22
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/visible/nested.pdf",
+                "source_root": "$TMP/source",
+                "relative_path": "visible/nested.pdf",
+                "origin": "named-source",
+                "size_bytes": 10,
+                "url": null
+              }
+            ],
+            "mode": "named-sources",
+            "recursive": true,
+            "pattern": null,
+            "total_bytes": 10,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": [
+              {
+                "path": "$TMP/source/visible/.hidden.pdf",
+                "reason": "hidden file skipped"
+              }
+            ]
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/visible/nested.pdf",
+                "url": "",
+                "reference": "$TMP/source/visible/nested.pdf",
+                "relative": "visible/nested.pdf",
+                "size_bytes": 10
+              }
+            ],
+            "total_bytes": 10,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_recursive_is_rejected_for_named_files",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/input.pdf"
+              ],
+              "recursive": true
+            }
+          },
+          "filesystem": [
+            {
+              "path": "input.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--recursive is valid only when input selection includes a directory.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_recursion",
+            "message": "--recursive requires at least one directory input.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_recursive_source_is_sorted_by_source_relative_path",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "$TMP/source"
+              ],
+              "recursive": true
+            }
+          },
+          "filesystem": [
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/nested",
+              "kind": "directory"
+            },
+            {
+              "path": "source/nested/a.pdf",
+              "kind": "file",
+              "content": "a",
+              "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+              "size": 1
+            },
+            {
+              "path": "source/z.pdf",
+              "kind": "file",
+              "content": "z",
+              "sha256": "594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06",
+              "size": 1
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/nested/a.pdf",
+                "source_root": "$TMP/source",
+                "relative_path": "nested/a.pdf",
+                "origin": "named-source",
+                "size_bytes": 1,
+                "url": null
+              },
+              {
+                "path": "$TMP/source/z.pdf",
+                "source_root": "$TMP/source",
+                "relative_path": "z.pdf",
+                "origin": "named-source",
+                "size_bytes": 1,
+                "url": null
+              }
+            ],
+            "mode": "named-sources",
+            "recursive": true,
+            "pattern": null,
+            "total_bytes": 2,
+            "extension_counts": {
+              ".pdf": 2
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/nested/a.pdf",
+                "url": "",
+                "reference": "$TMP/source/nested/a.pdf",
+                "relative": "nested/a.pdf",
+                "size_bytes": 1
+              },
+              {
+                "path": "$TMP/source/z.pdf",
+                "url": "",
+                "reference": "$TMP/source/z.pdf",
+                "relative": "z.pdf",
+                "size_bytes": 1
+              }
+            ],
+            "total_bytes": 2,
+            "extension_counts": {
+              ".pdf": 2
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://[invalid/container/input.pdf?sv=1&sig=secret]",
+      "calls": [
+        {
+          "operation": "redact_input_reference",
+          "input": {
+            "args": [
+              "https://[invalid/container/input.pdf?sv=1&sig=secret"
+            ],
+            "kwargs": {}
+          },
+          "filesystem": [],
+          "result": "https://[invalid/container/input.pdf?REDACTED",
+          "result_type": "builtins.str",
+          "error": null,
+          "native_result": "[invalid URL]",
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://user:password@[invalid/input.pdf?sig=secret]",
+      "calls": [
+        {
+          "operation": "redact_input_reference",
+          "input": {
+            "args": [
+              "https://user:password@[invalid/input.pdf?sig=secret"
+            ],
+            "kwargs": {}
+          },
+          "filesystem": [],
+          "result": "https://[invalid/input.pdf?REDACTED",
+          "result_type": "builtins.str",
+          "error": null,
+          "native_result": "[invalid URL]",
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://user:password@example.test/input.pdf?sig=secret]",
+      "calls": [
+        {
+          "operation": "redact_input_reference",
+          "input": {
+            "args": [
+              "https://user:password@example.test/input.pdf?sig=secret"
+            ],
+            "kwargs": {}
+          },
+          "filesystem": [],
+          "result": "https://example.test/input.pdf?REDACTED",
+          "result_type": "builtins.str",
+          "error": null,
+          "native_result": "https://example.test/input.pdf?REDACTED",
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https:/container/input.pdf?sv=1&sig=secret]",
+      "calls": [
+        {
+          "operation": "redact_input_reference",
+          "input": {
+            "args": [
+              "https:/container/input.pdf?sv=1&sig=secret"
+            ],
+            "kwargs": {}
+          },
+          "filesystem": [],
+          "result": "https:///container/input.pdf?REDACTED",
+          "result_type": "builtins.str",
+          "error": null,
+          "native_result": "https:/container/input.pdf?REDACTED",
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_relative_absolute_and_symlink_overlap_is_silently_deduplicated",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "source/input.pdf",
+                "$TMP/source/input.pdf",
+                "$TMP/alias.pdf"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "alias.pdf",
+              "kind": "symlink",
+              "target": "$TMP/source/input.pdf"
+            },
+            {
+              "path": "source",
+              "kind": "directory"
+            },
+            {
+              "path": "source/input.pdf",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/input.pdf",
+                "source_root": "$TMP/source",
+                "relative_path": "input.pdf",
+                "origin": "positional-file",
+                "size_bytes": 5,
+                "url": null
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/source/input.pdf",
+                "url": "",
+                "reference": "$TMP/source/input.pdf",
+                "relative": "input.pdf",
+                "size_bytes": 5
+              }
+            ],
+            "total_bytes": 5,
+            "extension_counts": {
+              ".pdf": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_sas_url_preserves_query_parameters[positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": {
+            "inputs": [
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "video.mp4",
+                "origin": "positional-url",
+                "size_bytes": null,
+                "url": "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D"
+              }
+            ],
+            "mode": "positional",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "",
+                "url": "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D",
+                "reference": "https://storage.example.test/container/video.mp4?REDACTED",
+                "relative": "video.mp4",
+                "size_bytes": null
+              }
+            ],
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_sas_url_preserves_query_parameters[urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": {
+            "inputs": [
+              {
+                "path": null,
+                "source_root": null,
+                "relative_path": "video.mp4",
+                "origin": "named-url",
+                "size_bytes": null,
+                "url": "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D"
+              }
+            ],
+            "mode": "named-urls",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "",
+                "url": "https://storage.example.test/container/video.mp4?sv=2026-01-01&sp=r&sig=a%2Bb%2Fc%3D",
+                "reference": "https://storage.example.test/container/video.mp4?REDACTED",
+                "relative": "video.mp4",
+                "size_bytes": null
+              }
+            ],
+            "total_bytes": 0,
+            "extension_counts": {
+              ".mp4": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs0-positional inputs cannot be combined with --file]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "a"
+              ],
+              "files": [
+                "b"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "positional inputs cannot be combined with --file.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs1-positional inputs cannot be combined with --source]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "a"
+              ],
+              "sources": [
+                "b"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "positional inputs cannot be combined with --source.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs2---file and --source]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "a"
+              ],
+              "sources": [
+                "b"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--file and --source cannot be combined.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs3---pattern is valid only]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "a"
+              ],
+              "pattern": "*.pdf"
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--pattern is valid only with --source.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_pattern",
+            "message": "A nonempty --pattern requires --source.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs4-positional inputs cannot be combined with --url]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "a"
+              ],
+              "urls": [
+                "https://example.test/b.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "positional inputs cannot be combined with --url.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs5---url cannot be combined with --file or --source]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "a"
+              ],
+              "urls": [
+                "https://example.test/b.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--url cannot be combined with --file or --source.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs6---url cannot be combined with --file or --source]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "sources": [
+                "a"
+              ],
+              "urls": [
+                "https://example.test/b.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--url cannot be combined with --file or --source.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs7---pattern is valid only]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test/a.pdf"
+              ],
+              "pattern": "*.pdf"
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--pattern is valid only with --source.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_pattern",
+            "message": "A nonempty --pattern requires --source.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs8---recursive is valid only]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test/a.pdf"
+              ],
+              "recursive": true
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "--recursive is valid only when input selection includes a directory.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_recursion",
+            "message": "--recursive requires at least one directory input.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs9-provide positional inputs]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {}
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.UsageError",
+            "category": "usage",
+            "message": "provide positional inputs, --file, --source, or --url.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_mode",
+            "message": "Select inputs using positionals, --file, --source, or --url, not a mixture.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unknown_extension_is_selected_without_local_rejection",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "files": [
+                "$TMP/input.brandnew"
+              ]
+            }
+          },
+          "filesystem": [
+            {
+              "path": "input.brandnew",
+              "kind": "file",
+              "content": "input",
+              "sha256": "c96c6d5be8d08a12e7b5cdc1b207fa6b2430974c86803d8891675e76fd992c20",
+              "size": 5
+            }
+          ],
+          "result": {
+            "inputs": [
+              {
+                "path": "$TMP/input.brandnew",
+                "source_root": "$TMP",
+                "relative_path": "input.brandnew",
+                "origin": "named-file",
+                "size_bytes": 5,
+                "url": null
+              }
+            ],
+            "mode": "named-files",
+            "recursive": false,
+            "pattern": null,
+            "total_bytes": 5,
+            "extension_counts": {
+              ".brandnew": 1
+            },
+            "skipped": []
+          },
+          "result_type": "cu_cli_core.contracts.InputPlan",
+          "error": null,
+          "native_result": {
+            "inputs": [
+              {
+                "path": "$TMP/input.brandnew",
+                "url": "",
+                "reference": "$TMP/input.brandnew",
+                "relative": "input.brandnew",
+                "size_bytes": 5
+              }
+            ],
+            "total_bytes": 5,
+            "extension_counts": {
+              ".brandnew": 1
+            }
+          },
+          "native_error": null
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[ftp://example.test/sample.pdf-unsupported URL scheme 'ftp'-positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "ftp://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input uses unsupported URL scheme 'ftp'.",
+            "hint": "Content Understanding remote inputs require an HTTPS URL.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[ftp://example.test/sample.pdf-unsupported URL scheme 'ftp'-urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "ftp://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url uses unsupported URL scheme 'ftp'.",
+            "hint": "Content Understanding remote inputs require an HTTPS URL.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[http://example.test/sample.pdf-unsupported URL scheme 'http'-positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "http://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input uses unsupported URL scheme 'http'.",
+            "hint": "Content Understanding remote inputs require an HTTPS URL.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[http://example.test/sample.pdf-unsupported URL scheme 'http'-urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "http://example.test/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url uses unsupported URL scheme 'http'.",
+            "hint": "Content Understanding remote inputs require an HTTPS URL.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[https:/sample.pdf-not a valid HTTPS URL-positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "https:/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input is not a valid HTTPS URL: https:///sample.pdf",
+            "hint": "include a host, for example https://host/path/file.pdf.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[https:/sample.pdf-not a valid HTTPS URL-urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https:/sample.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url is not a valid HTTPS URL: https:///sample.pdf",
+            "hint": "include a host, for example https://host/path/file.pdf.",
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_url_over_service_length_limit_is_rejected[positional]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "https://example.test/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input URL exceeds the 8192-character service limit.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_url_over_service_length_limit_is_rejected[urls]",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "urls": [
+                "https://example.test/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "--url URL exceeds the 8192-character service limit.",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_url",
+            "message": "Remote inputs require an absolute HTTPS URL without credentials or whitespace.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "source_case": "packages/core/tests/test_input_planning.py::test_windows_drive_spelling_is_not_treated_as_url",
+      "calls": [
+        {
+          "operation": "plan_inputs",
+          "input": {
+            "args": [],
+            "kwargs": {
+              "positional": [
+                "C://does-not-exist/input.pdf"
+              ]
+            }
+          },
+          "filesystem": [],
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.errors.ValidationError",
+            "category": "validation",
+            "message": "positional input does not exist: C:/does-not-exist/input.pdf",
+            "hint": null,
+            "status_code": null,
+            "details": [],
+            "context": {}
+          },
+          "native_result": null,
+          "native_error": {
+            "kind": "validation",
+            "code": "invalid_input_path",
+            "message": "An input path does not exist or could not be resolved.",
+            "hint": "Check analyze --help and correct the input or output options.",
+            "status_code": 0
+          }
+        }
+      ]
+    }
+  ]
+}

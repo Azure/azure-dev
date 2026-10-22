@@ -145,7 +145,7 @@ func TestRecordedScenarioManifestRejectsDrift(t *testing.T) {
 		name   string
 		change func(*parityInventory)
 	}{
-		{"snapshot digest", func(i *parityInventory) { i.ScenarioSource.SHA256 = parityCaseSnapshotSHA256 }},
+		{"snapshot digest", func(i *parityInventory) { i.ScenarioSource.SHA256 = "invalid" }},
 		{"snapshot path", func(i *parityInventory) { i.ScenarioSource.File = "../source_scenarios.yaml" }},
 		{"source path", func(i *parityInventory) { i.ScenarioSource.SourcePath += ".changed" }},
 		{"source license", func(i *parityInventory) { i.ScenarioSource.License = "" }},

@@ -1322,7 +1322,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
 			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
-	_ = cmd.Flags().MarkHidden("harness")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+

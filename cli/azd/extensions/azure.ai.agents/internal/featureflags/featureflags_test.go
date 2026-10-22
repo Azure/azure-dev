@@ -440,6 +440,135 @@ func TestEnvironmentSelection(t *testing.T) {
 func TestAbsentScopeSentinelsMatchHost(t *testing.T) {
 	require.Equal(t, azdcontext.ErrNoProject.Error(), errNoProject.Error())
 	require.Equal(t, environment.ErrDefaultEnvironmentNotFound.Error(), errDefaultEnvironmentNotFound.Error())
+	require.Equal(t, environment.ErrNotFound.Error(), errEnvironmentNotFound.Error())
+}
+
+func TestInitOptionalScopes(t *testing.T) {
+	for _, scope := range []string{"no project", "new named environment", "existing environment"} {
+		for _, source := range []string{"off", "process", "config", "service", "dotenv"} {
+			if (scope == "no project" && source == "service") ||
+				(scope != "existing environment" && source == "dotenv") {
+				continue
+			}
+			t.Run(scope+"/"+source, func(t *testing.T) {
+				t.Setenv(fixture.EnvVar, fmt.Sprint(source == "process"))
+				value := "off"
+				if source == "config" {
+					value = "on"
+				}
+				client := newMockClient(t)
+				client.expectConfig(alphaResponse(t, value, "off"), nil)
+				if scope == "no project" {
+					client.expectProject(nil, status.Error(codes.Unknown, azdcontext.ErrNoProject.Error()))
+				} else {
+					client.expectProject(&azdext.GetProjectResponse{
+						Project: projectWithServices(service("appservice", fmt.Sprint(source == "service"))),
+					}, nil)
+					if scope == "new named environment" {
+						client.expectDotenv("selected", nil, status.Error(codes.Unknown, environment.ErrNotFound.Error()))
+					} else {
+						client.expectDotenv("selected", &azdext.KeyValueListResponse{
+							KeyValues: []*azdext.KeyValue{{Key: fixture.EnvVar, Value: fmt.Sprint(source == "dotenv")}},
+						}, nil)
+					}
+				}
+				ctx := WithInitScope(WithEnvironment(t.Context(), "selected"))
+				enabled, err := isEnabled(ctx, client, fixture, Environment(ctx))
+				require.NoError(t, err)
+				require.Equal(t, source != "off", enabled)
+				require.Equal(t, "selected", Environment(ctx))
+			})
+		}
+	}
+}
+
+func TestInitScopePreservesSourceErrors(t *testing.T) {
+	detailedAbsence, err := status.New(codes.Unknown, environment.ErrNotFound.Error()).WithDetails(
+		&errdetails.ErrorInfo{Reason: "load_failed"},
+	)
+	require.NoError(t, err)
+	detailedProjectAbsence, err := status.New(codes.Unknown, azdcontext.ErrNoProject.Error()).WithDetails(
+		&errdetails.ErrorInfo{Reason: "load_failed"},
+	)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name  string
+		stage string
+		cause error
+	}{
+		{"config transport", "config", status.Error(codes.Unavailable, "connection lost")},
+		{"config permission", "config", &fs.PathError{Op: "read", Path: "config.json", Err: fs.ErrPermission}},
+		{"config canceled", "config", context.Canceled},
+		{"project permission", "project", status.Error(codes.PermissionDenied, "project denied")},
+		{"project decoding", "project", errors.New("decoding azure.yaml")},
+		{"project transport", "project", status.Error(codes.Unavailable, azdcontext.ErrNoProject.Error())},
+		{"project not found status", "project", status.Error(codes.NotFound, azdcontext.ErrNoProject.Error())},
+		{"project prefixed absence", "project", fmt.Errorf("loading: %w", azdcontext.ErrNoProject)},
+		{"project detailed absence", "project", detailedProjectAbsence.Err()},
+		{"project canceled", "project", context.Canceled},
+		{"environment permission", "dotenv", status.Error(codes.PermissionDenied, "environment denied")},
+		{"environment decoding", "dotenv", errors.New("decoding dotenv")},
+		{"environment transport", "dotenv", status.Error(codes.Unavailable, environment.ErrNotFound.Error())},
+		{"environment not found status", "dotenv", status.Error(codes.NotFound, environment.ErrNotFound.Error())},
+		{"environment detailed absence", "dotenv", detailedAbsence.Err()},
+		{"environment prefixed absence", "dotenv", fmt.Errorf("reading: %w", environment.ErrNotFound)},
+		{"environment default absence", "dotenv", environment.ErrDefaultEnvironmentNotFound},
+		{"project disappeared", "dotenv", azdcontext.ErrNoProject},
+		{"environment canceled", "dotenv", context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(fixture.EnvVar, "true")
+			client := newMockClient(t)
+			if tc.stage == "config" {
+				client.expectConfig(nil, tc.cause)
+			} else {
+				client.expectConfig(alphaResponse(t, "on", "off"), nil)
+				if tc.stage == "project" {
+					client.expectProject(nil, tc.cause)
+				} else {
+					client.expectProject(&azdext.GetProjectResponse{Project: projectWithServices()}, nil)
+					client.expectDotenv("selected", nil, tc.cause)
+				}
+			}
+			enabled, err := isEnabled(WithInitScope(t.Context()), client, fixture, "selected")
+			require.False(t, enabled)
+			require.ErrorIs(t, err, tc.cause)
+		})
+	}
+}
+
+func TestInitScopeMalformedResponses(t *testing.T) {
+	for _, stage := range []string{"config", "decode", "project", "empty project", "dotenv"} {
+		t.Run(stage, func(t *testing.T) {
+			t.Setenv(fixture.EnvVar, "true")
+			client := newMockClient(t)
+			switch stage {
+			case "config":
+				client.expectConfig(nil, nil)
+			case "decode":
+				client.expectConfig(&azdext.GetUserConfigResponse{Found: true, Value: []byte("{")}, nil)
+			default:
+				client.expectConfig(alphaResponse(t, "on", "off"), nil)
+				switch stage {
+				case "project":
+					client.expectProject(nil, nil)
+				case "empty project":
+					client.expectProject(&azdext.GetProjectResponse{}, nil)
+				case "dotenv":
+					client.expectProject(&azdext.GetProjectResponse{Project: projectWithServices()}, nil)
+					client.expectDotenv("selected", nil, nil)
+				}
+			}
+			enabled, err := isEnabled(WithInitScope(t.Context()), client, fixture, "selected")
+			require.False(t, enabled)
+			if stage == "decode" {
+				require.ErrorContains(t, err, "decoding alpha user config")
+			} else {
+				require.ErrorContains(t, err, "missing")
+				require.ErrorContains(t, err, "response")
+			}
+		})
+	}
 }
 
 func TestOptionalScopes(t *testing.T) {

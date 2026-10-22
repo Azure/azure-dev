@@ -291,7 +291,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			a.environment = env
 			a.flags.env = env.Name
 		} else {
-			envName := sanitizeAgentName(agentName + "-dev")
+			envName := a.flags.env
+			if envName == "" {
+				envName = sanitizeAgentName(agentName + "-dev")
+			}
 			env, err := createNewEnvironment(ctx, a.azdClient, envName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create azd environment: %w", err)

@@ -96,6 +96,8 @@ enabled, err := featureflags.IsEnabled(
 
 `Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The context holds the selected environment, its validation error, and the service gate marker.
 
+The `init` pre-run also binds `WithInitScope` before enforcement or discovery. Init can create a project or a named environment, so the evaluator accepts the exact host no-project sentinel even with a selected name, and the exact environment-not-found sentinel when the named environment has not been created. It does not erase the selection or substitute a default. Existing scopes are still read using the selected name. Other commands and ordinary `IsEnabled` calls remain strict about explicitly selected missing scopes. Permission, decoding, transport, cancellation, detailed-status, and malformed-response failures remain errors even when another source enables the feature. Disabled previews still fail before authentication or writes.
+
 ## Central enforcement
 
 Enforcement has two layers. Each layer has one check.

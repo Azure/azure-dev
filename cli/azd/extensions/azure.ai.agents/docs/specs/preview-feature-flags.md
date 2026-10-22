@@ -153,6 +153,8 @@ The [README](../../README.md#preview-feature-opt-ins) lists the equivalent comma
 
 `azd ai agent config list-alpha` mirrors `azd config list-alpha`. It prints every feature from `All` as a block with `Name`, `Description`, `Status` (`On` or `Off`), and `Environment variable`. It calls `IsEnabled` once per feature with the environment selected by `-e`, so the status matches what enforcement sees. It prints no source for an opt-in because the API returns only a decision.
 
+An explicit empty environment is rejected before any source is read.
+
 The default text output prints `Status: Unknown` and an `Error` line for a feature whose status cannot be read. `--output json` prints `{"features":[...]}` with `name`, `description`, `status`, `envVar`, and an `error` field when the read failed. Both formats list every feature before the command exits with an error that counts the failed reads. The command is read only and needs no authentication.
 
 ## Documented enablement methods

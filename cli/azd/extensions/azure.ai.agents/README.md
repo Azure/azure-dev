@@ -36,8 +36,10 @@ do not turn them on. Ordinary hosted and plain prompt agents need no opt-in.
 
 `azd ai agent config list-alpha` lists each feature with its name, description,
 status in the selected environment, and environment variable, in the layout of
-`azd config list-alpha`. Use `-e` to read another environment and
-`--output json` for scripts.
+`azd config list-alpha`.
+
+- `-e/--environment` selects another environment. An explicit empty environment is rejected.
+- `--output json` sets the output format for scripts.
 
 ```bash
 azd ai agent config list-alpha

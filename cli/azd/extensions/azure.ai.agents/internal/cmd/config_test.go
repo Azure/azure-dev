@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -186,6 +187,25 @@ func TestConfigListAlphaRejectsUnsupportedOutput(t *testing.T) {
 	clearPreviewProcess(t)
 	_, err := executeRoot(t, "config", "list-alpha", "--output", "raw")
 	require.ErrorContains(t, err, "raw")
+}
+
+func TestConfigListAlphaRejectsEmptyEnvironment(t *testing.T) {
+	for _, value := range []string{"", " \t "} {
+		for _, flag := range []string{"--environment", "-e"} {
+			t.Run(flag+"/"+value, func(t *testing.T) {
+				clearPreviewProcess(t)
+				t.Setenv("AZD_ENVIRONMENT", "default-env")
+
+				text, err := executeRoot(t, "config", "list-alpha", flag, value)
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "%v", err)
+				require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
+				require.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
+				require.Contains(t, localErr.Message, "--environment")
+				require.Empty(t, text)
+			})
+		}
+	}
 }
 
 func TestFeatureCommandRemoved(t *testing.T) {

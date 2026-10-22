@@ -781,19 +781,20 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 19
-source cases have recorded command evidence, 778 remain pending, and none is
+approval. Approved rows require an explicit review reference. Currently 27
+source cases have recorded command evidence, 770 remain pending, and none is
 approved. Passing the structural checks does not mean parity is complete.
 
-Nine normalized recordings are imported under `testdata/playback/`:
+All nineteen source recordings are imported under `testdata/playback/`:
 `defaults_get`, `analyzer_list`, `analyze_single`, `analyze_batch`, and
 `analyze_prebuilt_invoice_json`, `analyzer_create`, `analyzer_show`, and
-`analyzer_delete`, and `analyzer_test`. Their source commits, raw/imported digests,
+`analyzer_delete`, and `analyzer_test`, plus the eight template/classifier/route
+recordings and `doctor`/`schema_suggest` described below. Their source commits, raw/imported digests,
 ordered source interaction indices, omitted duplicate interactions, MIT license, and
 normalization records are retained. Defaults deployment names are synthetic.
 Playback JSON is checked out with LF endings so its provenance digest is stable
 on Windows as well as Linux/macOS.
-The list retains all 88 public prebuilt definitions. The three analysis fixtures
+The list retains all 88 public prebuilt definitions. The analysis and analyzer-test fixtures
 retain only results from the repository-provided public Contoso invoice sample;
 its path/digest and review disposition are recorded. No customer extraction
 output or uploaded binary data is included.
@@ -847,8 +848,9 @@ non-retried write errors; no real analyzer is created or deleted.
 The source `schema-template-validate-lifecycle` scenario actually repeats the
 basic lifecycle, without template generation or validation. Its mapping follows
 those actual assertions; the separate template/classifier scenarios and template
-generation/validation coverage remain open. Ten source scenario dispositions
-are evidenced, not ten distinct or release-approved workflows.
+generation/validation coverage are supplemented below. All fourteen recorded
+source scenario dispositions are evidenced, not fourteen distinct or
+release-approved workflows.
 
 `TestRecordedAnalyzerFieldReport/recorded` replays all 45 analyzer-test
 interactions, including 43 Running polls, in all three output modes. The entire
@@ -862,9 +864,55 @@ are normalized; Go CI needs neither Python nor a sibling checkout.
 Separate synthetic warning/usage and terminal-failure variants verify report
 omission rules, safe failure text and saving the failed report before returning
 an error. They do not claim recorded warning/error evidence. The scrubbed upload
-still matches synthetic bytes, not the original PDF. Ten source cassettes and
-four recorded scenario dispositions remain, plus two live-only and 11 hygiene
-dispositions, approvals and the other semantic/host/release gates.
+still matches synthetic bytes, not the original PDF.
+
+`TestRecordedTemplateClassifierLifecycle` adds eight recordings and retains all
+22 source interactions for extraction-template and classifier/route lifecycle workflows.
+Offline schema creation compares complete stdout/saved documents with the
+existing source-pinned Python template oracle; strict/spec validation requires
+zero findings and neither command opens a service/host session. Classifier
+configuration preserves all four categories and explicitly adds prebuilt-invoice
+and custom-route references. The route is created first and deleted last.
+Full service definitions, effective models/configuration and empty-204 deletes
+are checked in all three output modes. Fresh local schema names and the recorded
+extraction response's older schema name are preserved independently, not
+normalized to hide their difference.
+
+The recorded classifier PUT already returns a complete ready resource. Native
+create correctly consumes that response without the source's extra operation
+GET. `TestRecordedClassifierSyntheticPendingStart` retains/exercises that poll
+under a labelled synthetic creating start; source final-resource GETs remain
+explicit show commands. Source PUT bodies are scrubbed, so exact synthetic
+template/route expectations and the declared no-replacement query are not proof
+of original submitted bytes. The route input follows the Azure helper; the
+source dual-host helper uses a shorter vendor description. Configuration
+lifecycle playback does not establish actual document classification/routing
+or live dependency enforcement.
+
+`TestRecordedDoctorCommands/healthy` compares the full read-only report with
+independent Python frontend results in all three output modes, for projectless
+and selected-environment contexts. Preserve every model/alias key with synthetic
+deployment values. Source Azure/Python azd auth and profile labels differ;
+native explicitly reports Entra and azd context, with the resolved endpoint
+without a trailing slash. No fields are dropped to obtain equality. Separate
+synthetic cases distinguish empty/unset generative defaults (ready:false) from
+an unrelated resource-not-found error, and verify safe diagnostics.
+
+`TestRecordedSchemaSuggestion/recorded` retains all 51 interactions and 49
+Running polls, comparing complete saved/stdout schemas against independent
+Python frontend results with all 20 fields, nested descriptions, models and
+configuration intact. Source Azure's profile selects gpt-4.1 while Python azd
+and native use gpt-5.2; both full source results are retained and cross-checked
+for that sole schema difference, not filtered. The original JSON `:analyze`
+request is explicitly adapted to native PDF `:analyzeBinary`, with strict MIME
+and synthetic-byte matching. Responses remain unchanged; this does not prove
+the original JSON upload or recorded native binary-service behavior. Synthetic
+warning/usage and empty-suggestion variants verify safe warning text, complete
+output and the independent Python starter fallback.
+
+All 19 cassette identities and 14 recorded scenario dispositions now have
+evidence; two live-only and 11 hygiene dispositions, all approvals and the
+other semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Structural inventory, recorded commands, mismatch/network-denial and hygiene tests.

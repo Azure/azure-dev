@@ -32,6 +32,45 @@ var recordedLifecycleCases = []struct {
 	{"recorded-template", 4, 11, 1, 4 * time.Second},
 }
 
+type recordedAnalyzerStep struct {
+	action  string
+	fixture recordedFixture
+	args    []string
+	result  json.RawMessage
+	wait    time.Duration
+}
+
+func executeRecordedAnalyzerStep(
+	t *testing.T, step recordedAnalyzerStep, analyzer string, definition json.RawMessage, format string,
+) {
+	t.Helper()
+	transport := &recordedTransport{fixture: step.fixture, jsonBody: definition}
+	root := newRecordedCommand(t, transport, "")
+	args := []string{"analyzer", step.action, analyzer}
+	args = append(args, step.args...)
+	args = append(args, "-o", format, "--debug", "--no-prompt",
+		"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion)
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	require.NoError(t, ValidateInvocation(root, args))
+	root.SetArgs(args)
+	start := time.Now()
+	require.NoError(t, root.ExecuteContext(t.Context()), step.action)
+	require.NoError(t, transport.complete(), step.action)
+	assert.Equal(t, step.wait, time.Since(start), step.action)
+	assert.Empty(t, stderr.String(), step.action)
+	if format == "none" {
+		assert.Empty(t, stdout.String(), step.action)
+	} else {
+		wanted, err := recordedJSON(step.result)
+		require.NoError(t, err)
+		actual, err := recordedJSON(stdout.Bytes())
+		require.NoError(t, err)
+		assert.Equal(t, wanted, actual, "compare complete "+step.action+" output")
+	}
+}
+
 func recordedLifecycleDefinition(t *testing.T, fixture recordedFixture, basic bool) json.RawMessage {
 	t.Helper()
 	if basic {
@@ -93,13 +132,7 @@ func TestRecordedAnalyzerLifecycle(t *testing.T) {
 						require.NoError(t, err)
 						schemaFile := filepath.Join(t.TempDir(), "schema.json")
 						require.NoError(t, os.WriteFile(schemaFile, schemaJSON, 0o600))
-						for _, step := range []struct {
-							action  string
-							fixture recordedFixture
-							args    []string
-							result  json.RawMessage
-							wait    time.Duration
-						}{
+						for _, step := range []recordedAnalyzerStep{
 							{"create", create, []string{"--schema", schemaFile},
 								finalRead.Interactions[0].Response.Body, test.polls},
 							{"show", finalRead, nil, finalRead.Interactions[0].Response.Body, 0},
@@ -107,32 +140,7 @@ func TestRecordedAnalyzerLifecycle(t *testing.T) {
 							{"delete", deletion, []string{"--yes"},
 								json.RawMessage(`{"deleted":true,"analyzerId":"cu_cli_test_v1"}`), 0},
 						} {
-							transport := &recordedTransport{fixture: step.fixture, jsonBody: schemaJSON}
-							root := newRecordedCommand(t, transport, "")
-							args := []string{"analyzer", step.action, recordedAnalyzerID}
-							args = append(args, step.args...)
-							args = append(args, "-o", format, "--debug", "--no-prompt",
-								"--endpoint", "https://sanitized.services.ai.azure.com",
-								"--api-version", cuclient.DefaultAPIVersion)
-							var stdout, stderr bytes.Buffer
-							root.SetOut(&stdout)
-							root.SetErr(&stderr)
-							require.NoError(t, ValidateInvocation(root, args))
-							root.SetArgs(args)
-							start := time.Now()
-							require.NoError(t, root.ExecuteContext(t.Context()), step.action)
-							require.NoError(t, transport.complete(), step.action)
-							assert.Equal(t, step.wait, time.Since(start), step.action)
-							assert.Empty(t, stderr.String(), step.action)
-							if format == "none" {
-								assert.Empty(t, stdout.String(), step.action)
-							} else {
-								wanted, err := recordedJSON(step.result)
-								require.NoError(t, err)
-								actual, err := recordedJSON(stdout.Bytes())
-								require.NoError(t, err)
-								assert.Equal(t, wanted, actual, "compare complete "+step.action+" output")
-							}
+							executeRecordedAnalyzerStep(t, step, recordedAnalyzerID, schemaJSON, format)
 						}
 					})
 				})

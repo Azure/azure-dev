@@ -62,6 +62,14 @@ type recordedFixture struct {
 		Normalizations []string          `json:"normalizations"`
 		Report         json.RawMessage   `json:"report"`
 	} `json:"report_expectation,omitempty"`
+	CommandExpectation *struct {
+		Derivation        string                     `json:"derivation"`
+		SourceFiles       map[string]string          `json:"source_files"`
+		Runtime           map[string]string          `json:"runtime"`
+		Normalizations    []string                   `json:"normalizations"`
+		NativeDifferences []string                   `json:"native_differences"`
+		Results           map[string]json.RawMessage `json:"results"`
+	} `json:"command_expectation,omitempty"`
 }
 
 type recordedInteraction struct {
@@ -121,6 +129,32 @@ func loadRecordedFixture(t *testing.T, name string) recordedFixture {
 			}
 		} else {
 			require.Nil(t, fixture.ReportExpectation)
+		}
+		if name == "doctor" || name == "schema_suggest" {
+			require.NotNil(t, fixture.CommandExpectation)
+			require.NotEmpty(t, fixture.CommandExpectation.Derivation)
+			require.Len(t, fixture.CommandExpectation.SourceFiles, 6)
+			for path, digest := range fixture.CommandExpectation.SourceFiles {
+				require.True(t, strings.HasPrefix(path, "packages/") || strings.HasPrefix(path, "tests/"))
+				require.NotContains(t, path, "..")
+				require.Regexp(t, "^[0-9a-f]{64}$", digest)
+			}
+			require.Len(t, fixture.CommandExpectation.Runtime, 3)
+			for _, dependency := range []string{"python", "azure-ai-contentunderstanding", "azure-core"} {
+				require.NotEmpty(t, fixture.CommandExpectation.Runtime[dependency])
+			}
+			require.NotEmpty(t, fixture.CommandExpectation.NativeDifferences)
+			require.Len(t, fixture.CommandExpectation.Results, 2)
+			for _, frontend := range []string{"azure", "azd"} {
+				require.True(t, json.Valid(fixture.CommandExpectation.Results[frontend]))
+			}
+			if name == "doctor" {
+				require.Len(t, fixture.CommandExpectation.Normalizations, 1)
+			} else {
+				require.Empty(t, fixture.CommandExpectation.Normalizations)
+			}
+		} else {
+			require.Nil(t, fixture.CommandExpectation)
 		}
 		seen := map[int]bool{}
 		last := -1
@@ -341,7 +375,7 @@ func newRecordedCommand(t *testing.T, transport *recordedTransport, analyzer str
 		assert.Equal(t, len(transport.fixture.Interactions), credential.calls)
 	})
 	return newRootCommand(func(
-		_ *cobra.Command, _ *azdext.ExtensionContext, options config.Options,
+		_ *cobra.Command, extCtx *azdext.ExtensionContext, options config.Options,
 	) (*serviceSession, error) {
 		opens++
 		require.Equal(t, "https://sanitized.services.ai.azure.com", options.Endpoint)
@@ -353,6 +387,7 @@ func newRecordedCommand(t *testing.T, transport *recordedTransport, analyzer str
 			return nil, err
 		}
 		return &serviceSession{client: client, apiVersion: options.APIVersion, analyzer: analyzer,
+			endpoint: options.Endpoint, environment: extCtx.Environment,
 			close: func() { closes++ }}, nil
 	})
 }

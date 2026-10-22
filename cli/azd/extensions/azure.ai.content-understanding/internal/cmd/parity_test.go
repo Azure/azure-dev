@@ -275,6 +275,19 @@ func validateGoTestReference(reference string) error {
 			for _, row := range recordedFieldReportCases {
 				exists = exists || row.name == scenario
 			}
+		case file == "internal/cmd/template_classifier_playback_test.go" &&
+			function == "TestRecordedTemplateClassifierLifecycle":
+			for _, row := range recordedTemplateCases {
+				exists = exists || row.name == scenario
+			}
+		case file == "internal/cmd/diagnostics_schema_playback_test.go" && function == "TestRecordedDoctorCommands":
+			for _, row := range recordedDoctorCases {
+				exists = exists || row == scenario
+			}
+		case file == "internal/cmd/diagnostics_schema_playback_test.go" && function == "TestRecordedSchemaSuggestion":
+			for _, row := range recordedSuggestionCases {
+				exists = exists || row == scenario
+			}
 		default:
 			return fmt.Errorf("subtest evidence requires a checked scenario registry: %s", reference)
 		}

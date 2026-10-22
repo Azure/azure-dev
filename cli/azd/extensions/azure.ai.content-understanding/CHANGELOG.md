@@ -22,6 +22,16 @@
   polls, compared in full against identical offline Python Azure/azd reports.
   Preserve all 56 fields, exact statistics, nullable confidence and disclaimer;
   separately label synthetic warning/usage and saved-failure report contracts.
+- Eight extraction-template/classifier/route recordings retain all 22
+  interactions, full service definitions, offline Python template-oracle
+  comparisons and strict/spec validation. Preserve ready-result polling
+  shortcuts, explicit final reads and reverse dependency deletion; label
+  synthetic pending-start and scrubbed-request evidence separately.
+- Recorded doctor and sample-schema suggestion complete the 19-cassette import:
+  full independent frontend outputs, declared auth/context/model differences,
+  all 51 suggestion interactions/49 Running polls and all 20 suggested fields.
+  Explicitly distinguish JSON-to-binary request adaptation, synthetic missing
+  defaults/warning/fallback contracts and unproven live/host/release evidence.
 - Context-free help, version, and command-tree metadata.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,

@@ -83,6 +83,8 @@ func (f armField[T]) MarshalJSON() ([]byte, error) {
 // It follows the schema defined at:
 // https://learn.microsoft.com/azure/azure-resource-manager/templates/resource-declaration
 type armTemplateResource struct {
+	// ID is the fully resolved resource ID emitted for predicted snapshot resources.
+	ID string `json:"id,omitempty"`
 	// Type is the resource type including namespace (e.g. "Microsoft.Storage/storageAccounts").
 	Type string `json:"type"`
 	// APIVersion is the REST API version to use for the resource (e.g. "2023-01-01").

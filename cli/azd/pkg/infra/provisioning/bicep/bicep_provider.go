@@ -2908,6 +2908,22 @@ func (p *BicepProvider) setProvisionValidationOutcome(
 	)
 }
 
+// roleAssignmentTargetScope returns the scope that contains a predicted role assignment.
+// Bicep snapshots emit a resolved resource ID rather than the ARM template's scope property.
+func roleAssignmentTargetScope(resource armTemplateResource) string {
+	if resource.ID != "" {
+		const roleAssignmentSegment = "/providers/microsoft.authorization/roleassignments/"
+		if index := strings.LastIndex(strings.ToLower(resource.ID), roleAssignmentSegment); index >= 0 {
+			if index == 0 {
+				return "/"
+			}
+			return strings.TrimRight(resource.ID[:index], "/")
+		}
+	}
+
+	return strings.TrimRight(resource.Scope, "/")
+}
+
 // checkRoleAssignmentPermissions is a ProvisionValidationCheckFn that verifies the current principal
 // has Microsoft.Authorization/roleAssignments/write permission when the template contains
 // role assignments. The PermissionsService is resolved lazily via the service locator so it
@@ -2940,7 +2956,7 @@ func (p *BicepProvider) checkRoleAssignmentPermissions(
 		}
 
 		hasSnapshotRoleAssignment = true
-		scope := strings.TrimRight(resource.Scope, "/")
+		scope := roleAssignmentTargetScope(resource)
 		switch {
 		case strings.EqualFold(scope, subscriptionScope):
 			hasSubscriptionScope = true

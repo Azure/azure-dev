@@ -55,6 +55,19 @@ func newWarningBicepProvider(mockContext *mocks.MockContext) *BicepProvider {
 	}
 }
 
+func roleAssignmentSnapshotResource(scope string) armTemplateResource {
+	resource := armTemplateResource{
+		Type:       "Microsoft.Authorization/roleAssignments",
+		Name:       "assignment",
+		APIVersion: "2022-04-01",
+	}
+	if scope != "" {
+		resource.ID = strings.TrimRight(scope, "/") +
+			"/providers/Microsoft.Authorization/roleAssignments/assignment"
+	}
+	return resource
+}
+
 func (warningSubscriptionResolver) GetSubscription(
 	_ context.Context, subscriptionID string,
 ) (*account.Subscription, error) {
@@ -150,9 +163,9 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(),
 				&validationContext{
 					Props: resourcesProperties{HasRoleAssignments: true},
-					SnapshotResources: []armTemplateResource{{
-						Type: "Microsoft.Authorization/roleAssignments", Scope: "/subscriptions/SUBSCRIPTION_ID",
-					}},
+					SnapshotResources: []armTemplateResource{
+						roleAssignmentSnapshotResource("/subscriptions/SUBSCRIPTION_ID"),
+					},
 				})
 			require.NoError(t, err)
 			if tt.wantDiagnostic == "" {
@@ -178,6 +191,31 @@ func TestProvisionValidationWarning_RolePermissions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProvisionValidationWarning_UsesBicepSnapshotResourceID(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	prepareRoleWarningMocks(t, mockContext, rolePermissionMissing)
+	provider := newWarningBicepProvider(mockContext)
+
+	var snapshot snapshotResult
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"predictedResources": [{
+			"id": "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleAssignments/assignment",
+			"type": "Microsoft.Authorization/roleAssignments",
+			"name": "assignment",
+			"apiVersion": "2022-04-01"
+		}]
+	}`), &snapshot))
+
+	results, err := provider.checkRoleAssignmentPermissions(t.Context(), &validationContext{
+		Props:             analyzeResources(snapshot.PredictedResources),
+		SnapshotResources: snapshot.PredictedResources,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, "role_assignment_missing", results[0].DiagnosticID)
+	require.True(t, results[0].IsCritical)
 }
 
 func TestProvisionValidationWarning_Confirmation(t *testing.T) {
@@ -329,11 +367,7 @@ func TestProvisionValidationWarning_Confirmation(t *testing.T) {
 				if tt.roleScope != nil {
 					scope = *tt.roleScope
 				}
-				resources = append(resources, armTemplateResource{
-					Type: "Microsoft.Authorization/roleAssignments",
-					Name: "assignment", APIVersion: "2022-04-01",
-					Scope: scope,
-				})
+				resources = append(resources, roleAssignmentSnapshotResource(scope))
 			}
 			if tt.regular {
 				resources = append(resources, armTemplateResource{
@@ -525,9 +559,8 @@ func TestProvisionValidationWarning_RolePermissionScopes(t *testing.T) {
 			provider := newWarningBicepProvider(mockContext)
 			valCtx := &validationContext{Props: resourcesProperties{HasRoleAssignments: true}}
 			for _, scope := range tt.scopes {
-				valCtx.SnapshotResources = append(valCtx.SnapshotResources, armTemplateResource{
-					Type: "Microsoft.Authorization/roleAssignments", Scope: scope,
-				})
+				valCtx.SnapshotResources = append(
+					valCtx.SnapshotResources, roleAssignmentSnapshotResource(scope))
 			}
 			results, err := provider.checkRoleAssignmentPermissions(t.Context(), valCtx)
 			require.NoError(t, err)

@@ -22,6 +22,9 @@ scenario_source:
 normalized:
   file: testdata/parity/normalized_adapter.json
   sha256: 1f2213e2893464fe50ccff36ec52f3b8d4f5544a740d426dc06ba9c508225157
+generated_projects:
+  file: testdata/parity/generated_projects.json
+  sha256: 91842a6caacf0db13d103c6eac918a66caf2bfabedde0f0bb12e967f9f14af6f
 capabilities:
 - id: 1
   source_paths:
@@ -1886,17 +1889,51 @@ cases:
 - source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-9]
   state: pending
 - source: tests/parity/test_generated_projects.py::test_generated_bash_hook_delegates_to_hidden_command[azure-cli]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: Execute this exact source fixture/assertion for the core/Azure frontend and retain the complete ten-file canonical
+    path/hash set, choices and actual Bash hook arguments. Execute the generated Bash hook against a local fake azd; compare
+    its full ordered argv with the actual source observation and canonical hidden command. Core/Azure labels identify source
+    origins, not two native frontend implementations. No service/installed-host/live or Windows runtime evidence; PowerShell
+    source cases stay pending without pwsh. All release approvals remain open.
+  go_tests:
+  - internal/cmd/generated_project_parity_test.go::TestGeneratedBashHookParity/azure-cli
 - source: tests/parity/test_generated_projects.py::test_generated_bash_hook_delegates_to_hidden_command[core]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: Execute this exact source fixture/assertion for the core/Azure frontend and retain the complete ten-file canonical
+    path/hash set, choices and actual Bash hook arguments. Execute the generated Bash hook against a local fake azd; compare
+    its full ordered argv with the actual source observation and canonical hidden command. Core/Azure labels identify source
+    origins, not two native frontend implementations. No service/installed-host/live or Windows runtime evidence; PowerShell
+    source cases stay pending without pwsh. All release approvals remain open.
+  go_tests:
+  - internal/cmd/generated_project_parity_test.go::TestGeneratedBashHookParity/core
 - source: tests/parity/test_generated_projects.py::test_generated_powershell_hook_delegates_to_hidden_command[azure-cli]
   state: pending
 - source: tests/parity/test_generated_projects.py::test_generated_powershell_hook_delegates_to_hidden_command[core]
   state: pending
 - source: tests/parity/test_generated_projects.py::test_generated_project_matches_complete_golden_tree[azure-cli]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact source fixture/assertion for the core/Azure frontend and retain the complete ten-file canonical
+    path/hash set, choices and actual Bash hook arguments. Native Materialize compares all written/on-disk files, source CRLF-normalized
+    hashes and executable Bash mode. README.md uses an explicit pinned native Go/Entra-only replacement hash; JSON config
+    key order has a pinned byte difference plus a complete semantic JSON comparison. Retain all source hashes and keep differences
+    unapproved. Core/Azure labels identify source origins, not two native frontend implementations. No service/installed-host/live
+    or Windows runtime evidence; PowerShell source cases stay pending without pwsh. All release approvals remain open.
+  go_tests:
+  - internal/cmd/generated_project_parity_test.go::TestGeneratedProjectTreeParity/azure-cli
 - source: tests/parity/test_generated_projects.py::test_generated_project_matches_complete_golden_tree[core]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact source fixture/assertion for the core/Azure frontend and retain the complete ten-file canonical
+    path/hash set, choices and actual Bash hook arguments. Native Materialize compares all written/on-disk files, source CRLF-normalized
+    hashes and executable Bash mode. README.md uses an explicit pinned native Go/Entra-only replacement hash; JSON config
+    key order has a pinned byte difference plus a complete semantic JSON comparison. Retain all source hashes and keep differences
+    unapproved. Core/Azure labels identify source origins, not two native frontend implementations. No service/installed-host/live
+    or Windows runtime evidence; PowerShell source cases stay pending without pwsh. All release approvals remain open.
+  go_tests:
+  - internal/cmd/generated_project_parity_test.go::TestGeneratedProjectTreeParity/core
 - source: tests/parity/test_request_result_parity.py::test_analyzer_delete_named_and_positional_forms_have_parity
   state: evidenced
   disposition: difference

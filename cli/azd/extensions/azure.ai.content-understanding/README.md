@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 93
+approval. Approved rows require an explicit review reference. Currently 97
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter evidence, 704 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project evidence, 700 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1004,14 +1004,32 @@ compared in full; quiet output has a separate no-output contract. Conflict
 validation must occur before session/credential/HTTP/prompt activity. These
 offline tests do not establish live authentication, RBAC or installed hosts.
 
+Four generated-project source cases also have checked evidence for the core
+and Azure Python origins: complete golden trees and actual Bash delegation.
+`testdata/parity/generated_projects.json` retains all ten source path/hash
+expectations, canonical choices, observed Bash arguments, four source-file
+hashes and MIT/runtime provenance. Both labels exercise the same native
+`infra.Materialize`, not separate native frontends. Compare the complete
+written/on-disk file sets, source CRLF-to-LF hashes and the Bash owner-execute bit.
+
+Keep two explicit tree differences: native Go/Entra-only README content and
+Go's sorted JSON config keys versus source insertion order. Pin their native
+hashes alongside the original source hashes; additionally compare the entire
+parsed config JSON, without selecting keys. Both tree mappings remain
+unapproved differences. Execute the generated Bash hook against a local fake
+azd and compare full ordered arguments with both source observations and the
+canonical hidden command; those two mappings are equivalent but unapproved.
+PowerShell source cases remain pending because `pwsh` is unavailable. POSIX
+fake-host execution is not installed-host/live or Windows runtime evidence.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
 semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
-# Inventory, recorded/normalized commands, mismatch/network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized)' -count=1
+# Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

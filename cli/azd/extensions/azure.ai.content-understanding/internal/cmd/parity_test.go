@@ -84,6 +84,10 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"normalized"`
+	GeneratedProjects struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"generated_projects"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -225,6 +229,16 @@ func validateParityInventory(inventory parityInventory) error {
 	if sha256Text(normalized) != inventory.Normalized.SHA256 {
 		return fmt.Errorf("normalized adapter oracle digest mismatch")
 	}
+	if inventory.GeneratedProjects.File != "testdata/parity/generated_projects.json" {
+		return fmt.Errorf("invalid generated project oracle path")
+	}
+	generated, err := os.ReadFile(filepath.Join("../..", inventory.GeneratedProjects.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(generated) != inventory.GeneratedProjects.SHA256 {
+		return fmt.Errorf("generated project oracle digest mismatch")
+	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
 	}
@@ -296,6 +310,9 @@ func validateGoTestReference(reference string, inventory parityInventory) error 
 		}
 		exists := false
 		switch {
+		case file == "internal/cmd/generated_project_parity_test.go" &&
+			(function == "TestGeneratedProjectTreeParity" || function == "TestGeneratedBashHookParity"):
+			exists = !hasFormat && slices.Contains(generatedProjectFrontends, scenario)
 		case file == "internal/cmd/normalized_parity_test.go" && function == "TestNormalizedAdapterParity":
 			exists = !hasFormat && slices.Contains(normalizedParityNames, scenario)
 		case file == "internal/cmd/playback_test.go" && function == "TestRecordedFixtureHygiene":
@@ -420,6 +437,8 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"hygiene path", func(i *parityInventory) { i.Hygiene.File = "../hygiene.json" }},
 		{"normalized digest", func(i *parityInventory) { i.Normalized.SHA256 = strings.Repeat("0", 64) }},
 		{"normalized path", func(i *parityInventory) { i.Normalized.File = "../normalized_adapter.json" }},
+		{"generated project digest", func(i *parityInventory) { i.GeneratedProjects.SHA256 = strings.Repeat("0", 64) }},
+		{"generated project path", func(i *parityInventory) { i.GeneratedProjects.File = "../generated_projects.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}
@@ -463,6 +482,18 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"normalized subtest format", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/list/json"}
+		}},
+		{"missing generated project frontend", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/generated_project_parity_test.go::TestGeneratedProjectTreeParity/missing",
+			}
+		}},
+		{"generated hook subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/generated_project_parity_test.go::TestGeneratedBashHookParity/core/json",
+			}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

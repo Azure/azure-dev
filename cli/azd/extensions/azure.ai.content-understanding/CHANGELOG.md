@@ -63,6 +63,13 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map four source generated-project cases to complete ten-file tree/written-set
+  checks and actual Bash hook delegation for both Python origins. Preserve all
+  source hashes/choices/arguments and explicit native README/config-key-order
+  differences; compare full config JSON separately. Check owner-execute mode,
+  not just script text. PowerShell cases stay pending without `pwsh`; no claim
+  of installed-host/live/Windows execution. Totals: 97 cases evidenced, 700
+  pending; prior assets, scenario states and all approvals remain unchanged.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,
   and fake-client command tests for the initial GA and preview API baseline.

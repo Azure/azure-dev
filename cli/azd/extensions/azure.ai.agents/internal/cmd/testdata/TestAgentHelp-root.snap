@@ -17,6 +17,7 @@ Usage
 Available Commands
   add          : Add a file-backed Agent service to the current azd project.
   code         : Manage agent source code. (Preview)
+  config       : Inspect agent extension configuration.
   connection   : Manage connection service dependencies for an agent.
   delete       : Delete an agent.
   doctor       : Diagnose problems with an azd ai agent project.

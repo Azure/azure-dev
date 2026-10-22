@@ -1,0 +1,16 @@
+# Tier 0: read-only alpha feature listing; no auth or Azure cost.
+name: "config-list-alpha"
+command: "azd ai agent config list-alpha"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:config", "parallel-safe"]
+goals:
+  - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
+  - "Confirm the output lists agents.managed_harness, agents.voice, and agents.long_running as blocks with Name, Description, Status: Off, and an AZD_FOUNDRY_EXT_ENABLE_AGENTS_* Environment variable line, in the layout of 'azd config list-alpha'."
+  - "Run 'AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE=true azd ai agent config list-alpha'. Confirm only agents.voice shows Status: On."
+  - "Run 'azd ai agent config list-alpha --output json'. Confirm the output is a JSON object with a features array whose items have name, description, status, and envVar fields."
+  - "Run 'azd ai agent config list-alpha --output raw'. Confirm it exits non-zero and names the supported formats."
+  - "Run 'azd ai agent config --help' and 'azd ai agent config list-alpha --help'. Confirm both exit with code 0."
+  - "Run 'azd ai agent feature list'. Confirm it does not list features."
+  - "Confirm the output shows no field or text that names where a feature was turned on."
+  - "Take a screenshot of the text and JSON output."
+  - "Report a finding if a registered feature is missing, a status is wrong, or the command prompts or mutates a project."

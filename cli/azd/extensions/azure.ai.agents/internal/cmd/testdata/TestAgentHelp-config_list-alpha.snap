@@ -1,0 +1,27 @@
+Display the list of agent features in alpha stage with the status of each
+in the selected environment and the environment variable that turns it on.
+
+Use -e/--environment to read another azd environment. When a status cannot be
+read, the entry reports the error and the command exits with an error after
+listing every feature.
+
+Usage
+  azd ai agent config list-alpha [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list-alpha
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, text) (default "text")
+
+Examples
+  Display the agent features in alpha stage
+    azd ai agent config list-alpha
+
+  Display the features for another environment as JSON
+    azd ai agent config list-alpha -e dev --output json
+
+  Turn on a specific alpha feature
+    azd config set alpha.<feature-name> on

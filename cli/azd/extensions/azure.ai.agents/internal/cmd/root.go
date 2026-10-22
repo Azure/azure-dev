@@ -109,6 +109,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newStateStoresCommand(extCtx))
 	rootCmd.AddCommand(newInvocationsCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
+	rootCmd.AddCommand(newConfigCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())
 
 	rootCmd.AddCommand(newCodeCommand(extCtx))

@@ -17,6 +17,7 @@ Managed harness means `kind: prompt` with harness type `microsoft_copilot_previe
 azure.ai.agents/
 ├── internal/
 │   ├── cmd/
+│   │   ├── config.go              # config list-alpha command
 │   │   ├── root.go                # One pre-run check and the help hook
 │   │   └── preview_features.go    # Annotations, enforcement, help hiding
 │   ├── project/
@@ -139,6 +140,12 @@ azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
 
 The [README](../../README.md#preview-feature-opt-ins) lists the equivalent commands for all three capabilities.
 
+## Alpha feature listing
+
+`azd ai agent config list-alpha` mirrors `azd config list-alpha`. It prints every feature from `All` as a block with `Name`, `Description`, `Status` (`On` or `Off`), and `Environment variable`. It calls `IsEnabled` once per feature with the environment selected by `-e`, so the status matches what enforcement sees. It prints no source for an opt-in because the API returns only a decision.
+
+The default text output prints `Status: Unknown` and an `Error` line for a feature whose status cannot be read. `--output json` prints `{"features":[...]}` with `name`, `description`, `status`, `envVar`, and an `error` field when the read failed. Both formats list every feature before the command exits with an error that counts the failed reads. The command is read only and needs no authentication.
+
 ## Documented enablement methods
 
 The documented ways to opt into a feature are listed below. These opt-ins are additive: any enabling value is sufficient.
@@ -193,6 +200,6 @@ Disabled capabilities return the structured `feature_not_enabled` compatibility 
 
 Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation. Registry tests cover declaration rules, the stable copy returned by `All`, and `Lookup`.
 
-Command regressions run through the root command so the central pre-run applies. They cover which parsed flags and values require which feature, inherited command annotations, service gate placement, independent gates, obsolete hosted opt-in isolation, selected-environment forwarding for enforcement and help, help hiding per feature with a process fallback, hidden commands that stay reachable, staged manifests, local invocation, deployed-name fallback, unchanged inputs on rejection, ordinary flows, and retained read access. Help snapshots cover the full surface with every feature on and the default surface with every feature off. A walk over every command with every feature off rejects help text that names a disabled preview.
+Command regressions run through the root command so the central pre-run applies. They cover which parsed flags and values require which feature, inherited command annotations, service gate placement, independent gates, obsolete hosted opt-in isolation, selected-environment forwarding for enforcement and help, help hiding per feature with a process fallback, hidden commands that stay reachable, staged manifests, local invocation, deployed-name fallback, unchanged inputs on rejection, ordinary flows, and retained read access. Help snapshots cover the full surface with every feature on and the default surface with every feature off. A walk over every command with every feature off rejects help text that names a disabled preview. Alpha listing tests cover text and JSON output, per-feature read errors, the selected environment, and the output flag allow list.
 
-Run offline tests, build, vet, and scoped lint against the pinned SDK. Tier 0 scenarios cover the hidden and enabled help states.
+Run offline tests, build, vet, and scoped lint against the pinned SDK. Tier 0 scenarios cover the hidden and enabled help states and `config list-alpha`.

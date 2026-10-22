@@ -28,6 +28,21 @@ Opt-ins combine with OR. A false value never overrides a true value elsewhere.
 `alpha.all` and unrelated config keys, including `agents.hosted`, do not turn
 these features on. Ordinary hosted and plain prompt agents need no opt-in.
 
+### Check feature status
+
+`azd ai agent config list-alpha` lists each feature with its name, description,
+status in the selected environment, and environment variable, in the layout of
+`azd config list-alpha`. Use `-e` to read another environment and
+`--output json` for scripts.
+
+```bash
+azd ai agent config list-alpha
+azd ai agent config list-alpha -e dev --output json
+```
+
+When a status cannot be read, that entry shows `Unknown` with the error. The
+command still lists every feature and then exits with an error.
+
 While a feature is off, its flags, commands, and help sections are hidden from
 help. This covers `invoke --long-running`, `invoke --no-wait`, the
 `invocations` group, `init --voice`, and the `prompt-voice` choice of

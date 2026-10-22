@@ -345,6 +345,7 @@ in any order, any time.
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
+| `tier0/0.32-config-list-alpha.yaml` | `config list-alpha` text and JSON output for agent alpha features |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP

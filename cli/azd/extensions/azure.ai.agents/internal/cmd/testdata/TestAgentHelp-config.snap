@@ -1,0 +1,23 @@
+Inspect agent extension configuration.
+
+Use 'azd config' to change azd user configuration.
+
+Usage
+  azd ai agent config [command]
+
+Available Commands
+  list-alpha : Display the list of agent features in alpha stage.
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for config
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+  Display the agent features in alpha stage
+    azd ai agent config list-alpha
+
+Use azd ai agent config [command] --help to view examples and more information about a specific command.

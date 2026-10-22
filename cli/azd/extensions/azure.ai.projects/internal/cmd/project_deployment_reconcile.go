@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -13,13 +12,13 @@ import (
 
 	"azure.ai.projects/internal/azure"
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	armcognitiveservices "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"go.yaml.in/yaml/v3"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func reconcileAdoptedDeployments(
@@ -58,29 +57,25 @@ func reconcileAdoptedDeployments(
 	if err != nil {
 		return "", false, nil, fmt.Errorf("read adopted project deployments: %w", err)
 	}
-	if len(declared) == 0 {
-		return "", false, func() error { return nil }, nil
-	}
-	services := section.GetSection().AsMap()
-	serviceConfig, _ := services[serviceName].(map[string]any)
-	originalDeployment, hadDeployment := serviceConfig["deployments"]
-	originalValue, err := structpb.NewValue(originalDeployment)
-	if err != nil && hadDeployment {
-		return "", false, nil, fmt.Errorf("save adopted project deployments: %w", err)
-	}
 	oldEnvironment, err := client.Environment().GetValues(
 		ctx, &azdext.GetEnvironmentRequest{Name: envName},
 	)
 	if err != nil {
 		return "", false, nil, fmt.Errorf("read adopted deployment default: %w", err)
 	}
-	originalDefault := ""
 	environmentValues := make(map[string]string, len(oldEnvironment.GetKeyValues()))
 	for _, item := range oldEnvironment.GetKeyValues() {
 		environmentValues[item.GetKey()] = item.GetValue()
-		if item.GetKey() == "AZURE_AI_MODEL_DEPLOYMENT_NAME" {
-			originalDefault = item.GetValue()
-		}
+	}
+	if effective, present, err := provisioning.DecodeProjectDeployments(
+		environmentValues[projectDeploymentsEnvKey],
+	); err != nil {
+		return "", false, nil, err
+	} else if present {
+		declared = effective
+	}
+	if len(declared) == 0 {
+		return "", false, func() error { return nil }, nil
 	}
 
 	credential, err := azidentity.NewAzureDeveloperCLICredential(
@@ -141,6 +136,30 @@ func reconcileAdoptedDeployments(
 		return strings.Compare(a.Name, b.Name)
 	})
 
+	return reconcileAdoptedDeploymentChoices(
+		ctx, client, envName, declared, live, environmentValues, noPrompt,
+	)
+}
+
+func reconcileAdoptedDeploymentChoices(
+	ctx context.Context,
+	client *azdext.AzdClient,
+	envName string,
+	declared []synthesis.Deployment,
+	live []liveProjectDeployment,
+	environmentValues map[string]string,
+	noPrompt bool,
+) (string, bool, func() error, error) {
+	originalDefault := environmentValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]
+	envDeployments, present, err := provisioning.DecodeProjectDeployments(
+		environmentValues[projectDeploymentsEnvKey],
+	)
+	if err != nil {
+		return "", false, nil, err
+	}
+	if present {
+		declared = envDeployments
+	}
 	remaining := make([]synthesis.Deployment, 0, len(declared))
 	referenced := make([]synthesis.Deployment, 0, len(declared))
 	changed := false
@@ -173,7 +192,7 @@ func reconcileAdoptedDeployments(
 			choices = append(choices,
 				&azdext.SelectChoice{
 					Value: "deploy",
-					Label: "Deploy as specified in azure.yaml",
+					Label: "Deploy as configured",
 				},
 				&azdext.SelectChoice{
 					Value: "skip",
@@ -201,6 +220,9 @@ func reconcileAdoptedDeployments(
 			case choice == "deploy":
 				remaining = append(remaining, item)
 				referenced = append(referenced, expandedItem)
+				if !present {
+					changed = true
+				}
 				continue
 			case choice == "skip":
 				changed = true
@@ -226,70 +248,52 @@ func reconcileAdoptedDeployments(
 		return "", false, func() error { return nil }, nil
 	}
 
-	value, err := deploymentValue(remaining)
-	if err != nil {
-		return "", false, nil, err
+	restore := func() error {
+		return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+			_, defaultErr := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+				Value:   originalDefault,
+			})
+			var environmentErr error
+			if changed {
+				_, err := client.Environment().SetValue(rollbackCtx, &azdext.SetEnvRequest{
+					EnvName: envName,
+					Key:     projectDeploymentsEnvKey,
+					Value:   environmentValues[projectDeploymentsEnvKey],
+				})
+				environmentErr = err
+			}
+			return errors.Join(defaultErr, environmentErr)
+		})
 	}
 	if changed {
-		if _, err := client.Project().SetServiceConfigValue(ctx,
-			&azdext.SetServiceConfigValueRequest{
-				ServiceName: serviceName,
-				Path:        "deployments",
-				Value:       value,
-			}); err != nil {
-			return "", false, nil, fmt.Errorf("update adopted project deployments: %w", err)
+		encoded, err := provisioning.EncodeProjectDeployments(remaining)
+		if err != nil {
+			return "", false, nil, errors.Join(err, restore())
+		}
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName, Key: projectDeploymentsEnvKey, Value: encoded,
+		}); err != nil {
+			return "", false, nil, errors.Join(
+				fmt.Errorf("set adopted project deployments: %w", err), restore(),
+			)
 		}
 	}
-	if len(referenced) == 0 {
-		return "", changed, func() error {
-			return restoreAdoptedDeploymentState(
-				ctx,
-				client,
-				serviceName,
-				envName,
-				changed,
-				hadDeployment,
-				originalValue,
-				originalDefault,
-			)
-		}, nil
+	defaultName := ""
+	if len(referenced) > 0 {
+		defaultName = selectReconciledDefault(originalDefault, live, referenced)
 	}
-	defaultName := selectReconciledDefault(
-		originalDefault,
-		live,
-		referenced,
-	)
 	if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: envName,
 		Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
 		Value:   defaultName,
 	}); err != nil {
 		operationErr := fmt.Errorf("set adopted deployment default: %w", err)
-		if restoreErr := restoreAdoptedDeploymentState(
-			ctx,
-			client,
-			serviceName,
-			envName,
-			changed,
-			hadDeployment,
-			originalValue,
-			originalDefault,
-		); restoreErr != nil {
+		if restoreErr := restore(); restoreErr != nil {
 			return "", false, nil, errors.Join(operationErr, restoreErr)
 		}
 		return "", false, nil, operationErr
-	}
-	restore := func() error {
-		return restoreAdoptedDeploymentState(
-			ctx,
-			client,
-			serviceName,
-			envName,
-			changed,
-			hadDeployment,
-			originalValue,
-			originalDefault,
-		)
 	}
 	return defaultName, changed, restore, nil
 }
@@ -360,68 +364,8 @@ func expandDeployment(
 	return deployment, nil
 }
 
-func restoreAdoptedDeploymentState(
-	ctx context.Context,
-	client *azdext.AzdClient,
-	serviceName string,
-	envName string,
-	restoreService bool,
-	hadDeployment bool,
-	originalValue *structpb.Value,
-	originalDefault string,
-) error {
-	return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
-		var restoreErrs []error
-		if restoreService && hadDeployment {
-			if _, err := client.Project().SetServiceConfigValue(
-				rollbackCtx,
-				&azdext.SetServiceConfigValueRequest{
-					ServiceName: serviceName,
-					Path:        "deployments",
-					Value:       originalValue,
-				},
-			); err != nil {
-				restoreErrs = append(restoreErrs, err)
-			}
-		} else if restoreService {
-			if _, err := client.Project().UnsetServiceConfig(
-				rollbackCtx,
-				&azdext.UnsetServiceConfigRequest{
-					ServiceName: serviceName,
-					Path:        "deployments",
-				},
-			); err != nil {
-				restoreErrs = append(restoreErrs, err)
-			}
-		}
-		if _, err := client.Environment().SetValue(
-			rollbackCtx,
-			&azdext.SetEnvRequest{
-				EnvName: envName,
-				Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-				Value:   originalDefault,
-			},
-		); err != nil {
-			restoreErrs = append(restoreErrs, err)
-		}
-		return errors.Join(restoreErrs...)
-	})
-}
-
 type liveProjectDeployment struct {
 	Name  string
 	Model synthesis.DeploymentModel
 	Sku   synthesis.DeploymentSku
-}
-
-func deploymentValue(deployments []synthesis.Deployment) (*structpb.Value, error) {
-	body, err := json.Marshal(deployments)
-	if err != nil {
-		return nil, fmt.Errorf("marshal adopted deployments: %w", err)
-	}
-	var value any
-	if err := json.Unmarshal(body, &value); err != nil {
-		return nil, fmt.Errorf("decode adopted deployments: %w", err)
-	}
-	return structpb.NewValue(value)
 }

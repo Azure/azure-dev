@@ -21,7 +21,7 @@ import (
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"

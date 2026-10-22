@@ -206,6 +206,53 @@ Consumer migration and release follow-ups:
 [extension usage telemetry](https://github.com/Azure/azure-dev/issues/10438)
 and [current Azure principal](https://github.com/Azure/azure-dev/issues/10437).
 
+## October 2026 second graduation (target azd 1.37.0)
+
+The [second batch audit](https://github.com/Azure/azure-dev/issues/10625) records
+deployment preview graduation, shipped in host and SDK 1.37.0 on October 21, 2026.
+The [release](https://github.com/Azure/azure-dev/releases/tag/azure-dev-cli_1.37.0)
+and SDK tag `cli/azd/v1.37.0` point to commit `c49286c2955a7ba5fc13487d960a723687651cc3`. The permanent
+[history](https://github.com/Azure/azure-dev/issues/10436) links both October
+batches.
+
+The additive stable surface is `RegisterServiceTargetRequest.supports_preview=2`,
+`ServiceTargetMessage.preview_request=21` and `preview_response=22` in the
+existing `message_type` oneof, plus `ServiceTargetPreviewRequest(service_config=1)`,
+`ServiceTargetPreviewResponse(result=1)` and
+`ServiceDeployPreviewResult(message=1, data=2)`. It retains the existing
+bidirectional `ServiceTargetService.Stream` method and all beta field types and
+numbers. Stable preview registrations use a dedicated v1 stream, separate from
+ordinary service target lifecycle traffic.
+
+The beta preview fields and messages are deprecated, not removed. The focused
+beta service target override is no longer needed: the generated adapter
+transcodes requests/responses into the same stable preview implementation.
+Already-built beta clients retain their route and behavior, including preview
+opt-in, provider errors, and extension ownership checks. The frozen unversioned
+bridge gains no preview capability. There is no beta removal date.
+
+The new stable Go API is `ExtensionHost.WithServiceTargetPreview` with
+`azdext.ServiceTargetPreviewProvider` and stable config/result types.
+`ServiceTarget()` and `ServiceTargetEnvelope` expose the stable messages.
+`WithBetaServiceTargetPreview`, `preview.ServiceTargetPreviewProvider`,
+`BetaServiceTarget()`, and the beta preview envelope remain source-compatible
+but deprecated. The SDK preserves their beta stream and provider types through
+compatibility adapters; no Go accessor return type changes or source breaks
+are introduced in this batch.
+
+Preview remains read-only: a fresh provider runs without `Initialize`, build,
+package, publish, deployment state writes, or deploy hooks. Structured
+predeploy/postdeploy messages remain beta-only and are not part of this graduation.
+
+[Consumer migration and release tracking](https://github.com/Azure/azure-dev/issues/10626)
+covers the verified agents/projects consumers.
+[Migration PR #10571](https://github.com/Azure/azure-dev/pull/10571) migrates preview
+consumers and pins all nine affected extension modules to the published SDK v1.37.0 with
+`requiredAzdVersion: ">=1.37.0"`, retaining stricter future requirements if needed.
+Do not publish an SDK pin before its version exists or merge local replacements.
+
+## Graduation audit requirements
+
 For every graduation, record the capability, complete stable surface, target
 release, beta deprecation/retention policy, SDK migration decisions,
 implementation PR, validation, and per-capability consumer migration issues

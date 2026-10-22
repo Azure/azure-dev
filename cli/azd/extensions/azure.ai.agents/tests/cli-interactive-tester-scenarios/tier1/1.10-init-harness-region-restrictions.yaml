@@ -1,11 +1,11 @@
-# Tier 1 (auth, local init only): GitHub Copilot harness region guard for generation and adoption.
+# Tier 1 (auth, local init only): Microsoft Copilot harness region guard for generation and adoption.
 # Requires Azure login and externally prepared, readable Foundry projects in both
 # an allowed and a disallowed region; the latter must have a usable model deployment.
 # Configure {region} to an allowed region and {model} to a catalog model unavailable
 # there but available with quota in a disallowed recovery region. Missing fixtures
 # fail setup, not pass with skipped checks. No cloud resource creation.
 name: "init-harness-region-restrictions"
-command: "azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-picker-{instance} --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none"
+command: "azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-picker-{instance} --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none"
 cwd: "~/working/azd-agents-harness-regions-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe", "picker", "negative-path", "manual-seed"]
 
@@ -44,7 +44,7 @@ goals:
     disallowed project. Take a screenshot, then cancel before selecting a project. No agent service should be written.
   - >-
     From the scenario root, create and enter a fresh 'explicit-id' subdirectory. Run
-    `azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-id-{instance}
+    `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-id-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none
     --project-id "$unsupported_project_id" --model-deployment "$existing_deployment" --no-prompt`.
     Expect non-zero exit with an error identifying the unsupported project region as 'not supported for this agent setup',
@@ -61,7 +61,7 @@ goals:
     region in the local environment. Do not provision or deploy it.
   - >-
     From the scenario root, create and enter a fresh 'recovery' subdirectory. Run
-    `azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-recovery-{instance}
+    `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-recovery-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none --model {model}`.
     At 'Select a Foundry project to host your agent and model', choose 'Create a new Foundry project'.
     The initial location picker must offer only the nine allowed region IDs (display labels may be friendly names)
@@ -81,7 +81,7 @@ goals:
   - >-
     From the scenario root, create a local 'template' directory containing azure.yaml with name: harness-template
     and a single service named assistant with host: azure.ai.agent, kind: prompt, name: assistant,
-    model: '{model}', instructions: 'Be helpful.', and harness.type: github_copilot_preview. Do not put any
+    model: '{model}', instructions: 'Be helpful.', and harness.type: microsoft_copilot_preview. Do not put any
     project resource ID or location in the template. Use this local azure.yaml as --template for all adoption
     checks below, without --harness or --kind: the template itself must determine the region policy.
   - >-

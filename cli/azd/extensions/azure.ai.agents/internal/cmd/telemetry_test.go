@@ -13,24 +13,23 @@ import (
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type telemetryRecordingClient struct {
-	requests []*v1beta.ReportUsageRequest
+	requests []*azdext.ReportUsageRequest
 	err      error
 }
 
 func (c *telemetryRecordingClient) ReportUsage(
 	_ context.Context,
-	request *v1beta.ReportUsageRequest,
+	request *azdext.ReportUsageRequest,
 	_ ...grpc.CallOption,
-) (*v1beta.ReportUsageResponse, error) {
+) (*azdext.ReportUsageResponse, error) {
 	c.requests = append(c.requests, request)
-	return &v1beta.ReportUsageResponse{Accepted: true}, c.err
+	return &azdext.ReportUsageResponse{Accepted: true}, c.err
 }
 
 func TestAgentTelemetryContextsClassifiesKindsAndHarnesses(t *testing.T) {
@@ -39,7 +38,7 @@ func TestAgentTelemetryContextsClassifiesKindsAndHarnesses(t *testing.T) {
 		"name":         "assistant",
 		"model":        "gpt",
 		"instructions": "help",
-		"harness":      map[string]any{"type": "github_copilot_preview"},
+		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
 	})
 	require.NoError(t, err)
 	hostedProps, err := structpb.NewStruct(map[string]any{
@@ -62,11 +61,29 @@ func TestAgentTelemetryContextsClassifiesKindsAndHarnesses(t *testing.T) {
 	for _, agentCtx := range contexts {
 		byKind[agentCtx.kind] = agentCtx
 	}
-	require.Equal(t, "github_copilot_preview", byKind["prompt"].harness)
+	require.Equal(t, "microsoft_copilot_preview", byKind["prompt"].harness)
 	require.Equal(t, agentHarnessNone, byKind["hosted"].harness)
 	require.Equal(t, containerModeBuild, byKind["hosted"].containerMode)
 	require.Empty(t, byKind["prompt"].containerMode)
 	require.Equal(t, "invoke", byKind["prompt"].operation)
+}
+
+func TestTelemetryAgentHarnessPreservesCopilotNames(t *testing.T) {
+	for _, test := range []struct {
+		harness string
+		want    string
+	}{
+		{"microsoft_copilot_preview", "microsoft_copilot_preview"},
+		{"github_copilot_preview", "github_copilot_preview"},
+		{" Microsoft_Copilot_Preview ", "microsoft_copilot_preview"},
+		{" GitHub_Copilot_Preview ", "github_copilot_preview"},
+		{"", agentHarnessNone},
+		{"customer-harness", agentHarnessOther},
+	} {
+		t.Run(test.harness, func(t *testing.T) {
+			require.Equal(t, test.want, telemetryAgentHarness(test.harness))
+		})
+	}
 }
 
 func TestAgentContextReporterReportsContext(t *testing.T) {

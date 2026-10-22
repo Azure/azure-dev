@@ -319,8 +319,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if reconciledDefault != "" {
 		effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = reconciledDefault
 	}
+	if reconciledChanged {
+		refreshedValues, readErr := currentProjectEnvironment(ctx, client, envName)
+		if readErr != nil {
+			return rollbackProjectAdd(
+				readErr, restoreReconciled, restoreEnvironment, restoreService, restoreProvider,
+			)
+		}
+		effectiveValues = refreshedValues
+	}
 	restoreDeploymentDefault := func() error { return nil }
-	if reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx); discoverErr != nil {
+	reconciledService, _, discoverErr := reconciler.discoverProjectService(ctx)
+	if discoverErr != nil {
 		return rollbackProjectAdd(
 			discoverErr,
 			restoreReconciled,
@@ -328,38 +338,53 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			restoreService,
 			restoreProvider,
 		)
-	} else if reconciledService != nil &&
-		firstProjectDeploymentName(reconciledService.Resolved) != "" &&
+	}
+	if reconciledService != nil &&
 		strings.TrimSpace(effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"]) == "" {
-		defaultName := firstProjectDeploymentName(reconciledService.Resolved)
-		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: envName,
-			Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-			Value:   defaultName,
-		}); err != nil {
+		defaultName, nameErr := defaultModelDeploymentName(
+			effectiveValues[projectDeploymentsEnvKey],
+			reconciledService.Resolved,
+		)
+		if nameErr != nil {
 			return rollbackProjectAdd(
-				fmt.Errorf(
-					"set default project deployment: %w",
-					err,
-				),
+				nameErr,
 				restoreReconciled,
 				restoreEnvironment,
 				restoreService,
 				restoreProvider,
 			)
 		}
-		restoreDeploymentDefault = func() error {
-			return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
-				_, err := client.Environment().SetValue(
-					rollbackCtx,
-					&azdext.SetEnvRequest{
-						EnvName: envName,
-						Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
-						Value:   "",
-					},
+		if defaultName != "" {
+			if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+				EnvName: envName,
+				Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+				Value:   defaultName,
+			}); err != nil {
+				return rollbackProjectAdd(
+					fmt.Errorf(
+						"set default project deployment: %w",
+						err,
+					),
+					restoreReconciled,
+					restoreEnvironment,
+					restoreService,
+					restoreProvider,
 				)
-				return err
-			})
+			}
+			effectiveValues["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = defaultName
+			restoreDeploymentDefault = func() error {
+				return withProjectRollbackContext(ctx, func(rollbackCtx context.Context) error {
+					_, err := client.Environment().SetValue(
+						rollbackCtx,
+						&azdext.SetEnvRequest{
+							EnvName: envName,
+							Key:     "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+							Value:   "",
+						},
+					)
+					return err
+				})
+			}
 		}
 	}
 	if infra := a.flags.infra; infra != "" {
@@ -1424,12 +1449,19 @@ func validateExistingEndpointMode(
 				"before retaining project resources",
 		)
 	}
-	if service == nil {
-		return nil
+	deployments, present, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
 	}
-	sameEndpoint := equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
-	hasDeployments := hasManagedDeployments(service.Resolved) ||
-		hasManagedDeployments(service.Raw)
+	sameEndpoint := false
+	hasDeployments := len(deployments) > 0
+	if service != nil {
+		sameEndpoint = equalProjectEndpoint(serviceEndpoint(service.Resolved), endpoint)
+		if !present {
+			hasDeployments = hasManagedDeployments(service.Resolved) ||
+				hasManagedDeployments(service.Raw)
+		}
+	}
 	if hasDeployments &&
 		(!sameEndpoint || strings.TrimSpace(values["AZURE_AI_PROJECT_ID"]) != "") {
 		return exterrors.Dependency(
@@ -1440,7 +1472,7 @@ func validateExistingEndpointMode(
 				"before managing deployments",
 		)
 	}
-	if !sameEndpoint &&
+	if service != nil && !sameEndpoint &&
 		hasManagedProjectFields(service.Raw) {
 		return exterrors.Dependency(
 			"project_reconciliation_requires_project_id",
@@ -1777,6 +1809,9 @@ func ejectProjectInfra(
 			fmt.Sprintf("cannot synthesize Foundry infrastructure: %s", err),
 			"fix the project service configuration and retry",
 		)
+	}
+	if err := applyProjectEjectDeployments(result, environment); err != nil {
+		return err
 	}
 	// #nosec G301
 	if err := os.MkdirAll(infraDir, 0755); err != nil {

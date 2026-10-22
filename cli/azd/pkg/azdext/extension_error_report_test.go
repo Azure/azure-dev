@@ -4,7 +4,9 @@
 package azdext
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -35,4 +37,21 @@ func TestWrapUnwrapErrorRoundTrip(t *testing.T) {
 		proto := WrapError(nil)
 		require.Nil(t, proto)
 	})
+}
+
+func TestNewErrorReportContext_DetachesCancellation(t *testing.T) {
+	type contextKey string
+	const key contextKey = "key"
+
+	parent, cancelParent := context.WithCancel(context.WithValue(t.Context(), key, "value"))
+	cancelParent()
+
+	reportCtx, cancelReport := newErrorReportContext(parent)
+	defer cancelReport()
+
+	require.NoError(t, reportCtx.Err())
+	require.Equal(t, "value", reportCtx.Value(key))
+	deadline, ok := reportCtx.Deadline()
+	require.True(t, ok)
+	require.WithinDuration(t, time.Now().Add(errorReportTimeout), deadline, 100*time.Millisecond)
 }

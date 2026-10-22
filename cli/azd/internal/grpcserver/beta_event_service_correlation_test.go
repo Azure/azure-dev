@@ -177,6 +177,11 @@ func TestServer_BetaEventStreamDoesNotRouteLateCanceledResponse(t *testing.T) {
 	firstInvoke, err := stream.Recv()
 	require.NoError(t, err)
 	cancelFirst()
+	cancellation, err := stream.Recv()
+	require.NoError(t, err)
+	require.Equal(t, firstInvoke.GetRequestId(), cancellation.GetRequestId())
+	require.Nil(t, cancellation.GetMessageType())
+	require.ErrorIs(t, unwrapBetaExtensionError(cancellation.GetError()), context.Canceled)
 	require.ErrorIs(t, waitBetaServiceEvent(t, ctx, firstDone), context.Canceled)
 
 	secondCollector := commandresult.NewServiceEventMessageCollector()

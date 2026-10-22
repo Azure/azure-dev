@@ -11,12 +11,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ServiceTargetPreviewEnvelope provides broker operations for the experimental v1beta
+// ServiceTargetPreviewEnvelope provides broker operations for the deprecated v1beta
 // deployment preview stream. The stream only carries preview registration and preview messages;
 // ordinary service target lifecycle messages stay on the stable stream.
+//
+// Deprecated: use ServiceTargetEnvelope with stable messages in azd 1.37.0 or later.
 type ServiceTargetPreviewEnvelope struct{}
 
 // NewServiceTargetPreviewEnvelope creates envelope operations for the deployment preview stream.
+//
+// Deprecated: use NewServiceTargetEnvelope with stable messages in azd 1.37.0 or later.
 func NewServiceTargetPreviewEnvelope() *ServiceTargetPreviewEnvelope {
 	return &ServiceTargetPreviewEnvelope{}
 }
@@ -63,9 +67,9 @@ func (ops *ServiceTargetPreviewEnvelope) GetInnerMessage(msg *v1beta.ServiceTarg
 	case *v1beta.ServiceTargetMessage_RegisterServiceTargetResponse:
 		return m.RegisterServiceTargetResponse
 	case *v1beta.ServiceTargetMessage_PreviewRequest:
-		return m.PreviewRequest
+		return m.PreviewRequest //nolint:staticcheck // Retain the deprecated beta envelope.
 	case *v1beta.ServiceTargetMessage_PreviewResponse:
-		return m.PreviewResponse
+		return m.PreviewResponse //nolint:staticcheck // Retain the deprecated beta envelope.
 	case *v1beta.ServiceTargetMessage_ProgressMessage:
 		return m.ProgressMessage
 	default:

@@ -1364,15 +1364,17 @@ func (s *stubEnvServer) SetValue(
 	return &azdext.EmptyResponse{}, nil
 }
 
-// newEnvTestClient spins up a gRPC server with the given environment
-// service stub and returns an AzdClient connected to it.
+// newEnvTestClient serves the environment stub and optional project stub over gRPC.
 func newEnvTestClient(
-	t *testing.T, envSrv azdext.EnvironmentServiceServer,
+	t *testing.T, envSrv azdext.EnvironmentServiceServer, projectSrvs ...azdext.ProjectServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	srv := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(srv, envSrv)
+	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
+		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -4503,7 +4505,17 @@ func TestEndpoints_PromptRepairsLegacyEndpointFromDeployedDefinition(t *testing.
 		want       string
 	}{
 		{
-			name: "harnessed endpoint is repaired",
+			name: "Microsoft Copilot endpoint is repaired",
+			definition: map[string]any{
+				"kind": "prompt",
+				"harness": map[string]any{
+					"type": agent_api.ManagedAgentHarnessMicrosoftCopilot,
+				},
+			},
+			want: projectEndpoint + "/agents/deployed-agent/endpoint/protocols/openai/responses?api-version=v1",
+		},
+		{
+			name: "legacy GitHub Copilot backend response is preserved",
 			definition: map[string]any{
 				"kind": "prompt",
 				"harness": map[string]any{
@@ -4555,6 +4567,13 @@ func TestEndpoints_PromptRepairsLegacyEndpointFromDeployedDefinition(t *testing.
 			require.NoError(t, err)
 			require.Equal(t, []string{test.want}, got)
 			require.EqualValues(t, 1, versionLookups.Load())
+			if test.name == "legacy GitHub Copilot backend response is preserved" {
+				definition, ok := test.definition.(map[string]any)
+				require.True(t, ok)
+				harness, ok := definition["harness"].(map[string]any)
+				require.True(t, ok)
+				require.Equal(t, "github_copilot_preview", harness["type"])
+			}
 		})
 	}
 }

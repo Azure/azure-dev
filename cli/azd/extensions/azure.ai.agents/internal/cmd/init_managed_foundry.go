@@ -79,7 +79,7 @@ func resolvePromptHarnessTarget(
 		}
 		if len(allowedLocations) > 0 {
 			fmt.Println(output.WithWarningFormat(
-				"The GitHub Copilot harness requires a Foundry project in one of these regions: %s.",
+				"The Microsoft Copilot harness requires a Foundry project in one of these regions: %s.",
 				strings.Join(allowedLocations, ", "),
 			))
 		}
@@ -258,7 +258,7 @@ func selectPromptFoundryProject(
 	if len(projects) == 0 {
 		if len(allowedLocations) > 0 {
 			fmt.Println(output.WithWarningFormat(
-				"No Foundry projects were found in regions supported for the GitHub Copilot harness. " +
+				"No Foundry projects were found in regions supported for the Microsoft Copilot harness. " +
 					"Continue by configuring a new project.",
 			))
 		}

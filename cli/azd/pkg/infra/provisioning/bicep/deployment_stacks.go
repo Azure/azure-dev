@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/drone/envsubst/parse"
 )
 
 // deploymentStacksEnabled reports whether the Deployment Stacks alpha feature is active. This
@@ -128,42 +129,42 @@ func (p *BicepProvider) resolveDeploymentStacksMap(includeDenySettings bool) (ma
 }
 
 // resolveDeploymentStacksValues evaluates ${VAR} references in each value, resolving from the
-// plan-time layer outputs (VirtualEnv) first and then the azd environment. A value that resolves
-// to an empty string is treated as a misconfiguration (a blank deny-list entry, for example an
-// empty excluded principal, is almost always a mistake) and returns an error. Shell-style default
-// expressions such as ${VAR:-fallback} are honored: Envsubst applies the default before this check,
-// so a reference with a usable default yields a non-blank value and is accepted.
+// plan-time layer outputs (VirtualEnv) first and then the azd environment. A bare ${VAR} reference
+// that remains unresolved or a value that resolves to an empty string is treated as a
+// misconfiguration. Shell-style default expressions such as ${VAR:-fallback} are honored:
+// Envsubst applies the default, so a reference with a usable default is accepted.
 func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.ExpandableString) ([]string, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
 
+	lookup := func(name string) string {
+		if v, has := p.options.VirtualEnv[name]; has {
+			return v
+		}
+		v, _ := p.env.LookupEnv(name)
+		return v
+	}
+
 	resolved := make([]string, 0, len(values))
 	for _, value := range values {
-		var lookedUpEmpty []string
-		substituted, err := value.Envsubst(func(name string) string {
-			if p.options.VirtualEnv != nil {
-				if v, has := p.options.VirtualEnv[name]; has {
-					return v
-				}
-			}
-
-			v, ok := p.env.LookupEnv(name)
-			if !ok || v == "" {
-				lookedUpEmpty = append(lookedUpEmpty, name)
-			}
-			return v
-		})
+		tree, err := parse.Parse(value.Raw())
 		if err != nil {
 			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
 		}
 
+		unresolved := unsetDeploymentStacksReferences(tree.Root, lookup)
+		if len(unresolved) > 0 {
+			return nil, fmt.Errorf(
+				"deploymentStacks references unset environment variable(s): %s",
+				strings.Join(unresolved, ", "))
+		}
+
+		substituted, err := value.Envsubst(lookup)
+		if err != nil {
+			return nil, fmt.Errorf("resolving deploymentStacks value: %w", err)
+		}
 		if strings.TrimSpace(substituted) == "" {
-			if len(lookedUpEmpty) > 0 {
-				return nil, fmt.Errorf(
-					"deploymentStacks references unset environment variable(s): %s",
-					strings.Join(lookedUpEmpty, ", "))
-			}
 			return nil, fmt.Errorf("deploymentStacks value resolved to an empty string")
 		}
 
@@ -171,6 +172,37 @@ func (p *BicepProvider) resolveDeploymentStacksValues(values []osutil.Expandable
 	}
 
 	return resolved, nil
+}
+
+func unsetDeploymentStacksReferences(node parse.Node, lookup func(string) string) []string {
+	var children []parse.Node
+	switch node := node.(type) {
+	case *parse.ListNode:
+		children = node.Nodes
+	case *parse.FuncNode:
+		switch node.Name {
+		case "=", ":=", ":-", ":?", ":+", "-", "+":
+			// Envsubst evaluates fallback arguments eagerly; only validate a fallback when it is selected.
+			if lookup(node.Param) != "" {
+				return nil
+			}
+		case "":
+			if len(node.Args) == 0 && lookup(node.Param) == "" {
+				return []string{node.Param}
+			}
+		default:
+			if lookup(node.Param) == "" {
+				return []string{node.Param}
+			}
+		}
+		children = node.Args
+	}
+
+	var unset []string
+	for _, child := range children {
+		unset = append(unset, unsetDeploymentStacksReferences(child, lookup)...)
+	}
+	return unset
 }
 
 // deploymentOptionsMap builds the generic options map handed to the deployment API layer,

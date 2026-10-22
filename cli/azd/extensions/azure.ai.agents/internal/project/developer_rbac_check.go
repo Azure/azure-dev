@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
@@ -163,7 +162,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	fmt.Println()
 	fmt.Println("Developer RBAC pre-flight check")
 
-	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.AccountBeta(), info.SubscriptionID)
+	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.Account(), info.SubscriptionID)
 	if err != nil {
 		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping RBAC pre-flight check\n", err)
 		return nil
@@ -318,11 +317,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 
 func developerRBACPrincipal(
 	ctx context.Context,
-	account v1beta.AccountServiceClient,
+	account azdext.AccountServiceClient,
 	subscriptionID string,
 ) (string, armauthorization.PrincipalType, error) {
 	// The host resolves object IDs in the resource tenant for both user and app logins.
-	principal, err := account.GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
+	principal, err := account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
 	if err != nil {
 		return "", "", err
 	}
@@ -330,9 +329,9 @@ func developerRBACPrincipal(
 		return "", "", fmt.Errorf("the azd host returned an empty current principal object ID")
 	}
 	switch principal.GetPrincipalType() {
-	case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
 		return principal.GetObjectId(), armauthorization.PrincipalTypeUser, nil
-	case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
 		return principal.GetObjectId(), armauthorization.PrincipalTypeServicePrincipal, nil
 	default:
 		return "", "", fmt.Errorf("the azd host returned an unsupported current principal type: %v", principal.GetPrincipalType())

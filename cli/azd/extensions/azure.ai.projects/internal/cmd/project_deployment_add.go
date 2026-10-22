@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/provisioning"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -221,6 +223,10 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	if err := validateConfiguredProjectIdentity(values, service); err != nil {
 		return err
 	}
+	envDeployments, deploymentsPresent, err := provisioning.DecodeProjectDeployments(values[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
 	if requiresExistingProjectID(values, service) {
 		return exterrors.Validation(
 			"project_deployment_requires_id",
@@ -328,6 +334,43 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 	)
 	if err != nil {
 		return rollbackProjectDeploymentAdd(err, restoreEnvironment)
+	}
+	if !deploymentsPresent {
+		updated, _, readErr := reconciler.discoverProjectService(ctx)
+		if readErr != nil {
+			return rollbackProjectDeploymentAdd(readErr, restoreEnvironment, restoreDeployment)
+		}
+		if updated == nil {
+			return rollbackProjectDeploymentAdd(
+				fmt.Errorf("project service disappeared after adding deployment"), restoreEnvironment, restoreDeployment,
+			)
+		}
+		data, encodeErr := json.Marshal(updated.Resolved)
+		if encodeErr != nil {
+			return rollbackProjectDeploymentAdd(encodeErr, restoreEnvironment, restoreDeployment)
+		}
+		var cfg projectServiceConfig
+		if decodeErr := json.Unmarshal(data, &cfg); decodeErr != nil {
+			return rollbackProjectDeploymentAdd(decodeErr, restoreEnvironment, restoreDeployment)
+		}
+		envDeployments = cfg.Deployments
+	}
+	index := slices.IndexFunc(envDeployments, func(deployment synthesis.Deployment) bool {
+		return strings.EqualFold(deployment.Name, selected.Deployment.Name)
+	})
+	if index < 0 {
+		envDeployments = append(envDeployments, selected.Deployment)
+	} else {
+		envDeployments[index] = selected.Deployment
+	}
+	encodedDeployments, err := provisioning.EncodeProjectDeployments(envDeployments)
+	if err != nil {
+		return rollbackProjectDeploymentAdd(err, restoreEnvironment, restoreDeployment)
+	}
+	if err := setEnvironmentValue(projectDeploymentsEnvKey, encodedDeployments); err != nil {
+		return rollbackProjectDeploymentAdd(
+			fmt.Errorf("set %s: %w", projectDeploymentsEnvKey, err), restoreEnvironment, restoreDeployment,
+		)
 	}
 	if selected.Location != "" {
 		if err := setEnvironmentValue(

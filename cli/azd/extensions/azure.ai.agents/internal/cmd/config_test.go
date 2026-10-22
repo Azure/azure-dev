@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -15,6 +16,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestConfigListAlphaText(t *testing.T) {
@@ -85,6 +88,19 @@ func TestConfigListAlphaReportsEachReadError(t *testing.T) {
 				require.Contains(t, text, feature.ID, "every feature is listed despite the error")
 			}
 			require.Contains(t, text, "cannot read selected environment")
+			if format == "json" {
+				var response alphaFeatureListResponse
+				require.NoError(t, json.Unmarshal(out.Bytes(), &response))
+				for _, item := range response.Features {
+					if item.Name == featureflags.Voice.ID {
+						require.Equal(t, "Unknown", item.Status)
+						require.Equal(t, "cannot read selected environment", item.Error)
+					} else {
+						require.Equal(t, "On", item.Status)
+						require.Empty(t, item.Error)
+					}
+				}
+			}
 			if format == "text" {
 				require.Contains(t, text, "Name: agents.voice\n"+
 					"Description: Voice, prompt-voice, and hosted voice agents\n"+
@@ -96,6 +112,26 @@ func TestConfigListAlphaReportsEachReadError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigListAlphaKeepsReadErrorChain(t *testing.T) {
+	notFound := status.Error(codes.NotFound, "environment not found")
+	err := runConfigListAlpha(t.Context(), io.Discard, "text",
+		func(_ context.Context, feature featureflags.Feature) (bool, error) {
+			switch feature {
+			case featureflags.Voice:
+				return false, notFound
+			case featureflags.LongRunning:
+				return false, context.Canceled
+			}
+			return false, nil
+		})
+	require.ErrorContains(t, err, "2 of 3")
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, notFound)
+	joined, ok := errors.Unwrap(err).(interface{ Unwrap() []error })
+	require.True(t, ok)
+	require.ErrorIs(t, joined.Unwrap()[0], context.Canceled, "cancellation takes precedence")
 }
 
 func TestConfigListAlphaCommandReadsSelectedEnvironment(t *testing.T) {

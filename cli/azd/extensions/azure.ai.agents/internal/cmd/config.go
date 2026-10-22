@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -106,7 +107,7 @@ listing every feature.`,
 func runConfigListAlpha(ctx context.Context, out io.Writer, format string, read alphaFeatureReader) error {
 	features := featureflags.All()
 	items := make([]AlphaFeatureItem, 0, len(features))
-	failed := 0
+	var failures []error
 	for _, feature := range features {
 		item := AlphaFeatureItem{
 			Name:        feature.ID,
@@ -119,7 +120,11 @@ func runConfigListAlpha(ctx context.Context, out io.Writer, format string, read 
 		case err != nil:
 			item.Status = alphaStatusUnknown
 			item.Error = err.Error()
-			failed++
+			if errors.Is(err, context.Canceled) {
+				failures = append([]error{err}, failures...)
+			} else {
+				failures = append(failures, err)
+			}
 		case enabled:
 			item.Status = alphaStatusOn
 		}
@@ -135,8 +140,11 @@ func runConfigListAlpha(ctx context.Context, out io.Writer, format string, read 
 	if err != nil {
 		return err
 	}
-	if failed > 0 {
-		return fmt.Errorf("could not read the status of %d of %d alpha features", failed, len(items))
+	if len(failures) > 0 {
+		// Keep the read errors so cancellation and structured errors keep
+		// their classification. Cancellation is listed first.
+		return fmt.Errorf("could not read the status of %d of %d alpha features: %w",
+			len(failures), len(items), errors.Join(failures...))
 	}
 	return nil
 }

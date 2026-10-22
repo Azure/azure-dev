@@ -16,6 +16,7 @@ on:
       - "eng/scripts/Set-ExtensionVersionVariable*.ps1"
       - "eng/scripts/Test-CliReleaseReadiness*.ps1"
       - "eng/scripts/Test-ExtensionBuildScripts*.ps1"
+      - "eng/scripts/Install-Pester*.ps1"
     branches: [main]
 
 # If two events are triggered within a short time in the same PR, cancel the run of the oldest event
@@ -64,11 +65,11 @@ jobs:
       - name: Run Pester tests for engineering scripts
         shell: pwsh
         run: |
-          # Pin Pester to a specific signed release for deterministic, supply-chain-safe installs.
-          Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          ./eng/scripts/Install-Pester.ps1
           Import-Module Pester -RequiredVersion 5.7.1
           $config = New-PesterConfiguration
           $config.Run.Path = @(
+            './eng/scripts/Install-Pester.Tests.ps1'
             './eng/scripts/Get-CoverageDiff.Tests.ps1'
             './eng/scripts/Set-ExtensionVersionVariable.Tests.ps1'
             './eng/scripts/Test-CliReleaseReadiness.Tests.ps1'
@@ -80,6 +81,7 @@ jobs:
 
   extension-build-script-tests:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -93,7 +95,7 @@ jobs:
       - name: Validate native extension build arguments
         shell: pwsh
         run: |
-          Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          ./eng/scripts/Install-Pester.ps1
           Import-Module Pester -RequiredVersion 5.7.1
           Invoke-Pester -Path ./eng/scripts/Test-ExtensionBuildScripts.Tests.ps1 -CI
 

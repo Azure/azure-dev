@@ -68,7 +68,7 @@ func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentP
 		}
 		if protocol != "" && protocol != agent_api.AgentProtocolA2A {
 			return exterrors.Validation(
-				exterrors.CodeInvalidParameter,
+				exterrors.CodeConflictingArguments,
 				"--a2a-version is only supported with the a2a protocol",
 				"omit --a2a-version or select --protocol a2a",
 			)

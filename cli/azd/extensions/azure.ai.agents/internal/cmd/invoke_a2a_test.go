@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
@@ -64,26 +66,35 @@ func TestValidateInvokeA2AVersionFlags(t *testing.T) {
 
 func TestInvokeA2AVersionCommandValidation(t *testing.T) {
 	for _, tt := range []struct {
-		name string
-		args []string
-		want string
+		name     string
+		args     []string
+		want     string
+		wantCode string
 	}{
-		{"missing file version", []string{"-p", "a2a", "-f", "missing.json"}, "requires an explicit --a2a-version"},
-		{"invalid version", []string{"-p", "a2a", "--a2a-version", "2.0", "hello"}, "supported versions are 0.3 and 1.0"},
-		{"empty version", []string{"-p", "a2a", "--a2a-version=", "hello"}, "invalid --a2a-version"},
-		{"responses", []string{"-p", "responses", "--a2a-version", "1.0", "hello"}, "only supported with the a2a protocol"},
+		{"missing file version", []string{"-p", "a2a", "-f", "missing.json"},
+			"requires an explicit --a2a-version", exterrors.CodeInvalidParameter},
+		{"invalid version", []string{"-p", "a2a", "--a2a-version", "2.0", "hello"},
+			"supported versions are 0.3 and 1.0", exterrors.CodeInvalidParameter},
+		{"empty version", []string{"-p", "a2a", "--a2a-version=", "hello"},
+			"invalid --a2a-version", exterrors.CodeInvalidParameter},
+		{"responses", []string{"-p", "responses", "--a2a-version", "1.0", "hello"},
+			"only supported with the a2a protocol", exterrors.CodeConflictingArguments},
 		{"invocations", []string{"-p", "invocations", "--a2a-version", "0.3", "hello"},
-			"only supported with the a2a protocol"},
+			"only supported with the a2a protocol", exterrors.CodeConflictingArguments},
 		{"endpoint file", []string{"--agent-endpoint",
 			"https://acct.services.ai.azure.com/api/projects/project/agents/agent/endpoint/protocols/a2a",
-			"-f", "missing.json"}, "requires an explicit --a2a-version"},
+			"-f", "missing.json"}, "requires an explicit --a2a-version", exterrors.CodeInvalidParameter},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			command := newInvokeCommand(&azdext.ExtensionContext{NoPrompt: true})
 			command.SetOut(io.Discard)
 			command.SetErr(io.Discard)
 			command.SetArgs(tt.args)
-			require.ErrorContains(t, command.Execute(), tt.want)
+			err := command.Execute()
+			require.ErrorContains(t, err, tt.want)
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "expected a structured local error")
+			require.Equal(t, tt.wantCode, localErr.Code)
 		})
 	}
 }

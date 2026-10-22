@@ -118,11 +118,6 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 
 					got, err := promptModelInfrastructureOnDisk(root)
 					if tt.errField != "" {
-						if !layered && provider == "terraform" && tt.symlink != "" {
-							require.NoError(t, err)
-							require.True(t, got)
-							return
-						}
 						require.ErrorContains(t, err, "azure.yaml "+field+"."+tt.errField)
 						require.ErrorContains(t, err, tt.errText)
 						require.NotNil(t, errors.Unwrap(err))

@@ -59,6 +59,9 @@ func ResolvePromptAgentModel(
 			return "", err
 		}
 		if slices.Contains(declared, model) {
+			if _, err := promptModelInfrastructureOnDisk(projectRoot); err != nil {
+				return "", err
+			}
 			if replacement == "" {
 				return "", exterrors.Dependency(
 					exterrors.CodeModelDeploymentNotFound,

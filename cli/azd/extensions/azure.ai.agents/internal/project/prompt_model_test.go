@@ -343,3 +343,21 @@ func TestResolvePromptAgentModelExplicitBindings(t *testing.T) {
 		})
 	}
 }
+
+func TestResolvePromptAgentModelExplicitBindingsUnsafeInfrastructure(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"infra:\n  path: ../outside\n",
+	), 0600))
+	agent, services := promptModelServices(t, "chat")
+	for _, replacement := range []string{"selected-chat", ""} {
+		t.Run("replacement="+replacement, func(t *testing.T) {
+			got, err := ResolvePromptAgentModel("chat", agent, services, root, map[string]string{
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{"chat":"` + replacement + `"}`,
+			})
+			require.ErrorContains(t, err, "resolve azure.yaml infra.path")
+			require.ErrorContains(t, err, "must not contain '..'")
+			require.Empty(t, got)
+		})
+	}
+}

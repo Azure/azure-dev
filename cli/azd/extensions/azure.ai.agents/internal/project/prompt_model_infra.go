@@ -80,6 +80,14 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 		}
 		if provider == "terraform" {
 			if !layered {
+				for _, name := range []string{".azd-foundry", "main.tf"} {
+					if _, err := paths.JoinAllowRoot(root, path, name); err != nil {
+						return false, fmt.Errorf("resolve azure.yaml %s.path Terraform input: %w", field, err)
+					}
+				}
+				if _, err := paths.JoinAllowRoot(root, path, filepath.FromSlash(module+".tf")); err != nil {
+					return false, fmt.Errorf("resolve azure.yaml %s.module: %w", field, err)
+				}
 				return true, nil
 			}
 			markerPath, err := paths.JoinAllowRoot(root, path, ".azd-foundry")

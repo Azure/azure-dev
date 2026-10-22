@@ -131,8 +131,9 @@ A2A Version:
 Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
 not a Foundry API version or the deployed agent version selected by --version.
 For plain messages, azd composes the body and A2A-Version header together,
-using 1.0 as a convenience default. A2A hosted agents must declare A2A 1.0,
-and the requested version must match. Other protocols do not enable translation.
+using 1.0 as a convenience default. A declared hosted A2A implementation must
+support 1.0 and match the requested version, regardless of other protocols.
+Without an A2A declaration, Foundry enforces target support.
 With --input-file, --a2a-version is always required; YAML does not select it.
 File bytes are sent unchanged and must match the selected version.
 Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.

@@ -765,3 +765,118 @@ Prior prototype live evidence covers GA/preview URL, binary and base64 analysis,
 preview inline behavior, analyzer lifecycle and same-resource copy. Successful
 cross-resource authorization/copy and defaults mutation remain live-validation
 gaps with offline contract coverage.
+
+### Initial source-pinned parity and recorded playback
+
+<!-- cspell:ignore parityrelease -->
+
+`testdata/parity/pr2_test_inventory.yaml` contains all 797 collected source cases
+from 65 Python/shared-core/Azure-adapter modules at commit
+`25d39b30116a840491b7b6f393d6db792b38d4a4`, all 29 capability dispositions, and
+27 playback/live/hygiene scenarios. Normal CI validates the immutable source-case
+snapshot, unique rows, command presence, declared mapping states, existing Go
+test references, and imported fixture digests without a sibling checkout or
+Python runtime. A changed source revision requires deliberate re-collection,
+review, and updating the pinned snapshot/counts, not automatic enrollment.
+
+States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
+tests plus an equivalent/different/not-applicable rationale; it is not release
+approval. Approved rows require an explicit review reference. Currently 19
+source cases have recorded command evidence, 778 remain pending, and none is
+approved. Passing the structural checks does not mean parity is complete.
+
+Nine normalized recordings are imported under `testdata/playback/`:
+`defaults_get`, `analyzer_list`, `analyze_single`, `analyze_batch`, and
+`analyze_prebuilt_invoice_json`, `analyzer_create`, `analyzer_show`, and
+`analyzer_delete`, and `analyzer_test`. Their source commits, raw/imported digests,
+ordered source interaction indices, omitted duplicate interactions, MIT license, and
+normalization records are retained. Defaults deployment names are synthetic.
+Playback JSON is checked out with LF endings so its provenance digest is stable
+on Windows as well as Linux/macOS.
+The list retains all 88 public prebuilt definitions. The three analysis fixtures
+retain only results from the repository-provided public Contoso invoice sample;
+its path/digest and review disposition are recorded. No customer extraction
+output or uploaded binary data is included.
+
+`TestRecordedServiceCommands` exercises defaults show and analyzer list
+(default/custom/created-time scenarios), all three output modes, and full JSON
+results through actual production `SDKTransport` and the command boundary.
+Only the session/credential are injected: this is not installed-host or live
+Entra evidence. Request matching checks method, origin, escaped path, complete
+query, relevant headers and semantic JSON bodies with exact numbers. Unexpected,
+repeated or unconsumed interactions fail explicitly; the injected transport has
+no real-network fallback. Python user-agent/request IDs are not contract matches.
+Hygiene checks supplement, not replace, manual fixture review.
+
+`TestRecordedAnalysisCommands` adds three analysis scenarios in all three output
+modes, including full terminal envelopes and saved directory results. Fixture
+schema v2 carries ordered interactions and body modes. All 7/6/42 interactions
+are preserved, including every repeated Running poll; Go virtual time executes
+the real SDK polling loop without wall-clock sleeps or production timing changes.
+Scrubbed binary requests must match explicit synthetic test bytes, never an
+unconstrained wildcard, and do not prove original PDF uploads. Synthetic polling
+mutations reject wrong operation IDs/origins/API versions/query values, altered
+terminal IDs, extra/unconsumed polls, and mismatched/missing binary expectations.
+
+All three source analysis recordings are binary, not URL input. The separate
+`TestRecordedAnalysisSyntheticURLContract` checks URL JSON submission with recorded
+responses; it is explicitly synthetic and does not claim URL service evidence.
+The source dual-host case labelled `analyze-prebuilt-invoice-json` actually calls
+the layout/single-file runner; its ledger mapping follows those real assertions.
+The separate Azure-adapter invoice case maps to the actual invoice recording.
+Scenario names alone are not evidence of LLM rendering or invoice analyzer use.
+
+`TestRecordedAnalyzerLifecycle` replays both distinct public basic/template
+definitions in all three output modes. All 11 create interactions and two show
+interactions are retained; the delete fixture retains GET preflight/empty-204
+DELETE and explicitly dispositions one duplicate frontend DELETE. The SDK uses
+the analyzer embedded in Succeeded instead of redundantly fetching it: source
+final GETs are exercised as explicit show commands, while a separate synthetic
+missing-result test verifies the SDK final-GET fallback. Full definitions,
+including effective models and nested fields, are compared without filtering.
+
+Source PUT JSON was itself scrubbed. JSON matching therefore requires explicit
+synthetic expectations, not a wildcard or a claim of original request-byte/model
+submission proof. Basic input follows the source test schema; alternate template
+input is reconstructed from the public definition. An explicit
+`allowReplace=false` query is a declared native SDK difference from the omitted
+source query. Synthetic failures cover JSON mismatches, replacement queries,
+operation origin/identity, missing final GET, invalid final analyzer/status and
+non-retried write errors; no real analyzer is created or deleted.
+
+The source `schema-template-validate-lifecycle` scenario actually repeats the
+basic lifecycle, without template generation or validation. Its mapping follows
+those actual assertions; the separate template/classifier scenarios and template
+generation/validation coverage remain open. Ten source scenario dispositions
+are evidenced, not ten distinct or release-approved workflows.
+
+`TestRecordedAnalyzerFieldReport/recorded` replays all 45 analyzer-test
+interactions, including 43 Running polls, in all three output modes. The entire
+saved/stdout report is compared with an independent oracle generated offline by
+both pinned Python frontends and asserted identical. It covers all 56 flattened
+fields, values, nullable confidence, population/mean/low-confidence statistics,
+threshold and disclaimer, not only a selected field or nonempty confidence.
+Source-code hashes and the Python/SDK/core runtime versions are retained.
+Only the asserted input path and integral JSON floating-point representation
+are normalized; Go CI needs neither Python nor a sibling checkout.
+Separate synthetic warning/usage and terminal-failure variants verify report
+omission rules, safe failure text and saving the failed report before returning
+an error. They do not claim recorded warning/error evidence. The scrubbed upload
+still matches synthetic bytes, not the original PDF. Ten source cassettes and
+four recorded scenario dispositions remain, plus two live-only and 11 hygiene
+dispositions, approvals and the other semantic/host/release gates.
+
+```bash
+# Structural inventory, recorded commands, mismatch/network-denial and hygiene tests.
+go test ./internal/cmd -run 'Test(Parity|Recorded)' -count=1
+
+# Required parity approval gate before promotion; intentionally fails while rows remain pending.
+go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1
+```
+
+The approval command is an explicit gate, not yet wired into the shared release
+pipeline. Remaining source cases, recorded scenarios, review dispositions,
+SDK-backed integration seams, platform/install validation and authorized live
+copy/defaults mutation are still open. GA success recordings do not prove
+preview/errors/cancellation; scrubbed uploads do not prove binary bytes, and
+dummy credentials do not prove authentication/RBAC.

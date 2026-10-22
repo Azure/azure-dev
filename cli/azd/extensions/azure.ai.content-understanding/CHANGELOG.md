@@ -4,7 +4,24 @@
 
 ### Features Added
 
+- Source-pinned 797-case parity ledger with explicit pending/evidenced/approved
+  states, structural completeness checks, and a separate fail-closed approval gate.
+- Sanitized defaults/analyzer-list recordings exercised through the production
+  Go SDK adapter and command boundary, with strict offline matching, full-result
+  assertions, provenance, hygiene, and unexpected-request/network-denial tests.
+- Three recorded GA analysis scenarios with all ordered polling interactions,
+  complete streamed/saved results, and virtual-time SDK execution. Distinguish
+  synthetic binary/URL requests and polling-failure contracts from recorded
+  service responses; retain public-sample provenance and binary evidence limits.
+- Recorded analyzer create/show/delete lifecycle replay for both public schema
+  variants, complete definitions, ordered polling, explicit resource reads and
+  empty-204 deletion. Declare scrubbed JSON expectations/no-replacement queries,
+  embedded-result versus synthetic final-GET fallback, and source scenario-label limits.
 - Native Go extension scaffold with standard azd build, lint, and release integration.
+- Recorded analyzer-test field report with all 45 interactions and 43 Running
+  polls, compared in full against identical offline Python Azure/azd reports.
+  Preserve all 56 fields, exact statistics, nullable confidence and disclaimer;
+  separately label synthetic warning/usage and saved-failure report contracts.
 - Context-free help, version, and command-tree metadata.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,

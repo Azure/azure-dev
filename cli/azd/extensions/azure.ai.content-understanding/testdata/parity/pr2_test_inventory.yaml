@@ -1,0 +1,2167 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+schema_version: 1
+source:
+  repository: microsoft-foundry/content-understanding-cli
+  commit: 25d39b30116a840491b7b6f393d6db792b38d4a4
+  case_count: 797
+  module_count: 65
+  case_list_sha256: 727ab1a6dc1afd6320d03eb3bd34e5fe756d5ca8a546dd8c3e6570491225f206
+  collection: CU_TEST_REC_MODE=playback .venv/bin/python -m pytest --collect-only -q packages/azd-extension/tests/unit tests/host_contract
+    tests/packaging tests/parity tests/playback packages/core/tests packages/azure-cli-extension/tests/unit
+readiness: 'in-progress: pending/evidenced rows are not approved parity'
+capabilities:
+- id: 1
+  source_paths:
+  - az cu analyze
+  target: azd ai cu analyze
+  classification: extension-path
+  state: pending
+- id: 2
+  source_paths:
+  - az cu analyzer list
+  target: azd ai cu analyzer list
+  classification: extension-path
+  state: pending
+- id: 3
+  source_paths:
+  - az cu analyzer show
+  target: azd ai cu analyzer show
+  classification: extension-path
+  state: pending
+- id: 4
+  source_paths:
+  - az cu analyzer create
+  target: azd ai cu analyzer create
+  classification: extension-path
+  state: pending
+- id: 5
+  source_paths:
+  - az cu analyzer copy
+  target: azd ai cu analyzer copy
+  classification: extension-path
+  state: pending
+- id: 6
+  source_paths:
+  - az cu analyzer delete
+  target: azd ai cu analyzer delete
+  classification: extension-path
+  state: pending
+- id: 7
+  source_paths:
+  - az cu analyzer validate
+  target: azd ai cu analyzer validate
+  classification: extension-path
+  state: pending
+- id: 8
+  source_paths:
+  - az cu analyzer test
+  target: azd ai cu analyzer test
+  classification: extension-path
+  state: pending
+- id: 9
+  source_paths:
+  - az cu analyzer schema create
+  target: azd ai cu analyzer schema create
+  classification: extension-path
+  state: pending
+- id: 10
+  source_paths:
+  - az cu defaults show
+  target: azd ai cu defaults show
+  classification: extension-path
+  state: pending
+- id: 11
+  source_paths:
+  - az cu defaults set
+  target: azd ai cu defaults set
+  classification: extension-path
+  state: pending
+- id: 12
+  source_paths:
+  - az cu profile show
+  target: azd env get-values plus azd env config get cu
+  classification: environment-mapping
+  state: pending
+- id: 13
+  source_paths:
+  - az cu profile list
+  target: azd env list
+  classification: environment-mapping
+  state: pending
+- id: 14
+  source_paths:
+  - az cu profile get
+  target: azd env get-value or azd env config get
+  classification: environment-mapping
+  state: pending
+- id: 15
+  source_paths:
+  - az cu profile set
+  target: azd env set, azd env set-secret, or azd env config set
+  classification: environment-mapping
+  state: pending
+- id: 16
+  source_paths:
+  - az cu profile unset
+  target: azd env config unset; environment-value removal requires host support
+  classification: environment-mapping
+  state: pending
+- id: 17
+  source_paths:
+  - az cu profile create
+  target: azd env new
+  classification: environment-mapping
+  state: pending
+- id: 18
+  source_paths:
+  - az cu profile delete
+  target: azd env remove
+  classification: environment-mapping
+  state: pending
+- id: 19
+  source_paths:
+  - az cu profile copy
+  target: optional nonsecret import with secret re-entry
+  classification: environment-mapping
+  state: pending
+- id: 20
+  source_paths:
+  - az cu profile rename
+  target: optional create, copy, select, and remove workflow
+  classification: environment-mapping
+  state: pending
+- id: 21
+  source_paths:
+  - az cu profile set-active
+  target: azd env select; per-command selection uses -e/--environment
+  classification: environment-mapping
+  state: pending
+- id: 22
+  source_paths:
+  - az cu profile sync-defaults
+  target: azd ai cu defaults set --from-environment
+  classification: environment-mapping
+  state: pending
+- id: 23
+  source_paths:
+  - cu profile _has-values
+  target: generated hooks query environment values and config through the host
+  classification: removed-helper
+  state: pending
+- id: 24
+  source_paths:
+  - az cu env-var list
+  target: azd ai cu env-var list
+  classification: extension-path
+  state: pending
+- id: 25
+  source_paths:
+  - az cu doctor
+  target: azd ai cu doctor
+  classification: extension-path
+  state: pending
+- id: 26
+  source_paths:
+  - az cu infra generate
+  target: azd ai cu infra generate
+  classification: extension-path
+  state: pending
+- id: 27
+  source_paths:
+  - az cu infra _models
+  - cu _infra-models
+  target: azd ai cu infra _models
+  classification: extension-path
+  state: pending
+- id: 28
+  source_paths:
+  - az cu infra _postprovision-v1
+  - cu _infra-postprovision-v1
+  target: azd ai cu infra _postprovision-v1
+  classification: extension-path
+  state: pending
+- id: 29
+  source_paths:
+  - cu upgrade
+  target: azd extension update azure.ai.content-understanding
+  classification: host-owned-update
+  state: pending
+scenarios:
+- id: 1
+  name: analyze-single-file-markdown
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_single
+  state: evidenced
+- id: 2
+  name: analyze-directory-writes-results
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_batch
+  state: evidenced
+- id: 3
+  name: analyze-prebuilt-invoice-json
+  kind: command
+  mode: playback
+  recordings:
+  - analyze_prebuilt_invoice_json
+  state: evidenced
+- id: 4
+  name: analyzer-list-json
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+  state: evidenced
+- id: 5
+  name: analyzer-list-custom-sorted
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+  state: evidenced
+- id: 6
+  name: analyzer-list-created-at
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_list
+  state: evidenced
+- id: 7
+  name: analyzer-create-show-delete
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_create
+  - analyzer_show
+  - analyzer_delete
+  state: evidenced
+- id: 8
+  name: analyzer-copy-same-resource
+  kind: command
+  mode: live-only
+  recordings: []
+  state: pending
+- id: 9
+  name: analyzer-copy-cross-resource
+  kind: command
+  mode: live-only
+  recordings: []
+  state: pending
+- id: 10
+  name: analyzer-test-field-report
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_test
+  state: evidenced
+- id: 11
+  name: template-analyzer-create-show-delete
+  kind: command
+  mode: playback
+  recordings:
+  - template_analyzer_create
+  - template_analyzer_show
+  - template_analyzer_delete
+  state: pending
+- id: 12
+  name: classifier-routing-lifecycle
+  kind: command
+  mode: playback
+  recordings:
+  - route_target_create
+  - classifier_route_create
+  - classifier_route_show
+  - classifier_route_delete
+  - route_target_delete
+  state: pending
+- id: 13
+  name: doctor-connectivity
+  kind: command
+  mode: playback
+  recordings:
+  - doctor
+  state: pending
+- id: 14
+  name: defaults-show-json
+  kind: command
+  mode: playback
+  recordings:
+  - defaults_get
+  state: evidenced
+- id: 15
+  name: schema-template-validate-lifecycle
+  kind: command
+  mode: playback
+  recordings:
+  - analyzer_create
+  - analyzer_show
+  - analyzer_delete
+  state: evidenced
+- id: 16
+  name: schema-create-from-sample
+  kind: command
+  mode: playback
+  recordings:
+  - schema_suggest
+  state: pending
+- id: 17
+  name: scrub-request-sas-basic
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 18
+  name: scrub-request-sas-apostrophe-path
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 19
+  name: scrub-request-sas-apostrophe-query
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 20
+  name: scrub-response-sas-basic-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 21
+  name: scrub-response-sas-apostrophe-path-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 22
+  name: scrub-response-sas-apostrophe-query-text
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 23
+  name: scrub-response-sas-basic-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 24
+  name: scrub-response-sas-apostrophe-path-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 25
+  name: scrub-response-sas-apostrophe-query-bytes
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 26
+  name: scrub-response-host-and-query
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+- id: 27
+  name: scrub-response-bytes-payload
+  kind: hygiene
+  mode: offline
+  recordings: []
+  state: pending
+recordings:
+- name: defaults_get
+  file: testdata/playback/defaults_get.json
+  sha256: 1a7721cf988071954f09edf60f15e5be15ac96a9d01f713a31b8de32e615597f
+  source_sha256: 8292bd42ac999a8d501f4944e4872ade7a3fc45958256a4e020d49565df29fcc
+- name: analyzer_list
+  file: testdata/playback/analyzer_list.json
+  sha256: 92e891a7974aeb30fe75aa48ec68bca8f5a384d66dca029165cb617d87d56a61
+  source_sha256: 72c5954e96bc1f92124f5c141c0757e74faa136073fea30abab7e5c5f7c84720
+- name: analyze_single
+  file: testdata/playback/analyze_single.json
+  sha256: fa7e622be939df59187c57afdf479fc882cc091965bab54e3b7c4488d7558120
+  source_sha256: d958af832809b8dd7f5b47d6e9e7eddacf0aa4a9b0f70fe0d62d1413b1e12cdb
+- name: analyze_batch
+  file: testdata/playback/analyze_batch.json
+  sha256: fec707782d4131202e83150e2339f802f8d3d0342370f3c6acab25729001de0d
+  source_sha256: 794d89b2d05a89471b7e9300df40471d7cdfe8d5f63854a3213390874a68a05f
+- name: analyze_prebuilt_invoice_json
+  file: testdata/playback/analyze_prebuilt_invoice_json.json
+  sha256: 8171a89bb867d1c4a8aadbc2e5206c6890a13a28624be87c26f31732d8d8412e
+  source_sha256: adcddd442b00fd28992db1729e182f751125fa62c7841569250e0590d1054917
+- name: analyzer_test
+  file: testdata/playback/analyzer_test.json
+  sha256: b048570bfcfa0d9e1548915b87e9ea23eca45395e2b503ff2e5e3d601a30017c
+  source_sha256: dfa54f52ebb62d0856f5127004cb863b5b552bd517af55e807f7ff29eae6d684
+- name: analyzer_create
+  file: testdata/playback/analyzer_create.json
+  sha256: 8282ccf3780f3b3bb5fc416994a40e9406e44a70b7bf4d5ec46d502a23a21509
+  source_sha256: ed34b063c84cbc04935f28b9ca689b4c210be66312bc88c7a594e077de96d935
+- name: analyzer_show
+  file: testdata/playback/analyzer_show.json
+  sha256: ae73d6aa1654bcdcc7046e4f04d9ffa7f4a0be4b8f8ce59e45f6c9e62bf609aa
+  source_sha256: c51f6c90ef35721eb0e7357cd26c63c2db4bffbb148721f1745c83db33d7d224
+- name: analyzer_delete
+  file: testdata/playback/analyzer_delete.json
+  sha256: cb77fa1226ea6e81831787a20e7e2e0ecb1b5ca348738952a7b33c112b1769c3
+  source_sha256: 05071e692a2db35be19f78a93605f884fc9f476808c85b096d1dd2862f8566e4
+cases:
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyze]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-copy]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-create]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-delete]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-list]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-schema-create]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-show]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-test]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[analyzer-validate]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[defaults-set]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[defaults-show]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[doctor]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[env-var-list]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[infra-_models]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[infra-_postprovision-v1]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_all_extension_paths_are_registered[infra-generate]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_analyzer_validate_runs_without_azd_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_authorization_error_preserves_safe_service_correlation
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_debug_error_is_redacted_and_does_not_emit_traceback
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_environment_variable_list_routes_without_azd_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_error_message_redacts_sensitive_urls
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_host_authentication_failure_is_redacted_without_traceback
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_host_close_failure_prevents_success_output
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_host_globals_are_accepted_after_subcommands
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_infra_commands_route_to_runtime[generate_infrastructure-argv0]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_infra_commands_route_to_runtime[postprovision_v1-argv2]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_infra_commands_route_to_runtime[setup_infrastructure_models-argv1]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_metadata_does_not_connect_to_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_output_none_suppresses_metadata
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_output_none_suppresses_service_result
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_output_none_suppresses_version
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_parser_error_is_structured_without_host_or_service_call
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[analyze-argv0-expected0]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[copy_analyzer-argv6-expected6]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[create_analyzer-argv3-expected3]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[create_analyzer_schema-argv4-expected4]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[delete_analyzer-argv7-expected7]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[list_analyzers-argv1-expected1]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[run_doctor-argv10-expected10]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[set_defaults-argv9-expected9]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[show_analyzer-argv2-expected2]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[show_defaults-argv8-expected8]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_public_commands_route_all_arguments_to_runtime[test_analyzer-argv5-expected5]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_query_is_not_currently_supported
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_rejected_host_token_prevents_projectless_cu_call[StatusCode.PERMISSION_DENIED]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_rejected_host_token_prevents_projectless_cu_call[StatusCode.UNAUTHENTICATED]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_runtime_api_key_is_not_forwarded_to_host_factory
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_runtime_failures_have_deterministic_structured_errors[raised0-cancellation-130]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_runtime_failures_have_deterministic_structured_errors[raised1-cancellation-130]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_runtime_failures_have_deterministic_structured_errors[raised2-host-contract-1]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_service_output_modes_emit_complete_json[None]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_service_output_modes_emit_complete_json[default]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_service_output_modes_emit_complete_json[json]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_unavailable_prompt_requires_host_upgrade_without_service_call
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_unsupported_output_is_rejected_before_host_access
+  state: pending
+- source: packages/azd-extension/tests/unit/test_cli.py::test_version_does_not_connect_to_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_config.py::test_all_profile_capabilities_have_an_azd_environment_disposition
+  state: pending
+- source: packages/azd-extension/tests/unit/test_config.py::test_api_key_is_accepted_only_from_runtime_environment
+  state: pending
+- source: packages/azd-extension/tests/unit/test_config.py::test_explicit_and_process_values_precede_azd_environment_config
+  state: pending
+- source: packages/azd-extension/tests/unit/test_config.py::test_invalid_structured_config_fails_explicitly
+  state: pending
+- source: packages/azd-extension/tests/unit/test_config.py::test_key_authentication_requires_exactly_one_runtime_key
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_credential_allows_only_cu_scope_for_selected_tenant
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_credential_rejects_escalation_before_token_request[scopes0-tenant-scope]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_credential_rejects_escalation_before_token_request[scopes1-tenant-scope]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_credential_rejects_escalation_before_token_request[scopes2-other-tenant-tenant]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_default_credential_uses_selected_tenant_without_wildcard
+  state: pending
+- source: packages/azd-extension/tests/unit/test_credential.py::test_management_credential_allows_only_management_scope
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_authorization_error_preserves_service_identity_and_rbac_guidance
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_client_disables_retries_for_create_and_destructive_operations
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_client_uses_product_version_user_agent_and_default_retries
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_core_authorization_error_uses_host_owned_rbac_remediation
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_core_service_error_preserves_code_and_request_id
+  state: pending
+- source: packages/azd-extension/tests/unit/test_error_behavior.py::test_partial_result_warnings_are_not_mapped_to_failure
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_client_rejects_invalid_extension_claims[eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJzdWIiOiAiYW5vdGhlci5leHRlbnNpb24iLCAiY2FwIjogWyJjdXN0b20tY29tbWFuZHMiXX0.InNpZ25hdHVyZSI]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_client_rejects_invalid_extension_claims[eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJzdWIiOiAiYXp1cmUuYWkuY29udGVudC11bmRlcnN0YW5kaW5nIiwgImNhcCI6IFsibWV0YWRhdGEiXX0.InNpZ25hdHVyZSI]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_client_rejects_invalid_extension_claims[not-a-jwt]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_context_calls_attach_authentication_metadata
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_from_environment_requires_host_credentials
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_accepts_only_loopback_addresses[http://127.0.0.1:5001-127.0.0.1:5001]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_accepts_only_loopback_addresses[http://[::1]:5001-[::1]:5001]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_accepts_only_loopback_addresses[localhost:5001-localhost:5001]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_rejects_unsafe_addresses[http://localhost:5001/path]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_rejects_unsafe_addresses[http://localhost]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_rejects_unsafe_addresses[http://user@localhost:5001]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_host.py::test_localhost_target_rejects_unsafe_addresses[https://example.com:5001]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_deploy_models_creates_missing_deployment
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_deploy_models_rejects_conflicting_model_version
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_deploy_models_reuses_matching_deployment
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_deployment_states_returns_only_named_models
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_honors_resource_group
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_maps_management_authentication_failures[401]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_maps_management_authentication_failures[403]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_matches_endpoint_in_selected_subscription
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_matches_name_or_arm_id[/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_matches_name_or_arm_id[account]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_rejects_ambiguous_matches
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_rejects_malformed_arm_id
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_rejects_non_https_urls[ftp://account]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_rejects_non_https_urls[http://account.example.test]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_uses_scope_embedded_in_arm_id
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_uses_supported_endpoint_fallbacks[account0-https://alternate.example/]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_uses_supported_endpoint_fallbacks[account1-https://property.example/]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_management.py::test_resolve_resource_uses_supported_endpoint_fallbacks[account2-https://account.services.ai.azure.com/]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_metadata.py::test_manifest_registers_provisional_foundry_namespace
+  state: pending
+- source: packages/azd-extension/tests/unit/test_metadata.py::test_metadata_does_not_redeclare_azd_reserved_globals
+  state: pending
+- source: packages/azd-extension/tests/unit/test_metadata.py::test_metadata_exposes_the_complete_command_surface
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_analyze_dry_run_uses_shared_input_and_output_planning
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_analyzer_test_dry_run_avoids_service_call
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cancelled_operation_stops_before_service_call
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cross_resource_copy_rejects_flags_conflicting_with_arm_id[None-other-rg-resource
+    group conflicts]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cross_resource_copy_rejects_flags_conflicting_with_arm_id[other-sub-None-subscription
+    conflicts]
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cross_resource_copy_rejects_key_authentication
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cross_resource_copy_resolves_resources_and_delegates_to_core
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_cross_resource_copy_uses_arm_id_scope_without_explicit_flags
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_defaults_set_can_use_selected_environment_model_deployments
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_defaults_show_and_set_use_selected_service_context
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_delete_rejects_conflicting_names_before_prompt
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_delete_requires_yes_when_host_is_noninteractive
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_delete_supports_positional_and_host_confirmation
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_environment_variable_list_redacts_api_key
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_infra_generate_materializes_azd_native_hooks
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_infra_models_none_requires_no_service_or_management_clients
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_invalid_selected_environment_fails_before_host_call
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_list_delegates_filtering_and_sorting_to_core
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_postprovision_configures_environment_without_persisting_key
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_process_shutdown_sets_cancellation_before_unwinding
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_projectless_explicit_endpoint_does_not_call_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_rejected_prompt_is_cancellation
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_runtime_api_key_builds_key_credential_without_entra_credential
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_schema_template_creation_runs_without_host
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_selected_environment_is_validated_and_loaded_exactly
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_service_settings_precedence_does_not_use_profiles
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_show_supports_positional_name_and_delegates_to_core
+  state: pending
+- source: packages/azd-extension/tests/unit/test_runtime.py::test_validate_analyzer_is_offline_and_returns_structured_result
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_atomic_write_does_not_follow_replaced_output_directory
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_atomic_write_does_not_replace_concurrently_created_file
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_atomic_write_requires_overwrite_policy_and_replaces_complete_file
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_cli_emits_allowlisted_diagnostic_event
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_diagnostic_event_contains_only_allowlisted_redacted_fields
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_output_path_rejects_symlink_destination_and_parent
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_output_path_rejects_traversal_outside_approved_root
+  state: pending
+- source: packages/azd-extension/tests/unit/test_security.py::test_redaction_removes_tokens_signed_urls_and_full_paths
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_create_client_rejects_unsupported_cloud
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_create_client_uses_explicit_api_key_without_azure_login
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_create_client_uses_key_from_selected_profile
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_explicit_login_overrides_profile_key
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_get_cli_credential_uses_active_subscription
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_key_auth_requires_a_key
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_real_azure_parser_preserves_profile_api_version_and_passes_key_to_client
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_resolve_service_settings_prefers_explicit_values
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_client_factory.py::test_resolve_service_settings_requires_endpoint
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_command_dispatch.py::test_active_extension_does_not_import_standalone_frontend
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_command_dispatch.py::test_dispatch_returns_plain_values
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_command_dispatch.py::test_dispatch_translates_core_errors_with_fallback
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_command_dispatch.py::test_entry_points_use_azure_cli_kwargs_convention
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_all_help_entries_are_valid_yaml
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_command_help_keys_and_summaries_come_from_shared_specs
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_every_shared_command_derives_a_unique_callable_adapter
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_infrastructure_generation_is_registered_but_obsolete_commands_are_not
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_internal_hook_helper_is_not_in_top_level_azure_help_surface
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_commands.py::test_preview_commands_are_generated_from_shared_specs
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_categories[core_error0-ArgumentUsageError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_categories[core_error1-InvalidArgumentValueError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_categories[core_error2-AuthenticationError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_categories[core_error3-ResourceNotFoundError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_categories[core_error4-CLIError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_sdk_failures[sdk_error0-AuthenticationError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_sdk_failures[sdk_error1-AzureConnectionError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_maps_sdk_failures[sdk_error2-InvalidArgumentValueError]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_errors.py::test_azure_cli_error_preserves_hint
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_analyze_llm_input_preserves_sdk_result_for_formatter
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_analyzer_copy_uses_host_resolved_resources
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_analyzer_create_rejects_schema_pin_that_differs_from_profile
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_connectivity_failure_is_nonzero_and_redacts_key
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_defaults_not_set_is_successful_partial_readiness
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_explicit_overrides_and_key_result_are_secret_free
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_fix_defaults_applies_profile_mappings
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_fix_without_service_or_profile_mappings_is_nonzero
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_loads_named_profile_without_changing_active_profile
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_doctor_unsupported_version_fails_before_client_creation
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_env_var_list_redacts_secret
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_frontend_emits_shared_analysis_report_contract
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_profile_delete_uses_native_confirmation
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_profile_get_redacts_saved_api_key
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_expanded_commands.py::test_profile_show_lists_live_deployments
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_format.py::test_analyzer_list_table_projects_known_columns
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_format.py::test_defaults_table_projects_sorted_model_mappings
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_choose_account_can_default_to_choice_143
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_choose_account_lists_subscriptions_and_marks_active
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_generate_can_explicitly_skip_role_assignment
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_generate_noninteractive_uses_active_azure_cli_account
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_interactive_choices_prompt_in_order_with_shared_defaults
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_interactive_existing_resource_skips_role_and_region_prompts
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_interactive_unspecified_models_match_shared_deferred_selection
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_models_special_values_cannot_be_combined
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_prompt_with_default_uses_blank_response
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_template_is_packaged_with_the_extension
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_validation_rejects_unsafe_environment_and_region
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_write_project_materializes_canonical_template
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_write_project_rejects_non_template_directory
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra.py::test_write_project_reuses_template_and_preserves_unknown_state
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_deploy_reuses_matching_name_and_version
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_model_setup_deploys_and_configures_service_defaults
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_model_setup_with_key_uses_core_client_factory
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_none_writes_empty_model_file_without_clients
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_prompt_models_defaults_to_no_models_on_blank_response
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_prompt_only_offers_models_supported_by_cu_and_foundry
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_recommended_prefers_known_default_versions
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_select_requires_version_for_ambiguous_family
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_models.py::test_supported_models_accepts_sdk_and_wire_shapes
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_infra_parity.py::test_azure_frontend_materialization_matches_core
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_analyze_uses_named_non_conflicting_options
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_clean_real_azure_registration_and_parsing_finishes_within_budget
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_complete_shared_registry_conversion_finishes_within_budget
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec0]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec10]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec11]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec12]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec13]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec14]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec15]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec16]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec17]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec18]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec19]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec1]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec20]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec21]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec22]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec23]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec24]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec2]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec3]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec4]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec5]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec6]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec7]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec8]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_every_shared_command_loads_named_parameters[spec9]
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_generic_adapter_converts_portable_argument_types
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_loader_initialization_registers_the_complete_approved_surface
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_params.py::test_real_azure_parser_passes_analyze_report_file_to_runtime
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_postprovision.py::test_azure_adapter_rejects_empty_account_key
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_postprovision.py::test_azure_adapter_returns_shared_postprovision_result
+  state: pending
+- source: packages/azure-cli-extension/tests/unit/test_postprovision.py::test_completed_model_state_from_azd_skips_azure_model_setup
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_bytes_and_one_inline_use_the_synchronous_client_method
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_bytes_and_one_use_the_client
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_many_collects_all_successes
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_many_default_runner_reads_files
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_many_invokes_on_result_for_every_job
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_many_isolates_per_job_failures
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_url_and_job_preserve_sas_query_for_the_service
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_analyze_url_inline_uses_synchronous_url_method
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_dedupe_same_file_collapses_path_spellings
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_dedupe_same_file_collapses_symlink
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_dedupe_same_file_keeps_distinct_files
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_dedupe_same_file_keeps_first_in_planned_order
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_dedupe_same_file_missing_files_fall_back_to_realpath
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_disambiguate_collisions_embeds_input_path_hash
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_disambiguate_collisions_is_stable_across_runs
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_disambiguate_collisions_makes_out_paths_unique
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_disambiguate_collisions_noop_when_unique
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_execute_analyze_plans_named_urls_without_a_frontend
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_json_jobs_return_raw_lro_and_inline_service_payloads
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_direct_files_with_same_basename_collide
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_out_dir_preserves_source_relative_structure
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_out_dir_rejects_unsafe_source_relative_path
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_out_dir_uses_absolute_file_basename
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_out_dir_uses_direct_file_basename
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_same_relative_path_from_multiple_roots_collides
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_stdout_uses_no_out_path
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_plan_jobs_uses_expanded_direct_file_relative_path
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_url_helpers_retain_raw_json_and_usage
+  state: pending
+- source: packages/core/tests/test_analysis.py::test_usage_aware_helpers_retain_lro_and_inline_usage
+  state: pending
+- source: packages/core/tests/test_client.py::test_client_factory_forwards_explicit_retry_policy
+  state: pending
+- source: packages/core/tests/test_client.py::test_client_factory_injects_credential_and_normalizes_endpoint
+  state: pending
+- source: packages/core/tests/test_client.py::test_client_factory_validates_inputs_before_sdk_import[kwargs0-endpoint cannot
+    be empty]
+  state: pending
+- source: packages/core/tests/test_client.py::test_client_factory_validates_inputs_before_sdk_import[kwargs1-credential cannot
+    be empty]
+  state: pending
+- source: packages/core/tests/test_client.py::test_client_factory_validates_inputs_before_sdk_import[kwargs2-API version cannot
+    be empty]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_analyze_named_urls_bind_as_repeatable_common_strings
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_analyzer_show_builds_normalized_typed_request
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_analyzer_show_canonical_and_positional_forms_bind_identically
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed0-provide name only
+    once]
+  state: pending
+- source: 'packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed1-missing required
+    argument: --name]'
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path0-canonical0-shortcut0-expected0]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path1-canonical1-shortcut1-expected1]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path2-canonical2-shortcut2-expected2]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path3-canonical3-shortcut3-expected3]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path4-canonical4-shortcut4-expected4]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path5-canonical5-shortcut5-expected5]
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_defaults_set_does_not_implicitly_select_profile_mappings
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_frontend_presentation_arguments_are_not_bound_to_core_request
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_profile_copy_destination_is_required_but_source_defaults_to_active
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_profile_set_canonical_and_positional_forms_bind_identically
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_registry_import_is_frontend_sdk_and_side_effect_safe
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_registry_metadata_is_unambiguous_for_frontend_adapters
+  state: pending
+- source: packages/core/tests/test_command_spec.py::test_registry_paths_are_unique_and_resolvable
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analysis_report_rejects_unknown_result_view
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analysis_report_rejects_unknown_status
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analysis_report_v1_has_stable_fields_statuses_and_counts
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analyzer_show_rejects_empty_name[ ]
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analyzer_show_rejects_empty_name[\t\n]
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_analyzer_show_rejects_empty_name[]
+  state: pending
+- source: packages/core/tests/test_contracts.py::test_batch_report_counts_each_outcome_status
+  state: pending
+- source: packages/core/tests/test_defaults.py::test_apply_defaults_merges_existing_values
+  state: pending
+- source: packages/core/tests/test_defaults.py::test_parse_model_kv_validates_and_normalizes_values
+  state: pending
+- source: packages/core/tests/test_defaults.py::test_with_prebuilt_default_mappings_adds_service_aliases
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_connectivity_failure_is_required_and_redacts_key
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_connectivity_failure_preserves_service_code_and_request_id
+  state: pending
+- source: 'packages/core/tests/test_doctor.py::test_connectivity_failure_redacts_common_credential_formats[Authorization:
+    Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature]'
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_connectivity_failure_redacts_common_credential_formats[api_key=another-secret]
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_connectivity_failure_redacts_common_credential_formats[https://example.test/file?sig=sas-signature&other=safe]
+  state: pending
+- source: 'packages/core/tests/test_doctor.py::test_connectivity_failure_redacts_common_credential_formats[token: token-value]'
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_defaults_not_set_is_reachable_partial_readiness
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_fix_reads_once_preserves_mappings_and_adds_aliases
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_fix_without_any_mapping_is_usage_failure
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_request_resolves_all_explicit_overrides_without_exposing_key
+  state: pending
+- source: packages/core/tests/test_doctor.py::test_unsupported_version_fails_before_client_creation
+  state: pending
+- source: packages/core/tests/test_environment.py::test_environment_registry_matches_preview_contract
+  state: pending
+- source: packages/core/tests/test_environment.py::test_list_set_environment_variables_redacts_secrets
+  state: pending
+- source: packages/core/tests/test_errors.py::test_core_error_retains_structured_frontend_neutral_context
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[AuthenticationError-authentication]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[ConflictError-conflict]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[LocalIOError-local-io]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[NotFoundError-not-found]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[ServiceError-service]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[UsageError-usage]
+  state: pending
+- source: packages/core/tests/test_errors.py::test_error_subclasses_have_stable_categories[ValidationError-validation]
+  state: pending
+- source: packages/core/tests/test_infra.py::test_built_wheel_contains_canonical_assets
+  state: pending
+- source: packages/core/tests/test_infra.py::test_canonical_template_has_expected_assets
+  state: pending
+- source: packages/core/tests/test_infra.py::test_canonical_template_matches_golden_hashes
+  state: pending
+- source: packages/core/tests/test_infra.py::test_materialization_is_deterministic_and_preserves_state
+  state: pending
+- source: packages/core/tests/test_infra.py::test_model_selection_supports_interactive_prompt_default
+  state: pending
+- source: packages/core/tests/test_infra_models.py::test_normalizes_sdk_models_and_selects_preferred_skus
+  state: pending
+- source: packages/core/tests/test_infra_models.py::test_rejects_ambiguous_or_duplicate_model_families
+  state: pending
+- source: packages/core/tests/test_infra_models.py::test_shared_model_setup_executes_host_capabilities
+  state: pending
+- source: packages/core/tests/test_infra_models.py::test_shared_model_setup_none_is_offline
+  state: pending
+- source: packages/core/tests/test_infra_models.py::test_writes_canonical_bicep_model_shape_atomically
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[files]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_direct_duplicate_arguments_are_rejected[sources]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_directory_discovery_excludes_hidden_and_generated_files
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_distinct_remote_outputs_preserve_filenames_and_extensions[full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_distinct_remote_outputs_preserve_filenames_and_extensions[llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_duplicate_named_urls_are_rejected_without_echoing_query
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_empty_discovery_is_an_error
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_exhausted_local_collision_names_are_rejected[full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_exhausted_local_collision_names_are_rejected[llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_existing_https_colon_filename_remains_a_local_input
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_existing_output_policy_is_planned[error-False]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_existing_output_policy_is_planned[reanalyze-False]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_existing_output_policy_is_planned[skip-True]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[.hidden.pdf]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[report.pdf.result.json]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_explicit_files_allow_hidden_and_generated_files[report.pdf.result.md]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_hardlink_overlap_from_sources_is_silently_deduplicated
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_hidden_only_discovery_names_skipped_file
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_https_url_is_preserved_without_local_file_access[positional-positional-positional-url]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_https_url_is_preserved_without_local_file_access[urls-named-urls-named-url]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_invalid_url_port_is_rejected_without_echoing_query[positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_invalid_url_port_is_rejected_without_echoing_query[urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_local_digest_collisions_stay_stable_when_reordered[full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_local_digest_collisions_stay_stable_when_reordered[llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[error-False-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[error-False-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[error-True-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[error-True-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[reanalyze-False-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[reanalyze-False-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[reanalyze-True-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[reanalyze-True-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[skip-False-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[skip-False-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[skip-True-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_mixed_collisions_are_rejected_before_existing_policy[skip-True-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_multiple_inputs_write_alongside_sources
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_files_require_literal_files
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_local_input_rejects_https_url_with_named_hint[files]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_local_input_rejects_https_url_with_named_hint[sources]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[empty]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[local]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[relative-url]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_url_requires_an_absolute_https_url[windows-path]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_named_urls_preserve_selection_order
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_output_collisions_are_disambiguated_before_existing_policy
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_output_directory_preserves_source_relative_paths
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_output_file_and_directory_are_mutually_exclusive
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_output_file_requires_exactly_one_input
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_pattern_filters_every_named_source
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_positional_directory_is_nonrecursive_by_default
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_positional_files_preserve_order_and_measure_content
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_positional_wildcard_has_actionable_error
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_recursive_discovery_excludes_hidden_paths_and_generated_files
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_recursive_is_rejected_for_named_files
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_recursive_source_is_sorted_by_source_relative_path
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://[invalid/container/input.pdf?sv=1&sig=secret]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://user:password@[invalid/input.pdf?sig=secret]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https://user:password@example.test/input.pdf?sig=secret]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_redact_input_reference_hides_secrets_from_malformed_urls[https:/container/input.pdf?sv=1&sig=secret]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_relative_absolute_and_symlink_overlap_is_silently_deduplicated
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_batch_requires_output_directory
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_case_only_output_collision_is_rejected_on_windows
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_explicit_output_file_is_unchanged[long-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_explicit_output_file_is_unchanged[long-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_explicit_output_file_is_unchanged[short-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_explicit_output_file_is_unchanged[short-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[ascii-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[ascii-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[long-url-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[long-url-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[unicode-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_generated_filename_over_byte_budget_is_rejected[unicode-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_input_uses_url_filename_under_output_directory[full-positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_input_uses_url_filename_under_output_directory[full-urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_input_uses_url_filename_under_output_directory[llm-input-positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_input_uses_url_filename_under_output_directory[llm-input-urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_long_filename_can_still_stream_to_stdout[full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_long_filename_can_still_stream_to_stdout[llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[basename-skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[empty-path-skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[query-skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[reserved-skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_output_collisions_are_rejected[sanitized-skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[False-False-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[False-False-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[False-True-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[False-True-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[True-False-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[True-False-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[True-True-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_paths_remain_stable_when_inputs_reordered[True-True-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[error-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[error-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[reanalyze-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[reanalyze-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[skip-full]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_remote_result_path_is_unchanged_when_sas_is_renewed[skip-llm-input]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_sas_url_preserves_query_parameters[positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_sas_url_preserves_query_parameters[urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs0-positional
+    inputs cannot be combined with --file]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs1-positional
+    inputs cannot be combined with --source]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs2---file and
+    --source]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs3---pattern
+    is valid only]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs4-positional
+    inputs cannot be combined with --url]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs5---url cannot
+    be combined with --file or --source]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs6---url cannot
+    be combined with --file or --source]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs7---pattern
+    is valid only]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs8---recursive
+    is valid only]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_selection_modes_are_rejected_before_discovery[kwargs9-provide positional
+    inputs]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_single_input_streams_without_destination_by_default
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unknown_extension_is_selected_without_local_rejection
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[ftp://example.test/sample.pdf-unsupported
+    URL scheme 'ftp'-positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[ftp://example.test/sample.pdf-unsupported
+    URL scheme 'ftp'-urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[http://example.test/sample.pdf-unsupported
+    URL scheme 'http'-positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[http://example.test/sample.pdf-unsupported
+    URL scheme 'http'-urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[https:/sample.pdf-not a valid
+    HTTPS URL-positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_unsupported_url_has_actionable_error[https:/sample.pdf-not a valid
+    HTTPS URL-urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_url_over_service_length_limit_is_rejected[positional]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_url_over_service_length_limit_is_rejected[urls]
+  state: pending
+- source: packages/core/tests/test_input_planning.py::test_windows_drive_spelling_is_not_treated_as_url
+  state: pending
+- source: packages/core/tests/test_operations.py::test_get_analyzer_delegates_to_injected_client
+  state: pending
+- source: packages/core/tests/test_package_metadata.py::test_runtime_version_matches_package_metadata
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_adapter_exception_text_cannot_leak_into_result
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_completed_state_skips_model_setup
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_configuration_opt_out_prevents_inspection_and_mutation[False]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_configuration_opt_out_prevents_inspection_and_mutation[True]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_key_auth_precedes_endpoint_analyzer_and_defaults
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_optional_model_and_defaults_failures_preserve_basic_success
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_optional_model_failure_does_not_mark_setup_complete
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_populated_configuration_is_preserved_unless_forced
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_readiness_requires_succeeded_completion_and_embedding_deployments[deployments0-False]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_readiness_requires_succeeded_completion_and_embedding_deployments[deployments1-False]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_readiness_requires_succeeded_completion_and_embedding_deployments[deployments2-False]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_readiness_requires_succeeded_completion_and_embedding_deployments[deployments3-True]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_required_profile_write_failure_is_nonzero[api_key]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_required_profile_write_failure_is_nonzero[default_analyzer]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_required_profile_write_failure_is_nonzero[endpoint]
+  state: pending
+- source: packages/core/tests/test_postprovision.py::test_role_enabled_uses_login_without_fetching_key
+  state: pending
+- source: packages/core/tests/test_postprovision_launchers.py::test_launchers_are_policy_free_and_reference_only_azd
+  state: pending
+- source: packages/core/tests/test_postprovision_launchers.py::test_posix_launcher_fails_when_no_frontend_is_installed
+  state: pending
+- source: packages/core/tests/test_postprovision_launchers.py::test_posix_launcher_invokes_azd_extension
+  state: pending
+- source: packages/core/tests/test_postprovision_launchers.py::test_posix_launcher_prefers_explicit_azd_path
+  state: pending
+- source: packages/core/tests/test_postprovision_launchers.py::test_powershell_launcher_selects_azd
+  state: pending
+- source: packages/core/tests/test_profile_operations.py::test_profile_operations_cover_full_lifecycle
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_active_profile_cannot_be_deleted
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_azure_config_path_honors_azure_config_dir
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_copy_uses_explicit_values_and_rename_updates_active
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_default_profile_exists_without_a_file
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_empty_named_profile_can_be_created_saved_and_reloaded
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_import_does_not_create_azure_config
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_azure_config_is_not_overwritten
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_model_deployment_key_is_rejected[model_deployments. gpt-5.2]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_model_deployment_key_is_rejected[model_deployments.]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_model_deployment_key_is_rejected[model_deployments.gpt/5.2]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_model_deployment_key_is_rejected[model_deployments.gpt:5.2]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_invalid_model_deployment_key_is_rejected[model_deployments.gpt=5.2]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_missing_profile_is_reported
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_model_deployment_key_round_trips
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[-dev]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[Default]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[MODEL_DEPLOYMENTS]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[contains space]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[default]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[dev-]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[dev.profile]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[model_deployments]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_mutable_profile_name_validation[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_named_profile_inherits_base_settings_but_not_default_profile
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_profile_resolution_applies_environment_last
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_profile_round_trip_preserves_unrelated_azure_config
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_profile_update_replaces_only_existing_cu_section
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_save_detects_concurrent_modification
+  state: pending
+- source: packages/core/tests/test_profiles.py::test_setting_api_key_selects_key_auth_and_unsetting_restores_login
+  state: pending
+- source: packages/core/tests/test_schema.py::test_sample_suggestion_adds_placeholder_descriptions_and_passes_strict_validation
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_accepts_documented_formats[.csv]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_accepts_documented_formats[.docx]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_accepts_documented_formats[.eml]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_accepts_documented_formats[.json]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_accepts_documented_formats[.pdf]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_rejects_non_document_and_unknown_formats[.jpg]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_rejects_non_document_and_unknown_formats[.mp3]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_rejects_non_document_and_unknown_formats[.mp4]
+  state: pending
+- source: packages/core/tests/test_schema.py::test_validate_document_sample_rejects_non_document_and_unknown_formats[.zip]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_2025_11_01_json_field_type_is_valid
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_allowed_types_match_design_doc
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_array_field_requires_items_object
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_array_field_valid_with_object_items_table_like
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_array_field_valid_with_string_items
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_array_items_missing_type_is_error
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_array_items_object_without_properties_is_error
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_bad_analyzer_id_rejected
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_bad_field_type_exact_message
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_classification_schema_with_content_categories_is_valid_without_field_schema
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_classify_requires_enum
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_classify_requires_two_distinct_enum_values
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_config_boolean_fields_must_be_boolean
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_content_categories_must_be_non_empty_object
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_content_category_analyzer_id_pattern_enforced
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_field_examples_and_enum_descriptions_are_accepted
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_missing_method_is_allowed
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_missing_type_is_error
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_object_field_requires_properties_or_ref
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_rejects_non_object_roots[42]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_rejects_non_object_roots[None]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_rejects_non_object_roots[True]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_rejects_non_object_roots[payload0]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_rejects_non_object_roots[schema]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_parse_and_validate_reports_bad_json
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_ref_definition_is_rejected_for_supported_api_versions[2025-11-01]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_ref_definition_is_rejected_for_supported_api_versions[2026-06-01-preview]
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_ref_is_rejected_recursively_in_fields_items_properties_and_definitions
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_schema_pinned_version
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_tables_with_same_columns_are_valid_when_row_schema_is_inlined
+  state: pending
+- source: packages/core/tests/test_schema_validation.py::test_valid_schema_ok
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_render_llm_input_converts_mapping_to_analysis_result
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_render_llm_input_passes_sdk_result_through
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_to_plain_value_recursively_serializes_supported_values
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_to_plain_value_rejects_cycles
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_to_plain_value_rejects_unknown_objects
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_to_plain_value_stringifies_mapping_keys
+  state: pending
+- source: packages/core/tests/test_serialization.py::test_to_plain_value_surfaces_as_dict_failure
+  state: pending
+- source: packages/core/tests/test_service_options.py::test_analyzer_show_composes_expected_service_options_in_order
+  state: pending
+- source: packages/core/tests/test_service_options.py::test_service_option_keys_are_unique_and_resolvable
+  state: pending
+- source: packages/core/tests/test_service_options.py::test_service_option_security_and_defaults
+  state: pending
+- source: packages/core/tests/test_validation_operation.py::test_validate_schema_accepts_valid_utf8_json
+  state: pending
+- source: packages/core/tests/test_validation_operation.py::test_validate_schema_applies_optional_service_contract
+  state: pending
+- source: packages/core/tests/test_validation_operation.py::test_validate_schema_reports_binary_input_as_validation_error
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_double_dash_preserves_option_shaped_input
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_raw_input_arguments_are_not_retokenized_or_expanded
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_repeated_named_urls_preserve_order_and_duplicates
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_supported_input_forms_reach_the_typed_request[arguments0-expected0]
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_supported_input_forms_reach_the_typed_request[arguments1-expected1]
+  state: pending
+- source: tests/host_contract/test_argument_forwarding.py::test_supported_input_forms_reach_the_typed_request[arguments2-expected2]
+  state: pending
+- source: tests/host_contract/test_context.py::test_invalid_host_tokens_fail_before_any_host_or_service_call[eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiYXpkIiwgInN1YiI6ICJhbm90aGVyLmV4dGVuc2lvbiIsICJhdWQiOiBbImxvY2FsaG9zdDo1MDAxIl0sICJjYXAiOiBbImN1c3RvbS1jb21tYW5kcyJdfQ.Imhvc3Qtc2lnbmF0dXJlIg]
+  state: pending
+- source: tests/host_contract/test_context.py::test_invalid_host_tokens_fail_before_any_host_or_service_call[eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiYXpkIiwgInN1YiI6ICJhenVyZS5haS5jb250ZW50LXVuZGVyc3RhbmRpbmciLCAiYXVkIjogWyJsb2NhbGhvc3Q6NTAwMSJdLCAiY2FwIjogWyJjdXN0b20tY29tbWFuZHMiXSwgImV4cCI6IDB9.Imhvc3Qtc2lnbmF0dXJlIg]
+  state: pending
+- source: tests/host_contract/test_context.py::test_invalid_host_tokens_fail_before_any_host_or_service_call[eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiYXpkIiwgInN1YiI6ICJhenVyZS5haS5jb250ZW50LXVuZGVyc3RhbmRpbmciLCAiYXVkIjogWyJsb2NhbGhvc3Q6NTAwMSJdLCAiY2FwIjogWyJtZXRhZGF0YSJdfQ.Imhvc3Qtc2lnbmF0dXJlIg]
+  state: pending
+- source: tests/host_contract/test_context.py::test_invalid_host_tokens_fail_before_any_host_or_service_call[malformed]
+  state: pending
+- source: tests/host_contract/test_context.py::test_selected_environment_and_cu_scope_are_fail_closed
+  state: pending
+- source: tests/host_contract/test_generated_contract.py::test_contract_exposes_exact_required_services
+  state: pending
+- source: tests/host_contract/test_generated_contract.py::test_contract_records_revision_and_uses_only_stable_v1
+  state: pending
+- source: tests/host_contract/test_generated_contract.py::test_generated_contract_is_deterministic
+  state: pending
+- source: tests/host_contract/test_generated_contract.py::test_generator_rejects_preview_contract_dependency
+  state: pending
+- source: tests/host_contract/test_versions.py::test_extension_and_python_prerelease_versions_are_equivalent
+  state: pending
+- source: tests/host_contract/test_versions.py::test_host_contract_matrix_matches_version_policy
+  state: pending
+- source: tests/host_contract/test_versions.py::test_required_azd_version_matches_tested_host_floor
+  state: pending
+- source: tests/packaging/test_azd_extension_bundle.py::test_artifact_validator_checks_metadata_and_version
+  state: pending
+- source: tests/packaging/test_azd_extension_bundle.py::test_ci_builds_native_azd_extension_bundles
+  state: pending
+- source: tests/packaging/test_azd_extension_bundle.py::test_native_build_scripts_are_present
+  state: pending
+- source: tests/packaging/test_azd_feasibility_measurement.py::test_budget_evaluation_checks_each_measured_dimension
+  state: pending
+- source: tests/packaging/test_azd_feasibility_measurement.py::test_proposed_budgets_are_explicit
+  state: pending
+- source: tests/packaging/test_azd_feasibility_measurement.py::test_timing_summary_uses_median
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_builds_same_sha_manifest_with_sbom_and_provenance
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_ci_aggregates_all_platforms_into_same_sha_candidates
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_archive_traversal
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_bundle_with_mismatched_content
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_nonimmutable_source[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-
+    M package.py-clean source tree]
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_nonimmutable_source[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb--does
+    not match HEAD]
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_nonimmutable_source[short-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--40-character]
+  state: pending
+- source: tests/packaging/test_release_manifest.py::test_rejects_private_archive_members
+  state: pending
+- source: tests/packaging/test_source_boundary.py::test_source_boundary
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_ci_runs_canonical_gates_from_a_clean_checkout
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_extension_requires_core_on_pypi
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_rejects_unapproved_context[actual_commit-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-does
+    not match workflow commit]
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_rejects_unapproved_context[expected_commit-short-40-character SHA]
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_rejects_unapproved_context[expected_version-0.1.1-does not match]
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_rejects_unapproved_context[ref-refs/heads/feature-releases must run
+    from]
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_rejects_unapproved_context[repository-someone/fork-releases must
+    run in]
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_release_documentation_records_trusted_publisher_contract
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_release_workflow_is_manual_and_tokenless
+  state: pending
+- source: tests/packaging/test_validate_release.py::test_validates_core_and_extension_release_metadata
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-10]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-11]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-12]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-13]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-14]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-15]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-16]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-17]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-18]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-19]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-1]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-20]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-21]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-22]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-23]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-24]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-25]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-26]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-27]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-28]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-29]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-2]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-3]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-4]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-5]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-6]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-7]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-8]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_all_29_dispositions_have_runtime_evidence[row-9]
+  state: pending
+- source: tests/parity/test_all_dispositions.py::test_hosted_frontends_use_the_same_candidate_core
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_capability_dispositions_are_complete
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_capability_dispositions_are_unique
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-10]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-11]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-12]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-13]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-14]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-15]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-16]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-17]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-18]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-19]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-1]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-20]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-21]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-22]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-23]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-24]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-25]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-26]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-27]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-28]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-29]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-2]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-3]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-4]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-5]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-6]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-7]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-8]
+  state: pending
+- source: tests/parity/test_capability_dispositions.py::test_every_capability_has_an_automated_disposition[row-9]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_bash_hook_delegates_to_hidden_command[azure-cli]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_bash_hook_delegates_to_hidden_command[core]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_powershell_hook_delegates_to_hidden_command[azure-cli]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_powershell_hook_delegates_to_hidden_command[core]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_project_matches_complete_golden_tree[azure-cli]
+  state: pending
+- source: tests/parity/test_generated_projects.py::test_generated_project_matches_complete_golden_tree[core]
+  state: pending
+- source: tests/parity/test_request_result_parity.py::test_analyzer_delete_named_and_positional_forms_have_parity
+  state: pending
+- source: tests/parity/test_request_result_parity.py::test_analyzer_list_has_normalized_request_and_result_parity
+  state: pending
+- source: tests/parity/test_request_result_parity.py::test_conflicting_delete_operands_have_normalized_error_parity
+  state: pending
+- source: tests/playback/test_azd_analyzers.py::test_azd_analyzer_delete_replays_shared_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native commands cover full create/show definitions, operation polling, final-resource GET and
+    delete result. Source PUT JSON was scrubbed; exact synthetic schema expectations and explicit allowReplace=false replace
+    missing/omitted request data. Dummy Entra/session injection replaces Python key/profile hosts. Native delete includes
+    GET preflight even for the source azd case that directly deletes. No original-request-byte, model-role submission, installed-host/live-auth
+    equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analyzer_playback_test.go::TestRecordedAnalyzerLifecycle/basic
+- source: tests/playback/test_azd_analyzers.py::test_azd_analyzer_list_replays_shared_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/analyzer-list-json
+- source: tests/playback/test_azure_cli_analysis.py::test_az_cu_analyze_batch_writes_result_files
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-directory-writes-results
+- source: tests/playback/test_azure_cli_analysis.py::test_az_cu_analyze_prebuilt_invoice_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-prebuilt-invoice-json
+- source: tests/playback/test_azure_cli_analysis.py::test_az_cu_analyze_single_file_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-single-file-markdown
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_analyzer_lifecycle_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native commands cover full create/show definitions, operation polling, final-resource GET and
+    delete result. Source PUT JSON was scrubbed; exact synthetic schema expectations and explicit allowReplace=false replace
+    missing/omitted request data. Dummy Entra/session injection replaces Python key/profile hosts. Native delete includes
+    GET preflight even for the source azd case that directly deletes. No original-request-byte, model-role submission, installed-host/live-auth
+    equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analyzer_playback_test.go::TestRecordedAnalyzerLifecycle/basic
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_analyzer_list_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/analyzer-list-json
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_analyzer_test_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native analyzer-test command consumes all 45 source interactions and compares complete streamed/saved
+    field reports against an independent full Python Azure/azd playback oracle. Only input path and integral JSON number representation
+    are normalized; field values/confidences/statistics and disclaimer are retained. Explicit synthetic binary bytes and dummy
+    Entra/session replace scrubbed PDF bytes and Python key/profile hosts. No binary-upload, installed-host/live-auth equivalence
+    or approval is claimed; service warnings/usage remain in recorded envelopes, not in this source report contract.
+  go_tests:
+  - internal/cmd/analyzer_testing_playback_test.go::TestRecordedAnalyzerFieldReport/recorded
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_classifier_routing_lifecycle_replays_sanitized_service_calls
+  state: pending
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_schema_suggestion_replays_sanitized_service_calls
+  state: pending
+- source: tests/playback/test_azure_cli_analyzers.py::test_az_cu_template_analyzer_lifecycle_replays_sanitized_service_calls
+  state: pending
+- source: tests/playback/test_azure_cli_diagnostics.py::test_az_cu_defaults_show_replays_sanitized_service_calls
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/defaults-show-json
+- source: tests/playback/test_azure_cli_diagnostics.py::test_az_cu_doctor_replays_sanitized_service_calls
+  state: pending
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyze-directory-writes-results]
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-directory-writes-results
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyze-prebuilt-invoice-json]
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed. The source dual-host invoice-labelled
+    case actually calls _run_analyze_single/analyze_single with prebuilt-layout; map its actual assertions to layout playback.
+    The separate Azure adapter case covers the real prebuilt-invoice cassette.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-single-file-markdown
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyze-single-file-markdown]
+  state: evidenced
+  disposition: difference
+  rationale: Full recorded terminal envelope/usage and ordered polling are covered through production SDK and native commands,
+    including saved directory results. Dummy Entra/session injection replaces Python key/profile hosts; scrubbed uploads are
+    matched against explicit synthetic bytes, not source PDF bytes. Virtual time preserves every recorded poll without real
+    waits. No installed-host/live-auth/binary-upload equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analysis_playback_test.go::TestRecordedAnalysisCommands/analyze-single-file-markdown
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyzer-create-show-delete]
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native commands cover full create/show definitions, operation polling, final-resource GET and
+    delete result. Source PUT JSON was scrubbed; exact synthetic schema expectations and explicit allowReplace=false replace
+    missing/omitted request data. Dummy Entra/session injection replaces Python key/profile hosts. Native delete includes
+    GET preflight even for the source azd case that directly deletes. No original-request-byte, model-role submission, installed-host/live-auth
+    equivalence or approval is claimed.
+  go_tests:
+  - internal/cmd/analyzer_playback_test.go::TestRecordedAnalyzerLifecycle/basic
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyzer-list-created-at]
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/analyzer-list-created-at
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyzer-list-custom-sorted]
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/analyzer-list-custom-sorted
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyzer-list-json]
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/analyzer-list-json
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[analyzer-test-field-report]
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native analyzer-test command consumes all 45 source interactions and compares complete streamed/saved
+    field reports against an independent full Python Azure/azd playback oracle. Only input path and integral JSON number representation
+    are normalized; field values/confidences/statistics and disclaimer are retained. Explicit synthetic binary bytes and dummy
+    Entra/session replace scrubbed PDF bytes and Python key/profile hosts. No binary-upload, installed-host/live-auth equivalence
+    or approval is claimed; service warnings/usage remain in recorded envelopes, not in this source report contract.
+  go_tests:
+  - internal/cmd/analyzer_testing_playback_test.go::TestRecordedAnalyzerFieldReport/recorded
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[classifier-routing-lifecycle]
+  state: pending
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[defaults-show-json]
+  state: evidenced
+  disposition: difference
+  rationale: Recorded service/result assertions covered; native dummy Entra credential and azd command/session injection replace
+    Python key/profile hosts. No claim of installed-host or live Entra equivalence; release review pending.
+  go_tests:
+  - internal/cmd/playback_test.go::TestRecordedServiceCommands/defaults-show-json
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[doctor-connectivity]
+  state: pending
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[schema-create-from-sample]
+  state: pending
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[schema-template-validate-lifecycle]
+  state: evidenced
+  disposition: difference
+  rationale: Production SDK/native commands cover full create/show definitions, operation polling, final-resource GET and
+    delete result. Source PUT JSON was scrubbed; exact synthetic schema expectations and explicit allowReplace=false replace
+    missing/omitted request data. Dummy Entra/session injection replaces Python key/profile hosts. Native delete includes
+    GET preflight even for the source azd case that directly deletes. No original-request-byte, model-role submission, installed-host/live-auth
+    equivalence or approval is claimed. The source scenario actually calls _schema/_run_lifecycle with the basic vendor_name
+    definition; it does not generate or validate a template. Map actual lifecycle assertions, not the misleading label; independent
+    template generation/validation remains pending.
+  go_tests:
+  - internal/cmd/analyzer_playback_test.go::TestRecordedAnalyzerLifecycle/basic
+- source: tests/playback/test_dual_host.py::test_all_14_recorded_scenarios_have_dual_host_parity[template-analyzer-create-show-delete]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-path]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-query]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-basic]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-bytes-payload]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-host-and-query]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-bytes]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-text]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-bytes]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-text]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-bytes]
+  state: pending
+- source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-text]
+  state: pending
+- source: tests/playback/test_live_analyzer_copy.py::test_live_cross_resource_copy_through_azd_adapter
+  state: pending
+- source: tests/playback/test_live_analyzer_copy.py::test_live_same_resource_copy_through_azd_adapter
+  state: pending
+- source: tests/playback/test_recording.py::test_committed_recordings_are_complete_and_sanitized
+  state: pending
+- source: tests/playback/test_recording.py::test_request_scrubber_removes_host_headers_and_sas_values
+  state: pending
+- source: tests/playback/test_recording.py::test_response_scrubber_removes_host_and_sensitive_query[False]
+  state: pending
+- source: tests/playback/test_recording.py::test_response_scrubber_removes_host_and_sensitive_query[True]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_batch]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_prebuilt_invoice_json]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyze_single]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_create]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_delete]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_list]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_show]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[analyzer_test]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_create]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_delete]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[classifier_route_show]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[defaults_get]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[doctor]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[route_target_create]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[route_target_delete]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[schema_suggest]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_create]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_delete]
+  state: pending
+- source: tests/playback/test_recording_hygiene.py::test_recording_contains_no_private_paths_urls_or_secrets[template_analyzer_show]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-directory-writes-results]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-prebuilt-invoice-json]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-single-file-markdown]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-copy-cross-resource]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-copy-same-resource]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-create-show-delete]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-created-at]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-custom-sorted]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-json]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-test-field-report]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[classifier-routing-lifecycle]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[defaults-show-json]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[doctor-connectivity]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[schema-create-from-sample]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[schema-template-validate-lifecycle]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-apostrophe-path]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-apostrophe-query]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-basic]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-bytes-payload]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-host-and-query]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-path-bytes]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-path-text]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-query-bytes]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-query-text]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-basic-bytes]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-basic-text]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_contract[template-analyzer-create-show-delete]
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenario_inventory_matches_clean_cutover
+  state: pending
+- source: tests/playback/test_scenarios.py::test_shared_scenarios_own_every_sanitized_recording
+  state: pending

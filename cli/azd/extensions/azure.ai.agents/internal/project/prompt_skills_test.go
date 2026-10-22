@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -968,7 +969,7 @@ func (fakeTokenCredential) GetToken(context.Context, policy.TokenRequestOptions)
 func TestNewFoundryToolboxBuilder_ResolvesAccountFromProjectResourceIDAndChecksOwnership(t *testing.T) {
 	t.Parallel()
 
-	const customSubdomainEndpoint = "https://custom-subdomain.services.ai.azure.com/api/projects/my-proj"
+	const customSubdomainEndpoint = "https://custom-subdomain.services.ai.azure.com/api/projects/arm-project-name"
 	const projectResourceID = "/subscriptions/sub-from-id/resourceGroups/rg-from-id/" +
 		"providers/Microsoft.CognitiveServices/accounts/arm-account-name/projects/arm-project-name"
 
@@ -1020,6 +1021,75 @@ func TestNewFoundryToolboxBuilder_ResolvesAccountFromProjectResourceIDAndChecksO
 		_, err := newFoundryToolboxBuilder(g, settings, fakeTokenCredential{})
 		require.Error(t, err)
 	})
+}
+
+func TestToolboxVersionConnectionNameFitsARMContract(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name    string
+		version string
+	}{
+		{"tools", "1"},
+		{"customer-research-tools", "1"},
+		{strings.Repeat("a", 100), "1"},
+		{"tools", strings.Repeat("1234567890", 10)},
+		{"customer-research-tools", strings.Repeat("1234567890", 10)},
+		{"_tools with spaces", "version/one"},
+	} {
+		t.Run(tt.name+"/"+tt.version, func(t *testing.T) {
+			t.Parallel()
+			endpoint := "https://acct.services.ai.azure.com/api/projects/proj/toolboxes/" +
+				tt.name + "/versions/" + tt.version + "/mcp"
+			name := toolboxVersionConnectionName(tt.name, tt.version, endpoint)
+			require.Regexp(t, `^[a-zA-Z0-9][a-zA-Z0-9_-]{2,32}$`, name)
+			require.LessOrEqual(t, len(name), 33)
+			require.Equal(t, name, toolboxVersionConnectionName(tt.name, tt.version, endpoint))
+			require.NotEqual(t, name, toolboxVersionConnectionName(tt.name, tt.version, endpoint+"?api-version=v1"))
+			putCalled := false
+			builder := &foundryToolboxBuilder{
+				pipeline: runtime.NewPipeline("test", "v1", runtime.PipelineOptions{}, &policy.ClientOptions{
+					Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+						parts := strings.Split(req.URL.Path, "/")
+						requestName := parts[len(parts)-1]
+						require.LessOrEqual(t, len(requestName), 33, "legacy lookups must also respect the length limit")
+						status := http.StatusNotFound
+						if req.Method == http.MethodPut {
+							putCalled = true
+							require.Equal(t, name, requestName)
+							status = http.StatusOK
+						}
+						return &http.Response{
+							StatusCode: status, Request: req, Body: io.NopCloser(strings.NewReader(`{}`)),
+						}, nil
+					}),
+				}),
+			}
+			connection, err := builder.ensureToolboxConnection(t.Context(), tt.name, tt.version, endpoint)
+			require.NoError(t, err)
+			require.Equal(t, name, connection)
+			require.True(t, putCalled)
+		})
+	}
+}
+
+func TestNewFoundryToolboxBuilderRejectsSplitProjectTargets(t *testing.T) {
+	t.Parallel()
+	const projectID = "/subscriptions/sub/resourceGroups/rg/" +
+		"providers/Microsoft.CognitiveServices/accounts/arm-account/projects/project-b"
+	for _, env := range []map[string]string{
+		{"AZURE_AI_PROJECT_ID": projectID},
+		{"AZURE_AI_PROJECT_NAME": "project-b"},
+	} {
+		t.Run(fmt.Sprint(env), func(t *testing.T) {
+			t.Parallel()
+			builder, err := newFoundryToolboxBuilder(&promptGraph{env: env}, &PromptAgentSettings{
+				SubscriptionID: "sub", ResourceGroup: "rg",
+				ProjectEndpoint: "https://custom-subdomain.services.ai.azure.com/api/projects/project-a",
+			}, fakeTokenCredential{})
+			require.Nil(t, builder, "no client should be constructed for mismatched projects")
+			require.ErrorContains(t, err, `endpoint names project "project-a", but the ARM target names project "project-b"`)
+		})
+	}
 }
 
 func TestReconcileMcpTool_UpdatesPriorToolboxVersionAndRejectsConflictingURL(t *testing.T) {

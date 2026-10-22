@@ -990,6 +990,10 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 		toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL),
 	}
 	for i, connectionName := range candidates {
+		// An overlong legacy name cannot satisfy the ARM connection contract.
+		if i == 0 && len(connectionName) > 33 {
+			continue
+		}
 		_, isExplicit := b.explicitConns[strings.ToLower(connectionName)]
 		existing, found, err := b.getConnection(ctx, connectionName)
 		if err != nil {
@@ -1051,7 +1055,16 @@ func (b *foundryToolboxBuilder) ensureToolboxConnection(
 // unversioned connections for toolboxes whose names already end in a version.
 func toolboxVersionConnectionName(toolboxName, toolboxVersion, mcpURL string) string {
 	sum := sha256.Sum256([]byte(mcpURL))
-	return fmt.Sprintf("%s-v%s-%x-mcp", toolboxName, toolboxVersion, sum[:4])
+	// Reserve 13 of ARM's 33 characters for the endpoint hash and -mcp suffix.
+	prefix := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, toolboxName+"-v"+toolboxVersion)
+	prefix = strings.TrimLeft(prefix, "-_")
+	prefix = prefix[:min(len(prefix), 20)]
+	return fmt.Sprintf("%s-%x-mcp", prefix, sum[:4])
 }
 
 func isMatchingToolboxConnection(
@@ -1202,6 +1215,15 @@ func resolveToolboxProjectARMTarget(
 			exterrors.CodeInvalidServiceConfig,
 			"Foundry project subscription, resource group, account, and project are required to configure toolbox connections",
 			"run `azd provision` to populate the Foundry project environment values",
+		)
+	}
+	_, endpointProject := foundryProjectIdentity(settings.ProjectEndpoint)
+	if !strings.EqualFold(endpointProject, projectName) {
+		return "", "", "", "", exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("Foundry project endpoint names project %q, but the ARM target names project %q",
+				endpointProject, projectName),
+			"set FOUNDRY_PROJECT_ENDPOINT, AZURE_AI_PROJECT_ID, and AZURE_AI_PROJECT_NAME to the same Foundry project",
 		)
 	}
 	return subscriptionID, resourceGroup, accountName, projectName, nil

@@ -207,7 +207,7 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke using public A2A 0.3
   azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
 
-  # Generate a plain-message request using the 1.0 default
+  # Use the A2A 1.0 convenience default for a plain message
   azd ai agent invoke -p a2a "Hello!"
 
   # Send a complete public JSON-RPC file unchanged (version is required)
@@ -231,7 +231,7 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Start background work and return after its Response ID is received
   azd ai agent invoke --long-running --no-wait "Run the long task"
 
-  # Start a new session (discard the saved session ID)
+  # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
   # Invoke a specific deployed agent version

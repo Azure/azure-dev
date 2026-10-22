@@ -131,9 +131,9 @@ A2A Version:
 Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
 not a Foundry API version or the deployed agent version selected by --version.
 For plain messages, azd composes the body and A2A-Version header together,
-using 1.0 as a convenience default. A2A hosted-agent declaration 1.0.0 maps to
-wire version 1.0; explicit overrides must be compatible with the agent.
-With --input-file, --a2a-version is always required; YAML versions do not apply.
+using 1.0 as a convenience default. A2A hosted agents must declare A2A 1.0,
+and the requested version must match. Other protocols do not enable translation.
+With --input-file, --a2a-version is always required; YAML does not select it.
 File bytes are sent unchanged and must match the selected version.
 Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.
 Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
@@ -206,7 +206,7 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke using public A2A 0.3
   azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
 
-  # Generate a plain-message request (implementation inference or the 1.0 default)
+  # Generate a plain-message request using the 1.0 default
   azd ai agent invoke -p a2a "Hello!"
 
   # Send a complete public JSON-RPC file unchanged (version is required)

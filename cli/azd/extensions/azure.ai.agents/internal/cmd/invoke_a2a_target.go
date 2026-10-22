@@ -15,8 +15,8 @@ import (
 	projectpkg "azureaiagent/internal/project"
 )
 
-// resolveA2ATarget reads implementation capabilities from the selected local service.
-func (a *InvokeAction) resolveA2ATarget(ctx context.Context, rc *remoteContext) error {
+// validateA2ATarget checks implementation capabilities from the selected local service.
+func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext) error {
 	if a.endpoint != nil || rc.azdClient == nil || rc.serviceName == "" {
 		return nil
 	}
@@ -37,73 +37,54 @@ func (a *InvokeAction) resolveA2ATarget(ctx context.Context, rc *remoteContext) 
 	if !found || !isHosted {
 		return nil
 	}
-	version, err := selectA2ATargetVersion(hosted.Protocols, a.flags.a2aVersion)
-	if err != nil {
-		return err
+	return validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion())
+}
+
+func validateHostedA2ACompatibility(protocols []agent_yaml.ProtocolVersionRecord, requested string) error {
+	var declared string
+	for _, record := range protocols {
+		if strings.TrimSpace(record.Protocol) != "a2a" {
+			continue
+		}
+		version, err := normalizeA2AWireVersion(record.Version)
+		if err != nil {
+			return err
+		}
+		if declared != "" && declared != version {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"the A2A hosted agent declares conflicting A2A versions",
+				"declare one A2A major.minor version in the selected service's protocols",
+			)
+		}
+		declared = version
 	}
-	a.resolvedA2AVersion = version
+	if declared == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"the hosted agent does not declare an A2A implementation",
+			"implement A2A 1.0 and declare it in the selected service's protocols",
+		)
+	}
+	if declared != "1.0" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("A2A hosted-agent version %s is not supported by Foundry", declared),
+			"use an A2A 1.0 hosted agent",
+		)
+	}
+	if requested != declared {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			fmt.Sprintf("requested A2A version %s does not match the hosted-agent declaration %s", requested, declared),
+			"use --a2a-version 1.0 and a matching request body; A2A hosted agents do not translate dialects",
+		)
+	}
 	return nil
 }
 
-// selectA2ATargetVersion checks implementation compatibility and selects a wire dialect.
-func selectA2ATargetVersion(protocols []agent_yaml.ProtocolVersionRecord, explicit string) (string, error) {
-	if explicit != "" {
-		if err := validateA2AVersion(explicit); err != nil {
-			return "", err
-		}
-	}
-	var native string
-	var nativeError error
-	var responses bool
-	for _, record := range protocols {
-		switch strings.TrimSpace(record.Protocol) {
-		case "responses":
-			responses = true
-		case "a2a":
-			version, err := nativeA2AWireVersion(record.Version)
-			if err != nil {
-				nativeError = err
-				continue
-			}
-			if native != "" && native != version {
-				return "", exterrors.Validation(
-					exterrors.CodeInvalidAgentManifest,
-					"the agent declares conflicting native A2A versions",
-					"declare one supported native A2A version in the selected service's protocols",
-				)
-			}
-			native = version
-		}
-	}
-
-	// Responses may still support translation when the A2A implementation is unknown.
-	if nativeError != nil && !responses {
-		return "", nativeError
-	}
-	if native == "0.3" && !responses {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"native A2A 0.3 passthrough is not supported by Foundry",
-			"upgrade the agent's A2A implementation and declare version 1.0.0; "+
-				"translation requires an implemented Responses protocol",
-		)
-	}
-	if native == "1.0" && explicit == "0.3" && !responses {
-		return "", exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			"A2A 0.3 cannot invoke this native A2A 1.0-only agent",
-			"use --a2a-version 1.0 and a matching request body; native A2A passthrough does not translate dialects",
-		)
-	}
-	if explicit != "" {
-		return explicit, nil
-	}
-	// Default eligible generated requests to 1.0.
-	return "1.0", nil
-}
-
-// nativeA2AWireVersion normalizes compatible declarations for wire use, not deployment validation.
-func nativeA2AWireVersion(declared string) (string, error) {
+// normalizeA2AWireVersion checks declaration syntax, not supported dialects or deployment versions.
+func normalizeA2AWireVersion(declared string) (string, error) {
 	parts := strings.Split(declared, ".")
 	valid := len(parts) == 2 || len(parts) == 3
 	for _, part := range parts {
@@ -113,14 +94,11 @@ func nativeA2AWireVersion(declared string) (string, error) {
 		}
 	}
 	if valid {
-		version := strings.Join(parts[:2], ".")
-		if version == "1.0" || version == "0.3" {
-			return version, nil
-		}
+		return strings.Join(parts[:2], "."), nil
 	}
 	return "", exterrors.Validation(
 		exterrors.CodeInvalidAgentManifest,
-		fmt.Sprintf("unsupported native A2A version %q in the agent definition", declared),
-		"declare A2A 1.0.0 for deployment; the public A2A wire selector is 1.0",
+		fmt.Sprintf("malformed A2A version %q in the hosted-agent definition", declared),
+		"use a major.minor or major.minor.patch A2A declaration",
 	)
 }

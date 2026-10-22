@@ -17,7 +17,7 @@ pre:
     name: "seed a complete public A2A 0.3 JSON-RPC request in an isolated directory"
 
 goals:
-  - "Confirm help lists --a2a-version 0.3 and 1.0, explains the 1.0 plain-message default, and maps hosted-agent declaration 1.0.0 to wire version 1.0. Incompatible overrides must not be promised."
+  - "Confirm help lists --a2a-version 0.3 and 1.0, explains the 1.0 plain-message default, and requires A2A hosted agents to declare A2A 1.0. Other protocols must not enable dialect translation or incompatible overrides."
   - "Confirm help distinguishes public A2A versions from Foundry API and deployed agent versions (--version). Confirm explicit -p a2a + --a2a-version examples precede the convenience-default example, and the A2A file-input example includes an explicit version. Confirm file bytes are unchanged and the caller must match the body and header without version inference. Confirm --local is described as a CLI limitation, not a protocol restriction."
   - "Confirm help states that A2A routing is service-controlled and saved session IDs do not guarantee process affinity or task retrieval."
   - "Confirm help documents the previous 0.3 default and --a2a-version 0.3 migration, and directs streaming requests to --output raw. Do not execute streaming requests in this offline scenario."

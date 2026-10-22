@@ -264,7 +264,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
-	if err := a.resolveA2ATarget(ctx, rc); err != nil {
+	if err := a.validateA2ATarget(ctx, rc); err != nil {
 		return err
 	}
 	body, bodyLabel, err := a.buildA2ARequestBody()

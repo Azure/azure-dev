@@ -11,6 +11,8 @@ cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_show_bind
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_delete_binding.json text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_create_binding.json text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_test_binding.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_validate_binding.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/core_copy_binding.json text eol=lf
 cli/azd/**/*.ts text eol=lf
 *.txt text eol=lf
 *.snap text eol=lf

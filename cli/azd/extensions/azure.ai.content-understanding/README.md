@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 136
+approval. Approved rows require an explicit review reference. Currently 138
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project/core-binding evidence, 661 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project/core-binding evidence, 659 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1114,6 +1114,44 @@ Synthetic input/service/report data is not source output, another recording,
 valid-PDF/accuracy evidence or four-worker performance proof. Python type,
 sample/path/report and host seams remain unapproved; no live billing occurs.
 
+The shared validate-binding parameter adds one source mapping, not 45.
+`testdata/parity/core_validate_binding.json` retains both complete named/
+positional Path observations and types, four hashes and classification/MIT
+provenance. `TestCoreValidateBindingParity` runs 45 offline variants:
+--schema/-s/positional, three output modes and five synthetic schema cases.
+Observe actual Cobra arguments/flags while delegating unchanged validation;
+verify the exact private spaced absolute path before projecting only that
+fixture path to source schema.json. Compare complete clean/warning output,
+strict-warning/malformed/read errors including category/message/hint/code,
+and separately empty quiet/error output. Invalid service/auth environment
+markers must be ignored, no service session may open, input bytes stay
+unchanged and no extra files appear.
+
+Source binding only binds schema.json; it reads no schema or emits validation
+results/errors. Native synthetic schema/output/error cases do not prove
+Python validator or service equivalence. Path/type/syntax/diagnostic/report/
+host seams remain unapproved differences; no cassette or live call is added.
+
+The shared analyzer-copy binding parameter adds one source mapping, not 18.
+`testdata/parity/core_copy_binding.json` retains both complete parsed/bound/type
+observations, four binding-file hashes and a fifth copy-operation reference.
+The spec and operation establish that `dev`/`prod` are analyzer IDs, not
+profiles; separate profile-copy and cross-resource cases remain pending.
+`TestCoreCopyBindingParity` preserves both IDs across named/positional/output
+variants and three synthetic same-resource cases: success, existing destination
+and missing source. Verify actual binding, ordered full GET models/404s,
+complete SDK copy request with empty cross-resource coordinates, strict
+no-replacement POST/body and full immediate-ready result/output including
+exact integer. Quiet output is empty; preflight failures expose full typed
+service error/code/status/hint and must prevent any copy POST.
+
+Reject account discovery, client switching, grants and prompts. Source binding
+performs no HTTP or analyzer/error output. Native HTTP/models/results/errors
+are synthetic, not source service outputs or a new recording. Python type,
+surface/service-error/host seams remain unapproved. Both live-only copy
+scenarios stay pending; no real copy, cross-resource authorization, auth/RBAC
+or installed-host equivalence is established.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1121,7 +1159,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate|CoreAnalyzerTest)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate|CoreAnalyzerTest|CoreValidate|CoreCopy)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

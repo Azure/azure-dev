@@ -110,6 +110,14 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"core_test_binding"`
+	CoreValidateBinding struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_validate_binding"`
+	CoreCopyBinding struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_copy_binding"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -303,6 +311,26 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	if sha256Text(testingBinding) != inventory.CoreTestBinding.SHA256 {
 		return fmt.Errorf("core analyzer test binding oracle digest mismatch")
+	}
+	if inventory.CoreValidateBinding.File != "testdata/parity/core_validate_binding.json" {
+		return fmt.Errorf("invalid core validate binding oracle path")
+	}
+	validation, err := os.ReadFile(filepath.Join("../..", inventory.CoreValidateBinding.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(validation) != inventory.CoreValidateBinding.SHA256 {
+		return fmt.Errorf("core validate binding oracle digest mismatch")
+	}
+	if inventory.CoreCopyBinding.File != "testdata/parity/core_copy_binding.json" {
+		return fmt.Errorf("invalid core copy binding oracle path")
+	}
+	copying, err := os.ReadFile(filepath.Join("../..", inventory.CoreCopyBinding.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(copying) != inventory.CoreCopyBinding.SHA256 {
+		return fmt.Errorf("core copy binding oracle digest mismatch")
 	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
@@ -518,6 +546,14 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"core create binding path", func(i *parityInventory) { i.CoreCreateBinding.File = "../core_create_binding.json" }},
 		{"core test binding digest", func(i *parityInventory) { i.CoreTestBinding.SHA256 = strings.Repeat("0", 64) }},
 		{"core test binding path", func(i *parityInventory) { i.CoreTestBinding.File = "../core_test_binding.json" }},
+		{"core validate binding digest", func(i *parityInventory) {
+			i.CoreValidateBinding.SHA256 = strings.Repeat("0", 64)
+		}},
+		{"core validate binding path", func(i *parityInventory) {
+			i.CoreValidateBinding.File = "../core_validate_binding.json"
+		}},
+		{"core copy binding digest", func(i *parityInventory) { i.CoreCopyBinding.SHA256 = strings.Repeat("0", 64) }},
+		{"core copy binding path", func(i *parityInventory) { i.CoreCopyBinding.File = "../core_copy_binding.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}

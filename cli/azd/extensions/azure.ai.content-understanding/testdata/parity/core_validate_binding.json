@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "source_case": "packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path5-canonical5-shortcut5-expected5]",
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "python": "3.14.4",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    },
+    "command_path": [
+      "analyzer",
+      "validate"
+    ],
+    "positional_classification": "standalone-shortcut"
+  },
+  "calls": [
+    {
+      "operation": "bind",
+      "parsed": {
+        "named_schema_path": "schema.json"
+      },
+      "result": {
+        "schema": "schema.json"
+      },
+      "result_type": "builtins.dict",
+      "error": null,
+      "schema_path_type": "pathlib.PosixPath",
+      "bound_schema_type": "pathlib.PosixPath"
+    },
+    {
+      "operation": "bind",
+      "parsed": {
+        "positional_schema_path": "schema.json"
+      },
+      "result": {
+        "schema": "schema.json"
+      },
+      "result_type": "builtins.dict",
+      "error": null,
+      "schema_path_type": "pathlib.PosixPath",
+      "bound_schema_type": "pathlib.PosixPath"
+    }
+  ],
+  "native_cases": [
+    {
+      "name": "clean",
+      "body": "{\"baseAnalyzerId\": \"prebuilt-document\", \"models\": {\"completion\": \"gpt-4.1\"}, \"fieldSchema\": {\"fields\": {\"Total\": {\"type\": \"number\", \"method\": \"extract\", \"description\": \"Synthetic total.\"}}}}",
+      "write_file": true,
+      "strict": false,
+      "result": {
+        "ok": true,
+        "errors": [],
+        "warnings": [],
+        "strict": false,
+        "apiVersion": "2025-11-01"
+      },
+      "error_code": "",
+      "error": null
+    },
+    {
+      "name": "layout-warning",
+      "body": "{\"baseAnalyzerId\": \"prebuilt-document\"}",
+      "write_file": true,
+      "strict": false,
+      "result": {
+        "ok": true,
+        "errors": [],
+        "warnings": [
+          {
+            "path": "fieldSchema",
+            "msg": "No fieldSchema; layout/markdown only."
+          }
+        ],
+        "strict": false,
+        "apiVersion": "2025-11-01"
+      },
+      "error_code": "",
+      "error": null
+    },
+    {
+      "name": "strict-layout",
+      "body": "{\"baseAnalyzerId\": \"prebuilt-document\"}",
+      "write_file": true,
+      "strict": true,
+      "result": null,
+      "error_code": "invalid_analyzer_schema",
+      "error": {
+        "category": "validation",
+        "message": "Schema validation failed:\nfieldSchema: No fieldSchema; layout/markdown only.",
+        "hint": "Correct the reported constraints, or omit --strict to allow authoring warnings.",
+        "status_code": null
+      }
+    },
+    {
+      "name": "malformed-json",
+      "body": "{synthetic-invalid-json",
+      "write_file": true,
+      "strict": false,
+      "result": null,
+      "error_code": "invalid_analyzer_schema",
+      "error": {
+        "category": "validation",
+        "message": "Schema validation failed:\n$: The schema must be a UTF-8 JSON object.",
+        "hint": "Correct the reported constraints, or omit --strict to allow authoring warnings.",
+        "status_code": null
+      }
+    },
+    {
+      "name": "missing-file",
+      "body": "",
+      "write_file": false,
+      "strict": false,
+      "result": null,
+      "error_code": "schema_read_failed",
+      "error": {
+        "category": "validation",
+        "message": "The schema file could not be read.",
+        "hint": "Specify a readable UTF-8 JSON file relative to --cwd.",
+        "status_code": null
+      }
+    }
+  ],
+  "boundaries": [
+    "Execute this exact shared-validate source parameter and both original assertions. Preserve full named/positional Path inputs/bound results, parsed/bound path types, result types, four code hashes and MIT/Python/classification provenance. Source only binds schema.json; it never reads or validates schema bytes and emits no report/error.",
+    "Native materializes a separate synthetic schema.json under a private absolute path containing spaces. Observe actual Cobra arguments/schema flag by delegating the unchanged real RunE; verify the exact selected path before fixture-only projection to source schema.json. Exercise named/short/positional forms with complete clean/warning results, strict-warning/malformed/read errors including category/message/hint/code, and separately empty quiet output.",
+    "Native validation runs offline without a service session, ignores invalid service/auth environment markers, preserves input bytes and creates no other files. Synthetic schema/results/errors are native contracts, not Python validation parity, a service recording or live proof. Python Path types, CLI syntax, temporary-path and diagnostic/report/host seams remain unapproved differences. Nine form/output variants across five synthetic cases add one source mapping, not 45."
+  ]
+}

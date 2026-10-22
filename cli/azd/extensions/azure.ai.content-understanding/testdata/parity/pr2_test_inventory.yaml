@@ -37,6 +37,12 @@ core_create_binding:
 core_test_binding:
   file: testdata/parity/core_test_binding.json
   sha256: 250777da541a8b2fe2c263b9c6c1665e25ac1f2ae779b9cce98b80f65d1c0e19
+core_validate_binding:
+  file: testdata/parity/core_validate_binding.json
+  sha256: 16582bf80cb34237371d8cee178f27621df8f936d516d9489893ffb3dc67b014
+core_copy_binding:
+  file: testdata/parity/core_copy_binding.json
+  sha256: 59b4f7791e82573357e12515b1ae0e78aa5d3bf1f8f8235c7340d9fe714b2255
 capability_source:
   file: testdata/parity/source_capabilities.yaml
   sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
@@ -1152,9 +1158,34 @@ cases:
   - internal/cmd/core_test_binding_parity_test.go::TestCoreAnalyzerTestBindingParity
   - internal/cmd/core_test_binding_parity_test.go::TestCoreAnalyzerTestBindingRequiresSamples
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path4-canonical4-shortcut4-expected4]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute the exact shared analyzer-copy parameter/both original assertions; retain two full parsed/bound/type
+    observations, four binding hashes and copy-operation semantic reference. dev/prod are analyzer IDs, not profiles; preserve
+    both with no adaptation. Eighteen native SDK-backed variants cover named/positional/output modes and synthetic same-resource
+    success, existing destination and missing source. Verify actual binding, complete ordered GET models/404s, full SDK copy
+    request with empty cross-resource coordinates, strict no-replacement POST/body, complete ready result/exact integer/output
+    and separate quiet output. Preflight failures must prevent copy POST and expose complete typed service error/code/status/hint.
+    Reject account discovery/client switching/grants/prompts. Source binding has no HTTP/results/errors; synthetic native
+    fixtures are not source outputs or a new recording. Python type/surface/service-error/host differences remain unapproved;
+    both live-only copy scenarios and separate profile/cross-resource cases stay pending. One source mapping only; prior evidence
+    unchanged and no real copy.
+  go_tests:
+  - internal/cmd/core_copy_binding_parity_test.go::TestCoreCopyBindingParity
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path5-canonical5-shortcut5-expected5]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Execute the exact shared-validate source parameter and both original assertions, preserving full named/positional
+    Path inputs/bound results/types and four source hashes. Run 45 native offline variants across three schema forms, three
+    output modes and five explicitly synthetic schema cases. Observe real parsed Cobra arguments/flags while delegating unchanged
+    RunE; verify the exact private spaced absolute path before projecting only that fixture path to source schema.json. Compare
+    full clean/warning results and strict-warning/malformed/read errors including category/message/hint/code; quiet/errors
+    have no output. Reject any service-session opening, ignore invalid service/auth environment markers and prove input preservation/no
+    extra files. Source binding does not read schemas or produce validation reports/errors: synthetic native contracts do
+    not prove Python validator/service/live equivalence. Path/type/syntax/diagnostic/report/host seams remain unapproved;
+    one source mapping only, with all prior assets/mappings/reviews unchanged.'
+  go_tests:
+  - internal/cmd/core_validate_binding_parity_test.go::TestCoreValidateBindingParity
 - source: packages/core/tests/test_command_spec.py::test_defaults_set_does_not_implicitly_select_profile_mappings
   state: pending
 - source: packages/core/tests/test_command_spec.py::test_frontend_presentation_arguments_are_not_bound_to_core_request

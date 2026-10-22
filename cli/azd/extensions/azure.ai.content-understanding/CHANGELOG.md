@@ -63,6 +63,26 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map one exact analyzer-copy binding parameter to two complete source
+  observations, four binding hashes and a copy-operation semantic reference.
+  Clarify dev/prod are analyzer IDs, not profiles, and preserve them across 18
+  SDK-backed named/positional/output variants. Compare full ordered GET models/
+  404s, full same-resource copy request/strict no-replacement POST and complete
+  ready result/exact integer/output. Existing destination or missing source
+  must prevent copy POST and expose full typed service errors/status/hints.
+  Reject account discovery/client switching/grants/prompts. All native HTTP/
+  results/errors are synthetic; no new recording or live/cross-resource proof.
+  Totals: 138 evidenced, 659 pending; differences and both live-only copy
+  scenarios remain unapproved/pending.
+- Map one exact shared-validate parameter to both complete original Path
+  bindings/types/four hashes and 45 native offline variants. Observe actual
+  parsed schema arguments/flags while delegating unchanged validation; verify
+  the exact spaced path before fixture-only source-path projection. Compare
+  full clean/warning results, strict-warning/malformed/read errors including
+  category/message/hint/code and empty quiet/error output. Prove zero service
+  sessions, ignored service/auth environment markers, unchanged inputs and no
+  extra files. Synthetic native cases are not Python validator/service parity.
+  Totals: 137 evidenced, 660 pending; differences remain unapproved.
 - Map one exact shared analyzer-test core parameter to both full source
   bindings/types/four hashes and 12 SDK-backed native variants. Preserve
   invoice-v1 and parsed default concurrency 4; verify 12 source-only

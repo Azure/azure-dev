@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "source_case": "packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path3-canonical3-shortcut3-expected3]",
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "python": "3.14.4",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    },
+    "command_path": [
+      "analyzer",
+      "test"
+    ],
+    "positional_classification": "standalone-shortcut"
+  },
+  "calls": [
+    {
+      "operation": "bind",
+      "parsed": {
+        "analyzer_name": "invoice-v1"
+      },
+      "result": {
+        "name": "invoice-v1",
+        "concurrency": 4
+      },
+      "result_type": "builtins.dict",
+      "error": null
+    },
+    {
+      "operation": "bind",
+      "parsed": {
+        "positional_analyzer_name": "invoice-v1"
+      },
+      "result": {
+        "name": "invoice-v1",
+        "concurrency": 4
+      },
+      "result_type": "builtins.dict",
+      "error": null
+    }
+  ],
+  "native_input": {
+    "name": "sample_invoice.pdf",
+    "body": "%PDF-1.7\nsynthetic offline playback input\n%%EOF\n"
+  },
+  "native_envelope": {
+    "id": "synthetic-core-test",
+    "status": "Succeeded",
+    "usage": {
+      "documentPagesStandard": 1
+    },
+    "result": {
+      "analyzerId": "invoice-v1",
+      "apiVersion": "2025-11-01",
+      "contents": [
+        {
+          "kind": "document",
+          "mimeType": "application/pdf",
+          "fields": {
+            "Total": {
+              "type": "number",
+              "valueNumber": 0,
+              "confidence": 0.6
+            },
+            "Reference": {
+              "type": "string",
+              "valueString": "synthetic-invoice"
+            },
+            "Counter": {
+              "type": "integer",
+              "valueInteger": 9007199254740993
+            }
+          }
+        }
+      ],
+      "future": {
+        "synthetic": true
+      }
+    }
+  },
+  "native_report": {
+    "analyzerId": "invoice-v1",
+    "summary": {
+      "samplesTotal": 1,
+      "samplesOk": 1,
+      "samplesFailed": 0,
+      "disclaimer": "This is not a real accuracy benchmark. It only checks whether a value was extracted or generated, and reports confidence when the service returns it.",
+      "fields": {
+        "Total": {
+          "populated": 1,
+          "populatedPct": 100,
+          "meanConfidence": 0.6,
+          "lowConfidenceCount": 0
+        },
+        "Reference": {
+          "populated": 1,
+          "populatedPct": 100,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        },
+        "Counter": {
+          "populated": 1,
+          "populatedPct": 100,
+          "meanConfidence": null,
+          "lowConfidenceCount": 0
+        }
+      },
+      "lowConfidenceThreshold": 0.6
+    },
+    "samples": [
+      {
+        "input": "sample_invoice.pdf",
+        "status": "ok",
+        "fields": {
+          "Total": {
+            "value": 0,
+            "confidence": 0.6
+          },
+          "Reference": {
+            "value": "synthetic-invoice",
+            "confidence": null
+          },
+          "Counter": {
+            "value": 9007199254740993,
+            "confidence": null
+          }
+        }
+      }
+    ]
+  },
+  "boundaries": [
+    "Execute the exact original shared-test parameter and both assertions, preserving full parsed inputs/name/concurrency-default bindings, result types and four source hashes/MIT provenance. Source binding reads no sample and performs no HTTP or report generation.",
+    "Native binding uses unchanged invoice-v1 and verifies parsed default concurrency=4 with no override. Original source-only arguments fail local sample discovery before a session opens. Successful native commands add one explicitly synthetic sample under a private spaced absolute path. This observes the parsed default, not four-worker load/performance behavior.",
+    "Verify positional/name/-n/-a and positional/--file samples, full actual SDK request/binary bytes, strict immediate-success binary POST, complete SDK envelope/result and full synthetic saved/stdout reports with separately empty quiet output. Normalize only the verified actual sample path. Native bytes/service result/report are synthetic, not source outputs, a new recording, valid-PDF or accuracy evidence. Python types, sample/path/report and installed-host seams remain unapproved; no live billing, authorization or concurrency-performance proof."
+  ]
+}

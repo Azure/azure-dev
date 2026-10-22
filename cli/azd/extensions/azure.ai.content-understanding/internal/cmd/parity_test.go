@@ -106,6 +106,10 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"core_create_binding"`
+	CoreTestBinding struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_test_binding"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -289,6 +293,16 @@ func validateParityInventory(inventory parityInventory) error {
 	}
 	if sha256Text(creation) != inventory.CoreCreateBinding.SHA256 {
 		return fmt.Errorf("core create binding oracle digest mismatch")
+	}
+	if inventory.CoreTestBinding.File != "testdata/parity/core_test_binding.json" {
+		return fmt.Errorf("invalid core analyzer test binding oracle path")
+	}
+	testingBinding, err := os.ReadFile(filepath.Join("../..", inventory.CoreTestBinding.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(testingBinding) != inventory.CoreTestBinding.SHA256 {
+		return fmt.Errorf("core analyzer test binding oracle digest mismatch")
 	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
@@ -502,6 +516,8 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"core delete binding path", func(i *parityInventory) { i.CoreDeleteBinding.File = "../core_delete_binding.json" }},
 		{"core create binding digest", func(i *parityInventory) { i.CoreCreateBinding.SHA256 = strings.Repeat("0", 64) }},
 		{"core create binding path", func(i *parityInventory) { i.CoreCreateBinding.File = "../core_create_binding.json" }},
+		{"core test binding digest", func(i *parityInventory) { i.CoreTestBinding.SHA256 = strings.Repeat("0", 64) }},
+		{"core test binding path", func(i *parityInventory) { i.CoreTestBinding.File = "../core_test_binding.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}

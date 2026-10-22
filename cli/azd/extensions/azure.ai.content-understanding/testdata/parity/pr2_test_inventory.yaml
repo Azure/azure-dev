@@ -34,6 +34,9 @@ core_delete_binding:
 core_create_binding:
   file: testdata/parity/core_create_binding.json
   sha256: 46e4a185bfd8c1bc50757f56cb0aaf57af8c559f49343c9cddfa3958d0dcd3a6
+core_test_binding:
+  file: testdata/parity/core_test_binding.json
+  sha256: 250777da541a8b2fe2c263b9c6c1665e25ac1f2ae779b9cce98b80f65d1c0e19
 capability_source:
   file: testdata/parity/source_capabilities.yaml
   sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
@@ -1135,7 +1138,19 @@ cases:
   go_tests:
   - internal/cmd/core_delete_parity_test.go::TestCoreDeleteBindingParity
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path3-canonical3-shortcut3-expected3]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact shared-test source parameter/both assertions and preserve two full parsed/name/default-concurrency
+    observations, types and four hashes. Twelve native SDK-backed variants retain invoice-v1 and verify default concurrency=4
+    without an override; source-only arguments fail local discovery before session creation in twelve negative variants. Explicitly
+    add one synthetic local sample for execution, verify positional/--file inputs and full SDK binary request/strict immediate-success
+    POST/envelope/result. Compare complete synthetic saved/stdout reports including exact integer/confidence/null/statistics/disclaimer;
+    quiet output is separately empty. Verify the exact temporary sample path before narrow fixture-only projection. Source
+    binding has no bytes, service calls or report; native fixtures are synthetic, not another recording or accuracy/live/four-worker
+    performance evidence. Python type/sample/path/report/host seams remain unapproved differences; preserve prior mappings/assets/reviews.
+  go_tests:
+  - internal/cmd/core_test_binding_parity_test.go::TestCoreAnalyzerTestBindingParity
+  - internal/cmd/core_test_binding_parity_test.go::TestCoreAnalyzerTestBindingRequiresSamples
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path4-canonical4-shortcut4-expected4]
   state: pending
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path5-canonical5-shortcut5-expected5]

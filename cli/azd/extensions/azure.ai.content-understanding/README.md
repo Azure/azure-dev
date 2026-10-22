@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 135
+approval. Approved rows require an explicit review reference. Currently 136
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project/core-binding evidence, 662 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project/core-binding evidence, 661 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1094,6 +1094,26 @@ one immediate-ready response and full native output; quiet output is empty.
 Schemas/service results are synthetic, not source results or a new cassette.
 ID/path/type/host differences remain unapproved; no live-create claim.
 
+The shared analyzer-test binding parameter adds one source mapping, not 24.
+`testdata/parity/core_test_binding.json` retains both complete parsed/bound
+observations, dictionary types, four hashes and classification/MIT provenance.
+`TestCoreAnalyzerTestBindingParity` verifies unchanged `invoice-v1` and parsed
+default concurrency 4 without overriding the flag. Its 12 successful native
+variants add one explicitly synthetic sample under a private spaced path.
+Compare actual SDK name/mode/content type/full bytes, strict binary POST with
+202/immediate-success body and valid operation location, complete SDK envelope
+and nested result, and complete saved/stdout reports including exact integer,
+confidence/nulls/statistics/disclaimer. The reader closes and input stays
+unchanged; quiet output is empty. Verify the actual sample path before reusing
+the fixture-only report-path projection. Both positional and --file samples run.
+
+Source binding only resolves name/default concurrency: it has no sample bytes,
+service calls or report. `TestCoreAnalyzerTestBindingRequiresSamples` verifies
+12 source-only argument variants fail local discovery before session creation.
+Synthetic input/service/report data is not source output, another recording,
+valid-PDF/accuracy evidence or four-worker performance proof. Python type,
+sample/path/report and host seams remain unapproved; no live billing occurs.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1101,7 +1121,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow|CoreDelete|CoreCreate|CoreAnalyzerTest)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

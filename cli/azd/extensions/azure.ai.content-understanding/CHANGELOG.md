@@ -63,6 +63,17 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map one exact shared analyzer-test core parameter to both full source
+  bindings/types/four hashes and 12 SDK-backed native variants. Preserve
+  invoice-v1 and parsed default concurrency 4; verify 12 source-only
+  argument variants fail sample discovery before session creation.
+  Explicitly add one synthetic sample for positional/--file execution; compare
+  full binary request/202 operation location/immediate-success result, SDK
+  envelope and complete saved/stdout reports with narrow verified path
+  projection and separate quiet output. Check reader closure, unchanged input,
+  exact integer/confidence/null/statistics/disclaimer. Synthetic data does not
+  prove valid-PDF/accuracy, four-worker performance or live/host equivalence.
+  Totals: 136 evidenced, 661 pending; all differences remain unapproved.
 - Map one exact shared-create core parameter to both original name/schema
   bindings, dictionary/path types and four hashes. Verify 12 original-name
   rejections before session creation; explicitly use synthetic invoice_v1 for

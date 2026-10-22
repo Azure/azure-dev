@@ -1,4 +1,5 @@
-# Tier 0: read-only alpha feature listing with a dedicated config copy, no auth or Azure cost.
+# Tier 0: alpha feature listing with isolated extension data, no auth or Azure cost.
+# cspell:ignore shutil rglob copytree
 name: "config-list-alpha"
 command: 'AZD_CONFIG_DIR="$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config" azd ai agent config list-alpha'
 cwd: "~/working/azd-agents-t0-config-list-alpha-{instance}"
@@ -26,25 +27,40 @@ pre:
       else
         source_config="$HOME/.azd"
       fi
-      cp -a -- "$source_config/." "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config/"
-      python3 - "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config/config.json" <<'PY'
+      python3 - "$source_config" "$HOME/working/azd-agents-t0-config-list-alpha-{instance}/azd-config" <<'PY'
       import json
       import pathlib
+      import shutil
       import sys
 
-      path = pathlib.Path(sys.argv[1])
-      if path.exists():
-          with path.open() as stream:
-              data = json.load(stream)
-          data.pop("alpha", None)
-          with path.open("w") as stream:
-              json.dump(data, stream, indent=2)
-              stream.write("\n")
-          with path.open() as stream:
-              json.load(stream)
+      source = pathlib.Path(sys.argv[1])
+      target = pathlib.Path(sys.argv[2])
+      with (source / "config.json").open() as stream:
+          data = json.load(stream)
+      extension_id = "azure.ai.agents"
+      installed = data.get("extension", {}).get("installed", {})
+      if extension_id not in installed:
+          raise ValueError("install azure.ai.agents before running this scenario")
+      registration = installed[extension_id]
+      entry = pathlib.Path(registration["path"])
+      package = pathlib.Path("extensions") / extension_id
+      if entry.is_absolute() or ".." in entry.parts or not entry.is_relative_to(package):
+          raise ValueError("the installed agent entry point must stay inside its extension directory")
+      artifacts = source / package
+      if (source / "extensions").is_symlink() or artifacts.is_symlink():
+          raise ValueError("the installed agent directory must not be a symbolic link")
+      if not (source / entry).is_file():
+          raise ValueError("the installed agent entry point is missing")
+      for path in artifacts.rglob("*"):
+          if path.is_symlink() or not (path.is_file() or path.is_dir()):
+              raise ValueError("the installed agent artifacts must be regular files or directories")
+      shutil.copytree(artifacts, target / package)
+      with (target / "config.json").open("w") as stream:
+          json.dump({"extension": {"installed": {extension_id: registration}}}, stream, indent=2)
+          stream.write("\n")
       PY
     cwd: "~/working"
-    name: "copy the real config and extensions and remove all alpha opt-ins"
+    name: "copy only the installed agent registration and package without auth or alpha settings"
 
 post:
   - run: 'rm -rf -- "$HOME/working/azd-agents-t0-config-list-alpha-{instance}"'
@@ -60,7 +76,7 @@ goals:
   - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
   - "Confirm the output lists agents.managed_harness, agents.voice, and agents.long_running as blocks with Name, Description, Status: Off, and an AZD_FOUNDRY_EXT_ENABLE_AGENTS_* Environment variable line, in the layout of 'azd config list-alpha'."
   - "Run 'AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE=true azd ai agent config list-alpha'. Confirm only agents.voice shows Status: On."
-  - "Run 'azd ai agent config list-alpha --output json'. Confirm the output is a JSON object with a features array whose items have name, description, status, and envVar fields."
+  - "Run 'azd ai agent config list-alpha --output json'. Confirm the output is a JSON object with a features array whose items have name, description, status, and envVar fields, and every status is Off."
   - "Run 'azd ai agent config list-alpha --output raw'. Confirm it exits non-zero and names the supported formats."
   - "Run 'azd ai agent config --help' and 'azd ai agent config list-alpha --help'. Confirm both exit with code 0."
   - "Run 'azd ai agent feature list'. Confirm it does not list features."

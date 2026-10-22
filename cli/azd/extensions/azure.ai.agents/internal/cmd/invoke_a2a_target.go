@@ -26,7 +26,11 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 	}
 	svc, proj, err := resolveAgentService(ctx, rc.azdClient, rc.serviceName, a.noPrompt)
 	if err != nil {
-		return fmt.Errorf("resolve A2A target service: %w", err)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		log.Printf("could not resolve local A2A target service: %v", err)
+		return nil
 	}
 	hosted, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedService(svc, proj.Path)
 	if err != nil {

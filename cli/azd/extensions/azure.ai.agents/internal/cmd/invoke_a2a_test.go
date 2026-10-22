@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1075,6 +1076,55 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestA2ATargetServiceLookupFailure(t *testing.T) {
+	for _, cancelled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancelled=%t", cancelled), func(t *testing.T) {
+			client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0"}, noPrompt: true}
+			rc := &remoteContext{serviceName: "a2a-agent", azdClient: client}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if cancelled {
+				cancel()
+			}
+
+			err := action.validateA2ATarget(ctx, rc)
+			if cancelled {
+				require.ErrorIs(t, err, context.Canceled)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestA2ARemoteServiceLookupFailureStillInvokes(t *testing.T) {
+	client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
+	var sends int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sends++
+		assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+		assert.Equal(t, "1.0", r.Header.Get("A2A-Version"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"task":`+
+			`{"artifacts":[{"parts":[{"text":"lookup-failure-result"}]}]}}}`)
+	}))
+	defer server.Close()
+	action := &InvokeAction{
+		flags:      &invokeFlags{protocol: "a2a", message: "hello", a2aVersion: "1.0"},
+		credential: responseTestCredential{}, noPrompt: true,
+		resolvedRemoteContext: &remoteContext{
+			name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
+			apiVersion: "v1", azdClient: client,
+		},
+	}
+
+	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+	require.NoError(t, err)
+	assert.Equal(t, 1, sends)
+	assert.Contains(t, output, "lookup-failure-result")
 }
 
 func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {

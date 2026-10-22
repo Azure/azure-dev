@@ -17,8 +17,11 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/spf13/pflag"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"azureaiagent/internal/exterrors"
 )
 
 // Feature declares one extension opt-in.
@@ -51,9 +54,27 @@ type azdClient interface {
 	UserConfig() azdext.UserConfigServiceClient
 }
 
+// CheckEnvironmentFlag rejects an explicitly empty -e/--environment selection.
+func CheckEnvironmentFlag(flags *pflag.FlagSet) error {
+	if flags == nil {
+		return nil
+	}
+	flag := flags.Lookup("environment")
+	if flag == nil || !flag.Changed || strings.TrimSpace(flag.Value.String()) != "" {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"the --environment flag was set to an empty value",
+		"pass an environment name with --environment, or omit the flag to use the default environment",
+	)
+}
+
 // IsEnabled resolves feature for one invocation.
+// Call CheckEnvironmentFlag before IsEnabled and before any source read.
+// An explicit empty environment selection is invalid.
 // Pass ExtensionContext.Environment to honor -e/--environment.
-// An empty environmentName uses the project default, if one exists.
+// An empty environmentName means the flag was omitted and uses the project default, if one exists.
 // Loading failures are returned even when another source enables it.
 func IsEnabled(
 	ctx context.Context,

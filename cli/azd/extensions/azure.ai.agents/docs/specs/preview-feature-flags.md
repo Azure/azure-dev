@@ -42,6 +42,8 @@ type Feature struct {
     Description string
 }
 
+func CheckEnvironmentFlag(flags *pflag.FlagSet) error
+
 func IsEnabled(
     ctx context.Context,
     client *azdext.AzdClient,
@@ -52,6 +54,10 @@ func IsEnabled(
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
+
+Callers must call `CheckEnvironmentFlag(cmd.Flags())` before `IsEnabled` and before any source read. An explicit empty or whitespace only `-e/--environment` selection is invalid. The check returns a validation error with code `invalid_parameter`. It returns nil for a nil flag set, an absent flag, an omitted flag, or a nonempty selection.
+
+Pass the parsed `azdext.ExtensionContext.Environment` unchanged to `IsEnabled`. An empty name means the flag was omitted and lets the host select the project default. A nonempty name is passed to `Environment.GetValues`, so an explicit selection takes precedence over the project default. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
 
 ## Feature registry
 
@@ -66,6 +72,9 @@ func Lookup(id string) (Feature, bool)
 Each ID starts with `agents.`. Each environment key is `AZD_FOUNDRY_EXT_ENABLE_` plus the ID in upper case with dots replaced by underscores. Tests enforce both rules, unique IDs and keys, and a nonempty description. The helper still reads `EnvVar` as declared and never derives it at run time.
 
 ```go
+if err := featureflags.CheckEnvironmentFlag(cmd.Flags()); err != nil {
+    return err
+}
 enabled, err := featureflags.IsEnabled(
     extCtx.Context(),
     azdClient,
@@ -74,7 +83,7 @@ enabled, err := featureflags.IsEnabled(
 )
 ```
 
-`IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator. Pass the parsed `azdext.ExtensionContext.Environment` unchanged. A nonempty name is forwarded to `Environment.GetValues`, so explicit `-e/--environment` takes precedence over the project default. An empty name delegates default selection to the host. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
+`IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator.
 
 ## Documented enablement methods
 
@@ -86,9 +95,13 @@ The documented ways to opt into a feature are listed below. These opt-ins are ad
 | Process environment | Only the declared `EnvVar` | A true value accepted by `strconv.ParseBool` |
 | Selected azd environment | Exact `EnvVar` in raw `.env` values from `Environment.GetValues` (`azd env set`) | A true value accepted by `strconv.ParseBool` |
 
-The agents reader ignores `alpha.all` and unrelated config keys. A global opt-in cannot enable an agents preview, and global or unrelated values cannot cancel a per-feature or environment opt-in. Core azd's `alpha.all` behavior is unchanged.
+Unrelated config keys cannot enable a preview or cancel an opt-in from another source.
 
-False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace. Booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`. Values such as `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle, `AZD_ALPHA_ENABLE_*` alias, or experimentation default.
+False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace. Booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`. Values such as `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle or experimentation default.
+
+### Relation to azd alpha features
+
+Agents previews reuse the `alpha.<id>` config key shape for `azd config set`, but are not part of the azd alpha feature set. Neither `alpha.all` nor `AZD_ALPHA_ENABLE_<NAME>`, such as `AZD_ALPHA_ENABLE_AGENTS_VOICE`, turns them on. Each preview must be turned on with its own `alpha.agents.<name>` key or its `AZD_FOUNDRY_EXT_ENABLE_*` variable. Each preview is chosen on its own, so a global switch cannot opt a user into a preview they did not choose. Core azd alpha feature behavior is unchanged.
 
 ## Reads, optional scopes, and errors
 

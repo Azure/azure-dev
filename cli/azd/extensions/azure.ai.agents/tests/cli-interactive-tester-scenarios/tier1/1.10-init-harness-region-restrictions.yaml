@@ -25,9 +25,9 @@ goals:
     Before answering product prompts, use read-only Azure queries to identify the seeded projects in
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
-    $existing_deployment for subsequent commands. Allowed region IDs are exactly japaneast,
-    swedencentral, uksouth, australiaeast, westeurope, germanywestcentral, canadacentral, westus2,
-    westus, centralus.
+    $existing_deployment for subsequent commands. Allowed region IDs are exactly australiaeast,
+    canadacentral, centralus, germanywestcentral, japaneast, swedencentral, uksouth, westeurope,
+    westus, westus2.
     Do not create fixtures during this run.
   - >-
     RESOURCE NAMING: if asked for an azd environment name, clear any default and use '{prefix}-picker-{instance}'

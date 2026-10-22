@@ -1148,18 +1148,34 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 		noService bool
 		version   string
 		deployed  string
+		session   string
+		wantError bool
 	}{
 		{name: "explicit endpoint ignores project definition", endpoint: true},
+		{name: "explicit session ignores project definition", session: "existing-session", version: "2", deployed: "2"},
 		{name: "no local client", noClient: true},
 		{name: "no selected service", noService: true},
 		{name: "historical agent version", version: "1", deployed: "2"},
 		{name: "unknown deployed agent version", version: "1"},
+		{name: "current version matches deployed", version: "2", deployed: "2", wantError: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			// This server does not implement project lookup: attempting to load a
-			// definition would fail, so success proves we skipped unrelated YAML.
-			client := newInvokeTestAzdClient(t, newInvokeUserConfigServer())
-			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0"}}
+			// A readable unsupported definition makes accidental inspection fail.
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{"a2a-agent": {
+					Name: "a2a-agent", Host: AiAgentHost, AdditionalProperties: mustStruct(t, map[string]any{
+						"kind": "hosted", "name": "deployed-agent",
+						"protocols": []any{map[string]any{"protocol": "a2a", "version": "0.3"}},
+					}),
+				}},
+			}}
+			address := newInvokeRemoteContextTestAzdServer(t, project, &testEnvironmentServiceServer{})
+			t.Setenv("AZD_SERVER", address)
+			client, err := azdext.NewAzdClient()
+			require.NoError(t, err)
+			defer client.Close()
+			action := &InvokeAction{flags: &invokeFlags{a2aVersion: "1.0", session: tt.session}, noPrompt: true}
 			if tt.endpoint {
 				action.endpoint = &parsedAgentEndpoint{}
 			}
@@ -1172,8 +1188,12 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 			if tt.noService {
 				rc.serviceName = ""
 			}
-			err := action.validateA2ATarget(t.Context(), rc)
-			require.NoError(t, err)
+			err = action.validateA2ATarget(t.Context(), rc)
+			if tt.wantError {
+				require.ErrorContains(t, err, "A2A hosted-agent version 0.3 is not supported by Foundry")
+			} else {
+				require.NoError(t, err)
+			}
 			assert.Equal(t, "1.0", action.a2aProtocolVersion())
 		})
 	}

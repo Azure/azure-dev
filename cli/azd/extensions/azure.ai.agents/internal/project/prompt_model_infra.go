@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/pkg/paths"
+
 	"go.yaml.in/yaml/v3"
 )
 
@@ -51,7 +53,11 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 	if !layered {
 		targets = []infraTarget{document.Infra.infraTarget}
 	}
-	for _, target := range targets {
+	for i, target := range targets {
+		field := "infra"
+		if layered {
+			field = fmt.Sprintf("infra.layers[%d]", i)
+		}
 		provider := strings.TrimSpace(target.Provider)
 		if provider == "" {
 			provider = strings.TrimSpace(document.Infra.Provider)
@@ -60,12 +66,27 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 		if path == "" {
 			path = "infra"
 		}
-		dir := filepath.Join(root, filepath.FromSlash(path))
+		dir, err := paths.JoinAllowRoot(root, path)
+		if err != nil {
+			return false, fmt.Errorf("resolve azure.yaml %s.path: %w", field, err)
+		}
+		module := strings.TrimSuffix(strings.TrimSpace(target.Module), ".bicep")
+		if module == "" {
+			module = "main"
+		}
+		// Embedded infrastructure may not have an on-disk directory yet.
+		if _, err := paths.Join(dir, module); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return false, fmt.Errorf("resolve azure.yaml %s.module: %w", field, err)
+		}
 		if provider == "terraform" {
 			if !layered {
 				return true, nil
 			}
-			marker, err := os.ReadFile(filepath.Join(dir, ".azd-foundry"))
+			markerPath, err := paths.JoinAllowRoot(root, path, ".azd-foundry")
+			if err != nil {
+				return false, fmt.Errorf("resolve azure.yaml %s.path Foundry marker: %w", field, err)
+			}
+			marker, err := os.ReadFile(markerPath)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return false, fmt.Errorf("read Foundry infrastructure marker: %w", err)
 			}
@@ -73,7 +94,11 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 				return true, nil
 			}
 			if errors.Is(err, fs.ErrNotExist) {
-				source, err := os.ReadFile(filepath.Join(dir, "main.tf"))
+				sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
+				if err != nil {
+					return false, fmt.Errorf("resolve azure.yaml %s.path Terraform source: %w", field, err)
+				}
+				source, err := os.ReadFile(sourcePath)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return false, fmt.Errorf("read Terraform infrastructure: %w", err)
 				}
@@ -87,15 +112,14 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 		if layered && provider != "microsoft.foundry" {
 			continue
 		}
-		module := strings.TrimSuffix(strings.TrimSpace(target.Module), ".bicep")
-		if module == "" {
-			module = "main"
-		}
 		for _, suffix := range []string{".bicep", ".bicepparam"} {
-			path := filepath.Join(dir, module+suffix)
-			info, err := os.Stat(path)
+			file, err := paths.JoinAllowRoot(root, path, filepath.FromSlash(module+suffix))
+			if err != nil {
+				return false, fmt.Errorf("resolve azure.yaml %s.module: %w", field, err)
+			}
+			info, err := os.Stat(file)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return false, fmt.Errorf("inspect infrastructure %q: %w", path, err)
+				return false, fmt.Errorf("inspect infrastructure %q: %w", file, err)
 			}
 			if err == nil && !info.IsDir() {
 				return true, nil

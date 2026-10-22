@@ -584,6 +584,9 @@ default when `--a2a-version` is omitted:
 azd ai agent invoke -p a2a "Hello!"
 ```
 
+Previously, plain messages used A2A 0.3. To preserve that behavior, use
+`azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
+
 **File input requires an explicit version.** When using `--input-file` (`-f`)
 with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
 native A2A agent YAML declares a version. No heuristic infers the version
@@ -592,8 +595,13 @@ from agent configuration or the request body.
 The file must contain a complete public JSON-RPC request for the selected A2A
 version, not a version envelope. The CLI sends the file bytes unchanged; it
 does not wrap, rewrite, or convert the body. The caller must match the body
-to `--a2a-version`, which selects the `A2A-Version` header. For example, save
-this complete A2A 1.0 request as `a2a-request-1.0.json`:
+to `--a2a-version`, which selects the `A2A-Version` header.
+
+Formatted output supports non-streaming JSON-RPC responses. For streaming methods
+(`message/stream` or `SendStreamingMessage`), use `--output raw` to stream the SSE
+response without parsing it.
+
+For example, save this complete A2A 1.0 request as `a2a-request-1.0.json`:
 
 ```json
 {

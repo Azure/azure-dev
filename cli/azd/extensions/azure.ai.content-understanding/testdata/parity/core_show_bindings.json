@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "python": "3.14.4",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    },
+    "command_path": [
+      "analyzer",
+      "show"
+    ],
+    "positional_classification": "standalone-shortcut"
+  },
+  "native_response": {
+    "analyzerId": "invoice-v1",
+    "status": "ready",
+    "description": "Synthetic core-binding transport response."
+  },
+  "boundaries": [
+    "Execute five exact original source tests, including their assertions; retain every parsed input, full bind/typed result, Python result type and complete source exception type/message.",
+    "Native invokes actual Cobra commands and production SDKTransport with strict synthetic GETs. Project actual resolved SDK name into the full source name request. Preserve synthetic response output separately; source core tests do not make HTTP requests or produce analyzer definitions.",
+    "Python dict/dataclass identity and standalone-shortcut classification are source facts, not Go implementation identity. Native -n/-a and safe LocalError category/message/hint/code remain explicit unapproved differences. Missing/conflicting inputs must have no session/credential/HTTP/prompt activity. Dummy auth/session and synthetic HTTP do not prove live/installed-host behavior."
+  ],
+  "cases": [
+    {
+      "name": "show-forms",
+      "source": "packages/core/tests/test_command_spec.py::test_analyzer_show_canonical_and_positional_forms_bind_identically",
+      "calls": [
+        {
+          "operation": "bind",
+          "parsed": {
+            "positional_analyzer_name": "invoice-v1",
+            "analyzer_name": null
+          },
+          "result": {
+            "name": "invoice-v1"
+          },
+          "result_type": "builtins.dict",
+          "error": null
+        },
+        {
+          "operation": "bind",
+          "parsed": {
+            "positional_analyzer_name": null,
+            "analyzer_name": "invoice-v1"
+          },
+          "result": {
+            "name": "invoice-v1"
+          },
+          "result_type": "builtins.dict",
+          "error": null
+        }
+      ],
+      "native_error": null,
+      "native_error_code": ""
+    },
+    {
+      "name": "show-typed",
+      "source": "packages/core/tests/test_command_spec.py::test_analyzer_show_builds_normalized_typed_request",
+      "calls": [
+        {
+          "operation": "build_request",
+          "parsed": {
+            "positional_analyzer_name": null,
+            "analyzer_name": " invoice-v1 "
+          },
+          "result": {
+            "name": "invoice-v1"
+          },
+          "result_type": "cu_cli_core.contracts.AnalyzerShowRequest",
+          "error": null
+        }
+      ],
+      "native_error": null,
+      "native_error_code": ""
+    },
+    {
+      "name": "show-shared-forms",
+      "source": "packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path0-canonical0-shortcut0-expected0]",
+      "calls": [
+        {
+          "operation": "bind",
+          "parsed": {
+            "analyzer_name": "invoice-v1"
+          },
+          "result": {
+            "name": "invoice-v1"
+          },
+          "result_type": "builtins.dict",
+          "error": null
+        },
+        {
+          "operation": "bind",
+          "parsed": {
+            "positional_analyzer_name": "invoice-v1"
+          },
+          "result": {
+            "name": "invoice-v1"
+          },
+          "result_type": "builtins.dict",
+          "error": null
+        }
+      ],
+      "native_error": null,
+      "native_error_code": ""
+    },
+    {
+      "name": "show-conflict",
+      "source": "packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed0-provide name only once]",
+      "calls": [
+        {
+          "operation": "bind",
+          "parsed": {
+            "positional_analyzer_name": "invoice-v1",
+            "analyzer_name": "invoice-v2"
+          },
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.command_spec.CommandBindingError",
+            "message": "provide name only once; --name cannot be combined with ANALYZER_NAME."
+          }
+        }
+      ],
+      "native_error": {
+        "category": "validation",
+        "message": "Specify the analyzer name only once.",
+        "hint": "Use a positional name or --name, not both.",
+        "status_code": null
+      },
+      "native_error_code": "conflicting_analyzer_name"
+    },
+    {
+      "name": "show-missing",
+      "source": "packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed1-missing required argument: --name]",
+      "calls": [
+        {
+          "operation": "bind",
+          "parsed": {
+            "positional_analyzer_name": null,
+            "analyzer_name": null
+          },
+          "result": null,
+          "result_type": "",
+          "error": {
+            "type": "cu_cli_core.command_spec.CommandBindingError",
+            "message": "missing required argument: --name."
+          }
+        }
+      ],
+      "native_error": {
+        "category": "validation",
+        "message": "Specify an analyzer name.",
+        "hint": "Use a positional name or --name.",
+        "status_code": null
+      },
+      "native_error_code": "missing_analyzer_name"
+    }
+  ]
+}

@@ -25,6 +25,9 @@ normalized:
 generated_projects:
   file: testdata/parity/generated_projects.json
   sha256: 91842a6caacf0db13d103c6eac918a66caf2bfabedde0f0bb12e967f9f14af6f
+core_show_bindings:
+  file: testdata/parity/core_show_bindings.json
+  sha256: b0928c34a2bb6e8dfaa1f2a3a860e82ed3cb1a23c8b13c7bb980c515b32e14b3
 capability_source:
   file: testdata/parity/source_capabilities.yaml
   sha256: 7573f107038183b21cac2698f3d454823f62c8ed83bcc2a049d2ed391cd71fed
@@ -1038,17 +1041,67 @@ cases:
 - source: packages/core/tests/test_command_spec.py::test_analyze_named_urls_bind_as_repeatable_common_strings
   state: pending
 - source: packages/core/tests/test_command_spec.py::test_analyzer_show_builds_normalized_typed_request
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact core analyzer-show test and retain all parsed inputs, full bound/typed results, Python result
+    types and original exception type/message. Native commands use production SDKTransport with strict synthetic GETs; project
+    the actual resolved SDK name into the complete source request, including whitespace normalization. Test positional/name/-n/-a
+    and three output modes; compare full synthetic outputs separately. Source dict/dataclass identity and standalone classification
+    are not Go implementation identity. Preserve safe native error category/message/hint/code and source errors as explicit
+    unapproved differences; missing/conflicting inputs have zero session, credential, HTTP, prompt and output activity. Source
+    core tests make no HTTP calls; synthetic responses are not service recordings, live auth or installed-host evidence.
+  go_tests:
+  - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-typed
 - source: packages/core/tests/test_command_spec.py::test_analyzer_show_canonical_and_positional_forms_bind_identically
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact core analyzer-show test and retain all parsed inputs, full bound/typed results, Python result
+    types and original exception type/message. Native commands use production SDKTransport with strict synthetic GETs; project
+    the actual resolved SDK name into the complete source request, including whitespace normalization. Test positional/name/-n/-a
+    and three output modes; compare full synthetic outputs separately. Source dict/dataclass identity and standalone classification
+    are not Go implementation identity. Preserve safe native error category/message/hint/code and source errors as explicit
+    unapproved differences; missing/conflicting inputs have zero session, credential, HTTP, prompt and output activity. Source
+    core tests make no HTTP calls; synthetic responses are not service recordings, live auth or installed-host evidence.
+  go_tests:
+  - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-forms
 - source: packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed0-provide name only
     once]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact core analyzer-show test and retain all parsed inputs, full bound/typed results, Python result
+    types and original exception type/message. Native commands use production SDKTransport with strict synthetic GETs; project
+    the actual resolved SDK name into the complete source request, including whitespace normalization. Test positional/name/-n/-a
+    and three output modes; compare full synthetic outputs separately. Source dict/dataclass identity and standalone classification
+    are not Go implementation identity. Preserve safe native error category/message/hint/code and source errors as explicit
+    unapproved differences; missing/conflicting inputs have zero session, credential, HTTP, prompt and output activity. Source
+    core tests make no HTTP calls; synthetic responses are not service recordings, live auth or installed-host evidence.
+  go_tests:
+  - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-conflict
 - source: 'packages/core/tests/test_command_spec.py::test_analyzer_show_rejects_invalid_bindings[parsed1-missing required
     argument: --name]'
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact core analyzer-show test and retain all parsed inputs, full bound/typed results, Python result
+    types and original exception type/message. Native commands use production SDKTransport with strict synthetic GETs; project
+    the actual resolved SDK name into the complete source request, including whitespace normalization. Test positional/name/-n/-a
+    and three output modes; compare full synthetic outputs separately. Source dict/dataclass identity and standalone classification
+    are not Go implementation identity. Preserve safe native error category/message/hint/code and source errors as explicit
+    unapproved differences; missing/conflicting inputs have zero session, credential, HTTP, prompt and output activity. Source
+    core tests make no HTTP calls; synthetic responses are not service recordings, live auth or installed-host evidence.
+  go_tests:
+  - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-missing
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path0-canonical0-shortcut0-expected0]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Execute this exact core analyzer-show test and retain all parsed inputs, full bound/typed results, Python result
+    types and original exception type/message. Native commands use production SDKTransport with strict synthetic GETs; project
+    the actual resolved SDK name into the complete source request, including whitespace normalization. Test positional/name/-n/-a
+    and three output modes; compare full synthetic outputs separately. Source dict/dataclass identity and standalone classification
+    are not Go implementation identity. Preserve safe native error category/message/hint/code and source errors as explicit
+    unapproved differences; missing/conflicting inputs have zero session, credential, HTTP, prompt and output activity. Source
+    core tests make no HTTP calls; synthetic responses are not service recordings, live auth or installed-host evidence.
+  go_tests:
+  - internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-shared-forms
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path1-canonical1-shortcut1-expected1]
   state: pending
 - source: packages/core/tests/test_command_spec.py::test_canonical_and_standalone_shortcut_forms_bind_identically[path2-canonical2-shortcut2-expected2]

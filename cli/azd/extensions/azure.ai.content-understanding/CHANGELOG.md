@@ -63,6 +63,13 @@
   validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
   scenario-state changes.
 - Context-free help, version, and command-tree metadata.
+- Map five exact core analyzer-show binding cases to seven complete original
+  input/result/type/error observations and 45 SDK-backed native command variants.
+  Verify trimmed names, full synthetic results, separate quiet output and
+  zero-activity conflict/missing-name rejection. Preserve source type/surface
+  facts and explicit safe native error differences without claiming Python
+  implementation identity, source HTTP recording or live/installed-host parity.
+  Totals: 133 cases evidenced, 664 pending; all five differences are unapproved.
 - Map 31 source capability-disposition manifest cases to immutable original YAML
   and exact ordered ID/source-path/target/classification contracts. Verify
   classification counts and uniqueness; reject path/alias/target/identity drift

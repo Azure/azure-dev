@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 128
+approval. Approved rows require an explicit review reference. Currently 133
 source cases have recorded-command, hygiene-replacement, manifest-structure or
-normalized-adapter/generated-project evidence, 669 remain pending, and none is approved. Passing the structural checks does
+normalized-adapter/generated-project/core-binding evidence, 664 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -1040,6 +1040,29 @@ structure only, not runtime dispositions or host-helper/update workflows.
 All 29 capability approvals and the separate runtime/core source cases remain
 pending. Existing cassette/scenario evidence states are unchanged.
 
+Five exact core analyzer-show binding tests now have command-path evidence.
+`testdata/parity/core_show_bindings.json` retains seven complete original
+observations: parsed inputs, bound/typed results, Python result types and
+exception type/messages, plus four source hashes and positional-classification
+provenance. Execute the original assertions when producing the oracle.
+
+`TestCoreShowBindingParity` runs 45 positional/name/-n/-a/output variants through
+actual Cobra commands and production `SDKTransport`. A delegating observer
+projects the resolved SDK name into the complete source name request, including
+trimmed named input. Strict synthetic GETs compare full SDK results and
+default/JSON output; quiet output is separately empty. Source core tests make
+no HTTP calls and produce no analyzer definition: native response data is
+explicitly synthetic, not another service recording.
+
+Retain source dictionary/typed-request class identity and standalone-shortcut
+classification as source facts, not Go implementation identity. Preserve raw source binding
+exceptions separately from native safe validation category/message/hint/code.
+Conflict/missing-name errors must precede any session, credential, HTTP or
+prompt activity and produce no output. All five mappings remain unapproved
+differences. No live/installed-host/authentication equivalence is established.
+Also, the 29 source tests named runtime-disposition evidence only check registry
+membership; their names are not evidence of service execution.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
@@ -1047,7 +1070,7 @@ semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Inventory, recorded/normalized/project commands, network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability)' -count=1
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized|Generated|SourceCapability|CoreShow)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

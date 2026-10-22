@@ -94,6 +94,10 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"generated_projects"`
+	CoreShowBindings struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"core_show_bindings"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -248,6 +252,16 @@ func validateParityInventory(inventory parityInventory) error {
 	if sha256Text(generated) != inventory.GeneratedProjects.SHA256 {
 		return fmt.Errorf("generated project oracle digest mismatch")
 	}
+	if inventory.CoreShowBindings.File != "testdata/parity/core_show_bindings.json" {
+		return fmt.Errorf("invalid core show binding oracle path")
+	}
+	bindings, err := os.ReadFile(filepath.Join("../..", inventory.CoreShowBindings.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(bindings) != inventory.CoreShowBindings.SHA256 {
+		return fmt.Errorf("core show binding oracle digest mismatch")
+	}
 	if err := validateScenarioManifest(inventory); err != nil {
 		return err
 	}
@@ -319,6 +333,8 @@ func validateGoTestReference(reference string, inventory parityInventory) error 
 		}
 		exists := false
 		switch {
+		case file == "internal/cmd/core_show_parity_test.go" && function == "TestCoreShowBindingParity":
+			exists = !hasFormat && slices.Contains(coreShowNames, scenario)
 		case file == "internal/cmd/capability_manifest_test.go" && function == "TestSourceCapabilityContracts":
 			for _, capability := range inventory.Capabilities {
 				exists = exists || !hasFormat && scenario == fmt.Sprintf("row-%d", capability.ID)
@@ -452,6 +468,8 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"normalized path", func(i *parityInventory) { i.Normalized.File = "../normalized_adapter.json" }},
 		{"generated project digest", func(i *parityInventory) { i.GeneratedProjects.SHA256 = strings.Repeat("0", 64) }},
 		{"generated project path", func(i *parityInventory) { i.GeneratedProjects.File = "../generated_projects.json" }},
+		{"core show binding digest", func(i *parityInventory) { i.CoreShowBindings.SHA256 = strings.Repeat("0", 64) }},
+		{"core show binding path", func(i *parityInventory) { i.CoreShowBindings.File = "../core_show_bindings.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}
@@ -525,6 +543,14 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 			i.Cases[0].GoTests = []string{
 				"internal/cmd/capability_manifest_test.go::TestSourceCapabilityContracts/row-01",
 			}
+		}},
+		{"missing core show binding subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/missing"}
+		}},
+		{"core show binding subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/core_show_parity_test.go::TestCoreShowBindingParity/show-forms/json"}
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

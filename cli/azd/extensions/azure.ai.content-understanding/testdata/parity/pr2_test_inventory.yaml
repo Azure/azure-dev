@@ -11,6 +11,9 @@ source:
   collection: CU_TEST_REC_MODE=playback .venv/bin/python -m pytest --collect-only -q packages/azd-extension/tests/unit tests/host_contract
     tests/packaging tests/parity tests/playback packages/core/tests packages/azure-cli-extension/tests/unit
 readiness: 'in-progress: pending/evidenced rows are not approved parity'
+hygiene:
+  file: testdata/parity/hygiene_scenarios.json
+  sha256: ee047ed267cebf45c6267a60d8009c76b38cefed3a84fafd57baaff3992ea3af
 capabilities:
 - id: 1
   source_paths:
@@ -314,67 +317,67 @@ scenarios:
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 18
   name: scrub-request-sas-apostrophe-path
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 19
   name: scrub-request-sas-apostrophe-query
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 20
   name: scrub-response-sas-basic-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 21
   name: scrub-response-sas-apostrophe-path-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 22
   name: scrub-response-sas-apostrophe-query-text
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 23
   name: scrub-response-sas-basic-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 24
   name: scrub-response-sas-apostrophe-path-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 25
   name: scrub-response-sas-apostrophe-query-bytes
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 26
   name: scrub-response-host-and-query
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 - id: 27
   name: scrub-response-bytes-payload
   kind: hygiene
   mode: offline
   recordings: []
-  state: pending
+  state: evidenced
 recordings:
 - name: defaults_get
   file: testdata/playback/defaults_get.json
@@ -2154,27 +2157,126 @@ cases:
   go_tests:
   - internal/cmd/template_classifier_playback_test.go::TestRecordedTemplateClassifierLifecycle/extraction
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-path]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-request-sas-apostrophe-path
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-query]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-request-sas-apostrophe-query
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-basic]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-request-sas-basic
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-bytes-payload]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-bytes-payload
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-host-and-query]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-host-and-query
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-bytes]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-apostrophe-path-bytes
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-text]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-apostrophe-path-text
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-bytes]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-apostrophe-query-bytes
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-text]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-apostrophe-query-text
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-bytes]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-basic-bytes
 - source: tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-text]
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: 'Exact raw/scrubbed synthetic controls captured by executing this pinned Python case. Native artifact-boundary
+    regression rejects the raw artifact, independently checks host/header/query markers, and accepts a fully reviewed credential-free
+    public control. Native has no automatic recording scrubber: it deliberately also rejects source REDACTED credential markers;
+    import review and fail-closed CI are a proposed stricter replacement. UTF-8 byte controls are canonicalized only at the
+    serialized JSON artifact boundary, not claimed as source in-memory byte-return API equivalence. Manual fixture review
+    and explicit replacement approval remain required; no live or production-redaction evidence is claimed.'
+  go_tests:
+  - internal/cmd/hygiene_playback_test.go::TestRecordedHygieneScenarios/scrub-response-sas-basic-text
 - source: tests/playback/test_live_analyzer_copy.py::test_live_cross_resource_copy_through_azd_adapter
   state: pending
 - source: tests/playback/test_live_analyzer_copy.py::test_live_same_resource_copy_through_azd_adapter

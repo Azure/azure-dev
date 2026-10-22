@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "tests/playback/recording.py": "118e325d345de80ef93e03b44696507a9e23fd99a75de5cecce483871412aa5c",
+      "tests/playback/test_hygiene_scenarios.py": "91b2ba89f69e6e9cb44b0c7d5258b6f0ee52b5d09e6f2b8f4abb7ab3a83ea0a9"
+    },
+    "sensitive_headers": [
+      "api-key",
+      "authorization",
+      "ocp-apim-subscription-key",
+      "set-cookie",
+      "subscription-key",
+      "x-ms-client-request-id",
+      "x-ms-request-id"
+    ],
+    "sensitive_query": [
+      "api-key",
+      "code",
+      "se",
+      "si",
+      "sig",
+      "sip",
+      "skoid",
+      "sks",
+      "skt",
+      "sktid",
+      "skv",
+      "sp",
+      "spr",
+      "sr",
+      "srt",
+      "st",
+      "subscription-key",
+      "sv"
+    ]
+  },
+  "normalizations": [
+    "Synthetic unit controls only, never live service/customer data or playback cassettes.",
+    "Canonicalize only source UTF-8 bytes to JSON text after asserting exact encode/decode round-trip. Retain body encoding metadata and full raw/scrubbed request or response objects.",
+    "Native CI rejects unsafe artifacts instead of implementing Python's recording-time scrubber. It also rejects REDACTED credential markers; reviewed native imports omit credential metadata. This is a proposed stricter replacement, not automatic-scrubber or byte-return API equivalence."
+  ],
+  "cases": [
+    {
+      "name": "scrub-request-sas-basic",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-basic]",
+      "body_encoding": "text",
+      "raw": {
+        "uri": "https://customer-resource.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "Bearer customer-token"
+        },
+        "body": "{\"inputs\": [{\"url\": \"https://storage.example.test/container/input.pdf?sv=1&sig=customer-secret\"}]}"
+      },
+      "scrubbed": {
+        "uri": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "REDACTED"
+        },
+        "body": "{\"inputs\":[{\"url\":\"https://storage.example.test/container/input.pdf?sv=REDACTED&sig=REDACTED\"}]}"
+      }
+    },
+    {
+      "name": "scrub-request-sas-apostrophe-path",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-path]",
+      "body_encoding": "text",
+      "raw": {
+        "uri": "https://customer-resource.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "Bearer customer-token"
+        },
+        "body": "{\"inputs\": [{\"url\": \"https://storage.example.test/container/customer's-file.pdf?sv=1&sig=customer-secret\"}]}"
+      },
+      "scrubbed": {
+        "uri": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "REDACTED"
+        },
+        "body": "{\"inputs\":[{\"url\":\"https://storage.example.test/container/customer's-file.pdf?sv=REDACTED&sig=REDACTED\"}]}"
+      }
+    },
+    {
+      "name": "scrub-request-sas-apostrophe-query",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-request-sas-apostrophe-query]",
+      "body_encoding": "text",
+      "raw": {
+        "uri": "https://customer-resource.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "Bearer customer-token"
+        },
+        "body": "{\"inputs\": [{\"url\": \"https://storage.example.test/container/input.pdf?sv=1&name=customer's-file&sig=customer-secret\"}]}"
+      },
+      "scrubbed": {
+        "uri": "https://sanitized.services.ai.azure.com/contentunderstanding/analyzers/prebuilt-layout:analyze",
+        "headers": {
+          "authorization": "REDACTED"
+        },
+        "body": "{\"inputs\":[{\"url\":\"https://storage.example.test/container/input.pdf?sv=REDACTED&name=customer%27s-file&sig=REDACTED\"}]}"
+      }
+    },
+    {
+      "name": "scrub-response-sas-basic-text",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-text]",
+      "body_encoding": "text",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-sas-apostrophe-path-text",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-text]",
+      "body_encoding": "text",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/customer's-file.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Fcustomer%27s-file.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-sas-apostrophe-query-text",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-text]",
+      "body_encoding": "text",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&name=customer's-file&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&name=customer%27s-file&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-sas-basic-bytes",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-basic-bytes]",
+      "body_encoding": "utf8-bytes",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-sas-apostrophe-path-bytes",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-path-bytes]",
+      "body_encoding": "utf8-bytes",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/customer's-file.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Fcustomer%27s-file.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-sas-apostrophe-query-bytes",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-sas-apostrophe-query-bytes]",
+      "body_encoding": "utf8-bytes",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&name=customer's-file&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&name=customer%27s-file&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-host-and-query",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-host-and-query]",
+      "body_encoding": "text",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    },
+    {
+      "name": "scrub-response-bytes-payload",
+      "source": "tests/playback/test_hygiene_scenarios.py::test_all_11_offline_recording_hygiene_scenarios[scrub-response-bytes-payload]",
+      "body_encoding": "utf8-bytes",
+      "raw": {
+        "headers": {
+          "x-ms-request-id": [
+            "customer-request-id"
+          ],
+          "operation-location": [
+            "https://customer-resource.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://customer-resource.services.ai.azure.com/result?code=customer-secret&source=https://storage.example.test/container/input.pdf?sv=1&sig=customer-secret"
+        }
+      },
+      "scrubbed": {
+        "headers": {
+          "x-ms-request-id": [
+            "REDACTED"
+          ],
+          "operation-location": [
+            "https://sanitized.services.ai.azure.com/operations/1"
+          ]
+        },
+        "body": {
+          "string": "https://sanitized.services.ai.azure.com/result?code=REDACTED&source=https%3A%2F%2Fstorage.example.test%2Fcontainer%2Finput.pdf%3Fsv%3D1&sig=REDACTED"
+        }
+      }
+    }
+  ]
+}

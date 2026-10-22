@@ -32,6 +32,12 @@
   all 51 suggestion interactions/49 Running polls and all 20 suggested fields.
   Explicitly distinguish JSON-to-binary request adaptation, synthetic missing
   defaults/warning/fallback contracts and unproven live/host/release evidence.
+- All 11 source hygiene scenarios have exact source-hashed synthetic controls
+  and native rejection/positive-control evidence, plus isolated sensitive-header,
+  query-key and CU-host regressions. Native rejects unsafe imports, including
+  REDACTED credential markers, rather than implementing a recording scrubber.
+  Keep this stricter replacement unapproved and UTF-8 artifact normalization
+  distinct from byte-return API equivalence; 38 cases evidenced, 759 pending.
 - Context-free help, version, and command-tree metadata.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,

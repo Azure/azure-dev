@@ -69,7 +69,11 @@ type parityInventory struct {
 		CaseListSHA256 string `yaml:"case_list_sha256"`
 		Collection     string `yaml:"collection"`
 	} `yaml:"source"`
-	Readiness    string             `yaml:"readiness"`
+	Readiness string `yaml:"readiness"`
+	Hygiene   struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"hygiene"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -191,6 +195,16 @@ func validateParityInventory(inventory parityInventory) error {
 			return fmt.Errorf("unknown capability classification")
 		}
 	}
+	if inventory.Hygiene.File != "testdata/parity/hygiene_scenarios.json" {
+		return fmt.Errorf("invalid hygiene source-control path")
+	}
+	hygiene, err := os.ReadFile(filepath.Join("../..", inventory.Hygiene.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(hygiene) != inventory.Hygiene.SHA256 {
+		return fmt.Errorf("hygiene source-control digest mismatch")
+	}
 	imports := map[string]bool{}
 	for _, row := range inventory.Recordings {
 		if imports[row.Name] || row.Name == "" || row.File != "testdata/playback/"+row.Name+".json" {
@@ -288,6 +302,8 @@ func validateGoTestReference(reference string) error {
 			for _, row := range recordedSuggestionCases {
 				exists = exists || row == scenario
 			}
+		case file == "internal/cmd/hygiene_playback_test.go" && function == "TestRecordedHygieneScenarios":
+			exists = slices.Contains(recordedHygieneNames, scenario)
 		default:
 			return fmt.Errorf("subtest evidence requires a checked scenario registry: %s", reference)
 		}
@@ -365,6 +381,8 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"missing scenario", func(i *parityInventory) { i.Scenarios = i.Scenarios[1:] }},
 		{"missing native command", func(i *parityInventory) { i.Capabilities[0].Target += " missing" }},
 		{"fixture drift", func(i *parityInventory) { i.Recordings[0].SHA256 = strings.Repeat("0", 64) }},
+		{"hygiene drift", func(i *parityInventory) { i.Hygiene.SHA256 = strings.Repeat("0", 64) }},
+		{"hygiene path", func(i *parityInventory) { i.Hygiene.File = "../hygiene.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}

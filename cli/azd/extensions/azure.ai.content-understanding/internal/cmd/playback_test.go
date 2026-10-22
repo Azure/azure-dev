@@ -548,7 +548,14 @@ func TestRecordedJSONMatchingPreservesNumbersAndRejectsBodies(t *testing.T) {
 var recordingPrivateText = regexp.MustCompile(
 	`(?i)(/home/|/Users/|[a-z]:\\Users\\|dev\.azure\.com|visualstudio\.com|coreai-microsoft|msazure)`)
 var recordingSecretText = regexp.MustCompile(
-	`(?i)(authorization|api[-_]?key|subscription[-_]?key|client_secret|password|token|sig)\s*["']?\s*[:=]`)
+	`(?i)(authorization|api[-_]?key|subscription[-_]?key|client_secret|password|token|sig|` +
+		`ocp-apim-subscription-key|set-cookie|x-ms-client-request-id|x-ms-request-id)\s*["']?\s*[:=]`)
+var recordingURLText = regexp.MustCompile(`(?i)https?://[^\s"\\]+`)
+var recordingSensitiveQuery = map[string]bool{
+	"api-key": true, "code": true, "se": true, "sig": true, "si": true, "sip": true,
+	"skoid": true, "sks": true, "skt": true, "sktid": true, "skv": true, "sp": true,
+	"spr": true, "sr": true, "srt": true, "st": true, "subscription-key": true, "sv": true,
+}
 
 func recordingHygiene(data []byte) error {
 	value, err := recordedJSON(data)
@@ -561,6 +568,30 @@ func recordingHygiene(data []byte) error {
 		case string:
 			if recordingPrivateText.MatchString(value) || recordingSecretText.MatchString(value) {
 				return errors.New("Recording contains private or credential-like content; manual review required.")
+			}
+			for _, text := range recordingURLText.FindAllString(value, -1) {
+				link, err := url.Parse(text)
+				if err != nil {
+					return errors.New("Recording contains an invalid URL; manual review required.")
+				}
+				host := strings.ToLower(link.Hostname())
+				if strings.HasSuffix(host, ".services.ai.azure.com") && host != "sanitized.services.ai.azure.com" {
+					return errors.New("Recording contains an unreviewed CU resource hostname.")
+				}
+				query, err := url.ParseQuery(link.RawQuery)
+				if err != nil {
+					return errors.New("Recording contains an invalid URL query; manual review required.")
+				}
+				for key, items := range query {
+					if recordingSensitiveQuery[strings.ToLower(key)] {
+						return errors.New("Recording contains a credential-like URL query.")
+					}
+					for _, item := range items {
+						if err := inspect(item); err != nil {
+							return err
+						}
+					}
+				}
 			}
 		case map[string]any:
 			for key, item := range value {

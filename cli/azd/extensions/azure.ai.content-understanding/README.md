@@ -781,9 +781,10 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 27
-source cases have recorded command evidence, 770 remain pending, and none is
-approved. Passing the structural checks does not mean parity is complete.
+approval. Approved rows require an explicit review reference. Currently 38
+source cases have recorded-command or proposed hygiene-replacement evidence,
+759 remain pending, and none is approved. Passing the structural checks does
+not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
 `defaults_get`, `analyzer_list`, `analyze_single`, `analyze_batch`, and
@@ -910,9 +911,28 @@ the original JSON upload or recorded native binary-service behavior. Synthetic
 warning/usage and empty-suggestion variants verify safe warning text, complete
 output and the independent Python starter fallback.
 
-All 19 cassette identities and 14 recorded scenario dispositions now have
-evidence; two live-only and 11 hygiene dispositions, all approvals and the
-other semantic/preview/error/cancellation/host/release gates remain open.
+`TestRecordedHygieneScenarios` maps all 11 exact pinned source hygiene cases,
+including apostrophes in URL paths/query values and four UTF-8 byte-body cases.
+The source-executed full raw/scrubbed controls and two source-code hashes live
+in `testdata/parity/hygiene_scenarios.json`, pinned by the ledger's SHA256.
+These synthetic unsafe controls are not service recordings or a twentieth
+cassette. UTF-8 bytes are canonicalized to artifact text only after an exact
+round-trip check; this does not prove in-memory byte-return API equivalence.
+
+Python scrubs during recording; native has no recorder and instead rejects
+unsafe artifacts during import review/CI. Native deliberately also rejects
+REDACTED credential markers; reviewed imports omit that metadata. Each case
+rejects the exact source raw and scrubbed artifacts and accepts a separate
+reviewed native control. Independent single-marker tests cover all seven
+sensitive headers, all 18 sensitive query keys (including blank/REDACTED
+values), customer CU hosts, encoded/nested URLs and malformed queries without
+depending on a second leak to fail. This is an evidenced but unapproved
+stricter replacement, not an automatic scrubber or a production logging change.
+
+All 19 cassette identities and 25 source scenario dispositions now have
+evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
+Two live-only dispositions, all approvals and the other
+semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
 # Structural inventory, recorded commands, mismatch/network-denial and hygiene tests.
@@ -923,7 +943,7 @@ go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -
 ```
 
 The approval command is an explicit gate, not yet wired into the shared release
-pipeline. Remaining source cases, recorded scenarios, review dispositions,
+pipeline. Remaining source cases, live scenarios, review dispositions,
 SDK-backed integration seams, platform/install validation and authorized live
 copy/defaults mutation are still open. GA success recordings do not prove
 preview/errors/cancellation; scrubbed uploads do not prove binary bytes, and

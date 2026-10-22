@@ -47,6 +47,7 @@ type invokeFlags struct {
 	conversation    string
 	newConversation bool
 	protocol        string
+	a2aVersion      string
 	agentEndpoint   string
 	version         string
 	outputFmt       string
@@ -126,10 +127,22 @@ instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
+A2A Version:
+Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
+not a Foundry API version or the deployed agent version selected by --version.
+For plain messages, azd composes the body and A2A-Version header together,
+so 1.0 is a convenience default. With --input-file, --a2a-version is always
+required, even if native A2A agent YAML declares a version. File bytes are
+sent unchanged as a complete public JSON-RPC request. The caller must match
+the body to the selected header version; azd does not infer the version.
+Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.
+Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
+requests, use --output raw to stream unparsed SSE events.
+
 Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. The a2a protocol is remote-only and cannot be used with
---local.
+instead of Foundry. This CLI does not support a2a with --local; this is a
+CLI limitation, not a restriction of the A2A protocol.
 
 Sessions & Identity:
 Sessions are persisted per-agent — consecutive invokes reuse the same
@@ -158,6 +171,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+For A2A Task responses in both 0.3 and 1.0, default output prefers answer
+artifacts over generic status messages such as "Done". Status messages and
+history provide fallback text when no text artifact is present.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -183,11 +199,17 @@ This option does not provide crash recovery or automatic reconnection.`,
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
 
-  # Invoke a deployed agent over the a2a protocol
-  azd ai agent invoke --protocol a2a "Hello!"
+  # Invoke a deployed agent with an explicit public A2A version
+  azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
 
-  # Invoke the a2a protocol with a complete JSON-RPC request from a file
-  azd ai agent invoke --protocol a2a -f a2a-request.json
+  # Invoke using public A2A 0.3
+  azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+
+  # Use the A2A 1.0 convenience default for a plain message
+  azd ai agent invoke -p a2a "Hello!"
+
+  # Send a complete public JSON-RPC file unchanged (version is required)
+  azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
 
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
@@ -326,6 +348,13 @@ This option does not provide crash recovery or automatic reconnection.`,
 				}
 			}
 
+			if cmd.Flags().Changed("a2a-version") && flags.a2aVersion == "" {
+				return validateA2AVersion(flags.a2aVersion)
+			}
+			if err := validateInvokeA2AVersionFlags(flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
+				return err
+			}
+
 			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 			if err != nil {
 				return err
@@ -386,6 +415,8 @@ This option does not provide crash recovery or automatic reconnection.`,
 		"Protocol to use: responses, invocations, or a2a. "+
 			"Auto-detected from deployment data or the agent definition; "+
 			"pass --protocol when it cannot be determined.")
+	cmd.Flags().StringVar(&flags.a2aVersion, "a2a-version", "",
+		"A2A wire version: 0.3 or 1.0. Defaults to 1.0 for messages; required with --input-file for a2a.")
 	cmd.Flags().IntVar(&flags.port, "port", DefaultPort, "Local server port")
 	cmd.Flags().IntVarP(
 		&flags.timeout,
@@ -549,6 +580,9 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+		return err
+	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err
@@ -582,6 +616,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses); err != nil {
+				return err
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -591,6 +628,10 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 
 	protocol, err := a.resolveProtocol(ctx)
 	if err != nil {
+		return err
+	}
+	if err := validateInvokeA2AVersionFlags(a.flags, protocol); err != nil {
+		a.closeResolvedRemoteContextClient()
 		return err
 	}
 

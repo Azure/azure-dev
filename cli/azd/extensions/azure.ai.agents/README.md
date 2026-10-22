@@ -53,7 +53,9 @@ While a feature is off, its flags, commands, and help sections are hidden from
 help. This covers `invoke --long-running`, `invoke --no-wait`, the
 `invocations` group, `init --voice`, and the `prompt-voice` choice of
 `init --kind`. Hidden commands still run. Using a disabled preview fails with a
-`feature_not_enabled` error that names the commands above.
+`feature_not_enabled` error that names the preview feature ID and suggests
+`azd config set alpha.<id> on`, `azd env set <ENVVAR> true`, or setting the
+matching process variable to `true`.
 
 Checks cover preview flags on init and invoke, `agent add` definitions,
 existing and staged project definitions, the selected service for invoke, run,

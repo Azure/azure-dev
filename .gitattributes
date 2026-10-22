@@ -3,6 +3,8 @@
 **/testdata/**/*.md text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/playback/*.json text eol=lf
 cli/azd/extensions/azure.ai.content-understanding/testdata/parity/hygiene_scenarios.json text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/source_scenarios.yaml text eol=lf
+cli/azd/extensions/azure.ai.content-understanding/testdata/parity/normalized_adapter.json text eol=lf
 cli/azd/**/*.ts text eol=lf
 *.txt text eol=lf
 *.snap text eol=lf

@@ -781,9 +781,9 @@ review, and updating the pinned snapshot/counts, not automatic enrollment.
 
 States are `pending`, `evidenced`, and `approved`. An evidenced mapping records
 tests plus an equivalent/different/not-applicable rationale; it is not release
-approval. Approved rows require an explicit review reference. Currently 61
-source cases have recorded-command or proposed hygiene-replacement evidence,
-736 remain pending, and none is approved. Passing the structural checks does
+approval. Approved rows require an explicit review reference. Currently 93
+source cases have recorded-command, hygiene-replacement, manifest-structure or
+normalized-adapter evidence, 704 remain pending, and none is approved. Passing the structural checks does
 not mean parity is complete.
 
 All nineteen source recordings are imported under `testdata/playback/`:
@@ -959,14 +959,59 @@ These checks supplement full provenance/digest/header/response hygiene; they
 do not turn native import rejection into Python's recording-time scrubber or
 make normalized JSON checks equivalent to checking original YAML in Go CI.
 
+All 29 source scenario-manifest cases have separate structural evidence.
+`testdata/parity/source_scenarios.yaml` is a byte-for-byte copy of the pinned
+source manifest, with source path/MIT provenance, an immutable digest checked
+in code and the ledger, and LF checkout policy. Compare the ledger's ordered
+five-field projection (ID, name, kind, mode, recording list) exactly against
+that source. Review state and approval are native metadata outside this
+contract. Preserve shared cassettes across scenarios, but reject renamed,
+reordered, duplicate or incorrectly associated scenario/recording entries.
+
+The native tests retain all 27 exact per-name contracts, 16 command/11 hygiene
+counts, 14 playback/two live-only/11 offline counts, and the exact union of 19
+inventory/on-disk cassette identities. Twenty-one negative controls cover
+source-reference and manifest drift, including missing cassette references
+even when a scenario is pending. Checked subtest references reject unknown
+names and invented formats. These are manifest facts only: structural checks
+for the two live-only rows do not execute copy, and hygiene-row shape checks
+do not prove a native scrubber. Existing scenario evidence and approval states
+are unchanged.
+
+The three source normalized-adapter tests also have exact checked mappings.
+`testdata/parity/normalized_adapter.json` retains complete equal Azure/Python
+azd observations and fake-client calls from executing the original tests,
+nine source-code hashes, runtime/MIT provenance and declared host differences.
+`TestNormalizedAdapterParity` delegates to production `SDKTransport`; it captures
+actual SDK results/name operands and projects parsed local kind/sort/yes flags.
+This is a test-only typed request projection, not Python request-builder
+implementation equivalence. Strict synthetic HTTP responses derive from the
+source fake-client calls; this asset is not a twentieth service recording.
+
+Source list/get fake models omit `status`, which existing native wire validation
+requires. Preserve the original source objects and inject only `status: ready`
+into the separately declared native wire models and complete expected native
+list/backend results. Negative tests verify the unadapted source models fail
+with `malformed_response`, without a subsequent DELETE or output. Do not weaken
+production validation to accommodate source mocks.
+
+All three mappings are unapproved differences. For conflicting delete operands,
+retain the source `usage` category/message/null hint versus native `validation`,
+safe message/actionable hint and `conflicting_analyzer_name` code. Compare full
+requests/results/warnings/errors and backend order across 24 default/explicit
+flag, positional/alias and output-mode invocations. Default/JSON output is
+compared in full; quiet output has a separate no-output contract. Conflict
+validation must occur before session/credential/HTTP/prompt activity. These
+offline tests do not establish live authentication, RBAC or installed hosts.
+
 All 19 cassette identities and 25 source scenario dispositions now have
 evidence: 14 recorded command scenarios and 11 proposed hygiene replacements.
 Two live-only dispositions, all approvals and the other
 semantic/preview/error/cancellation/host/release gates remain open.
 
 ```bash
-# Structural inventory, recorded commands, mismatch/network-denial and hygiene tests.
-go test ./internal/cmd -run 'Test(Parity|Recorded)' -count=1
+# Inventory, recorded/normalized commands, mismatch/network-denial and hygiene tests.
+go test ./internal/cmd -run 'Test(Parity|Recorded|Normalized)' -count=1
 
 # Required parity approval gate before promotion; intentionally fails while rows remain pending.
 go test -tags parityrelease ./internal/cmd -run '^TestParityReleaseReadiness$' -count=1

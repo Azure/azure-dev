@@ -47,7 +47,21 @@
   exact import-set checks. Pin three code hashes and expected cassette names;
   reject missing/duplicate/extra files and non-placeholder request origins.
   Keep scrubber/REDACTED/UTF-8 artifact differences unapproved. Totals:
-  61 cases evidenced, 736 pending.
+  61 cases evidenced at that checkpoint.
+- Map 29 source manifest cases to exact per-scenario structural checks, source
+  counts and cassette ownership. Pin a byte-identical source YAML snapshot and
+  reject identity/order/association/reference drift independently of review
+  metadata. Live-only shape checks do not execute live workflows or approve
+  behavior. Totals at that checkpoint: 90 cases evidenced, 707 pending.
+- Map three source normalized-adapter cases to complete source-executed
+  observations/backend calls and production-SDK-delegating native checks.
+  Declare synthetic ready-status additions for source fake models and exact
+  conflict-error differences; retain original source objects and reject
+  unadapted models without weakening production validation. Compare full
+  default/JSON output with separate quiet-output assertions across 24
+  invocations. This is synthetic HTTP evidence, not another cassette or live
+  validation. Totals: 93 cases evidenced, 704 pending; no new approvals or
+  scenario-state changes.
 - Context-free help, version, and command-tree metadata.
 - Cancellable azd runtime context, structured errors, and safe debug diagnostics.
 - Host-neutral CU client contracts, typed domain validation/errors, optional usage,

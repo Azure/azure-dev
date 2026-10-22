@@ -14,6 +14,14 @@ readiness: 'in-progress: pending/evidenced rows are not approved parity'
 hygiene:
   file: testdata/parity/hygiene_scenarios.json
   sha256: 152c411c6fbfb2eeabd42735c2825272dca6af54f68d56ce364820f03e421b76
+scenario_source:
+  file: testdata/parity/source_scenarios.yaml
+  sha256: 406e6e9d960c26ab88c233c2c0608407030f79d1fc8fb4bc3680f5294eeecd24
+  source_path: tests/playback/scenarios/scenarios.yaml
+  license: MIT
+normalized:
+  file: testdata/parity/normalized_adapter.json
+  sha256: 1f2213e2893464fe50ccff36ec52f3b8d4f5544a740d426dc06ba9c508225157
 capabilities:
 - id: 1
   source_paths:
@@ -1890,11 +1898,45 @@ cases:
 - source: tests/parity/test_generated_projects.py::test_generated_project_matches_complete_golden_tree[core]
   state: pending
 - source: tests/parity/test_request_result_parity.py::test_analyzer_delete_named_and_positional_forms_have_parity
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Independent execution of this exact source test preserves complete equal Azure/azd request/result/warning/error
+    observations and ordered fake-client backend calls. Native command/default/JSON tests delegate through production SDKTransport
+    under strict synthetic HTTP matching; capture parsed local flags, actual resolved name operands, full SDK results and
+    backend order. Source fake analyzer objects omit status; explicitly add status:ready only to synthetic native wire/full
+    native list/backend expectations. Preserve complete original source objects separately and verify unadapted objects fail
+    existing validation. Quiet output is tested separately; no fields are filtered for equality. Named/positional aliases
+    preserve semantic operands; full outputs and empty warnings/errors match. Synthetic SDK HTTP and injected Entra/host seams
+    are not service-recorded/live auth/RBAC or installed-host evidence; all release approval remains open.
+  go_tests:
+  - internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/delete
 - source: tests/parity/test_request_result_parity.py::test_analyzer_list_has_normalized_request_and_result_parity
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Independent execution of this exact source test preserves complete equal Azure/azd request/result/warning/error
+    observations and ordered fake-client backend calls. Native command/default/JSON tests delegate through production SDKTransport
+    under strict synthetic HTTP matching; capture parsed local flags, actual resolved name operands, full SDK results and
+    backend order. Source fake analyzer objects omit status; explicitly add status:ready only to synthetic native wire/full
+    native list/backend expectations. Preserve complete original source objects separately and verify unadapted objects fail
+    existing validation. Quiet output is tested separately; no fields are filtered for equality. Named/positional aliases
+    preserve semantic operands; full outputs and empty warnings/errors match. Synthetic SDK HTTP and injected Entra/host seams
+    are not service-recorded/live auth/RBAC or installed-host evidence; all release approval remains open.
+  go_tests:
+  - internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/list
 - source: tests/parity/test_request_result_parity.py::test_conflicting_delete_operands_have_normalized_error_parity
-  state: pending
+  state: evidenced
+  disposition: difference
+  rationale: Independent execution of this exact source test preserves complete equal Azure/azd request/result/warning/error
+    observations and ordered fake-client backend calls. Native command/default/JSON tests delegate through production SDKTransport
+    under strict synthetic HTTP matching; capture parsed local flags, actual resolved name operands, full SDK results and
+    backend order. Source fake analyzer objects omit status; explicitly add status:ready only to synthetic native wire/full
+    native list/backend expectations. Preserve complete original source objects separately and verify unadapted objects fail
+    existing validation. Quiet output is tested separately; no fields are filtered for equality. Source usage error/message/null
+    hint differs from native validation/safe message/actionable hint/code; both complete errors are retained and the replacement
+    remains unapproved. Assert zero session opens, prompts, credentials, HTTP calls and output. Synthetic SDK HTTP and injected
+    Entra/host seams are not service-recorded/live auth/RBAC or installed-host evidence; all release approval remains open.
+  go_tests:
+  - internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/conflicting-delete
 - source: tests/playback/test_azd_analyzers.py::test_azd_analyzer_delete_replays_shared_sanitized_service_calls
   state: evidenced
   disposition: difference
@@ -2597,60 +2639,350 @@ cases:
   - internal/cmd/playback_test.go::TestRecordedFixtureHygiene/template_analyzer_show
   - internal/cmd/hygiene_playback_test.go::TestRecordedSourceArtifactMarkers
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-directory-writes-results]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyze-directory-writes-results
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-prebuilt-invoice-json]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyze-prebuilt-invoice-json
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyze-single-file-markdown]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyze-single-file-markdown
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-copy-cross-resource]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-copy-cross-resource
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-copy-same-resource]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-copy-same-resource
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-create-show-delete]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-create-show-delete
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-created-at]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-list-created-at
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-custom-sorted]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-list-custom-sorted
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-list-json]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-list-json
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[analyzer-test-field-report]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/analyzer-test-field-report
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[classifier-routing-lifecycle]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/classifier-routing-lifecycle
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[defaults-show-json]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/defaults-show-json
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[doctor-connectivity]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/doctor-connectivity
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[schema-create-from-sample]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/schema-create-from-sample
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[schema-template-validate-lifecycle]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/schema-template-validate-lifecycle
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-apostrophe-path]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-request-sas-apostrophe-path
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-apostrophe-query]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-request-sas-apostrophe-query
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-request-sas-basic]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-request-sas-basic
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-bytes-payload]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-bytes-payload
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-host-and-query]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-host-and-query
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-path-bytes]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-apostrophe-path-bytes
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-path-text]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-apostrophe-path-text
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-query-bytes]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-apostrophe-query-bytes
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-apostrophe-query-text]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-apostrophe-query-text
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-basic-bytes]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-basic-bytes
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[scrub-response-sas-basic-text]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/scrub-response-sas-basic-text
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_contract[template-analyzer-create-show-delete]
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/template-analyzer-create-show-delete
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenario_inventory_matches_clean_cutover
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioInventory
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift
 - source: tests/playback/test_scenarios.py::test_shared_scenarios_own_every_sanitized_recording
-  state: pending
+  state: evidenced
+  disposition: equivalent
+  rationale: 'Equivalent only for pinned manifest facts and structural assertions: exact source YAML snapshot with immutable
+    digest, ordered IDs/names/kinds/modes/recording lists, 16-command/11-hygiene and 14-playback/2-live-only/11-offline counts,
+    and exact ownership of all 19 imported files. Native review-state/approval fields are separate metadata, not part of the
+    five-field source contract. Checked subtest names and drift regressions reject renames, reordered/duplicate/wrong cassette
+    links and stale source references. Structural live-only/hygiene rows do not execute live calls or establish scrubber/command
+    equivalence; existing scenario evidence states and all approvals remain unchanged.'
+  go_tests:
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioOwnership
+  - internal/cmd/scenario_manifest_test.go::TestRecordedScenarioManifestRejectsDrift

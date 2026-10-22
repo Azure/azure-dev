@@ -74,6 +74,16 @@ type parityInventory struct {
 		File   string `yaml:"file"`
 		SHA256 string `yaml:"sha256"`
 	} `yaml:"hygiene"`
+	ScenarioSource struct {
+		File       string `yaml:"file"`
+		SHA256     string `yaml:"sha256"`
+		SourcePath string `yaml:"source_path"`
+		License    string `yaml:"license"`
+	} `yaml:"scenario_source"`
+	Normalized struct {
+		File   string `yaml:"file"`
+		SHA256 string `yaml:"sha256"`
+	} `yaml:"normalized"`
 	Capabilities []parityCapability `yaml:"capabilities"`
 	Scenarios    []parityScenario   `yaml:"scenarios"`
 	Recordings   []parityRecording  `yaml:"recordings"`
@@ -149,7 +159,7 @@ func validateParityInventory(inventory parityInventory) error {
 			return fmt.Errorf("mapped case lacks Go evidence %s", row.Source)
 		}
 		for _, reference := range row.GoTests {
-			if err := validateGoTestReference(reference, inventory.Recordings); err != nil {
+			if err := validateGoTestReference(reference, inventory); err != nil {
 				return fmt.Errorf("%s: %w", row.Source, err)
 			}
 		}
@@ -205,6 +215,19 @@ func validateParityInventory(inventory parityInventory) error {
 	if sha256Text(hygiene) != inventory.Hygiene.SHA256 {
 		return fmt.Errorf("hygiene source-control digest mismatch")
 	}
+	if inventory.Normalized.File != "testdata/parity/normalized_adapter.json" {
+		return fmt.Errorf("invalid normalized adapter oracle path")
+	}
+	normalized, err := os.ReadFile(filepath.Join("../..", inventory.Normalized.File))
+	if err != nil {
+		return err
+	}
+	if sha256Text(normalized) != inventory.Normalized.SHA256 {
+		return fmt.Errorf("normalized adapter oracle digest mismatch")
+	}
+	if err := validateScenarioManifest(inventory); err != nil {
+		return err
+	}
 	imports := map[string]bool{}
 	for _, row := range inventory.Recordings {
 		if imports[row.Name] || row.Name == "" || row.File != "testdata/playback/"+row.Name+".json" {
@@ -255,7 +278,7 @@ func validateParityInventory(inventory parityInventory) error {
 	return nil
 }
 
-func validateGoTestReference(reference string, recordings []parityRecording) error {
+func validateGoTestReference(reference string, inventory parityInventory) error {
 	file, name, found := strings.Cut(reference, "::")
 	if !found || path.Clean(file) != file || !strings.HasPrefix(file, "internal/") || strings.Contains(file, `\`) ||
 		path.IsAbs(file) || !strings.HasSuffix(file, "_test.go") {
@@ -273,8 +296,14 @@ func validateGoTestReference(reference string, recordings []parityRecording) err
 		}
 		exists := false
 		switch {
+		case file == "internal/cmd/normalized_parity_test.go" && function == "TestNormalizedAdapterParity":
+			exists = !hasFormat && slices.Contains(normalizedParityNames, scenario)
 		case file == "internal/cmd/playback_test.go" && function == "TestRecordedFixtureHygiene":
-			exists = !hasFormat && slices.ContainsFunc(recordings, func(row parityRecording) bool {
+			exists = !hasFormat && slices.ContainsFunc(inventory.Recordings, func(row parityRecording) bool {
+				return row.Name == scenario
+			})
+		case file == "internal/cmd/scenario_manifest_test.go" && function == "TestRecordedScenarioContracts":
+			exists = !hasFormat && slices.ContainsFunc(inventory.Scenarios, func(row parityScenario) bool {
 				return row.Name == scenario
 			})
 		case file == "internal/cmd/playback_test.go" && function == "TestRecordedServiceCommands":
@@ -389,6 +418,8 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 		{"fixture drift", func(i *parityInventory) { i.Recordings[0].SHA256 = strings.Repeat("0", 64) }},
 		{"hygiene drift", func(i *parityInventory) { i.Hygiene.SHA256 = strings.Repeat("0", 64) }},
 		{"hygiene path", func(i *parityInventory) { i.Hygiene.File = "../hygiene.json" }},
+		{"normalized digest", func(i *parityInventory) { i.Normalized.SHA256 = strings.Repeat("0", 64) }},
+		{"normalized path", func(i *parityInventory) { i.Normalized.File = "../normalized_adapter.json" }},
 		{"missing test", func(i *parityInventory) {
 			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
 			i.Cases[0].GoTests = []string{"internal/cmd/root_test.go::TestDoesNotExist"}
@@ -415,6 +446,24 @@ func TestParityInventoryRejectsInvalidRows(t *testing.T) {
 				"internal/cmd/hygiene_playback_test.go::TestRecordedScrubberHelpers/scrub-response-text/json",
 			}
 		}},
+		{"missing manifest subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/missing"}
+		}},
+		{"manifest subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{
+				"internal/cmd/scenario_manifest_test.go::TestRecordedScenarioContracts/doctor-connectivity/json",
+			}
+		}},
+		{"missing normalized subtest", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "equivalent", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/missing"}
+		}},
+		{"normalized subtest format", func(i *parityInventory) {
+			i.Cases[0].State, i.Cases[0].Disposition, i.Cases[0].Rationale = "evidenced", "difference", "fixture"
+			i.Cases[0].GoTests = []string{"internal/cmd/normalized_parity_test.go::TestNormalizedAdapterParity/list/json"}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			inventory := loadParityInventory(t)
@@ -431,7 +480,7 @@ func TestParityReadinessDoesNotApproveEvidence(t *testing.T) {
 		inventory.Cases[index].State = "evidenced"
 	}
 	require.ErrorContains(t, parityReadiness(inventory), "797 evidenced but unapproved cases")
-	require.Error(t, validateGoTestReference("../outside_test.go::TestUnsafe", inventory.Recordings))
+	require.Error(t, validateGoTestReference("../outside_test.go::TestUnsafe", inventory))
 }
 
 func TestParityReadinessRequiresAllApprovals(t *testing.T) {

@@ -83,6 +83,7 @@ func TestResolveEnvironmentIsStrict(t *testing.T) {
 		readErr     error
 		want        string
 		wantCode    string
+		wantCommand string
 	}{
 		{
 			name: "canonical endpoint wins", environment: "staging",
@@ -94,7 +95,18 @@ func TestResolveEnvironmentIsStrict(t *testing.T) {
 		},
 		{
 			name: "missing endpoint ignores global and process", environment: "staging",
-			wantCode: exterrors.CodeMissingProjectEndpoint,
+			wantCode:    exterrors.CodeMissingProjectEndpoint,
+			wantCommand: "azd provision --environment 'staging'",
+		},
+		{
+			name: "missing endpoint quotes environment", environment: "prod west",
+			wantCode:    exterrors.CodeMissingProjectEndpoint,
+			wantCommand: "azd provision --environment 'prod west'",
+		},
+		{
+			name: "missing endpoint escapes shell syntax", environment: "it's-$USER;$(echo x)",
+			wantCode:    exterrors.CodeMissingProjectEndpoint,
+			wantCommand: `azd provision --environment 'it'\''s-$USER;$(echo x)'`,
 		},
 		{
 			name: "empty endpoint ignores global and process", environment: "staging",
@@ -113,7 +125,9 @@ func TestResolveEnvironmentIsStrict(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			environment := &strictEnvironmentServer{t: t, values: tt.values, err: tt.readErr}
+			environment := &strictEnvironmentServer{
+				t: t, environmentName: tt.environment, values: tt.values, err: tt.readErr,
+			}
 			server := grpc.NewServer()
 			azdext.RegisterEnvironmentServiceServer(server, environment)
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -136,8 +150,10 @@ func TestResolveEnvironmentIsStrict(t *testing.T) {
 					require.ErrorAs(t, err, &localErr)
 					assert.Equal(t, tt.wantCode, localErr.Code)
 					if tt.wantCode == exterrors.CodeMissingProjectEndpoint {
-						assert.Contains(t, localErr.Message, "staging")
-						assert.Contains(t, localErr.Suggestion, "staging")
+						assert.Contains(t, localErr.Message, tt.environment)
+						if tt.wantCommand != "" {
+							assert.Contains(t, localErr.Suggestion, "`"+tt.wantCommand+"`")
+						}
 					}
 				}
 			}
@@ -152,17 +168,18 @@ func TestResolveEnvironmentIsStrict(t *testing.T) {
 
 type strictEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	t      *testing.T
-	values map[string]string
-	err    error
-	calls  atomic.Int32
+	t               *testing.T
+	environmentName string
+	values          map[string]string
+	err             error
+	calls           atomic.Int32
 }
 
 func (s *strictEnvironmentServer) GetValues(
 	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
 	s.calls.Add(1)
-	assert.Equal(s.t, "staging", request.GetName())
+	assert.Equal(s.t, s.environmentName, request.GetName())
 	if s.err != nil {
 		return nil, s.err
 	}

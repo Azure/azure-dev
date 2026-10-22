@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/shellcmd"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -89,13 +90,9 @@ type TemplateListItem struct {
 	// `azd init -t <RepoURL>` -- note that the agent extension must be run
 	// separately after the core init completes.
 	//
-	// The URL segment is quoted with Go's %q verb so whitespace, embedded
-	// double quotes, and similar tokenizer-breaking characters survive a
-	// copy/paste into a POSIX or PowerShell prompt. The catalog is trusted
-	// (curated upstream), so this is not a hardening boundary against
-	// untrusted input; %q does NOT neutralize shell expansion of `$` or
-	// backticks. Coding agents that prefer pre-tokenized argv should reach
-	// for ManifestURL/RepoURL directly and skip InitCommand.
+	// The URL segment uses POSIX shell quoting when needed, preserving spaces
+	// and preventing shell expansion. Coding agents that prefer pre-tokenized
+	// argv should use ManifestURL/RepoURL directly and skip InitCommand.
 	InitCommand string `json:"initCommand"`
 }
 
@@ -296,10 +293,13 @@ func mapAgentTemplateToDTO(t AgentTemplate) TemplateListItem {
 	switch effective {
 	case TemplateTypeAzureYaml:
 		item.ManifestURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd ai agent init -t %q", t.Source)
+		item.InitCommand = shellcmd.Command("azd",
+			shellcmd.Lit("ai"), shellcmd.Lit("agent"), shellcmd.Lit("init"),
+			shellcmd.Lit("-t"), shellcmd.Lit(t.Source)).String()
 	case TemplateTypeAzd:
 		item.RepoURL = t.Source
-		item.InitCommand = fmt.Sprintf("azd init -t %q", t.Source)
+		item.InitCommand = shellcmd.Command("azd",
+			shellcmd.Lit("init"), shellcmd.Lit("-t"), shellcmd.Lit(t.Source)).String()
 	}
 
 	return item

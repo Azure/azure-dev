@@ -121,6 +121,8 @@ words:
   - remediations
   - uppercases
   - parseable
+  - pasteable
+  - shellcmd
   - azd's
   - deepseek
   - ttfb

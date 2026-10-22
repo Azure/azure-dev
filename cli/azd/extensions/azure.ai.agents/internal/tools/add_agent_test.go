@@ -12,6 +12,6 @@ import (
 func TestUnifiedInitGuidanceUsesTemplateFlag(t *testing.T) {
 	guidance := unifiedInitGuidance(`C:\agent templates\azure.yaml`)
 
-	require.Contains(t, guidance, `azd ai agent init -t "C:\\agent templates\\azure.yaml"`)
+	require.Contains(t, guidance, `azd ai agent init -t 'C:\agent templates\azure.yaml'`)
 	require.NotContains(t, guidance, "azd ai agent init -m")
 }

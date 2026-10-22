@@ -35,10 +35,21 @@ func TestWarnBaselineAdvancementFailure(t *testing.T) {
 	assert.Contains(
 		t,
 		output.String(),
-		"azd ai agent optimize apply --agent \"my-agent\" --candidate \"cand-123\"",
+		"azd ai agent optimize apply --agent my-agent --candidate cand-123",
 	)
-	assert.Contains(t, output.String(), "azd deploy \"my-agent\"")
+	assert.Contains(t, output.String(), "azd deploy my-agent")
 	assert.Contains(t, output.String(), assert.AnError.Error())
+}
+
+func TestWarnBaselineAdvancementFailureQuotesCommands(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	warnBaselineAdvancementFailure(&output, "my $USER", "it's-$(echo x)", assert.AnError)
+
+	assert.Contains(t, output.String(),
+		"  azd ai agent optimize apply --agent 'my $USER' --candidate 'it'\\''s-$(echo x)'\n")
+	assert.Contains(t, output.String(), "  azd deploy 'my $USER'\n")
 }
 
 func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {

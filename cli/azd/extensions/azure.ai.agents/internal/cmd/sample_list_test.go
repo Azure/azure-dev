@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -108,7 +107,7 @@ func TestMapAgentTemplateToDTO_AzureYamlType(t *testing.T) {
 	require.Equal(t, []string{"featured", "recommended"}, got.Tags)
 	require.True(t, got.Featured)
 	require.True(t, got.Recommended)
-	require.Equal(t, fmt.Sprintf("azd ai agent init -t %q", src), got.InitCommand)
+	require.Equal(t, "azd ai agent init -t "+src, got.InitCommand)
 }
 
 func TestMapAgentTemplateToDTO_AzdType(t *testing.T) {
@@ -130,7 +129,7 @@ func TestMapAgentTemplateToDTO_AzdType(t *testing.T) {
 	require.Equal(t, src, got.RepoURL)
 	require.False(t, got.Featured)
 	require.False(t, got.Recommended)
-	require.Equal(t, fmt.Sprintf("azd init -t %q", src), got.InitCommand)
+	require.Equal(t, "azd init -t "+src, got.InitCommand)
 }
 
 func TestMapAgentTemplateToDTO_ManifestUrlAndRepoUrlAreMutuallyExclusive(t *testing.T) {
@@ -386,16 +385,8 @@ func TestBuildTemplateListItems_InitCommandIsReadyToExecute(t *testing.T) {
 	}
 }
 
-// TestMapAgentTemplateToDTO_InitCommandQuotesURLs asserts that the source
-// URL/slug is wrapped with Go's %q verb in the generated initCommand. This
-// keeps the URL a single argument under POSIX shells and PowerShell when it
-// contains whitespace or embedded double quotes, so coding agents and
-// copy-paste users do not silently fragment the argument list.
-//
-// The catalog is trusted upstream, so this is not a hardening boundary
-// against untrusted input -- %q does not neutralize shell expansion of `$`
-// or backticks. Cases below cover the tokenizer hazards we actually expect
-// to see in upstream catalog data.
+// TestMapAgentTemplateToDTO_InitCommandQuotesURLs verifies POSIX quoting keeps
+// each source literal and in one argument. Plain URLs need no quoting.
 func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 	t.Parallel()
 
@@ -411,16 +402,16 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -t "https://example.com/path with space/azure.yaml"`,
+			want: `azd ai agent init -t 'https://example.com/path with space/azure.yaml'`,
 		},
 		{
-			name: "azure.yaml type quotes a clean URL too",
+			name: "azure.yaml type leaves a plain URL unquoted",
 			in: AgentTemplate{
 				Source:        "https://example.com/clean/azure.yaml",
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: `azd ai agent init -t "https://example.com/clean/azure.yaml"`,
+			want: `azd ai agent init -t https://example.com/clean/azure.yaml`,
 		},
 		{
 			name: "azd type quotes the repo slug",
@@ -429,16 +420,32 @@ func TestMapAgentTemplateToDTO_InitCommandQuotesURLs(t *testing.T) {
 				TemplateType:  "azd.template",
 				ExtensionTags: nil,
 			},
-			want: `azd init -t "Azure-Samples/some thing"`,
+			want: `azd init -t 'Azure-Samples/some thing'`,
 		},
 		{
-			name: "embedded double quotes are escaped via %q",
+			name: "embedded double quotes remain literal",
 			in: AgentTemplate{
 				Source:        `https://x/y "evil" path/azure.yaml`,
 				TemplateType:  "extension.ai.agent",
 				ExtensionTags: nil,
 			},
-			want: fmt.Sprintf(`azd ai agent init -t %q`, `https://x/y "evil" path/azure.yaml`),
+			want: `azd ai agent init -t 'https://x/y "evil" path/azure.yaml'`,
+		},
+		{
+			name: "shell expansions remain literal",
+			in: AgentTemplate{
+				Source:       "https://example.com/$USER/`echo x`/$(echo x)/azure.yaml",
+				TemplateType: "extension.ai.agent",
+			},
+			want: "azd ai agent init -t 'https://example.com/$USER/`echo x`/$(echo x)/azure.yaml'",
+		},
+		{
+			name: "embedded apostrophe is escaped",
+			in: AgentTemplate{
+				Source:       "Azure-Samples/it's-an-agent",
+				TemplateType: "azd.template",
+			},
+			want: `azd init -t 'Azure-Samples/it'\''s-an-agent'`,
 		},
 	}
 

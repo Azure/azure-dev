@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 
+	"azureaiagent/internal/shellcmd"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -67,9 +69,8 @@ func NewAddAgentTool() server.ServerTool {
 }
 
 func unifiedInitGuidance(azureYamlLocation string) string {
-	return fmt.Sprintf(
-		"No files or resources were changed. To initialize this project from azure.yaml, run:\n\n"+
-			"azd ai agent init -t %q",
-		azureYamlLocation,
-	)
+	return "No files or resources were changed. To initialize this project from azure.yaml, run:\n\n" +
+		shellcmd.Command("azd",
+			shellcmd.Lit("ai"), shellcmd.Lit("agent"), shellcmd.Lit("init"),
+			shellcmd.Lit("-t"), shellcmd.Lit(azureYamlLocation)).String()
 }

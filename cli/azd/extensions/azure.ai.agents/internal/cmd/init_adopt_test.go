@@ -493,16 +493,27 @@ kind: prompt
 }
 
 func TestPrintPromptInitNextSteps(t *testing.T) {
-	stdout := withCapturedStdout(t, func() {
-		printPromptInitNextSteps("prompt-agent")
-	})
+	for _, tt := range []struct {
+		folder string
+		want   string
+	}{
+		{"prompt-agent", "cd prompt-agent"},
+		{"prompt agent", "cd 'prompt agent'"},
+		{"it's-$USER", `cd 'it'\''s-$USER'`},
+	} {
+		t.Run(tt.folder, func(t *testing.T) {
+			stdout := withCapturedStdout(t, func() {
+				printPromptInitNextSteps(tt.folder)
+			})
 
-	require.Contains(t, stdout, `cd "prompt-agent"`)
-	require.Contains(t, stdout, "azd up")
-	require.Contains(t, stdout, "azd deploy")
-	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
-	require.NotContains(t, stdout, "azd ai agent run")
-	require.NotContains(t, stdout, "--local")
+			require.Contains(t, stdout, "  "+tt.want+"\n")
+			require.Contains(t, stdout, "azd up")
+			require.Contains(t, stdout, "azd deploy")
+			require.Contains(t, stdout, `azd ai agent invoke "hello"`)
+			require.NotContains(t, stdout, "azd ai agent run")
+			require.NotContains(t, stdout, "--local")
+		})
+	}
 }
 
 func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {

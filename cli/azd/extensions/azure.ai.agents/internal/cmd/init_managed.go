@@ -13,6 +13,7 @@ import (
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/shellcmd"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -639,7 +640,7 @@ func printPromptInitNextSteps(folderDisplay string) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if folderDisplay != "" {
-		fmt.Printf("  cd %q\n", folderDisplay)
+		fmt.Printf("  %s\n", shellcmd.Cd(folderDisplay).String())
 	}
 	fmt.Println("  # Provision infrastructure and deploy the agent")
 	fmt.Println("  azd up")

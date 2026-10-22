@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/pkg/servicekey"
+	"azureaiagent/internal/shellcmd"
 )
 
 const (
@@ -518,7 +519,8 @@ func qualifyCommandEnvironment(command, environmentName string) string {
 	if environmentName == "" || !strings.HasPrefix(command, "azd ") {
 		return command
 	}
-	return fmt.Sprintf("azd --environment %q %s", environmentName, strings.TrimPrefix(command, "azd "))
+	return fmt.Sprintf("azd --environment %s %s",
+		shellcmd.Quote(shellcmd.POSIX, environmentName), strings.TrimPrefix(command, "azd "))
 }
 
 // runFollowUpDescription picks the description for the
@@ -1055,9 +1057,7 @@ func appendInvokeLocalSecondary(
 // shellEscapeSingleQuoted wraps s in single quotes for POSIX shells.
 // Each embedded apostrophe is replaced with the four-character POSIX
 // escape sequence formed by: close the single-quoted string, emit a
-// backslash-escaped literal apostrophe, then reopen. The implementation
-// below uses a Go raw string for that sequence so its byte pattern is
-// stable across edits.
+// backslash-escaped literal apostrophe, then reopen.
 //
 // The extracted OpenAPI payload originates from json.Marshal, which
 // does not escape apostrophes, so a sample like {"q":"don't"} would
@@ -1069,5 +1069,5 @@ func appendInvokeLocalSecondary(
 // single-quoted string is represented by two consecutive apostrophes
 // instead. The suggestions are otherwise portable.
 func shellEscapeSingleQuoted(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+	return shellcmd.Quote(shellcmd.POSIX, s)
 }

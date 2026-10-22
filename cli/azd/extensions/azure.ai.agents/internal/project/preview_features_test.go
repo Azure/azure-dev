@@ -123,6 +123,10 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		{"prompt voice", map[string]any{"kind": "prompt-voice"}, featureflags.Voice},
 		{"hosted voice bridge", map[string]any{"kind": "hosted",
 			"protocols": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"api hosted voice bridge", map[string]any{"kind": "hosted",
+			"protocol_versions": []any{map[string]any{"protocol": "invocations_ws"}}}, featureflags.Voice},
+		{"legacy api hosted voice bridge", map[string]any{"kind": "hosted",
+			"container_protocol_versions": []any{map[string]any{"protocol": " invocations_ws "}}}, featureflags.Voice},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()

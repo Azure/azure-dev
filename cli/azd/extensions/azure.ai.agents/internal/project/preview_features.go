@@ -28,11 +28,16 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 	case "voice", "prompt-voice":
 		return featureflags.Voice
 	case "hosted":
-		protocols, _ := definition["protocols"].([]any)
-		for _, entry := range protocols {
-			protocol, _ := entry.(map[string]any)
-			if protocol["protocol"] == "invocations_ws" {
-				return featureflags.Voice
+		// Manifests use protocols. Foundry API definitions use protocol_versions
+		// or the legacy container_protocol_versions.
+		for _, key := range []string{"protocols", "protocol_versions", "container_protocol_versions"} {
+			protocols, _ := definition[key].([]any)
+			for _, entry := range protocols {
+				protocol, _ := entry.(map[string]any)
+				name, _ := protocol["protocol"].(string)
+				if strings.TrimSpace(name) == "invocations_ws" {
+					return featureflags.Voice
+				}
 			}
 		}
 	}

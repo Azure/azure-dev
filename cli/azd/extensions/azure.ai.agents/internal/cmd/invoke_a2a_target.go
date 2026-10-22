@@ -20,7 +20,8 @@ import (
 
 // validateA2ATarget checks implementation capabilities from the selected local service.
 func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext) error {
-	if a.endpoint != nil || rc.azdClient == nil || rc.serviceName == "" {
+	// An explicit session's bound deployment is not known from the current local definition.
+	if a.endpoint != nil || a.flags.session != "" || rc.azdClient == nil || rc.serviceName == "" {
 		return nil
 	}
 	// Current source cannot describe an explicitly selected historical deployment.

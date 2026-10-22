@@ -805,12 +805,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
-			if cmd.Flags().Changed("harness") && strings.TrimSpace(flags.harness) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--harness cannot be empty",
-					"omit --harness or use --harness none for a plain prompt agent",
-				)
+			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
+				return err
 			}
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
@@ -1341,7 +1337,90 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an "+
 			"azure.yaml project document or a full repository template; declare policies in azure.yaml instead.")
 
+	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
+		localFlags := *flags
+		localFlags.noPrompt = extCtx.NoPrompt
+		return validateInitPreviewArgs(cmd, args, localFlags)
+	})
 	return cmd
+}
+
+func validateInitPreviewArgs(cmd *cobra.Command, args []string, flags initFlags) error {
+	if err := validateTemplateFlagAliases(cmd); err != nil {
+		return err
+	}
+	isPromptVoice := flags.templatePointer == "" &&
+		strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+	// A positional path needs file reads to decide which init flow applies.
+	if len(args) == 0 {
+		voiceSpecified := cmd.Flags().Changed("voice")
+		if err := validateInitVoiceInput(&flags, voiceSpecified); err != nil {
+			return err
+		}
+		voiceInputErr := validateVoiceInitOptions(cmd, len(args) > 0 && flags.src != "")
+		if voiceSpecified || isPromptVoice {
+			if voiceInputErr != nil {
+				return voiceInputErr
+			}
+		}
+	}
+	if flags.image != "" {
+		if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+			return err
+		}
+	}
+	if len(args) == 0 && flags.templatePointer == "" {
+		if err := validateFastPathAgentName(&flags, isPromptVoice); err != nil {
+			return err
+		}
+		if flags.image != "" {
+			if _, err := validateExplicitProtocols(flags.protocols); err != nil {
+				return err
+			}
+		}
+	}
+	if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
+		return err
+	}
+	if err := validateDeployMode(flags.deployMode); err != nil {
+		return err
+	}
+	if flags.infra != "" {
+		if _, err := parseInfraProvider(flags.infra); err != nil {
+			return err
+		}
+	}
+	// Positional input needs file reads. A valid --infra may take the standalone
+	// eject path, which skips all remaining init checks.
+	if len(args) > 0 || flags.infra != "" {
+		return nil
+	}
+	if flags.templatePointer != "" {
+		return validateUnifiedInitFlags(cmd)
+	}
+	requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
+	if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
+		return err
+	}
+	if requestedKind == AgentKindChoicePrompt {
+		_, err := resolveInitHarness(flags.harness, "")
+		return err
+	}
+	if strings.TrimSpace(flags.instructions) != "" {
+		return promptOnlyInstructionsError()
+	}
+	return validateRegistryConnectionFlag(flags.registryConnection, flags.image, false, flags.deployMode, flags.kind)
+}
+
+func validateInitHarnessFlag(cmd *cobra.Command, harness string) error {
+	if !cmd.Flags().Changed("harness") || strings.TrimSpace(harness) != "" {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"--harness cannot be empty",
+		"omit --harness or use --harness none for a plain prompt agent",
+	)
 }
 
 func fastPathProjectTarget(

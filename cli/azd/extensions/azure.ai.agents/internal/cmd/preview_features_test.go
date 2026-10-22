@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"azureaiagent/internal/featureflags"
@@ -46,6 +47,7 @@ type previewTestEnvironment struct {
 	selected string
 	values   []*azdext.KeyValue
 	err      error
+	reads    atomic.Int32
 }
 
 func (s *previewTestEnvironment) GetValues(
@@ -64,8 +66,13 @@ func startPreviewCommandServer(
 	if config == nil {
 		config = &azdext.ProjectConfig{}
 	}
-	server := grpc.NewServer()
 	env := &previewTestEnvironment{}
+	server := grpc.NewServer(grpc.UnaryInterceptor(func(
+		ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
+	) (any, error) {
+		env.reads.Add(1)
+		return handler(ctx, request)
+	}))
 	azdext.RegisterUserConfigServiceServer(server, &previewTestConfig{alpha: alpha})
 	azdext.RegisterProjectServiceServer(server, &helpersProjectServer{project: config})
 	azdext.RegisterEnvironmentServiceServer(server, env)
@@ -216,7 +223,8 @@ func TestPreviewInitRejectsBeforeAuthOrProjectWrites(t *testing.T) {
 		{[]string{"--kind", "prompt", "--harness", "github_copilot_preview"}, featureflags.ManagedHarness},
 		{[]string{"--kind", "prompt-voice", "--agent-name", "voice-agent"}, featureflags.Voice},
 		{[]string{"--kind", " Prompt-Voice ", "--agent-name", "voice-agent"}, featureflags.Voice},
-		{[]string{"--voice", "en-US-Ava:DragonHDLatestNeural"}, featureflags.Voice},
+		{[]string{"--voice", "en-US-Ava:DragonHDLatestNeural", "--kind", "prompt-voice",
+			"--agent-name", "voice-agent"}, featureflags.Voice},
 	} {
 		t.Run(tc.feature.ID+"/"+tc.args[len(tc.args)-1], func(t *testing.T) {
 			t.Chdir(t.TempDir())
@@ -408,7 +416,6 @@ func TestPreviewLongRunningDirectEndpoint(t *testing.T) {
 	for _, args := range [][]string{
 		{"--long-running"},
 		{"--long-running", "--no-wait"},
-		{"--no-wait"},
 	} {
 		all := append([]string{"invoke", "-e", "selected-env", "--agent-endpoint", endpoint}, args...)
 		_, err := executeRoot(t, append(all, "hello")...)

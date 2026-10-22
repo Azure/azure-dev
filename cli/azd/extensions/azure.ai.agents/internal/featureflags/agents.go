@@ -14,10 +14,22 @@ import (
 )
 
 type environmentKey struct{}
+type environmentErrorKey struct{}
 
 // WithEnvironment preserves the SDK environment for nested calls.
 func WithEnvironment(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, environmentKey{}, name)
+}
+
+// WithEnvironmentError binds a flag error for nested preview checks.
+func WithEnvironmentError(ctx context.Context, err error) context.Context {
+	return context.WithValue(ctx, environmentErrorKey{}, struct{ err error }{err})
+}
+
+// EnvironmentError returns the bound environment flag error.
+func EnvironmentError(ctx context.Context) error {
+	value, _ := ctx.Value(environmentErrorKey{}).(struct{ err error })
+	return value.err
 }
 
 // Environment returns the SDK or host lifecycle selection.
@@ -31,6 +43,9 @@ func Environment(ctx context.Context) string {
 // Require rejects a disabled preview before its operation starts.
 // Service values include opt-ins from definitions not yet persisted.
 func Require(ctx context.Context, client *azdext.AzdClient, feature Feature, serviceValues ...string) error {
+	if err := EnvironmentError(ctx); err != nil {
+		return err
+	}
 	enabled, err := IsEnabled(ctx, client, feature, Environment(ctx))
 	if err != nil {
 		return err

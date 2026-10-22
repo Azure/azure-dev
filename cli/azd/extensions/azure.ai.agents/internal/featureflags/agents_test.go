@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -52,5 +53,21 @@ func TestProcessEnabled(t *testing.T) {
 	for value, want := range map[string]bool{"true": true, "1": true, "on": false, "": false, "false": false} {
 		t.Setenv(Voice.EnvVar, value)
 		require.Equal(t, want, ProcessEnabled(Voice), value)
+	}
+}
+
+func TestRequireReturnsBoundEnvironmentError(t *testing.T) {
+	flags := pflag.NewFlagSet("preview", pflag.ContinueOnError)
+	flags.String("environment", "", "")
+	require.NoError(t, flags.Set("environment", " \t "))
+	want := CheckEnvironmentFlag(flags)
+	require.Error(t, want)
+	ctx := WithEnvironmentError(WithEnvironment(t.Context(), ""), want)
+	for _, feature := range All() {
+		t.Setenv(feature.EnvVar, "true")
+		require.Same(t, want, Require(ctx, nil, feature, "true"))
+		enabled, err := IsEnabled(ctx, nil, feature, "")
+		require.False(t, enabled)
+		require.Same(t, want, err)
 	}
 }

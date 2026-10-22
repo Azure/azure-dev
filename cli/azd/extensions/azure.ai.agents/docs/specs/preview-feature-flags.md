@@ -89,17 +89,17 @@ enabled, err := featureflags.IsEnabled(
 )
 ```
 
-`IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator.
+`IsEnabled` returns a bound environment validation error first. It then rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator.
 
-`IsEnabled` itself never reads `AZD_ENVIRONMENT`. The root pre-run binds the parsed `ExtensionContext.Environment` into the command context with `WithEnvironment`. That value already falls back to `AZD_ENVIRONMENT` in the SDK. `Require` passes `Environment(ctx)` to `IsEnabled`. That is the bound value when present, including an explicit empty value. Otherwise it is `AZD_ENVIRONMENT`, which azd sets for lifecycle callbacks.
+`IsEnabled` itself never reads `AZD_ENVIRONMENT`. The root pre-run binds the parsed `ExtensionContext.Environment` with `WithEnvironment` and the result of `CheckEnvironmentFlag` with `WithEnvironmentError`. The SDK falls back to `AZD_ENVIRONMENT` when the flag is omitted. `Require` returns the bound validation error before any source read. An explicit empty or whitespace only value cannot fall back to the default environment. Otherwise `Require` passes `Environment(ctx)` to `IsEnabled`. Without a bound value, it uses `AZD_ENVIRONMENT`, which azd sets for lifecycle callbacks.
 
-`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The selected environment and the service gate marker are the only flag-related context values.
+`Require` delegates all persisted-source reads to `IsEnabled` and returns the common disabled-feature error. Agent-kind and harness classification belong to `internal/project`, alongside the existing inline and `$ref` resolver, not to the flag reader. The context holds the selected environment, its validation error, and the service gate marker.
 
 ## Central enforcement
 
 Enforcement has two layers. Each layer has one check.
 
-**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It then calls `enforcePreviewFeatures` once for the executing command. The existing debug logging and telemetry steps keep their order. A command without a preview annotation and without a set preview flag makes no host reads.
+**Command layer.** Commands and flags carry annotations that name a registered feature. The root `PersistentPreRunE` runs after the SDK pre-run, so `-e` and `AZD_ENVIRONMENT` are already applied. It calls `enforcePreviewFeatures` for the executing command with its args. Whenever the gate would reject, it first runs the command's local argument checks from `validateBeforePreview` so local conflicts are reported before `feature_not_enabled` or an empty environment error. These checks use only flags and args, with no source reads or state changes. The existing debug logging and telemetry steps keep their order. The gate makes no host reads for a command without a preview annotation or a set preview flag. A bound environment error only fails commands that perform a preview check.
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
@@ -130,7 +130,7 @@ These entry points classify content that only exists at run time, so an annotati
 
 ## Help hiding
 
-`NewRootCommand` builds the tree without an azd client, and help rendering skips `PersistentPreRunE`. The root help function therefore resolves feature states when help is shown. Cobra has already parsed flags, so `-e` is honored. Without `-e`, `AZD_ENVIRONMENT` is used. The same evaluator reads user config, the process environment, and the selected azd environment through a client created at that moment with a ten second bound. When `AZD_SERVER` is absent or a read fails, help falls back to the process value only. Help never fails because of a flag read. The states are applied to the whole tree once (`Hidden` on commands and flags, usage text swaps, and help block removal) before the default help renders.
+`NewRootCommand` builds the tree without an azd client, and help rendering skips `PersistentPreRunE`. The root help function resolves feature states when help is shown. Cobra has already parsed flags, so `-e` is honored. Without `-e`, `AZD_ENVIRONMENT` is used. An explicit empty or whitespace only selection uses process values only and makes no host reads. For other selections, the evaluator reads user config, the process environment, and the selected azd environment through a client created at that moment with a ten second bound. When `AZD_SERVER` is absent or a read fails, help falls back to the process value only. Help never fails because of a flag read. The states are applied to the whole tree once (`Hidden` on commands and flags, usage text swaps, and help block removal) before the default help renders.
 
 Trade-offs:
 

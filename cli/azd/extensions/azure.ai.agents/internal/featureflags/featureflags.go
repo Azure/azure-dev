@@ -82,6 +82,9 @@ func IsEnabled(
 	feature Feature,
 	environmentName string,
 ) (bool, error) {
+	if err := EnvironmentError(ctx); err != nil {
+		return false, err
+	}
 	if client == nil {
 		return false, errors.New("featureflags.IsEnabled: client must not be nil")
 	}

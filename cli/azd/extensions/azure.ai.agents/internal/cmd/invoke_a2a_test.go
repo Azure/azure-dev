@@ -6,6 +6,7 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -887,80 +888,105 @@ func TestA2ARequestURL(t *testing.T) {
 	})
 }
 
-// A2A hosted capabilities and target resolution.
+// A2A hosted capabilities and target validation.
 
-func TestSelectA2ATargetVersion(t *testing.T) {
+func TestValidateHostedA2ACompatibility(t *testing.T) {
 	t.Parallel()
-	// Exercise client-side wire compatibility, not the service's deployment
-	// allowlist. Init emits the supported A2A declaration 1.0.0.
 	for _, tt := range []struct {
-		name, native, explicit string
-		responses              bool
-		want, wantError        string
+		name      string
+		versions  []string
+		wantError string
 	}{
-		{name: "unknown target", want: "1.0"},
-		{name: "translation", responses: true, want: "1.0"},
-		{name: "translation explicit legacy", responses: true, explicit: "0.3", want: "0.3"},
-		{name: "native", native: "1.0.0", want: "1.0"},
-		{name: "native minor selector", native: "1.0", want: "1.0"},
-		{name: "native patch compatible", native: "1.0.7", want: "1.0"},
-		{name: "native explicit", native: "1.0.0", explicit: "1.0", want: "1.0"},
-		{name: "native legacy mismatch", native: "1.0.0", explicit: "0.3", wantError: "1.0-only agent"},
-		{name: "native plus Responses legacy", native: "1.0.0", responses: true, explicit: "0.3", want: "0.3"},
-		{name: "legacy native only", native: "0.3.0", wantError: "0.3 passthrough is not supported"},
-		{name: "legacy native explicit new", native: "0.3", explicit: "1.0", wantError: "0.3 passthrough"},
-		{name: "legacy plus Responses", native: "0.3.0", responses: true, want: "1.0"},
-		{name: "legacy plus Responses explicit", native: "0.3", responses: true, explicit: "0.3", want: "0.3"},
-		{name: "future minor", native: "1.1.0", wantError: "unsupported native A2A version"},
-		{name: "future plus Responses", native: "1.1.0", responses: true, want: "1.0"},
-		{name: "old plus Responses", native: "0.2", responses: true, explicit: "1.0", want: "1.0"},
-		{name: "future major", native: "2.0.0", wantError: "unsupported native A2A version"},
-		{name: "malformed", native: "latest", wantError: "unsupported native A2A version"},
-		{name: "negative patch", native: "1.0.-1", wantError: "unsupported native A2A version"},
-		{name: "extra component", native: "1.0.0.0", wantError: "unsupported native A2A version"},
-		{name: "invalid explicit", explicit: "2.0", wantError: "invalid --a2a-version"},
+		{name: "missing", wantError: "does not declare an A2A implementation"},
+		{name: "major minor", versions: []string{"1.0"}},
+		{name: "deployment version", versions: []string{"1.0.0"}},
+		{name: "compatible patch", versions: []string{"1.0.7"}},
+		{name: "duplicate normalized", versions: []string{"1.0", "1.0.0", "1.0.7"}},
+		{name: "conflicting", versions: []string{"1.0.0", "0.3.0"}, wantError: "conflicting A2A versions"},
+		{name: "conflicting unsupported", versions: []string{"0.2", "2.0"}, wantError: "conflicting A2A versions"},
+		{name: "legacy", versions: []string{"0.3.0"}, wantError: "version 0.3 is not supported"},
+		{name: "old", versions: []string{"0.2"}, wantError: "version 0.2 is not supported"},
+		{name: "future minor", versions: []string{"1.1.0"}, wantError: "version 1.1 is not supported"},
+		{name: "future major", versions: []string{"2.0.0"}, wantError: "version 2.0 is not supported"},
+		{name: "empty", versions: []string{""}, wantError: "malformed A2A version"},
+		{name: "malformed", versions: []string{"latest"}, wantError: "malformed A2A version"},
+		{name: "negative patch", versions: []string{"1.0.-1"}, wantError: "malformed A2A version"},
+		{name: "extra component", versions: []string{"1.0.0.0"}, wantError: "malformed A2A version"},
+		{name: "leading zero", versions: []string{"01.0"}, wantError: "malformed A2A version"},
+		{name: "signed", versions: []string{"+1.0"}, wantError: "malformed A2A version"},
+		{name: "whitespace", versions: []string{" 1.0"}, wantError: "malformed A2A version"},
+		{name: "valid then malformed", versions: []string{"1.0", "latest"}, wantError: "malformed A2A version"},
+		{name: "malformed then valid", versions: []string{"latest", "1.0"}, wantError: "malformed A2A version"},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
+		for _, responses := range []bool{false, true} {
+			for _, requested := range []string{"1.0", "0.3"} {
+				t.Run(fmt.Sprintf("%s/responses=%t/requested=%s", tt.name, responses, requested), func(t *testing.T) {
+					t.Parallel()
+					protocols := []agent_yaml.ProtocolVersionRecord{{Protocol: "other", Version: "ignored"}}
+					for _, version := range tt.versions {
+						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: version})
+					}
+					if responses {
+						protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "responses", Version: "ignored"})
+					}
+					wantError := tt.wantError
+					if wantError == "" && requested == "0.3" {
+						wantError = "does not match the hosted-agent declaration"
+					}
+					err := validateHostedA2ACompatibility(protocols, requested)
+					if wantError != "" {
+						require.ErrorContains(t, err, wantError)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestNormalizeA2AWireVersion(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ declared, want string }{
+		{"1.0", "1.0"}, {"1.0.7", "1.0"}, {"0.3.0", "0.3"}, {"1.1.0", "1.1"}, {"2.0", "2.0"},
+	} {
+		t.Run(tt.declared, func(t *testing.T) {
 			t.Parallel()
-			var protocols []agent_yaml.ProtocolVersionRecord
-			if tt.native != "" {
-				protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: tt.native})
-			}
-			if tt.responses {
-				protocols = append(protocols, agent_yaml.ProtocolVersionRecord{Protocol: "responses", Version: "2.0.0"})
-			}
-			got, err := selectA2ATargetVersion(protocols, tt.explicit)
-			if tt.wantError != "" {
-				require.ErrorContains(t, err, tt.wantError)
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tt.want, got)
-			}
+			got, err := normalizeA2AWireVersion(tt.declared)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestSelectA2ATargetVersionConflictingDeclarations(t *testing.T) {
-	t.Parallel()
-	_, err := selectA2ATargetVersion([]agent_yaml.ProtocolVersionRecord{
-		{Protocol: "a2a", Version: "0.3.0"}, {Protocol: "a2a", Version: "1.0.0"},
-	}, "")
-	require.ErrorContains(t, err, "conflicting native A2A versions")
-}
-
-func TestNativeA2ARemoteTarget(t *testing.T) {
+func TestHostedA2ARemoteTarget(t *testing.T) {
 	for _, tt := range []struct {
 		name, native, explicit, wantError string
 		fileBacked                        bool
 		missingRef                        bool
 		responsesOnly                     bool
+		responses, prompt, noDefinition   bool
 	}{
-		{name: "inline native", native: "1.0.0"},
+		{name: "inline A2A hosted agent", native: "1.0.0"},
+		{name: "A2A with Responses", native: "1.0.0", responses: true},
+		{name: "Responses cannot translate", native: "1.0.0", responses: true, explicit: "0.3",
+			wantError: "does not match the hosted-agent declaration"},
+		{name: "Responses cannot rescue unsupported", native: "0.3", responses: true,
+			wantError: "version 0.3 is not supported"},
+		{name: "Responses cannot rescue malformed", native: "latest", responses: true,
+			wantError: "malformed A2A version"},
+		{name: "prompt definition bypass", prompt: true, explicit: "0.3"},
+		{name: "missing definition bypass", noDefinition: true, explicit: "0.3"},
 		{name: "missing local reference still invokes", missingRef: true},
-		{name: "public A2A is not native", responsesOnly: true, explicit: "0.3"},
+		{name: "Responses-only rejects default", responsesOnly: true,
+			wantError: "does not declare an A2A implementation"},
+		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3",
+			wantError: "does not declare an A2A implementation"},
 		{name: "file-backed native", native: "1.0.0", fileBacked: true},
-		{name: "native 0.3 rejected before send", native: "0.3.0", wantError: "0.3 passthrough"},
-		{name: "explicit conflict before send", native: "1.0.0", explicit: "0.3", wantError: "1.0-only agent"},
+		{name: "A2A 0.3 rejected before send", native: "0.3.0", wantError: "version 0.3 is not supported"},
+		{name: "malformed rejected before send", native: "latest", wantError: "malformed A2A version"},
+		{name: "explicit conflict before send", native: "1.0.0", explicit: "0.3",
+			wantError: "does not match the hosted-agent declaration"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -968,6 +994,18 @@ func TestNativeA2ARemoteTarget(t *testing.T) {
 				"kind": "hosted", "name": "deployed-agent",
 				"protocols":     []any{map[string]any{"protocol": "a2a", "version": tt.native}},
 				"agentEndpoint": map[string]any{"protocols": []any{"a2a"}},
+			}
+			if tt.responses {
+				properties["protocols"] = []any{
+					map[string]any{"protocol": "a2a", "version": tt.native},
+					map[string]any{"protocol": "responses", "version": "2.0.0"},
+				}
+			}
+			if tt.prompt {
+				properties = map[string]any{"kind": "prompt", "name": "deployed-agent", "model": "test-model"}
+			}
+			if tt.noDefinition {
+				properties = map[string]any{}
 			}
 			if tt.fileBacked {
 				require.NoError(t, os.WriteFile(filepath.Join(dir, "native.yaml"), []byte(
@@ -1034,12 +1072,16 @@ func TestNativeA2ARemoteTarget(t *testing.T) {
 
 func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		endpoint bool
-		version  string
-		deployed string
+		name      string
+		endpoint  bool
+		noClient  bool
+		noService bool
+		version   string
+		deployed  string
 	}{
 		{name: "explicit endpoint ignores project definition", endpoint: true},
+		{name: "no local client", noClient: true},
+		{name: "no selected service", noService: true},
 		{name: "historical agent version", version: "1", deployed: "2"},
 		{name: "unknown deployed agent version", version: "1"},
 	} {
@@ -1051,11 +1093,17 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 			if tt.endpoint {
 				action.endpoint = &parsedAgentEndpoint{}
 			}
-			err := action.resolveA2ATarget(t.Context(), &remoteContext{
-				serviceName: "native-agent", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
-			})
+			rc := &remoteContext{
+				serviceName: "a2a-agent", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
+			}
+			if tt.noClient {
+				rc.azdClient = nil
+			}
+			if tt.noService {
+				rc.serviceName = ""
+			}
+			err := action.validateA2ATarget(t.Context(), rc)
 			require.NoError(t, err)
-			assert.Empty(t, action.resolvedA2AVersion)
 			assert.Equal(t, "1.0", action.a2aProtocolVersion())
 		})
 	}

@@ -632,9 +632,9 @@ and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
 
 For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
-default when `--a2a-version` is omitted. For A2A hosted agents, declaration `1.0.0`
-selects wire version `1.0`; explicit overrides must be compatible with the agent.
-Foundry controls request routing.
+default when `--a2a-version` is omitted. A2A hosted agents must declare A2A `1.0`
+(`1.0.0` in deployment YAML), and the requested wire version must match.
+Declaring Responses does not enable dialect translation. Foundry controls request routing.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"

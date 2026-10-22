@@ -1180,23 +1180,18 @@ func promptProtocols(
 			continue
 		}
 		versionOf[p.Name] = p.Version
-		label := p.Name
-		if p.Name == "a2a" {
-			label = "a2a — A2A hosted agent (1.0)"
-		}
 		choices = append(choices, &azdext.MultiSelectChoice{
 			Value:    p.Name,
-			Label:    label,
+			Label:    p.Name,
 			Selected: p.Name == "responses",
 		})
 	}
 
 	resp, err := promptClient.MultiSelect(ctx, &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
-			Message: "Which protocols does your agent support?",
-			Choices: choices,
-			HelpMessage: "Choose the protocols your agent code implements. " +
-				"Use arrow keys to move, space to toggle, enter to confirm",
+			Message:     "Which protocols does your agent support?",
+			Choices:     choices,
+			HelpMessage: "Use arrow keys to move, space to toggle, enter to confirm",
 		},
 	})
 	if err != nil {

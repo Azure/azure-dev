@@ -1311,8 +1311,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
 
 	cmd.Flags().StringSliceVar(&flags.protocols, "protocol", nil,
-		fmt.Sprintf("Protocols implemented by your agent code (%s). Can be specified multiple times.",
-			knownProtocolNames()))
+		fmt.Sprintf("Protocols supported by the agent (%s). Can be specified multiple times.", knownProtocolNames()))
 
 	cmd.Flags().StringVar(&flags.deployMode, "deploy-mode", "",
 		"Deployment mode: 'container' (Docker image) or 'code' (ZIP upload). Defaults to 'code' for Python/.NET projects in --no-prompt.")

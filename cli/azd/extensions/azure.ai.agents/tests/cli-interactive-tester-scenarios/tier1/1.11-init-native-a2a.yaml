@@ -19,7 +19,7 @@ goals:
   - "At 'How do you want to initialize your agent?', select 'Use the code in the current directory'."
   - "When prompted for the agent name, use exactly '{prefix}-t1-native-a2a-{instance}', replacing any pre-filled default. If asked for an azd environment name, use the same run-unique name."
   - "At 'Select the runtime for your agent', select 'Python 3.13'. At the entry-point prompt, accept 'app.py'. At 'How should dependencies be resolved?', select 'Remote build (dependencies installed on server during deployment)'."
-  - "At 'Which protocols does your agent support?', confirm the choices include 'responses', 'invocations', 'invocations_ws', 'activity', and 'a2a — A2A hosted agent (1.0)'. Responses must be selected by default and A2A unselected. Set the final selection to only 'a2a — A2A hosted agent (1.0)'; leave every other choice unselected and continue."
+  - "At 'Which protocols does your agent support?', confirm the choices include 'responses', 'invocations', 'invocations_ws', 'activity', and 'a2a'. Responses must be selected by default and A2A unselected. Select only 'a2a'; leave every other choice unselected and continue."
   - "There must be no A2A version prompt and no A2A 0.3 implementation choice."
   - "If asked to select a Foundry project, select 'Create a new Foundry project'. If asked for its name, use exactly '{foundry_project_name}', replacing any default. This configures a future project only; do not create cloud resources."
   - "If a 'Select a tenant' prompt appears, select the tenant provided for this run; if none was provided, fail without answering. If asked for a subscription, select '{subscription}'. If asked for a location, select '{region}'."

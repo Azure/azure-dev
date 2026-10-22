@@ -566,8 +566,8 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 ## Initializing an A2A hosted agent
 
 Foundry forwards requests directly to A2A hosted agents instead of converting them
-to Responses requests. Select `a2a — A2A hosted agent (1.0)` during init and deselect `responses` if your
-agent does not implement it. For non-interactive initialization:
+to Responses requests. Select `a2a` during init and deselect `responses` if your
+agent does not support it. For non-interactive initialization:
 
 ```bash
 azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \

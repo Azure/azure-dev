@@ -755,13 +755,13 @@ func TestNativeA2AInitInteractive(t *testing.T) {
 			client := &fakePromptClient{multiSelectFn: func(
 				_ context.Context, request *azdext.MultiSelectRequest, _ ...grpc.CallOption,
 			) (*azdext.MultiSelectResponse, error) {
-				require.Contains(t, request.Options.HelpMessage, "protocols your agent code implements")
+				require.Equal(t, "Use arrow keys to move, space to toggle, enter to confirm", request.Options.HelpMessage)
 				choices := request.Options.Choices
 				require.Len(t, choices, 5)
 				for i, expected := range []struct{ value, label string }{
 					{"responses", "responses"}, {"invocations", "invocations"},
 					{"invocations_ws", "invocations_ws"}, {"activity", "activity"},
-					{"a2a", "a2a — A2A hosted agent (1.0)"},
+					{"a2a", "a2a"},
 				} {
 					require.Equal(t, expected.value, choices[i].Value)
 					require.Equal(t, expected.label, choices[i].Label)

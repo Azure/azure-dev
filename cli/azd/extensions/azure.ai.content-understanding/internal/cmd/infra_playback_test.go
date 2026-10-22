@@ -34,7 +34,7 @@ type infraPlaybackHost struct {
 func (h *infraPlaybackHost) Capabilities(
 	_ context.Context, snapshot infraSnapshot, request infra.PostRequest,
 ) (infra.PostCapabilities, infra.ModelCapabilities, error) {
-	client, err := cuclient.NewRESTTransport(request.Endpoint, h.credential,
+	client, err := cuclient.NewSDKTransport(request.Endpoint, h.credential,
 		&cuclient.TransportOptions{APIVersion: request.APIVersion, Transport: h.transport})
 	if err != nil {
 		return nil, nil, err

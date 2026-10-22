@@ -531,13 +531,13 @@ func TestAnalyzerResponseFailures(t *testing.T) {
 		}},
 	}
 	for _, operation := range operations {
-		for _, scenario := range []string{"status", "read", "close", "http_error", "invalid_json"} {
+		for _, scenario := range []string{"status", "read", "http_error", "invalid_json"} {
 			if scenario == "invalid_json" && operation.name == "delete" {
 				continue
 			}
 			t.Run(operation.name+"/"+scenario, func(t *testing.T) {
 				calls := 0
-				client := newTestTransport(t, func(*http.Request) (*http.Response, error) {
+				client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 					calls++
 					status := http.StatusOK
 					if operation.name == "delete" {
@@ -549,8 +549,6 @@ func TestAnalyzerResponseFailures(t *testing.T) {
 						result.StatusCode = http.StatusAccepted
 					case "read":
 						result.Body = brokenBody{}
-					case "close":
-						result.Body = closeErrorBody{strings.NewReader(`{}`)}
 					case "http_error":
 						result.StatusCode = http.StatusNotFound
 					}
@@ -558,7 +556,12 @@ func TestAnalyzerResponseFailures(t *testing.T) {
 				})
 				err := operation.run(client)
 				require.Error(t, err)
-				assert.Equal(t, 1, calls)
+				expectedCalls := 1
+				if scenario == "read" &&
+					(operation.name == "list" || operation.name == "get" || operation.name == "get_defaults") {
+					expectedCalls = 3
+				}
+				assert.Equal(t, expectedCalls, calls)
 				assert.NotContains(t, err.Error(), "private-token")
 				assert.NotContains(t, err.Error(), "private-read-error")
 				assert.NotContains(t, err.Error(), "private-close-error")
@@ -571,23 +574,23 @@ type closeErrorBody struct{ io.Reader }
 
 func (closeErrorBody) Close() error { return errors.New("private-close-error") }
 
-func TestAnalyzerJSONEncodingFailure(t *testing.T) {
-	client := newTestTransport(t, func(*http.Request) (*http.Response, error) {
+func TestAnalyzerInvalidDefinitionDoesNotReachHTTP(t *testing.T) {
+	client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 		t.Fatal("invalid JSON must not reach the transport")
 		return nil, nil
 	})
-	_, err := client.jsonRequest(t.Context(), http.MethodPost, "/analyzers/custom:copy",
-		nil, make(chan int), "application/json")
+	_, err := client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{AnalyzerID: "custom", Definition: []byte(`{`)})
 	require.Error(t, err)
-	assert.NotContains(t, err.Error(), "chan")
 }
 
 func TestAnalyzerResponsesCloseBodies(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusAccepted} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			body := &measuredBody{reader: strings.NewReader(readyAnalyzer)}
-			response := &http.Response{StatusCode: status, Body: body}
-			_, err := readResponse(response, http.StatusOK)
+			client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: status, Body: body, Request: request}, nil
+			})
+			_, err := client.GetAnalyzer(t.Context(), "custom")
 			assert.Equal(t, status != http.StatusOK, err != nil)
 			assert.True(t, body.closed)
 		})

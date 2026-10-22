@@ -539,6 +539,30 @@ override. Structured settings remain `cu.apiVersion`, `cu.defaultAnalyzer`, and
 
 Learn more about building extensions in the [azd extension framework docs](https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/extensions/extension-framework.md).
 
+### Native Go extension conventions
+
+Like [Foundry agents](../azure.ai.agents/) and
+[Foundry projects](../azure.ai.projects/), this extension uses:
+
+- A Go binary with Cobra commands, `azdext.Run`, generated metadata and standard
+  global flags. CU additionally validates invocation diagnostics and filters SDK
+  logs to keep input/configuration values out of error output.
+- The azd gRPC client, host token provider, scoped environment/config RPCs and
+  structured extension errors; no independent Python runtime or profile store.
+- The standard manifest, version file, changelog, developer build scripts,
+  shared CI build wrapper, lint configuration and shared extension release
+  pipeline. CI runs both extension tests and the separately versioned local SDK
+  module's tests. CODEOWNERS confirmation and release publication remain separate
+  owner/release gates, not inferred from local tests.
+- Native Go unit tests, typed fakes and SDK-backed command integration tests.
+  Python supplies feature/edge-case references, not a second implementation
+  framework or a source-test migration quota.
+
+CU declares only custom-command and metadata capabilities. Agents/projects
+service-target, provisioning, lifecycle and MCP capabilities are not required
+for this command-only extension. Generated CU project hooks invoke normal azd
+commands rather than registering another provider.
+
 ### Validation
 
 Use the Go version declared in `go.mod`.
@@ -577,8 +601,8 @@ host renders reported extension errors to stdout; consumers must check the exit
 status before parsing output. Strict host-level error stream separation would
 require a shared azd change, not a CU-specific error-reporting bypass.
 
-The scaffold currently lists `@chienyuanchang` and `@JeffreyCA` as provisional
-CODEOWNERS. Confirm CU/azd ownership and extension identity before merging.
+The extension has an entry in [CODEOWNERS](../../../../.github/CODEOWNERS).
+Confirm CU/azd ownership and extension identity before merging.
 API-key requirements, performance budgets, and Foundry pack timing remain
 implementation/release gates.
 
@@ -676,7 +700,9 @@ tenant or identity. The SDK's key constructor is not exposed by the extension.
 - Requests carry the extension/version user agent, JSON accept header, a unique
   client request ID, and azd trace correlation when available.
 - Reads and polling allow at most two retries under the Azure pipeline policy.
-  Write submissions override the policy to disable automatic retries.
+  Write submissions disable automatic retries. An extension-owned SDK policy
+  enforces the configured attempt timeout and retry bounds even if the caller
+  supplies context-level Azure retry overrides.
 - The default timeout is two minutes per HTTP attempt and can be overridden
   internally. Caller cancellation propagates to token acquisition, requests, and
   response reads. The default HTTP client does not follow redirects.
@@ -757,7 +783,11 @@ versions.
   cancellation, and failure; the Azure pipeline may rewind and consume them.
 
 Analyzer/analysis wire and polling conformance tests construct the production
-`SDKTransport`; low-level REST pipeline/helper tests remain reference coverage.
+`SDKTransport`, including copy, schema suggestion, analyzer-test and generated
+postprovision integration tests. The former parallel REST transport and its
+private request/polling helpers have been removed. Retry, authentication,
+response-body bounds and diagnostics are tested through the production SDK
+adapter; only genuine shared-helper behavior is tested directly.
 The local SDK unit suite and adapter tests cover the supported
 version/input/mode matrix, exact raw JSON, failures, polling, no-replay, stream
 ownership, and SDK log redaction. The test suite makes no live Azure calls.
@@ -1153,7 +1183,7 @@ or installed-host equivalence is established.
 | --- | --- | --- |
 | Input selection, URL privacy and filesystem identity | `internal/analysis`: discovery, aliases, recursion, patterns, URL limits/redaction and reader identity tests | Actual Windows/macOS filesystem execution |
 | Safe deterministic outputs | `internal/analysis`: policies, aliases, parent/report collisions, every real-SHA fallback length and exhaustion, reordered plans, UTF-8 byte budgets and complete previews | Platform-specific path execution |
-| Analysis orchestration | `internal/analysis`: async/inline local/URL requests, complete envelopes/usage, saved JSON/LLM/report goldens, partial failures, bounded workers, cancellation and reader closure | Authorized live service and installed-host evidence |
+| Analysis orchestration | `internal/analysis`: async/inline local/URL requests, complete envelopes/usage, saved JSON/LLM/report golden outputs, partial failures, bounded workers, cancellation and reader closure | Authorized live service and installed-host evidence |
 | Structural authoring validation | `internal/schema`: compact validation vectors, complete ordered safe findings, diagnostic-path privacy, aliases, PrepareDefinition, bundled versioned contracts | Review material native/Python diagnostic and policy differences |
 | Service requests and results | `internal/cmd`, `internal/cuclient` and the local SDK: strict production-SDK playback, no network fallback, full ordered interactions/results, binary contracts and redaction | Preview/error/cancellation service evidence; live auth/RBAC and copy/defaults mutation |
 | Host and release integration | Existing command/generated-project and host-contract tests | Installed-host, PowerShell, Windows/macOS runtime, signing/registry/release ownership (Tasks 6.1/6.2) |

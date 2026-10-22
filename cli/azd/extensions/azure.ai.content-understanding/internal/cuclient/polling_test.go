@@ -260,9 +260,6 @@ func TestAnalyzerPollingRetryAfterHonorsCancellation(t *testing.T) {
 			assert.Less(t, time.Since(start), time.Second, "cancellation must interrupt Retry-After")
 		})
 	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	assert.ErrorIs(t, waitForPoll(ctx, time.Hour), context.Canceled)
 }
 
 func TestAnalyzerPollingHTTPFailure(t *testing.T) {

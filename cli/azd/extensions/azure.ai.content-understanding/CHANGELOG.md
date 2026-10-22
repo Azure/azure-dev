@@ -4,6 +4,13 @@
 
 ### Features Added
 
+- Align the CLI-only extension with native azd conventions used by Foundry
+  agents/projects. Migrate copy, schema, analyzer-test and generated-project
+  integration tests to the production SDK adapter, remove the unused parallel
+  REST implementation, and exercise retry/authentication/error regressions
+  through real SDK operations. Enforce extension retry/attempt-timeout bounds
+  against caller context overrides without replaying writes. Retain strict
+  recorded playback and all reused-asset provenance.
 - Native Go behavior/risk testing with Python cases used only as references.
   Remove the exhaustive source-node ledger, AST/subtest registry, count-based
   approval gate, and five bulky source-capture harnesses. Preserve unique hash,

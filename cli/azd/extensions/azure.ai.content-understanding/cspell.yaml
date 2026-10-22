@@ -25,12 +25,6 @@ overrides:
       - contentunderstanding
       - projectless
       - fnmatch
-  - filename: "internal/cuclient/polling.go"
-    words:
-      - notstarted
-  - filename: "internal/cuclient/analysis.go"
-    words:
-      - notstarted
   - filename: "sdk/azcontentunderstanding/polling.go"
     words:
       - notstarted

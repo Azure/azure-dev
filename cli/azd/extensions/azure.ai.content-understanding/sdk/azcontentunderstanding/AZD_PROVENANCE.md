@@ -38,6 +38,9 @@ The copied module's Go directive is aligned with the repository's Go 1.26.4 base
   bounded retries for reads and polling.
 
 The adapter separately enforces the existing CLI continuation path/API-version
-contract using a shared link validator. Analyzer/analysis wire and polling
-conformance tests use `SDKTransport`; low-level REST pipeline helper tests remain
-as reference coverage. This does not claim generic SDK resume-token parity.
+contract using a shared link validator. Its pipeline policy also enforces the
+extension's configured retry and attempt-timeout bounds against caller context
+overrides. These are adapter policies, not additional patches to this SDK copy.
+Analyzer/analysis wire, polling and command integration tests use `SDKTransport`;
+the obsolete parallel REST implementation and its helper-only tests have been
+removed. This does not claim generic SDK resume-token parity.

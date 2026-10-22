@@ -48,6 +48,7 @@ func NewSDKTransport(
 	if transport == nil {
 		transport = newHTTPTransport(settings.RequestTimeout)
 	}
+	retryOptions := policy.RetryOptions{MaxRetries: 2, TryTimeout: settings.RequestTimeout}
 	client, err := sdk.NewClient(
 		strings.TrimSuffix(normalized, "/contentunderstanding"),
 		safeTokenCredential{inner: credential},
@@ -55,12 +56,9 @@ func NewSDKTransport(
 			APIVersion: settings.APIVersion,
 			ClientOptions: azcore.ClientOptions{
 				Transport: &boundedErrorTransport{inner: transport},
-				Retry: policy.RetryOptions{
-					MaxRetries: 2,
-					TryTimeout: settings.RequestTimeout,
-				},
+				Retry:     retryOptions,
 				PerCallPolicies: []policy.Policy{
-					&sdkResponsePolicy{endpoint: normalized, apiVersion: settings.APIVersion},
+					&sdkPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
 					azsdk.NewMsClientRequestIdPolicy(),
 					azsdk.NewMsCorrelationPolicy(),
 					azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
@@ -332,12 +330,19 @@ func operationDiagnosticDetails(values []sdk.OperationDiagnostic) []wireDiagnost
 	return result
 }
 
-type sdkResponsePolicy struct {
+type sdkPolicy struct {
 	endpoint   string
 	apiVersion string
+	retry      policy.RetryOptions
 }
 
-func (p *sdkResponsePolicy) Do(request *policy.Request) (*http.Response, error) {
+func (p *sdkPolicy) Do(request *policy.Request) (*http.Response, error) {
+	// Caller retry overrides must not weaken the extension's retry and timeout bounds.
+	retry := p.retry
+	if request.Raw().Method != http.MethodGet && request.Raw().Method != http.MethodHead {
+		retry.MaxRetries = -1
+	}
+	request = request.WithContext(policy.WithRetryOptions(request.Raw().Context(), retry))
 	response, err := request.Next()
 	if err != nil || response.StatusCode < 200 || response.StatusCode >= 300 {
 		return response, err

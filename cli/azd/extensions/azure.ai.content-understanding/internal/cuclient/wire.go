@@ -6,9 +6,7 @@ package cuclient
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"net/http"
-	"slices"
+
 	"time"
 )
 
@@ -26,19 +24,6 @@ type wireDiagnostic struct {
 	Message string           `json:"message"`
 	Target  string           `json:"target"`
 	Details []wireDiagnostic `json:"details"`
-}
-
-type wireOperation struct {
-	ID     string          `json:"id"`
-	Status string          `json:"status"`
-	Result json.RawMessage `json:"result"`
-	Error  *wireDiagnostic `json:"error"`
-	Usage  *wireUsage      `json:"usage"`
-}
-
-type wireAnalysisInput struct {
-	URL      string `json:"url"`
-	MIMEType string `json:"mimeType,omitempty"`
 }
 
 func diagnostics(values []wireDiagnostic, redact bool) []Diagnostic {
@@ -87,27 +72,6 @@ func (w *wireUsage) domain() *Usage {
 		AudioHours: w.AudioHours, VideoHours: w.VideoHours, ContextualizationTokens: w.ContextualizationTokens,
 		AdvancedContextualizationTokens: w.AdvancedContextualizationTokens, Tokens: w.Tokens,
 	}
-}
-
-// readResponse closes every response and keeps unexpected success statuses from
-// being mistaken for a completed service operation.
-func readResponse(response *http.Response, statuses ...int) (json.RawMessage, error) {
-	if !slices.Contains(statuses, response.StatusCode) {
-		defer response.Body.Close()
-		return nil, malformedResponse()
-	}
-	body, readErr := io.ReadAll(response.Body)
-	if readErr == nil && response.Request != nil {
-		readErr = response.Request.Context().Err()
-	}
-	closeErr := response.Body.Close()
-	if readErr != nil {
-		return nil, transportError(readErr)
-	}
-	if closeErr != nil {
-		return nil, transportError(closeErr)
-	}
-	return body, nil
 }
 
 func decodeWire(body json.RawMessage, target any) error {

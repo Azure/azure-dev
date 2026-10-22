@@ -242,7 +242,7 @@ func TestAnalyzerTestWirePipelineForBothAPIVersions(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			sample := schemaFile(t, "wire sample")
 			var calls []string
-			client, err := cuclient.NewRESTTransport("https://resource.example", &copyWireCredential{},
+			client, err := cuclient.NewSDKTransport("https://resource.example", &copyWireCredential{},
 				&cuclient.TransportOptions{APIVersion: version, Transport: copyWireTransport(func(
 					request *http.Request,
 				) (*http.Response, error) {

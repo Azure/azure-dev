@@ -384,7 +384,7 @@ func TestSchemaCreateCommandThroughCUPipeline(t *testing.T) {
 				result.Body = io.NopCloser(strings.NewReader(body))
 				return result, nil
 			})
-			client, err := cuclient.NewRESTTransport("https://resource.example", credential,
+			client, err := cuclient.NewSDKTransport("https://resource.example", credential,
 				&cuclient.TransportOptions{APIVersion: version, Transport: transport})
 			require.NoError(t, err)
 			root := newRootCommand(func(

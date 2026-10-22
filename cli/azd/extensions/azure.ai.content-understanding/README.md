@@ -373,10 +373,39 @@ back to asynchronous analysis. Authentication remains Entra-only.
   input-selection order. Any failure returns nonzero, without success-shaped
   stdout; successful result files and a requested report remain available.
 
-Result/report publication uses private, same-directory temporary files and
-rooted filesystem operations. No-clobber publication is atomic, replacement is
-explicit, symlink/special-file destinations are rejected, and directory identity
-is checked around publication. Temporary files are removed on failure.
+All local output surfaces use the same guarded writer: analysis results/reports,
+schema files, analyzer-test reports, generated infrastructure/environment files,
+and model files. It verifies directory ownership and permissions before creating
+customer data, stages in a private operation-owned directory on the destination
+filesystem, and publishes through rooted operations. No-clobber publication is
+atomic; replacement requires the command's explicit overwrite policy.
+Cleanup checks staging identities and never recursively removes a staging path
+or deletes an unrelated replacement.
+
+The current OS account and privileged administrators are trusted. Other accounts
+must not be able to modify the output directory chain. Symlinks, Windows reparse
+points, unsafe shared output directories, and unverifiable filesystems fail
+closed without repairing existing permissions. A private child under a trusted
+sticky temporary directory is supported. Newly created POSIX directories are
+owner-only; published files are owner-only, with executable bits added to
+generated shell hooks. Windows staging and published files grant access only
+to the current account, SYSTEM, and Administrators; validated ancestor handles
+are retained without delete sharing.
+
+Linux permission checks include the effective POSIX ACL mask and require ext,
+XFS, Btrfs, tmpfs, or overlay filesystems. macOS requires APFS/HFS and rejects
+ACL mutation grants conservatively; private staging also rejects ACL read grants.
+Windows requires a local fixed ACL-capable volume. Network/unsupported output
+filesystems are not silently treated as private. POSIX directory handles follow
+renames: these protections do not isolate a malicious same-account/admin process
+or trusted-owner permission changes, and a post-write identity check is not a
+guarantee against such relocation.
+
+Diagnostics use bounded, redacted text, not raw library errors. Invalid arguments
+do not echo their values; schema errors retain fixed constraint locations but
+omit customer field paths. SDK debug logging emits only fixed event categories,
+never raw SDK messages, URLs, headers, or bodies. Intentional stdout/file result
+payloads, including extracted content and schema output, are not redacted.
 `-o none` suppresses successful stdout, not result/report file writes.
 
 ### Offline analyzer validation

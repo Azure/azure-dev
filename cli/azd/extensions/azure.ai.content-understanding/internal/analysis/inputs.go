@@ -6,7 +6,6 @@ package analysis
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/fs"
 	"net/url"
 	"os"
@@ -362,7 +361,7 @@ func globPattern(pattern string) (*regexp.Regexp, error) {
 	expression.WriteByte('$')
 	compiled, err := regexp.Compile(expression.String())
 	if err != nil {
-		return nil, invalid("invalid_pattern", fmt.Sprintf("The source pattern is invalid: %s.", pattern))
+		return nil, invalid("invalid_pattern", "The source pattern is invalid.")
 	}
 	return compiled, nil
 }

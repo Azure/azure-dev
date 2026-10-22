@@ -10,12 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
-	"strings"
 	"sync"
 	"sync/atomic"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/exterrors"
 	"azure.ai.content-understanding/internal/localio"
 )
 
@@ -293,8 +292,6 @@ func makeReport(analyzer string, llm bool, records []Record) report {
 	return summary
 }
 
-var diagnosticURL = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
-
 func safeDiagnostic(err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "Analysis was cancelled."
@@ -303,7 +300,7 @@ func safeDiagnostic(err error) string {
 		return "Analysis timed out."
 	}
 	if domain, ok := errors.AsType[*cuclient.Error](err); ok {
-		return diagnosticURL.ReplaceAllStringFunc(strings.TrimSpace(domain.Message), RedactURL)
+		return exterrors.Redact(domain.Message)
 	}
 	return "Analysis failed; check the input, authentication, and service availability."
 }

@@ -104,8 +104,9 @@ func TestAnalyzerValidateInvalidArgumentsAndContent(t *testing.T) {
 	stdout, _, err := f.execute(t.Context(), "analyzer", "validate", file)
 	require.Error(t, err)
 	assert.Empty(t, stdout)
-	assert.Contains(t, err.Error(), "fieldSchema.fields.A.type")
-	assert.Contains(t, err.Error(), "fieldSchema.fields.B.items")
+	assert.NotContains(t, err.Error(), "fieldSchema.fields")
+	assert.Contains(t, err.Error(), "Specify a field type")
+	assert.Contains(t, err.Error(), "Array fields require an items object")
 	assert.NotContains(t, err.Error(), "private")
 }
 

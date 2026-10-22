@@ -31,6 +31,9 @@ func executeRoot(t *testing.T, args ...string) (string, string, error) {
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
 	root.SetArgs(args)
+	if err := ValidateInvocation(root, args); err != nil {
+		return "", "", err
+	}
 	err := root.ExecuteContext(t.Context())
 	return stdout.String(), stderr.String(), err
 }
@@ -77,18 +80,21 @@ func TestUsageErrors(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		args []string
-		want string
 	}{
-		{"unknown command", []string{"missing-command"}, `unknown command "missing-command" for "cu"`},
-		{"unknown flag", []string{"version", "--missing"}, "unknown flag: --missing"},
-		{"invalid bool", []string{"version", "--debug=invalid"}, `invalid argument "invalid"`},
-		{"invalid output", []string{"version", "--output", "table"}, `invalid value "table" for --output`},
-		{"version arguments", []string{"version", "extra"}, `unknown command "extra" for "cu version"`},
-		{"metadata arguments", []string{"metadata", "extra"}, `unknown command "extra" for "cu metadata"`},
+		{"unknown command", []string{"missing-command"}},
+		{"unknown flag", []string{"version", "--missing"}},
+		{"invalid bool", []string{"version", "--debug=invalid"}},
+		{"invalid output", []string{"version", "--output", "table"}},
+		{"version arguments", []string{"version", "extra"}},
+		{"metadata arguments", []string{"metadata", "extra"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			stdout, stderr, err := executeRoot(t, tt.args...)
-			require.ErrorContains(t, err, tt.want)
+			require.ErrorContains(t, err, "The command arguments or options are invalid.")
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			assert.Equal(t, azdext.LocalErrorCategoryValidation, local.Category)
+			assert.Equal(t, "invalid_command_arguments", local.Code)
 			assert.Empty(t, stdout)
 			assert.Empty(t, stderr)
 		})
@@ -219,7 +225,9 @@ func TestOutputFailures(t *testing.T) {
 			root := NewRootCommand()
 			root.SetOut(failingWriter{})
 			root.SetArgs(args)
-			require.ErrorContains(t, root.ExecuteContext(context.Background()), "output unavailable")
+			err := root.ExecuteContext(context.Background())
+			require.ErrorContains(t, err, "could not complete the operation")
+			assert.NotContains(t, err.Error(), "output unavailable")
 		})
 	}
 }

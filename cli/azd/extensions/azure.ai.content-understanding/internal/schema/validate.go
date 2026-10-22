@@ -19,6 +19,17 @@ type Finding struct {
 	Message string `json:"msg"`
 }
 
+// DiagnosticPath keeps contract-defined locations, never customer-authored property names.
+func (f Finding) DiagnosticPath() string {
+	switch f.Path {
+	case "$", "analyzerId", "baseAnalyzerId", "apiVersion", "models", "models.completion",
+		"config", "config.contentCategories", "fieldSchema", "fieldSchema.fields":
+		return f.Path
+	default:
+		return "[redacted field path]"
+	}
+}
+
 type ValidationResult struct {
 	OK       bool      `json:"ok"`
 	Errors   []Finding `json:"errors"`

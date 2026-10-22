@@ -34,7 +34,8 @@ func MissingTenant() error {
 	}
 }
 
-func FromError(err error) error {
+func FromError(err error) (result error) {
+	defer sanitizeError(&result)
 	if err == nil {
 		return nil
 	}

@@ -72,10 +72,10 @@ func newAnalyzerValidateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			var message strings.Builder
 			message.WriteString("Schema validation failed:")
 			for _, finding := range findings {
-				message.WriteString("\n" + finding.Path + ": " + finding.Message)
+				message.WriteString("\n" + finding.DiagnosticPath() + ": " + finding.Message)
 			}
 			return exterrors.FromError(commandError("invalid_analyzer_schema", message.String(),
-				"Correct the reported fields, or omit --strict to allow authoring warnings."))
+				"Correct the reported constraints, or omit --strict to allow authoring warnings."))
 		}
 		return exterrors.FromError(writeServiceResult(cmd, extCtx.OutputFormat, struct {
 			schema.ValidationResult

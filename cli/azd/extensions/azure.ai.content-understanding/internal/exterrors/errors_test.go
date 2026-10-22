@@ -33,7 +33,7 @@ func TestPreservesStructuredErrors(t *testing.T) {
 			Message: "original message", Suggestion: "original suggestion",
 		},
 		&azdext.ServiceError{
-			ErrorCode: "Conflict", StatusCode: 409, ServiceName: "example.test",
+			ErrorCode: "Conflict", StatusCode: 409, ServiceName: "ContentUnderstanding",
 			Message: "service message", Suggestion: "service suggestion",
 		},
 		&azdext.ToolError{ToolName: "azd", Kind: azdext.ToolErrorKindMissing, Message: "tool message"},

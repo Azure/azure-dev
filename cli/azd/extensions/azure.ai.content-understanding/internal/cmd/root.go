@@ -48,5 +48,6 @@ func newRootCommandWithInfra(open sessionFactory, infraOpen infraHostFactory) *c
   # Display the extension version as JSON
   azd ai cu version --output json`
 
+	protectCommandErrors(rootCmd)
 	return rootCmd
 }

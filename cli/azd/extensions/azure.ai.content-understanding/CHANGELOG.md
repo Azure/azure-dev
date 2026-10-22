@@ -17,6 +17,14 @@
 
 ### Bugs Fixed
 
+- Guard all local outputs with verified directory ownership/permissions/ACLs,
+  private staging, identity-checked cleanup, and atomic no-clobber publication.
+  Reject unsafe shared or unsupported output locations without changing user permissions.
+- Bound and redact diagnostic messages and metadata, omit customer-authored schema
+  paths from errors, and suppress raw SDK log details. Preserve intentional result
+  payloads and cancellation categories.
+- Return safe validation errors for invalid command arguments/options instead of
+  echoing supplied values; retain structured command errors and safe constraint locations.
 - Prevent authentication challenges from replaying write submissions.
 - Preserve configured request timeouts when disabling write retries, including
   submission and response-body deadlines.

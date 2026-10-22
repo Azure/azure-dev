@@ -157,3 +157,64 @@ func TestAtomicWriteFilesystemFailures(t *testing.T) {
 	require.Error(t, err)
 	require.Error(t, Write(filepath.Join(private, "missing", "result"), []byte("data"), false))
 }
+
+func TestStagingSourceAndCleanupOwnership(t *testing.T) {
+	for _, substitute := range []string{"payload", "directory"} {
+		t.Run(substitute, func(t *testing.T) {
+			directory := t.TempDir()
+			parent, err := openDirectory(directory, false)
+			require.NoError(t, err)
+			defer parent.Close()
+			stage, err := newStaging(parent.Root)
+			require.NoError(t, err)
+			_, err = stage.file.WriteString("private-content")
+			require.NoError(t, err)
+			info, err := stage.root.Stat(".")
+			require.NoError(t, err)
+			if runtime.GOOS != "windows" {
+				assert.Zero(t, info.Mode().Perm()&0o077)
+			}
+			if substitute == "payload" {
+				require.NoError(t, stage.root.Rename("payload", "original"))
+				require.NoError(t, os.WriteFile(filepath.Join(directory, stage.name, "payload"), []byte("unrelated"), 0o600))
+			} else {
+				if runtime.GOOS == "windows" {
+					require.NoError(t, stage.file.Close())
+					stage.file = nil
+				}
+				require.NoError(t, parent.Rename(stage.name, stage.name+"-original"))
+				require.NoError(t, parent.Mkdir(stage.name, 0o700))
+			}
+			require.Error(t, stage.publish("result", false))
+			require.Error(t, stage.cleanup())
+			_, err = parent.Lstat("result")
+			require.ErrorIs(t, err, fs.ErrNotExist)
+			if substitute == "payload" {
+				// #nosec G304 -- Reads the replacement inside this test's private directory.
+				body, err := os.ReadFile(filepath.Join(directory, stage.name, "payload"))
+				require.NoError(t, err)
+				assert.Equal(t, "unrelated", string(body))
+			} else {
+				_, err := parent.Stat(stage.name)
+				require.NoError(t, err, "cleanup must preserve an unrelated replacement directory")
+			}
+		})
+	}
+}
+
+func TestOutputErrorsDoNotExposePaths(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "private-file")
+	require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
+	for _, operation := range []func(string) error{
+		func(path string) error { _, err := Check(path); return err },
+		func(path string) error { _, err := Read(path); return err },
+		MakeExecutable,
+		func(path string) error { return Write(path, []byte("private-content"), false) },
+	} {
+		err := operation(filepath.Join(path, "child"))
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), directory)
+		assert.NotContains(t, err.Error(), "private-file")
+	}
+}

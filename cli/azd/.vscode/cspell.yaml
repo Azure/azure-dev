@@ -135,6 +135,15 @@ words:
   - seekable
   - seekability
   - APFS
+  - Btrfs
+  - tmpfs
+  - overlayfs
+  - Fstypename
+  - Attrlist
+  - Bitmapcount
+  - Commonattr
+  - OICI
+  - accountkey
   - NTFS
   - mcpgo
   - cpus

@@ -39,7 +39,7 @@ func agentHelpFooter() string {
   to the deployed agent.
 
 Preview Feature Switches:
-  Set these variables in your shell or CI process environment before running azd:
+  We recommend setting these in your shell or CI before running azd:
 `)
 	for _, feature := range featureflags.All() {
 		fmt.Fprintf(&footer, "  %s=true\n    %s.\n", feature.EnvVar, feature.Description)
@@ -47,9 +47,8 @@ Preview Feature Switches:
 	footer.WriteString(`
   All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
   False, empty, and invalid values do not enable a switch.
-  Switch values are read only from the process environment, not azd config
-  or selected azd environment files. --environment does not select their values.
-  Use shell or CI variables, not 'azd config set' or 'azd env set', for switches.
+  The extension reads these switches from its own process environment.
+  It does not query azd config or load azd environment files itself.
   These declarations do not add command or runtime gates by themselves.
   Regular hosted and plain prompt agents are outside these preview scopes.
 

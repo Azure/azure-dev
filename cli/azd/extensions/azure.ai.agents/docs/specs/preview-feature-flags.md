@@ -70,7 +70,7 @@ Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the
 
 ## Process-only enablement
 
-Set the desired variable in the shell or CI process environment before running azd. For example:
+We recommend setting the desired variable in the shell or CI process environment before running azd. For example:
 
 ```sh
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
@@ -90,11 +90,11 @@ All three features default to off. Only `strconv.ParseBool` true values enable a
 
 Each feature is independent. There is no global toggle, experimentation default, or cross-feature opt-in.
 
-### Sources that are not read
+### Evaluator source boundary
 
-Flag evaluation does not read azd user config, `alpha.all`, selected or default azd dotenv files, or project/service environment mappings. Neither `azd config set alpha.agents.<name> on` nor `azd env set <switch> true` is an activation method. `--environment` and ambient `AZD_ENVIRONMENT` do not select a flag source.
+The evaluator reads the extension's own process environment. It does not query azd user config (including `alpha.all`), load selected or default azd environment files, or read project/service environment mappings itself.
 
-Only the actual process environment is inspected. If a shell or another launcher explicitly exports a value into that process environment, it is a process value; this package never loads or merges another source.
+Values that the azd host has already injected into the extension's process environment are still read, regardless of their original source. This boundary does not guarantee that the full azd launch path excludes dotenv values or that `--environment` cannot influence them. The evaluator does not filter the origin of process values.
 
 Normal project configuration, deployment environments, runtime settings, and command input validation elsewhere in the extension are unchanged.
 
@@ -103,7 +103,7 @@ Normal project configuration, deployment environments, runtime settings, and com
 This intentionally narrows the earlier multi-source implementation:
 
 - `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
-- User config and selected dotenv opt-ins no longer participate.
+- The evaluator no longer explicitly reads user config or loads selected/default azd environment files.
 - Feature evaluation no longer loads project/service scopes or calls the azd host.
 - The old context/client/environment parameters, host-error sentinels, and flag-specific environment validation are removed.
 
@@ -119,7 +119,7 @@ There is no cache, output, process-environment mutation, configuration write, au
 
 ## Validation
 
-Tests cover all three canonical keys, default-off behavior, accepted boolean forms, non-enabling values, independent feature combinations, ignored old/global/unrelated keys, and optional descriptions. Temporary local fixtures verify that user config, default/selected dotenv files, project/service mappings, and environment selection do not affect decisions or get modified. Repeated calls verify fresh reads and no process or declaration mutation.
+Tests cover all three canonical keys, default-off behavior, accepted boolean forms, non-enabling values, independent feature combinations, ignored old/global/unrelated keys, and optional descriptions. Temporary local fixtures verify that direct evaluator calls do not load or modify user config, default/selected dotenv files, or project/service mappings. These tests do not exercise the host's extension launch path or rule out values it injects into the process environment. Repeated calls verify fresh reads and no process or declaration mutation.
 
 Registry tests cover the stable copy returned by `All` and `Lookup`. Help tests cover registry-derived switches and scopes, color/no-color headings, root-only placement, unchanged command discovery, and updated snapshots.
 

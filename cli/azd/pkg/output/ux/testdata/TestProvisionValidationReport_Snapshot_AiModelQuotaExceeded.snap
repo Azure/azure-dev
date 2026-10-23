@@ -1,4 +1,7 @@
   (!) Warning: Insufficient quota for model "gpt-4o" (SKU: GlobalStandard) in eastus2
-  Requested: 99999 · Available: 140
-  Suggestion: Reduce the requested capacity to 140 or change your deployment location via azd env set AZURE_LOCATION <location>. You can also request a quota increase in the Azure portal.
-  • https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal
+      Requested: 99999 · Available: 140
+
+      Suggestion: Reduce the requested capacity to 140 or change your deployment location via azd env set AZURE_LOCATION <location>. You can also request a quota increase in the Azure portal.
+      • https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal
+
+  1 warning found.

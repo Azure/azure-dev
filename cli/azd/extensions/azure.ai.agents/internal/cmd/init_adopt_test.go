@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -497,12 +499,56 @@ func TestPrintPromptInitNextSteps(t *testing.T) {
 		printPromptInitNextSteps("prompt-agent")
 	})
 
-	require.Contains(t, stdout, `cd "prompt-agent"`)
+	require.Contains(t, stdout, "  cd prompt-agent\n")
 	require.Contains(t, stdout, "azd up")
 	require.Contains(t, stdout, "azd deploy")
 	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
 	require.NotContains(t, stdout, "azd ai agent run")
 	require.NotContains(t, stdout, "--local")
+}
+
+// Prompt-only adoption preserves paths in each shell's navigation hint.
+func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, tt := range []struct {
+		dir  string
+		want string
+	}{
+		{"my-$USER", "cd 'my-$USER'"},
+		{"my-$(whoami)", "cd 'my-$(whoami)'"},
+		{"it's", `cd 'it'\''s'`},
+		{"tab\there", "cd 'tab\there'"},
+		{"My Agent", "cd 'My Agent'"},
+		{"Bob's Agent", `cd 'Bob'\''s Agent'`},
+		{"my~agent", "cd 'my~agent'"},
+		{"agent[1]", "cd 'agent[1]'"},
+		{"my-%PATH%", "cd 'my-%PATH%'"},
+		{"my-!PATH!", "cd 'my-!PATH!'"},
+	} {
+		t.Run(tt.dir, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.ContainsAny(tt.dir, "\t") {
+				t.Skip("tab is not valid in Windows file names")
+			}
+			require.NoError(t, os.Mkdir(tt.dir, 0o700))
+			display := folderDisplayForSubdir(tt.dir)
+			require.Equal(t, tt.dir, display)
+
+			stdout := withCapturedStdout(t, func() {
+				printPromptInitNextSteps(display)
+			})
+			require.Contains(t, stdout, "  "+tt.want+"\n")
+			require.Contains(t, stdout, "  Set-Location -LiteralPath '"+
+				strings.ReplaceAll(tt.dir, "'", "''")+"'\n")
+			if strings.ContainsAny(tt.dir, "%!") {
+				require.Contains(t, stdout, "cmd.exe: use a shell-specific alternative above")
+			} else {
+				require.Contains(t, stdout, "  cd /d \""+tt.dir+"\"\n")
+			}
+			require.Contains(t, stdout, "# POSIX shells:")
+			require.Contains(t, stdout, "# PowerShell:")
+			require.Contains(t, stdout, "azd up")
+		})
+	}
 }
 
 func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {
@@ -1135,21 +1181,48 @@ func TestAdoptTargetDir(t *testing.T) {
 		require.Equal(t, ".", dir)
 		require.Empty(t, display)
 	})
+
+	t.Run("existing target still requires navigation", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		require.NoError(t, os.Mkdir("foundry-simple", 0o700))
+		for _, flags := range []*initFlags{{}, {src: "foundry-simple"}} {
+			dir, display := adoptTargetDir(flags, "Foundry Simple")
+			require.Equal(t, "foundry-simple", dir)
+			require.Equal(t, "foundry-simple", display)
+		}
+	})
 }
 
-func TestFolderDisplayIfNew(t *testing.T) {
-	t.Run("current dir is never a created folder", func(t *testing.T) {
-		require.Empty(t, folderDisplayIfNew("."))
-	})
+func TestFolderDisplayForSubdir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir("existing-dir", 0o700))
+	require.NoError(t, os.Mkdir("my agent", 0o700))
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	absoluteSubdir := filepath.Join(cwd, "existing-dir")
 
-	t.Run("non-existent dir is displayed", func(t *testing.T) {
-		require.Equal(t, "brand-new-dir-does-not-exist-xyz", folderDisplayIfNew("brand-new-dir-does-not-exist-xyz"))
-	})
-
-	t.Run("existing dir is not displayed", func(t *testing.T) {
-		existing := t.TempDir()
-		require.Empty(t, folderDisplayIfNew(existing))
-	})
+	tests := []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{name: "current dir is not displayed", dir: "."},
+		{name: "empty dir is not displayed"},
+		{name: "current dir with trailing slash is not displayed", dir: "./"},
+		{name: "current dir with native separator is not displayed", dir: "." + string(filepath.Separator)},
+		{name: "subdirectory parent is not displayed", dir: "existing-dir/.."},
+		{name: "absolute current dir is not displayed", dir: cwd},
+		{name: "absolute subdirectory is displayed", dir: absoluteSubdir, want: filepath.ToSlash(absoluteSubdir)},
+		{name: "non-existent dir is displayed", dir: "new-dir", want: "new-dir"},
+		{name: "existing subdirectory is displayed", dir: "existing-dir", want: "existing-dir"},
+		{name: "existing subdirectory with spaces is displayed unquoted", dir: "my agent", want: "my agent"},
+		{name: "nested path uses slashes", dir: filepath.Join("parent", "child"), want: "parent/child"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, folderDisplayForSubdir(tt.dir))
+		})
+	}
 }
 
 func TestStagedAzureYamlExists(t *testing.T) {

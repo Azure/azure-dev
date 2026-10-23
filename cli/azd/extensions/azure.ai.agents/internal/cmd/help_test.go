@@ -70,7 +70,7 @@ func TestAgentHelp(t *testing.T) {
 			snapshot.SnapshotT(t, strings.TrimRight(strings.Join(lines, "\n"), "\n"))
 		})
 		for _, child := range command.Commands() {
-			if child.IsAvailableCommand() {
+			if child.IsAvailableCommand() || (!child.Hidden && child.Deprecated != "") {
 				walk(child, append(append([]string{}, path...), child.Name()))
 			}
 		}
@@ -84,7 +84,7 @@ func TestAgentHelpColor(t *testing.T) {
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = previous })
 
-	for _, path := range [][]string{nil, {"init"}, {"invoke"}, {"files", "list"}, {"optimize"}, {"eval", "show"}} {
+	for _, path := range [][]string{nil, {"init"}, {"invoke"}, {"files", "list"}, {"optimize"}, {"eval", "run"}} {
 		t.Run(strings.Join(path, "_"), func(t *testing.T) {
 			root := NewRootCommand()
 			var buf bytes.Buffer

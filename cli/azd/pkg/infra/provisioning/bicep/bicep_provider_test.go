@@ -2125,6 +2125,11 @@ func TestSetProvisionValidationOutcome_AllOutcomeValues(t *testing.T) {
 			diagnosticIDs: []string{"role_assignment_conditional"},
 		},
 		{
+			name:          "canceled in no-prompt mode",
+			outcome:       provisionValidationOutcomeCanceledNoPrompt,
+			diagnosticIDs: []string{"role_assignment_missing"},
+		},
+		{
 			name:          "skipped",
 			outcome:       provisionValidationOutcomeSkipped,
 			diagnosticIDs: nil,

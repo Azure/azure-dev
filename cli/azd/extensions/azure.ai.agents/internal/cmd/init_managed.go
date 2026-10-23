@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -639,7 +640,10 @@ func printPromptInitNextSteps(folderDisplay string) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if folderDisplay != "" {
-		fmt.Printf("  cd %q\n", folderDisplay)
+		for _, suggestion := range nextstep.CdSuggestions(folderDisplay) {
+			fmt.Printf("  %s\n", suggestion.Command)
+			fmt.Printf("  # %s\n", suggestion.Description)
+		}
 	}
 	fmt.Println("  # Provision infrastructure and deploy the agent")
 	fmt.Println("  azd up")

@@ -16,15 +16,16 @@ import (
 
 // Poller polls an optimization job until it reaches a terminal state.
 type Poller struct {
-	Client      *OptimizeClient
-	OperationID string
-	Interval    time.Duration
-	MaxAttempts int // 0 means no limit
-	OnProgress  func(*OptimizeJobStatus)
+	Client            *OptimizeClient
+	OperationID       string
+	Interval          time.Duration
+	MaxAttempts       int // 0 means no limit
+	OnProgress        func(*OptimizeJobStatus)
+	IncludeCandidates bool
 }
 
 // PollUntilDone polls GetOptimizeStatus at the configured interval until the
-// job reaches a terminal state (completed, failed, cancelled), the context
+// job reaches a terminal state (succeeded, failed, cancelled, skipped), the context
 // is cancelled, or MaxAttempts is reached. Transient errors (5xx, 429,
 // connection reset) are retried up to maxConsecutiveTransient times before
 // the poller gives up.
@@ -49,6 +50,9 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) 
 	consecutiveTransient := 0
 	for {
 		status, err := p.Client.GetOptimizeStatus(ctx, p.OperationID)
+		if err == nil && p.IncludeCandidates {
+			err = p.Client.LoadCandidates(ctx, status)
+		}
 		if err != nil {
 			if agents.IsTransientError(err) {
 				consecutiveTransient++
@@ -61,7 +65,7 @@ func (p *Poller) PollUntilDone(ctx context.Context) (*OptimizeJobStatus, error) 
 					p.OperationID, consecutiveTransient, maxConsecutiveTransient, err)
 				goto wait
 			}
-			return nil, fmt.Errorf("failed to get optimization status: %w", err)
+			return nil, fmt.Errorf("failed to get optimization status or candidates: %w", err)
 		}
 
 		consecutiveTransient = 0 // reset on success

@@ -1,0 +1,11 @@
+# Tier 0 (offline) - optimization input selectors must fail before authentication or mutations.
+name: "optimize-eval-selector-conflict"
+command: "azd ai agent optimize --config missing-ga-request.yaml --eval quality --no-prompt"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:optimize", "negative-path", "parallel-safe"]
+goals:
+  - "Confirm the command exits non-zero with a validation error naming both --config and --eval as conflicting inputs."
+  - "Confirm the command does not read missing-ga-request.yaml, prompt for an agent or credentials, or attempt an optimization request."
+  - "Confirm no optimization job ID is printed and no project files or environment values are changed."
+  - "Take a screenshot of the validation output; screenshot capture failure is only an observation."
+  - "Report a finding if either selector is silently ignored, authentication starts, a job is submitted, or the error does not identify the conflicting flags."

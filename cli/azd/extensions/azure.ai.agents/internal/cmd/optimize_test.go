@@ -7,14 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	projectpkg "azureaiagent/internal/project"
 
@@ -129,8 +128,8 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 			require.Equal(t, "2", resolved.agentVersion)
 			require.Equal(t, "assistant", resolved.serviceName)
 			cfg := &OptimizeConfig{
-				Config: opt_eval.Config{Agent: opt_eval.AgentRef{Name: resolved.agentName}},
-				Options: &opt_eval.Options{OptimizationConfig: opt_eval.OptimizationConfig{
+				Config: optconfig.Config{Agent: optconfig.AgentRef{Name: resolved.agentName}},
+				Options: &optconfig.Options{OptimizationConfig: optconfig.OptimizationConfig{
 					"model":              json.RawMessage(`"gpt-5"`),
 					"system_prompt":      json.RawMessage(`"Be helpful."`),
 					"tools":              json.RawMessage(`[]`),
@@ -140,14 +139,12 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 			}
 			request, _, err := optimizeRequestConfig(cfg, resolved.promptAgent).ToRequest()
 			require.NoError(t, err)
-			for _, key := range []string{"model", "system_prompt", "tools", "skills"} {
-				if tt.wantPrompt {
-					require.NotContains(t, request.Options.OptimizationConfig, key)
-				} else {
-					require.Contains(t, request.Options.OptimizationConfig, key)
-				}
+			if tt.wantPrompt {
+				require.Nil(t, request.OptimizationConfiguration.BaselineAgentConfiguration)
+			} else {
+				require.NotNil(t, request.OptimizationConfiguration.BaselineAgentConfiguration)
 			}
-			require.Contains(t, request.Options.OptimizationConfig, "model_search_space")
+			require.Equal(t, []string{"gpt-5"}, request.OptimizationConfiguration.AgentOptimizationSpace.ModelSearchSpace)
 			require.Len(t, cfg.Options.OptimizationConfig, 5)
 		})
 	}
@@ -357,11 +354,11 @@ func TestOptimizeCommand_DefaultFlags(t *testing.T) {
 }
 
 func TestIsTerminal_ViaOptimizeAPI(t *testing.T) {
-	assert.True(t, optimize_api.IsTerminal(optimize_api.StatusCompleted))
+	assert.True(t, optimize_api.IsTerminal(optimize_api.StatusSucceeded))
 	assert.True(t, optimize_api.IsTerminal(optimize_api.StatusFailed))
 	assert.True(t, optimize_api.IsTerminal(optimize_api.StatusCancelled))
-	assert.False(t, optimize_api.IsTerminal(optimize_api.StatusRunning))
-	assert.False(t, optimize_api.IsTerminal(optimize_api.StatusPending))
+	assert.False(t, optimize_api.IsTerminal(optimize_api.StatusInProgress))
+	assert.False(t, optimize_api.IsTerminal(optimize_api.StatusQueued))
 	assert.False(t, optimize_api.IsTerminal(""))
 }
 
@@ -372,10 +369,10 @@ func TestTruncateString(t *testing.T) {
 }
 
 func TestFormatOptimizeStatus(t *testing.T) {
-	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusCompleted))
+	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusSucceeded))
 	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusFailed))
 	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusCancelled))
-	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusRunning))
+	assert.NotEmpty(t, formatOptimizeStatus(optimize_api.StatusInProgress))
 	assert.NotEmpty(t, formatOptimizeStatus("unknown"))
 }
 
@@ -392,76 +389,6 @@ func TestDefaultOptimizeConfig(t *testing.T) {
 	assert.Empty(t, cfg.Evaluators)
 }
 
-// ---- LoadOptimizeConfig + reconcileConfigAgent (--config path) ----
-
-func TestLoadOptimizeConfig_ReconcileAgent(t *testing.T) {
-	t.Parallel()
-
-	writeConfigYAML := func(t *testing.T, dir, agentName string) string {
-		t.Helper()
-		content := "agent:\n  name: " + agentName + "\noptions:\n  eval_model: gpt-4o\n  mode: optimize\n"
-		path := filepath.Join(dir, "spec.yaml")
-		require.NoError(t, os.WriteFile(path, []byte(content), 0600))
-		return path
-	}
-
-	t.Run("env overrides config when names differ", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		cfgPath := writeConfigYAML(t, dir, "config-agent")
-
-		cfg, err := LoadOptimizeConfig(cfgPath)
-		require.NoError(t, err)
-		assert.Equal(t, "config-agent", cfg.Agent.Name)
-
-		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "env-agent", "", cfgPath)
-		assert.True(t, changed, "should report change when names differ")
-		assert.Equal(t, "env-agent", cfg.Agent.Name, "environment name should take precedence")
-	})
-
-	t.Run("no change when names match", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		cfgPath := writeConfigYAML(t, dir, "same-agent")
-
-		cfg, err := LoadOptimizeConfig(cfgPath)
-		require.NoError(t, err)
-
-		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "same-agent", "", cfgPath)
-		assert.False(t, changed)
-		assert.Equal(t, "same-agent", cfg.Agent.Name)
-	})
-
-	t.Run("sets name when config has empty agent name", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		content := "agent:\n  kind: hosted\noptions:\n  eval_model: gpt-4o\n"
-		cfgPath := filepath.Join(dir, "spec.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(content), 0600))
-
-		cfg, err := LoadOptimizeConfig(cfgPath)
-		require.NoError(t, err)
-		assert.Empty(t, cfg.Agent.Name)
-
-		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "env-agent", "", cfgPath)
-		assert.False(t, changed, "filling empty name is not a 'change' (no conflict)")
-		assert.Equal(t, "env-agent", cfg.Agent.Name)
-	})
-
-	t.Run("no-op when env name is empty", func(t *testing.T) {
-		t.Parallel()
-		dir := t.TempDir()
-		cfgPath := writeConfigYAML(t, dir, "config-agent")
-
-		cfg, err := LoadOptimizeConfig(cfgPath)
-		require.NoError(t, err)
-
-		changed := reconcileConfigAgent(io.Discard, &cfg.Agent, "", "", cfgPath)
-		assert.False(t, changed)
-		assert.Equal(t, "config-agent", cfg.Agent.Name, "original name preserved when env is empty")
-	})
-}
-
 // ---- applyOverrides: --dataset flag ----
 
 func TestApplyOverrides_DatasetFlag_LocalFile(t *testing.T) {
@@ -471,11 +398,11 @@ func TestApplyOverrides_DatasetFlag_LocalFile(t *testing.T) {
 	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hi"}`+"\n"), 0600))
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
-			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Config: optconfig.Config{
+			Agent:      optconfig.AgentRef{Name: "a", Instruction: optconfig.InstructionRef{Value: "test"}},
+			Evaluators: optconfig.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -493,15 +420,15 @@ func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
-			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Config: optconfig.Config{
+			Agent:      optconfig.AgentRef{Name: "a", Instruction: optconfig.InstructionRef{Value: "test"}},
+			Evaluators: optconfig.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
-		flags:    &optimizeFlags{dataset: "my-golden-dataset"},
+		flags:    &optimizeFlags{dataset: "my-golden-dataset:2"},
 		noPrompt: true,
 	}
 
@@ -510,6 +437,7 @@ func TestApplyOverrides_DatasetFlag_RegisteredName(t *testing.T) {
 	assert.Empty(t, cfg.DatasetFile)
 	require.NotNil(t, cfg.Dataset)
 	assert.Equal(t, "my-golden-dataset", cfg.Dataset.Name)
+	assert.Equal(t, "2", cfg.Dataset.Version)
 }
 
 func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
@@ -519,12 +447,12 @@ func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
 	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hi"}`+"\n"), 0600))
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent:      opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
-			Dataset:    &opt_eval.DatasetRef{Name: "old-ref"},
-			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+		Config: optconfig.Config{
+			Agent:      optconfig.AgentRef{Name: "a", Instruction: optconfig.InstructionRef{Value: "test"}},
+			Dataset:    &optconfig.DatasetRef{Name: "old-ref"},
+			Evaluators: optconfig.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -538,13 +466,13 @@ func TestApplyOverrides_DatasetFlag_OverridesExisting(t *testing.T) {
 	assert.Nil(t, cfg.Dataset, "ref should be cleared")
 }
 
-// ---- eval.yaml auto-use in --no-prompt mode ----
+// ---- Rejection of legacy evaluation configuration ----
 
-func TestLoadOptimizeConfig_EvalYAML_WithDatasetFile(t *testing.T) {
+func TestLoadOptimizeConfig_RejectsLegacyEvalWithDatasetFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	// Simulate an eval.yaml with dataset_file — the format generated by "azd ai agent eval generate".
+	// Legacy agent evaluation configuration is not a GA optimization request.
 	dataFile := filepath.Join(dir, "data.jsonl")
 	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hello"}`+"\n"), 0600))
 
@@ -559,15 +487,11 @@ options:
 	evalPath := filepath.Join(dir, "eval.yaml")
 	require.NoError(t, os.WriteFile(evalPath, []byte(evalYAML), 0600))
 
-	cfg, err := LoadOptimizeConfig(evalPath)
-	require.NoError(t, err)
-	assert.Equal(t, "travel-agent", cfg.Agent.Name)
-	assert.Equal(t, dataFile, cfg.DatasetFile, "dataset_file from eval.yaml should be loaded")
-	assert.Nil(t, cfg.Dataset)
-	assert.Equal(t, "gpt-4o", cfg.Options.EvalModel)
+	_, err := LoadOptimizeConfig(evalPath)
+	require.ErrorContains(t, err, "legacy")
 }
 
-func TestLoadOptimizeConfig_EvalYAML_WithDatasetReference(t *testing.T) {
+func TestLoadOptimizeConfig_RejectsLegacyEvalWithDatasetReference(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
@@ -584,13 +508,8 @@ options:
 	evalPath := filepath.Join(dir, "eval.yaml")
 	require.NoError(t, os.WriteFile(evalPath, []byte(evalYAML), 0600))
 
-	cfg, err := LoadOptimizeConfig(evalPath)
-	require.NoError(t, err)
-	assert.Equal(t, "travel-agent", cfg.Agent.Name)
-	assert.Empty(t, cfg.DatasetFile)
-	require.NotNil(t, cfg.Dataset, "dataset_reference from eval.yaml should be loaded")
-	assert.Equal(t, "golden-dataset", cfg.Dataset.Name)
-	assert.Equal(t, "2", cfg.Dataset.Version)
+	_, err := LoadOptimizeConfig(evalPath)
+	require.ErrorContains(t, err, "legacy")
 }
 
 func TestApplyOverrides_NoPrompt_EvalYAML_WithDataset_Succeeds(t *testing.T) {
@@ -601,14 +520,14 @@ func TestApplyOverrides_NoPrompt_EvalYAML_WithDataset_Succeeds(t *testing.T) {
 	dataFile := filepath.Join(dir, "data.jsonl")
 	require.NoError(t, os.WriteFile(dataFile, []byte(`{"input":"hi"}`+"\n"), 0600))
 
-	// Config as if loaded from eval.yaml (has dataset already).
+	// Resolved configuration already contains a dataset.
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent:       opt_eval.AgentRef{Name: "travel-agent", Instruction: opt_eval.InstructionRef{Value: "You are a travel agent."}},
+		Config: optconfig.Config{
+			Agent:       optconfig.AgentRef{Name: "travel-agent", Instruction: optconfig.InstructionRef{Value: "You are a travel agent."}},
 			DatasetFile: dataFile,
-			Evaluators:  opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
+			Evaluators:  optconfig.EvaluatorList{{Name: "builtin.task_adherence"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o", OptimizationModel: "gpt-5"},
 	}
 
 	action := &OptimizeAction{
@@ -618,17 +537,17 @@ func TestApplyOverrides_NoPrompt_EvalYAML_WithDataset_Succeeds(t *testing.T) {
 
 	err := action.applyOverrides(t.Context(), cfg, "")
 	require.NoError(t, err)
-	assert.Equal(t, dataFile, cfg.DatasetFile, "dataset from eval.yaml should be preserved")
+	assert.Equal(t, dataFile, cfg.DatasetFile, "configured dataset should be preserved")
 }
 
 func TestResolveOptimizeDataset_NoPrompt_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: "a"},
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{Name: "a"},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o"},
 	}
 
 	err := resolveOptimizeDataset(t.Context(), nil, cfg, "", true)
@@ -641,10 +560,10 @@ func TestApplyOverrides_NoPrompt_NoDataset_ReturnsError(t *testing.T) {
 
 	// Config without dataset — simulates using defaultOptimizeConfig in --no-prompt.
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: "a", Instruction: opt_eval.InstructionRef{Value: "test"}},
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{Name: "a", Instruction: optconfig.InstructionRef{Value: "test"}},
 		},
-		Options: &opt_eval.Options{EvalModel: "gpt-4o"},
+		Options: &optconfig.Options{EvalModel: "gpt-4o"},
 	}
 
 	action := &OptimizeAction{
@@ -661,16 +580,16 @@ func TestApplyOverrides_PromptAgentUsesServiceSideDefinition(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: "prompt-agent"},
-			Dataset: &opt_eval.DatasetRef{
-				Name: "optimization-dataset",
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{Name: "prompt-agent"},
+			Dataset: &optconfig.DatasetRef{
+				Name: "optimization-dataset", Version: "1",
 			},
-			Evaluators: opt_eval.EvaluatorList{
+			Evaluators: optconfig.EvaluatorList{
 				{Name: "builtin.task_adherence"},
 			},
 		},
-		Options: &opt_eval.Options{
+		Options: &optconfig.Options{
 			EvalModel:         "gpt-4.1-mini",
 			OptimizationModel: "gpt-5",
 		},
@@ -690,24 +609,24 @@ func TestApplyOverrides_PromptAgentUsesServiceSideDefinition(t *testing.T) {
 
 	request, _, err := cfg.ToRequest()
 	require.NoError(t, err)
-	require.Nil(t, request.Options.OptimizationConfig)
+	require.Nil(t, request.OptimizationConfiguration.BaselineAgentConfiguration)
 }
 
 func TestOptimizeRequestConfig_PromptAgentOmitsServiceSideDefinition(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{
 				Name:        "prompt-agent",
 				Model:       "gpt-4.1-mini",
-				Instruction: opt_eval.InstructionRef{File: "missing-instructions.md"},
+				Instruction: optconfig.InstructionRef{File: "missing-instructions.md"},
 			},
 		},
 		SkillDir:  "missing-skills",
 		ToolsFile: "missing-tools.json",
-		Options: &opt_eval.Options{
-			OptimizationConfig: opt_eval.OptimizationConfig{
+		Options: &optconfig.Options{
+			OptimizationConfig: optconfig.OptimizationConfig{
 				"model":              json.RawMessage(`"gpt-4.1-mini"`),
 				"system_prompt":      json.RawMessage(`"Be helpful."`),
 				"skills":             json.RawMessage(`[{"name":"search"}]`),
@@ -720,10 +639,9 @@ func TestOptimizeRequestConfig_PromptAgentOmitsServiceSideDefinition(t *testing.
 	requestConfig := optimizeRequestConfig(cfg, true)
 	request, _, err := requestConfig.ToRequest()
 	require.NoError(t, err)
-	require.Equal(t, optimize_api.AgentIdentifier{AgentName: "prompt-agent"}, request.Agent)
-	require.Equal(t, map[string]json.RawMessage{
-		"model_search_space": json.RawMessage(`["gpt-4.1-mini","gpt-5"]`),
-	}, request.Options.OptimizationConfig)
+	require.Equal(t, &optimize_api.AgentIdentifier{Type: "foundry_agent", Name: "prompt-agent"}, request.TargetConfiguration)
+	require.Nil(t, request.OptimizationConfiguration.BaselineAgentConfiguration)
+	require.Equal(t, []string{"gpt-4.1-mini", "gpt-5"}, request.OptimizationConfiguration.AgentOptimizationSpace.ModelSearchSpace)
 
 	require.Equal(t, "gpt-4.1-mini", cfg.Agent.Model)
 	require.Equal(t, "missing-instructions.md", cfg.Agent.Instruction.File)
@@ -745,12 +663,10 @@ func TestPrintOptimizeResults_TableHasCandidateScorePass(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "candidate_1",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "baseline", AvgScore: 0.91},
-				{Name: "candidate_1", AvgScore: 0.95},
-			},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "c1"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{CandidateID: "base", Name: "baseline", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.91)}},
+			{CandidateID: "c1", Name: "candidate_1", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)}},
 		},
 	}
 
@@ -779,12 +695,10 @@ func TestPrintOptimizeResults_BestMarkedWithStar(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "candidate_1",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "baseline", AvgScore: 0.80},
-				{Name: "candidate_1", AvgScore: 0.95},
-			},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "c1"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{CandidateID: "base", Name: "baseline", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.80)}},
+			{CandidateID: "c1", Name: "candidate_1", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)}},
 		},
 	}
 
@@ -809,11 +723,9 @@ func TestPrintOptimizeResults_ShowsCandidateIDs(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "abc-123",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "candidate_1", AvgScore: 0.95, CandidateID: "abc-123"},
-			},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "abc-123"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{Name: "candidate_1", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)}, CandidateID: "abc-123"},
 		},
 	}
 
@@ -830,24 +742,14 @@ func TestPrintOptimizeResults_ShowsStrategyColumn(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "candidate_1",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "baseline", AvgScore: 0.90},
-				{
-					Name:     "candidate_1",
-					AvgScore: 0.95,
-					Mutations: map[string]any{
-						"skills": []any{
-							map[string]any{
-								"name":        "policy-reviewer",
-								"description": "Reviews travel requests",
-								"body":        "updated instructions",
-							},
-						},
-						"system_prompt": "new prompt",
-					},
-				},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "c1"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{Name: "baseline", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.90)}},
+			{
+				CandidateID: "c1", Name: "candidate_1",
+				Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)},
+				Output: &optimize_api.CandidateOutput{Type: "agent_optimization",
+					Mutations: []optimize_api.CandidateMutation{{Type: "skills"}, {Type: "instructions"}}},
 			},
 		},
 	}
@@ -865,11 +767,9 @@ func TestPrintOptimizeResults_NoStrategyColumnWhenNoMutations(t *testing.T) {
 	t.Parallel()
 
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "candidate_1",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "candidate_1", AvgScore: 0.95},
-			},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "c1"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{CandidateID: "c1", Name: "candidate_1", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)}},
 		},
 	}
 
@@ -885,15 +785,14 @@ func TestPrintOptimizeResults_StrategyDashForMixedMutations(t *testing.T) {
 	// One candidate with mutations, one without — both are printed in the
 	// Strategy column. The candidate without mutations should show "-".
 	status := &optimize_api.OptimizeJobStatus{
-		Result: &optimize_api.OptimizeResult{
-			Best: "candidate_1",
-			Candidates: []optimize_api.CandidateResult{
-				{Name: "baseline", AvgScore: 0.80},
-				{
-					Name:      "candidate_1",
-					AvgScore:  0.95,
-					Mutations: map[string]any{"system_prompt": "new"},
-				},
+		Result: &optimize_api.OptimizeResult{CandidateSummary: &optimize_api.CandidateSummary{BestID: "c1"}},
+		CandidateResults: []optimize_api.CandidateResult{
+			{Name: "baseline", Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.80)}},
+			{
+				CandidateID: "c1", Name: "candidate_1",
+				Evaluation: &optimize_api.CandidateEvaluation{Score: new(0.95)},
+				Output: &optimize_api.CandidateOutput{Type: "agent_optimization",
+					Mutations: []optimize_api.CandidateMutation{{Type: "instructions"}}},
 			},
 		},
 	}
@@ -903,7 +802,7 @@ func TestPrintOptimizeResults_StrategyDashForMixedMutations(t *testing.T) {
 	out := buf.String()
 
 	assert.Contains(t, out, "Strategy")
-	assert.Contains(t, out, "system_prompt")
+	assert.Contains(t, out, "instructions")
 	// The baseline row (no mutations) should contain a dash placeholder.
 	lines := strings.SplitSeq(out, "\n")
 	found := false

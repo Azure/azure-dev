@@ -37,16 +37,15 @@ func TestPoller_PollsUntilCompleted(t *testing.T) {
 	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		n := atomic.AddInt32(&callCount, 1)
-		status := StatusRunning
+		status := StatusInProgress
 		if n >= 3 {
-			status = StatusCompleted
+			status = StatusSucceeded
 		}
+
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
 			ID:     "op-1",
 			Status: status,
-			Progress: &JobProgress{
-				CandidatesCompleted: int(n),
-			},
+			Result: &OptimizeResult{CandidateSummary: &CandidateSummary{CompletedCandidateCount: int(n)}},
 		})
 	}))
 	defer server.Close()
@@ -63,9 +62,30 @@ func TestPoller_PollsUntilCompleted(t *testing.T) {
 
 	result, err := poller.PollUntilDone(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, StatusCompleted, result.Status)
+	assert.Equal(t, StatusSucceeded, result.Status)
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&callCount), int32(3))
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&progressCalls), int32(3))
+}
+
+func TestPoller_LoadsGACandidates(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/agent_optimization_jobs/job1":
+			_, _ = w.Write([]byte(`{"id":"job1","status":"succeeded"}`))
+		case "/agent_optimization_jobs/job1/candidates":
+			_, _ = w.Write([]byte(`{"data":[{"candidate_id":"c1","status":"completed"}],"has_more":false}`))
+		default:
+			t.Errorf("unexpected route: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	poller := &Poller{Client: newTestClient(server.URL), OperationID: "job1", IncludeCandidates: true}
+	job, err := poller.PollUntilDone(t.Context())
+	require.NoError(t, err)
+	require.Len(t, job.Candidates(), 1)
+	assert.Equal(t, "c1", job.Candidates()[0].CandidateID)
 }
 
 func TestPoller_PollsUntilFailed(t *testing.T) {
@@ -74,7 +94,7 @@ func TestPoller_PollsUntilFailed(t *testing.T) {
 	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		n := atomic.AddInt32(&callCount, 1)
-		status := StatusRunning
+		status := StatusInProgress
 		if n >= 2 {
 			status = StatusFailed
 		}
@@ -106,7 +126,7 @@ func TestPoller_ContextCancellation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
 			ID:     "op-cancel",
-			Status: StatusRunning,
+			Status: StatusInProgress,
 		})
 	}))
 	defer server.Close()
@@ -132,9 +152,9 @@ func TestPoller_OnProgressCalled(t *testing.T) {
 	var callCount int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		n := atomic.AddInt32(&callCount, 1)
-		status := StatusRunning
+		status := StatusInProgress
 		if n >= 2 {
-			status = StatusCompleted
+			status = StatusSucceeded
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
 			ID:     "op-prog",
@@ -155,9 +175,9 @@ func TestPoller_OnProgressCalled(t *testing.T) {
 
 	result, err := poller.PollUntilDone(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, StatusCompleted, result.Status)
+	assert.Equal(t, StatusSucceeded, result.Status)
 	assert.GreaterOrEqual(t, len(statuses), 2)
-	assert.Equal(t, StatusCompleted, statuses[len(statuses)-1])
+	assert.Equal(t, StatusSucceeded, statuses[len(statuses)-1])
 }
 
 func TestPoller_TransientRetryThenSuccess(t *testing.T) {
@@ -174,7 +194,7 @@ func TestPoller_TransientRetryThenSuccess(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(OptimizeJobStatus{
 			ID:     "op-retry",
-			Status: StatusCompleted,
+			Status: StatusSucceeded,
 		})
 	}))
 	defer server.Close()
@@ -187,7 +207,7 @@ func TestPoller_TransientRetryThenSuccess(t *testing.T) {
 
 	result, err := poller.PollUntilDone(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, StatusCompleted, result.Status)
+	assert.Equal(t, StatusSucceeded, result.Status)
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&callCount), int32(4))
 }
 

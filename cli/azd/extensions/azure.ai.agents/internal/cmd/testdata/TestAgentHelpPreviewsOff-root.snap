@@ -21,7 +21,6 @@ Available Commands
   delete       : Delete an agent.
   doctor       : Diagnose problems with an azd ai agent project.
   endpoint     : Inspect agent endpoints and manage hosted endpoint/card configuration.
-  eval         : Create and run quick evals for an agent.
   files        : Manage files in a hosted agent session.
   init         : Initialize a new agent project. (Preview)
   invoke       : Send a message to your prompt or hosted agent.

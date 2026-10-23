@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +74,51 @@ func TestConfirm_Render_initial(t *testing.T) {
 	// The message already ends in punctuation, so no colon is appended.
 	assert.NotContains(t, output, "Continue?:")
 	assert.Contains(t, output, "[y/n]")
+}
+
+func TestConfirm_Render_warning_colors(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
+	tests := []struct {
+		name     string
+		value    *bool
+		complete bool
+		answer   string
+	}{
+		{name: "default No", answer: "No"},
+		{name: "edited Yes", value: new(true), answer: "Yes"},
+		{name: "completed Yes", value: new(true), complete: true, answer: "Yes"},
+		{name: "completed No", value: new(false), complete: true, answer: "No"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			c := NewConfirm(&ConfirmOptions{
+				Writer:       &buf,
+				Message:      "Deployment will likely fail. Proceed anyway?",
+				IsWarning:    true,
+				DefaultValue: new(false),
+			})
+			if tt.value != nil {
+				c.value = tt.value
+				c.displayValue = getBooleanString(*tt.value)
+			}
+			c.complete = tt.complete
+
+			require.NoError(t, c.Render(NewPrinter(&buf)))
+
+			want := "\x1b[94m? \x1b[0m" +
+				"\x1b[33m\x1b[1mDeployment will likely fail. Proceed anyway? \x1b[22m\x1b[0m"
+			if !tt.complete {
+				want += "\x1b[94m[y/N]\x1b[0m "
+			}
+			want += "\x1b[94m" + tt.answer + "\x1b[0m"
+			assert.Equal(t, want, strings.SplitN(buf.String(), "\n", 2)[0])
+		})
+	}
 }
 
 func TestConfirm_Render_complete(t *testing.T) {

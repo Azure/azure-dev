@@ -13,14 +13,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 
-	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/paths"
 
@@ -60,12 +60,12 @@ func projectEndpointFromEnv() string {
 // envName selects a specific azd environment; empty means "current default".
 func (f *optimizeConnectionFlags) resolve(ctx context.Context, envName string) (string, error) {
 	if f.endpoint != "" {
-		return strings.TrimRight(f.endpoint, "/"), nil
+		return normalizeOptimizeEndpoint(f.endpoint)
 	}
 
 	// Explicit --project-endpoint flag
 	if f.projectEndpoint != "" {
-		return strings.TrimRight(f.projectEndpoint, "/"), nil
+		return normalizeOptimizeEndpoint(f.projectEndpoint)
 	}
 
 	// When an explicit envName is provided, read FOUNDRY_PROJECT_ENDPOINT
@@ -73,7 +73,7 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context, envName string) (
 	// cascade (which always reads the current/default environment).
 	if envName != "" {
 		if ep := endpointFromNamedEnv(ctx, envName); ep != "" {
-			return strings.TrimRight(ep, "/"), nil
+			return normalizeOptimizeEndpoint(ep)
 		}
 	}
 
@@ -82,14 +82,25 @@ func (f *optimizeConnectionFlags) resolve(ctx context.Context, envName string) (
 	if err != nil {
 		// Fall back to FOUNDRY_PROJECT_ENDPOINT or AZURE_AI_PROJECT_ENDPOINT env var (works standalone)
 		if ep := projectEndpointFromEnv(); ep != "" {
-			return ep, nil
+			return normalizeOptimizeEndpoint(ep)
 		}
 		return "", fmt.Errorf("could not resolve project endpoint\n\n" +
 			"Set FOUNDRY_PROJECT_ENDPOINT, provide --project-endpoint (-p),\n" +
 			"or run 'azd ai agent init'")
 	}
 
-	return projectEndpoint, nil
+	return normalizeOptimizeEndpoint(projectEndpoint)
+}
+
+func normalizeOptimizeEndpoint(endpoint string) (string, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+		return "", fmt.Errorf("optimization endpoint must be an absolute HTTP or HTTPS URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("optimization endpoint must not contain user credentials, a query string, or a fragment")
+	}
+	return strings.TrimRight(endpoint, "/"), nil
 }
 
 // endpointFromNamedEnv reads FOUNDRY_PROJECT_ENDPOINT from the specified
@@ -219,7 +230,7 @@ func printOptimizePortalLink(ctx context.Context, out io.Writer, agentName, oper
 		return
 	}
 
-	printPortalLink(ctx, out, azdClient, env.Name, func(prefix *eval_api.PortalPrefix) string {
+	printPortalLink(ctx, out, azdClient, env.Name, func(prefix *optimize_api.PortalPrefix) string {
 		return prefix.OptimizationURL(agentName, operationID)
 	})
 }
@@ -265,7 +276,10 @@ func buildCandidateEvalURLs(
 
 	urls := make(map[string]string)
 	for _, c := range candidates {
-		url := buildEvalReportURL(ctx, azdClient, envName, c.EvalID, c.EvalRunID)
+		if c.Evaluation == nil {
+			continue
+		}
+		url := buildEvalReportURL(ctx, azdClient, envName, c.Evaluation.EvalID, c.Evaluation.EvalRunID)
 		if url != "" {
 			urls[c.Name] = url
 		}
@@ -333,7 +347,7 @@ func baselineAdvancementDir(
 	configsDir, err := paths.JoinAllowRoot(
 		projectPath,
 		svc.GetRelativePath(),
-		opt_eval.AgentConfigsDir,
+		optconfig.AgentConfigsDir,
 	)
 	if err != nil {
 		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
@@ -353,7 +367,7 @@ func baselineAdvancementDir(
 	// directory so aliases still share one lock key when the directory is created.
 	resolvedServiceDir, err := filepath.EvalSymlinks(filepath.Dir(configsDir))
 	if err == nil {
-		return filepath.Join(filepath.Clean(resolvedServiceDir), opt_eval.AgentConfigsDir)
+		return filepath.Join(filepath.Clean(resolvedServiceDir), optconfig.AgentConfigsDir)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		log.Printf("postdeploy: skipping baseline advancement for %s: %v", svc.Name, err)
@@ -408,7 +422,7 @@ func advanceBaselineToCandidateWithOps(
 	defer lock.Unlock()
 
 	candidateDir := filepath.Join(configsDir, candidateID)
-	baselineDir := filepath.Join(configsDir, opt_eval.BaselineDir)
+	baselineDir := filepath.Join(configsDir, optconfig.BaselineDir)
 
 	// Only advance when the candidate config exists locally.
 	candidateExists, err := candidateConfigExists(candidateDir, os.Stat)
@@ -433,7 +447,7 @@ func advanceBaselineToCandidateWithOps(
 
 	archiveDir := ""
 	if jobID != "" && isSafePathSegment(jobID) {
-		archiveDir = filepath.Join(configsDir, opt_eval.BaselineDir+"_"+jobID)
+		archiveDir = filepath.Join(configsDir, optconfig.BaselineDir+"_"+jobID)
 	}
 
 	archiveExists := false
@@ -583,7 +597,7 @@ func reportSvcOptimizationDeployment(
 		EnvName: envName,
 		Key:     candidateKey,
 	})
-	if err != nil || candidateResp.Value == "" {
+	if err != nil || candidateResp == nil || candidateResp.Value == "" {
 		log.Printf("postdeploy: no optimization candidate for %s, skipping", svc.Name)
 		return
 	}
@@ -593,8 +607,16 @@ func reportSvcOptimizationDeployment(
 		EnvName: envName,
 		Key:     versionKey,
 	})
-	if err != nil || versionResp.Value == "" {
+	if err != nil || versionResp == nil || versionResp.Value == "" {
 		log.Printf("postdeploy: no version for %s, skipping", svc.Name)
+		return
+	}
+	nameResp, err := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
+		EnvName: envName,
+		Key:     fmt.Sprintf("AGENT_%s_NAME", serviceKey),
+	})
+	if err != nil || nameResp == nil || nameResp.Value == "" {
+		log.Printf("postdeploy: no deployed agent name for %s, skipping optimization reporting", svc.Name)
 		return
 	}
 
@@ -625,7 +647,7 @@ func reportSvcOptimizationDeployment(
 	optClient := newClient(projectEndpoint)
 	if err := optClient.ReportDeploymentWithHeaders(ctx, jobID, &optimize_api.DeploymentReport{
 		CandidateID:  candidateResp.Value,
-		AgentName:    svc.Name,
+		AgentName:    nameResp.Value,
 		AgentVersion: versionResp.Value,
 	}, headers); err != nil {
 		log.Printf("postdeploy: failed to report optimization deployment for %s: %v", svc.Name, err)
@@ -691,10 +713,14 @@ func candidateTableHeader(showEval, showStrategy bool) (header, sep string) {
 // mutation attribute names (or nil). showEval/showStrategy control whether the
 // columns are included.
 func formatCandidateRow(
-	name string, score float64, evalCell string,
+	name string, score *float64, evalCell string,
 	strategyKeys []string, showEval, showStrategy bool,
 ) string {
-	line := fmt.Sprintf("  %-20s %8.3f", name, score)
+	scoreText := "-"
+	if score != nil {
+		scoreText = fmt.Sprintf("%.3f", *score)
+	}
+	line := fmt.Sprintf("  %-20s %8s", name, scoreText)
 	if showEval {
 		if evalCell == "" {
 			evalCell = "-"

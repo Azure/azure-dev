@@ -1433,10 +1433,7 @@ func fastPathProjectTarget(
 		return ".", ""
 	}
 	targetDir := sanitizeAgentName(agentName)
-	if _, err := os.Stat(targetDir); errors.Is(err, fs.ErrNotExist) {
-		return targetDir, filepath.ToSlash(targetDir)
-	}
-	return targetDir, ""
+	return targetDir, filepath.ToSlash(targetDir)
 }
 
 func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {

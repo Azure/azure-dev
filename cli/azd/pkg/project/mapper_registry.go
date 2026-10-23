@@ -845,6 +845,8 @@ func getResourceTypeKinds(resourceType ResourceType) []string {
 		return []string{"MongoDB"}
 	case ResourceTypeHostAppService:
 		return []string{"app", "app,linux"}
+	case ResourceTypeHostFunctionApp:
+		return []string{"functionapp", "functionapp,linux"}
 	default:
 		return []string{}
 	}
@@ -865,6 +867,15 @@ func createTypedResourceProps(resourceType ResourceType, config []byte) (any, er
 		return props, nil
 	case ResourceTypeHostContainerApp:
 		props := ContainerAppProps{}
+		if len(config) == 0 {
+			return props, nil
+		}
+		if err := json.Unmarshal(config, &props); err != nil {
+			return nil, err
+		}
+		return props, nil
+	case ResourceTypeHostFunctionApp:
+		props := FunctionAppProps{}
 		if len(config) == 0 {
 			return props, nil
 		}

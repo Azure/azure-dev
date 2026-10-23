@@ -4,14 +4,20 @@
 package add
 
 import (
+	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 func TestPromptPort_MultiplePorts_SelectSpecific(t *testing.T) {
@@ -155,7 +161,7 @@ func TestAddServiceAsResource_AppService_Python(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.Python}
-	r, err := addServiceAsResource(t.Context(), c, svc, prj)
+	r, err := addServiceAsResource(t.Context(), c, svc, prj, nil)
 	require.NoError(t, err)
 	assert.Equal(t, project.ResourceTypeHostAppService, r.Type)
 	props, ok := r.Props.(project.AppServiceProps)
@@ -175,7 +181,7 @@ func TestAddServiceAsResource_AppService_JavaScript(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.JavaScript}
-	r, err := addServiceAsResource(t.Context(), c, svc, prj)
+	r, err := addServiceAsResource(t.Context(), c, svc, prj, nil)
 	require.NoError(t, err)
 	props, ok := r.Props.(project.AppServiceProps)
 	require.True(t, ok)
@@ -194,9 +200,179 @@ func TestAddServiceAsResource_UnsupportedHost(t *testing.T) {
 		RelativePath: tempDir,
 	}
 	prj := appdetect.Project{Language: appdetect.JavaScript}
-	_, err := addServiceAsResource(t.Context(), c, svc, prj)
+	_, err := addServiceAsResource(t.Context(), c, svc, prj, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported service target")
+}
+
+func TestAddServiceAsResource_FunctionApp(t *testing.T) {
+	for language, runtime := range functionRuntimeByLanguage {
+		if language.IsDotNet() {
+			continue
+		}
+		t.Run(string(language), func(t *testing.T) {
+			svc := &project.ServiceConfig{
+				Name: "func", Host: project.AzureFunctionTarget, Language: language,
+			}
+			resource, err := addServiceAsResource(t.Context(), newTestConsole(), svc, appdetect.Project{}, nil)
+			require.NoError(t, err)
+			assert.Equal(t, project.ResourceTypeHostFunctionApp, resource.Type)
+			assert.Equal(t, project.FunctionAppProps{Runtime: runtime}, resource.Props)
+		})
+	}
+}
+
+func TestAddServiceAsResource_FunctionApp_DotNet(t *testing.T) {
+	tests := []struct {
+		name      string
+		evaluated string
+		version   string
+		inherited bool
+		evalErr   error
+		wantErr   string
+	}{
+		{name: "net8.0", evaluated: "v8.0", version: "8.0"},
+		{name: "net9.0", evaluated: "v9.0", version: "9.0"},
+		{name: "net10.0", evaluated: "v10.0\r\n", version: "10.0"},
+		{name: "inherited framework", evaluated: "v10.0", version: "10.0", inherited: true},
+		{name: "empty framework", wantErr: "invalid Function App target framework version"},
+		{name: "invalid framework", evaluated: "invalid", wantErr: "invalid Function App target framework version"},
+		{
+			name: "evaluation failure", evalErr: errors.New("MSBuild failed"),
+			wantErr: "evaluating Function App target framework",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			projectContent := `<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>` +
+				`<TargetFramework>` + tt.name + `</TargetFramework></PropertyGroup></Project>`
+			if tt.inherited {
+				projectContent = `<Project Sdk="Microsoft.NET.Sdk" />`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "Directory.Build.props"),
+					[]byte(`<Project><PropertyGroup><TargetFramework>net8.0</TargetFramework>`+
+						`<TargetFramework Condition="'$(Configuration)' == 'Release'">net10.0</TargetFramework>`+
+						`</PropertyGroup></Project>`),
+					0o600))
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "func.csproj"), []byte(projectContent), 0o600))
+			mockContext := mocks.NewMockContext(t.Context())
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return args.Cmd == "dotnet"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				require.Equal(t, []string{
+					"msbuild", dir, "--ignore:.sln", "--getProperty:TargetFrameworkVersion",
+					"-property:Configuration=Release",
+				}, args.Args)
+				return exec.NewRunResult(0, tt.evaluated, ""), tt.evalErr
+			})
+			svc := &project.ServiceConfig{
+				Name: "func", Host: project.AzureFunctionTarget, Language: project.ServiceLanguageDotNet,
+			}
+			resource, err := addServiceAsResource(t.Context(), newTestConsole(), svc,
+				appdetect.Project{Path: dir, Language: appdetect.DotNet}, dotnet.NewCli(mockContext.CommandRunner))
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, resource)
+				if tt.evalErr != nil {
+					require.ErrorIs(t, err, tt.evalErr)
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, project.ResourceTypeHostFunctionApp, resource.Type)
+			assert.Equal(t, project.FunctionAppProps{
+				Runtime: project.FunctionAppRuntime{Stack: "dotnet-isolated", Version: tt.version},
+			}, resource.Props)
+		})
+	}
+}
+
+func TestValidateFunctionCodeProject(t *testing.T) {
+	tests := []struct {
+		name     string
+		language appdetect.Language
+		project  string
+		wantErr  string
+	}{
+		{"Python", appdetect.Python, "", ""},
+		{"isolated .NET", appdetect.DotNet,
+			`<Project Sdk="Microsoft.NET.Sdk"><PackageReference Include="Microsoft.Azure.Functions.Worker" /></Project>`,
+			""},
+		{"in-process .NET", appdetect.DotNet,
+			`<Project Sdk="Microsoft.NET.Sdk.Functions"></Project>`, "requires a .NET isolated Function App"},
+		{"unsupported", appdetect.Language("unknown"), "", "unsupported Function App language"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte("{}"), 0o600))
+			if tt.project != "" {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "func.csproj"), []byte(tt.project), 0o600))
+			}
+			err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: tt.language})
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+	t.Run("missing host.json", func(t *testing.T) {
+		err := validateFunctionCodeProject(&appdetect.Project{Path: t.TempDir(), Language: appdetect.Go})
+		require.ErrorContains(t, err, "no host.json")
+	})
+	t.Run("host.json is a directory", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.Mkdir(filepath.Join(dir, "host.json"), 0o700))
+		err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.Go})
+		require.ErrorContains(t, err, "host.json must be a file")
+	})
+	t.Run("in-process .NET with host.json", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte("{}"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "func.csproj"),
+			[]byte(`<Project Sdk="Microsoft.NET.Sdk.Functions"></Project>`), 0o600))
+		err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.DotNet})
+		require.ErrorContains(t, err, "requires a .NET isolated Function App")
+	})
+}
+
+func TestPromptCodeProject_GoFunctionApp(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/func\n"), 0o600))
+	c := newTestConsole()
+	c.promptFsFn = func(input.ConsoleOptions, input.FsOptions) (string, error) { return dir, nil }
+	prj, err := (&AddAction{console: c}).promptCodeProject(t.Context(), project.ResourceTypeHostFunctionApp)
+	require.NoError(t, err)
+	require.Equal(t, appdetect.Go, prj.Language)
+}
+
+func TestValidateFunctionCodeProject_DotNetProjectTypes(t *testing.T) {
+	for _, extension := range []string{".csproj", ".fsproj", ".vbproj"} {
+		for _, inProcess := range []bool{false, true} {
+			name := extension + "/isolated"
+			packageName := "Microsoft.Azure.Functions.Worker"
+			if inProcess {
+				name = extension + "/in-process"
+				packageName = "Microsoft.NET.Sdk.Functions"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "host.json"), []byte("{}"), 0o600))
+				content := `<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="` +
+					packageName + `" /></ItemGroup></Project>`
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "func"+extension), []byte(content), 0o600))
+				err := validateFunctionCodeProject(&appdetect.Project{Path: dir, Language: appdetect.DotNet})
+				if inProcess {
+					require.ErrorContains(t, err, "requires a .NET isolated Function App")
+					require.ErrorContains(t, err, "func"+extension)
+				} else {
+					require.NoError(t, err)
+				}
+			})
+		}
+	}
 }
 
 func TestPromptCodeProject_FallbackLanguageSelection(t *testing.T) {

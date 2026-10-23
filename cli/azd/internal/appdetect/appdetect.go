@@ -27,6 +27,7 @@ const (
 	JavaScript    Language = "js"
 	TypeScript    Language = "ts"
 	Python        Language = "python"
+	Go            Language = "go"
 )
 
 func (pt Language) Display() string {
@@ -43,6 +44,8 @@ func (pt Language) Display() string {
 		return "TypeScript"
 	case Python:
 		return "Python"
+	case Go:
+		return "Go"
 	}
 
 	return ""

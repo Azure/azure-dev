@@ -285,6 +285,37 @@ func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 			input:    "APP_MODE",
 			property: "spring.main.web-application-type",
 		},
+		{
+			name: "interpolated placeholder name",
+			configuration: "MODE_KEY=app.mode\n" +
+				"spring.main.web-application-type=${${MODE_KEY}:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
+		{
+			name:          "datasource JNDI selector",
+			configuration: "spring.datasource.jndi-name=${APP_JNDI:}\n",
+			input:         "APP_JNDI",
+			property:      "spring.datasource.jndi-name",
+		},
+		{
+			name:          "datasource passwordless selector",
+			configuration: "spring.datasource.azure.passwordless-enabled=${PASSWORDLESS:false}\n",
+			input:         "PASSWORDLESS",
+			property:      "spring.datasource.azure.passwordless-enabled",
+		},
+		{
+			name:          "cloud JDBC passwordless selector",
+			configuration: "spring.cloud.azure.jdbc.passwordless-enabled=${PASSWORDLESS:false}\n",
+			input:         "PASSWORDLESS",
+			property:      "spring.cloud.azure.jdbc.passwordless-enabled",
+		},
+		{
+			name:          "datasource auto-configuration selector",
+			configuration: "spring.autoconfigure.exclude=${AUTO_CONFIG_EXCLUDES:}\n",
+			input:         "AUTO_CONFIG_EXCLUDES",
+			property:      "spring.autoconfigure.exclude",
+		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
 			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
@@ -363,6 +394,15 @@ func TestApplicationInputProfileIncludeSourceConflicts(t *testing.T) {
 					"spring:\n  profiles:\n    include:\n",
 			},
 		},
+		{
+			name: "include alias overridden by selected profile",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=release\n" +
+					"spring.profiles.include=${INCLUDE_ALIAS:}\n" +
+					"INCLUDE_ALIAS=${EXTRA_PROFILES:}\n",
+				"src/main/resources/application-release.properties": "INCLUDE_ALIAS=\n",
+			},
+		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
 			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
@@ -377,6 +417,43 @@ func TestApplicationInputProfileIncludeSourceConflicts(t *testing.T) {
 				})
 				require.ErrorContains(t, err, "application input EXTRA_PROFILES"+
 					" affects deployment-owned property spring.profiles.include")
+			})
+		}
+	}
+}
+
+func TestApplicationInputFoundrySelectorPlaceholderConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		property string
+		input    string
+		extra    string
+	}{
+		{
+			property: "spring.ai.model.chat",
+			input:    "CHAT_MODEL",
+			extra:    "spring.ai.azure.openai.chat.options.deployment-name=chat\n",
+		},
+		{
+			property: "spring.ai.model.embedding",
+			input:    "EMBEDDING_MODEL",
+			extra:    "spring.ai.azure.openai.embedding.options.deployment-name=embeddings\n",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.property+"/"+string(kind), func(t *testing.T) {
+				directory := t.TempDir()
+				writeFixture(t, directory, "pom.xml", "<project/>")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					tt.property+"=${"+tt.input+":azure-openai}\n"+tt.extra)
+				resolver := staticResolver{model: effectiveModel(t, directory,
+					dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))}
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{
+						tt.input: kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property "+tt.property)
 			})
 		}
 	}

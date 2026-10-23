@@ -42,7 +42,7 @@ type configuration struct {
 	externalFiles    []string
 	traces           map[string][]Evidence
 	trace            []Evidence
-	referenceSources []property
+	references       map[string][]Evidence
 	profileGroupKeys []string
 }
 
@@ -210,7 +210,6 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	var includeEvidence []Evidence
 	for _, p := range includeSources {
 		p.key = profileIncludeProperty
-		c.referenceSources = append(c.referenceSources, p)
 		c.trace = nil
 		text, err := c.expandProperty(profileIncludeProperty, p, map[string]bool{})
 		if err != nil {
@@ -1068,7 +1067,6 @@ func (c *configuration) resolveProfileGroup(name string) (string, error) {
 	var ok bool
 	if p, ok := c.profileGroups[name]; ok && p.source == "SPRING_APPLICATION_JSON" {
 		p.key = key
-		c.referenceSources = append(c.referenceSources, p)
 		value, err := c.expandProperty(key, p, map[string]bool{})
 		c.traces[key] = slices.Clone(c.trace)
 		return value, err
@@ -1078,7 +1076,6 @@ func (c *configuration) resolveProfileGroup(name string) (string, error) {
 	}
 	if ok {
 		p.key = key
-		c.referenceSources = append(c.referenceSources, p)
 		value, err := c.expandProperty(key, p, map[string]bool{})
 		c.traces[key] = slices.Clone(c.trace)
 		return value, err
@@ -1105,14 +1102,14 @@ func (c *configuration) expandProperty(key string, p property, visiting map[stri
 	if !slices.Contains(c.trace, evidence) {
 		c.trace = append(c.trace, evidence)
 	}
-	value, err := c.expandText(p.text, visiting)
+	value, err := c.expandText(p.text, visiting, evidence)
 	if missing, ok := errors.AsType[*missingInput](err); ok {
 		missing.evidence = append([]Evidence{evidence}, missing.evidence...)
 	}
 	return value, err
 }
 
-func (c *configuration) expandText(text string, visiting map[string]bool) (string, error) {
+func (c *configuration) expandText(text string, visiting map[string]bool, evidence Evidence) (string, error) {
 	for depth := 0; depth < 32 && strings.Contains(text, "${"); depth++ {
 		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
 		if len(matches) == 0 {
@@ -1125,6 +1122,7 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 			if !propertyName.MatchString(name) {
 				return "", invalidConfiguration("Spring configuration has an invalid property placeholder name")
 			}
+			c.recordReference(name, evidence)
 			value := fallback
 			if _, exists := c.raw(name); exists {
 				var err error
@@ -1144,14 +1142,24 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 	return text, nil
 }
 
-func (c *configuration) placeholderReferences() map[string][]Evidence {
-	result := map[string][]Evidence{}
-	sources := make([]property, 0, len(c.values)+len(c.referenceSources))
-	for _, p := range c.values {
-		sources = append(sources, p)
+func (c *configuration) recordReference(name string, evidence Evidence) {
+	if c.references == nil {
+		c.references = map[string][]Evidence{}
 	}
-	sources = append(sources, c.referenceSources...)
-	for _, p := range sources {
+	for _, alias := range environmentPropertyNames(name) {
+		key := canonical(alias)
+		if !slices.Contains(c.references[key], evidence) {
+			c.references[key] = append(c.references[key], evidence)
+		}
+	}
+}
+
+func (c *configuration) placeholderReferences() map[string][]Evidence {
+	result := make(map[string][]Evidence, len(c.references))
+	for key, evidence := range c.references {
+		result[key] = slices.Clone(evidence)
+	}
+	for _, p := range c.values {
 		references := map[string]bool{}
 		c.collectPlaceholderReferences(p.text, references, map[string]bool{})
 		evidence := Evidence{Property: p.key, Source: p.source}

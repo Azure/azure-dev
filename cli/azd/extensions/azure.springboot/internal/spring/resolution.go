@@ -22,19 +22,23 @@ type DeploymentInputs struct {
 
 var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var deploymentOwnedRuntimeSettings = []string{
-	"spring.ai.azure.openai.api-key",
-	"spring.ai.azure.openai.chat.options.deployment-name",
-	"spring.ai.azure.openai.embedding.options.deployment-name",
-	"spring.ai.azure.openai.endpoint",
-	"spring.ai.azure.openai.openai-api-key",
-	"spring.datasource.driver-class-name",
-	"spring.datasource.password",
-	"spring.datasource.url",
-	"spring.datasource.username",
-	"spring.jpa.hibernate.ddl-auto",
-	"spring.sql.init.mode",
-}
+var deploymentOwnedRuntimeSettings = func() []string {
+	result := []string{
+		"spring.ai.azure.openai.api-key",
+		"spring.ai.azure.openai.chat.options.deployment-name",
+		"spring.ai.azure.openai.embedding.options.deployment-name",
+		"spring.ai.azure.openai.endpoint",
+		"spring.ai.azure.openai.openai-api-key",
+		"spring.datasource.driver-class-name",
+		"spring.datasource.password",
+		"spring.datasource.url",
+		"spring.datasource.username",
+		"spring.jpa.hibernate.ddl-auto",
+		"spring.sql.init.mode",
+	}
+	result = append(result, deploymentOwnedFoundrySelectors...)
+	return append(result, deploymentOwnedDatasourceSelectors...)
+}()
 
 var reservedApplicationInputs = func() map[string]bool {
 	result := map[string]bool{

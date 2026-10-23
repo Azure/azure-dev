@@ -95,6 +95,8 @@ type Application struct {
 const (
 	webApplicationTypeProperty = "spring.main.web-application-type"
 	serverSSLEnabledProperty   = "server.ssl.enabled"
+	chatModelProperty          = "spring.ai.model.chat"
+	embeddingModelProperty     = "spring.ai.model.embedding"
 )
 
 var deploymentOwnedHostingSettings = []string{
@@ -102,6 +104,18 @@ var deploymentOwnedHostingSettings = []string{
 	"server.port",
 	webApplicationTypeProperty,
 	serverSSLEnabledProperty,
+}
+
+var deploymentOwnedFoundrySelectors = []string{
+	chatModelProperty,
+	embeddingModelProperty,
+}
+
+var deploymentOwnedDatasourceSelectors = []string{
+	"spring.autoconfigure.exclude",
+	"spring.cloud.azure.jdbc.passwordless-enabled",
+	"spring.datasource.azure.passwordless-enabled",
+	"spring.datasource.jndi-name",
 }
 
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
@@ -229,7 +243,6 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 		InputEvidence:          inputEvidence,
-		InputReferences:        c.placeholderReferences(),
 	}
 	if info, err := root.Lstat("Dockerfile"); err == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
@@ -272,6 +285,9 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	a.InputEvidence = append(a.InputEvidence, c.traces["spring.datasource.url"]...)
+	for _, setting := range deploymentOwnedDatasourceSelectors {
+		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
+	}
 	if embedded {
 		a.Embedded, err = resolveEmbedded(m, c)
 		if err != nil {
@@ -285,13 +301,15 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, err
 	}
+	for _, setting := range deploymentOwnedFoundrySelectors {
+		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
+	}
+	a.InputReferences = c.placeholderReferences()
 	return a, nil
 }
 
 func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
 	const (
-		chatModelProperty           = "spring.ai.model.chat"
-		embeddingModelProperty      = "spring.ai.model.embedding"
 		endpointProperty            = "spring.ai.azure.openai.endpoint"
 		apiKeyProperty              = "spring.ai.azure.openai.api-key"
 		publicKeyProperty           = "spring.ai.azure.openai.openai-api-key"

@@ -136,8 +136,8 @@ running `azd up`.
 After resource provisioning, the hook:
 
 1. Sets up selected model deployments, unless model setup already completed.
-2. Saves the endpoint and `prebuilt-layout` default analyzer in the selected
-   azd environment.
+2. Saves `CU_ENDPOINT` and `CU_DEFAULT_ANALYZER=prebuilt-layout` in the selected
+   azd environment, never in global CU user defaults.
 3. Saves discovered model mappings and configures Content Understanding defaults
    when deployments exist.
 4. Reports model readiness, warnings, and available workflows.

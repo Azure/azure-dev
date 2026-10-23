@@ -13,5 +13,6 @@
     "prebuilt-analyzer-embedding": "embedding"
   },
   "missingRequirements": [],
-  "failures": []
+  "failures": [],
+  "sources": null
 }

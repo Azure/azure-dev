@@ -25,6 +25,7 @@ type serviceSession struct {
 	environment       string
 	models            map[string]string
 	scope             config.ResourceScope
+	sources           map[string]string
 	resolveAccount    func(context.Context, string, string, string) (armclient.Account, error)
 	clientForEndpoint func(string) (cuclient.Client, error)
 	confirm           func(context.Context, string) (bool, error)
@@ -51,8 +52,9 @@ func openServiceSession(
 		client: client, apiVersion: runtime.Config.APIVersion,
 		analyzer: runtime.Config.DefaultAnalyzer, close: runtime.Close,
 		endpoint: runtime.Config.Endpoint, environment: runtime.Config.Environment,
-		models: runtime.Config.ModelDeployments,
-		scope:  runtime.Config.Scope,
+		models:  runtime.Config.ModelDeployments,
+		scope:   runtime.Config.Scope,
+		sources: runtime.Config.Sources,
 		resolveAccount: func(ctx context.Context, resource, subscription, group string) (armclient.Account, error) {
 			resolver, err := armclient.NewResolver(runtime.Credential, nil)
 			if err != nil {

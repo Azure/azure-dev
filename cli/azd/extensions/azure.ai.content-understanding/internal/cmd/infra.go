@@ -230,19 +230,13 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 
 func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 	request := infra.PostRequest{
-		Endpoint:      firstInfra(snapshot.values["FOUNDRY_ENDPOINT"], snapshot.values["CU_ENDPOINT"]),
+		Endpoint:      snapshot.values["CU_ENDPOINT"],
 		ResourceGroup: snapshot.values["AZURE_RESOURCE_GROUP"], Account: snapshot.values["FOUNDRY_RESOURCE_NAME"],
 		Subscription:         snapshot.values["AZURE_SUBSCRIPTION_ID"],
 		APIVersion:           firstInfra(snapshot.values["CU_API_VERSION"], cuclient.DefaultAPIVersion),
 		Selection:            firstInfra(snapshot.values["CU_MODEL_SELECTION"], "prompt"),
 		ForceConfiguration:   truthyInfra(snapshot.values["CU_CONFIG_SETUP_FORCE"]),
 		DisableConfiguration: truthyInfra(os.Getenv("CU_DISABLE_AUTO_CONFIG")),
-	}
-	if raw, exists := snapshot.section["apiVersion"]; exists {
-		if err := json.Unmarshal(raw, &request.APIVersion); err != nil || request.APIVersion == "" {
-			return request, commandError("invalid_environment_config", "cu.apiVersion must be a nonempty string.",
-				"Repair the selected environment configuration.")
-		}
 	}
 	if raw, exists := snapshot.section["modelSetupComplete"]; exists {
 		if err := json.Unmarshal(raw, &request.SetupComplete); err != nil {

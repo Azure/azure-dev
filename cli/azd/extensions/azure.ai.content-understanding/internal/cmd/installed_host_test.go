@@ -121,6 +121,19 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "version", "-o", "json"), &actual))
 	require.Equal(t, map[string]string{"name": extensionID, "version": version}, actual)
 
+	run(true, "ai", "cu", "config", "set", "CU_ENDPOINT", "https://resource.example")
+	var userDefaults map[string]string
+	require.NoError(t, json.Unmarshal(run(true, "config", "get",
+		"extensions.ai-content-understanding"), &userDefaults))
+	require.Equal(t, map[string]string{"CU_ENDPOINT": "https://resource.example"}, userDefaults)
+	run(true, "config", "set", "extensions.ai-content-understanding.CU_API_VERSION", "2027-01-01-preview")
+	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "config", "list", "-o", "json"), &userDefaults))
+	require.Equal(t, map[string]string{
+		"CU_ENDPOINT": "https://resource.example", "CU_API_VERSION": "2027-01-01-preview",
+	}, userDefaults)
+	run(true, "ai", "cu", "config", "unset", "CU_ENDPOINT")
+	run(false, "ai", "cu", "config", "get", "CU_ENDPOINT")
+
 	schema := filepath.Join(work, "schema with spaces.json")
 	definition := `{"baseAnalyzerId":"prebuilt-document","models":{"completion":"gpt-4.1"},` +
 		`"fieldSchema":{"fields":{"Total":{"type":"number","method":"extract","description":"Synthetic total."}}}}`

@@ -53,6 +53,8 @@ func TestRecordedDoctorCommands(t *testing.T) {
 							expected["authentication"] = "Microsoft Entra ID"
 							expected["profile"] = environment
 							expected["endpoint"] = "https://sanitized.services.ai.azure.com"
+							// This factory supplies service results, not a config resolver.
+							expected["sources"] = nil
 							if name != "healthy" {
 								if name == "synthetic-empty" {
 									fixture.Interactions[0].Response.Body = json.RawMessage(`{"modelDeployments":{}}`)

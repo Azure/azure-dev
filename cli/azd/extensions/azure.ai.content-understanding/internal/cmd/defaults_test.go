@@ -58,6 +58,7 @@ type defaultsFixture struct {
 	openErr       error
 	opens, closes int
 	onOpen        func()
+	sources       map[string]string
 }
 
 func newDefaultsFixture(t *testing.T) *defaultsFixture {
@@ -97,7 +98,8 @@ func (f *defaultsFixture) root() *cobra.Command {
 		return &serviceSession{
 			client: f.client, models: f.models, apiVersion: version, environment: environment,
 			endpoint: "https://configured.example/contentunderstanding", analyzer: f.analyzer,
-			close: func() { f.closes++ },
+			sources: f.sources,
+			close:   func() { f.closes++ },
 			confirm: func(context.Context, string) (bool, error) {
 				return false, errors.New("defaults and doctor must never invoke an implicit prompt")
 			},

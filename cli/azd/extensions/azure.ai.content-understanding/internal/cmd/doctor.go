@@ -24,6 +24,7 @@ type doctorResult struct {
 	Models         map[string]string `json:"modelDeployments"`
 	Missing        []string          `json:"missingRequirements"`
 	Failures       []doctorFailure   `json:"failures"`
+	Sources        map[string]string `json:"sources"`
 }
 
 type doctorFailure struct {
@@ -41,7 +42,7 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 		Use: "doctor", Args: cobra.NoArgs,
 		Short: "Check azd context, Entra authentication, CU access, and generative readiness",
 		Long: "Resolve azd environment or projectless configuration, authenticate through azd, " +
-			"and read CU service defaults.\n" +
+			"and read CU service defaults. Show effective CU settings and their configuration sources.\n" +
 			"Missing generative mappings return ready:false; " +
 			"configuration/auth/service failures use the host error channel.\n" +
 			"No resources or deployments are created. Only --fix-defaults permits a service-defaults update.",
@@ -108,7 +109,7 @@ func runDoctor(
 	return writeServiceResult(cmd, extCtx.OutputFormat, doctorResult{
 		Ready: len(missing) == 0, Endpoint: session.endpoint, APIVersion: session.apiVersion,
 		Authentication: "Microsoft Entra ID", Profile: environment, Analyzer: analyzer,
-		Models: mapping, Missing: missing, Failures: []doctorFailure{},
+		Models: mapping, Missing: missing, Failures: []doctorFailure{}, Sources: session.sources,
 	})
 }
 
@@ -118,8 +119,9 @@ func doctorConfigurationError(err error) error {
 		result := *local
 		switch result.Code {
 		case "missing_endpoint", "invalid_endpoint":
-			result.Suggestion = "Pass --endpoint, set process CU_ENDPOINT, or use azd env select and " +
-				"azd env set CU_ENDPOINT https://<resource>.services.ai.azure.com."
+			result.Suggestion = "Pass --endpoint, set process CU_ENDPOINT, use azd env set CU_ENDPOINT, " +
+				"or save a projectless default with " +
+				"azd ai cu config set CU_ENDPOINT https://<resource>.services.ai.azure.com."
 		case exterrors.CodeMissingTenant:
 			result.Suggestion = "Set AZURE_TENANT_ID or AZURE_SUBSCRIPTION_ID in the selected environment using " +
 				"azd env set. For projectless use, pass an endpoint without selecting an environment. " +
@@ -129,7 +131,7 @@ func doctorConfigurationError(err error) error {
 				"For projectless diagnostics, supply --endpoint and process AZURE_TENANT_ID without --environment."
 		case "unsupported_api_version":
 			result.Suggestion = "Pass --api-version 2025-11-01 or a valid YYYY-MM-DD-preview date, " +
-				"or correct CU_API_VERSION / azd env config set cu.apiVersion."
+				"or correct CU_API_VERSION using azd env set or azd ai cu config set."
 		}
 		return &result
 	}

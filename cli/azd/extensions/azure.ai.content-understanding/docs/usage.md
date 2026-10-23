@@ -29,13 +29,28 @@ configure a tenant or subscription. To select a tenant explicitly, set
 `$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
 do not replace `azd auth login` or supported noninteractive azd authentication.
 
-In an existing azd project, you can instead save settings in an environment:
+To persist a user default without creating a project:
+
+```bash
+azd ai cu config set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
+azd ai cu config set CU_DEFAULT_ANALYZER prebuilt-layout
+azd ai cu config get CU_ENDPOINT
+azd ai cu config list
+azd ai cu config unset CU_DEFAULT_ANALYZER
+```
+
+These commands use azd user configuration, not another store. For example,
+`azd config set extensions.ai-content-understanding.CU_ENDPOINT <endpoint>`
+writes the same setting as the CU shortcut. Both work from any directory without
+`azd init`; managing defaults does not require sign-in.
+
+In an existing azd project, you can instead save project-specific settings in an environment:
 
 ```bash
 azd env select dev
 azd env set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
 azd env set AZURE_SUBSCRIPTION_ID "<subscription-id>"
-azd env config set cu.defaultAnalyzer '"prebuilt-layout"'
+azd env set CU_DEFAULT_ANALYZER prebuilt-layout
 azd ai cu doctor --environment dev
 ```
 
@@ -55,6 +70,8 @@ commands are not supported.
 empty. `CU_AUTH_MODE`, if set, must be `login`.
 
 `doctor` checks configuration, authentication, service access, and model defaults.
+Its `sources` object identifies the source of each effective `CU_*` setting:
+`flag: --<name>`, `process`, `azd environment: <name>`, `user config`, or `built-in`.
 A report with `ready: false` and missing model requirements can still exit
 successfully: non-generative analyzers may remain usable. Authentication,
 configuration, and service failures return nonzero. Inspect the report rather
@@ -247,21 +264,54 @@ Offline authoring checks accept the same preview versions, but `analyzer validat
 `2025-11-01` and `2026-06-01-preview`. For other preview versions, omit `--spec`;
 the CLI reports a clear error rather than silently substituting a contract.
 
-For persisted settings, use azd environments and `cu.*` environment configuration
-instead of CU profiles.
+Endpoint, default analyzer, and API version use the exact, case-sensitive names
+`CU_ENDPOINT`, `CU_DEFAULT_ANALYZER`, and `CU_API_VERSION` across process
+variables, azd environment values, and CU user defaults. There are no alternate
+setting names or compatibility fallbacks: `FOUNDRY_ENDPOINT`,
+`cu.defaultAnalyzer`, and `cu.apiVersion` are not read as substitutes.
+
+Service commands use one shared resolver, in this order:
+
+1. Explicit command flags.
+2. Process environment variables.
+3. Applicable azd project-environment values.
+4. CU user defaults under `extensions.ai-content-understanding` in azd user configuration.
+5. Built-in defaults, or an actionable missing-setting error.
 
 | Setting | Highest to lowest priority |
 | --- | --- |
-| Endpoint | `--endpoint`; process `CU_ENDPOINT`; selected environment `CU_ENDPOINT`; selected environment `FOUNDRY_ENDPOINT`. |
-| API version | `--api-version`; process `CU_API_VERSION`; environment config `cu.apiVersion`; environment `CU_API_VERSION`; GA. |
-| Default analyzer | `--analyzer`; process `CU_DEFAULT_ANALYZER`; environment config `cu.defaultAnalyzer`; environment `CU_DEFAULT_ANALYZER`; `prebuilt-layout`. |
+| Endpoint | `--endpoint`; process `CU_ENDPOINT`; applicable environment `CU_ENDPOINT`; user default `CU_ENDPOINT`; missing-setting error. |
+| API version | `--api-version`; process `CU_API_VERSION`; applicable environment `CU_API_VERSION`; user default `CU_API_VERSION`; `2025-11-01`. |
+| Default analyzer | `--analyzer`; process `CU_DEFAULT_ANALYZER`; applicable environment `CU_DEFAULT_ANALYZER`; user default `CU_DEFAULT_ANALYZER`; `prebuilt-layout`. |
 | Model mappings | Explicit mappings; environment config `cu.modelDeployments`; empty mapping. |
 | Tenant | Process `AZURE_TENANT_ID`; selected environment `AZURE_TENANT_ID`; default deployment context for the default environment, or resolved subscription lookup for explicitly selected environments and endpoint-only use. Endpoint-only use without a tenant or subscription delegates to azd authentication. |
 | Subscription/resource group | Explicit resource selectors; process `AZURE_SUBSCRIPTION_ID` / `AZURE_RESOURCE_GROUP`; selected environment values; default deployment scope when applicable. |
 
-With no explicit `--environment` or process `AZD_ENVIRONMENT`, a process or command-line endpoint selects endpoint-only
-mode; otherwise the default azd environment is used. Explicitly selected
-environments do not borrow tenant or scope from an unrelated environment.
+With no explicit `--environment` or process `AZD_ENVIRONMENT`, a process or command-line
+endpoint selects endpoint-only mode: project-environment settings are not loaded,
+even inside a project. User defaults can still supply the analyzer and API version.
+Otherwise the current project environment is used when available. If there is
+no project or no current environment, user defaults allow the command to run without one.
+An explicitly selected missing environment always fails; it never silently
+falls back to user defaults. Other environment-loading failures also fail.
+Explicitly selected environments do not borrow tenant or scope from an unrelated environment.
+
+Invalid effective values fail instead of falling back to a lower-priority source.
+Explicitly empty command flags are rejected; empty process/environment values
+are treated as unset. `config set` rejects empty values; use `config unset` to
+remove a user default.
+
+`config get` and `config list` show only stored CU user defaults, not merged
+effective settings. Unsupported setting names are rejected by the shortcut.
+`config unset` removes only the user default; it does not change shell variables
+or an azd environment. These commands do not accept `--environment`.
+Direct `azd config` writes are validated when their values are used.
+Use `doctor` for effective values and sources. These CLI preferences are separate
+from resource-level model defaults managed by `azd ai cu defaults`.
+
+Offline schema templates and validation remain independent of resource settings
+and user defaults; they use their existing explicit/API-version process inputs.
+
 When tenant selection is delegated to azd, `azd auth token` uses its normal
 resolution: the current project's subscription, process `AZURE_SUBSCRIPTION_ID`,
 then the signed-in identity's home tenant. Being inside a project can therefore
@@ -285,8 +335,8 @@ extension does not infer a tenant from the endpoint.
 Use `azd ai cu env-var list` to inspect supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated
 variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
-`--on-existing` is absent. `FOUNDRY_ENDPOINT` is a selected-environment fallback,
-not an independent process override.
+`--on-existing` is absent. `FOUNDRY_ENDPOINT` remains an infrastructure output,
+not an alias for `CU_ENDPOINT` in service-command configuration.
 
 The azd extension SDK also reads these inherited process inputs. Corresponding
 explicit flags take precedence over the SDK environment defaults:
@@ -305,6 +355,7 @@ explicit flags take precedence over the SDK environment defaults:
 | `azd ai cu analyzer` | List, show, create, copy, delete, validate, and test analyzers. |
 | `azd ai cu analyzer schema create` | Generate an offline starter or suggest fields from a sample. |
 | `azd ai cu defaults` | Read or configure model-to-deployment defaults. |
+| `azd ai cu config` | Set, get, list, or unset CU user defaults in azd configuration. |
 | `azd ai cu infra generate` | Generate an azd/Bicep project and its postprovision hooks. |
 | `azd ai cu doctor` | Return structured connectivity and readiness checks. |
 | `azd ai cu env-var list` | Inspect supported process inputs with secrets redacted. |

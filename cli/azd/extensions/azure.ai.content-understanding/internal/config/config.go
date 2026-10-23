@@ -32,6 +32,7 @@ type Resolved struct {
 	TenantID         string
 	Scope            ResourceScope
 	ModelDeployments map[string]string
+	Sources          map[string]string
 }
 
 // ProcessValues reads only the supported compatibility inputs, never modifies the process.
@@ -48,7 +49,9 @@ func ProcessValues() map[string]string {
 	return values
 }
 
-func resolve(options Options, process, values map[string]string, section []byte) (Resolved, error) {
+func resolve(
+	options Options, process, values map[string]string, section []byte, user map[string]json.RawMessage,
+) (Resolved, error) {
 	var result Resolved
 	settings := make(map[string]json.RawMessage)
 	if len(section) != 0 {
@@ -68,31 +71,53 @@ func resolve(options Options, process, values map[string]string, section []byte)
 		return result, unsupportedKey()
 	}
 	var err error
-	endpoint := first(options.Endpoint, process["CU_ENDPOINT"], values["CU_ENDPOINT"], values["FOUNDRY_ENDPOINT"])
+	result.Sources = make(map[string]string)
+	setting := func(name, flag, flagName, fallback string) (string, error) {
+		for _, candidate := range []struct{ value, source string }{
+			{flag, "flag: --" + flagName}, {process[name], "process"}, {values[name], "azd environment"},
+		} {
+			if candidate.value != "" {
+				if err := ValidateSetting(name, candidate.value); err != nil {
+					return "", err
+				}
+				result.Sources[name] = candidate.source
+				return candidate.value, nil
+			}
+		}
+		value, found, err := UserSetting(user, name)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			result.Sources[name] = "user config"
+			return value, nil
+		}
+		result.Sources[name] = "built-in"
+		return fallback, nil
+	}
+	endpoint, err := setting("CU_ENDPOINT", options.Endpoint, "endpoint", "")
+	if err != nil {
+		return result, err
+	}
 	if endpoint == "" {
 		return result, invalid("missing_endpoint",
-			"Specify --endpoint or CU_ENDPOINT, or select an azd environment with CU_ENDPOINT or FOUNDRY_ENDPOINT.")
+			"Specify --endpoint or CU_ENDPOINT, or run "+
+				"azd ai cu config set CU_ENDPOINT https://<resource>.services.ai.azure.com.")
 	}
 	if result.Endpoint, err = cuclient.NormalizeEndpoint(endpoint); err != nil {
 		return result, err
 	}
-	apiVersion := first(options.APIVersion, process["CU_API_VERSION"])
-	if apiVersion == "" {
-		if apiVersion, err = optionalString(settings, "apiVersion"); err != nil {
-			return result, err
-		}
-		apiVersion = first(apiVersion, values["CU_API_VERSION"])
+	apiVersion, err := setting("CU_API_VERSION", options.APIVersion, "api-version", cuclient.DefaultAPIVersion)
+	if err != nil {
+		return result, err
 	}
 	result.APIVersion, err = cuclient.NormalizeAPIVersion(apiVersion)
 	if err != nil {
 		return result, err
 	}
-	result.DefaultAnalyzer = first(options.DefaultAnalyzer, process["CU_DEFAULT_ANALYZER"])
-	if result.DefaultAnalyzer == "" {
-		if result.DefaultAnalyzer, err = optionalString(settings, "defaultAnalyzer"); err != nil {
-			return result, err
-		}
-		result.DefaultAnalyzer = first(result.DefaultAnalyzer, values["CU_DEFAULT_ANALYZER"], "prebuilt-layout")
+	result.DefaultAnalyzer, err = setting("CU_DEFAULT_ANALYZER", options.DefaultAnalyzer, "analyzer", "prebuilt-layout")
+	if err != nil {
+		return result, err
 	}
 	if result.DefaultAnalyzer != "" {
 		if err := cuclient.ValidateAnalyzerID(result.DefaultAnalyzer); err != nil {
@@ -137,19 +162,6 @@ func validateRuntime(process map[string]string) error {
 		return unsupportedKey()
 	}
 	return nil
-}
-
-func optionalString(settings map[string]json.RawMessage, key string) (string, error) {
-	raw, present := settings[key]
-	if !present {
-		return "", nil
-	}
-	var value string
-	if err := json.Unmarshal(raw, &value); err != nil || strings.TrimSpace(value) == "" {
-		return "", invalid("invalid_environment_config",
-			"azd environment config cu."+key+" must be a nonempty string.")
-	}
-	return value, nil
 }
 
 func first(values ...string) string {

@@ -121,7 +121,7 @@ retain that contract. The hook does not require Python or the standalone `cu` CL
 ## Auto-configuring the azd environment
 
 After live model setup, the post-provision hook saves `CU_ENDPOINT`, sets
-`cu.defaultAnalyzer` to `prebuilt-layout`, and saves available model mappings
+`CU_DEFAULT_ANALYZER` to `prebuilt-layout`, and saves available model mappings
 under `cu.modelDeployments`. Inspect the selected environment and check readiness:
 
 ```sh
@@ -186,13 +186,16 @@ After `azd up`, `azd env get-values` exposes:
 | `FOUNDRY_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
 | `FOUNDRY_RESOURCE_NAME` | Account name (also the custom subdomain) |
 | `FOUNDRY_PROJECT_NAME` | Project name when created by this deployment |
-| `CU_ENDPOINT` | Alias of `FOUNDRY_ENDPOINT` for clarity |
+| `CU_ENDPOINT` | Resource endpoint used by CU commands; those commands do not fall back to `FOUNDRY_ENDPOINT` |
+| `CU_DEFAULT_ANALYZER` | Saved by the hook as `prebuilt-layout`, unless existing CU configuration is preserved |
 | `MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
 
 Generation also saves inputs such as `CU_API_VERSION`, `CU_MODEL_SELECTION`,
 and any existing-resource selectors in the azd environment. These are not Bicep
-outputs. Use `azd env config get cu` to inspect `defaultAnalyzer`,
-`modelDeployments`, and the `modelSetupComplete` marker set by successful setup.
+outputs. Use `azd env get-values` to inspect `CU_DEFAULT_ANALYZER`, and
+`azd env config get cu` for `modelDeployments` and the `modelSetupComplete`
+marker set by successful setup. Hooks update only the selected azd environment,
+never CU user defaults in global azd configuration.
 
 ## Layout
 

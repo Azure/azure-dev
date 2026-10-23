@@ -146,7 +146,7 @@ func runAnalyzeCommand(
 	defer session.close()
 	if session.analyzer == "" {
 		return commandError("missing_analyzer",
-			"No analyzer was selected.", "Pass --analyzer or configure cu.defaultAnalyzer.")
+			"No analyzer was selected.", "Pass --analyzer or configure CU_DEFAULT_ANALYZER.")
 	}
 	if err := cuclient.ValidateAnalyzerID(session.analyzer); err != nil {
 		return err

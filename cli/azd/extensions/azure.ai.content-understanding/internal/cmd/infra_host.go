@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"azure.ai.content-understanding/internal/armclient"
@@ -45,15 +44,9 @@ type azdInfraHost struct {
 
 // Generation must work without a CU endpoint or project. Only the host channel is opened here.
 func openInfraHost(cmd *cobra.Command, extCtx *azdext.ExtensionContext) (infraHost, error) {
-	if err := cmd.Context().Err(); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(os.Getenv("AZD_SERVER")) == "" || strings.TrimSpace(os.Getenv("AZD_ACCESS_TOKEN")) == "" {
-		return nil, exterrors.HostUnavailable()
-	}
-	client, err := azdext.NewAzdClient()
+	client, err := openHostClient(cmd.Context())
 	if err != nil {
-		return nil, exterrors.HostUnavailable()
+		return nil, err
 	}
 	return &azdInfraHost{client: client, noPrompt: extCtx.NoPrompt}, nil
 }
@@ -273,7 +266,7 @@ func (c *infraCapabilities) HasConfiguration(ctx context.Context) (bool, error) 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	_, analyzer := c.snapshot.section["defaultAnalyzer"]
+	analyzer := c.snapshot.values["CU_DEFAULT_ANALYZER"] != ""
 	_, models := c.snapshot.section["modelDeployments"]
 	return analyzer || models, nil
 }
@@ -294,9 +287,13 @@ func (c *infraCapabilities) setConfig(ctx context.Context, path string, value an
 	return nil
 }
 func (c *infraCapabilities) SetConfiguration(ctx context.Context, key, value string) error {
-	if key == "endpoint" {
+	if key == "endpoint" || key == "default_analyzer" {
+		name := "CU_ENDPOINT"
+		if key == "default_analyzer" {
+			name = "CU_DEFAULT_ANALYZER"
+		}
 		response, err := c.host.client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
-			EnvName: c.snapshot.environment, Key: "CU_ENDPOINT", Value: value,
+			EnvName: c.snapshot.environment, Key: name, Value: value,
 		})
 		if err != nil {
 			return err
@@ -304,10 +301,8 @@ func (c *infraCapabilities) SetConfiguration(ctx context.Context, key, value str
 		if response == nil {
 			return errors.New("host returned no environment write acknowledgment")
 		}
+		c.snapshot.values[name] = value
 		return nil
-	}
-	if key == "default_analyzer" {
-		return c.setConfig(ctx, "cu.defaultAnalyzer", value)
 	}
 	if model, ok := strings.CutPrefix(key, "model_deployments."); ok {
 		mappings := map[string]string{}

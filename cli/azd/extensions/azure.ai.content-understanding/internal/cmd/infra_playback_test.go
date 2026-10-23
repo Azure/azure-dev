@@ -153,6 +153,7 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 	rpc.mu.Lock()
 	rpc.values = []*azdext.KeyValue{
 		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.example"}, {Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
+		{Key: "CU_ENDPOINT", Value: "https://foundry.example"},
 		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
 		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: "recommended"},
 	}
@@ -176,7 +177,7 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
 	section := map[string]json.RawMessage{
 		"modelSetupComplete": rpc.writes["cu.modelSetupComplete"],
-		"modelDeployments":   rpc.writes["cu.modelDeployments"], "defaultAnalyzer": rpc.writes["cu.defaultAnalyzer"],
+		"modelDeployments":   rpc.writes["cu.modelDeployments"],
 	}
 	wire, err := json.Marshal(section)
 	rpc.mu.Unlock()

@@ -99,6 +99,7 @@ func startHost(t *testing.T, server *deploymentServer, prompts ...azdext.PromptS
 	azdext.RegisterDeploymentServiceServer(host, server)
 	azdext.RegisterEnvironmentServiceServer(host, &environmentServer{})
 	azdext.RegisterAccountServiceServer(host, server)
+	azdext.RegisterUserConfigServiceServer(host, &userConfigServer{})
 	if len(prompts) != 0 {
 		azdext.RegisterPromptServiceServer(host, prompts[0])
 	}

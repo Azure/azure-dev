@@ -40,6 +40,7 @@ func newRootCommandWithInfra(open sessionFactory, infraOpen infraHostFactory) *c
 	rootCmd.AddCommand(newAnalyzeCommand(extCtx, open))
 	rootCmd.AddCommand(newDefaultsCommand(extCtx, open))
 	rootCmd.AddCommand(newDoctorCommand(extCtx, open))
+	rootCmd.AddCommand(newConfigCommand(extCtx))
 	rootCmd.AddCommand(newEnvVarCommand(extCtx))
 	rootCmd.AddCommand(newInfraCommand(extCtx, infraOpen))
 	rootCmd.Example = `  azd ai cu analyze invoice.pdf

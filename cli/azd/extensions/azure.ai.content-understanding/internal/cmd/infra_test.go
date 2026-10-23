@@ -42,6 +42,7 @@ func infraCommandFixture(t *testing.T) *infraCommandHost {
 	return &infraCommandHost{capabilities: &infraCommandCapabilities{}, snapshot: infraSnapshot{
 		environment: "dev", section: map[string]json.RawMessage{}, values: map[string]string{
 			"FOUNDRY_ENDPOINT": "https://foundry.example", "FOUNDRY_RESOURCE_NAME": "foundry",
+			"CU_ENDPOINT":           "https://foundry.example",
 			"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_TENANT_ID": "tenant", "AZURE_RESOURCE_GROUP": "group",
 			"CU_MODEL_SELECTION": "none",
 		},
@@ -233,10 +234,10 @@ func TestInfraMetadataAndPostEnvironmentPrecedence(t *testing.T) {
 	f.snapshot.values["CU_ENDPOINT"] = "https://other.example"
 	f.snapshot.values["CU_MODEL_SETUP_COMPLETE"] = "true"
 	f.snapshot.values["CU_CONFIG_SETUP_FORCE"] = "true"
-	f.snapshot.section["apiVersion"] = json.RawMessage(`"2026-06-01-preview"`)
+	f.snapshot.values["CU_API_VERSION"] = "2026-06-01-preview"
 	request, err := postRequest(f.snapshot)
 	require.NoError(t, err)
-	assert.Equal(t, "https://foundry.example", request.Endpoint)
+	assert.Equal(t, "https://other.example", request.Endpoint)
 	assert.Equal(t, cuclient.PreviewAPIVersion, request.APIVersion)
 	assert.False(t, request.SetupComplete)
 	assert.True(t, request.ForceConfiguration)
@@ -296,7 +297,16 @@ func (h *infraRPC) SetConfig(_ context.Context, request *azdext.SetConfigRequest
 	return &azdext.EmptyResponse{}, nil
 }
 func (h *infraRPC) SetValue(_ context.Context, request *azdext.SetEnvRequest) (*azdext.EmptyResponse, error) {
-	h.record("env:" + request.EnvName + ":" + request.Key + ":" + request.Value)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.calls = append(h.calls, "env:"+request.EnvName+":"+request.Key+":"+request.Value)
+	for _, pair := range h.values {
+		if pair.Key == request.Key {
+			pair.Value = request.Value
+			return &azdext.EmptyResponse{}, nil
+		}
+	}
+	h.values = append(h.values, &azdext.KeyValue{Key: request.Key, Value: request.Value})
 	return &azdext.EmptyResponse{}, nil
 }
 func (h *infraRPC) ListSubscriptions(
@@ -387,6 +397,8 @@ func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {
 	assert.JSONEq(t, `true`, string(rpc.writes["cu.modelSetupComplete"]))
 	assert.NotContains(t, strings.Join(rpc.calls, " "), "get:default")
 	assert.NotContains(t, rpc.calls, "current")
+	assert.Contains(t, rpc.calls, "env:selected:CU_DEFAULT_ANALYZER:prebuilt-layout")
+	assert.NotContains(t, rpc.writes, "cu.defaultAnalyzer")
 	assert.Equal(t, []string{"get:selected", "values:selected", "config:selected:cu"}, rpc.calls[:3])
 	rpc.mu.Unlock()
 }

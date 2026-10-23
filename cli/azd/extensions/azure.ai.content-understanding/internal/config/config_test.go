@@ -48,11 +48,11 @@ func TestResolvePrecedence(t *testing.T) {
 			"CU_API_VERSION": cuclient.DefaultAPIVersion, "CU_DEFAULT_ANALYZER": "env-analyzer",
 			"AZURE_TENANT_ID": "env-tenant", "AZURE_SUBSCRIPTION_ID": "env-sub", "AZURE_RESOURCE_GROUP": "env-rg",
 		}, `{"apiVersion":"2026-06-01-preview","defaultAnalyzer":"config-analyzer"}`, map[string]string{
-			"endpoint": "https://env.example/contentunderstanding", "api": cuclient.PreviewAPIVersion,
-			"analyzer": "config-analyzer", "tenant": "env-tenant", "sub": "env-sub", "rg": "env-rg",
+			"endpoint": "https://env.example/contentunderstanding", "api": cuclient.DefaultAPIVersion,
+			"analyzer": "env-analyzer", "tenant": "env-tenant", "sub": "env-sub", "rg": "env-rg",
 		}},
 		{"environment values", Options{}, nil, map[string]string{
-			"FOUNDRY_ENDPOINT": "https://foundry.example", "CU_API_VERSION": cuclient.PreviewAPIVersion,
+			"CU_ENDPOINT": "https://foundry.example", "CU_API_VERSION": cuclient.PreviewAPIVersion,
 			"CU_DEFAULT_ANALYZER": "env-analyzer",
 		}, "", map[string]string{
 			"endpoint": "https://foundry.example/contentunderstanding", "api": cuclient.PreviewAPIVersion,
@@ -75,7 +75,7 @@ func TestResolvePrecedence(t *testing.T) {
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.config))
+			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.config), nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, map[string]string{
 				"endpoint": result.Endpoint, "api": result.APIVersion, "analyzer": result.DefaultAnalyzer,
@@ -98,11 +98,10 @@ func TestResolveFuturePreviewVersions(t *testing.T) {
 		{"flag", Options{APIVersion: version}, nil, nil, ""},
 		{"process", Options{}, map[string]string{"CU_API_VERSION": version}, nil, ""},
 		{"environment", Options{}, nil, map[string]string{"CU_API_VERSION": version}, ""},
-		{"config", Options{}, nil, nil, `{"apiVersion":"2027-01-01-preview"}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.options.Endpoint = "https://resource.example"
-			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.section))
+			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.section), nil)
 			require.NoError(t, err)
 			assert.Equal(t, version, result.APIVersion)
 		})
@@ -130,17 +129,10 @@ func TestResolveInvalidConfiguration(t *testing.T) {
 		{"invalid JSON", Options{}, nil, nil, `{"apiVersion":private-value}`, "invalid_environment_config"},
 		{"array section", Options{}, nil, nil, `[]`, "invalid_environment_config"},
 		{"null section", Options{}, nil, nil, `null`, "invalid_environment_config"},
-		{"null version", Options{}, nil, nil, `{"apiVersion":null}`, "invalid_environment_config"},
-		{"numeric version", Options{}, nil, nil, `{"apiVersion":15}`, "invalid_environment_config"},
-		{"blank version", Options{}, nil, nil, `{"apiVersion":" "}`, "invalid_environment_config"},
 		{"invalid explicit analyzer", Options{DefaultAnalyzer: "private-value/secret"}, nil, nil,
 			"", "invalid_analyzer_id"},
 		{"invalid process analyzer", Options{}, map[string]string{"CU_DEFAULT_ANALYZER": " "}, nil,
 			`{"defaultAnalyzer":"valid"}`, "invalid_analyzer_id"},
-		{"invalid config analyzer", Options{}, nil, nil,
-			`{"defaultAnalyzer":"private-value/secret"}`, "invalid_analyzer_id"},
-		{"numeric analyzer", Options{}, nil, nil, `{"defaultAnalyzer":5}`, "invalid_environment_config"},
-		{"null analyzer", Options{}, nil, nil, `{"defaultAnalyzer":null}`, "invalid_environment_config"},
 		{"invalid tenant", Options{TenantID: " private-value"}, nil, nil, "", "invalid_azure_scope"},
 		{"invalid scope", Options{SubscriptionID: "private-value\n"}, nil, nil, "", "invalid_azure_scope"},
 		{"invalid resource group", Options{ResourceGroup: " "}, nil, nil, "", "invalid_azure_scope"},
@@ -165,7 +157,7 @@ func TestResolveInvalidConfiguration(t *testing.T) {
 			if tt.name != "missing endpoint" && tt.options.Endpoint == "" && tt.process["CU_ENDPOINT"] == "" {
 				tt.options.Endpoint = "https://explicit.example"
 			}
-			_, err := resolve(tt.options, tt.process, tt.values, []byte(tt.config))
+			_, err := resolve(tt.options, tt.process, tt.values, []byte(tt.config), nil)
 			domain, ok := errors.AsType[*cuclient.Error](err)
 			require.True(t, ok, "expected validation error: %v", err)
 			assert.Equal(t, tt.code, domain.Code)
@@ -177,12 +169,12 @@ func TestResolveInvalidConfiguration(t *testing.T) {
 
 func TestResolveModelDeployments(t *testing.T) {
 	config := []byte(`{"modelDeployments":{"gpt-4.1":"env-gpt"},"futureSetting":"not-returned"}`)
-	result, err := resolve(Options{Endpoint: "https://explicit.example"}, nil, nil, config)
+	result, err := resolve(Options{Endpoint: "https://explicit.example"}, nil, nil, config, nil)
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"gpt-4.1": "env-gpt"}, result.ModelDeployments)
 	explicit := map[string]string{"gpt-4.1-mini": "flag-mini"}
 	result, err = resolve(Options{Endpoint: "https://explicit.example", ModelDeployments: explicit},
-		nil, nil, []byte(`{"modelDeployments":false}`))
+		nil, nil, []byte(`{"modelDeployments":false}`), nil)
 	require.NoError(t, err)
 	explicit["gpt-4.1-mini"] = "changed"
 	assert.Equal(t, map[string]string{"gpt-4.1-mini": "flag-mini"}, result.ModelDeployments)
@@ -216,4 +208,67 @@ func TestProcessValues(t *testing.T) {
 	assert.Equal(t, "process-tenant", result["AZURE_TENANT_ID"])
 	assert.Equal(t, "dev", result["AZD_ENVIRONMENT"])
 	assert.NotContains(t, result, "UNRELATED_PRIVATE_KEY")
+}
+
+func TestUserDefaultsPrecedenceAndSources(t *testing.T) {
+	user := map[string]json.RawMessage{
+		"CU_ENDPOINT":         json.RawMessage(`"https://user.example"`),
+		"CU_API_VERSION":      json.RawMessage(`"2027-01-01-preview"`),
+		"CU_DEFAULT_ANALYZER": json.RawMessage(`"prebuilt-invoice"`),
+	}
+	for _, test := range []struct {
+		name, source, endpoint, version, analyzer string
+		options                                   Options
+		process, values                           map[string]string
+	}{
+		{"user", "user config", "user", "2027-01-01-preview", "prebuilt-invoice", Options{}, nil, nil},
+		{"environment", "azd environment", "env", "2026-06-01-preview", "prebuilt-layout", Options{}, nil, map[string]string{
+			"CU_ENDPOINT": "https://env.example", "CU_API_VERSION": "2026-06-01-preview",
+			"CU_DEFAULT_ANALYZER": "prebuilt-layout",
+		}},
+		{"process", "process", "process", "2025-11-01", "prebuilt-read", Options{}, map[string]string{
+			"CU_ENDPOINT": "https://process.example", "CU_API_VERSION": "2025-11-01", "CU_DEFAULT_ANALYZER": "prebuilt-read",
+		}, map[string]string{"CU_ENDPOINT": "https://env.example"}},
+		{"flags", "flag", "flag", "2025-11-01", "prebuilt-read", Options{
+			Endpoint: "https://flag.example", APIVersion: "2025-11-01", DefaultAnalyzer: "prebuilt-read",
+		}, map[string]string{"CU_ENDPOINT": "https://process.example"},
+			map[string]string{"CU_ENDPOINT": "https://env.example"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := resolve(test.options, test.process, test.values, nil, user)
+			require.NoError(t, err)
+			assert.Equal(t, "https://"+test.endpoint+".example/contentunderstanding", result.Endpoint)
+			assert.Equal(t, test.version, result.APIVersion)
+			assert.Equal(t, test.analyzer, result.DefaultAnalyzer)
+			for _, name := range SettingNames {
+				assert.Contains(t, result.Sources[name], test.source)
+			}
+		})
+	}
+	result, err := resolve(Options{Endpoint: "https://flag.example"}, nil, nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"CU_ENDPOINT": "flag: --endpoint", "CU_API_VERSION": "built-in", "CU_DEFAULT_ANALYZER": "built-in",
+	}, result.Sources)
+}
+
+func TestNoSettingAliasesOrInvalidValueFallbacks(t *testing.T) {
+	_, err := resolve(Options{}, nil, map[string]string{"FOUNDRY_ENDPOINT": "https://foundry.example"}, nil, nil)
+	require.ErrorContains(t, err, "Specify --endpoint")
+	result, err := resolve(Options{Endpoint: "https://flag.example"}, nil, nil,
+		[]byte(`{"apiVersion":"2027-01-01-preview","defaultAnalyzer":"prebuilt-invoice"}`), nil)
+	require.NoError(t, err)
+	assert.Equal(t, cuclient.DefaultAPIVersion, result.APIVersion)
+	assert.Equal(t, "prebuilt-layout", result.DefaultAnalyzer)
+	for _, raw := range []string{`null`, `15`, `""`, `"https://user:private@resource.example?sig=private"`} {
+		_, err := resolve(Options{}, nil, nil, nil, map[string]json.RawMessage{"CU_ENDPOINT": json.RawMessage(raw)})
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "private")
+	}
+	user := map[string]json.RawMessage{"CU_ENDPOINT": json.RawMessage(`"https://user.example"`)}
+	_, err = resolve(Options{}, map[string]string{"CU_ENDPOINT": "private-invalid-value"}, nil, nil, user)
+	require.Error(t, err, "an invalid override must not fall back to the user default")
+	user["CU_ENDPOINT"] = json.RawMessage(`15`)
+	_, err = resolve(Options{Endpoint: "https://flag.example"}, nil, nil, nil, user)
+	require.NoError(t, err, "overridden user values are not effective")
 }

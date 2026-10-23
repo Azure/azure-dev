@@ -37,13 +37,14 @@ type configHost struct {
 	block    string
 	mu       sync.Mutex
 	requests []string
+	user     []byte
 }
 
 func validHost() *configHost {
 	return &configHost{
 		name: "dev",
 		values: []*azdext.KeyValue{
-			{Key: "FOUNDRY_ENDPOINT", Value: "https://env.example"},
+			{Key: "CU_ENDPOINT", Value: "https://env.example"},
 		},
 		section: &azdext.GetConfigSectionResponse{},
 		tenant:  "user-access-tenant",
@@ -51,6 +52,26 @@ func validHost() *configHost {
 			TenantId: "default-tenant", SubscriptionId: "default-sub", ResourceGroup: "default-rg",
 		},
 	}
+}
+
+func (h *configHost) GetUserConfig(
+	ctx context.Context, request *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	if err := h.record(ctx, "user:"+request.Path); err != nil {
+		return nil, err
+	}
+	return &azdext.GetUserConfigResponse{Found: h.user != nil, Value: h.user}, nil
+}
+
+type userConfigHost struct {
+	azdext.UnimplementedUserConfigServiceServer
+	host *configHost
+}
+
+func (h *userConfigHost) Get(
+	ctx context.Context, request *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	return h.host.GetUserConfig(ctx, request)
 }
 
 func (h *configHost) record(ctx context.Context, request string) error {
@@ -135,6 +156,7 @@ func hostClient(t *testing.T, service *configHost) *azdext.AzdClient {
 	azdext.RegisterEnvironmentServiceServer(server, service)
 	azdext.RegisterDeploymentServiceServer(server, service)
 	azdext.RegisterAccountServiceServer(server, service)
+	azdext.RegisterUserConfigServiceServer(server, &userConfigHost{host: service})
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -157,7 +179,7 @@ func TestLoadDefaultEnvironment(t *testing.T) {
 	assert.Equal(t, "https://env.example/contentunderstanding", result.Endpoint)
 	assert.Equal(t, "default-tenant", result.TenantID)
 	assert.Equal(t, ResourceScope{SubscriptionID: "default-sub", ResourceGroup: "default-rg"}, result.Scope)
-	assert.Equal(t, []string{"current", "values:dev", "config:dev:cu", "deployment"}, h.calls())
+	assert.Equal(t, []string{"current", "values:dev", "config:dev:cu", "user:" + UserConfigPath, "deployment"}, h.calls())
 }
 
 func TestLoadSelectedEnvironment(t *testing.T) {
@@ -173,9 +195,9 @@ func TestLoadSelectedEnvironment(t *testing.T) {
 			h := validHost()
 			h.name = tt.selected
 			h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "selected-tenant"})
-			h.section = &azdext.GetConfigSectionResponse{
-				Found: true, Section: []byte(`{"apiVersion":"2026-06-01-preview","defaultAnalyzer":"configured"}`),
-			}
+			h.values = append(h.values,
+				&azdext.KeyValue{Key: "CU_API_VERSION", Value: "2026-06-01-preview"},
+				&azdext.KeyValue{Key: "CU_DEFAULT_ANALYZER", Value: "configured"})
 			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
 			result, err := Load(ctx, hostClient(t, h), tt.explicit, Options{},
 				map[string]string{"AZD_ENVIRONMENT": tt.processEnv})
@@ -186,7 +208,7 @@ func TestLoadSelectedEnvironment(t *testing.T) {
 			assert.Equal(t, "2026-06-01-preview", result.APIVersion)
 			assert.Empty(t, result.Scope.SubscriptionID)
 			assert.Equal(t, []string{
-				"get:" + tt.selected, "values:" + tt.selected, "config:" + tt.selected + ":cu",
+				"get:" + tt.selected, "values:" + tt.selected, "config:" + tt.selected + ":cu", "user:" + UserConfigPath,
 			}, h.calls())
 		})
 	}
@@ -223,7 +245,7 @@ func TestLoadProjectless(t *testing.T) {
 			assert.Empty(t, result.Environment)
 			assert.NotEmpty(t, result.TenantID)
 			assert.Equal(t, "2025-11-01", result.APIVersion)
-			assert.Empty(t, h.calls(), "projectless mode must not need a project or prior deployment")
+			assert.Equal(t, []string{"user:" + UserConfigPath}, h.calls())
 		})
 	}
 }
@@ -235,7 +257,7 @@ func TestLoadProjectlessDefaultAuthentication(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, result.TenantID, "leave tenant resolution to azd authentication")
 	assert.Empty(t, result.Environment)
-	assert.Empty(t, h.calls(), "must not switch to the default environment to find a tenant")
+	assert.Equal(t, []string{"user:" + UserConfigPath}, h.calls())
 }
 
 func TestLoadSubscriptionTenant(t *testing.T) {
@@ -264,7 +286,7 @@ func TestLoadSubscriptionTenant(t *testing.T) {
 			assert.Equal(t, "user-access-tenant", result.TenantID)
 			assert.NotEqual(t, h.scope.TenantId, result.TenantID, "do not use the default deployment's resource tenant")
 			assert.Equal(t, tt.subscription, result.Scope.SubscriptionID)
-			expected := []string{"tenant:" + tt.subscription}
+			expected := []string{"user:" + UserConfigPath, "tenant:" + tt.subscription}
 			if result.Environment != "" {
 				expected = append([]string{"get:test", "values:test", "config:test:cu"}, expected...)
 			}
@@ -294,7 +316,7 @@ func TestLoadConfiguredTenantSkipsSubscriptionLookup(t *testing.T) {
 			result, err := Load(ctx, hostClient(t, h), "dev", tt.options, tt.process)
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, result.TenantID)
-			assert.Equal(t, []string{"get:dev", "values:dev", "config:dev:cu"}, h.calls())
+			assert.Equal(t, []string{"get:dev", "values:dev", "config:dev:cu", "user:" + UserConfigPath}, h.calls())
 		})
 	}
 }
@@ -309,7 +331,9 @@ func TestLoadEmptySubscriptionTenant(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeMissingTenant, local.Code)
 	assert.Equal(t, Resolved{}, result)
-	assert.Equal(t, []string{"get:dev", "values:dev", "config:dev:cu", "tenant:selected-sub"}, h.calls())
+	assert.Equal(t, []string{
+		"get:dev", "values:dev", "config:dev:cu", "user:" + UserConfigPath, "tenant:selected-sub",
+	}, h.calls())
 }
 
 func TestLoadExplicitScopeAndTenant(t *testing.T) {
@@ -428,6 +452,80 @@ func TestRuntimeKeyRejectedBeforeHostAccess(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "API-key authentication is not enabled")
 	assert.NotContains(t, err.Error(), "private-api-key")
+}
+
+func TestUserDefaultsWithoutProjectOrCurrentEnvironment(t *testing.T) {
+	for _, message := range []string{
+		"no project exists; to create a new project, run `azd init`", "default environment not found",
+	} {
+		h := validHost()
+		h.fail, h.err = "current", status.Error(codes.Unknown, message)
+		h.user = []byte(`{"CU_ENDPOINT":"https://user.example","CU_API_VERSION":"2027-01-01-preview"}`)
+		ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+		result, err := Load(ctx, hostClient(t, h), "", Options{}, nil)
+		require.NoError(t, err)
+		assert.Empty(t, result.Environment)
+		assert.Empty(t, result.TenantID)
+		assert.Equal(t, "https://user.example/contentunderstanding", result.Endpoint)
+		assert.Equal(t, "2027-01-01-preview", result.APIVersion)
+		assert.Equal(t, "user config", result.Sources["CU_ENDPOINT"])
+		assert.Equal(t, []string{"current", "user:" + UserConfigPath}, h.calls())
+	}
+}
+
+func TestUserDefaultsDoNotHideExplicitEnvironmentFailures(t *testing.T) {
+	h := validHost()
+	h.fail = "get:missing"
+	h.err = status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`")
+	h.user = []byte(`{"CU_ENDPOINT":"https://user.example"}`)
+	ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+	_, err := Load(ctx, hostClient(t, h), "missing", Options{Endpoint: "https://flag.example"}, nil)
+	require.Error(t, err)
+	assert.Equal(t, []string{"get:missing"}, h.calls())
+}
+
+func TestUserDefaultsWithApplicableEnvironmentAndRuntimeEndpoint(t *testing.T) {
+	for _, runtimeEndpoint := range []bool{false, true} {
+		h := validHost()
+		h.user = []byte(`{"CU_ENDPOINT":"https://user.example","CU_DEFAULT_ANALYZER":"prebuilt-invoice"}`)
+		options := Options{}
+		if runtimeEndpoint {
+			options.Endpoint = "https://flag.example"
+		}
+		ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+		result, err := Load(ctx, hostClient(t, h), "", options, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "prebuilt-invoice", result.DefaultAnalyzer)
+		assert.Equal(t, "user config", result.Sources["CU_DEFAULT_ANALYZER"])
+		if runtimeEndpoint {
+			assert.Empty(t, result.Environment)
+			assert.Equal(t, []string{"user:" + UserConfigPath}, h.calls())
+		} else {
+			assert.Equal(t, "dev", result.Environment)
+			assert.Equal(t, "https://env.example/contentunderstanding", result.Endpoint)
+			assert.Equal(t, "azd environment: dev", result.Sources["CU_ENDPOINT"])
+		}
+	}
+}
+
+func TestUserConfigFailuresAreNotSilentDefaults(t *testing.T) {
+	for _, raw := range []string{`null`, `[]`, `invalid`, `{"CU_ENDPOINT":15}`} {
+		h := validHost()
+		h.user = []byte(raw)
+		h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "tenant"})
+		if raw == `{"CU_ENDPOINT":15}` {
+			h.values = nil
+		}
+		ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+		_, err := Load(ctx, hostClient(t, h), "", Options{}, nil)
+		require.Error(t, err)
+	}
+	h := validHost()
+	h.fail, h.err = "user:"+UserConfigPath, status.Error(codes.Unavailable, "private-user-config-detail")
+	ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+	_, err := Load(ctx, hostClient(t, h), "", Options{Endpoint: "https://flag.example"}, nil)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "private")
 }
 
 func TestLoadCancellationAndDeadline(t *testing.T) {

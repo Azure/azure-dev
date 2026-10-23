@@ -31,14 +31,10 @@ func newRuntimeContext(
 	if err := ctx.Err(); err != nil {
 		return nil, exterrors.FromError(err)
 	}
-	if strings.TrimSpace(os.Getenv("AZD_SERVER")) == "" || strings.TrimSpace(os.Getenv("AZD_ACCESS_TOKEN")) == "" {
-		return nil, exterrors.HostUnavailable()
-	}
-
 	logger := azdext.NewLogger("cu", azdext.LoggerOptions{Debug: extCtx.Debug, Writer: cmd.ErrOrStderr()})
 	logger.Debug("Initializing azd runtime")
 	ctx = azdext.WithAccessToken(ctx)
-	client, err := azdext.NewAzdClient()
+	client, err := openHostClient(ctx)
 	if err != nil {
 		logger.Debug("Failed to create azd host client")
 		return nil, exterrors.HostUnavailable()
@@ -61,6 +57,20 @@ func newRuntimeContext(
 	return &runtimeContext{
 		Context: ctx, Client: client, Credential: credential, Logger: logger, Config: resolved,
 	}, nil
+}
+
+func openHostClient(ctx context.Context) (*azdext.AzdClient, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(os.Getenv("AZD_SERVER")) == "" || strings.TrimSpace(os.Getenv("AZD_ACCESS_TOKEN")) == "" {
+		return nil, exterrors.HostUnavailable()
+	}
+	client, err := azdext.NewAzdClient()
+	if err != nil {
+		return nil, exterrors.HostUnavailable()
+	}
+	return client, nil
 }
 
 func (r *runtimeContext) Close() {

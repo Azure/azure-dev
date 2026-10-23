@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 
+	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/exterrors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -49,7 +50,30 @@ func protectCommandErrors(command *cobra.Command) {
 		}
 	}
 	if run := command.RunE; run != nil {
-		command.RunE = func(cmd *cobra.Command, args []string) error { return exterrors.FromError(run(cmd, args)) }
+		command.RunE = func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Lookup("endpoint") != nil && cmd.Flags().Changed("environment") {
+				environment, err := cmd.Flags().GetString("environment")
+				if err != nil {
+					return invalidArguments()
+				}
+				if environment == "" {
+					return exterrors.FromError(commandError("empty_setting", "--environment must not be empty.",
+						"Select an existing environment, or omit --environment for projectless use."))
+				}
+			}
+			for flag, setting := range map[string]string{"endpoint": "CU_ENDPOINT", "api-version": "CU_API_VERSION"} {
+				if cmd.Flags().Changed(flag) {
+					value, err := cmd.Flags().GetString(flag)
+					if err != nil {
+						return invalidArguments()
+					}
+					if err := config.ValidateSetting(setting, value); err != nil {
+						return exterrors.FromError(err)
+					}
+				}
+			}
+			return exterrors.FromError(run(cmd, args))
+		}
 	}
 	for _, child := range command.Commands() {
 		protectCommandErrors(child)

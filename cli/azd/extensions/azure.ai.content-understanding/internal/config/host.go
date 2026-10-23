@@ -10,6 +10,8 @@ import (
 	"azure.ai.content-understanding/internal/exterrors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Load reads one environment snapshot before resolving configuration and the credential's tenant.
@@ -31,8 +33,11 @@ func Load(
 		var selected *azdext.Environment
 		if useDefault {
 			response, err := client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-			if err != nil {
+			if err != nil && !noCurrentEnvironment(err) {
 				return Resolved{}, environmentError(err)
+			}
+			if err != nil {
+				useDefault = false
 			}
 			selected = response.GetEnvironment()
 		} else {
@@ -42,46 +47,57 @@ func Load(
 			}
 			selected = response.GetEnvironment()
 		}
-		if selected.GetName() == "" || (environment != "" && selected.GetName() != environment) {
-			return Resolved{}, invalid("invalid_environment", "The azd host did not return the requested environment.")
-		}
-		environment = selected.GetName()
-		response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: environment})
-		if err != nil {
-			return Resolved{}, environmentError(err)
-		}
-		if response == nil {
-			return Resolved{}, invalid("invalid_environment", "The azd host did not return environment values.")
-		}
-		values = make(map[string]string)
-		for _, entry := range response.GetKeyValues() {
-			if entry.GetKey() == "" {
-				return Resolved{}, invalid("invalid_environment", "The azd host returned an invalid environment value.")
+		if selected != nil || useDefault || environment != "" {
+			if selected.GetName() == "" || (environment != "" && selected.GetName() != environment) {
+				return Resolved{}, invalid("invalid_environment", "The azd host did not return the requested environment.")
 			}
-			if _, duplicate := values[entry.GetKey()]; duplicate {
-				return Resolved{}, invalid("invalid_environment", "The azd host returned duplicate environment values.")
+			environment = selected.GetName()
+			response, err := client.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: environment})
+			if err != nil {
+				return Resolved{}, environmentError(err)
 			}
-			values[entry.GetKey()] = entry.GetValue()
-		}
-		config, err := client.Environment().GetConfigSection(ctx, &azdext.GetConfigSectionRequest{
-			Path: "cu", EnvName: environment,
-		})
-		if err != nil {
-			return Resolved{}, environmentError(err)
-		}
-		if config == nil || (config.GetFound() && len(config.GetSection()) == 0) {
-			return Resolved{}, invalid("invalid_environment_config",
-				"The azd host returned an invalid cu configuration section.")
-		}
-		if config.GetFound() {
-			section = config.GetSection()
+			if response == nil {
+				return Resolved{}, invalid("invalid_environment", "The azd host did not return environment values.")
+			}
+			values = make(map[string]string)
+			for _, entry := range response.GetKeyValues() {
+				if entry.GetKey() == "" {
+					return Resolved{}, invalid("invalid_environment", "The azd host returned an invalid environment value.")
+				}
+				if _, duplicate := values[entry.GetKey()]; duplicate {
+					return Resolved{}, invalid("invalid_environment", "The azd host returned duplicate environment values.")
+				}
+				values[entry.GetKey()] = entry.GetValue()
+			}
+			config, err := client.Environment().GetConfigSection(ctx, &azdext.GetConfigSectionRequest{
+				Path: "cu", EnvName: environment,
+			})
+			if err != nil {
+				return Resolved{}, environmentError(err)
+			}
+			if config == nil || (config.GetFound() && len(config.GetSection()) == 0) {
+				return Resolved{}, invalid("invalid_environment_config",
+					"The azd host returned an invalid cu configuration section.")
+			}
+			if config.GetFound() {
+				section = config.GetSection()
+			}
 		}
 	}
-	result, err := resolve(options, process, values, section)
+	user, err := ReadUserDefaults(ctx, client)
+	if err != nil {
+		return Resolved{}, err
+	}
+	result, err := resolve(options, process, values, section, user)
 	if err != nil {
 		return Resolved{}, err
 	}
 	result.Environment = environment
+	for name, source := range result.Sources {
+		if source == "azd environment" {
+			result.Sources[name] = source + ": " + environment
+		}
+	}
 	if result.TenantID == "" && useDefault {
 		// Deployment RPCs always use azd's default environment, never a named selection.
 		deployment, err := client.Deployment().GetDeploymentContext(ctx, &azdext.EmptyRequest{})
@@ -111,6 +127,20 @@ func Load(
 		return Resolved{}, exterrors.MissingTenant()
 	}
 	return result, nil
+}
+
+func noCurrentEnvironment(err error) bool {
+	// The v1 host returns these sentinels as untyped gRPC Unknown errors.
+	// Match only the exact known absence cases; never swallow other discovery failures.
+	if status.Code(err) != codes.Unknown {
+		return false
+	}
+	switch status.Convert(err).Message() {
+	case "no project exists; to create a new project, run `azd init`", "default environment not found":
+		return true
+	default:
+		return false
+	}
 }
 
 func environmentError(err error) error {

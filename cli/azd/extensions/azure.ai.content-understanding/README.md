@@ -49,7 +49,10 @@ Understanding access.
 Resource creation, Azure permissions, and model setup are covered in the
 separate [Microsoft Foundry provisioning guide](docs/provisioning.md).
 
-For an existing ready resource:
+For an existing ready resource, start with a session setting. Add persistence
+or project environments only when you need them.
+
+### 1. Connect for the current shell session
 
 ```bash
 azd auth login
@@ -63,11 +66,72 @@ Normal endpoint-only use does not require a tenant ID; the extension uses azd
 authentication. API-key authentication is not supported.
 
 `doctor` reports configuration, authentication, service access, and model
-readiness. Missing generative models can produce `ready: false` while
+readiness, including effective CU settings and their sources.
+Missing generative models can produce `ready: false` while
 `prebuilt-layout` remains usable. Inspect the report, not just the exit code.
 
-For saved azd environment settings or cross-tenant access, see
-[connection and authentication guidance](docs/usage.md#connect-to-microsoft-foundry-and-check-setup).
+### 2. Save a user default
+
+To reuse the endpoint in future shell sessions, save a user default. It works
+from any directory without `azd init`:
+
+```bash
+azd ai cu config set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
+azd ai cu config set CU_DEFAULT_ANALYZER prebuilt-layout
+azd ai cu config list
+```
+
+The CU shortcut uses the same user configuration as `azd config`; it does not
+create a separate store. For example, setting `CU_ENDPOINT` above is equivalent
+to `azd config set extensions.ai-content-understanding.CU_ENDPOINT <endpoint>`.
+
+Process variables still override saved settings. Clear the session endpoint to
+use the saved default:
+
+```bash
+unset CU_ENDPOINT
+azd ai cu doctor
+```
+
+In PowerShell, use `Remove-Item Env:CU_ENDPOINT`. Use
+`azd ai cu config unset CU_ENDPOINT` to remove the saved user default instead.
+
+### 3. Manage project-specific environments (optional)
+
+When you need settings grouped by project or separate development and production
+resources, initialize an azd project and save settings in its environments.
+Skip initialization if you already have an azd project, including one generated
+by `azd ai cu infra generate`.
+
+```bash
+mkdir cu-project
+cd cu-project
+azd init --minimal --environment dev
+azd env set CU_ENDPOINT "https://<dev-resource>.services.ai.azure.com/"
+azd env set CU_DEFAULT_ANALYZER prebuilt-layout
+azd env set AZURE_SUBSCRIPTION_ID "<dev-subscription-id>"
+azd ai cu doctor --environment dev
+```
+
+Add another environment and switch between them:
+
+```bash
+azd env new prod
+azd env set CU_ENDPOINT "https://<prod-resource>.services.ai.azure.com/"
+azd env set AZURE_SUBSCRIPTION_ID "<prod-subscription-id>"
+azd ai cu doctor --environment prod
+azd env select dev
+```
+
+Run project commands from the project directory or a subdirectory, or point
+`--cwd` at the project. Environment settings override user defaults; explicit
+flags and process variables override both. Clear any process overrides before
+switching resources. The selected subscription is used to resolve the
+user-access tenant.
+
+See [configuration precedence](docs/usage.md#configuration-and-api-versions)
+and [cross-tenant connection guidance](docs/usage.md#connect-to-microsoft-foundry-and-check-setup)
+for details.
 
 ## Supported Content Understanding API versions
 
@@ -154,6 +218,7 @@ for validation rules and test options.
 | `azd ai cu analyzer` | List, show, create, copy, delete, validate, and test analyzers. |
 | `azd ai cu analyzer schema create` | Generate an offline starter or suggest fields from a sample. |
 | `azd ai cu defaults` | Read or configure resource-level model-to-deployment defaults. |
+| `azd ai cu config` | Set, get, list, or unset projectless CU user defaults in azd configuration. |
 | `azd ai cu infra generate` | Generate an azd/Bicep project. Run `azd up` separately to provision it. |
 | `azd ai cu doctor` | Check connectivity and readiness. |
 | `azd ai cu env-var list` | Inspect supported process inputs with sensitive values redacted. |

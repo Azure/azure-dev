@@ -46,6 +46,22 @@ func TestDoctorHealthyGoldenReadOnlyAndContextLabel(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsEffectiveSettingSources(t *testing.T) {
+	f := newDefaultsFixture(t)
+	f.analyzer = "prebuilt-invoice"
+	f.sources = map[string]string{
+		"CU_ENDPOINT": "user config", "CU_API_VERSION": "built-in", "CU_DEFAULT_ANALYZER": "azd environment: dev",
+	}
+	stdout, stderr, err := f.execute(t.Context(), "doctor")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	var result doctorResult
+	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+	assert.Equal(t, f.sources, result.Sources)
+	require.NotNil(t, result.Analyzer)
+	assert.Equal(t, "prebuilt-invoice", *result.Analyzer)
+}
+
 func TestDoctorMissingGenerativeDefaultsIsNotConnectivityFailure(t *testing.T) {
 	for _, notSet := range []bool{false, true} {
 		f := newDefaultsFixture(t)
@@ -148,7 +164,7 @@ func TestDoctorSetupErrorsDistinguishContextAndInvalidServiceSettings(t *testing
 		{exterrors.CodeEnvironmentUnavailable, "azd env list/select"},
 		{"missing_endpoint", "azd env set"},
 		{"invalid_endpoint", "azd env set"},
-		{"unsupported_api_version", "azd env config set"},
+		{"unsupported_api_version", "azd ai cu config set"},
 	} {
 		t.Run(test.code, func(t *testing.T) {
 			f := newDefaultsFixture(t)

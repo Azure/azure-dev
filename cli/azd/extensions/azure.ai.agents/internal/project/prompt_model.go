@@ -53,12 +53,12 @@ func ResolvePromptAgentModel(
 	if err != nil {
 		return "", err
 	}
-	if replacement, bound := bindings[model]; bound {
+	if replacement, bound := synthesis.LookupDeploymentBinding(bindings, model); bound {
 		declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
 		if err != nil {
 			return "", err
 		}
-		if slices.Contains(declared, model) {
+		if synthesis.ContainsDeploymentName(declared, model) {
 			if _, err := promptModelInfrastructureOnDisk(projectRoot); err != nil {
 				return "", err
 			}
@@ -85,18 +85,18 @@ func ResolvePromptAgentModel(
 	if err != nil {
 		return "", err
 	}
-	if model == "" || !ok || slices.Contains(selected, model) {
+	if model == "" || !ok || synthesis.ContainsDeploymentName(selected, model) {
 		return model, nil
 	}
 	declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
 	if err != nil {
 		return "", err
 	}
-	if !slices.Contains(declared, model) {
+	if !synthesis.ContainsDeploymentName(declared, model) {
 		return model, nil
 	}
 	missing := slices.DeleteFunc(slices.Clone(declared), func(name string) bool {
-		return slices.Contains(selected, name)
+		return synthesis.ContainsDeploymentName(selected, name)
 	})
 	if len(missing) > 1 {
 		return "", exterrors.Dependency(

@@ -28,3 +28,38 @@ func TestDeploymentBindings(t *testing.T) {
 		require.ErrorContains(t, err, DeploymentBindingsEnvKey)
 	}
 }
+
+func TestDeploymentBindingLookupAndMembership(t *testing.T) {
+	bindings := map[string]string{
+		" Chat ":        "existing-chat",
+		"MyDeployment ": "existing-deployment",
+		"Skipped":       "",
+	}
+
+	target, ok := LookupDeploymentBinding(bindings, "chat")
+	require.True(t, ok)
+	require.Equal(t, "existing-chat", target)
+
+	target, ok = LookupDeploymentBinding(bindings, "mydeployment")
+	require.True(t, ok)
+	require.Equal(t, "existing-deployment", target)
+
+	target, ok = LookupDeploymentBinding(bindings, " skipped ")
+	require.True(t, ok)
+	require.Equal(t, "", target)
+
+	_, ok = LookupDeploymentBinding(bindings, "undeclared")
+	require.False(t, ok)
+
+	_, ok = LookupDeploymentBinding(bindings, "   ")
+	require.False(t, ok)
+
+	key, ok := FindDeploymentBindingKey(bindings, "CHAT")
+	require.True(t, ok)
+	require.Equal(t, " Chat ", key)
+
+	require.True(t, ContainsDeploymentName([]string{" Chat ", "Embeddings"}, "chat"))
+	require.True(t, ContainsDeploymentName([]string{" Chat ", "Embeddings"}, " embeddings "))
+	require.False(t, ContainsDeploymentName([]string{" Chat ", "Embeddings"}, "vision"))
+	require.False(t, ContainsDeploymentName([]string{" Chat ", "Embeddings"}, "  "))
+}

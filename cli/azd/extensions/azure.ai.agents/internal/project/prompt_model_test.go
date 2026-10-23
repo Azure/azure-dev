@@ -126,11 +126,31 @@ func TestResolvePromptAgentModel(t *testing.T) {
 			want: "template-chat",
 		},
 		{
+			name:     "deployment selection membership is case-insensitive",
+			model:    "Chat",
+			declared: []string{"chat"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         `[{"name":"chat"}]`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "Chat",
+		},
+		{
 			name:     "unset environment list is unchanged",
 			model:    "template-chat",
 			declared: []string{"template-chat"},
 			env:      map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41"},
 			want:     "template-chat",
+		},
+		{
+			name:     "declared membership is case-insensitive",
+			model:    "chat",
+			declared: []string{"Chat"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         "[]",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "existing-41",
 		},
 		{
 			name:     "undeclared model is unchanged",
@@ -342,6 +362,32 @@ func TestResolvePromptAgentModelExplicitBindings(t *testing.T) {
 			require.ErrorContains(t, err, "AI_PROJECT_DEPLOYMENT_BINDINGS")
 		})
 	}
+}
+
+func TestResolvePromptAgentModelExplicitBindingsCaseInsensitive(t *testing.T) {
+	agent, services := promptModelServices(t, "MyDeployment", "Chat", "Skipped")
+	env := map[string]string{
+		"AI_PROJECT_DEPLOYMENTS":         "[]",
+		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+		"AI_PROJECT_DEPLOYMENT_BINDINGS": `{"mydeployment":"selected-deployment","CHAT":"selected-chat",` +
+			`"sKiPpEd":"","UnDeclared":"wrong"}`,
+	}
+
+	root := t.TempDir()
+	got, err := ResolvePromptAgentModel("MyDeployment", agent, services, root, env)
+	require.NoError(t, err)
+	require.Equal(t, "selected-deployment", got)
+
+	got, err = ResolvePromptAgentModel("chat", agent, services, root, env)
+	require.NoError(t, err)
+	require.Equal(t, "selected-chat", got)
+
+	_, err = ResolvePromptAgentModel("skipped", agent, services, root, env)
+	require.ErrorContains(t, err, "was skipped")
+
+	got, err = ResolvePromptAgentModel("uNdEcLaReD", agent, services, root, env)
+	require.NoError(t, err)
+	require.Equal(t, "uNdEcLaReD", got)
 }
 
 func TestResolvePromptAgentModelExplicitBindingsUnsafeInfrastructure(t *testing.T) {

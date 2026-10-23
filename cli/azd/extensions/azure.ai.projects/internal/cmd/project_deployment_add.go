@@ -384,7 +384,7 @@ func (a *ProjectDeploymentAddAction) Run(ctx context.Context) error {
 		}
 	}
 	if bindingKey != "" {
-		bindings[bindingKey] = selected.Deployment.Name
+		synthesis.SetDeploymentBinding(bindings, selected.Deployment.Name, selected.Deployment.Name)
 		encoded, err := synthesis.EncodeDeploymentBindings(bindings)
 		if err != nil {
 			return rollbackProjectDeploymentAdd(err, restoreEnvironment, restoreDeployment)

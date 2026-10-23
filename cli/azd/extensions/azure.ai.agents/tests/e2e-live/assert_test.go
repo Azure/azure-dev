@@ -217,7 +217,7 @@ func TestSnapshotLivePipelineConfiguration(t *testing.T) {
 				selectSubscription := strings.Index(inputs.InlineScript, `az account set --subscription "$E2E_TARGET_SUBSCRIPTION"`)
 				require.NotEqual(t, -1, selectSubscription)
 				if displayName == "Run Tier 2 live golden path" {
-					require.Contains(t, inputs.InlineScript, "requires an explicit preview-approved subscriptionId")
+					require.NotContains(t, inputs.InlineScript, `[ -z "$E2E_TARGET_SUBSCRIPTION" ]`)
 					require.Contains(t, inputs.InlineScript, "does not match the requested subscriptionId")
 					readSubscription := strings.Index(inputs.InlineScript, `E2E_SUBSCRIPTION="$(az account show`)
 					require.Greater(t, readSubscription, selectSubscription)

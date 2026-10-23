@@ -90,14 +90,17 @@ Queue the live pipeline at the intended commit with:
 | --- | --- |
 | `memorySnapshot` | `true` |
 | `deployModes` | `code`; snapshot runs reject `container` and `both` |
-| `templateURL` | Pinned code sample already compatible with snapshot-enabled hosting |
-| `subscriptionId` | Explicit preview-approved subscription ID |
-| `serviceConnection` | Identity with management and Foundry data access to the target |
-| `location` | Preview-approved region; subscription approval alone is insufficient |
+| `templateURL` | Same sample as the ordinary run; empty uses the standard sample |
+| `subscriptionId` | Same subscription as the ordinary run; empty uses the service connection default |
+| `serviceConnection` | Same identity as the ordinary run, with management and Foundry data access |
+| `location` | Same region as the ordinary run |
 
-The pipeline verifies the requested subscription before init and binds azd and
-cleanup to it, without falling back to the connection's default. Ordinary runs
-may omit `subscriptionId` to retain that default.
+Run the ordinary case first, then change only `memorySnapshot` to `true`. Both
+cases can use the existing service connection's default subscription. If an
+explicit subscription is supplied, the pipeline verifies it before init and
+binds azd and cleanup to it without falling back to the connection's default.
+The selected subscription and region still need backend snapshot enablement;
+a preview rejection is a failed comparison, not permission to switch targets.
 
 CI changes only the isolated sample's snapshot setting, preserving its other
 configuration and dependencies. It verifies `AZD_AGENT_SKIP_ACR=true`, then uses

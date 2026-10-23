@@ -312,10 +312,6 @@ extends:
                   workingDirectory: cli/azd/extensions/azure.ai.agents
                   inlineScript: |
                     set -euo pipefail
-                    if [ "$E2E_MEMORY_SNAPSHOT" = "true" ] && [ -z "$E2E_TARGET_SUBSCRIPTION" ]; then
-                      echo "ERROR: snapshot validation requires an explicit preview-approved subscriptionId." >&2
-                      exit 1
-                    fi
                     if [ -n "$E2E_TARGET_SUBSCRIPTION" ]; then
                       az account set --subscription "$E2E_TARGET_SUBSCRIPTION"
                     fi

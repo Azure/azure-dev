@@ -601,6 +601,19 @@ overrides:
       - elts
       - fset
       - unkeyed
+  - filename: extensions/azure.ai.content-understanding/internal/infra/{models,templates}.go
+    words:
+      - cuclient
+      - localio
+      - contentunderstanding
+      - noninteractive
+      - australiaeast
+      - japaneast
+      - northeurope
+      - southcentralus
+      - southeastasia
+      - uksouth
+      - westeurope
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

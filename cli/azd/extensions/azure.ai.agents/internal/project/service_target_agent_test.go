@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
@@ -1246,6 +1248,136 @@ func TestAgentDeploymentFailedErrorPreservesServiceDetails(t *testing.T) {
 	require.Contains(t, serviceErr.Message, "[ImageError] the image could not be started")
 	require.Contains(t, serviceErr.Message, "request-id")
 	require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
+}
+
+type fakeAgentVersionStatusReader struct {
+	statuses []string
+	calls    int
+}
+
+func (reader *fakeAgentVersionStatusReader) GetAgentVersion(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error) {
+	status := reader.statuses[min(reader.calls, len(reader.statuses)-1)]
+	reader.calls++
+	if status == "error" {
+		return nil, errors.New("temporary poll failure")
+	}
+	version := &agent_api.AgentVersionObject{Status: status}
+	if status == "failed" {
+		version.Error = &agent_api.AgentVersionError{
+			Code: "SnapshotCreationError", Target: "HooksNotImplemented",
+			Message: "The agent server does not implement the before-snapshot hook.",
+		}
+	}
+	return version, nil
+}
+
+func TestAgentDeploymentSnapshotActivationPolling(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		statuses []string
+		want     string
+		calls    int
+	}{
+		{name: "capture pending then active", statuses: []string{"creating", "active", "active"}, want: "active", calls: 3},
+		{name: "capture failed", statuses: []string{"creating", "failed", "failed"}, want: "failed", calls: 3},
+		{name: "transient poll resets confirmation", statuses: []string{"active", "error", "active", "active"}, want: "active", calls: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			reader := &fakeAgentVersionStatusReader{statuses: test.statuses}
+			provider := &AgentServiceTargetProvider{}
+			version, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Nanosecond,
+				time.Second, func(string) {},
+			)
+			if test.want == "failed" {
+				require.ErrorContains(t, err, "HooksNotImplemented")
+				require.Nil(t, version)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "active", version.Status)
+			}
+			require.Equal(t, test.calls, reader.calls)
+		})
+	}
+}
+
+func TestAgentDeploymentSnapshotActivationCancellationAndTimeout(t *testing.T) {
+	t.Parallel()
+	provider := &AgentServiceTargetProvider{}
+	reader := &fakeAgentVersionStatusReader{statuses: []string{"creating"}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := provider.waitForAgentActive(
+		ctx, reader, "test.example.com", "snapshot-agent", "1", time.Second, time.Minute, func(string) {},
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, reader.calls)
+	_, err = provider.waitForAgentActive(
+		t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Second, -time.Nanosecond, func(string) {},
+	)
+	require.ErrorContains(t, err, "final deployment outcome is unknown")
+	require.Zero(t, reader.calls)
+}
+
+func TestAgentDeploymentMemorySnapshotPollTimeout(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		enabled *bool
+		want    time.Duration
+	}{
+		{name: "absent", want: 8 * time.Minute},
+		{name: "disabled", enabled: new(false), want: 8 * time.Minute},
+		{name: "enabled", enabled: new(true), want: 45 * time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, test.want, agentDeploymentPollTimeout(test.enabled))
+		})
+	}
+}
+
+func TestAgentDeploymentFailedErrorMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	var version agent_api.AgentVersionObject
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"status":"failed",
+		"error":{
+			"code":"SnapshotCreationError",
+			"target":"BeforeSnapshotHookFailed",
+			"message":"The agent's before-snapshot hook failed. The hook returned HTTP status 500."
+		}
+	}`), &version))
+	version.RequestID = "snapshot-request"
+	err := agentDeploymentFailedError(&version, "test.example.com")
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.SnapshotCreationError", serviceErr.ErrorCode)
+	require.Contains(t, serviceErr.Message, "BeforeSnapshotHookFailed")
+	require.Contains(t, serviceErr.Message, "HTTP status 500")
+	require.Contains(t, serviceErr.Message, "snapshot-request")
+	require.Contains(t, serviceErr.Suggestion, "agent logs")
+	require.Contains(t, serviceErr.Suggestion, "hosting library")
+}
+
+func TestAgentDeploymentTimeoutError(t *testing.T) {
+	t.Parallel()
+	for _, version := range []*agent_api.AgentVersionObject{nil, {Status: "creating"}} {
+		err := agentDeploymentTimeoutError(version, "test.example.com")
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok)
+		require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
+		require.Contains(t, serviceErr.Message, "outcome is unknown")
+		require.Contains(t, serviceErr.Message, "may still be running")
+		require.Contains(t, serviceErr.Suggestion, "azd ai agent show")
+		if version != nil {
+			require.Contains(t, serviceErr.Message, version.Status)
+		}
+	}
 }
 
 func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {

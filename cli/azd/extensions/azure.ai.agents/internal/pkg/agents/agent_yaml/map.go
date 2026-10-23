@@ -492,6 +492,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 				DependencyResolution: depRes,
 			},
 			SessionConfiguration: sessionConfig,
+			EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 		}
 
 		return createAgentAPIRequest(hostedAgent.AgentDefinition, codeDef,
@@ -521,6 +522,7 @@ func CreateHostedAgentAPIRequest(hostedAgent ContainerAgent, buildConfig *AgentB
 			RegistryConnectionID: registryConnectionID,
 		},
 		SessionConfiguration: sessionConfig,
+		EnableMemorySnapshot: hostedAgent.EnableMemorySnapshot,
 	}
 
 	return createAgentAPIRequest(hostedAgent.AgentDefinition, imageDef,

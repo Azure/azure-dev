@@ -139,6 +139,7 @@ type AgentDefinitionInline struct {
 	Container            *ContainerSettings                `json:"container,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
+	EnableMemorySnapshot *bool                             `json:"enableMemorySnapshot,omitempty"`
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
@@ -231,6 +232,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		Policies:             ca.Policies,
 		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
+		EnableMemorySnapshot: ca.EnableMemorySnapshot,
 	}
 
 	var container *ContainerSettings
@@ -275,6 +277,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		CodeConfiguration:    d.CodeConfiguration,
 		Policies:             d.Policies,
 		SessionConfiguration: d.SessionConfiguration,
+		EnableMemorySnapshot: d.EnableMemorySnapshot,
 	}
 
 	if container != nil && container.Resources != nil {
@@ -905,6 +908,22 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	if setting, exists := s.GetFields()["enableMemorySnapshot"]; exists {
+		if structKind(s) != string(agent_yaml.AgentKindHosted) {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot is only supported on hosted agents",
+				"remove enableMemorySnapshot or configure it on a hosted agent service",
+			)
+		}
+		if _, isBoolean := setting.GetKind().(*structpb.Value_BoolValue); !isBoolean {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot must be a boolean",
+				"set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled",
+			)
+		}
+	}
 	// The kind gate has to come before the decode, not after it. Every agent
 	// kind lands in the same property bag but they do not agree on types: a
 	// prompt agent's `model` is a deployment name, while the hosted and voice

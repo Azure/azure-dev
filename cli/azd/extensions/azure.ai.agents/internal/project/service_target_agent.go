@@ -1720,6 +1720,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 			endpointHost(projectEndpoint),
 			result.agentName,
 			result.agentVersion.Version,
+			10*time.Second,
+			agentDeploymentPollTimeout(agentDef.EnableMemorySnapshot),
 			progress,
 		)
 		if pollErr != nil {
@@ -4529,20 +4531,30 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 	return url, nil
 }
 
+func agentDeploymentPollTimeout(enableMemorySnapshot *bool) time.Duration {
+	if enableMemorySnapshot != nil && *enableMemorySnapshot {
+		return 45 * time.Minute
+	}
+	return 8 * time.Minute
+}
+
+type agentVersionStatusReader interface {
+	GetAgentVersion(context.Context, string, string, string, bool) (*agent_api.AgentVersionObject, error)
+}
+
 // waitForAgentActive polls the agent version until it reaches a confirmed terminal state.
 // It requires 2 consecutive polls with the same terminal status ("active" or "failed") to confirm,
 // avoiding transient service-side flickers. Returns the final AgentVersionObject or an error.
 func (p *AgentServiceTargetProvider) waitForAgentActive(
 	ctx context.Context,
-	agentClient *agent_api.AgentClient,
+	agentClient agentVersionStatusReader,
 	serviceName string,
 	agentName string,
 	version string,
+	pollInterval time.Duration,
+	pollTimeout time.Duration,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
-	const pollInterval = 10 * time.Second
-	// Code agent activation can take several minutes in a busy region.
-	const pollTimeout = 8 * time.Minute
 	const confirmCount = 2 // consecutive times a terminal status must be seen
 
 	deadline := time.Now().Add(pollTimeout)
@@ -4604,14 +4616,19 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	if lastPollErr != nil {
 		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
 	}
+	return nil, agentDeploymentTimeoutError(lastVersion, serviceName)
+}
+
+func agentDeploymentTimeoutError(lastVersion *agent_api.AgentVersionObject, serviceName string) error {
 	lastStatus := "unknown"
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
-	return nil, exterrors.Service(
+	return exterrors.Service(
 		exterrors.OpCreateAgent,
 		"timeout",
-		fmt.Sprintf("agent deployment timed out (last status: %s); check agent status manually", lastStatus),
+		fmt.Sprintf("stopped waiting for agent activation (last status: %s); "+
+			"the final deployment outcome is unknown and provisioning may still be running", lastStatus),
 		serviceName,
 		"run `azd ai agent show` to inspect the latest deployment status",
 	)
@@ -4624,6 +4641,13 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 	if versionResp.Error != nil {
 		code = versionResp.Error.Code
 		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
+		if versionResp.Error.Target != "" {
+			errMsg += fmt.Sprintf(" (stage: %s)", versionResp.Error.Target)
+		}
+		if code == "SnapshotCreationError" {
+			suggestion = "run `azd ai agent show` to inspect the failed version; " +
+				"check agent logs for snapshot hook diagnostics and verify your hosting library supports memory snapshots"
+		}
 		if remediation, ok := nextstep.RemediationForUserErrorCode(nextstep.UserErrorCode(code)); ok {
 			suggestion = fmt.Sprintf("run `%s` to %s", remediation.Command, remediation.Description)
 		}

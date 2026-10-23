@@ -284,6 +284,10 @@
     "sessionConfiguration": {
       "$ref": "#/definitions/SessionConfiguration"
     },
+    "enableMemorySnapshot": {
+      "type": "boolean",
+      "description": "Opt in to version-level memory snapshot capture and session startup from that snapshot. Requires compatible snapshot hooks and an enabled Foundry subscription and region. Defaults to disabled when omitted; snapshot sessions may have different state persistence behavior."
+    },
     "policies": {
       "type": "array",
       "description": "Governance policies attached to the agent (e.g., Responsible AI).",
@@ -302,6 +306,10 @@
   },
   "additionalProperties": true,
   "allOf": [
+    {
+      "if": { "required": ["enableMemorySnapshot"] },
+      "then": { "properties": { "kind": { "const": "hosted" } } }
+    },
     {
       "$comment": "The modelType hosted_agent authoring shape is not supported.",
       "if": {

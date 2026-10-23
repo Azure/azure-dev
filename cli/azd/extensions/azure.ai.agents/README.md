@@ -1280,6 +1280,34 @@ Details:
   Values outside that range are rejected at deploy time and by schema
   validation.
 
+## Memory snapshots
+
+Opt in on a hosted agent service in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    enableMemorySnapshot: true
+```
+
+Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
+this boolean setting, including referenced definitions. Omission preserves
+existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
+
+The subscription and region must be enabled for the preview, and the hosting SDK
+must support snapshot hooks. Python code deployment and invocation were verified
+with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
+Update dependencies and lock files yourself; rebuild container images when applicable.
+azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
+
+Snapshots reuse version initialization; they are not conversation or session-state
+backups. Snapshot capture, restore, and persistence guarantees belong to the hosting
+SDK and service.
+
 ## State Stores
 
 Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,

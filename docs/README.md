@@ -24,6 +24,7 @@ Task-oriented how-tos for common contributor workflows.
 - [Observability and Tracing](guides/observability.md) — Adding telemetry, traces, and debugging
 - [Feature Telemetry Guide](guides/feature-telemetry.md) — End-to-end guide for instrumenting telemetry in new features
 - [Telemetry Overview](guides/telemetry-overview.md) — Product-facing overview of azd telemetry metrics
+- [Evaluation Scenario CI](guides/evaluation-scenario-ci.md) — Offline package acceptance and the opt-in internal live quality gate
 
 ## Reference
 

@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
@@ -428,14 +428,14 @@ func validateVoiceTransferTargets(bindingPath string, targets []map[string]any) 
 		description, descriptionOK := target["description"].(string)
 		if !nameOK || !telephonyTargetNamePattern.MatchString(name) {
 			errors = append(errors, path+".name must be 1-64 ASCII letters, digits, underscores, or hyphens and start with a letter or digit")
-		} else if _, duplicate := names[name]; duplicate {
+		} else if _, duplicate := names[strings.ToLower(name)]; duplicate {
 			errors = append(errors, path+".name duplicates transfer target "+name)
 		} else {
-			names[name] = struct{}{}
+			names[strings.ToLower(name)] = struct{}{}
 		}
-		if !descriptionOK || description == "" {
+		if !descriptionOK || strings.TrimSpace(description) == "" {
 			errors = append(errors, path+".description is required")
-		} else if utf8.RuneCountInString(description) > 1024 {
+		} else if len(utf16.Encode([]rune(description))) > 1024 {
 			errors = append(errors, path+".description is too long")
 		}
 		destination, ok := target["destination"].(map[string]any)
@@ -454,6 +454,10 @@ func validateVoiceTransferTargets(bindingPath string, targets []map[string]any) 
 			errors = append(errors, path+".destination.kind and value are required strings")
 			continue
 		}
+		if len(utf16.Encode([]rune(value))) > 2048 {
+			errors = append(errors, path+".destination.value is too long")
+			continue
+		}
 		switch kind {
 		case "pstn":
 			if !e164Pattern.MatchString(value) {
@@ -465,7 +469,7 @@ func validateVoiceTransferTargets(bindingPath string, targets []map[string]any) 
 			}
 		case "sip":
 			if !isAuthoredSIPUri(value) {
-				errors = append(errors, path+".destination.value must be an absolute sip or sips URI")
+				errors = append(errors, path+".destination.value must be a sip or sips URI with user@host")
 			}
 		default:
 			errors = append(errors, path+".destination.kind must be pstn, teams, or sip")
@@ -487,7 +491,7 @@ func isTeamsTransferTarget(value string) bool {
 }
 
 func isAuthoredSIPUri(value string) bool {
-	if strings.ContainsAny(value, " \t\r\n") || hasMalformedPercentEscape(value) {
+	if strings.ContainsAny(value, " \t\r\n") || strings.Contains(value, "#") || hasMalformedPercentEscape(value) {
 		return false
 	}
 	parsed, err := url.ParseRequestURI(value)
@@ -495,7 +499,20 @@ func isAuthoredSIPUri(value string) bool {
 		return false
 	}
 	scheme := strings.ToLower(parsed.Scheme)
-	return scheme == "sip" || scheme == "sips"
+	if scheme != "sip" && scheme != "sips" {
+		return false
+	}
+	address := value[strings.Index(value, ":")+1:]
+	if suffix := strings.IndexAny(address, ";?"); suffix >= 0 {
+		address = address[:suffix]
+	}
+	at := strings.LastIndex(address, "@")
+	if strings.Count(address, "@") != 1 || at <= 0 || at == len(address)-1 {
+		return false
+	}
+	hostURI, err := url.Parse("https://" + address[at+1:])
+	return err == nil && hostURI.Hostname() != "" && hostURI.User == nil &&
+		(hostURI.Path == "" || hostURI.Path == "/")
 }
 
 func hasMalformedPercentEscape(value string) bool {

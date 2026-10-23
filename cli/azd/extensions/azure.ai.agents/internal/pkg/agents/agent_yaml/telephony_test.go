@@ -92,7 +92,7 @@ func TestValidateVoiceTelephonyTransferTargets(t *testing.T) {
 		{name: "relative SIP", edit: func(target map[string]any) {
 			destination := target["destination"].(map[string]any)
 			destination["kind"], destination["value"] = "sip", "relative/path"
-		}, want: "absolute sip or sips"},
+		}, want: "user@host"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

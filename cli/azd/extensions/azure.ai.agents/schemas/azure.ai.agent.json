@@ -701,7 +701,7 @@
       "type": "object",
       "properties": {
         "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
-        "description": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "description": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Maximum 1024 UTF-16 code units; enforced by azd validation." },
         "destination": { "$ref": "#/definitions/VoiceTelephonyTransferDestination" }
       },
       "required": ["name", "description", "destination"],
@@ -731,7 +731,7 @@
           "type": "object",
           "properties": {
             "kind": { "const": "sip" },
-            "value": { "type": "string", "pattern": "^[sS][iI][pP][sS]?:([^\\s%]|%[0-9a-fA-F]{2})+$" }
+            "value": { "type": "string", "pattern": "^[sS][iI][pP][sS]?:([^\\s%;?@]|%[0-9a-fA-F]{2})+@([^\\s%;?@/#]|%[0-9a-fA-F]{2})+(?::[0-9]+)?(?:[;?]([^\\s%#]|%[0-9a-fA-F]{2})*)?$", "description": "Maximum 2048 UTF-16 code units; enforced by azd validation." }
           },
           "required": ["kind", "value"],
           "additionalProperties": false

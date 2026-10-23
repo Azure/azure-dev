@@ -5,33 +5,31 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Internal opt-in mechanism, the feature registry, and design. No command adoption in this change.
+- **Scope:** Internal process-environment opt-in mechanism, a small feature registry, and root command help. No command adoption or new runtime gates.
 
-Keep preview opt-in decisions inside the Microsoft Foundry agents extension, without adding an azd core feature registry or public extension SDK API. The adoption scope is limited to **managed harness agents**, **voice agents**, and **long-running agent invocation**. General hosted agents and plain prompt functionality are not gated.
+Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax now so a future framework implementation can honor the same variables.
+
+The adoption scope remains **managed harness agents**, **voice agents**, and **long-running agent invocation**. Regular hosted agents and plain prompt functionality are outside those scopes. Declaring these switches and documenting them does not enforce them; actual command and runtime checks belong to a separate adoption change.
 
 ## Ownership and code organization
 
 ```text
 azure.ai.agents/
 ├── internal/
-│   ├── cmd/                       # Command discovery and runtime callers
-│   ├── project/                   # Project/service integration callers
+│   ├── cmd/                       # Help and future command callers
+│   ├── project/                   # Future project/service callers
 │   └── featureflags/
-│       ├── featureflags.go        # Validation, source reads, evaluation
-│       ├── featureflags_test.go   # Source combinations and regressions
-│       ├── registry.go            # Every declared feature and All
+│       ├── featureflags.go        # Declaration validation and ENV read
+│       ├── featureflags_test.go   # Process-environment contract tests
+│       ├── registry.go            # Feature declarations, All, Lookup
 │       └── registry_test.go       # Declaration rules
 └── docs/specs/
     └── preview-feature-flags.md
 ```
 
-Dependency direction is `internal/cmd` or `internal/project` → `internal/featureflags` → existing azd services through `azdext.AzdClient` (`UserConfig`, `Project`, `Environment`). The helper also uses the existing `pkg/config` reader to preserve nested alpha key lookup semantics. It never imports command or project orchestration.
+The package belongs to the `azureaiagent` module and is imported as `azureaiagent/internal/featureflags`. Go's `internal` boundary excludes other extension modules. The evaluator uses only the Go standard library; it has no azd client, config, project, environment-loader, gRPC, or authentication dependency.
 
-The package belongs to the `azureaiagent` module and is imported as `azureaiagent/internal/featureflags`. Go's `internal` boundary excludes other extension modules. It requires neither a new module nor a root-module replacement or dependency upgrade to expose the helper.
-
-The host-sentinel compatibility tests import the pinned azd environment packages. Their transitive dependencies require indirect entries for `heredoc/v2`, `azblob`, and `azfile` in this module. The azd requirement is `v1.37.0`.
-
-Keep validation, reads, and small evaluation helpers together in one implementation file. Splitting them into a loader framework or generic source abstraction would add indirection without another implementation to support. The registry is a plain list of declarations, not a plugin system.
+Keep the registry as a plain list, not a listing framework or plugin system. The extension stays on its pinned azd dependency, `v1.37.0`, without a local module replacement or dependency upgrade.
 
 ## API and caller contract
 
@@ -42,99 +40,87 @@ type Feature struct {
     Description string
 }
 
-func CheckEnvironmentFlag(flags *pflag.FlagSet) error
-
-func IsEnabled(
-    ctx context.Context,
-    client *azdext.AzdClient,
-    feature Feature,
-    environmentName string,
-) (bool, error)
-
+func IsEnabled(feature Feature) (bool, error)
 func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
 
-Callers must call `CheckEnvironmentFlag(cmd.Flags())` before `IsEnabled` and before any source read. An explicit empty or whitespace only `-e/--environment` selection is invalid. The check returns a validation error with code `invalid_parameter`. It returns nil for a nil flag set, an absent flag, an omitted flag, or a nonempty selection.
-
-Pass the parsed `azdext.ExtensionContext.Environment` unchanged to `IsEnabled`. An empty name means the flag was omitted and lets the host select the project default. A nonempty name is passed to `Environment.GetValues`, so an explicit selection takes precedence over the project default. The helper does not infer selection from ambient `AZD_ENVIRONMENT`.
-
-## Feature registry
-
-`registry.go` declares every agents preview feature in one place. `All` returns them in a stable order as a fresh slice. `Lookup` finds a declaration by ID. Command help, enforcement, and listings read this list instead of declaring their own identities.
-
-| Declaration | Feature ID | Environment key | Scope |
-| --- | --- | --- | --- |
-| `ManagedHarness` | `agents.managed_harness` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
-| `Voice` | `agents.voice` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
-| `LongRunning` | `agents.long_running` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
-
-Each ID starts with `agents.`. Each environment key is `AZD_FOUNDRY_EXT_ENABLE_` plus the ID in upper case with dots replaced by underscores. Tests enforce both rules, unique IDs and keys, and a nonempty description. The helper still reads `EnvVar` as declared and never derives it at run time.
+`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help.
 
 ```go
-if err := featureflags.CheckEnvironmentFlag(cmd.Flags()); err != nil {
+enabled, err := featureflags.IsEnabled(featureflags.Voice)
+if err != nil {
     return err
 }
-enabled, err := featureflags.IsEnabled(
-    extCtx.Context(),
-    azdClient,
-    featureflags.Voice,
-    extCtx.Environment,
-)
 ```
 
-`IsEnabled` rejects a nil client or an empty `ID` or `EnvVar` before reading sources. `Description` is optional and never read by the evaluator.
+`IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific `CheckEnvironmentFlag` helper.
 
-## Documented enablement methods
+## Feature registry and help
 
-The documented ways to opt into a feature are listed below. These opt-ins are additive: any enabling value is sufficient.
+`registry.go` declares each feature once. `All` returns a fresh slice in stable order, and `Lookup` finds a declaration by ID. Root help at `azd ai agent --help` renders the canonical switches and their scopes from these declarations while retaining the ordinary project and environment guidance.
 
-| Source | Read | Enabling value |
-| --- | --- | --- |
-| User config | `UserConfig.Get("alpha")` (`azd config set`) | Case-insensitive string `on` only at `alpha.<ID>` |
-| Process environment | Only the declared `EnvVar` | A true value accepted by `strconv.ParseBool` |
-| Selected azd environment | Exact `EnvVar` in raw `.env` values from `Environment.GetValues` (`azd env set`) | A true value accepted by `strconv.ParseBool` |
+| Declaration | Feature ID | Process environment key | Scope |
+| --- | --- | --- | --- |
+| `ManagedHarness` | `agents.managed_harness` | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
+| `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
+| `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
 
-Unrelated config keys cannot enable a preview or cancel an opt-in from another source.
+Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
-False, `off`, empty, missing, and other non-enabling values never override another source's true value. Config requires a string `on` without surrounding whitespace. Booleans and other JSON types are non-enabling. Environment values accept exactly `1`, `t`, `T`, `true`, `TRUE`, or `True`. Values such as `on`, `yes`, and whitespace-padded values do not enable. There is no `ALL` environment toggle or experimentation default.
+## Process environment enablement
 
-### Relation to azd alpha features
+We recommend setting the desired variable in the shell or CI process environment before running azd. For example:
 
-Agents previews reuse the `alpha.<id>` config key shape for `azd config set`, but are not part of the azd alpha feature set. Neither `alpha.all` nor `AZD_ALPHA_ENABLE_<NAME>`, such as `AZD_ALPHA_ENABLE_AGENTS_VOICE`, turns them on. Each preview must be turned on with its own `alpha.agents.<name>` key or its `AZD_FOUNDRY_EXT_ENABLE_*` variable. Each preview is chosen on its own, so a global switch cannot opt a user into a preview they did not choose. Core azd alpha feature behavior is unchanged.
+```sh
+export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+azd ai agent --help
+```
 
-## Reads, optional scopes, and errors
+In PowerShell:
 
-Each call captures the declared process value, reads user config, loads the project, and reads the selected environment when a project is available. It evaluates those per-call responses without merging source maps. This is a fresh per-invocation view, not a transaction across host reads.
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+azd ai agent --help
+```
 
-| Situation | Result |
-| --- | --- |
-| No project, no explicit environment | Skip project and dotenv sources. Process and config still apply |
-| Project without a default environment, no explicit selection | Skip dotenv. Process and config still apply |
-| Explicit selection with no project or a missing environment | Return the error. Do not fall back to the default |
-| Config/project/dotenv read, decoding, permission, or transport failure | Return an error even when another source enables the feature |
-| Missing config/project/environment response, or malformed config JSON | Return an error rather than treating a failed load as disabled |
+This example demonstrates the switch syntax and where to discover it; it does not demonstrate an implemented voice runtime gate.
 
-Only the host's exact no-project and no-default-environment sentinel messages, transported as `Unknown` without details (or as matching plain errors), qualify as optional absence. Similar messages, `NotFound` statuses, detailed statuses, and absence at the wrong read stage remain errors. Tests compare the sentinel text with the pinned azd dependency. Changes to the host contract require explicit compatibility review.
+All three features default to off. Only `strconv.ParseBool` true values enable a feature: `1`, `t`, `T`, `true`, `TRUE`, or `True`. False values (`0`, `f`, `F`, `false`, `FALSE`, `False`), missing or empty values, and invalid values leave it off without an error. Values such as `on`, `yes`, mixed-case `TrUe`, and whitespace-padded strings are invalid.
 
-Errors retain their cause with `%w` and add read-stage/feature context. A failed call returns `false, error`. Callers must not use it as a successful disabled result. User-facing orchestration can classify errors following the [extension error guidance](../../../../docs/extensions/extensions-style-guide.md#error-handling-in-extensions).
+Each feature is independent. There is no global toggle, experimentation default, or cross-feature opt-in.
 
-There is no global cache, process environment mutation, output, configuration write, or authentication API call. Calls use the supplied context. The helper never prints source values.
+### Evaluator source boundary
 
-## Adoption boundary and trade-offs
+`IsEnabled` reads the declared key from the process environment with `os.Getenv`. That environment includes variables set in the shell or CI before azd starts and values the azd host has already placed there. On a normal agents command, the host appends the selected azd environment before it launches the extension. These commands do not opt out of that injection, so a value saved with `azd env set` is visible on the next `azd` invocation. The host appends those values after the parent process environment. When the same key appears twice, the child process keeps the last value, so the selected environment overrides the parent process for that key.
 
-Command discovery and runtime enforcement are separate caller responsibilities. A future discovery check may hide a preview-only command, but that alone cannot gate preview flags on existing commands, project/service flows, or direct invocation paths. Runtime callers must check the selected capability before its side effects and forward the actual environment selection. No command registration, command behavior, or runtime gate changes in this PR.
+The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
-Only the three registered capabilities are candidates for adoption. Agents-private checks do **not** automatically intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Normal project configuration, deployment environments, runtime settings, and command input validation elsewhere in the extension are unchanged.
 
-The small API deliberately returns only an enablement decision and error, not a source report or policy object. OR semantics avoid accidental disabling by unrelated scopes, at the cost of having no local override for an existing opt-in. Exact optional-error matching avoids swallowing real failures but remains coupled to the existing host error contract.
+## Compatibility and future framework adoption
 
-The registry settles the three identities and environment keys. Exact command and runtime check locations and disabled-feature guidance belong with the behavior changes that adopt them.
+This intentionally narrows the earlier multi-source implementation:
+
+- `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
+- The evaluator no longer reads user config or opens selected/default azd environment files. The azd host may still inject the selected environment into the process before launch.
+- Feature evaluation no longer loads project/service scopes or calls the azd host.
+- The old context/client/environment parameters, host-error sentinels, and flag-specific environment validation are removed.
+
+The canonical syntax matches core azd alpha environment switches, but these three extension capabilities are not registered with core alpha features. Core alpha behavior is unchanged. Do not use core `FeatureManager` here: it would also read azd config.
+
+Discoverability through `azd config list-alpha`, a public SDK API, and framework/RPC support remain deferred. Root extension help is the discovery surface for now. A future framework implementation can replace the private evaluator while retaining the canonical variables and capability identities; it should introduce any broader source semantics explicitly.
+
+## Adoption boundary and side effects
+
+Only the three registered capabilities are candidates for future checks. Command discovery and runtime enforcement are separate caller responsibilities. A discovery check alone cannot gate preview flags, project/service flows, or direct invocation paths. Adoption should check the relevant capability before side effects without gating regular hosted or plain prompt agents.
+
+There is no cache, output, process-environment mutation, configuration write, authentication, or network call. Each evaluation reads the current process value. A declaration error returns `false, error`. Valid declarations always return the process-environment decision. The evaluator has no host-read failure path.
 
 ## Validation
 
-Tests cover source combinations, all supported boolean spellings and non-enabling values, nested per-feature alpha config, ignored `alpha.all` and unrelated keys, exact environment keys, explicit environment forwarding, optional scopes and sentinel compatibility, genuine failures despite positive sources, malformed responses, context forwarding, and snapshot isolation without input mutation.
+Tests cover all three canonical keys, default-off behavior, accepted boolean forms, non-enabling values, independent feature combinations, ignored old/global/unrelated keys, and optional descriptions. Temporary local fixtures verify that direct evaluator calls do not open or modify user config, default/selected dotenv files, or project/service mappings. A value already present in the process environment still enables the feature; that is the path host-injected azd environment values take. These tests call the evaluator directly and do not launch through the azd host. Repeated calls verify fresh reads and no process or declaration mutation.
 
-Registry tests cover declaration rules, the stable copy returned by `All`, and `Lookup`.
+Registry tests cover the stable copy returned by `All` and `Lookup`. Help tests cover registry-derived switches and scopes, color/no-color headings, root-only placement, unchanged command discovery, and updated snapshots.
 
-Run focused tests and vet for `./internal/featureflags`, build the agents module against its pinned azd dependency, and apply the module's formatting/lint rules. No Azure scenario or user auth/config mutation is needed for this mechanism-only change.
+Run focused feature-flag and help tests, scoped vet/lint/formatting/modernization/spelling checks, and the full agents module build with Go 1.26.4. The Tier 0 `tests/cli-interactive-tester-scenarios/tier0/0.02-help-root.yaml` scenario includes the switch discovery contract; scenario execution is opt-in through the `foundry-extension-scenario-orchestrator` agent. No Azure scenarios or user auth/config mutations are required for this mechanism-only change.

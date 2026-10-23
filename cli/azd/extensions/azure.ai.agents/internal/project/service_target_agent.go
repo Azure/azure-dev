@@ -3105,7 +3105,35 @@ func transferTargetsFromYAML(raw []map[string]any) ([]agent_api.TelephonyTransfe
 	if err := agent_api.ValidateTelephonyTransferTargetsForWrite(targets); err != nil {
 		return nil, err
 	}
+	if err := validateTelephonyTransferTargetsForDeployment(targets); err != nil {
+		return nil, err
+	}
 	return targets, nil
+}
+
+func validateTelephonyTransferTargetsForDeployment(targets []agent_api.TelephonyTransferTarget) error {
+	const teamsPrefix = "28:orgid:"
+	for _, target := range targets {
+		if target.Destination.Kind != agent_api.TelephonyTransferDestinationTeams {
+			continue
+		}
+		value := target.Destination.Value
+		if len(value) >= len(teamsPrefix) && strings.EqualFold(value[:len(teamsPrefix)], teamsPrefix) {
+			value = value[len(teamsPrefix):]
+		}
+		if !canonicalUUIDPattern.MatchString(value) {
+			return fmt.Errorf(
+				"Teams transfer-target destination must be a canonical object GUID or 28:orgid:<guid>",
+			)
+		}
+		_, err := uuid.Parse(value)
+		if err != nil {
+			return fmt.Errorf(
+				"Teams transfer-target destination must be a canonical object GUID or 28:orgid:<guid>",
+			)
+		}
+	}
+	return nil
 }
 
 func validateTransferTargetYAMLFields(raw []map[string]any) error {
@@ -3307,7 +3335,7 @@ func matchingGATelephonyBindings(
 ) []agent_api.GATelephonyBinding {
 	matches := []agent_api.GATelephonyBinding{}
 	for _, binding := range remote {
-		if binding.Provider != desired.provider {
+		if !telephonyProvidersMatch(binding.Provider, desired.provider) {
 			continue
 		}
 		switch desired.provider {
@@ -3323,6 +3351,16 @@ func matchingGATelephonyBindings(
 		}
 	}
 	return matches
+}
+
+func telephonyProvidersMatch(remote, desired string) bool {
+	remote = strings.TrimSpace(remote)
+	desired = strings.TrimSpace(desired)
+	if strings.EqualFold(remote, desired) {
+		return true
+	}
+	return strings.EqualFold(desired, agent_api.TelephonyProviderTeamsPhoneExtensibility) &&
+		strings.EqualFold(remote, "teams_phone_extension")
 }
 
 func gaTelephonyBindingConverged(remote agent_api.GATelephonyBinding, desired desiredTelephonyBinding) bool {

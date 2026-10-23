@@ -372,6 +372,43 @@ func TestDeployVoiceTelephonyBindings_TeamsMatchNormalizesUUID(t *testing.T) {
 	require.Zero(t, client.createCalls)
 }
 
+func TestDeployVoiceTelephonyBindings_MatchesLegacyTeamsProviderAlias(t *testing.T) {
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	}
+	for _, provider := range []string{
+		"teams_phone_extension",
+		" TEAMS_PHONE_EXTENSION ",
+		"teams_phone_extensibility",
+		" TEAMS_PHONE_EXTENSIBILITY ",
+	} {
+		t.Run(provider, func(t *testing.T) {
+			remote := agent_api.GATelephonyBinding{
+				ID: "opaque", Provider: provider,
+				ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+				Status: agent_api.TelephonyBindingStatusActive,
+			}
+			client := &fakeTelephonyBindingClient{listResults: [][]agent_api.GATelephonyBinding{{remote}}}
+			err := preflightVoiceTelephonyBindings(
+				t.Context(), client, "voice-agent", mustDesiredTelephonyBindings(t, binding))
+			require.NoError(t, err)
+			require.Zero(t, client.createCalls)
+		})
+	}
+}
+
+func TestDeployVoiceTelephonyBindings_DoesNotMatchUnrelatedProvider(t *testing.T) {
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: "teams_phone_extensibility_suffix",
+		ResourceAccountObjectID: "00000000-0000-0000-0000-00000000000A", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	desired := mustDesiredTelephonyBindings(t, agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-00000000000a", Connection: "acs",
+	})
+	require.Empty(t, matchingGATelephonyBindings([]agent_api.GATelephonyBinding{remote}, desired[0]))
+}
+
 func TestDeployVoiceTelephonyBindings_RejectsDriftAndMultipleBeforeMutation(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -528,6 +565,48 @@ func TestDesiredTelephonyTransferTargets_RejectsFutureYAMLFields(t *testing.T) {
 	binding.TransferTargets[0]["destination"].(map[string]any)["future_field"] = true
 	_, _, _, err = desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
 	require.ErrorContains(t, err, "unsupported field")
+}
+
+func TestDesiredTelephonyTransferTargets_ValidatesTeamsDestinationBeforeMutation(t *testing.T) {
+	for _, value := range []string{
+		"not-a-guid",
+		" 00000000-0000-0000-0000-000000000001 ",
+		"28:orgid:not-a-guid",
+	} {
+		t.Run(value, func(t *testing.T) {
+			binding := agent_yaml.VoiceTelephonyBinding{
+				Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+				TransferTargets: []map[string]any{{
+					"name": "teams", "description": "Teams transfer",
+					"destination": map[string]any{"kind": "teams", "value": value},
+				}},
+			}
+			_, _, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+			require.ErrorContains(t, err, "canonical object GUID")
+			require.NotContains(t, err.Error(), value)
+		})
+	}
+
+	for _, value := range []string{
+		"00000000-0000-0000-0000-000000000000",
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-00000000000A",
+		"28:orgid:00000000-0000-0000-0000-000000000001",
+		"28:ORGID:00000000-0000-0000-0000-000000000001",
+	} {
+		t.Run("valid-"+value, func(t *testing.T) {
+			binding := agent_yaml.VoiceTelephonyBinding{
+				Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+				TransferTargets: []map[string]any{{
+					"name": "teams", "description": "Teams transfer",
+					"destination": map[string]any{"kind": "teams", "value": value},
+				}},
+			}
+			_, targets, _, err := desiredTelephonyConfiguration([]agent_yaml.VoiceTelephonyBinding{binding})
+			require.NoError(t, err)
+			require.Equal(t, value, targets[0].Destination.Value)
+		})
+	}
 }
 
 func TestPreflightVoiceTelephonyState_RejectsUnreconcilableTargetDrift(t *testing.T) {
@@ -738,6 +817,26 @@ func TestDeployVoiceTelephonyBindings_ReconcilesCreateConflict(t *testing.T) {
 		t.Context(), client, mustDesiredTelephonyBindings(t, twilioYAMLBinding()), voiceAgentObject())
 	require.NoError(t, err)
 	require.Equal(t, 3, client.listCalls)
+	require.Equal(t, 1, client.createCalls)
+}
+
+func TestDeployVoiceTelephonyBindings_ReconcilesConflictWithLegacyTeamsAlias(t *testing.T) {
+	useFastTelephonyPolling(t)
+	binding := agent_yaml.VoiceTelephonyBinding{
+		Provider: "acs", Identifier: "28:orgid:00000000-0000-0000-0000-000000000001", Connection: "acs",
+	}
+	remote := agent_api.GATelephonyBinding{
+		ID: "opaque", Provider: "teams_phone_extension",
+		ResourceAccountObjectID: "00000000-0000-0000-0000-000000000001", ConnectionName: "acs",
+		Status: agent_api.TelephonyBindingStatusActive,
+	}
+	client := &fakeTelephonyBindingClient{
+		listResults: [][]agent_api.GATelephonyBinding{{}, {remote}, {remote}},
+		createErr:   &azcore.ResponseError{StatusCode: http.StatusConflict},
+	}
+	err := (&AgentServiceTargetProvider{}).deployVoiceTelephonyBindings(
+		t.Context(), client, mustDesiredTelephonyBindings(t, binding), voiceAgentObject())
+	require.NoError(t, err)
 	require.Equal(t, 1, client.createCalls)
 }
 

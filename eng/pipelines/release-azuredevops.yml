@@ -13,6 +13,11 @@ trigger:
       - eng/pipelines/templates/jobs/azuredevops-build.yml
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - ext/azuredevops

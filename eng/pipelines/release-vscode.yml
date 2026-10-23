@@ -9,6 +9,11 @@ trigger:
       - eng/pipelines/release-vscode.yml
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - ext/vscode

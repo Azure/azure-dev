@@ -59,6 +59,11 @@ bindings. Required values must exist in the selected azd environment before
 provisioning. Input names are shown during initialization, but values are not.
 Deployment-owned Spring, datasource, and Foundry variable names are rejected.
 Application inputs do not modify source or infer additional Azure resources.
+This unpublished feature currently depends on unresolved core azd support
+tracked in [#10688](https://github.com/Azure/azure-dev/issues/10688),
+[#10691](https://github.com/Azure/azure-dev/issues/10691), and
+[#10692](https://github.com/Azure/azure-dev/issues/10692). See
+[DESIGN.md](DESIGN.md) for the release boundary.
 
 PostgreSQL managed identity is inferred from supported passwordless Spring
 properties or the Azure PostgreSQL JDBC authentication plugin. MySQL managed

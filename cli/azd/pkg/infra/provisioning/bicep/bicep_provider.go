@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -2151,10 +2150,7 @@ type envSubstResult struct {
 	hasVirtualEnvVar                bool
 	mappedEnvVars                   []string
 	parametersMappedToAzureLocation []string
-	missingRequiredEnvVars          []string
 }
-
-var requiredEnvReference = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$`)
 
 // evalParamEnvSubst evaluates environment variable substitution on a single parameter string value.
 // It returns the substituted string, env var mapping information, and any error.
@@ -2197,133 +2193,6 @@ func evalParamEnvSubst(
 		return value
 	})
 	return replaced, result, err
-}
-
-func mergeEnvSubstResult(target *envSubstResult, source envSubstResult) {
-	target.hasUnsetEnvVar = target.hasUnsetEnvVar || source.hasUnsetEnvVar
-	target.hasVirtualEnvVar = target.hasVirtualEnvVar || source.hasVirtualEnvVar
-	target.mappedEnvVars = append(target.mappedEnvVars, source.mappedEnvVars...)
-	target.parametersMappedToAzureLocation = append(
-		target.parametersMappedToAzureLocation,
-		source.parametersMappedToAzureLocation...,
-	)
-	target.missingRequiredEnvVars = append(
-		target.missingRequiredEnvVars,
-		source.missingRequiredEnvVars...,
-	)
-}
-
-func (p *BicepProvider) resolveComplexParameterValue(
-	ctx context.Context,
-	value any,
-	principalId string,
-	principalType string,
-	paramName string,
-) (any, envSubstResult, error) {
-	switch typed := value.(type) {
-	case string:
-		replaced, result, err := evalParamEnvSubst(
-			typed,
-			principalId,
-			principalType,
-			paramName,
-			p.env,
-			p.options.VirtualEnv,
-		)
-		if err != nil {
-			return nil, envSubstResult{}, fmt.Errorf(
-				"substituting environment variables for parameter %s: %w",
-				paramName,
-				err,
-			)
-		}
-		if match := requiredEnvReference.FindStringSubmatch(typed); len(match) == 2 &&
-			(result.hasUnsetEnvVar || replaced == "") {
-			result.missingRequiredEnvVars = append(result.missingRequiredEnvVars, match[1])
-		}
-		if result.hasVirtualEnvVar {
-			return replaced, result, nil
-		}
-		replaced, err = p.evalCommandSubstitution(ctx, replaced)
-		if err != nil {
-			return nil, envSubstResult{}, err
-		}
-		return replaced, result, nil
-	case map[string]any:
-		result := make(map[string]any, len(typed))
-		substResult := envSubstResult{}
-		for _, key := range slices.Sorted(maps.Keys(typed)) {
-			resolved, childResult, err := p.resolveComplexParameterValue(
-				ctx,
-				typed[key],
-				principalId,
-				principalType,
-				paramName,
-			)
-			if err != nil {
-				return nil, envSubstResult{}, err
-			}
-			result[key] = resolved
-			mergeEnvSubstResult(&substResult, childResult)
-		}
-		return result, substResult, nil
-	case []any:
-		result := make([]any, len(typed))
-		substResult := envSubstResult{}
-		for index, item := range typed {
-			resolved, childResult, err := p.resolveComplexParameterValue(
-				ctx,
-				item,
-				principalId,
-				principalType,
-				paramName,
-			)
-			if err != nil {
-				return nil, envSubstResult{}, err
-			}
-			result[index] = resolved
-			mergeEnvSubstResult(&substResult, childResult)
-		}
-		return result, substResult, nil
-	default:
-		return value, envSubstResult{}, nil
-	}
-}
-
-func resolveNestedKeyVaultReferences(
-	ctx context.Context,
-	value any,
-	resolve func(context.Context, string) (string, error),
-) (any, error) {
-	switch typed := value.(type) {
-	case string:
-		if !keyvault.IsAzureKeyVaultSecret(typed) {
-			return typed, nil
-		}
-		return resolve(ctx, typed)
-	case map[string]any:
-		result := make(map[string]any, len(typed))
-		for _, key := range slices.Sorted(maps.Keys(typed)) {
-			resolved, err := resolveNestedKeyVaultReferences(ctx, typed[key], resolve)
-			if err != nil {
-				return nil, err
-			}
-			result[key] = resolved
-		}
-		return result, nil
-	case []any:
-		result := make([]any, len(typed))
-		for index, item := range typed {
-			resolved, err := resolveNestedKeyVaultReferences(ctx, item, resolve)
-			if err != nil {
-				return nil, err
-			}
-			result[index] = resolved
-		}
-		return result, nil
-	default:
-		return value, nil
-	}
 }
 
 // evalCommandSubstitution evaluates command substitutions (like secretOrRandomPassword) in the given string.
@@ -2393,9 +2262,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 		if hasDef &&
 			(paramType == provisioning.ParameterTypeObject || paramType == provisioning.ParameterTypeArray) &&
 			param.KeyVaultReference == nil {
-			if param.Value == nil {
-				continue
-			}
 			if stringVal, ok := param.Value.(string); ok {
 				// Run envsubst on just the string value, not the full parameter JSON
 				// This allows us to validate the substituted value as JSON,
@@ -2453,35 +2319,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 				resolvedParams[paramName] = azure.ArmParameter{Value: jsonValue}
 				continue
 			}
-
-			resolvedValue, substResult, err := p.resolveComplexParameterValue(
-				ctx,
-				param.Value,
-				principalId,
-				string(principalType),
-				paramName,
-			)
-			if err != nil {
-				return loadParametersResult{}, err
-			}
-			envMapping[paramName] = substResult.mappedEnvVars
-			parametersMappedToAzureLocation = append(
-				parametersMappedToAzureLocation,
-				substResult.parametersMappedToAzureLocation...,
-			)
-			if substResult.hasVirtualEnvVar {
-				virtualMapping[paramName] = struct{}{}
-				continue
-			}
-			if len(substResult.missingRequiredEnvVars) > 0 {
-				return loadParametersResult{}, fmt.Errorf(
-					"required environment variable %s for parameter %s is not set or is empty",
-					substResult.missingRequiredEnvVars[0],
-					paramName,
-				)
-			}
-			resolvedParams[paramName] = azure.ArmParameter{Value: resolvedValue}
-			continue
 		}
 
 		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs
@@ -3736,14 +3573,14 @@ func (p *BicepProvider) ensureParameters(
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 
-				if param.Secure() {
-					paramValue, err = resolveNestedKeyVaultReferences(
-						ctx,
-						paramValue,
-						p.keyvaultService.SecretFromAkvs,
-					)
-					if err != nil {
-						return nil, err
+				if stringValue, isString := paramValue.(string); isString && param.Secure() {
+					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
+					// and if yes, it fetches the secret value from the Key Vault.
+					if keyvault.IsAzureKeyVaultSecret(stringValue) {
+						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, stringValue)
+						if err != nil {
+							return nil, err
+						}
 					}
 				}
 

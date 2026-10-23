@@ -130,6 +130,17 @@ accounts, shared-resource deployment, MySQL managed identity, custom model selec
 Gradle, and non-web/HTTPS-only hosting remain unsupported. These limits do not
 restrict the intended model above.
 
+Application inputs intentionally use static, data-driven `object` and
+`secureObject` Bicep parameters. Release depends on core azd support for
+JSON-safe nested environment substitution ([#10688](https://github.com/Azure/azure-dev/issues/10688)),
+nested Key Vault reference resolution ([#10691](https://github.com/Azure/azure-dev/issues/10691)),
+and single environment mappings in `azd pipeline config`
+([#10692](https://github.com/Azure/azure-dev/issues/10692)). Until those fixes
+ship, tests use JSON-safe plain values and do not establish that
+`azd env set-secret` or pipeline configuration works for application inputs.
+Before release, require an azd version containing all three fixes or replace the
+object representation with generated scalar parameters.
+
 ## Tests
 
 - Test configuration precedence, resource detection, decision classification,

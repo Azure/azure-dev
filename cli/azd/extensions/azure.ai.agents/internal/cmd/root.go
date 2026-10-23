@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
 	"azureaiagent/internal/inittelemetry"
 
@@ -23,6 +24,7 @@ func NewRootCommand() *cobra.Command {
 			color.YellowString("(Preview)"),
 		),
 	})
+	previewHelpText(rootCmd, featureflags.Voice, "Ship prompt, hosted, and voice agents", "Ship agents")
 	rootCmd.SilenceUsage = true
 	rootCmd.Example = `  # Initialize and deploy an agent project
   azd ai agent init
@@ -49,6 +51,9 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
+		if err := enforcePreviewFeatures(cmd, args); err != nil {
+			return err
+		}
 		operation := telemetryOperation(cmd.CommandPath())
 		switch operation {
 		case "deploy", "init", "listen", "metadata", "version":
@@ -70,6 +75,7 @@ func NewRootCommand() *cobra.Command {
 	// Show the ASCII art banner above the default help text for the root command
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		applyPreviewVisibility(rootCmd, previewHelpStates())
 		if cmd == rootCmd {
 			printBanner(cmd.OutOrStdout())
 		}

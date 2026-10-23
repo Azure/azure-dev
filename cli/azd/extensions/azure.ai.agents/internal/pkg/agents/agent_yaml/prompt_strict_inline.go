@@ -50,6 +50,18 @@ func ValidateInlinePromptAgent(props map[string]any) error {
 			)
 		}
 	}
+	if _, hasToolbox := props["toolbox"]; hasToolbox {
+		if _, hasToolboxes := props["toolboxes"]; hasToolboxes {
+			return fmt.Errorf(
+				"cannot specify both \"toolbox\" and \"toolboxes\"; " +
+					"remove \"toolbox\" and list each azure.ai.toolbox service under \"toolboxes\"",
+			)
+		}
+		return fmt.Errorf(
+			"field \"toolbox\" is no longer supported; " +
+				"use \"toolboxes\" with a list of azure.ai.toolbox service names",
+		)
+	}
 	if raw, ok := props["harness"]; ok {
 		if err := validateInlineHarness(raw); err != nil {
 			return err

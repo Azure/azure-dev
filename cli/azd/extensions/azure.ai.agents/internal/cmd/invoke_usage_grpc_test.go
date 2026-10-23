@@ -48,6 +48,7 @@ func startInvokeUsageRPCServer(t *testing.T, project azdext.ProjectServiceServer
 	require.Equal(t, "azd.extensions.v1.TelemetryService", azdext.TelemetryService_ServiceDesc.ServiceName)
 	azdext.RegisterTelemetryServiceServer(server, recorder)
 	azdext.RegisterProjectServiceServer(server, project)
+	azdext.RegisterEnvironmentServiceServer(server, &previewTestEnvironment{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() { _ = server.Serve(listener) }()
@@ -71,7 +72,7 @@ func TestAgentInvokeSelectedRequestOverGRPC(t *testing.T) {
 		{"long-running responses", "responses", true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{})
+			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{project: &azdext.ProjectConfig{}})
 			action := &InvokeAction{
 				flags: &invokeFlags{
 					protocol: tt.protocol, message: "private prompt", longRunning: tt.longRunning, noWait: tt.noWait,

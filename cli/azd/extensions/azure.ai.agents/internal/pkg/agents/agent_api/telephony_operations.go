@@ -701,6 +701,12 @@ func validateTelephonyTransferTargets(
 	return nil
 }
 
+// ValidateTelephonyTransferTargetsForWrite validates a complete transfer-target
+// singleton using the same rules as ReplaceTelephonyTransferTargets.
+func ValidateTelephonyTransferTargetsForWrite(targets []TelephonyTransferTarget) error {
+	return validateTelephonyTransferTargets(&TelephonyTransferTargets{TransferTargets: targets}, "request", true)
+}
+
 func validateConnectionName(value string) error {
 	if !utf8.ValidString(value) {
 		return fmt.Errorf("connection name must be valid UTF-8")

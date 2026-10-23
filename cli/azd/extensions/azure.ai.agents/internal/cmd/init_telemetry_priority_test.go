@@ -66,6 +66,7 @@ func TestRootInitReportsExistingTelemetryBeforeFullTimingBuffer(t *testing.T) {
 		t.Run(code.String(), func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			setTimedInitAuth(t)
+			t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "true")
 			promptProps, err := structpb.NewStruct(map[string]any{
 				"kind": "prompt", "name": "prompt-agent", "model": "gpt-4.1-mini", "instructions": "Help.",
 			})

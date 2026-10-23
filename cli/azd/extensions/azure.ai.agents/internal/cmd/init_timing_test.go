@@ -141,7 +141,7 @@ func TestInitStepTimingAzureYamlScaffoldingFailure(t *testing.T) {
 			ctx, timing := inittelemetry.NewContext(t.Context())
 			err := runInitFromAzureYaml(ctx, &initFlags{
 				templatePointer: pointer, src: "project",
-			}, client, http.DefaultClient, content)
+			}, client, http.DefaultClient, content, "")
 			require.Error(t, err)
 			require.Equal(t, 1, workflow.runCalls)
 			recorder := &initTimingRecorder{}
@@ -369,9 +369,9 @@ func TestInitStepTimingLateValidationExcludesAuthentication(t *testing.T) {
 		{name: "harness", args: []string{"--kind", "prompt", "--harness", "invalid"}, wantErr: "unknown --harness", postAuth: true},
 		{name: "registry conflict", args: []string{"--registry-connection", "connection"},
 			wantErr: "--registry-connection", postAuth: true},
-		{name: "project service", wantErr: "agent definition not found", postAuth: true, invalidProject: true},
+		{name: "project service", wantErr: "agent definition not found", invalidProject: true},
 		{name: "unified template conflict", args: []string{"--kind", "hosted"},
-			wantErr: "project adoption cannot apply", postAuth: true, template: true},
+			wantErr: "project adoption cannot apply", template: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -447,6 +447,7 @@ func TestInitStepTimingVoiceConfigurationBothEntryPoints(t *testing.T) {
 		t.Run(fmt.Sprintf("explicit-kind=%t", explicit), func(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
+			t.Setenv("AZD_ALPHA_ENABLE_AGENTS_VOICE", "true")
 			project := &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: root, Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
 			}}

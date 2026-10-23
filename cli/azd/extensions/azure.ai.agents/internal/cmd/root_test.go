@@ -50,6 +50,7 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 }
 
 func TestVoicePublicPreviewHelp(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	for _, tt := range []struct {
 		name     string
@@ -60,7 +61,8 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		{
 			name: "root",
 			contains: []string{
-				"Ship prompt, hosted, and voice agents", "Initialize a new prompt, hosted, or voice agent project",
+				"Ship prompt, hosted, and voice agents with Microsoft Foundry",
+				"Initialize a new prompt, hosted, or voice agent project",
 				"Show the status of a prompt, hosted, or voice agent", "Delete a prompt, hosted, or voice agent",
 			},
 		},
@@ -92,11 +94,13 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		},
 		{
 			name: "show", path: []string{"show"},
-			contains: []string{"prompt, hosted, or voice agent"},
+			contains: []string{"Show the status of a prompt, hosted, or voice agent"},
 		},
 		{
 			name: "delete", path: []string{"delete"},
-			contains: []string{"prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup"},
+			contains: []string{
+				"Delete a prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup",
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

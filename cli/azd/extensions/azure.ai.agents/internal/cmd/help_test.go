@@ -19,6 +19,7 @@ import (
 )
 
 func TestAgentHelp(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true
@@ -66,7 +67,7 @@ func TestAgentHelp(t *testing.T) {
 				require.Contains(t, text,
 					"values the azd host already injected from the selected environment.")
 				require.Contains(t, text, "It does not query azd config or load environment files from disk itself.")
-				require.Contains(t, text, "These declarations do not add command or runtime gates by themselves.")
+				require.NotContains(t, text, "These declarations do not add command or runtime gates")
 				require.Contains(t, text, "Regular hosted and plain prompt agents are outside these preview scopes.")
 				require.NotContains(t, text, "AZD_FOUNDRY_EXT_ENABLE_")
 			} else {
@@ -97,6 +98,7 @@ func TestAgentHelp(t *testing.T) {
 }
 
 func TestAgentHelpColor(t *testing.T) {
+	setPreviewProcess(t, "true")
 	previous := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = previous })
@@ -124,7 +126,7 @@ func TestAgentHelpColor(t *testing.T) {
 	}
 }
 
-func TestAgentHelpIndependentOfPreviewSwitches(t *testing.T) {
+func TestAgentHelpSwitchListIndependentOfPreviewValues(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true
@@ -141,14 +143,17 @@ func TestAgentHelpIndependentOfPreviewSwitches(t *testing.T) {
 		root.SetErr(&buf)
 		root.SetArgs([]string{"--help"})
 		require.NoError(t, root.Execute())
+		_, switches, found := strings.Cut(buf.String(), "\nPreview Feature Switches\n")
+		require.True(t, found)
 		if expected == "" {
-			expected = buf.String()
+			expected = switches
 		}
-		require.Equal(t, expected, buf.String())
+		require.Equal(t, expected, switches)
 	}
 }
 
 func TestInitHelpUsesTemplateFlag(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	previous := color.NoColor
 	color.NoColor = true

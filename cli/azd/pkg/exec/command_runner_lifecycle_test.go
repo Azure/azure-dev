@@ -186,7 +186,7 @@ func TestCommandRunner_RunListPreCanceledContextPreventsStart(t *testing.T) {
 
 	_, err := runner.RunList(ctx, []string{helperListCommand()}, RunArgs{
 		Env: []string{
-			commandRunnerHelperExeEnv + "=" + os.Args[0],
+			helperExecutableEnv(os.Args[0]),
 			commandRunnerHelperModeEnv + "=mark-start",
 			commandRunnerHelperReadyEnv + "=" + readyPath,
 		},
@@ -195,6 +195,34 @@ func TestCommandRunner_RunListPreCanceledContextPreventsStart(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 	_, statErr := os.Stat(readyPath)
 	require.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestCommandRunner_RunListQuotesWindowsExecutablePath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("cmd.exe quoting is Windows-specific")
+	}
+
+	tempDir := filepath.Join(t.TempDir(), "path with spaces")
+	require.NoError(t, os.MkdirAll(tempDir, 0o700))
+	helperPath := filepath.Join(tempDir, "exec.test.exe")
+	contents, err := os.ReadFile(os.Args[0]) //nolint:gosec // current test executable
+	require.NoError(t, err)
+	//nolint:gosec // G703: helperPath is under the test-controlled temporary directory.
+	require.NoError(t, os.WriteFile(helperPath, contents, 0o600))
+	readyPath := filepath.Join(t.TempDir(), "started")
+
+	_, err = NewCommandRunner(nil).RunList(
+		t.Context(),
+		[]string{helperListCommand()},
+		RunArgs{Env: []string{
+			helperExecutableEnv(helperPath),
+			commandRunnerHelperModeEnv + "=mark-start",
+			commandRunnerHelperReadyEnv + "=" + readyPath,
+		}},
+	)
+
+	require.NoError(t, err)
+	require.FileExists(t, readyPath)
 }
 
 func TestCommandRunner_PreCanceledContextPreservesCause(t *testing.T) {
@@ -324,7 +352,7 @@ func TestCommandRunner_RunListCancellation(t *testing.T) {
 	go func() {
 		result, err := runner.RunList(ctx, []string{helperListCommand()}, RunArgs{
 			Env: []string{
-				commandRunnerHelperExeEnv + "=" + os.Args[0],
+				helperExecutableEnv(os.Args[0]),
 				commandRunnerHelperModeEnv + "=wait",
 				commandRunnerHelperReadyEnv + "=" + readyPath,
 			},
@@ -474,7 +502,7 @@ func TestCommandRunner_NormalCompletionTerminatesRemainingChildProcess(t *testin
 			run: func(ctx context.Context, addressPath string) (RunResult, error) {
 				return runner.RunList(ctx, []string{helperListCommand()}, RunArgs{
 					Env: []string{
-						commandRunnerHelperExeEnv + "=" + os.Args[0],
+						helperExecutableEnv(os.Args[0]),
 						commandRunnerHelperModeEnv + "=spawn-listener-without-pipes-and-exit",
 						commandRunnerHelperAddressEnv + "=" + addressPath,
 					},
@@ -538,7 +566,7 @@ func TestCommandRunner_RunListRootFailureBeforeCancellationIsPreserved(t *testin
 	go func() {
 		result, err := runner.RunList(ctx, []string{helperListCommand()}, RunArgs{
 			Env: []string{
-				commandRunnerHelperExeEnv + "=" + os.Args[0],
+				helperExecutableEnv(os.Args[0]),
 				commandRunnerHelperModeEnv + "=spawn-listener-and-exit-42",
 				commandRunnerHelperAddressEnv + "=" + addressPath,
 			},
@@ -594,6 +622,13 @@ func helperListCommand() string {
 		return `%` + commandRunnerHelperExeEnv + `% -test.run=TestCommandRunnerHelperProcess`
 	}
 	return `"$` + commandRunnerHelperExeEnv + `" -test.run=TestCommandRunnerHelperProcess`
+}
+
+func helperExecutableEnv(path string) string {
+	if runtime.GOOS == "windows" {
+		path = `"` + path + `"`
+	}
+	return commandRunnerHelperExeEnv + "=" + path
 }
 
 func writeHelperReady(t *testing.T) {

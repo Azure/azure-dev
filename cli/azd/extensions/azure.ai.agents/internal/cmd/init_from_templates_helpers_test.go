@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -358,6 +359,7 @@ func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
 }
 
 func TestPromptInitMode_ShowsVoiceChoiceWhenEnabled(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	dir := t.TempDir()
 	t.Chdir(dir)
 
@@ -374,6 +376,7 @@ func TestPromptInitMode_ShowsVoiceChoiceWhenEnabled(t *testing.T) {
 }
 
 func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	dir := t.TempDir()
 	t.Chdir(dir)
 
@@ -390,6 +393,7 @@ func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
 }
 
 func TestPromptInitMode_NonEmptyDirectoryChoices(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	for _, tt := range []struct {
 		mode  string
 		index int32

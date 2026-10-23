@@ -221,7 +221,7 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	voiceEnabled, err := featureflags.IsEnabled(ctx, azdClient, featureflags.Voice, featureflags.Environment(ctx))
+	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
 	if err != nil {
 		return "", err
 	}

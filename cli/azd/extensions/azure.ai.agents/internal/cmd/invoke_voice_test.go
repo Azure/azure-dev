@@ -58,7 +58,6 @@ func TestVoiceInvokeCommandPortalGuidance(t *testing.T) {
 				},
 			}}
 			server := grpc.NewServer()
-			azdext.RegisterUserConfigServiceServer(server, hostedOptInConfigServer{})
 			azdext.RegisterProjectServiceServer(server, project)
 			azdext.RegisterPromptServiceServer(server, &helpersPromptServer{})
 			azdext.RegisterEnvironmentServiceServer(server, &testEnvironmentServiceServer{

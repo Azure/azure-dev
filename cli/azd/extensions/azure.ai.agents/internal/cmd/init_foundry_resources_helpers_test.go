@@ -520,28 +520,6 @@ func newTestAzdClient(
 	return azdClient
 }
 
-// hostedOptInConfigServer enables previews in test fixtures.
-type hostedOptInConfigServer struct {
-	azdext.UnimplementedUserConfigServiceServer
-}
-
-func (hostedOptInConfigServer) Get(
-	context.Context, *azdext.GetUserConfigRequest,
-) (*azdext.GetUserConfigResponse, error) {
-	return &azdext.GetUserConfigResponse{Found: true, Value: []byte(
-		`{"agents":{"managed_harness":"on","voice":"on","long_running":"on"}}`,
-	)}, nil
-}
-
-// hostedOptInProjectServer supplies the preview project read.
-type hostedOptInProjectServer struct {
-	azdext.UnimplementedProjectServiceServer
-}
-
-func (hostedOptInProjectServer) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
-	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{}}, nil
-}
-
 func newTestAzdServer(
 	t *testing.T,
 	envServer azdext.EnvironmentServiceServer,
@@ -556,8 +534,6 @@ func newTestAzdServer(
 		workflowServer = &testWorkflowServiceServer{}
 	}
 	azdext.RegisterWorkflowServiceServer(grpcServer, workflowServer)
-	azdext.RegisterUserConfigServiceServer(grpcServer, hostedOptInConfigServer{})
-	azdext.RegisterProjectServiceServer(grpcServer, hostedOptInProjectServer{})
 	if len(promptServers) > 0 {
 		azdext.RegisterPromptServiceServer(grpcServer, promptServers[0])
 	}

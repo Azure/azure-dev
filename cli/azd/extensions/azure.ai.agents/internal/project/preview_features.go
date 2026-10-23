@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"azureaiagent/internal/featureflags"
@@ -45,34 +44,18 @@ func PreviewFeature(definition map[string]any) featureflags.Feature {
 }
 
 // RequireDefinitionFeatures checks the definition's preview opt-in.
-// Environments include services in a manifest not yet adopted.
-func RequireDefinitionFeatures(
-	ctx context.Context, client *azdext.AzdClient, definition map[string]any,
-	environments ...map[string]string,
-) error {
+func RequireDefinitionFeatures(definition map[string]any) error {
 	feature := PreviewFeature(definition)
 	if feature.ID == "" {
 		return nil
 	}
-	values := make([]string, 0, len(environments)+1)
-	if env, ok := definition["env"].(map[string]any); ok {
-		if value, found := env[feature.EnvVar]; found {
-			values = append(values, fmt.Sprint(value))
-		}
-	}
-	for _, env := range environments {
-		values = append(values, env[feature.EnvVar])
-	}
-	return featureflags.Require(ctx, client, feature, values...)
+	return featureflags.Require(feature)
 }
 
 // RequireAgentFeatures checks the inline or $ref definition.
 func RequireAgentFeatures(
-	ctx context.Context,
-	client *azdext.AzdClient,
 	service *azdext.ServiceConfig,
 	projectRoot string,
-	environments ...map[string]string,
 ) error {
 	if service.GetHost() != foundryAgentHost {
 		return nil
@@ -85,7 +68,7 @@ func RequireAgentFeatures(
 	if err != nil {
 		return err
 	}
-	return RequireDefinitionFeatures(ctx, client, resolved.AsMap(), environments...)
+	return RequireDefinitionFeatures(resolved.AsMap())
 }
 
 // prepareGatedOperation adopts and resolves the service, then applies the
@@ -108,5 +91,5 @@ func (p *AgentServiceTargetProvider) requirePreviewFeatures(ctx context.Context)
 			return err
 		}
 	}
-	return RequireAgentFeatures(ctx, p.azdClient, p.serviceConfig, p.projectPath)
+	return RequireAgentFeatures(p.serviceConfig, p.projectPath)
 }

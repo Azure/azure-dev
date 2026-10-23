@@ -10,7 +10,7 @@ tags: ["tier:0", "cmd:init", "picker", "parallel-safe"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
-  AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE: "true"
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "true"
 
 # Voice is explicitly enabled for this picker-navigation scenario.
 # Seed a file so the picker also includes the existing-code option.

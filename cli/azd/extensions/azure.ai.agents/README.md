@@ -6,39 +6,41 @@ Three capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
-| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS` |
-| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE` |
-| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING` |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 
-Turn on a feature in user config or in the selected azd environment:
+Set the desired variable in your shell or CI before running azd:
 
 ```bash
-azd config set alpha.agents.managed_harness on
-azd config set alpha.agents.voice on
-azd config set alpha.agents.long_running on
-
-# Or turn it on in the selected environment:
-azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS true
-azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE true
-azd env set AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING true
+export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
+export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 ```
 
-Setting the matching process variable to `true` also turns the feature on.
-Opt-ins combine with OR. A false value never overrides a true value elsewhere.
+In PowerShell, for example:
 
-`azd config set alpha.all on` and `AZD_ALPHA_ENABLE_<NAME>` variables such as
-`AZD_ALPHA_ENABLE_AGENTS_VOICE` do not turn these previews on.
-Each preview needs its own `alpha.agents.<name>` key or its
-`AZD_FOUNDRY_EXT_ENABLE_*` variable. Unrelated keys such as `agents.hosted`
-do not turn them on. Ordinary hosted and plain prompt agents need no opt-in.
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+```
 
-While a feature is off, its flags, commands, and help sections are hidden from
-help. This covers `invoke --long-running`, `invoke --no-wait`, the
+Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
+missing, and invalid values leave it off. The evaluator reads the current
+process environment without querying azd config or loading environment files.
+Values already injected by the azd host count; the selected azd environment
+can override the same key from the shell or CI.
+
+User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
+`AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
+hosted and plain prompt agents need no opt-in.
+
+Root help always lists the canonical switches and their scopes. While a
+feature is off, its command-specific flags and help sections are hidden.
+This covers `invoke --long-running`, `invoke --no-wait`, the
 `invocations` group, `init --voice`, and the `prompt-voice` choice of
 `init --kind`. Hidden commands still run. Using a disabled preview fails with a
 `feature_not_enabled` error that names the preview feature ID and suggests
-`azd config set alpha.<id> on`, `azd env set <ENVVAR> true`, or setting the
-matching process variable to `true`.
+setting its canonical variable to `true` in the shell or CI.
 
 Checks cover preview flags on init and invoke, `agent add` definitions,
 existing and staged project definitions, the selected service for invoke, run,
@@ -49,7 +51,7 @@ from protocol help and selection while voice is off. Explicit `--protocol`
 values, including repeated flags and comma-separated lists, require the voice
 opt-in for `invocations_ws`. Protocol selection completes before project or
 environment creation; ordinary protocols and the no-prompt Responses default
-need no additional feature read. Template catalogs do not identify
+need no additional feature check. Template catalogs do not identify
 capabilities, so templates are checked after staging and before adoption.
 
 ### Enforcement limits

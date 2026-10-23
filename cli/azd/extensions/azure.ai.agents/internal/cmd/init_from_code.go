@@ -1089,7 +1089,7 @@ func selectHostedProtocols(
 			return nil, err
 		}
 		if slices.Contains(explicit, "invocations_ws") {
-			if err := featureflags.Require(ctx, client, featureflags.Voice); err != nil {
+			if err := featureflags.Require(featureflags.Voice); err != nil {
 				return nil, err
 			}
 		}
@@ -1098,10 +1098,7 @@ func selectHostedProtocols(
 	if noPrompt {
 		return promptProtocols(ctx, nil, true, nil, false)
 	}
-	if err := featureflags.EnvironmentError(ctx); err != nil {
-		return nil, err
-	}
-	enabled, err := featureflags.IsEnabled(ctx, client, featureflags.Voice, featureflags.Environment(ctx))
+	enabled, err := featureflags.IsEnabled(featureflags.Voice)
 	if err != nil {
 		return nil, err
 	}

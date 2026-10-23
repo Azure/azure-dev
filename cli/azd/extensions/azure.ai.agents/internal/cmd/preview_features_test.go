@@ -190,11 +190,8 @@ func TestPreviewHostedProtocolPreRun(t *testing.T) {
 	clearPreviewProcess(t)
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			alpha := map[string]any{"all": "on"}
-			if enabled {
-				alpha["agents"] = map[string]any{"voice": "on"}
-			}
-			_, env := startPreviewCommandServer(t, alpha, nil, nil)
+			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
+			_, env := startPreviewCommandServer(t, nil, nil, nil)
 			for _, protocols := range [][]string{
 				nil, {"--protocol", "responses"}, {"--protocol", "invocations"},
 				{"--protocol", "activity"}, {"--protocol", "invocations_ws"},
@@ -207,7 +204,7 @@ func TestPreviewHostedProtocolPreRun(t *testing.T) {
 				cmd.SetContext(t.Context())
 				require.NoError(t, cmd.ParseFlags(protocols))
 				before := env.reads.Load()
-				err = enforcePreviewFeatures(cmd, nil, "selected")
+				err = enforcePreviewFeatures(cmd, nil)
 				if !strings.Contains(strings.Join(protocols, ","), "invocations_ws") {
 					require.NoError(t, err)
 					require.Empty(t, requiredPreviewFeatures(cmd))
@@ -218,6 +215,7 @@ func TestPreviewHostedProtocolPreRun(t *testing.T) {
 				} else {
 					require.ErrorContains(t, err, featureflags.Voice.ID)
 				}
+				require.Equal(t, before, env.reads.Load())
 			}
 		})
 	}
@@ -284,13 +282,8 @@ func TestPreviewHostedProtocolPickerBeforeMutation(t *testing.T) {
 					}
 					return nil, status.Error(codes.Canceled, "stop before project setup")
 				}}
-				value := "off"
-				if enabled {
-					value = "on"
-				}
-				client, _ := startPreviewCommandServer(t, map[string]any{
-					"agents": map[string]any{"voice": value},
-				}, nil, prompts)
+				t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
+				client, _ := startPreviewCommandServer(t, nil, nil, prompts)
 				flags := &initFlags{agentName: "agent"}
 				if route == "image" {
 					flags.image = "registry.example.com/agent:v1"
@@ -321,10 +314,7 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 	}
 	for _, enabled := range []bool{false, true} {
 		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			alpha := map[string]any{}
-			if enabled {
-				alpha["agents"] = map[string]any{"voice": "on"}
-			}
+			t.Setenv(featureflags.Voice.EnvVar, strconv.FormatBool(enabled))
 			prompts := &protocolSelectionServer{selectProtocols: func(*azdext.MultiSelectRequest) (
 				*azdext.MultiSelectResponse, error,
 			) {
@@ -332,9 +322,8 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 					{Value: "invocations_ws", Selected: true},
 				}}, nil
 			}}
-			client, env := startPreviewCommandServer(t, alpha, nil, prompts)
-			ctx := featureflags.WithEnvironment(t.Context(), "selected")
-			records, err := selectHostedProtocols(ctx, client, false, nil)
+			client, env := startPreviewCommandServer(t, nil, nil, prompts)
+			records, err := selectHostedProtocols(t.Context(), client, false, nil)
 			if enabled {
 				require.NoError(t, err)
 				require.Equal(t, []agent_yaml.ProtocolVersionRecord{
@@ -343,18 +332,25 @@ func TestPreviewHostedProtocolSelection(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, "unexpected protocol")
 			}
-			_, err = selectHostedProtocols(ctx, client, true, []string{"responses", "invocations_ws"})
+			before := env.reads.Load()
+			_, err = selectHostedProtocols(t.Context(), client, true, []string{"responses", "invocations_ws"})
 			if enabled {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, featureflags.Voice.ID)
 			}
+			require.Equal(t, before, env.reads.Load())
 			env.mu.Lock()
-			require.Equal(t, "selected", env.selected)
+			require.Empty(t, env.selected)
 			env.err = status.Error(codes.PermissionDenied, "selection source failure")
 			env.mu.Unlock()
-			_, err = selectHostedProtocols(ctx, client, false, nil)
-			require.ErrorContains(t, err, "selection source failure")
+			_, err = selectHostedProtocols(t.Context(), client, false, nil)
+			if enabled {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "unexpected protocol")
+			}
+			require.Equal(t, before+1, env.reads.Load(), "only the protocol prompt calls the host")
 		})
 	}
 }
@@ -364,8 +360,7 @@ func clearPreviewProcess(t *testing.T) {
 	setPreviewProcess(t, "")
 }
 
-// setPreviewProcess sets every registered feature's process value and
-// clears host selection so help and enforcement read only that value.
+// setPreviewProcess also clears host selection for offline fixtures.
 func setPreviewProcess(t *testing.T, value string) {
 	t.Helper()
 	for _, feature := range featureflags.All() {
@@ -391,12 +386,17 @@ func gatedContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, serviceGateKey{}, true)
 }
 
-func TestGlobalConfigCannotUnlockPreviewGates(t *testing.T) {
+func TestPersistedConfigCannotUnlockPreviewGates(t *testing.T) {
 	clearPreviewProcess(t)
-	for _, value := range []string{"on", "ON", "On", "oN"} {
-		t.Run(value, func(t *testing.T) {
+	for _, alpha := range []map[string]any{
+		{"all": "on"}, {"all": "ON"}, {"all": "On"}, {"all": "oN"},
+		{"agents": map[string]any{"managed_harness": "on", "voice": "on", "long_running": "on"}},
+	} {
+		name, err := json.Marshal(alpha)
+		require.NoError(t, err)
+		t.Run(string(name), func(t *testing.T) {
 			t.Chdir(t.TempDir())
-			startPreviewCommandServer(t, map[string]any{"all": value}, nil, nil)
+			_, env := startPreviewCommandServer(t, alpha, nil, nil)
 			for _, tc := range []struct {
 				args    []string
 				feature featureflags.Feature
@@ -413,6 +413,7 @@ func TestGlobalConfigCannotUnlockPreviewGates(t *testing.T) {
 			entries, err := os.ReadDir(".")
 			require.NoError(t, err)
 			require.Empty(t, entries)
+			require.Zero(t, env.reads.Load())
 		})
 	}
 }
@@ -424,32 +425,16 @@ func TestIndependentPreviewGates(t *testing.T) {
 	}
 	for _, enabled := range features {
 		t.Run(enabled.ID, func(t *testing.T) {
-			client, env := startPreviewCommandServer(t, map[string]any{
-				"all":    "on",
-				"agents": map[string]any{enabled.ID[len("agents."):]: "on"},
-			}, nil, nil)
-			ctx := featureflags.WithEnvironment(t.Context(), "selected-env")
+			t.Setenv(enabled.EnvVar, "true")
 			for _, candidate := range features {
-				err := featureflags.Require(ctx, client, candidate)
+				err := featureflags.Require(candidate)
 				if candidate == enabled {
 					require.NoError(t, err)
 				} else {
 					require.ErrorContains(t, err, candidate.ID)
 				}
 			}
-			env.mu.Lock()
-			require.Equal(t, "selected-env", env.selected)
-			env.mu.Unlock()
 		})
-	}
-	client, _ := startPreviewCommandServer(t, map[string]any{
-		"agents": map[string]any{"hosted": "on"},
-	}, nil, nil)
-	for _, feature := range features {
-		require.ErrorContains(t, featureflags.Require(t.Context(), client, feature), feature.ID)
-		t.Setenv(feature.EnvVar, "true")
-		require.NoError(t, featureflags.Require(t.Context(), client, feature))
-		t.Setenv(feature.EnvVar, "")
 	}
 }
 
@@ -459,24 +444,18 @@ func TestPreviewGuidanceDoesNotExposeServiceOptIn(t *testing.T) {
 		featureflags.ManagedHarness, featureflags.Voice, featureflags.LongRunning,
 	} {
 		t.Run(feature.ID, func(t *testing.T) {
-			client, _ := startPreviewCommandServer(t, nil, nil, nil)
-			err := featureflags.Require(t.Context(), client, feature)
+			err := featureflags.Require(feature)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			guidance := localErr.Message + " " + localErr.Suggestion
 			for _, hidden := range []string{"azure.yaml", "services[].env", "service env"} {
 				require.NotContains(t, strings.ToLower(guidance), hidden)
 			}
-			require.Contains(t, localErr.Suggestion, "azd config set alpha."+feature.ID+" on")
-			require.Contains(t, localErr.Suggestion, "azd env set "+feature.EnvVar+" true")
-			require.Contains(t, localErr.Suggestion, feature.EnvVar+"=true in the process environment")
-
-			client, _ = startPreviewCommandServer(t, nil, &azdext.ProjectConfig{
-				Services: map[string]*azdext.ServiceConfig{
-					"web": {Host: "appservice", Environment: map[string]string{feature.EnvVar: "true"}},
-				},
-			}, nil)
-			require.NoError(t, featureflags.Require(t.Context(), client, feature))
+			require.NotContains(t, guidance, "azd config set")
+			require.NotContains(t, guidance, "azd env set")
+			require.Contains(t, localErr.Suggestion, feature.EnvVar+"=true in your shell or CI")
+			t.Setenv(feature.EnvVar, "true")
+			require.NoError(t, featureflags.Require(feature))
 		})
 	}
 }
@@ -503,9 +482,7 @@ func TestPreviewInitRejectsBeforeAuthOrProjectWrites(t *testing.T) {
 			entries, err := os.ReadDir(".")
 			require.NoError(t, err)
 			require.Empty(t, entries)
-			env.mu.Lock()
-			require.Equal(t, "selected-env", env.selected)
-			env.mu.Unlock()
+			require.Zero(t, env.reads.Load())
 		})
 	}
 }
@@ -526,42 +503,39 @@ func TestPreviewVoiceDiscovery(t *testing.T) {
 	require.Len(t, prompts.lastSelect.Options.Choices, 2)
 }
 
-func TestPreviewStagedManifestAndServiceOptIn(t *testing.T) {
+func TestPreviewStagedManifestUsesProcessSwitch(t *testing.T) {
 	clearPreviewProcess(t)
 	root := t.TempDir()
-	client, _ := startPreviewCommandServer(t, nil, nil, nil)
 	content := []byte("name: preview-test\nservices:\n  voice:\n    host: azure.ai.agent\n    kind: prompt-voice\n")
-	require.ErrorContains(t, requireManifestPreviewFeatures(t.Context(), client, content, root), "agents.voice")
+	require.ErrorContains(t, requireManifestPreviewFeatures(content, root), "agents.voice")
 	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0600))
-	require.ErrorContains(t, requireStagedPreviewFeatures(t.Context(), client, root), "agents.voice")
-	require.NoError(t, requireManifestPreviewFeatures(t.Context(), client,
+	require.ErrorContains(t, requireStagedPreviewFeatures(root), "agents.voice")
+	require.ErrorContains(t, requireManifestPreviewFeatures(
 		append(content, []byte("  web:\n    host: containerapp\n    env:\n      "+
-			featureflags.Voice.EnvVar+": 'true'\n")...), root))
-	require.NoError(t, requireManifestPreviewFeatures(t.Context(), client,
-		append(content, []byte("    env:\n      "+featureflags.Voice.EnvVar+": true\n")...), root))
-	require.NoError(t, requireDefinitionPreviewFeatures(t.Context(), map[string]any{
+			featureflags.Voice.EnvVar+": 'true'\n")...), root), "agents.voice")
+	require.ErrorContains(t, requireManifestPreviewFeatures(
+		append(content, []byte("    env:\n      "+featureflags.Voice.EnvVar+": true\n")...), root), "agents.voice")
+	require.ErrorContains(t, project.RequireDefinitionFeatures(map[string]any{
 		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
-	}))
-	require.ErrorContains(t, requireDefinitionPreviewFeatures(t.Context(), map[string]any{
-		"kind": "prompt-voice",
-	}), "agents.voice", "prospective opt-ins must not leak into later checks")
+	}), "agents.voice")
+	t.Setenv(featureflags.Voice.EnvVar, "true")
+	require.NoError(t, requireManifestPreviewFeatures(content, root))
+	require.NoError(t, requireStagedPreviewFeatures(root))
+	require.NoError(t, project.RequireDefinitionFeatures(map[string]any{"kind": "prompt-voice"}))
 	got, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	require.NoError(t, err)
 	require.Equal(t, content, got)
 }
 
-func TestPreviewProspectiveOptInPreservesReadErrors(t *testing.T) {
+func TestPreviewDefinitionGateNeedsNoHost(t *testing.T) {
 	clearPreviewProcess(t)
-	client, env := startPreviewCommandServer(t, nil, nil, nil)
-	env.mu.Lock()
-	env.err = status.Error(codes.PermissionDenied, "cannot read selected environment")
-	env.mu.Unlock()
-	ctx := featureflags.WithEnvironment(t.Context(), "selected-env")
+	t.Setenv("AZD_SERVER", "127.0.0.1:1")
 	definition := map[string]any{
 		"kind": "prompt-voice", "env": map[string]any{featureflags.Voice.EnvVar: true},
 	}
-	require.ErrorContains(t, project.RequireDefinitionFeatures(ctx, client, definition),
-		"cannot read selected environment")
+	require.ErrorContains(t, project.RequireDefinitionFeatures(definition), "agents.voice")
+	t.Setenv(featureflags.Voice.EnvVar, "true")
+	require.NoError(t, project.RequireDefinitionFeatures(definition))
 }
 
 func TestPreviewInvokeLocalBypassesAndReadAccess(t *testing.T) {
@@ -615,7 +589,7 @@ func TestPreviewOptimizeDeployRejectsLocalHarnessBeforeAuth(t *testing.T) {
 		"--agent", "agent", "--candidate", "candidate-test")
 	require.ErrorContains(t, err, "agents.managed_harness")
 	env.mu.Lock()
-	require.Equal(t, "selected-env", env.selected)
+	require.Empty(t, env.selected)
 	env.mu.Unlock()
 }
 
@@ -689,9 +663,7 @@ func TestPreviewLongRunningDirectEndpoint(t *testing.T) {
 		_, err := executeRoot(t, append(all, "hello")...)
 		require.ErrorContains(t, err, "agents.long_running")
 	}
-	env.mu.Lock()
-	require.Equal(t, "selected-env", env.selected)
-	env.mu.Unlock()
+	require.Zero(t, env.reads.Load())
 	action := &InvokeAction{
 		flags:    &invokeFlags{protocol: "responses", message: "hello"},
 		endpoint: &parsedAgentEndpoint{}, credential: invokeUsageFailingCredential{},

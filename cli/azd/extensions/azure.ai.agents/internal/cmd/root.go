@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 
-	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -49,7 +48,7 @@ func NewRootCommand() *cobra.Command {
 			}
 		}
 		setupDebugLogging(cmd.Flags())
-		if err := enforcePreviewFeatures(cmd, args, extCtx.Environment); err != nil {
+		if err := enforcePreviewFeatures(cmd, args); err != nil {
 			return err
 		}
 		operation := telemetryOperation(cmd.CommandPath())
@@ -72,12 +71,7 @@ func NewRootCommand() *cobra.Command {
 	// Show the ASCII art banner above the default help text for the root command
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		// Help runs without the root pre-run, so preview visibility is
-		// resolved here from the parsed flags and the azd host.
-		applyPreviewVisibility(rootCmd, previewHelpStates(
-			featureflags.WithEnvironmentError(helpContext(cmd), featureflags.CheckEnvironmentFlag(cmd.Flags())),
-			previewHelpEnvironment(cmd, extCtx),
-		))
+		applyPreviewVisibility(rootCmd, previewHelpStates())
 		if cmd == rootCmd {
 			printBanner(cmd.OutOrStdout())
 		}
@@ -117,7 +111,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newEvalCommand())
 	rootCmd.AddCommand(newOptimizeCommand(extCtx))
 
-	helpformat.Install(rootCmd, "azd ai", agentHelpFooter)
+	helpformat.Install(rootCmd, "azd ai", agentHelpFooter())
 
 	return rootCmd
 }

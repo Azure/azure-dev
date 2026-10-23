@@ -12,9 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/project"
 
@@ -48,9 +46,6 @@ const (
 	helpExamplePrefix = "azure.ai.agents/help-example/"
 	helpBlockSep      = "\x1f"
 )
-
-// previewHelpTimeout bounds the host reads made while rendering help.
-const previewHelpTimeout = 10 * time.Second
 
 // previewFlag marks a flag as part of a preview feature. With values, only
 // those values (case-insensitive, trimmed) need the feature and the flag stays
@@ -187,21 +182,12 @@ func validateBeforePreview(cmd *cobra.Command, fn func(*cobra.Command, []string)
 	previewValidators.Store(cmd, fn)
 }
 
-// enforcePreviewFeatures runs once from the root PersistentPreRunE. It binds
-// the selected environment for nested checks, marks commands that classify
-// agent services, and rejects disabled preview commands and flags. Local
-// argument errors take precedence only when a preview check would fail.
-func enforcePreviewFeatures(cmd *cobra.Command, args []string, environmentName string) error {
-	environmentErr := featureflags.CheckEnvironmentFlag(cmd.Flags())
-	ctx := featureflags.WithEnvironment(cmd.Context(), environmentName)
-	ctx = featureflags.WithEnvironmentError(ctx, environmentErr)
-	if cmd.Name() == "init" {
-		ctx = featureflags.WithInitScope(ctx)
-	}
+// enforcePreviewFeatures marks service-gated commands and rejects
+// disabled preview inputs. Local errors take precedence on rejection.
+func enforcePreviewFeatures(cmd *cobra.Command, args []string) error {
 	if cmd.Annotations[serviceGateAnnotation] != "" {
-		ctx = context.WithValue(ctx, serviceGateKey{}, true)
+		cmd.SetContext(context.WithValue(cmd.Context(), serviceGateKey{}, true))
 	}
-	cmd.SetContext(ctx)
 
 	features := requiredPreviewFeatures(cmd)
 	if len(features) == 0 {
@@ -215,18 +201,8 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string, environmentName s
 		}
 		return gateErr
 	}
-	if environmentErr != nil {
-		return reject(environmentErr)
-	}
-	client, err := azdext.NewAzdClient()
-	if err != nil {
-		return exterrors.Internal(
-			exterrors.CodeAzdClientFailed, fmt.Sprintf("connecting to azd for preview opt-in: %s", err),
-		)
-	}
-	defer client.Close()
 	for _, feature := range features {
-		if err := featureflags.Require(ctx, client, feature); err != nil {
+		if err := featureflags.Require(feature); err != nil {
 			return reject(err)
 		}
 	}
@@ -236,12 +212,12 @@ func enforcePreviewFeatures(cmd *cobra.Command, args []string, environmentName s
 // requireSelectedServiceFeatures classifies a selected agent service when the
 // running command is annotated with gateAgentServices.
 func requireSelectedServiceFeatures(
-	ctx context.Context, client *azdext.AzdClient, service *azdext.ServiceConfig, projectRoot string,
+	ctx context.Context, service *azdext.ServiceConfig, projectRoot string,
 ) error {
 	if gated, _ := ctx.Value(serviceGateKey{}).(bool); !gated {
 		return nil
 	}
-	if err := project.RequireAgentFeatures(ctx, client, service, projectRoot); err != nil {
+	if err := project.RequireAgentFeatures(service, projectRoot); err != nil {
 		return &serviceGateError{err: err}
 	}
 	return nil
@@ -259,37 +235,13 @@ func isServiceGateError(err error) bool {
 	return ok
 }
 
-// previewHelpEnvironment mirrors the SDK selection, which help rendering
-// reaches before the root PersistentPreRunE has applied AZD_ENVIRONMENT.
-func previewHelpEnvironment(cmd *cobra.Command, extCtx *azdext.ExtensionContext) string {
-	if flag := cmd.Flags().Lookup("environment"); flag != nil && flag.Changed {
-		return extCtx.Environment
-	}
-	if value := os.Getenv("AZD_ENVIRONMENT"); value != "" {
-		return value
-	}
-	return extCtx.Environment
-}
-
-// previewHelpStates resolves each registered feature for help rendering.
-// Help must not fail, so a read error falls back to the process value only.
-func previewHelpStates(ctx context.Context, environmentName string) map[string]bool {
+// previewHelpStates reads the registered process switches for help.
+func previewHelpStates() map[string]bool {
 	states := map[string]bool{}
-	var client *azdext.AzdClient
-	if featureflags.EnvironmentError(ctx) == nil && os.Getenv("AZD_SERVER") != "" {
-		if created, err := azdext.NewAzdClient(); err == nil {
-			client = created
-			defer client.Close()
-		}
-	}
-	ctx, cancel := context.WithTimeout(azdext.WithAccessToken(ctx), previewHelpTimeout)
-	defer cancel()
 	for _, feature := range featureflags.All() {
-		enabled := featureflags.ProcessEnabled(feature)
-		if client != nil {
-			if resolved, err := featureflags.IsEnabled(ctx, client, feature, environmentName); err == nil {
-				enabled = resolved
-			}
+		enabled, err := featureflags.IsEnabled(feature)
+		if err != nil {
+			panic(err)
 		}
 		states[feature.ID] = enabled
 	}
@@ -339,15 +291,9 @@ func removeHelpBlocks(text, joined string) string {
 	return text
 }
 
-func requireProjectPreviewFeatures(
-	ctx context.Context, client *azdext.AzdClient, config *azdext.ProjectConfig,
-) error {
-	environments := make([]map[string]string, 0, len(config.GetServices()))
+func requireProjectPreviewFeatures(config *azdext.ProjectConfig) error {
 	for _, service := range config.GetServices() {
-		environments = append(environments, service.GetEnvironment())
-	}
-	for _, service := range config.GetServices() {
-		if err := project.RequireAgentFeatures(ctx, client, service, config.GetPath(), environments...); err != nil {
+		if err := project.RequireAgentFeatures(service, config.GetPath()); err != nil {
 			return err
 		}
 	}
@@ -355,7 +301,7 @@ func requireProjectPreviewFeatures(
 }
 
 func requireManifestPreviewFeatures(
-	ctx context.Context, client *azdext.AzdClient, content []byte, projectRoot string,
+	content []byte, projectRoot string,
 ) error {
 	var document struct {
 		Services map[string]*agentServiceAddRawService `yaml:"services"`
@@ -367,27 +313,15 @@ func requireManifestPreviewFeatures(
 	if err != nil {
 		return err
 	}
-	return requireProjectPreviewFeatures(ctx, client, &azdext.ProjectConfig{Services: services, Path: projectRoot})
+	return requireProjectPreviewFeatures(&azdext.ProjectConfig{Services: services, Path: projectRoot})
 }
 
-func requireStagedPreviewFeatures(ctx context.Context, client *azdext.AzdClient, root string) error {
+func requireStagedPreviewFeatures(root string) error {
 	content, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	if err != nil {
 		return err
 	}
-	return requireManifestPreviewFeatures(ctx, client, content, root)
-}
-
-func requireDefinitionPreviewFeatures(ctx context.Context, definition map[string]any) error {
-	if project.PreviewFeature(definition).ID == "" {
-		return nil
-	}
-	client, err := azdext.NewAzdClient()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	return project.RequireDefinitionFeatures(ctx, client, definition)
+	return requireManifestPreviewFeatures(content, root)
 }
 
 // selectLocalService selects a service for local preview checks.
@@ -426,11 +360,4 @@ func (a *InvokeAction) selectLocalService(ctx context.Context) error {
 	}
 	a.protocolServiceName = service.GetName()
 	return nil
-}
-
-func helpContext(cmd *cobra.Command) context.Context {
-	if ctx := cmd.Context(); ctx != nil {
-		return ctx
-	}
-	return context.Background()
 }

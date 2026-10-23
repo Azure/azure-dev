@@ -4,70 +4,35 @@
 package featureflags
 
 import (
-	"encoding/json"
-	"fmt"
-	"strings"
+	"errors"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAgentPreviewFourSourceCombinations(t *testing.T) {
-	for _, feature := range []Feature{ManagedHarness, Voice, LongRunning} {
-		for mask := range 16 {
-			t.Run(fmt.Sprintf("%s/%04b", feature.ID, mask), func(t *testing.T) {
-				t.Setenv(feature.EnvVar, fmt.Sprint(mask&1 != 0))
-				value := "off"
-				if mask&4 != 0 {
-					value = "on"
-				}
-				alpha, err := json.Marshal(map[string]any{
-					"agents": map[string]any{strings.TrimPrefix(feature.ID, "agents."): value},
-				})
-				require.NoError(t, err)
-				client := newMockClient(t)
-				client.expectSources(
-					&azdext.GetUserConfigResponse{Found: true, Value: alpha},
-					projectWithServices(&azdext.ServiceConfig{Host: "containerapp",
-						Environment: map[string]string{feature.EnvVar: fmt.Sprint(mask&8 != 0)}}),
-					map[string]string{feature.EnvVar: fmt.Sprint(mask&2 != 0)}, "selected",
-				)
-				enabled, err := isEnabled(t.Context(), client, feature, "selected")
-				require.NoError(t, err)
-				require.Equal(t, mask != 0, enabled)
-			})
-		}
-	}
-}
-
-func TestPreviewEnvironmentSelection(t *testing.T) {
-	t.Setenv("AZD_ENVIRONMENT", "host-selected")
-	require.Equal(t, "host-selected", Environment(t.Context()))
-	require.Equal(t, "explicit", Environment(WithEnvironment(t.Context(), "explicit")))
-	require.Empty(t, Environment(WithEnvironment(t.Context(), "")))
-}
-
-func TestProcessEnabled(t *testing.T) {
-	for value, want := range map[string]bool{"true": true, "1": true, "on": false, "": false, "false": false} {
-		t.Setenv(Voice.EnvVar, value)
-		require.Equal(t, want, ProcessEnabled(Voice), value)
-	}
-}
-
-func TestRequireReturnsBoundEnvironmentError(t *testing.T) {
-	flags := pflag.NewFlagSet("preview", pflag.ContinueOnError)
-	flags.String("environment", "", "")
-	require.NoError(t, flags.Set("environment", " \t "))
-	want := CheckEnvironmentFlag(flags)
-	require.Error(t, want)
-	ctx := WithEnvironmentError(WithEnvironment(t.Context(), ""), want)
+func TestRequireUsesProcessSwitch(t *testing.T) {
 	for _, feature := range All() {
-		t.Setenv(feature.EnvVar, "true")
-		require.Same(t, want, Require(ctx, nil, feature, "true"))
-		enabled, err := IsEnabled(ctx, nil, feature, "")
-		require.False(t, enabled)
-		require.Same(t, want, err)
+		t.Run(feature.ID, func(t *testing.T) {
+			for _, value := range []string{"", "false", "on", "true"} {
+				t.Setenv(feature.EnvVar, value)
+				err := Require(feature)
+				if value == "true" {
+					require.NoError(t, err)
+					continue
+				}
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok)
+				require.Equal(t, exterrors.CodeFeatureNotEnabled, localErr.Code)
+				require.Contains(t, localErr.Message, feature.ID)
+				require.Contains(t, localErr.Suggestion, feature.EnvVar+"=true")
+			}
+		})
 	}
+}
+
+func TestRequirePreservesDeclarationErrors(t *testing.T) {
+	require.ErrorContains(t, Require(Feature{}), "feature ID and EnvVar must not be empty")
 }

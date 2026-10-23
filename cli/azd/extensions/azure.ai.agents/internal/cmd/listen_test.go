@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -936,11 +937,10 @@ func TestResolveTemplateRef(t *testing.T) {
 }
 
 func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
-	t.Parallel()
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 
 	for _, event := range []string{"preprovision", "predeploy"} {
 		t.Run(event, func(t *testing.T) {
-			t.Parallel()
 			envServer := &testEnvironmentServiceServer{
 				current: &azdext.Environment{Name: "dev"},
 				values: map[string]map[string]string{"dev": {
@@ -1295,6 +1295,7 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", "true")
 	for _, kind := range []string{"voice", "prompt-voice"} {
 		t.Run(kind, func(t *testing.T) {

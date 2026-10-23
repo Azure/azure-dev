@@ -6,11 +6,11 @@
 
 ### Breaking Changes
 
-- [[#10640]](https://github.com/Azure/azure-dev/pull/10640) Voice agents, long-running invocation, and managed harness prompt agents are now preview features that are off by default. Existing projects, provisioning, deployment, and CI that use them fail with `feature_not_enabled` until the feature is turned on. Turn on each feature with its config key or process variable:
-  - Voice agents: `azd config set alpha.agents.voice on` or `AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE=true`.
-  - Long-running invocation: `azd config set alpha.agents.long_running on` or `AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING=true`.
-  - Managed harness prompt agents: `azd config set alpha.agents.managed_harness on` or `AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS=true`.
-  - For one azd environment, use `azd env set <variable> true` with the matching variable above. CI can set the variable in the process environment.
+- [[#10640]](https://github.com/Azure/azure-dev/pull/10640) Voice agents, long-running invocation, and managed harness prompt agents are now preview features that are off by default. Existing projects, provisioning, deployment, and CI that use them fail with `feature_not_enabled` until the feature is turned on. Set each required variable in the shell or CI before running azd:
+  - Voice agents: `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`.
+  - Long-running invocation: `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true`.
+  - Managed harness prompt agents: `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`.
+  - The evaluator reads only the process environment, including values already injected by the azd host. Selected-environment values can override shell values. User config keys and former `AZD_FOUNDRY_EXT_ENABLE_*` names no longer enable these features.
 
 ## 1.0.0-beta.21 (2026-10-19)
 

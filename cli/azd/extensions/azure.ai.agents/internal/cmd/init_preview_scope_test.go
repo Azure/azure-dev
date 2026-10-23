@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -19,13 +18,13 @@ import (
 	"azureaiagent/internal/featureflags"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+const initScopeNoProject = "no project exists; to create a new project, run `azd init`"
 
 type initScopeEnvironmentServer struct {
 	previewTestEnvironment
@@ -166,11 +165,11 @@ func TestInitPreviewNamedCreationScope(t *testing.T) {
 						t.Chdir(root)
 						host := &initScopeHost{}
 						if scope == "fresh" {
-							host.project.err = status.Error(codes.Unknown, azdcontext.ErrNoProject.Error())
+							host.project.err = status.Error(codes.Unknown, initScopeNoProject)
 						} else {
 							host.project.project = &azdext.ProjectConfig{Path: root}
 							if scope == "existing project" {
-								host.env.err = status.Error(codes.Unknown, environment.ErrNotFound.Error())
+								host.env.err = status.Error(codes.Unknown, "environment not found")
 							}
 						}
 						if source == "process" {
@@ -192,21 +191,19 @@ func TestInitPreviewNamedCreationScope(t *testing.T) {
 							t.Setenv("AZD_ENVIRONMENT", "new-env")
 						}
 						err := runInitScopeRoot(t, args...)
-						if source == "off" {
+						if source != "process" {
 							require.ErrorContains(t, err, "preview feature")
 							require.ErrorContains(t, err, route.feature.ID)
 							_, statErr := os.Stat(auth)
 							require.ErrorIs(t, statErr, os.ErrNotExist)
 							require.False(t, host.called("AiModelService/ListModels"))
+							require.Empty(t, host.methods)
 						} else {
 							require.ErrorContains(t, err, "not logged in")
 							require.FileExists(t, auth)
 						}
-						if scope != "fresh" {
-							host.env.mu.Lock()
-							require.Equal(t, "new-env", host.env.selected)
-							host.env.mu.Unlock()
-						}
+						require.False(t, host.called("UserConfigService/Get"))
+						require.False(t, host.called("EnvironmentService/GetValues"))
 						require.Zero(t, host.workflow.runCalls)
 						entries, readErr := os.ReadDir(root)
 						require.NoError(t, readErr)
@@ -262,13 +259,13 @@ func TestInitInteractiveNamedCreationScope(t *testing.T) {
 						},
 					}}
 					if scope == "fresh" {
-						host.project.err = status.Error(codes.Unknown, azdcontext.ErrNoProject.Error())
+						host.project.err = status.Error(codes.Unknown, initScopeNoProject)
 					} else {
 						host.project.project = &azdext.ProjectConfig{Path: root}
-						host.env.err = status.Error(codes.Unknown, environment.ErrNotFound.Error())
+						host.env.err = status.Error(codes.Unknown, "environment not found")
 					}
 					if voiceEnabled {
-						host.config.alpha = map[string]any{"agents": map[string]any{"voice": "on"}}
+						t.Setenv(featureflags.Voice.EnvVar, "true")
 					}
 					host.start(t)
 					initScopeAuthFixture(t, true)
@@ -300,10 +297,10 @@ func TestInitOrdinaryProtocolsPreserveCreationSelection(t *testing.T) {
 				require.NoError(t, os.WriteFile("main.py", []byte("print('hello')\n"), 0o600))
 				host := &initScopeHost{}
 				if scope == "fresh" {
-					host.project.err = status.Error(codes.Unknown, azdcontext.ErrNoProject.Error())
+					host.project.err = status.Error(codes.Unknown, initScopeNoProject)
 				} else {
 					host.project.project = &azdext.ProjectConfig{Path: root}
-					host.env.err = status.Error(codes.Unknown, environment.ErrNotFound.Error())
+					host.env.err = status.Error(codes.Unknown, "environment not found")
 				}
 				host.start(t)
 				initScopeAuthFixture(t, true)
@@ -331,59 +328,4 @@ func TestInitOrdinaryProtocolsPreserveCreationSelection(t *testing.T) {
 			})
 		}
 	}
-}
-
-func TestInitScopeRootPreservesErrors(t *testing.T) {
-	for _, scope := range []string{"project", "environment"} {
-		for _, cause := range []error{
-			status.Error(codes.PermissionDenied, "fixture permission denied"),
-			status.Error(codes.Unavailable, "fixture transport failed"),
-			status.Error(codes.Canceled, "fixture cancelled"),
-			status.Error(codes.NotFound, "environment not found"),
-			errors.New("fixture decoding failed"),
-		} {
-			t.Run(scope+"/"+cause.Error(), func(t *testing.T) {
-				clearPreviewProcess(t)
-				root := t.TempDir()
-				t.Chdir(root)
-				t.Setenv(featureflags.Voice.EnvVar, "true")
-				host := &initScopeHost{}
-				if scope == "project" {
-					host.project.err = cause
-				} else {
-					host.project.project = &azdext.ProjectConfig{Path: root}
-					host.env.err = cause
-				}
-
-				host.start(t)
-				auth := initScopeAuthFixture(t, false)
-				err := runInitScopeRoot(t, "--kind", "prompt-voice", "--agent-name", "agent", "-e", "new-env")
-				require.ErrorContains(t, err, status.Convert(cause).Message())
-				require.NotContains(t, err.Error(), "is disabled")
-				require.Zero(t, host.workflow.runCalls)
-				_, statErr := os.Stat(auth)
-				require.ErrorIs(t, statErr, os.ErrNotExist)
-				entries, readErr := os.ReadDir(root)
-				require.NoError(t, readErr)
-				require.Empty(t, entries)
-			})
-		}
-	}
-}
-
-func TestInitScopeDoesNotRelaxInvoke(t *testing.T) {
-	clearPreviewProcess(t)
-	t.Chdir(t.TempDir())
-	host := &initScopeHost{}
-	host.project.err = status.Error(codes.Unknown, azdcontext.ErrNoProject.Error())
-	host.start(t)
-	initScopeAuthFixture(t, false)
-	t.Setenv(featureflags.Voice.EnvVar, "true")
-	require.ErrorContains(t, runInitScopeRoot(t, "--kind", "prompt-voice",
-		"--agent-name", "voice-agent", "-e", "selected"), "not logged in")
-	t.Setenv(featureflags.LongRunning.EnvVar, "true")
-	_, err := executeRoot(t, "invoke", "--long-running", "-e", "selected", "hello")
-	require.ErrorContains(t, err, azdcontext.ErrNoProject.Error())
-	require.NotContains(t, err.Error(), "is disabled")
-	require.Zero(t, host.workflow.runCalls)
 }

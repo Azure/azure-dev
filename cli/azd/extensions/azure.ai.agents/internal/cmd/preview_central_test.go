@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 
@@ -21,40 +20,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPreviewEmptyEnvironment(t *testing.T) {
-	for _, value := range []string{"", " \t "} {
-		for _, flag := range []string{"--environment", "-e"} {
-			t.Run(flag+"/"+value, func(t *testing.T) {
+func TestPreviewEnforcementIgnoresEnvironmentSelection(t *testing.T) {
+	for _, environment := range []string{"", " \t ", "selected", "missing"} {
+		for _, value := range []string{"false", "true"} {
+			t.Run(environment+"/"+value, func(t *testing.T) {
 				clearPreviewProcess(t)
 				t.Setenv("AZD_ENVIRONMENT", "default-env")
-				t.Setenv(featureflags.LongRunning.EnvVar, "true")
-				_, env := startPreviewCommandServer(t, nil, nil, nil)
-				_, err := executeRoot(t, "invoke", "--long-running", flag, value, "hi")
-				localErr, ok := errors.AsType[*azdext.LocalError](err)
-				require.True(t, ok, "%v", err)
-				require.Equal(t, exterrors.CodeInvalidParameter, localErr.Code)
-				require.Contains(t, localErr.Message, "--environment")
-				require.Zero(t, env.reads.Load())
-
-				_, err = executeRoot(t, "version", flag, value)
-				require.NoError(t, err)
-				require.Zero(t, env.reads.Load())
-
-				root := NewRootCommand()
-				root.AddCommand(&cobra.Command{
-					Use: "nested",
-					RunE: func(cmd *cobra.Command, _ []string) error {
-						before := env.reads.Load()
-						err := featureflags.Require(cmd.Context(), nil, featureflags.Voice)
-						require.Equal(t, before, env.reads.Load())
-						return err
-					},
-				})
-				root.SetArgs([]string{"nested", flag, value})
-				err = root.Execute()
-				nestedErr, ok := errors.AsType[*azdext.LocalError](err)
-				require.True(t, ok, "%v", err)
-				require.Equal(t, exterrors.CodeInvalidParameter, nestedErr.Code)
+				_, env := startPreviewCommandServer(t, map[string]any{
+					"agents": map[string]any{"voice": "on", "long_running": "on", "managed_harness": "on"},
+				}, nil, nil)
+				env.err = errors.New("host must not be read")
+				for _, feature := range featureflags.All() {
+					t.Setenv(feature.EnvVar, value)
+					cmd := &cobra.Command{Use: "check"}
+					cmd.SetContext(t.Context())
+					cmd.Flags().String("environment", "", "")
+					require.NoError(t, cmd.ParseFlags([]string{"--environment", environment}))
+					previewCommand(cmd, feature)
+					err := enforcePreviewFeatures(cmd, nil)
+					if value == "true" {
+						require.NoError(t, err)
+					} else {
+						require.ErrorContains(t, err, feature.ID)
+					}
+				}
+				require.Zero(t, env.reads.Load(), "preview checks must not read the host")
 			})
 		}
 	}
@@ -127,9 +117,7 @@ func TestPreviewLocalValidationPrecedesGate(t *testing.T) {
 			if tc.message != "" {
 				require.Equal(t, tc.message, localErr.Message)
 			}
-			if slices.Contains(tc.args, "--environment") {
-				require.Zero(t, env.reads.Load())
-			}
+			require.Zero(t, env.reads.Load())
 			entries, err := os.ReadDir(".")
 			require.NoError(t, err)
 			require.Empty(t, entries)
@@ -141,28 +129,21 @@ func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		required        bool
-		enabled         bool
-		readError       bool
+		value           string
 		environmentArgs []string
 		wantCalls       int
 	}{
 		{name: "no feature"},
 		{name: "no feature with empty environment", environmentArgs: []string{"--environment", ""}},
-		{name: "enabled", required: true, enabled: true},
+		{name: "enabled", required: true, value: "true"},
 		{name: "disabled", required: true, wantCalls: 1},
-		{name: "source read error", required: true, enabled: true, readError: true, wantCalls: 1},
-		{name: "empty environment", required: true, enabled: true,
-			environmentArgs: []string{"--environment", ""}, wantCalls: 1},
+		{name: "invalid value", required: true, value: "on", wantCalls: 1},
+		{name: "empty environment", required: true, value: "true",
+			environmentArgs: []string{"--environment", ""}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearPreviewProcess(t)
-			_, env := startPreviewCommandServer(t, nil, nil, nil)
-			if tc.readError {
-				env.err = errors.New("cannot read environment")
-			}
-			if tc.enabled {
-				t.Setenv(featureflags.Voice.EnvVar, "true")
-			}
+			t.Setenv(featureflags.Voice.EnvVar, tc.value)
 			localErr := errors.New("local validation failed")
 			calls, preRuns, runs := 0, 0, 0
 			command := &cobra.Command{
@@ -180,7 +161,7 @@ func TestPreviewLocalValidatorRunsOnlyOnRejection(t *testing.T) {
 			root := &cobra.Command{
 				Use: "root",
 				PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-					return enforcePreviewFeatures(cmd, args, "selected-env")
+					return enforcePreviewFeatures(cmd, args)
 				},
 			}
 			root.PersistentFlags().String("environment", "", "")
@@ -305,7 +286,7 @@ func TestRequiredPreviewFeatures(t *testing.T) {
 		{[]string{"show"}, none},
 		{[]string{"delete"}, none},
 		{[]string{"endpoint", "show"}, none},
-		{[]string{"eval", "run", "--no-wait"}, none},
+		{[]string{"eval", "run"}, none},
 		{[]string{"optimize", "--no-wait"}, none},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
@@ -418,7 +399,7 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 	}
 }
 
-func TestPreviewHelpReadsHostAndSelectedEnvironment(t *testing.T) {
+func TestPreviewHelpIgnoresHostAndEnvironmentSelection(t *testing.T) {
 	clearPreviewProcess(t)
 	t.Chdir(t.TempDir())
 	_, env := startPreviewCommandServer(t, map[string]any{
@@ -426,21 +407,19 @@ func TestPreviewHelpReadsHostAndSelectedEnvironment(t *testing.T) {
 	}, nil, nil)
 	text, err := executeRoot(t, "invoke", "-e", "help-env", "--help")
 	require.NoError(t, err)
-	require.Contains(t, text, "--long-running")
+	require.NotContains(t, text, "--long-running")
 	require.NotContains(t, text, "Voice Agents")
-	env.mu.Lock()
-	require.Equal(t, "help-env", env.selected)
-	env.mu.Unlock()
+	require.Zero(t, env.reads.Load())
 
 	t.Setenv("AZD_ENVIRONMENT", "host-env")
-	_, err = executeRoot(t, "invoke", "--help")
+	t.Setenv(featureflags.LongRunning.EnvVar, "true")
+	text, err = executeRoot(t, "invoke", "--help")
 	require.NoError(t, err)
-	env.mu.Lock()
-	require.Equal(t, "host-env", env.selected)
-	env.mu.Unlock()
+	require.Contains(t, text, "--long-running")
+	require.Zero(t, env.reads.Load())
 }
 
-func TestPreviewHelpFallsBackToProcessOnReadError(t *testing.T) {
+func TestPreviewHelpNeedsNoHost(t *testing.T) {
 	clearPreviewProcess(t)
 	t.Setenv("AZD_SERVER", "127.0.0.1:1")
 	t.Setenv("AZD_ACCESS_TOKEN", "test-token")
@@ -474,8 +453,7 @@ func TestAgentHelpPreviewsOff(t *testing.T) {
 	}
 }
 
-// TestAgentHelpPreviewsOffHidesPreviewTerms walks every command so help
-// text outside the preview annotations cannot name a disabled preview.
+// Disabled help hides preview terms outside the root switch list.
 func TestAgentHelpPreviewsOffHidesPreviewTerms(t *testing.T) {
 	setPreviewProcess(t, "")
 	t.Setenv("NO_COLOR", "1")
@@ -488,6 +466,10 @@ func TestAgentHelpPreviewsOffHidesPreviewTerms(t *testing.T) {
 		t.Run(strings.Join(append([]string{"root"}, path...), "_"), func(t *testing.T) {
 			text, err := executeRoot(t, append(append([]string{}, path...), "--help")...)
 			require.NoError(t, err)
+			if len(path) == 0 {
+				require.Contains(t, text, "\nPreview Feature Switches\n")
+				text, _, _ = strings.Cut(text, "\nPreview Feature Switches\n")
+			}
 			require.Empty(t, terms.FindAllString(text, -1))
 		})
 		for _, child := range command.Commands() {

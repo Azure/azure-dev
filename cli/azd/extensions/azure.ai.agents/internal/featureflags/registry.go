@@ -10,19 +10,19 @@ var (
 	// ManagedHarness controls prompt agents using a Copilot harness.
 	ManagedHarness = Feature{
 		ID:          "agents.managed_harness",
-		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_MANAGED_HARNESS",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS",
 		Description: "Prompt agents that run on a Copilot harness",
 	}
 	// Voice controls managed voice and hosted voice agents.
 	Voice = Feature{
 		ID:          "agents.voice",
-		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_VOICE",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_VOICE",
 		Description: "Voice, prompt-voice, and hosted voice agents",
 	}
 	// LongRunning controls starting background Responses invocations.
 	LongRunning = Feature{
 		ID:          "agents.long_running",
-		EnvVar:      "AZD_FOUNDRY_EXT_ENABLE_AGENTS_LONG_RUNNING",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
 		Description: "Long-running Responses invocations",
 	}
 )

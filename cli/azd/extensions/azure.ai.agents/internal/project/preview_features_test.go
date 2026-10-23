@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,24 +14,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
-
-type previewConfigServer struct {
-	azdext.UnimplementedUserConfigServiceServer
-	alpha map[string]any
-}
-
-func (s *previewConfigServer) Get(
-	context.Context, *azdext.GetUserConfigRequest,
-) (*azdext.GetUserConfigResponse, error) {
-	value, err := json.Marshal(s.alpha)
-	return &azdext.GetUserConfigResponse{Found: s.alpha != nil, Value: value}, err
-}
 
 type previewProjectServer struct {
 	azdext.UnimplementedProjectServiceServer
@@ -40,47 +24,6 @@ type previewProjectServer struct {
 
 func (*previewProjectServer) Get(context.Context, *azdext.EmptyRequest) (*azdext.GetProjectResponse, error) {
 	return &azdext.GetProjectResponse{Project: &azdext.ProjectConfig{}}, nil
-}
-
-type previewEnvServer struct {
-	azdext.UnimplementedEnvironmentServiceServer
-	selected string
-}
-
-func (s *previewEnvServer) GetValues(
-	_ context.Context, request *azdext.GetEnvironmentRequest,
-) (*azdext.KeyValueListResponse, error) {
-	s.selected = request.Name
-	if request.Name == "" {
-		return nil, status.Error(codes.Unknown, "default environment not found")
-	}
-	return &azdext.KeyValueListResponse{}, nil
-}
-
-var previewFeaturesOn = map[string]any{"agents": map[string]any{
-	"managed_harness": "on", "voice": "on", "long_running": "on",
-}}
-
-func registerPreviewFeaturesOn(server *grpc.Server) {
-	azdext.RegisterUserConfigServiceServer(server, &previewConfigServer{alpha: previewFeaturesOn})
-	azdext.RegisterEnvironmentServiceServer(server, &previewEnvServer{})
-}
-
-func newPreviewFeatureClient(t *testing.T, alpha map[string]any) (*azdext.AzdClient, *previewEnvServer) {
-	t.Helper()
-	server := grpc.NewServer()
-	env := &previewEnvServer{}
-	azdext.RegisterUserConfigServiceServer(server, &previewConfigServer{alpha: alpha})
-	azdext.RegisterProjectServiceServer(server, &previewProjectServer{})
-	azdext.RegisterEnvironmentServiceServer(server, env)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
-	require.NoError(t, err)
-	t.Cleanup(client.Close)
-	return client, env
 }
 
 func TestPreviewNestedHarnessReference(t *testing.T) {
@@ -94,9 +37,8 @@ func TestPreviewNestedHarnessReference(t *testing.T) {
 			"kind": "prompt", "harness": map[string]any{"$ref": "harness.yaml"},
 		})}
 	before := proto.CloneOf(service)
-	client, _ := newPreviewFeatureClient(t, nil)
-	require.ErrorContains(t, RequireAgentFeatures(t.Context(), client, service, root), "agents.managed_harness")
-	provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root}
+	require.ErrorContains(t, RequireAgentFeatures(service, root), "agents.managed_harness")
+	provider := &AgentServiceTargetProvider{projectPath: root}
 	_, err := provider.Package(t.Context(), service, nil, nil)
 	require.ErrorContains(t, err, "agents.managed_harness")
 	require.True(t, proto.Equal(before, service))
@@ -107,7 +49,6 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		t.Setenv(feature.EnvVar, "")
 	}
 	t.Setenv("AZD_ENVIRONMENT", "")
-	client, env := newPreviewFeatureClient(t, nil)
 	for _, tc := range []struct {
 		name       string
 		definition map[string]any
@@ -150,16 +91,14 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 						service.AdditionalProperties = mustStruct(t, map[string]any{"$ref": "agent.json"})
 					}
 					before := proto.CloneOf(service)
-					ctx := featureflags.WithEnvironment(t.Context(), "selected")
-					err := RequireAgentFeatures(ctx, client, service, root)
+					ctx := t.Context()
+					err := RequireAgentFeatures(service, root)
 					if tc.feature.ID == "" {
 						require.NoError(t, err)
-						require.NoError(t, RequireAgentFeatures(ctx, nil, service, root))
 					} else {
 						require.ErrorContains(t, err, tc.feature.ID)
-						require.Equal(t, "selected", env.selected)
 						require.Contains(t, err.Error(), "disabled")
-						provider := &AgentServiceTargetProvider{azdClient: client, projectPath: root}
+						provider := &AgentServiceTargetProvider{projectPath: root}
 						_, err = provider.Package(ctx, proto.CloneOf(service), nil, nil)
 						require.ErrorContains(t, err, tc.feature.ID)
 						_, err = provider.Deploy(ctx, proto.CloneOf(service), nil, nil, nil)
@@ -169,7 +108,7 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 						_, err = provider.GetTargetResource(ctx, "", proto.CloneOf(service), nil)
 						require.ErrorContains(t, err, tc.feature.ID)
 						t.Setenv(tc.feature.EnvVar, "true")
-						require.NoError(t, RequireAgentFeatures(ctx, client, service, root))
+						require.NoError(t, RequireAgentFeatures(service, root))
 						t.Setenv(tc.feature.EnvVar, "")
 					}
 					require.True(t, proto.Equal(before, service))

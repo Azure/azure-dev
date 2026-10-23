@@ -822,7 +822,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if cached {
 					cachedExplicitAzureYaml = content
 					root := filepath.Dir(flags.templatePointer)
-					if err := requireManifestPreviewFeatures(ctx, azdClient, content, root); err != nil {
+					if err := requireManifestPreviewFeatures(content, root); err != nil {
 						return err
 					}
 				}
@@ -885,7 +885,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if !userProvidedTemplate {
 				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 				if projectErr == nil && projectResponse.GetProject() != nil {
-					if err := requireProjectPreviewFeatures(ctx, azdClient, projectResponse.GetProject()); err != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
 						return err
 					}
 					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {

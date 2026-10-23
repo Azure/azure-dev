@@ -572,7 +572,6 @@ func newHelpersTestAzdClient(
 	grpcServer := grpc.NewServer()
 	azdext.RegisterProjectServiceServer(grpcServer, projectServer)
 	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
-	azdext.RegisterUserConfigServiceServer(grpcServer, hostedOptInConfigServer{})
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
 	} else {

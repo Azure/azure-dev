@@ -790,7 +790,7 @@ func resolveAgentService(
 	}
 
 	// Commands annotated with gateAgentServices classify every selection here.
-	if err := requireSelectedServiceFeatures(ctx, azdClient, svc, projectResponse.Project.GetPath()); err != nil {
+	if err := requireSelectedServiceFeatures(ctx, svc, projectResponse.Project.GetPath()); err != nil {
 		return nil, nil, err
 	}
 	return svc, projectResponse.Project, nil
@@ -1162,7 +1162,7 @@ func resolveAgentServiceFromProject(
 		if err != nil {
 			return nil, err
 		}
-		if err := requireSelectedServiceFeatures(ctx, azdClient, svc, projectConfig.Path); err != nil {
+		if err := requireSelectedServiceFeatures(ctx, svc, projectConfig.Path); err != nil {
 			return nil, err
 		}
 	}

@@ -143,7 +143,7 @@ func (a *OptimizeDeployAction) runDirect(
 	if err != nil {
 		return err
 	}
-	if err := requireDefinitionPreviewFeatures(ctx, latestDef); err != nil {
+	if err := projectpkg.RequireDefinitionFeatures(latestDef); err != nil {
 		return err
 	}
 

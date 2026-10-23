@@ -206,6 +206,54 @@ type VoiceTelephonyBinding struct {
 	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
 }
 
+// MarshalJSON preserves the difference between omitted transfer targets and an
+// explicitly empty list. The latter manages the singleton as empty during deploy.
+func (b VoiceTelephonyBinding) MarshalJSON() ([]byte, error) {
+	type bindingWire struct {
+		Provider        string            `json:"provider"`
+		Identifier      string            `json:"identifier"`
+		Connection      string            `json:"connection"`
+		TransferTargets *[]map[string]any `json:"transferTargets,omitempty"`
+	}
+	var transferTargets *[]map[string]any
+	if b.TransferTargets != nil {
+		transferTargets = &b.TransferTargets
+	}
+	return json.Marshal(bindingWire{
+		Provider: b.Provider, Identifier: b.Identifier, Connection: b.Connection,
+		TransferTargets: transferTargets,
+	})
+}
+
+// UnmarshalJSON rejects the root-definition snake_case spelling in inline
+// azure.yaml services instead of silently ignoring transfer-target declarations.
+func (b *VoiceTelephonyBinding) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["transfer_targets"]; ok {
+		return fmt.Errorf("telephony binding transfer_targets is not valid inline; use transferTargets")
+	}
+	var wire struct {
+		Provider        string            `json:"provider"`
+		Identifier      string            `json:"identifier"`
+		Connection      string            `json:"connection"`
+		TransferTargets *[]map[string]any `json:"transferTargets,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	b.Provider = wire.Provider
+	b.Identifier = wire.Identifier
+	b.Connection = wire.Connection
+	b.TransferTargets = nil
+	if wire.TransferTargets != nil {
+		b.TransferTargets = *wire.TransferTargets
+	}
+	return nil
+}
+
 // VoiceAudio bundles optional prompt voice input/output audio overrides.
 type VoiceAudio struct {
 	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`

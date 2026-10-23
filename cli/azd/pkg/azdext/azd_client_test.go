@@ -213,3 +213,56 @@ func Test_AzdClient_ProjectBeta(t *testing.T) {
 	require.NotNil(t, second)
 	require.NotSame(t, first, second)
 }
+
+func Test_AzdClient_ConcurrentAccessors(t *testing.T) {
+	t.Parallel()
+
+	client := &AzdClient{}
+	tests := []struct {
+		name string
+		get  func() any
+	}{
+		{"Project", func() any { return client.Project() }},
+		{"Environment", func() any { return client.Environment() }},
+		{"UserConfig", func() any { return client.UserConfig() }},
+		{"Prompt", func() any { return client.Prompt() }},
+		{"Deployment", func() any { return client.Deployment() }},
+		{"Events", func() any { return client.Events() }},
+		{"EventsBeta", func() any { return client.EventsBeta() }},
+		{"CommandResult", func() any { return client.CommandResult() }},
+		{"Compose", func() any { return client.Compose() }},
+		{"Workflow", func() any { return client.Workflow() }},
+		{"ServiceTarget", func() any { return client.ServiceTarget() }},
+		{"Container", func() any { return client.Container() }},
+		{"Extension", func() any { return client.Extension() }},
+		{"Account", func() any { return client.Account() }},
+		{"Ai", func() any { return client.Ai() }},
+		{"Copilot", func() any { return client.Copilot() }},
+		{"Provisioning", func() any { return client.Provisioning() }},
+		{"Validation", func() any { return client.Validation() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			results := make([]any, 100)
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for i := range results {
+				wg.Go(func() {
+					<-start
+					results[i] = tt.get()
+				})
+			}
+			close(start)
+			wg.Wait()
+
+			require.NotNil(t, results[0])
+			for _, result := range results {
+				require.Same(t, results[0], result)
+			}
+			require.Same(t, results[0], tt.get())
+		})
+	}
+}

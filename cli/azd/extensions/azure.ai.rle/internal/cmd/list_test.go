@@ -556,6 +556,61 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	}
 }
 
+func TestShowSanitizesTaskDiagnosticsOnlyForTextOutput(t *testing.T) {
+	const diagnostic = "failed\nforged\r\x1b[31m\u009b[2J"
+	for _, format := range []string{"default", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
+			controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case testFoundryProjectPath + environmentCollectionPath + "/echo_env/versions":
+					_, _ = w.Write([]byte(`{"data":[{"name":"echo_env","version":"1.0.0"}]}`))
+				case testFoundryProjectPath + environmentCollectionPath + "/echo_env/versions/1.0.0/tasks":
+					if err := json.NewEncoder(w).Encode(map[string][]harborTaskStatus{
+						"data": {{
+							Name:                      "task-1",
+							DiskImageConversionStatus: "Failed",
+							DiskImageConversionError:  diagnostic,
+						}},
+					}); err != nil {
+						t.Error(err)
+					}
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer controlPlane.Close()
+			stubRleClientEndpoint(t, controlPlane.URL)
+
+			command := newShowCommand(new(format))
+			command.SetArgs([]string{"echo_env"})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			command.SetErr(&output)
+			require.NoError(t, command.Execute())
+
+			if format == "json" {
+				var versions []environmentResource
+				require.NoError(t, json.Unmarshal(output.Bytes(), &versions))
+				require.Len(t, versions, 1)
+				require.Len(t, versions[0].Tasks, 1)
+				require.Equal(t, diagnostic, versions[0].Tasks[0].DiskImageConversionError)
+				return
+			}
+			require.Contains(t, output.String(), "failed forged  [31m [2J")
+			require.False(t, strings.ContainsAny(output.String(), "\r\x1b\u009b"),
+				"conversion diagnostic must not inject terminal controls")
+		})
+	}
+}
+
 func TestShowSupportsJSONOutput(t *testing.T) {
 	t.Setenv(
 		foundryProjectEndpointEnvVar,

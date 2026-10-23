@@ -127,13 +127,13 @@ func (r *executeRolloutProgressRenderer) Render(progress executeRolloutProgress)
 		"  %s %s %s\n",
 		elapsed,
 		prefix,
-		sanitizeRolloutProgressMessage(progress.Message),
+		sanitizeTerminalText(progress.Message),
 	); err != nil {
 		return err
 	}
 	if summary := summarizeRolloutProgress(progress); summary != "" {
 		_, err := fmt.Fprintf(r.out, "             %s\n",
-			output.WithGrayFormat("%s", sanitizeRolloutProgressMessage(summary)))
+			output.WithGrayFormat("%s", sanitizeTerminalText(summary)))
 		return err
 	}
 	return nil
@@ -152,13 +152,13 @@ func rolloutProgressPrefix(phase string, status string) string {
 	default:
 		return output.WithGrayFormat(
 			"%s/%s:",
-			sanitizeRolloutProgressMessage(phase),
-			sanitizeRolloutProgressMessage(status),
+			sanitizeTerminalText(phase),
+			sanitizeTerminalText(status),
 		)
 	}
 }
 
-func sanitizeRolloutProgressMessage(message string) string {
+func sanitizeTerminalText(message string) string {
 	return strings.Map(func(value rune) rune {
 		if unicode.IsControl(value) {
 			return ' '

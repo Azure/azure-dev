@@ -434,6 +434,8 @@ and `UPDATED`; show displays the same columns without `NAME`. Missing type,
 protocol, or disk image conversion status is shown as `-`, not inferred as
 ready. Use `--output json` with either command for full details, including
 environment IDs, images, and defaults.
+Task conversion diagnostics in `show` tables have terminal control characters
+replaced with spaces. JSON output preserves the original service diagnostics.
 
 Execute one Loom-backed rollout of the manifest's exact `(name, version)`
 identity, using the model declared in `[model]`:

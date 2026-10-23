@@ -93,7 +93,7 @@ func (a *showAction) Run() error {
 			taskRows = append(taskRows, []string{
 				task.Name,
 				firstNonEmpty(task.DiskImageConversionStatus, "-"),
-				task.DiskImageConversionError,
+				sanitizeTerminalText(task.DiskImageConversionError),
 			})
 		}
 		fmt.Fprintf(a.cmd.OutOrStdout(), "\nTasks in version %s:\n", version.Version)

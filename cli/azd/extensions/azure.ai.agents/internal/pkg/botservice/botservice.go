@@ -253,7 +253,8 @@ func (c *Client) IsOwned(ctx context.Context, resourceGroup, name string) (bool,
 }
 
 // FindByMsaAppID returns the unique accessible Bot whose MsaAppID matches the
-// agent instance identity. A nil result means no matching Bot was found.
+// agent instance identity. List rows that share a resource id count as one bot.
+// A nil result means no matching Bot was found.
 func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotReference, error) {
 	if strings.TrimSpace(msaAppID) == "" || c.listBots == nil {
 		return nil, nil
@@ -281,7 +282,7 @@ func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotRefer
 	if err != nil {
 		return nil, fmt.Errorf("botservice: listing bots: %w", err)
 	}
-	collect(bots)
+	collect(dedupBotsByResourceID(bots))
 
 	if len(matches) == 0 {
 		return nil, nil
@@ -290,6 +291,27 @@ func (c *Client) FindByMsaAppID(ctx context.Context, msaAppID string) (*BotRefer
 		return nil, &MultipleBotsForMsaAppIDError{}
 	}
 	return &matches[0], nil
+}
+
+// dedupBotsByResourceID collapses list rows that share a resource id, keeping
+// the first row. The Bot Service list API can return the same bot more than
+// once; resource id is the identity used before the MsaAppID uniqueness check.
+func dedupBotsByResourceID(bots []*armbotservice.Bot) []*armbotservice.Bot {
+	seen := make(map[string]struct{}, len(bots))
+	deduped := make([]*armbotservice.Bot, 0, len(bots))
+	for _, bot := range bots {
+		if bot == nil || bot.ID == nil {
+			deduped = append(deduped, bot)
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(*bot.ID))
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, bot)
+	}
+	return deduped
 }
 
 // EnsureBot idempotently creates (or updates) the single-tenant Azure Bot bound

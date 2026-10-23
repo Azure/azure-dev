@@ -115,6 +115,7 @@ var deploymentOwnedDatasourceSelectors = []string{
 	"spring.autoconfigure.exclude",
 	"spring.cloud.azure.jdbc.passwordless-enabled",
 	"spring.datasource.azure.passwordless-enabled",
+	"spring.datasource.embedded-database-connection",
 	"spring.datasource.jndi-name",
 }
 
@@ -285,14 +286,14 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	a.InputEvidence = append(a.InputEvidence, c.traces["spring.datasource.url"]...)
-	for _, setting := range deploymentOwnedDatasourceSelectors {
-		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
-	}
 	if embedded {
 		a.Embedded, err = resolveEmbedded(m, c)
 		if err != nil {
 			return nil, err
 		}
+	}
+	for _, setting := range deploymentOwnedDatasourceSelectors {
+		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
 	}
 	if requirement != nil {
 		a.Requirements = []Requirement{*requirement}

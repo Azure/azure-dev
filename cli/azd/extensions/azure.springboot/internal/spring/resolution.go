@@ -22,6 +22,16 @@ type DeploymentInputs struct {
 
 var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+var deploymentOwnedIndexedSettings = []string{
+	"spring.autoconfigure.exclude",
+	"spring.config.additional-location",
+	"spring.config.import",
+	"spring.config.location",
+	"spring.profiles.active",
+	"spring.profiles.default",
+	"spring.profiles.include",
+}
+
 var deploymentOwnedRuntimeSettings = func() []string {
 	result := []string{
 		"spring.ai.azure.openai.api-key",
@@ -78,6 +88,16 @@ var reservedApplicationInputs = func() map[string]bool {
 	}
 	for _, setting := range unsupportedDatasourceSettings {
 		for _, name := range environmentPropertyNames(setting.key)[1:] {
+			result[name] = true
+		}
+	}
+	return result
+}()
+
+var reservedIndexedApplicationInputs = func() map[string]bool {
+	result := map[string]bool{}
+	for _, setting := range deploymentOwnedIndexedSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
 			result[name] = true
 		}
 	}
@@ -276,16 +296,22 @@ func AnalyzeProject(
 		supportedEvidence = append(supportedEvidence, application.Foundry.Evidence...)
 	}
 	for _, input := range applicationInputs {
-		for _, reference := range application.InputReferences[canonical(input.Name)] {
-			if containsEvidence(supportedEvidence, reference) {
-				reference = outermostSupportedReference(
-					reference,
-					application.InputReferences,
-					supportedEvidence,
-				)
-				return nil, fmt.Errorf(
-					"application input %s affects deployment-owned property %s in %s",
-					input.Name, reference.Property, reference.Source)
+		keys := []string{canonical(input.Name)}
+		if base, indexed := indexedApplicationInputBase(input.Name); indexed {
+			keys = append(keys, canonical(base))
+		}
+		for _, key := range keys {
+			for _, reference := range application.InputReferences[key] {
+				if containsEvidence(supportedEvidence, reference) {
+					reference = outermostSupportedReference(
+						reference,
+						application.InputReferences,
+						supportedEvidence,
+					)
+					return nil, fmt.Errorf(
+						"application input %s affects deployment-owned property %s in %s",
+						input.Name, reference.Property, reference.Source)
+				}
 			}
 		}
 	}
@@ -362,7 +388,8 @@ func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]Applica
 			return nil, fmt.Errorf("application inputs %s and %s differ only by case", previous, name)
 		}
 		seen[normalized] = name
-		if reservedApplicationInputs[normalized] {
+		base, indexed := indexedApplicationInputBase(normalized)
+		if reservedApplicationInputs[normalized] || indexed && reservedIndexedApplicationInputs[base] {
 			return nil, fmt.Errorf("application input %s conflicts with a deployment-owned binding", name)
 		}
 		if kind != ApplicationInputValue && kind != ApplicationInputSecret {
@@ -371,6 +398,19 @@ func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]Applica
 		result = append(result, ApplicationInput{Name: name, Kind: kind})
 	}
 	return result, nil
+}
+
+func indexedApplicationInputBase(name string) (string, bool) {
+	separator := strings.LastIndexByte(name, '_')
+	if separator <= 0 || separator == len(name)-1 {
+		return "", false
+	}
+	for _, char := range name[separator+1:] {
+		if char < '0' || char > '9' {
+			return "", false
+		}
+	}
+	return name[:separator], true
 }
 
 func containsEvidence(evidence []Evidence, reference Evidence) bool {

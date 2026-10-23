@@ -214,6 +214,22 @@ func TestApplicationInputReservedConfigurationSources(t *testing.T) {
 	}
 }
 
+func TestApplicationInputReservedIndexedConfigurationSources(t *testing.T) {
+	for _, name := range []string{
+		"SPRING_AUTOCONFIGURE_EXCLUDE_12",
+		"SPRING_CONFIG_IMPORT_0",
+		"SPRING_PROFILES_ACTIVE_0",
+		"SPRING_PROFILES_INCLUDE_0",
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(name+"/"+string(kind), func(t *testing.T) {
+				_, err := resolveApplicationInputs(map[string]ApplicationInputKind{name: kind})
+				require.ErrorContains(t, err, "conflicts with a deployment-owned binding")
+			})
+		}
+	}
+}
+
 func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
@@ -316,6 +332,12 @@ func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 			input:         "AUTO_CONFIG_EXCLUDES",
 			property:      "spring.autoconfigure.exclude",
 		},
+		{
+			name:          "embedded database selector",
+			configuration: "spring.datasource.embedded-database-connection=${DB_CONNECTION:}\n",
+			input:         "DB_CONNECTION",
+			property:      "spring.datasource.embedded-database-connection",
+		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
 			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
@@ -355,6 +377,11 @@ func TestApplicationInputProfileGroupConflicts(t *testing.T) {
 			name:     "selected profile group environment binding",
 			profiles: []string{"release"},
 			input:    "SPRING_PROFILES_GROUP_RELEASE",
+		},
+		{
+			name:     "selected profile group indexed environment binding",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE_0",
 		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {

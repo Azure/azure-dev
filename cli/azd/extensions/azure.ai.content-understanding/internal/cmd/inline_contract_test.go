@@ -70,7 +70,7 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 					args = append(args, "--url", "https://example.com/invoice.pdf")
 				}
 				if view == "full" {
-					args = append(args, "--llm-input=false")
+					args = append(args, "--output", "json")
 				} else if view == "usage" {
 					args = append(args, "--usage")
 				}

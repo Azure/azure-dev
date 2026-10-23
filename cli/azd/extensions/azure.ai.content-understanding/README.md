@@ -4,8 +4,6 @@ This preview extension adds Azure Content Understanding commands under
 `azd ai cu`. Analyze documents and media, manage analyzers, and configure model
 defaults using Azure Developer CLI authentication and environments.
 
-It is a native Go extension; Python and the standalone `cu` CLI are not required.
-
 ## Content Understanding concepts
 
 Content Understanding turns documents, images, audio, and video into structured
@@ -78,7 +76,6 @@ from any directory without `azd init`:
 
 ```bash
 azd ai cu config set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
-azd ai cu config set CU_DEFAULT_ANALYZER prebuilt-layout
 azd ai cu config list
 ```
 
@@ -107,20 +104,30 @@ by `azd ai cu infra generate`.
 ```bash
 mkdir cu-project
 cd cu-project
+# Create a minimal azd project and its initial dev environment.
 azd init --minimal --environment dev
+# Save the CU endpoint in the selected dev environment.
 azd env set CU_ENDPOINT "https://<dev-resource>.services.ai.azure.com/"
+# Choose an analyzer for this environment; omit this to keep the built-in prebuilt-layout default.
 azd env set CU_DEFAULT_ANALYZER prebuilt-layout
+# Select the subscription used to resolve the user-access tenant.
 azd env set AZURE_SUBSCRIPTION_ID "<dev-subscription-id>"
+# Check configuration and readiness using the dev environment explicitly.
 azd ai cu doctor --environment dev
 ```
 
 Add another environment and switch between them:
 
 ```bash
+# Create and select a separate production environment.
 azd env new prod
+# Save the production endpoint in the selected prod environment.
 azd env set CU_ENDPOINT "https://<prod-resource>.services.ai.azure.com/"
+# Resolve the production resource's user-access tenant through this subscription.
 azd env set AZURE_SUBSCRIPTION_ID "<prod-subscription-id>"
+# Check the production resource without changing the dev settings.
 azd ai cu doctor --environment prod
+# Make dev the selected environment for subsequent project commands.
 azd env select dev
 ```
 
@@ -154,11 +161,12 @@ model deployments. Download the public sample invoice and analyze it:
 curl --fail --location --output invoice.pdf \
   https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
 
-azd ai cu analyze invoice.pdf --llm-input
+# Analyze with prebuilt-layout when no analyzer is specified or configured.
+azd ai cu analyze invoice.pdf
 ```
 
 Without a specified or configured analyzer, analysis uses `prebuilt-layout`.
-Use `--analyzer` to override the default.
+Use `--analyzer` (or `-a`) to select a different analyzer.
 
 Analysis displays YAML front matter and Markdown in the console by default.
 `--llm-input` is enabled by default, so you can omit it. To save that text:
@@ -167,13 +175,34 @@ Analysis displays YAML front matter and Markdown in the console by default.
 azd ai cu analyze invoice.pdf --output-file invoice.result.md
 ```
 
-For the complete JSON response, including service warnings and usage, disable
-the LLM-input view. Display it in the console or save it to a file:
+For the complete JSON response, including service warnings and usage when
+present, use `--output json`. Display it in the console or save it to a file:
 
 ```bash
-azd ai cu analyze invoice.pdf --llm-input=false --output json
-azd ai cu analyze invoice.pdf --llm-input=false --output-file invoice.result.json
+# Display the complete service response as JSON.
+azd ai cu analyze invoice.pdf --output json
+# Save the same JSON response instead of the default Markdown view.
+azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
+
+Content Understanding also provides
+[prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
+for domain-specific extraction. For example, `prebuilt-invoice` extracts
+structured invoice fields. It requires the model deployments and defaults
+described in [model setup](docs/provisioning.md#deploy-models-and-configure-defaults).
+
+```bash
+# Extract invoice fields into YAML front matter, followed by document Markdown.
+azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice
+
+# Use -a as shorthand for --analyzer and save the complete response as JSON.
+azd ai cu analyze invoice.pdf -a prebuilt-invoice --output json --output-file invoice.result.json
+```
+
+In the saved response, structured fields are in each content entry's `fields`
+object under `result.contents`, for example `result.contents[0].fields`.
+See [document elements](https://learn.microsoft.com/azure/ai-services/content-understanding/document/elements)
+for the document content structure.
 
 See [analysis examples](docs/usage.md#analyze-content) for URLs, batches, dry runs,
 and existing-result handling, and the
@@ -187,7 +216,11 @@ Understanding defaults. Complete [model setup](docs/provisioning.md#deploy-model
 first, then generate a schema from a representative document:
 
 ```bash
+# Inspect the resource's current model-to-deployment defaults.
 azd ai cu defaults show
+# --name sets the custom analyzer ID in the generated definition.
+# --from-sample asks the service to suggest fields from this document.
+# --output-file saves the suggested definition for review and editing.
 azd ai cu analyzer schema create \
   --name invoice_v1 \
   --from-sample invoice.pdf \
@@ -201,8 +234,13 @@ Review and edit the generated schema for your extraction requirements, then
 validate, create, and test the analyzer:
 
 ```bash
+# --schema selects the local definition; --spec adds service-contract checks.
+# --strict makes authoring warnings fail validation.
 azd ai cu analyzer validate --schema invoice-schema.json --spec --strict
+# --name selects the new analyzer ID; --schema supplies its reviewed definition.
 azd ai cu analyzer create --name invoice_v1 --schema invoice-schema.json
+# --name selects the analyzer; --file supplies a local test document.
+# --output-file saves the test report; --yes confirms billed batches larger than 50 samples.
 azd ai cu analyzer test --name invoice_v1 --file invoice.pdf \
   --output-file test-report.json --yes
 ```
@@ -219,7 +257,7 @@ for validation rules and test options.
 | `azd ai cu analyzer` | List, show, create, copy, delete, validate, and test analyzers. |
 | `azd ai cu analyzer schema create` | Generate an offline starter or suggest fields from a sample. |
 | `azd ai cu defaults` | Read or configure resource-level model-to-deployment defaults. |
-| `azd ai cu config` | Set, get, list, or unset projectless CU user defaults in azd configuration. |
+| `azd ai cu config` | Set, get, list, or unset global CU user defaults in azd configuration. |
 | `azd ai cu infra generate` | Generate an azd/Bicep project. Run `azd up` separately to provision it. |
 | `azd ai cu doctor` | Check connectivity and readiness. |
 | `azd ai cu env-var list` | Inspect supported process inputs with sensitive values redacted. |

@@ -29,20 +29,30 @@ configure a tenant or subscription. To select a tenant explicitly, set
 `$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
 do not replace `azd auth login` or supported noninteractive azd authentication.
 
-To persist a user default without creating a project:
+To persist a global CU user default without creating an azd project using
+`azd init`:
 
 ```bash
 azd ai cu config set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
-azd ai cu config set CU_DEFAULT_ANALYZER prebuilt-layout
 azd ai cu config get CU_ENDPOINT
 azd ai cu config list
-azd ai cu config unset CU_DEFAULT_ANALYZER
 ```
 
 These commands use azd user configuration, not another store. For example,
 `azd config set extensions.ai-content-understanding.CU_ENDPOINT <endpoint>`
 writes the same setting as the CU shortcut. Both work from any directory without
 `azd init`; managing defaults does not require sign-in.
+
+Analysis uses `prebuilt-layout` when no analyzer is specified or configured.
+For a resource with the required model deployments and defaults, you can
+optionally save a different analyzer and remove that preference later:
+
+```bash
+# Use the invoice analyzer by default instead of prebuilt-layout.
+azd ai cu config set CU_DEFAULT_ANALYZER prebuilt-invoice
+# Remove only the global preference; other configuration sources still apply.
+azd ai cu config unset CU_DEFAULT_ANALYZER
+```
 
 In an existing azd project, you can instead save project-specific settings in an environment:
 
@@ -94,7 +104,7 @@ azd ai cu analyze invoice.pdf --llm-input
 ```
 
 When no analyzer is specified or configured, analysis defaults to
-`prebuilt-layout`. Use `--analyzer` to override a configured default.
+`prebuilt-layout`. Use `--analyzer` (or `-a`) to override a configured default.
 
 By default, a single analysis displays YAML front matter and Markdown in the
 console. This LLM-input view is enabled by default; `--llm-input` can be omitted.
@@ -109,18 +119,23 @@ azd ai cu analyze \
 ```
 
 For the complete JSON response envelope, including the result, service warnings,
-and usage when present, set `--llm-input=false`. These examples display the JSON
+and usage when present, use `--output json`. These examples display the JSON
 in the console and save it to a file, respectively:
 
 ```bash
-azd ai cu analyze invoice.pdf --llm-input=false --output json
-azd ai cu analyze invoice.pdf --llm-input=false --output-file invoice.result.json
+# Display the complete response as JSON.
+azd ai cu analyze invoice.pdf --output json
+# Save the complete response as JSON.
+azd ai cu analyze invoice.pdf --output json --output-file invoice.result.json
 ```
 
-The view determines the result content, not the filename extension.
-`--output json` JSON-encodes the selected console value: with LLM input enabled,
-that is a JSON string rather than the full response. `--usage` wraps a streamed
-result and usage metadata in a JSON object. Saved LLM input remains plain text.
+`--output json` disables the LLM-input view for both console and saved results.
+Explicitly combining it with `--llm-input` or `--llm-input=true` is an error.
+`--llm-input=false` also remains available to select the full response.
+The view determines the result content, not the filename extension: naming a
+file `.json` alone does not change its content.
+`--usage` wraps a streamed result and usage metadata in a JSON object.
+Saved LLM input remains plain text.
 
 Analyze an HTTPS or Azure Blob SAS URL without downloading it first:
 
@@ -148,7 +163,7 @@ azd ai cu analyze \
 | `--source ./documents` | Select files from this directory. |
 | `--pattern "*.pdf"` | Match source-relative paths using this pattern. Quoting keeps the shell from expanding it. |
 | `--recursive` | Include nested directories, excluding hidden directories. |
-| `--output-dir ./results` | Save results here, preserving source-relative paths. The default suffix is `.result.md`; use `--llm-input=false` for `.result.json`. |
+| `--output-dir ./results` | Save results here, preserving source-relative paths. The default suffix is `.result.md`; use `--output json` for `.result.json`. |
 | `--report-file ./report.json` | Write a new JSON report of per-input outcomes, separate from extracted results. |
 | `--analyzer prebuilt-layout` | Explicitly select the analyzer instead of a configured default. |
 | `--yes` | Confirm the cost of batches larger than 50 inputs without prompting. |
@@ -171,10 +186,18 @@ configuration. Select inputs using one mode: positional inputs, `--file`,
 ## Create a custom analyzer
 
 Custom analyzers require supported model deployments and configured Content
-Understanding defaults. Generate a starter schema from the sample invoice:
+Understanding defaults. Inspect the current resource mappings first:
 
 ```bash
+# Read the resource's model-to-deployment defaults without changing them.
 azd ai cu defaults show
+```
+
+Generate a starter schema from the sample invoice:
+
+```bash
+# --name sets the analyzer ID; --from-sample asks the service to suggest fields.
+# --output-file saves the suggested definition for review and editing.
 azd ai cu analyzer schema create \
   --name invoice_v1 \
   --from-sample invoice.pdf \
@@ -186,19 +209,37 @@ starter instead, replace `--from-sample invoice.pdf` with `--from-template`.
 Template mode also supports `--modality document|image|audio|video` and
 `--type extraction|classification`.
 
-Review and edit the generated fields, descriptions, and model mappings before
-validation and creation:
+Review and edit the generated fields, descriptions, and model mappings, then
+validate the definition locally:
 
 ```bash
+# --schema selects the local definition; --spec adds bundled service-contract checks.
+# --strict treats authoring warnings as validation failures.
 azd ai cu analyzer validate \
   --schema invoice-schema.json \
   --spec \
   --strict
+```
 
+Validation is offline and does not require an azd project, endpoint, or sign-in.
+
+Create a new analyzer from the reviewed definition:
+
+```bash
+# --name sets the new analyzer ID; --schema supplies its definition.
 azd ai cu analyzer create \
   --name invoice_v1 \
   --schema invoice-schema.json
+```
 
+Custom analyzer IDs use 1-64 ASCII letters, numbers, or underscores, such as
+`invoice_v1`. Create never replaces an existing analyzer.
+
+Test the analyzer against a local sample:
+
+```bash
+# --name selects the analyzer; --file supplies the local document.
+# --output-file saves the report; --yes confirms billed batches larger than 50 samples.
 azd ai cu analyzer test \
   --name invoice_v1 \
   --file invoice.pdf \
@@ -206,25 +247,31 @@ azd ai cu analyzer test \
   --yes
 ```
 
-Custom analyzer IDs use 1-64 ASCII letters, numbers, or underscores, such as
-`invoice_v1`. Create never replaces an existing analyzer.
-
-Validation is offline and does not require a project, endpoint, or sign-in.
-`--spec` adds bundled service-contract checks; `--strict` makes authoring warnings
-fail validation. An analyzer test sends local samples to the service and reports
+An analyzer test sends local samples to the service and reports
 field population and confidence, not extraction accuracy. Its concurrency
 defaults to 4 and accepts 1-16. Its `--dry-run` mode is fully offline.
 
 ## Manage analyzers and defaults
 
-```bash
-azd ai cu analyzer list --kind custom --sort-by createdAt
-azd ai cu analyzer show invoice_v1
-azd ai cu analyzer copy invoice_v1 invoice_v2
-azd ai cu analyzer delete invoice_v2 --yes
+List custom analyzers ordered by creation time:
 
-azd ai cu defaults show
-azd ai cu defaults set --from-environment
+```bash
+# --kind custom excludes service-provided analyzers; --sort-by chooses the ordering field.
+azd ai cu analyzer list --kind custom --sort-by createdAt
+```
+
+Inspect an analyzer definition:
+
+```bash
+# invoice_v1 identifies the analyzer to inspect.
+azd ai cu analyzer show invoice_v1
+```
+
+Copy an existing custom analyzer to a new ID:
+
+```bash
+# Copy the definition from invoice_v1 to a new analyzer named invoice_v2.
+azd ai cu analyzer copy invoice_v1 invoice_v2
 ```
 
 Without resource selectors, copy stays on the configured resource.
@@ -232,7 +279,30 @@ Cross-resource copy accepts `--source-resource` and `--destination-resource`
 as account names, ARM resource IDs, or HTTPS endpoints. Use the corresponding
 subscription and resource-group flags to narrow discovery. Missing custom
 analyzer dependencies must be copied explicitly. Copy never replaces an
-existing destination; delete requires confirmation or `--yes`.
+existing destination.
+
+Delete the copied analyzer when it is no longer needed:
+
+```bash
+# invoice_v2 identifies the analyzer to delete; --yes confirms deletion without prompting.
+azd ai cu analyzer delete invoice_v2 --yes
+```
+
+Without `--yes`, deletion requires interactive confirmation.
+
+Inspect the resource's current model-to-deployment defaults:
+
+```bash
+# Read service defaults without changing them.
+azd ai cu defaults show
+```
+
+Apply mappings from the selected azd environment:
+
+```bash
+# --from-environment loads cu.modelDeployments from the selected azd environment.
+azd ai cu defaults set --from-environment
+```
 
 Defaults are model-to-deployment settings on the CU resource, not local CLI
 settings. `--from-environment` uses `cu.modelDeployments`; repeatable
@@ -379,7 +449,7 @@ set `NO_COLOR=1` for plain text.
 - Supported output formats are `default`, `json`, and `none`. Analysis defaults
   to readable LLM-input text, and `doctor` defaults to readable diagnostics.
   Other commands, analysis summaries, dry runs, and
-  `--usage` wrappers use JSON. Use `--llm-input=false` for complete analysis JSON.
+  `--usage` wrappers use JSON. Use `--output json` for complete analysis JSON.
 - `--output none` suppresses successful stdout, not service operations, requested
   file writes, confirmations, or errors. Always check the exit code before parsing
   output: the azd host can render extension errors on stdout.

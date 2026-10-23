@@ -8,6 +8,7 @@
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add analyzer listing, inspection, creation, copying, deletion, schema authoring and validation, and testing against sample files.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add service-default configuration, environment-variable inspection, and setup diagnostics.
 - Show human-readable `doctor` diagnostics by default, retaining `--output json` for structured reports.
+- Make `analyze --output json` select the complete response for console and saved results; reject explicit `--llm-input=true` conflicts.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add `config set|get|list|unset` shortcuts for CU defaults in azd user configuration without a project, shared settings resolution, and effective-setting sources in `doctor`.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add infrastructure generation with Bash and PowerShell hooks for model setup and Content Understanding configuration.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Default to API version `2025-11-01` and accept valid `YYYY-MM-DD-preview` versions for internal testing and future previews.

@@ -301,7 +301,7 @@ func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	assert.Equal(t, "prebuilt-image", plan.Analyzer)
 	require.Len(t, plan.Outputs, 1)
 	assert.Equal(t, "https://example.com/a.pdf?REDACTED", plan.Outputs[0].Input)
-	assert.Equal(t, filepath.Join(directory, "a.pdf.result.md"), plan.Outputs[0].Output)
+	assert.Equal(t, filepath.Join(directory, "a.pdf.result.json"), plan.Outputs[0].Output)
 	assert.NotContains(t, stdout, "private")
 	assert.Empty(t, f.prompts)
 	assert.Zero(t, f.client.calls.Load())
@@ -504,7 +504,7 @@ func TestAnalyzeDefaultViewAndExplicitJSON(t *testing.T) {
 	}{
 		{"default", "default", nil, false},
 		{"explicit LLM", "default", []string{"--llm-input"}, false},
-		{"LLM JSON string", "json", nil, false},
+		{"implicit full JSON", "json", nil, true},
 		{"full default", "default", []string{"--llm-input=false"}, true},
 		{"full JSON", "json", []string{"--llm-input=false"}, true},
 		{"suppressed", "none", nil, false},
@@ -520,15 +520,96 @@ func TestAnalyzeDefaultViewAndExplicitJSON(t *testing.T) {
 				assert.Empty(t, stdout)
 			case tt.full:
 				assert.JSONEq(t, analyzeEnvelope, stdout)
-			case tt.format == "json":
-				var actual string
-				require.NoError(t, json.Unmarshal([]byte(stdout), &actual))
-				assert.Equal(t, text, actual)
 			default:
 				assert.Equal(t, text+"\n", stdout)
 			}
 			assert.EqualValues(t, 1, f.client.calls.Load())
 		})
+	}
+}
+
+func TestAnalyzeJSONUsageWrapsCompleteResponse(t *testing.T) {
+	f := newAnalyzeFixture(t)
+	stdout, stderr, err := f.execute(t.Context(), "https://example.com/a.pdf", "-o", "json", "--usage")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	var wrapped struct {
+		Result json.RawMessage `json:"result"`
+		Usage  json.RawMessage `json:"usage"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdout), &wrapped))
+	assert.JSONEq(t, analyzeEnvelope, string(wrapped.Result))
+	assert.JSONEq(t, `{"tokens":{"model":9007199254740993}}`, string(wrapped.Usage))
+	assert.Contains(t, string(wrapped.Result), "9007199254740993")
+	assert.Contains(t, string(wrapped.Usage), "9007199254740993")
+	assert.EqualValues(t, 1, f.client.calls.Load())
+}
+
+func TestAnalyzeJSONViewConflictDoesNotOpenOrWrite(t *testing.T) {
+	for _, flags := range [][]string{
+		{"--output", "json", "--llm-input"},
+		{"--output", "json", "--llm-input=true"},
+		{"--llm-input", "-o", "json"},
+		{"--llm-input=true", "-o", "json"},
+	} {
+		t.Run(strings.Join(flags, " "), func(t *testing.T) {
+			f := newAnalyzeFixture(t)
+			directory := filepath.Join(t.TempDir(), "not-created")
+			args := append([]string{"--url", "https://example.com/a.pdf",
+				"--output-dir", directory, "--report-file", filepath.Join(directory, "report.json")}, flags...)
+			stdout, stderr, err := f.execute(t.Context(), args...)
+			require.ErrorContains(t, err, "--output json")
+			assert.Contains(t, err.Error(), "--llm-input=true")
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
+			assert.Zero(t, f.opens)
+			assert.Zero(t, f.client.calls.Load())
+			assert.Empty(t, f.prompts)
+			_, err = os.Stat(directory)
+			require.ErrorIs(t, err, fs.ErrNotExist)
+		})
+	}
+}
+
+func TestAnalyzeJSONSelectsSavedFullResponse(t *testing.T) {
+	for _, batch := range []bool{false, true} {
+		for _, usage := range []bool{false, true} {
+			t.Run(fmt.Sprintf("batch=%t/usage=%t", batch, usage), func(t *testing.T) {
+				f := newAnalyzeFixture(t)
+				directory := t.TempDir()
+				input := filepath.Join(directory, "invoice.pdf")
+				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
+				output := filepath.Join(t.TempDir(), "saved.md")
+				report := filepath.Join(t.TempDir(), "report.json")
+				args := []string{input, "--output-file", output}
+				if batch {
+					output = filepath.Join(t.TempDir(), "results")
+					args = []string{"--source", directory, "--output-dir", output}
+					output = filepath.Join(output, "invoice.pdf.result.json")
+				}
+				args = append(args, "-o", "json", "--report-file", report)
+				if usage {
+					args = append(args, "--usage")
+				}
+				stdout, stderr, err := f.execute(t.Context(), args...)
+				require.NoError(t, err)
+				assert.Empty(t, stderr)
+				assert.True(t, json.Valid([]byte(stdout)), "saved results still produce JSON summaries")
+				// #nosec G304 -- Reads only this test's private temporary output.
+				body, err := os.ReadFile(output)
+				require.NoError(t, err)
+				assert.JSONEq(t, analyzeEnvelope, string(body), "preserve the full envelope regardless of file extension")
+				// #nosec G304 -- Reads only this test's private temporary report.
+				body, err = os.ReadFile(report)
+				require.NoError(t, err)
+				var summary struct {
+					View string `json:"result_view"`
+				}
+				require.NoError(t, json.Unmarshal(body, &summary))
+				assert.Equal(t, "full", summary.View)
+				assert.EqualValues(t, 1, f.client.calls.Load())
+			})
+		}
 	}
 }
 

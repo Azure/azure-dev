@@ -52,7 +52,10 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 						if test.directory {
 							args = []string{"analyze", "--source", directory, "--output-dir", output}
 						}
-						args = append(args, "--llm-input=false", "--analyzer", test.analyzer,
+						if format != "json" {
+							args = append(args, "--llm-input=false")
+						}
+						args = append(args, "--analyzer", test.analyzer,
 							"-o", format, "--debug", "--no-prompt",
 							"--endpoint", "https://sanitized.services.ai.azure.com",
 							"--api-version", cuclient.DefaultAPIVersion)
@@ -134,7 +137,7 @@ func TestRecordedAnalysisSyntheticURLContract(t *testing.T) {
 		first.Request.Headers["Content-Type"] = "application/json"
 		transport := &recordedTransport{fixture: fixture}
 		root := newRecordedCommand(t, transport, "prebuilt-layout")
-		args := []string{"analyze", "--llm-input=false", "--url", "https://example.com/sample_invoice.pdf",
+		args := []string{"analyze", "--url", "https://example.com/sample_invoice.pdf",
 			"--analyzer", "prebuilt-layout", "-o", "json", "--no-prompt",
 			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion}
 		var stdout, stderr bytes.Buffer

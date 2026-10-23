@@ -35,11 +35,11 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
-			"Use --llm-input=false for complete JSON, or --dry-run to inspect the plan without service calls.",
+			"Use --output json for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
     Analyze one file using the configured analyzer, or prebuilt-layout if unset.
 
-  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice --llm-input=false --output json
+  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice --output json
     Extract invoice fields and return the complete response as JSON.
 
   azd ai cu analyze --url "https://example.com/document.pdf" --analyzer prebuilt-layout
@@ -72,7 +72,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVarP(&options.inline, "inline", "i", false, "Use preview inline analysis; never falls back to async")
 	flags.BoolVar(&options.usage, "usage", false, "Include usage metadata in streamed results or per-input summaries")
 	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
-		"Render YAML front matter and Markdown; set false for the complete JSON envelope")
+		"Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
 	flags.StringVar(&options.output.Existing, "on-existing", "",
@@ -84,7 +84,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.IntVarP(&options.concurrency, "concurrency", "j", 4, "Concurrent analyses (1-32)")
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"default", "json", "none"},
-		Usage: "Output format: default (text for LLM input, otherwise JSON), json, or none; file writes are unaffected",
+		Usage: "Output format: default (text for LLM input, otherwise JSON), json (complete response), or none",
 	})
 }
 
@@ -94,6 +94,14 @@ func runAnalyzeCommand(
 	ctx := cmd.Context()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if extCtx.OutputFormat == "json" {
+		if cmd.Flags().Changed("llm-input") && options.output.LLMInput {
+			return commandError("conflicting_analyze_options",
+				"--output json cannot be combined with --llm-input=true.",
+				"Omit --llm-input to return complete JSON, or omit --output json to render LLM input.")
+		}
+		options.output.LLMInput = false
 	}
 	if options.dryRun && options.yes {
 		return commandError("dry_run_confirmation",

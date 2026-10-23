@@ -891,8 +891,8 @@ Supported providers and identifiers:
 - `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
   (the YAML provider name remains `acs` for compatibility). azd maps this to the
   canonical `teams_phone_extensibility` provider and sends the GUID as
-  `resource_account_object_id`. Legacy `4:+<E.164>` ACS-purchased-number IDs
-  cannot be deployed through the canonical GA contract.
+  `resource_account_object_id`. Legacy `4:+<E.164>` ACS-purchased-number IDs are
+  rejected during authoring validation because the canonical GA contract cannot deploy them.
 
 Deploy lists every page of canonical bindings and matches provider identities
 without deriving binding IDs. If exactly one active remote binding matches the

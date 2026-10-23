@@ -2641,14 +2641,22 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			return nil, err
 		}
 	}
+	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
+	remoteAgent, getErr := agentClient.GetVoiceAgent(
+		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
+	)
+	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
+	if decisionErr != nil {
+		return nil, exterrors.ServiceFromAzure(decisionErr, exterrors.OpGetAgent)
+	}
 	if err := preflightVoiceTelephonyState(
-		ctx, agentClient, request.Name, desiredTelephony,
+		ctx, agentClient, request.Name, desiredTelephony, !shouldUpdate,
 	); err != nil {
 		return nil, err
 	}
 
 	agentObject, deployOp, err := p.deployVoiceAgentRemote(
-		ctx, agentClient, request, azdEnv, progress,
+		ctx, agentClient, request, azdEnv, progress, shouldUpdate,
 	)
 	if err != nil {
 		return nil, exterrors.ServiceFromAzure(err, deployOp)
@@ -2789,20 +2797,22 @@ type desiredTelephonyState struct {
 	targetsManaged  bool
 }
 
+var errTelephonyAgentNotFound = errors.New("telephony agent not found")
+
 func preflightVoiceTelephonyBindings(
 	ctx context.Context,
 	client telephonyBindingClient,
 	agentName string,
 	desired []desiredTelephonyBinding,
+	agentMissing ...bool,
 ) error {
 	if len(desired) == 0 {
 		return nil
 	}
 	remote, err := client.ListAllTelephonyBindings(ctx, agentName, agent_api.TelephonyBindingListOptions{})
 	if err != nil {
-		if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-			responseErr.StatusCode == http.StatusNotFound {
-			return nil
+		if len(agentMissing) > 0 && agentMissing[0] && responseErrIsNotFound(err) {
+			return errTelephonyAgentNotFound
 		}
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetTelephonyBinding)
 	}
@@ -2815,8 +2825,13 @@ func preflightVoiceTelephonyState(
 	client telephonyBindingClient,
 	agentName string,
 	desired desiredTelephonyState,
+	agentMissing ...bool,
 ) error {
-	if err := preflightVoiceTelephonyBindings(ctx, client, agentName, desired.bindings); err != nil {
+	agentDoesNotExist := len(agentMissing) > 0 && agentMissing[0]
+	if err := preflightVoiceTelephonyBindings(ctx, client, agentName, desired.bindings, agentDoesNotExist); err != nil {
+		if errors.Is(err, errTelephonyAgentNotFound) {
+			return nil
+		}
 		return err
 	}
 	if !desired.targetsManaged {
@@ -2824,8 +2839,7 @@ func preflightVoiceTelephonyState(
 	}
 	current, err := client.GetTelephonyTransferTargets(ctx, agentName)
 	if err != nil {
-		if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok &&
-			responseErr.StatusCode == http.StatusNotFound {
+		if agentDoesNotExist && responseErrIsNotFound(err) {
 			return nil
 		}
 		return exterrors.ServiceFromAzure(err, "get_telephony_transfer_targets")
@@ -2858,6 +2872,11 @@ func preflightVoiceTelephonyState(
 		)
 	}
 	return nil
+}
+
+func responseErrIsNotFound(err error) bool {
+	var responseErr *azcore.ResponseError
+	return errors.As(err, &responseErr) && responseErr.StatusCode == http.StatusNotFound
 }
 
 func (p *AgentServiceTargetProvider) deployVoiceTelephonyBindings(
@@ -3044,6 +3063,12 @@ func desiredTelephonyBindings(bindings []agent_yaml.VoiceTelephonyBinding) ([]de
 func desiredTelephonyConfiguration(
 	bindings []agent_yaml.VoiceTelephonyBinding,
 ) ([]desiredTelephonyBinding, []agent_api.TelephonyTransferTarget, bool, error) {
+	if err := agent_yaml.ValidateVoiceTelephony(&agent_yaml.VoiceTelephony{Bindings: bindings}); err != nil {
+		return nil, nil, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest, "invalid telephony configuration: "+err.Error(),
+			"fix the telephony declaration before deploying",
+		)
+	}
 	desired := make([]desiredTelephonyBinding, 0, len(bindings))
 	seen := map[string]struct{}{}
 	var transferTargets []agent_api.TelephonyTransferTarget
@@ -3687,15 +3712,9 @@ func (p *AgentServiceTargetProvider) deployVoiceAgentRemote(
 	request *agent_api.CreateAgentRequest,
 	azdEnv map[string]string,
 	progress azdext.ProgressReporter,
+	shouldUpdate bool,
 ) (*agent_api.AgentObject, string, error) {
 	overriddenHost := azdEnv[voiceOverriddenHostEnvKey]
-	remoteAgent, getErr := agentClient.GetVoiceAgent(
-		ctx, request.Name, agent_api.AgentEndpointAPIVersion, overriddenHost,
-	)
-	shouldUpdate, decisionErr := shouldUpdateVoiceAgent(remoteAgent, getErr)
-	if decisionErr != nil {
-		return nil, exterrors.OpGetAgent, decisionErr
-	}
 	if shouldUpdate {
 		progress("Updating voice agent using unified API")
 		updateRequest := &agent_api.UpdateAgentRequest{

@@ -58,3 +58,55 @@ func TestVoiceTelephonyBindingJSONPreservesExplicitEmptyTargets(t *testing.T) {
 	require.NotNil(t, binding.TransferTargets)
 	require.Empty(t, binding.TransferTargets)
 }
+
+func TestValidateVoiceTelephonyTransferTargets(t *testing.T) {
+	valid := func() *VoiceTelephony {
+		return &VoiceTelephony{Bindings: []VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+			TransferTargets: []map[string]any{{
+				"name": "support", "description": "Support",
+				"destination": map[string]any{
+					"kind": "teams", "value": "28:orgid:00000000-0000-0000-0000-000000000001",
+				},
+			}},
+		}}}
+	}
+	require.NoError(t, ValidateVoiceTelephony(valid()))
+
+	tests := []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{name: "unknown target field", edit: func(target map[string]any) { target["future"] = true }, want: "unsupported field"},
+		{name: "unknown destination field", edit: func(target map[string]any) {
+			target["destination"].(map[string]any)["future"] = true
+		}, want: "unsupported field"},
+		{name: "invalid teams GUID", edit: func(target map[string]any) {
+			target["destination"].(map[string]any)["value"] = "not-a-guid"
+		}, want: "canonical object GUID"},
+		{name: "invalid PSTN", edit: func(target map[string]any) {
+			destination := target["destination"].(map[string]any)
+			destination["kind"], destination["value"] = "pstn", "4255550123"
+		}, want: "+<E.164>"},
+		{name: "relative SIP", edit: func(target map[string]any) {
+			destination := target["destination"].(map[string]any)
+			destination["kind"], destination["value"] = "sip", "relative/path"
+		}, want: "absolute sip or sips"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			telephony := valid()
+			test.edit(telephony.Bindings[0].TransferTargets[0])
+			require.ErrorContains(t, ValidateVoiceTelephony(telephony), test.want)
+		})
+	}
+
+	duplicate := valid()
+	duplicate.Bindings[0].TransferTargets = append(duplicate.Bindings[0].TransferTargets,
+		map[string]any{
+			"name": "support", "description": "Other",
+			"destination": map[string]any{"kind": "pstn", "value": "+14255550124"},
+		})
+	require.ErrorContains(t, ValidateVoiceTelephony(duplicate), "duplicates transfer target")
+}

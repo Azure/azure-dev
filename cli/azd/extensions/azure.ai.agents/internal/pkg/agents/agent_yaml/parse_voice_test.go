@@ -299,9 +299,6 @@ telephony:
     - provider: acs
       identifier: 28:orgid:00000000-0000-0000-0000-000000000001
       connection: telephony-acs
-    - provider: acs
-      identifier: 4:+14255550123
-      connection: telephony-acs
     - provider: twilio
       identifier: +14255550124
       connection: telephony-twilio
@@ -339,6 +336,15 @@ func TestValidateAgentDefinition_PromptVoice_InvalidTelephonyBindings(t *testing
       identifier: not-a-number
       connection: c`,
 			want: "identifier must be +<E.164>",
+		},
+		{
+			name: "legacy ACS purchased number",
+			yaml: `telephony:
+  bindings:
+    - provider: acs
+      identifier: 4:+14255550123
+      connection: c`,
+			want: "identifier must be 28:orgid:<guid>",
 		},
 		{
 			name: "missing connection",

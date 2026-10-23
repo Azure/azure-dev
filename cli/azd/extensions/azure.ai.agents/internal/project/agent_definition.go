@@ -1179,6 +1179,9 @@ func VoiceAgentDefinitionToServiceProperties(
 	va agent_yaml.VoiceAgent,
 	extra *ServiceTargetAgentConfig,
 ) (*structpb.Struct, error) {
+	if err := agent_yaml.ValidateVoiceTelephony(va.Telephony); err != nil {
+		return nil, fmt.Errorf("invalid voice telephony definition: %w", err)
+	}
 	inline := voiceAgentDefinitionToInline(va)
 
 	defStruct, err := MarshalStruct(&inline)

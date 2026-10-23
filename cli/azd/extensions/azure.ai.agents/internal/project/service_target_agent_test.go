@@ -495,16 +495,16 @@ func TestDeployVoiceTelephonyBindings_RejectsUnsupportedAndAmbiguousYAML(t *test
 	}{
 		{name: "legacy ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
 			Provider: "acs", Identifier: "4:+14255550123", Connection: "acs",
-		}}, want: "legacy ACS purchased-number"},
+		}}, want: "28:orgid:<guid>"},
 		{name: "malformed ACS", bindings: []agent_yaml.VoiceTelephonyBinding{{
 			Provider: "acs", Identifier: "28:orgid:not-a-uuid", Connection: "acs",
-		}}, want: "28:orgid:<uuid>"},
+		}}, want: "28:orgid:<guid>"},
 		{name: "malformed Twilio", bindings: []agent_yaml.VoiceTelephonyBinding{{
 			Provider: "twilio", Identifier: "14255550123", Connection: "twilio",
-		}}, want: "valid +<E.164>"},
+		}}, want: "+<E.164>"},
 		{name: "duplicate", bindings: []agent_yaml.VoiceTelephonyBinding{
 			twilioYAMLBinding(), twilioYAMLBinding(),
-		}, want: "declared more than once"},
+		}, want: "duplicates telephony binding"},
 		{name: "invalid transfer targets", bindings: []agent_yaml.VoiceTelephonyBinding{{
 			Provider: "twilio", Identifier: "+14255550123", Connection: "twilio",
 			TransferTargets: []map[string]any{{"kind": "phone"}},
@@ -623,6 +623,59 @@ func TestPreflightVoiceTelephonyState_RejectsUnreconcilableTargetDrift(t *testin
 	}
 	err := preflightVoiceTelephonyState(t.Context(), client, "agent", desired)
 	require.ErrorContains(t, err, "differ from the YAML")
+}
+
+func TestPreflightVoiceTelephonyState_Ignores404OnlyForMissingAgent(t *testing.T) {
+	desired := desiredTelephonyState{
+		bindings:        mustDesiredTelephonyBindings(t, twilioYAMLBinding()),
+		transferTargets: typedTransferTargets("first"),
+		targetsManaged:  true,
+	}
+	for _, test := range []struct {
+		name         string
+		agentMissing bool
+		listErr      error
+		targetGetErr error
+		listResults  [][]agent_api.GATelephonyBinding
+		wantErr      bool
+	}{
+		{name: "missing agent binding 404", agentMissing: true,
+			listErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}},
+		{name: "existing agent binding 404", listErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}, wantErr: true},
+		{name: "missing agent targets 404", agentMissing: true, listResults: [][]agent_api.GATelephonyBinding{{}},
+			targetGetErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}},
+		{name: "existing agent targets 404", listResults: [][]agent_api.GATelephonyBinding{{}},
+			targetGetErr: &azcore.ResponseError{StatusCode: http.StatusNotFound}, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &fakeTelephonyBindingClient{
+				listErr: test.listErr, listResults: test.listResults, targetGetErr: test.targetGetErr,
+			}
+			err := preflightVoiceTelephonyState(t.Context(), client, "agent", desired, test.agentMissing)
+			if test.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestVoiceAgentDefinitionToServiceProperties_RejectsInvalidTeamsTargetBeforeConversion(t *testing.T) {
+	va := agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &agent_yaml.Model{Id: "gpt-realtime"},
+		Telephony: &agent_yaml.VoiceTelephony{Bindings: []agent_yaml.VoiceTelephonyBinding{{
+			Provider: "twilio", Identifier: "+14255550123", Connection: "connection",
+			TransferTargets: []map[string]any{{
+				"name": "teams", "description": "Teams",
+				"destination": map[string]any{"kind": "teams", "value": "not-a-guid"},
+			}},
+		}}},
+	}
+	props, err := VoiceAgentDefinitionToServiceProperties(va, nil)
+	require.Nil(t, props)
+	require.ErrorContains(t, err, "canonical object GUID")
 }
 
 func TestDeployVoiceTelephonyState_TransferTargetBehavior(t *testing.T) {

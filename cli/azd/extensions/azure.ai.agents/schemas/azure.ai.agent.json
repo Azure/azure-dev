@@ -676,9 +676,13 @@
       "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
       "properties": {
         "provider": { "type": "string", "enum": ["acs", "twilio"] },
-        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>) or Twilio E.164 number (+<E.164>)." },
         "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
-        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        "transferTargets": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/VoiceTelephonyTransferTarget" },
+          "uniqueItems": true
+        }
       },
       "required": ["provider", "identifier", "connection"],
       "allOf": [
@@ -688,10 +692,51 @@
         },
         {
           "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
-          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+          "then": { "properties": { "identifier": { "pattern": "^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" } } }
         }
       ],
       "additionalProperties": false
+    },
+    "VoiceTelephonyTransferTarget": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "destination": { "$ref": "#/definitions/VoiceTelephonyTransferDestination" }
+      },
+      "required": ["name", "description", "destination"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyTransferDestination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "pstn" },
+            "value": { "type": "string", "pattern": "^\\+[1-9][0-9]{6,14}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "teams" },
+            "value": { "type": "string", "pattern": "^(28:[oO][rR][gG][iI][dD]:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "sip" },
+            "value": { "type": "string", "pattern": "^[sS][iI][pP][sS]?:([^\\s%]|%[0-9a-fA-F]{2})+$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        }
+      ]
     },
     "VoiceAudio": {
       "type": "object",

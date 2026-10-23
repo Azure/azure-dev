@@ -145,6 +145,7 @@ type AgentDefinitionInline struct {
 	// workflow entries are byte-for-byte unchanged.
 	DefinitionOverlay  map[string]any                      `json:"definitionOverlay,omitempty"`
 	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
+	SubProtocol        agent_yaml.VoiceSubProtocol         `json:"subProtocol,omitempty"`
 	Model              *agent_yaml.Model                   `json:"model,omitempty"`
 	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
 	ConversationEngine *agent_yaml.VoiceConversationEngine `json:"conversationEngine,omitempty"`
@@ -163,6 +164,7 @@ type AgentDefinitionInline struct {
 	MaxOutputTokens    any                                 `json:"maxOutputTokens,omitempty"`
 	Include            []string                            `json:"include,omitempty"`
 	Telephony          *agent_yaml.VoiceTelephony          `json:"telephony,omitempty"`
+	Delegation         *agent_yaml.LiveVoiceDelegation     `json:"delegation,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -172,6 +174,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		AgentDefinition:    va.AgentDefinition,
 		DefinitionOverlay:  va.DefinitionOverlay,
 		ModelType:          va.ModelType,
+		SubProtocol:        va.SubProtocol,
 		Model:              va.Model,
 		TargetAgent:        va.TargetAgent,
 		ConversationEngine: va.ConversationEngine,
@@ -190,6 +193,8 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		MaxOutputTokens:    va.MaxOutputTokens,
 		Include:            va.Include,
 		Telephony:          va.Telephony,
+		Delegation:         va.Delegation,
+		Policies:           va.Policies,
 	}
 }
 
@@ -199,6 +204,7 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		AgentDefinition:    d.AgentDefinition,
 		DefinitionOverlay:  d.DefinitionOverlay,
 		ModelType:          d.ModelType,
+		SubProtocol:        d.SubProtocol,
 		Model:              d.Model,
 		TargetAgent:        d.TargetAgent,
 		ConversationEngine: d.ConversationEngine,
@@ -217,6 +223,8 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		MaxOutputTokens:    d.MaxOutputTokens,
 		Include:            d.Include,
 		Telephony:          d.Telephony,
+		Delegation:         d.Delegation,
+		Policies:           d.Policies,
 	}
 }
 
@@ -786,10 +794,27 @@ func resolveRawServiceProps(
 			err,
 		)
 	}
-	resolved, err := foundry.ResolveFileRefs(
-		props.AsMap(),
-		projectRoot,
-	)
+	values := props.AsMap()
+	var resolved map[string]any
+	var err error
+	if ref, ok := values[AgentDefinitionRefKey].(string); ok && strings.TrimSpace(ref) != "" {
+		// Normalize a direct voice definition while its root-ref provenance is
+		// still known. Inline siblings are camelCase authoring and shallowly
+		// override the normalized file, matching ResolveFileRefs semantics.
+		resolved, err = foundry.ResolveFileRefs(map[string]any{AgentDefinitionRefKey: ref}, projectRoot)
+		if err == nil && agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(fmt.Sprint(resolved["kind"]))) {
+			resolved, err = normalizeRootVoiceDefinitionMap(resolved)
+		}
+		if err == nil {
+			siblings := maps.Clone(values)
+			delete(siblings, AgentDefinitionRefKey)
+			var overlays map[string]any
+			overlays, err = foundry.ResolveFileRefs(siblings, projectRoot)
+			maps.Copy(resolved, overlays)
+		}
+	} else {
+		resolved, err = foundry.ResolveFileRefs(values, projectRoot)
+	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"resolving service %q config: %w",
@@ -1125,6 +1150,34 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 		)
 	}
 	if s.GetFields()["policies"] != nil {
+		if inline.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			if len(inline.Policies) > 1 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live supports at most one RAI policy",
+					"remove the extra policy entries",
+				)
+			}
+			policy := inline.Policies[0]
+			if policy.Type != agent_yaml.PolicyTypeRai || policy.RaiPolicyName == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live policies must contain one named rai_policy",
+					"set type to rai_policy and provide raiPolicyName",
+				)
+			}
+			if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest, err.Error(), "use a valid RAI policy name or ARM ID")
+			}
+			if policy.InvocationsModeration != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"invocationsModeration is not supported for GPT Live",
+					"remove invocationsModeration from the RAI policy",
+				)
+			}
+			return validateDirectAgentDefinition(inline.toVoiceAgent())
+		}
 		for _, policy := range inline.Policies {
 			if policy.InvocationsModeration != nil {
 				return exterrors.Validation(
@@ -1421,4 +1474,70 @@ func VoiceAgentFromResolvedService(
 		return agent_yaml.VoiceAgent{}, false, err
 	}
 	return inline.toVoiceAgent(), true, nil
+}
+
+func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, error) {
+	aliases := map[string]string{
+		"model_type": "modelType", "sub_protocol": "subProtocol",
+		"target_agent": "targetAgent", "conversation_engine": "conversationEngine",
+		"structured_inputs": "structuredInputs", "output_modalities": "outputModalities",
+		"tool_choice": "toolChoice", "parallel_tool_calls": "parallelToolCalls",
+		"max_output_tokens": "maxOutputTokens",
+	}
+	for source, target := range aliases {
+		if value, found := values[source]; found {
+			if _, conflict := values[target]; conflict {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("voice agent definition contains both %q and %q", source, target),
+					"use snake_case in a root $ref definition and camelCase in inline azure.yaml authoring",
+				)
+			}
+			values[target] = value
+			delete(values, source)
+		}
+	}
+	if delegation, ok := values["delegation"].(map[string]any); ok {
+		for source, target := range map[string]string{"agent_name": "agentName", "agent_version": "agentVersion"} {
+			if value, found := delegation[source]; found {
+				delegation[target] = value
+				delete(delegation, source)
+			}
+		}
+		if responses, ok := delegation["responses"].(map[string]any); ok {
+			for source, target := range map[string]string{
+				"max_output_tokens": "maxOutputTokens", "parallel_tool_calls": "parallelToolCalls",
+				"service_tier": "serviceTier", "tool_choice": "toolChoice",
+			} {
+				if value, found := responses[source]; found {
+					responses[target] = value
+					delete(responses, source)
+				}
+			}
+		}
+	}
+	if policies, ok := values["policies"].([]any); ok {
+		for _, entry := range policies {
+			policy, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			for source, target := range map[string]string{
+				"rai_policy_name": "raiPolicyName", "invocations_moderation": "invocationsModeration",
+			} {
+				if value, found := policy[source]; found {
+					if _, conflict := policy[target]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							fmt.Sprintf("voice policy contains both %q and %q", source, target),
+							"use snake_case in a root $ref definition",
+						)
+					}
+					policy[target] = value
+					delete(policy, source)
+				}
+			}
+		}
+	}
+	return values, nil
 }

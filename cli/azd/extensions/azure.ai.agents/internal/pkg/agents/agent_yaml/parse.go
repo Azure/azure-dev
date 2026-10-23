@@ -214,13 +214,30 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									"configure protocols on the hosted target")
 						}
 						if _, hasPolicies := fields["policies"]; hasPolicies {
-							errors = append(errors,
-								"policies is not supported for prompt-voice agents; "+
-									"move target-owned policies to the hosted target")
+							if agent.SubProtocol != VoiceSubProtocolLive {
+								errors = append(errors,
+									"policies is not supported for prompt-voice agents; "+
+										"move target-owned policies to the hosted target")
+							} else {
+								var policyEnvelope struct {
+									Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
+								}
+								if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
+									errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
+								} else {
+									agent.Policies = policyEnvelope.Policies
+									errors = append(errors, validateLivePolicies(policyEnvelope.Policies)...)
+								}
+							}
 						}
 					}
 					_, hasLegacyTarget := fields["target_agent"]
-					if isHostedVoiceWrapper(agent) || hasLegacyTarget {
+					if agent.SubProtocol == VoiceSubProtocolLive {
+						errors = append(errors, validateLiveVoiceAgent(agent)...)
+					} else if agent.SubProtocol != "" && agent.SubProtocol != VoiceSubProtocolRealtime {
+						errors = append(errors, fmt.Sprintf(
+							"subProtocol '%s' is not supported; omit it for realtime or use 'live'", agent.SubProtocol))
+					} else if isHostedVoiceWrapper(agent) || hasLegacyTarget {
 						if agent.ModelType == VoiceModelTypeHostedAgent || hasLegacyTarget {
 							errors = append(errors,
 								"modelType hosted_agent and targetAgent are not supported; "+
@@ -266,7 +283,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"For hosted voice, use conversationEngine.",
 							agent.ModelType, VoiceModelTypeManaged, VoiceModelTypeSelfDeployed))
 					}
-					errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
+					if agent.SubProtocol != VoiceSubProtocolLive {
+						errors = append(errors, validateVoiceAgentAdvancedConfig(agent)...)
+					}
 				} else {
 					errors = append(errors, fmt.Sprintf("failed to unmarshal to VoiceAgent: %v", err))
 				}
@@ -286,6 +305,256 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	return nil
 }
 
+func validateLiveVoiceAgent(agent VoiceAgent) []string {
+	var errors []string
+	if agent.ModelType != VoiceModelTypeSelfDeployed {
+		errors = append(errors, "GPT Live requires modelType 'self_deployed'")
+	}
+	if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
+		errors = append(errors, "model.id is required for a GPT Live voice agent")
+	}
+	if agent.ConversationEngine != nil || agent.TargetAgent != nil {
+		errors = append(errors, "conversationEngine and targetAgent are not supported for GPT Live")
+	}
+	if agent.Voice != nil || agent.InputSchema != nil || agent.OutputSchema != nil ||
+		len(agent.OutputModalities) > 0 || len(agent.Tools) > 0 || len(agent.Avatar) > 0 ||
+		len(agent.Handoff) > 0 || agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
+		agent.MaxOutputTokens != nil || len(agent.Include) > 0 || agent.Telephony != nil {
+		errors = append(errors,
+			"voice, inputSchema, outputSchema, outputModalities, tools, avatar, handoff, toolChoice, "+
+				"parallelToolCalls, maxOutputTokens, include, and telephony are not supported for GPT Live")
+	}
+	if agent.Audio != nil {
+		if agent.Audio.Input != nil {
+			errors = append(errors, "audio.input is not supported for GPT Live")
+		}
+		if agent.Audio.Format != nil {
+			errors = append(errors, validateLiveAudioFormat(agent.Audio.Format)...)
+		}
+		if output := agent.Audio.Output; output != nil {
+			if output.Format != nil || output.Speed != nil {
+				errors = append(errors, "audio.output.format and audio.output.speed are not supported for GPT Live")
+			}
+			if output.Voice != nil {
+				errors = append(errors, validateLiveVoice(output.Voice)...)
+			}
+		}
+	}
+	if len(agent.Greeting) > 0 {
+		typ, typeOK := agent.Greeting["type"].(string)
+		text, textOK := agent.Greeting["text"].(string)
+		if !typeOK || strings.TrimSpace(typ) != "template" || !textOK || strings.TrimSpace(text) == "" {
+			errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
+		}
+		for key := range agent.Greeting {
+			if key != "type" && key != "text" {
+				errors = append(errors, fmt.Sprintf("greeting.%s is not supported for GPT Live", key))
+			}
+		}
+	}
+	errors = append(errors, validateLiveDelegation(agent.Delegation)...)
+	errors = append(errors, validateLivePolicies(agent.Policies)...)
+	return errors
+}
+
+func validateLivePolicies(policies []Policy) []string {
+	var errors []string
+	if len(policies) > 1 {
+		errors = append(errors, "GPT Live supports at most one RAI policy")
+	}
+	for i, policy := range policies {
+		if policy.Type != PolicyTypeRai || strings.TrimSpace(policy.RaiPolicyName) == "" {
+			errors = append(errors, fmt.Sprintf("policies[%d] must be a named rai_policy", i))
+			continue
+		}
+		if policy.InvocationsModeration != nil {
+			errors = append(errors, fmt.Sprintf("policies[%d].invocationsModeration is not supported for GPT Live", i))
+		}
+	}
+	return errors
+}
+
+func validateLiveAudioFormat(format *VoiceAudioFormat) []string {
+	typ := strings.TrimSpace(format.Type)
+	if typ == "" {
+		return []string{"audio.format.type is required for GPT Live"}
+	}
+	rate := 0
+	if format.Rate != nil {
+		rate = *format.Rate
+	}
+	switch typ {
+	case "audio/pcm":
+		if rate != 16000 && rate != 24000 {
+			return []string{"audio.format.rate must be 16000 or 24000 for audio/pcm"}
+		}
+	case "audio/pcmu", "audio/pcma":
+		if rate != 8000 {
+			return []string{fmt.Sprintf("audio.format.rate must be 8000 for %s", typ)}
+		}
+	default:
+		return []string{"audio.format.type must be audio/pcm, audio/pcmu, or audio/pcma for GPT Live"}
+	}
+	return nil
+}
+
+func validateLiveVoice(value any) []string {
+	voice, ok := value.(*VoiceConfig)
+	if !ok || voice == nil {
+		return []string{"audio.output.voice must be a voice name or custom voice object"}
+	}
+	if voice.LiveName != "" {
+		if strings.TrimSpace(voice.LiveName) == "" {
+			return []string{"audio.output.voice must not be blank"}
+		}
+		return nil
+	}
+	if strings.TrimSpace(voice.ID) == "" {
+		return []string{"audio.output.voice custom object requires a nonblank id"}
+	}
+	if voice.Type != "" || voice.Name != "" || voice.Style != nil || voice.Pitch != nil ||
+		voice.Rate != nil || voice.Locale != nil || voice.Volume != nil {
+		return []string{"audio.output.voice custom object supports only id"}
+	}
+	if len(voice.ID) > 128 {
+		return []string{"audio.output.voice.id must be at most 128 characters"}
+	}
+	return nil
+}
+
+func validateLiveDelegation(delegation *LiveVoiceDelegation) []string {
+	if delegation == nil {
+		return nil
+	}
+	switch strings.TrimSpace(delegation.Type) {
+	case "client":
+		if delegation.Responses != nil || delegation.AgentName != "" || delegation.AgentVersion != "" {
+			return []string{"client delegation supports only type"}
+		}
+	case "responses":
+		if delegation.Responses == nil || strings.TrimSpace(delegation.Responses.Model) == "" {
+			return []string{"responses delegation requires responses.model"}
+		}
+		if delegation.AgentName != "" || delegation.AgentVersion != "" {
+			return []string{"responses delegation cannot include agentName or agentVersion"}
+		}
+		return validateLiveResponses(delegation.Responses)
+	case "foundry_managed_agent":
+		if delegation.Responses != nil || strings.TrimSpace(delegation.AgentName) == "" {
+			return []string{"foundry_managed_agent delegation requires agentName and cannot include responses"}
+		}
+		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$`).MatchString(delegation.AgentName) {
+			return []string{"delegation.agentName is not a valid same-project agent name"}
+		}
+		if delegation.AgentVersion != "" && !regexp.MustCompile(`^[1-9][0-9]{0,19}$`).MatchString(delegation.AgentVersion) {
+			return []string{"delegation.agentVersion must be a positive numeric string"}
+		}
+	default:
+		return []string{"delegation.type must be client, responses, or foundry_managed_agent"}
+	}
+	return nil
+}
+
+func validateLiveResponses(responses *LiveResponsesDelegation) []string {
+	var errors []string
+	if responses.MaxOutputTokens != nil && *responses.MaxOutputTokens < 1 {
+		errors = append(errors, "delegation.responses.maxOutputTokens must be positive")
+	}
+	if responses.ServiceTier != nil && !slices.Contains(
+		[]string{"auto", "default", "fast_tier_temp_pilot", "flex", "priority", "ultrafast"}, *responses.ServiceTier) {
+		errors = append(errors, "delegation.responses.serviceTier is not supported")
+	}
+	if responses.Reasoning != nil {
+		if responses.Reasoning.Effort != nil && !slices.Contains(
+			[]string{"none", "minimal", "low", "medium", "high", "xhigh"}, *responses.Reasoning.Effort) {
+			errors = append(errors, "delegation.responses.reasoning.effort is not supported")
+		}
+		if responses.Reasoning.Summary != nil && !slices.Contains(
+			[]string{"concise", "detailed", "auto"}, *responses.Reasoning.Summary) {
+			errors = append(errors, "delegation.responses.reasoning.summary is not supported")
+		}
+	}
+	if responses.Text != nil && responses.Text.Verbosity != nil && !slices.Contains(
+		[]string{"low", "medium", "high"}, *responses.Text.Verbosity) {
+		errors = append(errors, "delegation.responses.text.verbosity is not supported")
+	}
+	errors = append(errors, validateLiveToolChoice(responses.ToolChoice)...)
+	for i, tool := range responses.Tools {
+		typ, _ := tool["type"].(string)
+		switch typ {
+		case "web_search":
+			if len(tool) != 1 {
+				errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d] web_search supports only type", i))
+			}
+		case "function":
+			name, ok := tool["name"].(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d] function requires name", i))
+			}
+			for key := range tool {
+				if !slices.Contains([]string{"type", "name", "description", "parameters", "strict"}, key) {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].%s is not supported", i, key))
+				}
+			}
+			if value, found := tool["description"]; found {
+				if _, ok := value.(string); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].description must be a string", i))
+				}
+			}
+			if value, found := tool["parameters"]; found && value != nil {
+				if _, ok := value.(map[string]any); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].parameters must be an object", i))
+				}
+			}
+			if value, found := tool["strict"]; found && value != nil {
+				if _, ok := value.(bool); !ok {
+					errors = append(errors, fmt.Sprintf("delegation.responses.tools[%d].strict must be a boolean", i))
+				}
+			}
+		default:
+			errors = append(errors, fmt.Sprintf(
+				"delegation.responses.tools[%d].type must be function or web_search", i))
+		}
+	}
+	return errors
+}
+
+func validateLiveToolChoice(choice any) []string {
+	if choice == nil {
+		return nil
+	}
+	if text, ok := choice.(string); ok {
+		if slices.Contains([]string{"auto", "none", "required"}, text) {
+			return nil
+		}
+		return []string{"delegation.responses.toolChoice must be auto, none, required, or a named tool choice"}
+	}
+	object, ok := choice.(map[string]any)
+	if !ok {
+		return []string{"delegation.responses.toolChoice must be a string or object"}
+	}
+	typ, _ := object["type"].(string)
+	switch typ {
+	case "function":
+		name, ok := object["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" || len(object) != 2 {
+			return []string{"function toolChoice requires only type and nonblank name"}
+		}
+	case "mcp":
+		name, nameOK := object["name"].(string)
+		label, labelOK := object["serverLabel"].(string)
+		if !labelOK {
+			label, labelOK = object["server_label"].(string)
+		}
+		if !nameOK || !labelOK || strings.TrimSpace(name) == "" || strings.TrimSpace(label) == "" || len(object) != 3 {
+			return []string{"mcp toolChoice requires only type, name, and serverLabel"}
+		}
+	default:
+		return []string{"named toolChoice type must be function or mcp"}
+	}
+	return nil
+}
+
 func isHostedVoiceWrapper(agent VoiceAgent) bool {
 	return agent.ModelType == VoiceModelTypeHostedAgent || agent.TargetAgent != nil ||
 		(agent.ConversationEngine != nil &&
@@ -297,6 +566,12 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	if agent.InputSchema != nil || agent.OutputSchema != nil {
 		errors = append(errors,
 			"inputSchema and outputSchema are not properties of the GA voice agent definition; remove them")
+	}
+	if agent.Audio != nil && agent.Audio.Format != nil {
+		errors = append(errors, "audio.format is only supported for GPT Live; realtime voice uses audio.input.format and audio.output.format")
+	}
+	if agent.Delegation != nil {
+		errors = append(errors, "delegation is only supported for GPT Live")
 	}
 	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
 		errors = append(errors, "outputModalities must not be empty when specified")
@@ -347,12 +622,19 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	}
 	if agent.Audio.Output != nil {
 		errors = append(errors, validateVoiceAudioFormat("audio.output.format", agent.Audio.Output.Format)...)
-		if voice := agent.Audio.Output.Voice; voice != nil {
-			if strings.TrimSpace(voice.Type) == "" {
-				errors = append(errors, "audio.output.voice.type must not be blank")
+		if value := agent.Audio.Output.Voice; value != nil {
+			voice, err := realtimeVoiceConfig(value)
+			if err != nil {
+				errors = append(errors, err.Error())
+				voice = nil
 			}
-			if strings.TrimSpace(voice.Name) == "" {
-				errors = append(errors, "audio.output.voice.name must not be blank")
+			if voice != nil {
+				if strings.TrimSpace(voice.Type) == "" {
+					errors = append(errors, "audio.output.voice.type must not be blank")
+				}
+				if strings.TrimSpace(voice.Name) == "" {
+					errors = append(errors, "audio.output.voice.name must not be blank")
+				}
 			}
 			if voice.Rate != nil && strings.TrimSpace(*voice.Rate) != "" {
 				errors = append(errors,

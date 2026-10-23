@@ -127,6 +127,11 @@
       "description": "Experimental YAML alias for definitionOverlay.",
       "additionalProperties": true
     },
+    "subProtocol": {
+      "type": "string",
+      "enum": ["realtime", "live"],
+      "description": "Native voice sub-protocol. Set to 'live' for GPT Live; omit for the existing Voice Live realtime path."
+    },
     "targetAgent": {
       "$ref": "#/definitions/VoiceTargetAgent",
       "deprecated": true,
@@ -178,7 +183,14 @@
       "description": "Prompt-agent reasoning configuration, such as reasoning effort."
     },
     "audio": {
-      "$ref": "#/definitions/VoiceAudio"
+      "description": "Protocol-specific voice audio configuration. GPT Live uses native format/output voice; realtime voice uses input/output.",
+      "anyOf": [
+        { "$ref": "#/definitions/VoiceAudio" },
+        { "$ref": "#/definitions/LiveVoiceAudio" }
+      ]
+    },
+    "delegation": {
+      "$ref": "#/definitions/LiveVoiceDelegation"
     },
     "outputModalities": {
       "type": "array",
@@ -358,6 +370,42 @@
       "then": { "not": {} }
     },
     {
+      "$comment": "GPT Live is a mutually exclusive native Live protocol branch.",
+      "if": {
+        "properties": { "subProtocol": { "const": "live" } },
+        "required": ["subProtocol"]
+      },
+      "then": {
+        "properties": {
+          "kind": { "const": "voice" },
+          "modelType": { "const": "self_deployed" },
+          "model": { "$ref": "#/definitions/VoiceModel" },
+          "audio": { "$ref": "#/definitions/LiveVoiceAudio" },
+          "greeting": { "$ref": "#/definitions/LiveTemplateGreeting" },
+          "structuredInputs": { "$ref": "#/definitions/LiveStructuredInputs" },
+          "delegation": { "$ref": "#/definitions/LiveVoiceDelegation" }
+        },
+        "required": ["kind", "modelType", "model"],
+        "not": {
+          "anyOf": [
+            { "required": ["conversationEngine"] }, { "required": ["targetAgent"] },
+            { "required": ["voice"] }, { "required": ["inputSchema"] },
+            { "required": ["outputSchema"] }, { "required": ["outputModalities"] },
+            { "required": ["tools"] }, { "required": ["avatar"] },
+            { "required": ["handoff"] }, { "required": ["toolChoice"] },
+            { "required": ["parallelToolCalls"] }, { "required": ["maxOutputTokens"] },
+            { "required": ["include"] }, { "required": ["telephony"] },
+            { "required": ["toolbox"] },
+            { "required": ["protocols"] }, { "required": ["environmentVariables"] },
+            { "required": ["codeConfiguration"] }, { "required": ["sessionConfiguration"] }
+          ]
+        }
+      },
+      "else": {
+        "not": { "required": ["delegation"] }
+      }
+    },
+    {
       "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
       "if": {
         "properties": {
@@ -370,13 +418,17 @@
       },
       "then": {
         "properties": {
-          "kind": { "enum": ["prompt-voice", "voice"] }
+          "kind": { "enum": ["prompt-voice", "voice"] },
+          "audio": { "$ref": "#/definitions/VoiceAudio" }
         },
         "required": ["kind"],
         "not": {
           "anyOf": [
             { "required": ["model"] },
             { "required": ["modelType"] },
+            { "required": ["subProtocol"] },
+            { "required": ["delegation"] },
+            { "required": ["targetAgent"] },
             { "required": ["inputSchema"] },
             { "required": ["outputSchema"] },
             { "required": ["codeConfiguration"] },
@@ -387,10 +439,6 @@
             { "required": ["instructions"] },
             { "required": ["tools"] },
             { "required": ["toolChoice"] },
-            { "required": ["subagent_config"] },
-            { "required": ["subagentConfig"] },
-            { "required": ["interim_response"] },
-            { "required": ["interimResponse"] },
             { "required": ["toolbox"] },
             { "required": ["toolboxes"] }
           ]
@@ -422,9 +470,20 @@
       "if": {
         "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
         "required": ["kind"],
-        "not": { "required": ["conversationEngine"] }
+        "not": { "required": ["conversationEngine"] },
+        "anyOf": [
+          { "not": { "required": ["subProtocol"] } },
+          {
+            "properties": { "subProtocol": { "const": "realtime" } },
+            "required": ["subProtocol"]
+          }
+        ]
       },
       "then": {
+        "properties": {
+          "audio": { "$ref": "#/definitions/VoiceAudio" },
+          "subProtocol": { "enum": ["realtime"] }
+        },
         "required": ["model"],
         "not": {
           "anyOf": [
@@ -438,10 +497,6 @@
             { "required": ["environmentVariables"] },
             { "required": ["codeConfiguration"] },
             { "required": ["sessionConfiguration"] }
-            ,{ "required": ["subagent_config"] }
-            ,{ "required": ["subagentConfig"] }
-            ,{ "required": ["interim_response"] }
-            ,{ "required": ["interimResponse"] }
           ]
         }
       }
@@ -783,6 +838,169 @@
         "input": { "$ref": "#/definitions/VoiceAudioInput" },
         "output": { "$ref": "#/definitions/VoiceAudioOutput" }
       },
+      "additionalProperties": false
+    },
+    "LiveVoiceAudio": {
+      "type": "object",
+      "description": "Native GPT Live bidirectional audio configuration.",
+      "properties": {
+        "format": { "$ref": "#/definitions/LiveAudioFormat" },
+        "output": {
+          "type": "object",
+          "properties": {
+            "voice": {
+              "oneOf": [
+                { "type": "string", "minLength": 1, "pattern": "\\S" },
+                {
+                  "type": "object",
+                  "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S" } },
+                  "required": ["id"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "LiveAudioFormat": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "type": { "const": "audio/pcm" }, "rate": { "enum": [16000, 24000] } },
+          "required": ["type", "rate"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "type": { "enum": ["audio/pcmu", "audio/pcma"] }, "rate": { "const": 8000 } },
+          "required": ["type", "rate"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LiveTemplateGreeting": {
+      "type": "object",
+      "properties": {
+        "type": { "const": "template" },
+        "text": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    "LiveStructuredInputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "defaultValue": {},
+          "schema": { "type": "object" },
+          "required": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "LiveVoiceDelegation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "type": { "const": "client" } },
+          "required": ["type"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "responses" },
+            "responses": { "$ref": "#/definitions/LiveResponsesDelegation" }
+          },
+          "required": ["type", "responses"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "foundry_managed_agent" },
+            "agentName": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$" },
+            "agentVersion": { "type": "string", "pattern": "^[1-9][0-9]{0,19}$" }
+          },
+          "required": ["type", "agentName"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LiveResponsesDelegation": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "instructions": { "type": "string" },
+        "maxOutputTokens": { "type": "integer", "minimum": 1 },
+        "parallelToolCalls": { "type": "boolean" },
+        "serviceTier": { "enum": ["auto", "default", "fast_tier_temp_pilot", "flex", "priority", "ultrafast"] },
+        "reasoning": {
+          "type": "object",
+          "properties": {
+            "effort": { "enum": ["none", "minimal", "low", "medium", "high", "xhigh"] },
+            "summary": { "enum": ["concise", "detailed", "auto"] }
+          },
+          "additionalProperties": false
+        },
+        "text": {
+          "type": "object",
+          "properties": { "verbosity": { "enum": ["low", "medium", "high"] } },
+          "additionalProperties": false
+        },
+        "toolChoice": {
+          "oneOf": [
+            { "enum": ["auto", "none", "required"] },
+            {
+              "type": "object",
+              "properties": { "type": { "const": "function" }, "name": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+              "required": ["type", "name"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "mcp" },
+                "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                "serverLabel": { "type": "string", "minLength": 1, "pattern": "\\S" }
+              },
+              "required": ["type", "name", "serverLabel"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": { "const": "function" },
+                  "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "description": { "type": "string" },
+                  "parameters": { "type": ["object", "null"] },
+                  "strict": { "type": ["boolean", "null"] }
+                },
+                "required": ["type", "name"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "type": { "const": "web_search" } },
+                "required": ["type"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": ["model"],
       "additionalProperties": false
     },
     "VoiceAudioInput": {

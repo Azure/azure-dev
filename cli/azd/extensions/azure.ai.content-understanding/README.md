@@ -105,10 +105,11 @@ curl --fail --location --output invoice.pdf \
   https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
 
 azd ai cu analyzer list --output json
-azd ai cu analyze \
-  --file invoice.pdf \
-  --analyzer prebuilt-layout
+azd ai cu analyze invoice.pdf
 ```
+
+When no analyzer is specified or configured, analysis defaults to
+`prebuilt-layout`. Use `--analyzer` to override a configured default.
 
 By default, a single analysis returns the complete terminal response envelope,
 including the result, service warnings, and usage when present. Use `--llm-input`
@@ -289,13 +290,12 @@ instead of CU profiles.
 | --- | --- |
 | Endpoint | `--endpoint`; process `CU_ENDPOINT`; selected environment `CU_ENDPOINT`; selected environment `FOUNDRY_ENDPOINT`. |
 | API version | `--api-version`; process `CU_API_VERSION`; environment config `cu.apiVersion`; environment `CU_API_VERSION`; GA. |
-| Default analyzer | `--analyzer`; process `CU_DEFAULT_ANALYZER`; environment config `cu.defaultAnalyzer`; environment `CU_DEFAULT_ANALYZER`. |
+| Default analyzer | `--analyzer`; process `CU_DEFAULT_ANALYZER`; environment config `cu.defaultAnalyzer`; environment `CU_DEFAULT_ANALYZER`; `prebuilt-layout`. |
 | Model mappings | Explicit mappings; environment config `cu.modelDeployments`; empty mapping. |
 | Tenant | Process `AZURE_TENANT_ID`; selected environment `AZURE_TENANT_ID`; default deployment context for the default environment, or resolved subscription lookup for explicitly selected environments and projectless use. Projectless use without a tenant or subscription delegates to azd authentication. |
 | Subscription/resource group | Explicit resource selectors; process `AZURE_SUBSCRIPTION_ID` / `AZURE_RESOURCE_GROUP`; selected environment values; default deployment scope when applicable. |
 
-No implicit default analyzer is selected. With no explicit `--environment` or
-process `AZD_ENVIRONMENT`, a process or command-line endpoint selects projectless
+With no explicit `--environment` or process `AZD_ENVIRONMENT`, a process or command-line endpoint selects projectless
 mode; otherwise the default azd environment is used. Explicitly selected
 environments do not borrow tenant or scope from an unrelated environment.
 When tenant selection is delegated to azd, `azd auth token` uses its normal

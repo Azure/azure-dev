@@ -33,9 +33,11 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	cmd := &cobra.Command{
 		Use: "analyze [INPUTS...]", Short: "Analyze local files, directories, or HTTPS URLs",
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
+			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Single results stream as complete JSON. Batches save source-relative result files.\n" +
 			"Use --llm-input for YAML front matter and Markdown, or --dry-run to inspect the plan without service calls.",
-		Example: "  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice\n" +
+		Example: "  azd ai cu analyze invoice.pdf\n" +
+			"  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice\n" +
 			"  azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json\n" +
 			"  azd ai cu analyze --url https://example.com/document.pdf --llm-input --output-file ./document.md",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -50,7 +52,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.BoolVarP(&options.input.Recursive, "recursive", "r", false,
 		"Discover files recursively, excluding hidden directories")
 	flags.StringVarP(&options.service.DefaultAnalyzer, "analyzer", "a", "",
-		"Analyzer ID (default: resolved CU default analyzer)")
+		"Analyzer ID (default: configured analyzer or prebuilt-layout)")
 	flags.StringVar(&options.service.Endpoint, "endpoint", "", "Microsoft Foundry resource endpoint")
 	flags.StringVar(&options.service.APIVersion, "api-version", "",
 		"CU API version (default: resolved setting or 2025-11-01)")

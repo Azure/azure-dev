@@ -92,7 +92,7 @@ func resolve(options Options, process, values map[string]string, section []byte)
 		if result.DefaultAnalyzer, err = optionalString(settings, "defaultAnalyzer"); err != nil {
 			return result, err
 		}
-		result.DefaultAnalyzer = first(result.DefaultAnalyzer, values["CU_DEFAULT_ANALYZER"])
+		result.DefaultAnalyzer = first(result.DefaultAnalyzer, values["CU_DEFAULT_ANALYZER"], "prebuilt-layout")
 	}
 	if result.DefaultAnalyzer != "" {
 		if err := cuclient.ValidateAnalyzerID(result.DefaultAnalyzer); err != nil {

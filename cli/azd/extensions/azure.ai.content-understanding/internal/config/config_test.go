@@ -60,8 +60,19 @@ func TestResolvePrecedence(t *testing.T) {
 		}},
 		{"defaults", Options{Endpoint: "https://explicit.example"}, nil, nil, "", map[string]string{
 			"endpoint": "https://explicit.example/contentunderstanding", "api": cuclient.DefaultAPIVersion,
-			"analyzer": "", "tenant": "", "sub": "", "rg": "",
+			"analyzer": "prebuilt-layout", "tenant": "", "sub": "", "rg": "",
 		}},
+		{"empty analyzer values", Options{Endpoint: "https://explicit.example"},
+			map[string]string{"CU_DEFAULT_ANALYZER": ""}, map[string]string{"CU_DEFAULT_ANALYZER": ""},
+			`{}`, map[string]string{
+				"endpoint": "https://explicit.example/contentunderstanding", "api": cuclient.DefaultAPIVersion,
+				"analyzer": "prebuilt-layout", "tenant": "", "sub": "", "rg": "",
+			}},
+		{"unconfigured environment analyzer", Options{}, nil,
+			map[string]string{"CU_ENDPOINT": "https://env.example"}, `{}`, map[string]string{
+				"endpoint": "https://env.example/contentunderstanding", "api": cuclient.DefaultAPIVersion,
+				"analyzer": "prebuilt-layout", "tenant": "", "sub": "", "rg": "",
+			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.config))

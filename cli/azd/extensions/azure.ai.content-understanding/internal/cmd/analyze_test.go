@@ -108,6 +108,71 @@ func (f *analyzeFixture) execute(ctx context.Context, args ...string) (string, s
 	return stdout.String(), stderr.String(), err
 }
 
+func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
+	for _, tt := range []struct {
+		name, configured, want string
+		flags                  []string
+	}{
+		{"unset", "", "prebuilt-layout", nil},
+		{"configured", "prebuilt-invoice", "prebuilt-invoice", nil},
+		{"explicit overrides configured", "prebuilt-invoice", "custom", []string{"--analyzer", "custom"}},
+	} {
+		for _, dryRun := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/dryRun=%t", tt.name, dryRun), func(t *testing.T) {
+				startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+					t.Error("endpoint-only analysis must not load deployment context")
+					return nil, errors.New("unexpected deployment call")
+				}})
+				t.Chdir(t.TempDir())
+				require.NoError(t, os.WriteFile("invoice.pdf", []byte("%PDF-1.7\n"), 0o600))
+				t.Setenv("CU_ENDPOINT", "https://resource.example")
+				t.Setenv("CU_DEFAULT_ANALYZER", tt.configured)
+				client := &analyzeFake{call: func(
+					_ context.Context, request cuclient.AnalyzeRequest,
+				) (cuclient.AnalyzeResponse, error) {
+					assert.Equal(t, tt.want, request.AnalyzerID)
+					body, err := io.ReadAll(request.Input.Body)
+					require.NoError(t, err)
+					assert.Equal(t, "%PDF-1.7\n", string(body))
+					return cuclient.AnalyzeResponse{JSON: json.RawMessage(analyzeEnvelope)}, nil
+				}}
+				root := newRootCommand(func(
+					cmd *cobra.Command, extCtx *azdext.ExtensionContext, options config.Options,
+				) (*serviceSession, error) {
+					session, err := openServiceSession(cmd, extCtx, options)
+					if err == nil {
+						session.client = client
+					}
+					return session, err
+				})
+				args := append([]string{"analyze", "invoice.pdf"}, tt.flags...)
+				if dryRun {
+					args = append(args, "--dry-run")
+				}
+				root.SetArgs(args)
+				var stdout, stderr bytes.Buffer
+				root.SetOut(&stdout)
+				root.SetErr(&stderr)
+				require.NoError(t, root.ExecuteContext(t.Context()))
+				assert.Empty(t, stderr.String())
+				if dryRun {
+					var plan struct {
+						DryRun   bool   `json:"dryRun"`
+						Analyzer string `json:"analyzerId"`
+					}
+					require.NoError(t, json.Unmarshal(stdout.Bytes(), &plan))
+					assert.True(t, plan.DryRun)
+					assert.Equal(t, tt.want, plan.Analyzer)
+					assert.Zero(t, client.calls.Load())
+				} else {
+					assert.JSONEq(t, analyzeEnvelope, stdout.String())
+					assert.EqualValues(t, 1, client.calls.Load())
+				}
+			})
+		}
+	}
+}
+
 func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 	for _, format := range []string{"default", "json", "none"} {
 		t.Run(format, func(t *testing.T) {
@@ -185,6 +250,7 @@ func TestAnalyzeInvalidInputsFailBeforeSession(t *testing.T) {
 		{"recursion", []string{path, "-r"}},
 		{"bad url", []string{"--url", "https://user:private@example.com/a"}},
 		{"bad analyzer", []string{path, "--analyzer", "bad/name"}},
+		{"empty analyzer", []string{path, "--analyzer="}},
 		{"zero concurrency", []string{path, "-j", "0"}},
 		{"large concurrency", []string{path, "-j", "33"}},
 		{"invalid integer", []string{path, "-j", "oops"}},

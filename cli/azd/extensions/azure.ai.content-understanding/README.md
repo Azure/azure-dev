@@ -40,12 +40,12 @@ Understanding access.
 
 | Your resource state | Next step |
 | --- | --- |
-| No Foundry resource yet | [Create a new resource](docs/provisioning.md#create-a-new-microsoft-foundry-resource). |
-| A resource exists but generative models or defaults are missing | [Deploy models and configure defaults](docs/provisioning.md#deploy-models-and-configure-defaults). |
+| No Foundry resource yet | [Create a new resource](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md#create-a-new-microsoft-foundry-resource). |
+| A resource exists but generative models or defaults are missing | [Deploy models and configure defaults](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md#deploy-models-and-configure-defaults). |
 | The resource is ready | Sign in and connect below. |
 
 Resource creation, Azure permissions, and model setup are covered in the
-separate [Microsoft Foundry provisioning guide](docs/provisioning.md).
+separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md).
 
 For an existing ready resource, start with a session setting. Add persistence
 or project environments only when you need them.
@@ -137,8 +137,8 @@ flags and process variables override both. Clear any process overrides before
 switching resources. The selected subscription is used to resolve the
 user-access tenant.
 
-See [configuration precedence](docs/usage.md#configuration-and-api-versions)
-and [cross-tenant connection guidance](docs/usage.md#connect-to-microsoft-foundry-and-check-setup)
+See [configuration precedence](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#configuration-and-api-versions)
+and [cross-tenant connection guidance](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#connect-to-microsoft-foundry-and-check-setup)
 for details.
 
 ## Supported Content Understanding API versions
@@ -149,7 +149,7 @@ testing or future previews. Acceptance by the CLI does not guarantee that the
 service supports that version. The extension's Preview release status does not
 change the default service API version.
 
-See [API versions and configuration](docs/usage.md#configuration-and-api-versions)
+See [API versions and configuration](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#configuration-and-api-versions)
 for precedence and preview-only inline analysis.
 
 ## Use prebuilt analyzers
@@ -189,7 +189,7 @@ Content Understanding also provides
 [prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
 for domain-specific extraction. For example, `prebuilt-invoice` extracts
 structured invoice fields. It requires the model deployments and defaults
-described in [model setup](docs/provisioning.md#deploy-models-and-configure-defaults).
+described in [model setup](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md#deploy-models-and-configure-defaults).
 
 ```bash
 # Extract invoice fields into YAML front matter, followed by document Markdown.
@@ -204,7 +204,7 @@ object under `result.contents`, for example `result.contents[0].fields`.
 See [document elements](https://learn.microsoft.com/azure/ai-services/content-understanding/document/elements)
 for the document content structure.
 
-See [analysis examples](docs/usage.md#analyze-content) for URLs, batches, dry runs,
+See [analysis examples](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#analyze-content) for URLs, batches, dry runs,
 and existing-result handling, and the
 [prebuilt analyzer catalog](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
 for other scenarios.
@@ -212,7 +212,7 @@ for other scenarios.
 ## Create a custom analyzer
 
 Custom analyzers require supported model deployments and configured Content
-Understanding defaults. Complete [model setup](docs/provisioning.md#deploy-models-and-configure-defaults)
+Understanding defaults. Complete [model setup](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md#deploy-models-and-configure-defaults)
 first, then generate a schema from a representative document:
 
 ```bash
@@ -246,7 +246,7 @@ azd ai cu analyzer test --name invoice_v1 --file invoice.pdf \
 ```
 
 The test summarizes field population and confidence, not extraction accuracy
-against labeled ground truth. See [custom analyzer guidance](docs/usage.md#create-a-custom-analyzer)
+against labeled ground truth. See [custom analyzer guidance](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#create-a-custom-analyzer)
 for validation rules and test options.
 
 ## Command overview
@@ -267,14 +267,14 @@ Run `azd ai cu <command> --help` for options and examples with descriptions.
 
 ## CLI usage guide
 
-The [CLI usage guide](docs/usage.md) covers batch processing, analyzer management,
+The [CLI usage guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md) covers batch processing, analyzer management,
 configuration precedence, tenant selection, environment variables, automation,
 output safety, and local development.
 
 ## More information
 
-- [Microsoft Foundry provisioning](docs/provisioning.md)
-- [Release history](CHANGELOG.md)
+- [Microsoft Foundry provisioning](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md)
+- [Release history](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/CHANGELOG.md)
 - [Supported file types and service limits](https://learn.microsoft.com/azure/ai-services/content-understanding/service-limits)
 - [Azure Content Understanding documentation](https://learn.microsoft.com/azure/ai-services/content-understanding/)
 - [Azure Developer CLI documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)

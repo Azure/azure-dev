@@ -151,7 +151,8 @@ func TestDiagnosticsMetadataAndHelpHaveNoProfileSurface(t *testing.T) {
 func TestEnvironmentVariableDocumentationCoversListedInputs(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	require.NoError(t, err)
-	require.Contains(t, string(readme), "(docs/usage.md)")
+	require.Contains(t, string(readme),
+		"(https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md)")
 	guide, err := os.ReadFile("../../docs/usage.md")
 	require.NoError(t, err)
 	for _, variable := range listEnvironmentVariables(func(string) (string, bool) { return "", true }) {

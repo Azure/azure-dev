@@ -1,9 +1,9 @@
 # Content Understanding CLI usage guide
 
 This guide covers `azd ai cu` commands, configuration, automation, and local
-development. Start with the [README](../README.md) for concepts and first use.
+development. Start with the [README](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md) for concepts and first use.
 For resource creation, permissions, model deployment, and service defaults, use
-the separate [Microsoft Foundry provisioning guide](provisioning.md).
+the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md).
 
 ## Connect to Microsoft Foundry and check setup
 
@@ -502,7 +502,7 @@ cd ..
 cspell lint '**/*.go' '**/*.md' --config ./cspell.yaml --no-progress
 ```
 
-The extension uses a [Content Understanding client](../cu-rest-client/README.md)
+The extension uses a [Content Understanding client](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/cu-rest-client/README.md)
 maintained for this extension. It is an extension-internal dependency, not a
 separately published package.
 CI tests and lints both modules. Ordinary tests use fakes, local
@@ -522,10 +522,10 @@ or release signing and publication.
 
 ## More information
 
-- [Getting started](../README.md)
-- [Microsoft Foundry provisioning](provisioning.md)
-- [Release history](../CHANGELOG.md)
+- [Getting started](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md)
+- [Microsoft Foundry provisioning](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/provisioning.md)
+- [Release history](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/CHANGELOG.md)
 - [Azure Content Understanding documentation](https://learn.microsoft.com/azure/ai-services/content-understanding/)
 - [Prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
 - [Azure Developer CLI documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
-- [Extension development guidelines](../../../docs/extensions/extensions-style-guide.md)
+- [Extension development guidelines](https://github.com/Azure/azure-dev/blob/main/cli/azd/docs/extensions/extensions-style-guide.md)

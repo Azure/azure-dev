@@ -2,8 +2,8 @@
 
 This guide covers creating or reusing a Microsoft Foundry resource, deploying
 supported models, configuring Content Understanding defaults, and connecting
-`azd ai cu`. For analysis and analyzer commands, return to the [README](../README.md)
-or [CLI usage guide](usage.md).
+`azd ai cu`. For analysis and analyzer commands, return to the [README](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md)
+or [CLI usage guide](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md).
 
 ## Understand what is required
 
@@ -26,7 +26,7 @@ subscription and resource discovery but does not deploy resources. Run
 
 ## Sign in
 
-Install the extension as described in the [README](../README.md#install), then
+Install the extension as described in the [README](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md#install), then
 sign in through Azure Developer CLI:
 
 ```bash
@@ -190,7 +190,7 @@ In PowerShell, use
 `$env:CU_ENDPOINT = "https://<resource-name>.services.ai.azure.com/"`.
 Normal endpoint-only use delegates tenant selection to azd authentication.
 For saved environment settings and explicit tenant selection, see
-[connection guidance](usage.md#connect-to-microsoft-foundry-and-check-setup).
+[connection guidance](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#connect-to-microsoft-foundry-and-check-setup).
 
 ## Configure defaults manually
 
@@ -215,7 +215,7 @@ If mappings are already saved in the selected azd environment's
 it does not deploy models or provision resources.
 
 Defaults belong to the Azure resource, not the local CLI. See
-[defaults update semantics](usage.md#manage-analyzers-and-defaults)
+[defaults update semantics](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#manage-analyzers-and-defaults)
 before changing shared resource settings.
 
 ## Diagnose readiness
@@ -235,8 +235,8 @@ defaults are missing, use the manual defaults workflow above.
 
 ## Further reading
 
-- [CLI getting started](../README.md)
-- [CLI usage and configuration](usage.md)
+- [CLI getting started](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md)
+- [CLI usage and configuration](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md)
 - [Create a Microsoft Foundry resource](https://learn.microsoft.com/azure/ai-services/content-understanding/how-to/create-multi-service-resource)
 - [Content Understanding regions and languages](https://learn.microsoft.com/azure/ai-services/content-understanding/language-region-support)
 - [Supported models and service limits](https://learn.microsoft.com/azure/ai-services/content-understanding/service-limits)

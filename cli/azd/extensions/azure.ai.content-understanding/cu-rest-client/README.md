@@ -3,7 +3,7 @@
 This Go module supplies the Content Understanding REST client used by
 `azd ai cu`. It is an extension dependency, not a separately published package.
 For installation, authentication, and command examples, see the
-[extension README](../README.md).
+[extension README](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/README.md).
 
 ## Client behavior
 
@@ -30,7 +30,7 @@ authentication contract.
 - Service and operation failures preserve typed status and safe diagnostic codes
   without exposing raw service messages.
 
-See [client integration requirements](AZD_PROVENANCE.md) for the behavior to verify
+See [client integration requirements](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/cu-rest-client/AZD_PROVENANCE.md) for the behavior to verify
 when changing the client dependency.
 
 ## Offline tests

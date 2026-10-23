@@ -20,7 +20,8 @@ import (
 
 // Settings to modify the way CmdTree is executed
 type CmdTreeOptions struct {
-	Interactive bool
+	Interactive        bool
+	WindowsCommandLine string
 }
 
 // CommandRunner exposes the contract for executing console/shell commands for the specified runArgs
@@ -105,6 +106,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	}
 
 	cmd.Dir = args.Cwd
+	cmd.WindowsCommandLine = args.WindowsCommandLine
 
 	var stdin io.Reader
 	if args.StdIn != nil {

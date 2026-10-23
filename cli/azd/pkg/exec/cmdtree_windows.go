@@ -29,6 +29,7 @@ type CmdTree struct {
 func (o *CmdTree) Start() error {
 	o.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		CmdLine:       o.WindowsCommandLine,
 	}
 
 	err := o.Cmd.Start()

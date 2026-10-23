@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
@@ -463,7 +464,21 @@ func (m *Manager) prepareMachineMSI(
 	if installer.InstalledBy() == installer.InstallTypePs {
 		runArgs = runArgs.AppendParams("INSTALLEDBY=" + string(installer.InstallTypePs))
 	}
+	runArgs.WindowsCommandLine = msiCommandLine(runArgs.Cmd, runArgs.Args)
 	return runArgs, cleanup, nil
+}
+
+func msiCommandLine(command string, args []string) string {
+	parts := []string{syscall.EscapeArg(command)}
+	for _, arg := range args {
+		if value, ok := strings.CutPrefix(arg, "INSTALLDIR="); ok {
+			// MSI requires PROPERTY="value", not Go's default "PROPERTY=value".
+			parts = append(parts, `INSTALLDIR="`+value+`"`)
+		} else {
+			parts = append(parts, syscall.EscapeArg(arg))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // hashFile returns the hex-encoded SHA-256 digest of the file at path.

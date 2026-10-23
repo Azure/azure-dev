@@ -19,6 +19,7 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, false, runArgs.Interactive)
 		require.Equal(t, false, runArgs.UseShell)
 		require.False(t, runArgs.shellSet)
+		require.Empty(t, runArgs.WindowsCommandLine)
 		require.Equal(t, "", runArgs.Cwd)
 		require.Nil(t, runArgs.DebugLogging)
 		require.Len(t, runArgs.Env, 0)

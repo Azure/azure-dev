@@ -529,6 +529,8 @@ func TestUpdateMSIMachine(t *testing.T) {
 					"ALLUSERS=1", "INSTALLDIR=" + installDir, "MSIRESTARTMANAGERCONTROL=DisableShutdown",
 				}, args.Args)
 				require.Equal(t, installDir, filepath.Dir(filepath.Dir(args.Args[1])))
+				require.Contains(t, args.WindowsCommandLine, `INSTALLDIR="`+installDir+`"`)
+				require.NotContains(t, args.WindowsCommandLine, `"INSTALLDIR=`)
 				require.Same(t, &writer, args.StdOut)
 				require.Same(t, &writer, args.Stderr)
 				require.NoError(t, os.WriteFile(args.Args[5], []byte("MSI diagnostics"), 0600))

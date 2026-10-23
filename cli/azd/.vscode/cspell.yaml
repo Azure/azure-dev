@@ -275,7 +275,7 @@ overrides:
       - keychain
       - crusername
       - azurecr
-  - filename: pkg/exec/cmdtree_processes_darwin.go
+  - filename: pkg/exec/internal/process/discovery_darwin.go
     words:
       - Eproc
       - Kinfo

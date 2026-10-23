@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -286,8 +287,7 @@ func TestExecAction_ExitCodePropagation(t *testing.T) {
 	execErr := executor.ExecuteDirect(t.Context(), exitBin, []string{})
 	require.Error(t, execErr)
 
-	var scriptExecErr *scripting.ExecutionError
-	if errors.As(execErr, &scriptExecErr) {
+	if scriptExecErr, ok := errors.AsType[*scripting.ExecutionError](execErr); ok {
 		assert.Equal(t, 42, scriptExecErr.ExitCode)
 	} else {
 		t.Fatalf("expected ExecutionError with exit code 42, got %T: %v", execErr, execErr)
@@ -760,4 +760,79 @@ func TestExecAction_ExecutionErrorDoesNotFallbackInline(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to execute script")
 	assert.NotContains(t, err.Error(), "inline script")
+}
+
+func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
+	customCause := errors.New("custom cancellation cause")
+	for _, test := range []struct {
+		name        string
+		ctx         func() context.Context
+		err         error
+		wantMessage string
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+			err:         context.Canceled,
+			wantMessage: "command execution was canceled by the user",
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				cancel()
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
+			name: "custom cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(customCause)
+				return ctx
+			},
+			err:         customCause,
+			wantMessage: "command execution was canceled by the user",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+				args:            []string{"go", "version"},
+			}
+
+			_, err := action.Run(test.ctx())
+
+			require.ErrorIs(t, err, test.err)
+			_, ok := errors.AsType[*internal.ExitCodeError](err)
+			require.False(t, ok)
+			if test.wantMessage != "" {
+				require.Equal(t, test.wantMessage, err.Error())
+			}
+		})
+	}
+}
+
+func TestExecCancellationErrorPreservesExecutionDetails(t *testing.T) {
+	executionErr := &scripting.ExecutionError{
+		ExitCode: 1,
+		Shell:    "pwsh",
+		IsInline: true,
+	}
+	err := &execCancellationError{
+		err: errors.Join(executionErr, context.Canceled),
+	}
+
+	require.Equal(t, "command execution was canceled by the user", err.Error())
+	require.ErrorIs(t, err, context.Canceled)
+	typedErr, ok := errors.AsType[*scripting.ExecutionError](err)
+	require.True(t, ok)
+	require.Same(t, executionErr, typedErr)
 }

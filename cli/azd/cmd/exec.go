@@ -100,6 +100,20 @@ type execAction struct {
 	args            []string
 }
 
+// execCancellationError keeps execution diagnostics available without
+// presenting an exit-code-focused message for a user-initiated cancellation.
+type execCancellationError struct {
+	err error
+}
+
+func (e *execCancellationError) Error() string {
+	return "command execution was canceled by the user"
+}
+
+func (e *execCancellationError) Unwrap() error {
+	return e.err
+}
+
 func newExecAction(
 	env *environment.Environment,
 	keyvaultService keyvault.KeyVaultService,
@@ -175,6 +189,12 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil && errors.Is(err, cause) {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil, &execCancellationError{err: err}
+			}
+			return nil, err
+		}
 		if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
 			return nil, &internal.ExitCodeError{
 				ExitCode: execErr.ExitCode,

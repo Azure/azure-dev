@@ -632,7 +632,7 @@ func TestInstall_NonCLI_RespectsContextCancellation(t *testing.T) {
 			slices.Contains(args.Args, "install")
 	}).Respond(exec.RunResult{ExitCode: 0})
 
-	// Detection always fails — but context will be cancelled.
+	// A pre-canceled context stops before installation or verification.
 	var callCount atomic.Int32
 	det := &mockDetector{
 		detectToolFn: func(
@@ -667,10 +667,8 @@ func TestInstall_NonCLI_RespectsContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.False(t, result.Success)
-	// Should have detected once, then ctx was cancelled before retry sleep.
-	assert.Equal(t, int32(1), callCount.Load(),
-		"expected only 1 detect call before context cancellation")
-	assert.Contains(t, result.Error.Error(), "context canceled")
+	assert.Zero(t, callCount.Load())
+	assert.ErrorIs(t, result.Error, context.Canceled)
 }
 
 func TestInstall_CLI_NoRetry(t *testing.T) {
@@ -2777,19 +2775,18 @@ func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
 	}).Respond(exec.RunResult{ExitCode: 0})
 
 	var callCount atomic.Int32
+	ctx, cancel := context.WithCancel(t.Context())
 	det := &mockDetector{
 		detectToolFn: func(
 			_ context.Context, tool *ToolDefinition,
 		) (*ToolStatus, error) {
 			callCount.Add(1)
+			cancel()
 			return &ToolStatus{Tool: tool, Installed: false}, nil
 		},
 	}
 
 	inst := NewInstaller(runner, NewPlatformDetector(runner), det)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel() // cancel before the first retry sleep
 
 	result, err := inst.Install(ctx, newSkillTool())
 	require.NoError(t, err)
@@ -2798,7 +2795,7 @@ func TestRunSkill_ContextCanceledDuringVerify(t *testing.T) {
 	assert.Equal(t, int32(1), callCount.Load(),
 		"expected only 1 detect call before context cancellation",
 	)
-	assert.Contains(t, result.Error.Error(), "context canceled")
+	assert.ErrorIs(t, result.Error, context.Canceled)
 }
 
 // ---------------------------------------------------------------------------

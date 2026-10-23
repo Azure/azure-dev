@@ -3,7 +3,7 @@
 
 //go:build linux
 
-package exec
+package process
 
 import (
 	"os"

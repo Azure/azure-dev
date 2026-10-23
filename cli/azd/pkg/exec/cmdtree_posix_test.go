@@ -131,7 +131,7 @@ func TestCmdTree_CleanupKillsReparentedInteractiveDescendants(t *testing.T) {
 	waitDone := make(chan error, 1)
 	waitCompleted := false
 	go func() {
-		waitDone <- waitForProcess(ctx, cmd.Wait, cmd.Kill)
+		waitDone <- cmd.Wait()
 	}()
 	t.Cleanup(func() {
 		cancel()

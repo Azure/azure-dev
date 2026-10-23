@@ -411,19 +411,13 @@ func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
 	require.ErrorIs(t, runErr, cmdError)
 }
 
-func TestRunner_Invoke_CanceledContextOverridesSuccessfulExit(t *testing.T) {
+func TestRunner_Invoke_PreCanceledContextReturnsCancellation(t *testing.T) {
 	_, ext := setupConfigAndExtension(t)
 	cmdRunner := mockexec.NewMockCommandRunner()
 	runner := NewRunner(cmdRunner)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-
-	cmdRunner.When(func(args exec.RunArgs, command string) bool {
-		return true
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.RunResult{ExitCode: 0}, nil
-	})
 
 	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
 	require.Error(t, err)
@@ -441,13 +435,13 @@ func TestRunner_Invoke_CanceledContextPreservesCommandError(t *testing.T) {
 	runner := NewRunner(cmdRunner)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 	cmdError := errors.New("process terminated")
 
 	cmdRunner.When(func(args exec.RunArgs, command string) bool {
 		return true
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.RunResult{ExitCode: 1}, cmdError
+	}).RespondContextFn(func(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+		cancel()
+		return exec.RunResult{ExitCode: 1}, errors.Join(cmdError, context.Cause(ctx))
 	})
 
 	_, err := runner.Invoke(ctx, ext, &InvokeOptions{})
@@ -456,19 +450,13 @@ func TestRunner_Invoke_CanceledContextPreservesCommandError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestRunner_Invoke_DeadlineCauseOverridesSuccessfulExit(t *testing.T) {
+func TestRunner_Invoke_PreCanceledContextPreservesDeadlineCause(t *testing.T) {
 	_, ext := setupConfigAndExtension(t)
 	cmdRunner := mockexec.NewMockCommandRunner()
 	runner := NewRunner(cmdRunner)
 
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cancel(context.DeadlineExceeded)
-
-	cmdRunner.When(func(args exec.RunArgs, command string) bool {
-		return true
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.RunResult{ExitCode: 0}, nil
-	})
 
 	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
 	require.Error(t, err)
@@ -478,18 +466,18 @@ func TestRunner_Invoke_DeadlineCauseOverridesSuccessfulExit(t *testing.T) {
 	require.NotErrorIs(t, err, context.Canceled)
 }
 
-func TestRunner_Invoke_DeadlineCauseOverridesCanceledRunError(t *testing.T) {
+func TestRunner_Invoke_PreservesCommandRunnerDeadlineCause(t *testing.T) {
 	_, ext := setupConfigAndExtension(t)
 	cmdRunner := mockexec.NewMockCommandRunner()
 	runner := NewRunner(cmdRunner)
 
 	ctx, cancel := context.WithCancelCause(t.Context())
-	cancel(context.DeadlineExceeded)
 
 	cmdRunner.When(func(args exec.RunArgs, command string) bool {
 		return true
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.RunResult{ExitCode: 1}, context.Canceled
+	}).RespondContextFn(func(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+		cancel(context.DeadlineExceeded)
+		return exec.RunResult{ExitCode: 1}, context.Cause(ctx)
 	})
 
 	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})

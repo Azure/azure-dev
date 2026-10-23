@@ -3,7 +3,7 @@
 
 //go:build darwin
 
-package exec
+package process
 
 import "golang.org/x/sys/unix"
 

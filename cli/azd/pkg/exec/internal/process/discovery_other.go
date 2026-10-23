@@ -3,7 +3,7 @@
 
 //go:build !windows && !linux && !darwin
 
-package exec
+package process
 
 import (
 	"os/exec"
@@ -16,7 +16,15 @@ func processIDsWithEnvironment(marker string) []int {
 		return nil
 	}
 
-	output, err := exec.Command("ps", "eww", "-A", "-o", "pid=", "-o", "command=").Output()
+	output, err := exec.Command(
+		"ps",
+		"eww",
+		"-A",
+		"-o",
+		"pid=",
+		"-o",
+		"command=",
+	).Output()
 	if err != nil {
 		return nil
 	}

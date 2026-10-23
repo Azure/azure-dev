@@ -54,6 +54,32 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		})
 	}
 	require.NoError(t, schema.validate(map[string]any{
+		"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+		"model": map[string]any{"id": "gpt-live-1"},
+		"audio": map[string]any{
+			"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+			"output": map[string]any{"voice": "marin"},
+		},
+		"delegation": map[string]any{"type": "client"},
+	}))
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "voice", "subProtocol": "realtime", "model": map[string]any{"id": "gpt-realtime"},
+		"audio": map[string]any{},
+	}))
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
+		"audio": map[string]any{"output": map[string]any{}},
+	}))
+	for _, invalid := range []map[string]any{
+		{"kind": "prompt-voice", "subProtocol": "live", "modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"}},
+		{"kind": "voice", "subProtocol": "live", "modelType": "managed", "model": map[string]any{"id": "gpt-live-1"}},
+		{"kind": "voice", "subProtocol": "live", "modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"}, "avatar": map[string]any{}},
+		{"kind": "voice", "model": map[string]any{"id": "gpt-realtime"}, "delegation": map[string]any{"type": "client"}},
+		{"kind": "voice", "subProtocol": "realtime", "model": map[string]any{"id": "gpt-realtime"}, "audio": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}},
+	} {
+		require.Error(t, schema.validate(invalid), "invalid cross-protocol definition: %v", invalid)
+	}
+	require.NoError(t, schema.validate(map[string]any{
 		"kind": "prompt", "name": "prompt-agent", "model": "my-deployment", "instructions": "Be helpful.",
 	}))
 	require.NoError(t, schema.validate(map[string]any{

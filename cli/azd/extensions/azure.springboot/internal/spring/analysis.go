@@ -520,25 +520,29 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 	})
 }
 
+type unsupportedDatasourceSetting struct {
+	key         string
+	replacement string
+}
+
+var unsupportedDatasourceSettings = []unsupportedDatasourceSetting{
+	{"spring.datasource.hikari.username", "spring.datasource.username/password"},
+	{"spring.datasource.hikari.password", "spring.datasource.username/password"},
+	{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
+	{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.hikari.driver-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.tomcat.url", "spring.datasource.url"},
+	{"spring.datasource.tomcat.username", "spring.datasource.username"},
+	{"spring.datasource.tomcat.password", "spring.datasource.password"},
+	{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.dbcp2.url", "spring.datasource.url"},
+	{"spring.datasource.dbcp2.username", "spring.datasource.username"},
+	{"spring.datasource.dbcp2.password", "spring.datasource.password"},
+	{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
+}
+
 func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
-	for _, setting := range []struct {
-		key         string
-		replacement string
-	}{
-		{"spring.datasource.hikari.username", "spring.datasource.username/password"},
-		{"spring.datasource.hikari.password", "spring.datasource.username/password"},
-		{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
-		{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.hikari.driver-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.tomcat.url", "spring.datasource.url"},
-		{"spring.datasource.tomcat.username", "spring.datasource.username"},
-		{"spring.datasource.tomcat.password", "spring.datasource.password"},
-		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.dbcp2.url", "spring.datasource.url"},
-		{"spring.datasource.dbcp2.username", "spring.datasource.username"},
-		{"spring.datasource.dbcp2.password", "spring.datasource.password"},
-		{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
-	} {
+	for _, setting := range unsupportedDatasourceSettings {
 		if _, present := c.raw(setting.key); present {
 			return nil, false, unsupportedConfiguration(
 				"%s is not supported; use %s instead", setting.key, setting.replacement)

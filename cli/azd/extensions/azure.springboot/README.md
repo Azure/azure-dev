@@ -58,6 +58,8 @@ inputs use secure Bicep parameters, Container Apps secrets, and `secretRef`
 bindings. Required values must exist in the selected azd environment before
 provisioning. Input names are shown during initialization, but values are not.
 Deployment-owned Spring, datasource, and Foundry variable names are rejected.
+Global Spring and JVM configuration override channels are also rejected; the
+complete ownership contract is in [DESIGN.md](DESIGN.md#appendix-application-input-ownership-and-conflicts).
 Application inputs do not modify source or infer additional Azure resources.
 This unpublished feature currently depends on unresolved core azd support
 tracked in [#10688](https://github.com/Azure/azure-dev/issues/10688),

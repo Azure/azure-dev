@@ -70,6 +70,14 @@ func canonical(key string) string {
 	return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(key))
 }
 
+func environmentPropertyNames(key string) []string {
+	return []string{
+		key,
+		strings.ToUpper(strings.NewReplacer(".", "_", "-", "").Replace(key)),
+		strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(key)),
+	}
+}
+
 func profileGroupName(key string) (string, bool) {
 	parts := strings.Split(key, ".")
 	if len(parts) < 4 || canonical(strings.Join(parts[:3], ".")) != canonical("spring.profiles.group") {
@@ -1003,9 +1011,7 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 }
 
 func lookupEnvProperty(lookup LookupEnv, key string) (property, bool) {
-	for _, name := range []string{key,
-		strings.ToUpper(strings.NewReplacer(".", "_", "-", "").Replace(key)),
-		strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(key))} {
+	for _, name := range environmentPropertyNames(key) {
 		if text, ok := lookup(name); ok {
 			return property{text: text, source: "environment"}, true
 		}

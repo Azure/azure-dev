@@ -22,38 +22,50 @@ type DeploymentInputs struct {
 
 var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-var reservedApplicationInputs = map[string]bool{
-	"AZURE_OPENAI_API_KEY":                   true,
-	"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME":      true,
-	"AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME": true,
-	"AZURE_OPENAI_ENDPOINT":                  true,
-	"MYSQL_DATABASE":                         true,
-	"MYSQL_HOST":                             true,
-	"MYSQL_PASSWORD":                         true,
-	"MYSQL_PORT":                             true,
-	"MYSQL_USERNAME":                         true,
-	"POSTGRES_DATABASE":                      true,
-	"POSTGRES_HOST":                          true,
-	"POSTGRES_PASSWORD":                      true,
-	"POSTGRES_PORT":                          true,
-	"POSTGRES_USERNAME":                      true,
-	"SERVER_ADDRESS":                         true,
-	"SERVER_PORT":                            true,
-	"SPRING_AI_AZURE_OPENAI_APIKEY":          true,
-	"SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME":      true,
-	"SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME": true,
-	"SPRING_AI_AZURE_OPENAI_ENDPOINT":                         true,
-	"SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY":                     true,
-	"SPRING_CONFIG_ADDITIONAL_LOCATION":                       true,
-	"SPRING_DATASOURCE_DRIVER_CLASS_NAME":                     true,
-	"SPRING_DATASOURCE_PASSWORD":                              true,
-	"SPRING_DATASOURCE_URL":                                   true,
-	"SPRING_DATASOURCE_USERNAME":                              true,
-	"SPRING_JPA_HIBERNATE_DDL_AUTO":                           true,
-	"SPRING_PROFILES_ACTIVE":                                  true,
-	"SPRING_PROFILES_DEFAULT":                                 true,
-	"SPRING_SQL_INIT_MODE":                                    true,
-}
+var reservedApplicationInputs = func() map[string]bool {
+	result := map[string]bool{
+		"_JAVA_OPTIONS":                          true,
+		"AZURE_OPENAI_API_KEY":                   true,
+		"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME":      true,
+		"AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME": true,
+		"AZURE_OPENAI_ENDPOINT":                  true,
+		"JAVA_TOOL_OPTIONS":                      true,
+		"JDK_JAVA_OPTIONS":                       true,
+		"MYSQL_DATABASE":                         true,
+		"MYSQL_HOST":                             true,
+		"MYSQL_PASSWORD":                         true,
+		"MYSQL_PORT":                             true,
+		"MYSQL_USERNAME":                         true,
+		"POSTGRES_DATABASE":                      true,
+		"POSTGRES_HOST":                          true,
+		"POSTGRES_PASSWORD":                      true,
+		"POSTGRES_PORT":                          true,
+		"POSTGRES_USERNAME":                      true,
+		"SERVER_ADDRESS":                         true,
+		"SERVER_PORT":                            true,
+		"SPRING_AI_AZURE_OPENAI_APIKEY":          true,
+		"SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME":      true,
+		"SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME": true,
+		"SPRING_AI_AZURE_OPENAI_ENDPOINT":                         true,
+		"SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY":                     true,
+		"SPRING_APPLICATION_JSON":                                 true,
+		"SPRING_CONFIG_ADDITIONAL_LOCATION":                       true,
+		"SPRING_DATASOURCE_DRIVER_CLASS_NAME":                     true,
+		"SPRING_DATASOURCE_PASSWORD":                              true,
+		"SPRING_DATASOURCE_URL":                                   true,
+		"SPRING_DATASOURCE_USERNAME":                              true,
+		"SPRING_JPA_HIBERNATE_DDL_AUTO":                           true,
+		"SPRING_PROFILES_ACTIVE":                                  true,
+		"SPRING_PROFILES_DEFAULT":                                 true,
+		"SPRING_SQL_INIT_MODE":                                    true,
+	}
+	for _, setting := range unsupportedDatasourceSettings {
+		for _, name := range environmentPropertyNames(setting.key)[1:] {
+			result[name] = true
+		}
+	}
+	return result
+}()
 
 // Resource describes a logical dependency independently of Azure server placement.
 type Resource struct {

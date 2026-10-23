@@ -180,6 +180,31 @@ func TestApplicationInputValidation(t *testing.T) {
 	}
 }
 
+func TestApplicationInputReservedConfigurationSources(t *testing.T) {
+	names := []string{
+		"SPRING_APPLICATION_JSON",
+		"JAVA_TOOL_OPTIONS",
+		"JDK_JAVA_OPTIONS",
+		"_JAVA_OPTIONS",
+	}
+	for _, setting := range unsupportedDatasourceSettings {
+		names = append(names, environmentPropertyNames(setting.key)[1:]...)
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(name+"/"+string(kind), func(t *testing.T) {
+				_, err := resolveApplicationInputs(map[string]ApplicationInputKind{name: kind})
+				require.ErrorContains(t, err, "conflicts with a deployment-owned binding")
+			})
+		}
+	}
+}
+
 func TestResolutionIgnoresAmbientConfiguration(t *testing.T) {
 	t.Setenv("SPRING_PROFILES_ACTIVE", "postgres")
 	t.Setenv("SPRING_DATASOURCE_URL", "jdbc:postgresql://ignored/not_selected")

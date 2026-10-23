@@ -173,6 +173,29 @@ as the database administrator; the deployed application uses its non-admin manag
 identity. This example shows lifecycle dependencies, not every parallel operation
 within `azd up`; other database modes omit or replace the bootstrap steps.
 
+## Appendix: Application input ownership and conflicts
+
+<!-- cspell:ignore DATASOURCECLASSNAME DRIVERCLASSNAME JDBCURL -->
+
+Application inputs cannot use names that override deployment-owned runtime
+configuration. The current reserved contract is:
+
+| Category | Reserved environment variables |
+| --- | --- |
+| Global override channels | `_JAVA_OPTIONS`, `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `SPRING_APPLICATION_JSON` |
+| Hosting and configuration | `SERVER_ADDRESS`, `SERVER_PORT`, `SPRING_CONFIG_ADDITIONAL_LOCATION`, `SPRING_PROFILES_ACTIVE`, `SPRING_PROFILES_DEFAULT` |
+| Datasource | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATASOURCE_DRIVER_CLASS_NAME`, `SPRING_JPA_HIBERNATE_DDL_AUTO`, `SPRING_SQL_INIT_MODE` |
+| Hikari overrides | `SPRING_DATASOURCE_HIKARI_USERNAME`, `SPRING_DATASOURCE_HIKARI_PASSWORD`, `SPRING_DATASOURCE_HIKARI_JDBCURL`, `SPRING_DATASOURCE_HIKARI_JDBC_URL`, `SPRING_DATASOURCE_HIKARI_DATASOURCECLASSNAME`, `SPRING_DATASOURCE_HIKARI_DATA_SOURCE_CLASS_NAME`, `SPRING_DATASOURCE_HIKARI_DRIVERCLASSNAME`, `SPRING_DATASOURCE_HIKARI_DRIVER_CLASS_NAME` |
+| Tomcat overrides | `SPRING_DATASOURCE_TOMCAT_URL`, `SPRING_DATASOURCE_TOMCAT_USERNAME`, `SPRING_DATASOURCE_TOMCAT_PASSWORD`, `SPRING_DATASOURCE_TOMCAT_DRIVERCLASSNAME`, `SPRING_DATASOURCE_TOMCAT_DRIVER_CLASS_NAME` |
+| DBCP2 overrides | `SPRING_DATASOURCE_DBCP2_URL`, `SPRING_DATASOURCE_DBCP2_USERNAME`, `SPRING_DATASOURCE_DBCP2_PASSWORD`, `SPRING_DATASOURCE_DBCP2_DRIVERCLASSNAME`, `SPRING_DATASOURCE_DBCP2_DRIVER_CLASS_NAME` |
+| Foundry and Spring AI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`, `SPRING_AI_AZURE_OPENAI_APIKEY`, `SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY`, `SPRING_AI_AZURE_OPENAI_ENDPOINT`, `SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME`, `SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME` |
+| Generated database bindings | `MYSQL_DATABASE`, `MYSQL_HOST`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_USERNAME`, `POSTGRES_DATABASE`, `POSTGRES_HOST`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_USERNAME` |
+
+When the extension generates or relies on a runtime property, every
+higher-precedence environment spelling capable of overriding that property must
+be added to this contract and its conflict tests. Application-specific names
+outside this ownership boundary remain valid.
+
 ## Appendix: Foundry model bindings
 
 Foundry support targets Spring AI Azure OpenAI chat and embedding bindings.

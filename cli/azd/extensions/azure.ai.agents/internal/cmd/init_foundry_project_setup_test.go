@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
@@ -28,44 +29,57 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2-euap"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
-	for _, location := range []string{"eastus", "japaneast", "", "eastus2-euap"} {
-		t.Run(location, func(t *testing.T) {
-			values := map[string]string{
-				"AZURE_SUBSCRIPTION_ID":         "sub",
-				"AZURE_LOCATION":                location,
-				"AZURE_AI_DEPLOYMENTS_LOCATION": "westus2",
-			}
-			envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{"test": values}}
-			address := newInvokeRemoteContextTestAzdServer(
-				t, &helpersProjectServer{}, envServer, &projectSetupAccountServer{},
-			)
-			client, err := azdext.NewAzdClient(azdext.WithAddress(address))
-			require.NoError(t, err)
-			t.Cleanup(func() { client.Close() })
-			azureContext, err := loadAzureContext(t.Context(), client, "test")
-			require.NoError(t, err)
-			if location == "eastus2-euap" {
-				azureContext.Scope.Location = location
-			}
-			_, err = configureFoundryProject(withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"),
-				client, azureContext, "test", "", "",
-				true, true, false, false, allowed)
-			if location == "eastus" {
-				require.ErrorContains(t, err, "configured AZURE_LOCATION")
-				require.Equal(t, location, values["AZURE_LOCATION"])
-			} else {
-				require.NoError(t, err)
-				if location == "" {
-					location = "westus2"
+	resetAgentRegionsCache(t, &harnessRegionsCache, allowed)
+	for _, flow := range []string{"generated", "adopted"} {
+		for _, tt := range []struct {
+			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
+		}{
+			{"unsupported project", "eastus", "westus2", "eastus", "westus2", "configured AZURE_LOCATION"},
+			{"public split", "japaneast", "westus2", "japaneast", "westus2", ""},
+			{"missing project location", "", "westus2", "westus2", "westus2", ""},
+			{"internal split", "eastus2-euap", "westus2", "eastus2-euap", "westus2", ""},
+			{"internal both", "eastus2-euap", "eastus2-euap", "eastus2-euap", "eastus2-euap", ""},
+			{"internal fallback", "eastus2-euap", "", "eastus2-euap", "eastus2-euap", ""},
+			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},
+			{"unsupported deployment", "japaneast", "eastus", "japaneast", "eastus", "location \"eastus\""},
+		} {
+			t.Run(flow+"/"+tt.name, func(t *testing.T) {
+				values := map[string]string{
+					"AZURE_SUBSCRIPTION_ID":         "sub",
+					"AZURE_LOCATION":                tt.location,
+					"AZURE_AI_DEPLOYMENTS_LOCATION": tt.deploymentLocation,
 				}
-				require.Equal(t, location, values["AZURE_LOCATION"])
-			}
-			expectedDeploymentLocation := "westus2"
-			if location == "eastus2-euap" {
-				expectedDeploymentLocation = location
-			}
-			require.Equal(t, expectedDeploymentLocation, values["AZURE_AI_DEPLOYMENTS_LOCATION"])
-		})
+				envServer := &testEnvironmentServiceServer{values: map[string]map[string]string{"test": values}}
+				address := newInvokeRemoteContextTestAzdServer(
+					t, &helpersProjectServer{}, envServer, &projectSetupAccountServer{},
+				)
+				client, err := azdext.NewAzdClient(azdext.WithAddress(address))
+				require.NoError(t, err)
+				t.Cleanup(func() { client.Close() })
+				azureContext, err := loadAzureContext(t.Context(), client, "test")
+				require.NoError(t, err)
+				if flow == "generated" {
+					_, _, _, _, err = resolvePromptHarnessTarget(t.Context(), client,
+						&initFlags{noPrompt: true, model: "gpt-4.1-mini"}, &azdext.Environment{Name: "test"},
+						&project.PromptAgentSettings{}, "microsoft_copilot_preview")
+				} else {
+					_, err = configureFoundryProject(withHarnessRegionPolicy(t.Context(), "microsoft_copilot_preview"),
+						client, azureContext, "test", "", "", true, true, false, false, allowed)
+				}
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					require.NotContains(t, err.Error(), "PromptLocation", "headless validation must not attempt a location prompt")
+				} else if flow == "generated" {
+					// No model service is registered: reaching it proves location setup
+					// succeeded without prompting or rewriting the split configuration.
+					require.ErrorContains(t, err, "AiModelService")
+				} else {
+					require.NoError(t, err)
+				}
+				require.Equal(t, tt.wantLocation, values["AZURE_LOCATION"])
+				require.Equal(t, tt.wantDeploymentLocation, values["AZURE_AI_DEPLOYMENTS_LOCATION"])
+			})
+		}
 	}
 }
 

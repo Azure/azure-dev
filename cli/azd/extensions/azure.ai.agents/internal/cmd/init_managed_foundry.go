@@ -117,19 +117,9 @@ func resolvePromptHarnessTarget(
 			"No existing Foundry project selected. `azd up` will provision one " +
 				"with the model deployment you choose next.",
 		))
-		if len(allowedLocations) > 0 {
-			err = ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, env.Name, allowedLocations)
-		} else {
-			err = ensureLocation(ctx, azdClient, azureContext, env.Name)
-		}
+		err = ensureNewProjectLocation(ctx, azdClient, azureContext, env.Name, flags.noPrompt, allowedLocations)
 		if err != nil {
 			return nil, false, nil, nil, err
-		}
-		if len(allowedLocations) > 0 {
-			// Project provisioning reads AZURE_LOCATION, which may differ from the model location.
-			if err := setEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION", azureContext.Scope.Location); err != nil {
-				return nil, false, nil, nil, err
-			}
 		}
 		if err := setEnvValue(ctx, azdClient, env.Name, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
 			return nil, false, nil, nil, err

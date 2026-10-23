@@ -2,6 +2,7 @@
 
 ## 0.4.0-preview (Unreleased)
 
+- Add `--enable-traces` to publish environments with traces routed to their owning RLE Foundry project.
 - Align environment discovery and remote invocation with the refreshed RLE service routes and cursor-based response contracts.
 - Use `/rl_environments` consistently for environment and instance lifecycle APIs.
 - Manage remote invoke through temporary instance groups and instances instead of direct sandbox lifecycle APIs.

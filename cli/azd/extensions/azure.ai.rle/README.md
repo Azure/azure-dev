@@ -164,6 +164,14 @@ Use `--version-bump major` (default), `--version-bump minor`, or `--version-bump
 
 The publish command prints a CLI-friendly summary using `environmentId`, `foundryProjectEndpoint`, `acrImage`, `environmentVersion`, `createdAt`, and `updatedAt`.
 
+Traces are disabled by default. Enable them at publish time with:
+
+```powershell
+azd ai rle publish --enable-traces
+```
+
+This serializes `{"traces":{"enabled":true}}`. When enabled, the service routes traces to the owning RLE Foundry project; the CLI does not accept a destination project. Omitting the flag omits `traces`, which the service treats as disabled. Use `--enable-traces=false` to send an explicit disabled value.
+
 If needed, override the Dockerfile path the same way as local run:
 
 ```powershell

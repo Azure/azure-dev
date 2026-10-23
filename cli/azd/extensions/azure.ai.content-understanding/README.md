@@ -9,11 +9,6 @@ The extension uses Azure Developer CLI authentication, environments, subscriptio
 context, and prompts. It is a native Go extension; Python and the standalone
 `cu` CLI are not required.
 
-> [!IMPORTANT]
-> The extension is not yet published in the official azd extension registry.
-> Install a local development build to try it. Commands may change before
-> general availability.
-
 ## Content Understanding concepts
 
 Content Understanding processes unstructured content, including documents,
@@ -37,31 +32,14 @@ Further reading:
 - [Content Understanding terminology](https://learn.microsoft.com/azure/ai-services/content-understanding/glossary)
 - [Supported file types and service limits](https://learn.microsoft.com/azure/ai-services/content-understanding/service-limits)
 
-## Install a local build
+## Install
 
-Requirements:
-
-- [Azure Developer CLI](https://aka.ms/azd) 1.37.0 or later.
-- The Go version declared in [go.mod](go.mod) for building from source.
-- The azd extension developer kit.
-
-Following the same local development workflow as other azd extensions, install
-the developer kit, then build, publish to the local registry, and install:
+Requires [Azure Developer CLI](https://aka.ms/azd) 1.37.0 or later.
 
 ```bash
-azd ext install microsoft.azd.extensions
-cd cli/azd/extensions/azure.ai.content-understanding
-azd x build
-azd x pack
-azd x publish
-azd ext install azure.ai.content-understanding --source local
+azd ext install azure.ai.content-understanding
 azd ai cu --help
 ```
-
-Run the `cd` command from the azure-dev repository root. `azd x publish` without
-a GitHub repository publishes to the local extension registry, not the public
-registry. Subsequent `azd x build` or `azd x watch` runs rebuild and reinstall
-the extension without repeating the initial packaging and registration steps.
 
 ## Connect to Microsoft Foundry and check setup
 
@@ -357,7 +335,25 @@ Run `azd ai cu <command> --help` for command-specific options.
 
 ## Local development
 
-Use `azd x watch` for automatic rebuilds and local installation. Tests live
+To build from source, use the Go version declared in [go.mod](go.mod) and
+install the azd extension developer kit. From the azure-dev repository root:
+
+```bash
+azd ext install microsoft.azd.extensions
+cd cli/azd/extensions/azure.ai.content-understanding
+azd x build
+azd x pack
+azd x publish
+azd ext install azure.ai.content-understanding --source local
+azd ai cu --help
+```
+
+`azd x publish` without a GitHub repository publishes to the local extension
+registry, not the public registry. Subsequent `azd x build` or `azd x watch`
+runs rebuild and reinstall the extension without repeating the initial
+packaging and registration steps.
+
+Tests live
 beside their Go packages under [internal/](internal/), including command,
 SDK-adapter, generated-project, and recorded-playback tests:
 

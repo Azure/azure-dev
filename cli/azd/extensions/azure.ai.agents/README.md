@@ -499,6 +499,34 @@ The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
 use the local service key from `azure.yaml`, which can differ from the deployed
 agent name shown in the endpoint.
 
+For adopted prompt agents, deploy and invoke resolve the template model against
+the active environment's deployment choices. `AI_PROJECT_DEPLOYMENT_BINDINGS` is
+an environment-local JSON object mapping each template deployment name to its
+selected deployment name. An empty target records an explicit skip. These
+names are matched case-insensitively, and updates preserve existing declaration-key
+spelling. Targets that differ only by case are equivalent; genuinely conflicting
+targets for keys that differ only by case are rejected. Bindings
+preserve independent choices for multiple declarations and take
+precedence over the project-wide runtime default. A skipped model, an ambiguous
+legacy replacement, or malformed deployment configuration returns an error
+rather than silently using another model. Model-resolution failures do not block
+`azd ai agent show` or `azd ai agent delete`.
+
+When adopting a template with `azd ai agent init --model-deployment`, init selects
+the template declaration to replace before copying project files or creating an
+environment. An ambiguous `--no-prompt` request or a cancelled replacement picker
+leaves the target unchanged. Template variable references in the selected
+declaration name are expanded against the final environment when applying the
+binding, with persisted values taking precedence over process values.
+
+For on-disk Bicep or Terraform infrastructure, deployment parameters are
+authoritative, not `AI_PROJECT_DEPLOYMENTS`. Ejection seeds deployment parameters
+from the adoption choices, and explicit per-declaration bindings remain effective
+after ejection. Without such a binding, deploy and invoke expand the agent's
+authored model without inferring replacements from the managed deployment list.
+Set the agent's model explicitly or use
+`${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

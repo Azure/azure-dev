@@ -91,10 +91,31 @@ Existing-project reuse is rechecked after preprovision hooks so a deployment
 list supplied by a hook is provisioned rather than silently skipped.
 
 Adopting an existing project reconciles the active environment's effective
-deployment list with reuse and skip choices, including an explicit `[]` when no
+deployment list with reuse, "Choose a different model" (any existing deployment
+or a catalog model), and skip choices, including an explicit `[]` when no
 managed deployments remain. Ejecting infrastructure seeds the generated Bicep
 or Terraform deployment parameters from that effective list. Subsequent edits
 to those parameter files remain authoritative.
+
+An explicit "Choose a different model" selection also updates
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`, even when the previous default still exists.
+With multiple alternative selections, the first becomes the runtime default.
+Other adoption choices retain the existing default-selection behavior.
+
+`AI_PROJECT_DEPLOYMENT_BINDINGS` stores environment-local adoption bindings as a
+JSON object, for example `{"template-chat":"existing-chat"}`. Each declaration
+retains its own selected deployment independently of the global runtime default;
+an empty target records Skip. Declaration names are matched case-insensitively,
+and updates preserve existing declaration-key spelling. Targets that differ only
+by case are equivalent; genuinely conflicting targets for case-equivalent keys
+are rejected. Prompt-agent deploy and invoke honor these explicit
+bindings even after infrastructure ejection. Bindings are cleared when the
+environment switches to a different project. Legacy environments without bindings
+retain the single-missing-declaration fallback and reject ambiguous replacements.
+Adding a managed deployment with `azd ai project deployment add` resets that
+declaration's binding to its managed name. For hand-edited agent bindings,
+update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
+or set it to `'{}'` to clear explicit bindings.
 
 ### Deployment preview
 

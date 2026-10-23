@@ -1,0 +1,48 @@
+# Tier 1: authenticated catalog picker; external seed, no cloud writes.
+name: "init-adopt-catalog-model"
+command: 'azd ai agent init -t "{fixtures_dir}/adopt-model-choice/azure.yaml" --src . --agent-name {prefix}-catalog-{instance} --environment {prefix}-catalog-{instance}'
+cwd: "~/working/azd-agents-adopt-catalog-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe", "picker", "manual-seed"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZURE_ENV_NAME: ""
+pre:
+  - run: "test -s ~/working/azd-agents-adoption-seed-{run_id}.json"
+    cwd: "~/working"
+    name: "require externally prepared adoption seed"
+  - run: "rm -rf ~/working/azd-agents-adopt-catalog-{instance}"
+    cwd: "~/working"
+    name: "reset isolated adoption working dir"
+goals:
+  - >-
+    Read ~/working/azd-agents-adoption-seed-{run_id}.json and verify with read-only Azure queries
+    that project_id identifies a readable Foundry project in '{subscription}'. Verify '{model}'
+    differs from gpt-4o and has a deployable SKU with remaining capacity in that project's location.
+    Missing or invalid seed or quota is a failure, not a skipped branch. Do not create or modify
+    the external seed or any Azure resource.
+  - >-
+    At 'Select a Foundry project to host your agent and any models or tools it uses.',
+    choose 'Use an existing Foundry project'. If 'Select a tenant' appears, select the tenant
+    provided with this run; fail without answering if none was provided. If asked for a subscription,
+    select '{subscription}'. In the Foundry project picker select the verified seeded project.
+    No agent-name, environment-name, description, instructions, or new-project prompt should appear.
+  - >-
+    At 'How would you like to proceed with deployment "template-chat" (model "gpt-4o")?',
+    select 'Choose a different model'. At 'How would you like to choose a model?', select
+    'Deploy a new model from the catalog'. At 'Select a model', select '{model}'.
+    If 'Select a model deployment' appears, accept its initially selected candidate and record
+    that candidate's model version, SKU, capacity, and location. Otherwise record the uniquely
+    resolved candidate from the resulting environment. No deployment-name prompt should appear:
+    the catalog choice must retain template-chat.
+  - >-
+    Confirm init exits successfully with adoption guidance and 'Next:'. Inspect the active
+    environment without printing its whole contents: AI_PROJECT_DEPLOYMENTS must contain exactly
+    one deployment named template-chat with model '{model}' and the resolved version, SKU, and
+    positive capacity; AI_PROJECT_DEPLOYMENT_BINDINGS must map template-chat to template-chat;
+    AZURE_AI_MODEL_DEPLOYMENT_NAME must equal template-chat. The portable azure.yaml must retain
+    the original gpt-4o declaration and the prompt agent's model reference to template-chat.
+  - "Take a screenshot of the completed init output."
+  - >-
+    STOP without provision, deploy, up, or invoke. Report a finding for an unexpected prompt,
+    a failed init, missing quota filtering, a lost catalog choice, changed portable deployment,
+    or any cloud mutation.

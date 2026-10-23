@@ -2686,12 +2686,55 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a local Connection service to this azd project.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a Connection YAML or JSON definition',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project'],
+									description: 'Existing azure.ai.project service key to own this Connection',
+									args: [
+										{
+											name: 'project',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2813,7 +2856,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2870,7 +2913,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2904,7 +2947,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2929,7 +2972,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2977,7 +3020,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -3011,7 +3054,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',

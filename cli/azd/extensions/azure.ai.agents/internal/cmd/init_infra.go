@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
@@ -460,7 +461,6 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	if provider == "" {
 		return nil
 	}
-
 	projectRoot, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
 		return nil
@@ -484,6 +484,7 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 			return err
 		}
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 	return ejectInfra(projectRoot, provider, env)
 }
 

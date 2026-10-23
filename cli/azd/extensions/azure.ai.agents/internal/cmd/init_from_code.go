@@ -7,6 +7,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
@@ -150,7 +151,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		// Generate .agentignore. The agent definition is written into the
 		// azure.yaml service entry below, not to an on-disk agent.yaml.
 		if strings.TrimSpace(localDefinition.Image) == "" {
-			if err := a.writeAgentIgnoreToSrcDir(srcDir); err != nil {
+			endGeneration := inittelemetry.Start(ctx, inittelemetry.FileGeneration)
+			err := a.writeAgentIgnoreToSrcDir(srcDir)
+			endGeneration()
+			if err != nil {
 				return fmt.Errorf("failed to write .agentignore: %w", err)
 			}
 		}
@@ -193,9 +197,10 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 	if a.projectTargetDir != "" {
 		return ensureProject(ctx, a.flags, a.azdClient, a.projectTargetDir)
 	}
-
 	projectResponse, err := a.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		// Derive an environment name when the user didn't pass --environment.
@@ -274,6 +279,8 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	ctx context.Context, protocols []agent_yaml.ProtocolVersionRecord,
 ) (*agent_yaml.ContainerAgent, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
+
 	// Default agent name to sanitized cwd
 	defaultName := "my-agent"
 	if cwd, err := os.Getwd(); err == nil {
@@ -890,6 +897,8 @@ func (a *InitFromCodeAction) addToProject(
 	definition *agent_yaml.ContainerAgent,
 	isCodeDeploy bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	agentName := definition.Name
 	agentServiceName := strings.ReplaceAll(agentName, " ", "")
 	if a.serviceNameOverride != "" {
@@ -1115,6 +1124,8 @@ func promptProtocols(
 	flagProtocols []string,
 	voiceEnabled bool,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ProtocolSelection)()
+
 	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
 		return validateExplicitProtocols(flagProtocols)
@@ -1230,6 +1241,8 @@ func knownProtocolNames() string {
 // When noPrompt is true and no flag is provided, defaults to "code".
 // When showCodeDeploy is false and no explicit flag overrides, code deploy is not offered.
 func promptDeployMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool, showCodeDeploy bool, deployModeFlag string, userProvidedTemplate bool) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.DeployModeSelection)()
+
 	// Resolution precedence:
 	//   1. Explicit flag (--deploy-mode) — always wins
 	//   2. !showCodeDeploy — container is the only option (not Python/.NET)
@@ -1347,6 +1360,8 @@ type codeDeployOptions struct {
 // promptCodeConfig prompts for code deploy configuration (runtime, entry point,
 // dependency resolution). When noPrompt is true, flags or defaults are used without prompting.
 func promptCodeConfig(ctx context.Context, azdClient *azdext.AzdClient, srcDir string, noPrompt bool, opts codeDeployOptions, userProvidedTemplate bool) (*agent_yaml.CodeConfiguration, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.CodeConfiguration)()
+
 	if srcDir == "" {
 		srcDir = "."
 	}

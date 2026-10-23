@@ -8,6 +8,7 @@ import (
 
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
+	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -67,6 +68,7 @@ func NewRootCommand() *cobra.Command {
 		if operation == "init" {
 			telemetryReporter.reportProject(cmd.Context(), operation)
 			reportInitOperation(cmd.Context())
+			inittelemetry.Report(cmd.Context())
 		}
 	}
 

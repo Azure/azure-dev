@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 	"context"
 	"fmt"
@@ -1486,6 +1487,8 @@ func ensureSubscription(
 	envName string,
 	promptMessage string,
 ) (azcore.TokenCredential, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.SubscriptionSelection)()
+
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Println(promptMessage)
 
@@ -1562,14 +1565,28 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
 	allowedLocations, err := supportedRegionsForInit(ctx)
 	if err != nil {
 		return err
 	}
-	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
 }
 
 func ensureLocationWithAllowedLocations(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	allowedLocations []string,
+) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func resolveLocationWithAllowedLocations(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	azureContext *azdext.AzureContext,
@@ -1703,6 +1720,8 @@ func selectNewModel(
 	azureContext *azdext.AzureContext,
 	modelFlag string,
 ) (*azdext.AiModel, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	defaultModel := defaultAgentModel
 	if modelFlag != "" {
 		defaultModel = modelFlag
@@ -1882,6 +1901,8 @@ func selectFoundryProject(
 	bicepless bool,
 	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.FoundryProjectSelection)()
+
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
 		spinnerText = "Getting details on the provided Foundry project..."
@@ -2048,6 +2069,8 @@ func selectModelDeployment(
 	modelDeploymentFlag string,
 	modelFilter string,
 ) (*FoundryDeploymentInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Text:        "Searching for model deployments in your Foundry Project...",
 		ClearOnStop: true,

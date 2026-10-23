@@ -400,8 +400,8 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings cannot be confirmed non-interactively; command fails), `skipped`, `error` |
+| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted, such as `role_assignment_missing`, `role_assignment_scope_unverified`, and `role_assignment_conditional` |
 | `validation.provision.rules` | string[] | Rule IDs executed |
 | `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.provision.check_type` | string | Dispatch site that emitted the event: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |

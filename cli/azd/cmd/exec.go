@@ -48,6 +48,10 @@ A single quoted argument uses shell inline execution unless it is ambiguous
 with a missing script path. Use --shell to make inline intent explicit when
 the command contains script-like path arguments.
 
+Canceling execution stops the command and its child processes and reports
+that the command was canceled by the user. After successful completion,
+intentional background child processes may continue running.
+
 Examples:
   azd exec python script.py                     # Direct exec (exact argv)
   azd exec npm run dev                           # Direct exec (no shell)

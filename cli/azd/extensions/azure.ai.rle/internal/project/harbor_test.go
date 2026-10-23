@@ -21,7 +21,7 @@ func writeHarborTask(t *testing.T, taskToml string) string {
 	}
 	for rel, content := range files {
 		path := filepath.Join(dir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

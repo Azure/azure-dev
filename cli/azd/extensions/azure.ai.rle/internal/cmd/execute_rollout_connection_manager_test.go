@@ -434,8 +434,7 @@ func TestExecuteRolloutDoesNotReplayAmbiguousDisconnect(t *testing.T) {
 		executeRolloutRequest{RolloutID: "ambiguous"},
 		nil,
 	)
-	var outcomeUnknown *executeRolloutOutcomeUnknownError
-	if !errors.As(err, &outcomeUnknown) {
+	if _, ok := errors.AsType[*executeRolloutOutcomeUnknownError](err); !ok {
 		t.Fatalf("expected outcome unknown, got %v", err)
 	}
 	if connectionCount.Load() != 1 {

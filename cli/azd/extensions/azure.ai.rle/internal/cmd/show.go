@@ -156,7 +156,10 @@ func listAllVersionTasks(
 		}
 		token = page.NextContinuationToken
 	}
-	return tasks, nil
+	return nil, paginationSafetyLimitError(
+		"Environment task list",
+		"rle_environment_task_list_safety_limit",
+	)
 }
 
 func listAllEnvironmentVersions(

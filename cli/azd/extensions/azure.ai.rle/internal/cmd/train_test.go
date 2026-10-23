@@ -908,7 +908,7 @@ func TestTrainRejectsMissingConfigurationBeforeDownstreamCalls(t *testing.T) {
 			value.SetZero()
 			structField, ok := reflect.TypeFor[project.RleGrpoDefaults]().FieldByName(field)
 			require.True(t, ok)
-			key := strings.Split(structField.Tag.Get("toml"), ",")[0]
+			key, _, _ := strings.Cut(structField.Tag.Get("toml"), ",")
 			err := runInvalidTrainConfig(t, config)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "%v", err)

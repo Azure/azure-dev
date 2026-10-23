@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -36,6 +37,7 @@ func TestMain(m *testing.M) {
 			Args []string
 			Cwd  string
 		}{os.Args[1:], cwd})
+		//nolint:gosec // Test-owned capture path supplied to the fake Azure CLI subprocess.
 		if err != nil || os.WriteFile(capture, data, 0600) != nil {
 			os.Exit(1)
 		}
@@ -274,13 +276,43 @@ func usePublishAzureCLI(t *testing.T) string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	if err := os.Link(executable, filepath.Join(bin, name)); err != nil {
+	// Hard links share Windows' lock on the running test binary and can prevent cleanup.
+	//nolint:gosec // Source is the running test binary returned by os.Executable.
+	data, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//nolint:gosec // Test-owned executable shim requires owner execute permission on Unix.
+	if err := os.WriteFile(filepath.Join(bin, name), data, 0700); err != nil {
 		t.Fatal(err)
 	}
 	capture := filepath.Join(t.TempDir(), "azure-cli.json")
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("RLE_TEST_PUBLISH_AZ_CAPTURE", capture)
 	return capture
+}
+
+func TestPublishAzureCLIUsesIndependentExecutable(t *testing.T) {
+	usePublishAzureCLI(t)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim, err := exec.LookPath("az")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalInfo, err := os.Stat(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shimInfo, err := os.Stat(shim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.SameFile(originalInfo, shimInfo) {
+		t.Fatal("Azure CLI shim must not share the running test executable's Windows file lock")
+	}
 }
 
 func readPublishAzureCLI(t *testing.T, capture string) ([]string, string) {

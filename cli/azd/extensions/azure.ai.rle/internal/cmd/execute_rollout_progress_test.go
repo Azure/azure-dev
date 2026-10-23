@@ -116,6 +116,39 @@ func TestExecuteRolloutProgressRendererShowsLifecycleAndPartialOutcome(t *testin
 	}
 }
 
+func TestExecuteRolloutProgressRendererSanitizesTerminationReason(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
+	for _, phase := range []string{"environment_step", "target_execute"} {
+		t.Run(phase, func(t *testing.T) {
+			var output bytes.Buffer
+			renderer := newExecuteRolloutProgressRenderer(&output)
+			if err := renderer.Render(executeRolloutProgress{
+				Message: "Finished.",
+				Phase:   phase,
+				Status:  "completed",
+				PartialResponse: &executeRolloutPartialResponse{
+					Episode: &executeRolloutPartialEpisode{
+						Steps:             []rollouts.Step{{EpisodeDone: true}},
+						TerminationReason: new("stopped\ninjected\x1b[31m\r\u009b[2J"),
+					},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			got := output.String()
+			if strings.Count(got, "\n") != 2 || strings.ContainsAny(got, "\r\x1b\u009b") {
+				t.Fatalf("termination reason injected terminal control characters: %q", got)
+			}
+			if !strings.Contains(got, "stopped injected [31m  [2J") {
+				t.Fatalf("expected the sanitized termination reason, got %q", got)
+			}
+		})
+	}
+}
+
 func TestExecuteRolloutProgressRendererDoesNotRepeatRunningStepOutcome(t *testing.T) {
 	previousNoColor := color.NoColor
 	color.NoColor = true

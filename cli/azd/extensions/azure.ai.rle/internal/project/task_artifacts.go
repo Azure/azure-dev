@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/gofrs/flock"
 )
 
@@ -133,7 +134,10 @@ func writeTaskArtifactJSON(filename string, value any) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if err := os.Rename(name, filename); err != nil {
+	// Recovery state must persist even if the cloud operation's context was canceled.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := osutil.Rename(ctx, name, filename); err != nil {
 		return err
 	}
 	if runtime.GOOS != "windows" {

@@ -132,7 +132,8 @@ func (r *executeRolloutProgressRenderer) Render(progress executeRolloutProgress)
 		return err
 	}
 	if summary := summarizeRolloutProgress(progress); summary != "" {
-		_, err := fmt.Fprintf(r.out, "             %s\n", output.WithGrayFormat("%s", summary))
+		_, err := fmt.Fprintf(r.out, "             %s\n",
+			output.WithGrayFormat("%s", sanitizeRolloutProgressMessage(summary)))
 		return err
 	}
 	return nil

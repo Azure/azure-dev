@@ -32,3 +32,32 @@ words:
   - kwargs
   - noninteractive
   - idxprobe
+overrides:
+  - filename: docs/harbor-artifacts.md
+    words:
+      - myregistry
+      - slurpfile
+      - taskset
+  - filename:
+      - internal/cmd/publish.go
+      - internal/project/rle_config.go
+      - internal/project/task_artifacts.go
+    words:
+      - taskset
+  - filename: internal/cmd/rollout.go
+    words:
+      - errp
+  - filename: internal/cmd/run.go
+    words:
+      - Winsock
+  - filename: internal/project/harbor.go
+    words:
+      - Gname
+  - filename:
+      - internal/project/rle_config.go
+      - README.md
+    words:
+      - targetable
+  - filename: README.md
+    words:
+      - userinfo

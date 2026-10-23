@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -248,6 +249,7 @@ func TestListAllVersionTasksFollowsContinuationAndReportsPerTaskStatus(t *testin
 		if !strings.HasSuffix(request.URL.Path, "/env/versions/1.0.0/tasks") {
 			t.Fatalf("unexpected path %q", request.URL.Path)
 		}
+
 		body := `{"data":[{"name":"a","diskImageConversionStatus":"Ready"}],"nextContinuationToken":"tok"}`
 		if request.URL.Query().Get("continuationToken") == "tok" {
 			body = `{"data":[{"name":"b","diskImageConversionStatus":"Failed","diskImageConversionError":"boom"}]}`
@@ -265,5 +267,44 @@ func TestListAllVersionTasksFollowsContinuationAndReportsPerTaskStatus(t *testin
 	}
 	if len(tasks) != 2 || tasks[0].DiskImageConversionStatus != "Ready" || tasks[1].DiskImageConversionError != "boom" {
 		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+}
+
+func TestListAllVersionTasksSafetyLimit(t *testing.T) {
+	for _, complete := range []bool{false, true} {
+		t.Run(fmt.Sprintf("complete=%t", complete), func(t *testing.T) {
+			client := newRleClientWithCredential(
+				"https://account.services.ai.azure.com/api/projects/project",
+				&testTokenCredential{},
+			)
+			calls := 0
+			client.httpClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				calls++
+				token := fmt.Sprintf("cursor-%d", calls)
+				if complete && calls == environmentListMaxPages {
+					token = ""
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(fmt.Sprintf(
+						`{"data":[{"name":"task-%d"}],"nextContinuationToken":%q}`, calls, token))),
+				}, nil
+			})
+			tasks, err := listAllVersionTasks(t.Context(), client, "env", "1.0.0")
+			if calls != environmentListMaxPages {
+				t.Fatalf("expected %d requests, got %d", environmentListMaxPages, calls)
+			}
+			if complete {
+				if err != nil || len(tasks) != environmentListMaxPages {
+					t.Fatalf("expected all tasks from the final page, got %d tasks and %v", len(tasks), err)
+				}
+				return
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			if !ok || localErr.Code != "rle_environment_task_list_safety_limit" || tasks != nil {
+				t.Fatalf("expected a safety-limit error without partial tasks, got tasks=%v, err=%v", tasks, err)
+			}
+		})
 	}
 }

@@ -75,6 +75,7 @@ func LoadHarborTask(dir string) (*HarborTask, error) {
 }
 
 func rejectUnsupportedHarborConfig(path string) error {
+	//nolint:gosec // Reads task.toml from the explicitly selected local task directory.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -128,6 +129,7 @@ func hashHarborTask(taskDir string) (string, error) {
 			if err != nil {
 				return "", err
 			}
+			//nolint:gosec // Paths come from walking regular files in the selected task's environment directory.
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return "", err
@@ -186,6 +188,7 @@ func BuildHarborBundle(task *HarborTask) ([]byte, error) {
 			if err := tw.WriteHeader(header); err != nil || d.IsDir() {
 				return err
 			}
+			//nolint:gosec // WalkDir only includes regular files beneath the selected task bundle entries.
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return err

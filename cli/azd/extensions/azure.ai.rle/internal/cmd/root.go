@@ -42,6 +42,10 @@ func newRootCommand(updateChecker extensionUpdateChecker) *cobra.Command {
 		switch cmd.Name() {
 		case "metadata", "models", "version":
 			return nil
+		case "cancel":
+			if parent := cmd.Parent(); parent != nil && parent.Name() == "jobs" {
+				return nil
+			}
 		}
 
 		update, err := updateChecker.Check(cmd.Context(), Version)

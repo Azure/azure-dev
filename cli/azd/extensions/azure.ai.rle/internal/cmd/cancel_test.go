@@ -114,8 +114,10 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 				})
 				return client, nil
 			}
+			updateChecks := 0
 			command := newRootCommand(extensionUpdateCheckerFunc(func(context.Context, string) (*extensionUpdate, error) {
-				return nil, nil
+				updateChecks++
+				return &extensionUpdate{LatestVersion: "99.0.0", IsBreaking: true, Source: "rle"}, nil
 			}))
 			args := []string{"jobs", "cancel", " " + realMonitorJobID + " ", "--output", test.format, "--no-prompt"}
 			command.SetArgs(args)
@@ -124,6 +126,9 @@ func TestCancelCommandEndpointAndOutput(t *testing.T) {
 			command.SetErr(&errorOutput)
 			if err := command.Execute(); err != nil {
 				t.Fatal(err)
+			}
+			if updateChecks != 0 {
+				t.Fatalf("job cancellation must bypass update checks, got %d checks", updateChecks)
 			}
 			if calls != 1 || errorOutput.Len() != 0 {
 				t.Fatalf("expected one cancel request and no diagnostics: calls=%d stderr=%s", calls, errorOutput.String())
@@ -275,6 +280,7 @@ func TestFinetuneCancelPropagatesContextCancellation(t *testing.T) {
 }
 
 func TestCancelEndpointDoesNotDiscloseURLCredentials(t *testing.T) {
+	//nolint:gosec // Dummy URL credentials exercise redaction; no real credentials are used.
 	raw := "https://private-user:private-password@account.openai.azure.com/?sig=private-signature#private-fragment"
 	endpoint, err := normalizeFinetuneEndpoint(raw)
 	if err != nil {

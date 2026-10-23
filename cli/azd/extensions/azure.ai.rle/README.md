@@ -129,6 +129,8 @@ To update, run `azd extension update azure.ai.rle --source rle`
 If the update path includes a release marked as breaking, lifecycle commands are
 blocked until the extension is updated. Commands needed to inspect the extension,
 such as `azd ai rle version` and help, remain available.
+`azd ai rle jobs cancel <job-id>` also bypasses update checks, so stopping an
+existing billable job never requires upgrading the extension first.
 
 Update to the latest release from the registered source:
 

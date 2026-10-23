@@ -40,11 +40,47 @@ const (
 // VoiceModelType selects the model-inference mode for a voice agent.
 type VoiceModelType string
 
+// VoiceSubProtocol selects the persisted wire protocol for a voice agent.
+// Omission preserves the existing Voice Live realtime behavior.
+type VoiceSubProtocol string
+
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
 	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
+
+	VoiceSubProtocolLive     VoiceSubProtocol = "live"
+	VoiceSubProtocolRealtime VoiceSubProtocol = "realtime"
 )
+
+// LiveVoiceDelegation selects the native GPT Live delegation owner/backend.
+type LiveVoiceDelegation struct {
+	Type         string                   `json:"type" yaml:"type"`
+	Responses    *LiveResponsesDelegation `json:"responses,omitempty" yaml:"responses,omitempty"`
+	AgentName    string                   `json:"agentName,omitempty" yaml:"agent_name,omitempty"`
+	AgentVersion string                   `json:"agentVersion,omitempty" yaml:"agent_version,omitempty"`
+}
+
+type LiveResponsesDelegation struct {
+	Model             string                  `json:"model" yaml:"model"`
+	Instructions      *string                 `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	MaxOutputTokens   *int                    `json:"maxOutputTokens,omitempty" yaml:"max_output_tokens,omitempty"`
+	ParallelToolCalls *bool                   `json:"parallelToolCalls,omitempty" yaml:"parallel_tool_calls,omitempty"`
+	ServiceTier       *string                 `json:"serviceTier,omitempty" yaml:"service_tier,omitempty"`
+	Reasoning         *LiveResponsesReasoning `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	Text              *LiveResponsesText      `json:"text,omitempty" yaml:"text,omitempty"`
+	ToolChoice        any                     `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
+	Tools             []map[string]any        `json:"tools,omitempty" yaml:"tools,omitempty"`
+}
+
+type LiveResponsesReasoning struct {
+	Effort  *string `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Summary *string `json:"summary,omitempty" yaml:"summary,omitempty"`
+}
+
+type LiveResponsesText struct {
+	Verbosity *string `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+}
 
 // VoiceTargetAgent identifies the hosted agent service that supplies the
 // conversation logic for a hosted voice wrapper. Service is an azure.yaml
@@ -149,6 +185,9 @@ type Workflow struct {
 // ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
+	// SubProtocol selects the native GPT Live path when set to live. Omission
+	// preserves the existing Voice Live realtime path.
+	SubProtocol VoiceSubProtocol `json:"subProtocol,omitempty" yaml:"sub_protocol,omitempty"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
@@ -191,6 +230,10 @@ type VoiceAgent struct {
 	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
 	// Telephony configures phone-number bindings for prompt voice agents.
 	Telephony *VoiceTelephony `json:"telephony,omitempty" yaml:"telephony,omitempty"`
+	// Delegation is valid only when sub_protocol is live.
+	Delegation *LiveVoiceDelegation `json:"delegation,omitempty" yaml:"delegation,omitempty"`
+	// Policies maps the first RAI policy to rai_config for GPT Live.
+	Policies []Policy `json:"-" yaml:"-"`
 }
 
 // VoiceTelephony declares telephony bindings for a prompt voice agent.
@@ -254,8 +297,10 @@ func (b *VoiceTelephonyBinding) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// VoiceAudio bundles optional prompt voice input/output audio overrides.
+// VoiceAudio is selected by subProtocol. Realtime voice uses input/output;
+// GPT Live uses format/output and must omit input.
 type VoiceAudio struct {
+	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
 	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`
 	Output *VoiceAudioOutput `json:"output,omitempty" yaml:"output,omitempty"`
 }
@@ -272,7 +317,7 @@ type VoiceAudioInput struct {
 // VoiceAudioOutput customizes agent-to-caller audio.
 type VoiceAudioOutput struct {
 	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
-	Voice  *VoiceConfig      `json:"voice,omitempty" yaml:"voice,omitempty"`
+	Voice  any               `json:"voice,omitempty" yaml:"voice,omitempty"`
 	Speed  *float64          `json:"speed,omitempty" yaml:"speed,omitempty"`
 }
 

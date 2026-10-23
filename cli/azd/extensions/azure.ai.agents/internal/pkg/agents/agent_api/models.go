@@ -542,6 +542,7 @@ type VoiceAudioConfig struct {
 // prompt voice agent. Its Kind is always AgentKindVoice ("voice").
 type VoiceAgentDefinition struct {
 	AgentDefinition
+	SubProtocol        string                     `json:"sub_protocol,omitempty"`
 	ModelType          VoiceModelType             `json:"model_type,omitempty"`
 	Model              string                     `json:"model,omitempty"`
 	TargetAgent        *VoiceTargetAgentReference `json:"target_agent,omitempty"`
@@ -559,6 +560,67 @@ type VoiceAgentDefinition struct {
 	ParallelToolCalls  *bool                      `json:"parallel_tool_calls,omitempty"`
 	MaxOutputTokens    any                        `json:"max_output_tokens,omitempty"`
 	Include            []string                   `json:"include,omitempty"`
+	LiveAudio          *LiveVoiceAudio            `json:"-"`
+	Delegation         *LiveVoiceDelegation       `json:"delegation,omitempty"`
+}
+
+// MarshalJSON emits one protocol-specific audio property. Realtime callers keep
+// the typed Audio field; GPT Live uses its incompatible native audio shape.
+func (d VoiceAgentDefinition) MarshalJSON() ([]byte, error) {
+	type definitionAlias VoiceAgentDefinition
+	var audio any
+	if d.Audio != nil {
+		audio = d.Audio
+	}
+	if d.LiveAudio != nil {
+		audio = d.LiveAudio
+	}
+	return json.Marshal(struct {
+		definitionAlias
+		Audio any `json:"audio,omitempty"`
+	}{definitionAlias: definitionAlias(d), Audio: audio})
+}
+
+type LiveVoiceAudio struct {
+	Format *LiveAudioFormat `json:"format,omitempty"`
+	Output *LiveAudioOutput `json:"output,omitempty"`
+}
+
+type LiveAudioFormat struct {
+	Type string `json:"type"`
+	Rate *int   `json:"rate,omitempty"`
+}
+
+type LiveAudioOutput struct {
+	Voice any `json:"voice,omitempty"`
+}
+
+type LiveVoiceDelegation struct {
+	Type         string                   `json:"type"`
+	Responses    *LiveResponsesDelegation `json:"responses,omitempty"`
+	AgentName    string                   `json:"agent_name,omitempty"`
+	AgentVersion string                   `json:"agent_version,omitempty"`
+}
+
+type LiveResponsesDelegation struct {
+	Model             string                  `json:"model"`
+	Instructions      *string                 `json:"instructions,omitempty"`
+	MaxOutputTokens   *int                    `json:"max_output_tokens,omitempty"`
+	ParallelToolCalls *bool                   `json:"parallel_tool_calls,omitempty"`
+	ServiceTier       *string                 `json:"service_tier,omitempty"`
+	Reasoning         *LiveResponsesReasoning `json:"reasoning,omitempty"`
+	Text              *LiveResponsesText      `json:"text,omitempty"`
+	ToolChoice        any                     `json:"tool_choice,omitempty"`
+	Tools             []map[string]any        `json:"tools,omitempty"`
+}
+
+type LiveResponsesReasoning struct {
+	Effort  *string `json:"effort,omitempty"`
+	Summary *string `json:"summary,omitempty"`
+}
+
+type LiveResponsesText struct {
+	Verbosity *string `json:"verbosity,omitempty"`
 }
 
 // TelephonyBindingRequest creates an agent telephony binding.

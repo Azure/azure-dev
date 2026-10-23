@@ -1,0 +1,29 @@
+name: gpt-live-agent
+services:
+  ai-project:
+    host: azure.ai.project
+  gpt-live-agent:
+    host: azure.ai.agent
+    kind: voice
+    name: gpt-live-agent
+    uses:
+      - ai-project
+    subProtocol: live
+    modelType: self_deployed
+    model:
+      id: gpt-live-1
+    instructions: You are a concise spoken English teacher. Always delegate grammar correction requests before answering.
+    store: false
+    audio:
+      format:
+        type: audio/pcm
+        rate: 24000
+      output:
+        voice: marin
+    delegation:
+      type: responses
+      responses:
+        model: gpt-5.6-terra
+        instructions: Return concise grammar guidance for the spoken teacher.
+infra:
+  provider: microsoft.foundry

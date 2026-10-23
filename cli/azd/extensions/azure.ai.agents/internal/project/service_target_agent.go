@@ -153,6 +153,25 @@ func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildGPTLiveWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice/live/sessions?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+func buildVoiceAgentWSProtocolURL(projectEndpoint, agentName string, subProtocol agent_yaml.VoiceSubProtocol) string {
+	if subProtocol == agent_yaml.VoiceSubProtocolLive {
+		return buildGPTLiveWSProtocolURL(projectEndpoint, agentName)
+	}
+	return buildVoiceWSProtocolURL(projectEndpoint, agentName)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -2651,7 +2670,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
-	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
+	baseEndpoint := buildVoiceAgentWSProtocolURL(projectEndpoint, agentObject.Name, va.SubProtocol)
 	if err := p.registerVoiceAgentEnvironmentVariables(
 		ctx,
 		serviceConfig,

@@ -1223,6 +1223,39 @@ func TestDocExamplesAreValid(t *testing.T) {
 	require.NotZero(t, checked, "no azure.ai.agent doc examples were found — is the extractor still working?")
 }
 
+func TestGPTLiveSchemaExampleIsValid(t *testing.T) {
+	t.Parallel()
+	root := extensionRoot(t)
+	path := filepath.Join(root, "schemas", "examples", "gpt-live.azure.yaml")
+	raw, err := os.ReadFile(path)
+	require.NoError(t, err)
+	example := docExample{file: "schemas/examples/gpt-live.azure.yaml", line: 1, content: string(raw)}
+	services := agentServicesInExample(t, example)
+	require.Len(t, services, 1)
+	schema := loadDocSchema(t, root)
+	for name, service := range services {
+		cfg := serviceConfigFromDoc(t, example, name, service)
+		_, _, found, _, err := AgentDefinitionFromService(cfg)
+		require.NoError(t, err)
+		require.True(t, found)
+		checkVocabulary(t, example, name, service, schema)
+	}
+
+	readme, err := os.ReadFile(filepath.Join(root, "README.md"))
+	require.NoError(t, err)
+	var readmeLive map[string]any
+	for _, candidate := range extractYAMLExamples("README.md", string(readme)) {
+		services := agentServicesInExample(t, candidate)
+		if service, ok := services["gpt-live-agent"]; ok {
+			readmeLive = service
+			break
+		}
+	}
+	require.NotNil(t, readmeLive, "README GPT Live example not found")
+	require.Equal(t, services["gpt-live-agent"], readmeLive,
+		"README and canonical GPT Live manifest must not drift")
+}
+
 // checkVocabulary asserts that every property the snippet declares is one azd
 // understands: a key azd core parses itself, or a property the extension's
 // schema declares — recursively, so neither an unsupported sibling of `config`

@@ -143,6 +143,7 @@ type AgentDefinitionInline struct {
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
 	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
+	SubProtocol        agent_yaml.VoiceSubProtocol         `json:"subProtocol,omitempty"`
 	Model              *agent_yaml.Model                   `json:"model,omitempty"`
 	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
 	ConversationEngine *agent_yaml.VoiceConversationEngine `json:"conversationEngine,omitempty"`
@@ -161,6 +162,7 @@ type AgentDefinitionInline struct {
 	MaxOutputTokens    any                                 `json:"maxOutputTokens,omitempty"`
 	Include            []string                            `json:"include,omitempty"`
 	Telephony          *agent_yaml.VoiceTelephony          `json:"telephony,omitempty"`
+	Delegation         *agent_yaml.LiveVoiceDelegation     `json:"delegation,omitempty"`
 }
 
 // voiceAgentDefinitionToInline projects a VoiceAgent into the inline definition
@@ -169,6 +171,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 	return AgentDefinitionInline{
 		AgentDefinition:    va.AgentDefinition,
 		ModelType:          va.ModelType,
+		SubProtocol:        va.SubProtocol,
 		Model:              va.Model,
 		TargetAgent:        va.TargetAgent,
 		ConversationEngine: va.ConversationEngine,
@@ -187,6 +190,8 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 		MaxOutputTokens:    va.MaxOutputTokens,
 		Include:            va.Include,
 		Telephony:          va.Telephony,
+		Delegation:         va.Delegation,
+		Policies:           va.Policies,
 	}
 }
 
@@ -195,6 +200,7 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
 		AgentDefinition:    d.AgentDefinition,
 		ModelType:          d.ModelType,
+		SubProtocol:        d.SubProtocol,
 		Model:              d.Model,
 		TargetAgent:        d.TargetAgent,
 		ConversationEngine: d.ConversationEngine,
@@ -213,6 +219,8 @@ func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 		MaxOutputTokens:    d.MaxOutputTokens,
 		Include:            d.Include,
 		Telephony:          d.Telephony,
+		Delegation:         d.Delegation,
+		Policies:           d.Policies,
 	}
 }
 
@@ -1038,6 +1046,34 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 		)
 	}
 	if len(inline.Policies) > 0 {
+		if inline.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			if len(inline.Policies) > 1 {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live supports at most one RAI policy",
+					"remove the extra policy entries",
+				)
+			}
+			policy := inline.Policies[0]
+			if policy.Type != agent_yaml.PolicyTypeRai || policy.RaiPolicyName == "" {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"GPT Live policies must contain one named rai_policy",
+					"set type to rai_policy and provide raiPolicyName",
+				)
+			}
+			if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest, err.Error(), "use a valid RAI policy name or ARM ID")
+			}
+			if policy.InvocationsModeration != nil {
+				return exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					"invocationsModeration is not supported for GPT Live",
+					"remove invocationsModeration from the RAI policy",
+				)
+			}
+			return validateDirectAgentDefinition(inline.toVoiceAgent())
+		}
 		for _, policy := range inline.Policies {
 			if policy.InvocationsModeration != nil {
 				return exterrors.Validation(
@@ -1249,6 +1285,7 @@ func VoiceAgentFromResolvedService(
 	if props == nil || len(props.GetFields()) == 0 {
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
+	_, rootRef := props.GetFields()[AgentDefinitionRefKey]
 	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
 	if err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
@@ -1259,6 +1296,12 @@ func VoiceAgentFromResolvedService(
 	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
 	if !agent_yaml.IsVoiceAgentKind(kind) {
 		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	if rootRef {
+		resolved, err = normalizeRootVoiceDefinition(resolved)
+		if err != nil {
+			return agent_yaml.VoiceAgent{}, false, err
+		}
 	}
 
 	var inline AgentDefinitionInline
@@ -1273,4 +1316,48 @@ func VoiceAgentFromResolvedService(
 		return agent_yaml.VoiceAgent{}, false, err
 	}
 	return inline.toVoiceAgent(), true, nil
+}
+
+func normalizeRootVoiceDefinition(resolved *structpb.Struct) (*structpb.Struct, error) {
+	values := resolved.AsMap()
+	aliases := map[string]string{
+		"model_type": "modelType", "sub_protocol": "subProtocol",
+		"target_agent": "targetAgent", "conversation_engine": "conversationEngine",
+		"structured_inputs": "structuredInputs", "output_modalities": "outputModalities",
+		"tool_choice": "toolChoice", "parallel_tool_calls": "parallelToolCalls",
+		"max_output_tokens": "maxOutputTokens",
+	}
+	for source, target := range aliases {
+		if value, found := values[source]; found {
+			if _, conflict := values[target]; conflict {
+				return nil, exterrors.Validation(
+					exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("voice agent definition contains both %q and %q", source, target),
+					"use snake_case in a root $ref definition and camelCase in inline azure.yaml authoring",
+				)
+			}
+			values[target] = value
+			delete(values, source)
+		}
+	}
+	if delegation, ok := values["delegation"].(map[string]any); ok {
+		for source, target := range map[string]string{"agent_name": "agentName", "agent_version": "agentVersion"} {
+			if value, found := delegation[source]; found {
+				delegation[target] = value
+				delete(delegation, source)
+			}
+		}
+		if responses, ok := delegation["responses"].(map[string]any); ok {
+			for source, target := range map[string]string{
+				"max_output_tokens": "maxOutputTokens", "parallel_tool_calls": "parallelToolCalls",
+				"service_tier": "serviceTier", "tool_choice": "toolChoice",
+			} {
+				if value, found := responses[source]; found {
+					responses[target] = value
+					delete(responses, source)
+				}
+			}
+		}
+	}
+	return structpb.NewStruct(values)
 }

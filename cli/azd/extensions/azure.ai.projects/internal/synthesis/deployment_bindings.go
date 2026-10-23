@@ -50,3 +50,43 @@ func EncodeDeploymentBindings(bindings map[string]string) (string, error) {
 	escaped := strings.ReplaceAll(string(data), "\\", "\\\\")
 	return strings.ReplaceAll(escaped, "\"", "\\\""), nil
 }
+
+// FindDeploymentBindingKey returns the declaration key in bindings that
+// case-insensitively matches name after trimming whitespace.
+func FindDeploymentBindingKey(bindings map[string]string, name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", false
+	}
+	for key := range bindings {
+		if strings.EqualFold(strings.TrimSpace(key), name) {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// LookupDeploymentBinding resolves a declaration name to its selected target
+// using case-insensitive, trimmed declaration-name matching.
+func LookupDeploymentBinding(bindings map[string]string, name string) (string, bool) {
+	key, ok := FindDeploymentBindingKey(bindings, name)
+	if !ok {
+		return "", false
+	}
+	return bindings[key], true
+}
+
+// ContainsDeploymentName returns whether names includes name using
+// case-insensitive, trimmed comparison.
+func ContainsDeploymentName(names []string, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, candidate := range names {
+		if strings.EqualFold(strings.TrimSpace(candidate), name) {
+			return true
+		}
+	}
+	return false
+}

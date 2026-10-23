@@ -232,11 +232,11 @@ func reconcileAdoptedDeploymentChoices(
 					"select an adopted model deployment: %w", promptErr,
 				)
 			}
-	index := int(prompt.GetValue())
-	if index < 0 || index >= len(choices) {
-		return "", false, nil, fmt.Errorf("invalid adopted deployment selection: %d", index)
-	}
-	choice := choices[index].GetValue()
+			index := int(prompt.GetValue())
+			if index < 0 || index >= len(choices) {
+				return "", false, nil, fmt.Errorf("invalid adopted deployment selection: %d", index)
+			}
+			choice := choices[index].GetValue()
 			switch {
 			case choice == "deploy":
 				synthesis.SetDeploymentBinding(bindings, expandedItem.Name, expandedItem.Name)

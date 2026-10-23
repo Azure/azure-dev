@@ -5,12 +5,85 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/stretchr/testify/require"
 )
+
+func TestCreateVoiceAgentAPIRequest_DefinitionGoldens(t *testing.T) {
+	t.Parallel()
+	speed := 1.1
+	parallel := true
+	tests := []struct {
+		name   string
+		build  func() (*agent_api.CreateAgentRequest, error)
+		golden string
+	}{
+		{
+			name: "managed",
+			build: func() (*agent_api.CreateAgentRequest, error) {
+				return CreateVoiceAgentAPIRequest(VoiceAgent{
+					AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "managed-voice"},
+					ModelType:       VoiceModelTypeManaged,
+					Model:           &Model{Id: "gpt-realtime"},
+					Audio: &VoiceAudio{Output: &VoiceAudioOutput{
+						Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)},
+						Speed:  &speed,
+					}},
+				})
+			},
+			golden: "managed.json",
+		},
+		{
+			name: "byom",
+			build: func() (*agent_api.CreateAgentRequest, error) {
+				return CreateVoiceAgentAPIRequest(VoiceAgent{
+					AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "byom-voice"},
+					ModelType:       VoiceModelTypeSelfDeployed,
+					Model:           &Model{Id: "realtime-deployment"},
+					Voice:           new("alloy"),
+					Audio: &VoiceAudio{
+						Input:  &VoiceAudioInput{Format: &VoiceAudioFormat{Type: "audio/pcmu"}},
+						Output: &VoiceAudioOutput{Format: &VoiceAudioFormat{Type: "audio/pcma"}},
+					},
+				})
+			},
+			golden: "byom.json",
+		},
+		{
+			name: "hosted wrapper",
+			build: func() (*agent_api.CreateAgentRequest, error) {
+				return CreateHostedVoiceAgentAPIRequest(VoiceAgent{
+					AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "hosted-wrapper"},
+					ConversationEngine: &VoiceConversationEngine{
+						Type: "hosted_agent", Name: "target-service",
+					},
+					Greeting:          map[string]any{"type": "template", "text": "Hello"},
+					StructuredInputs:  map[string]any{"tenant": map[string]any{"defaultValue": "contoso"}},
+					ParallelToolCalls: &parallel,
+					MaxOutputTokens:   1024,
+					Include:           []string{"item.input_audio_transcription.phrases"},
+				}, agent_api.VoiceTargetAgentReference{Name: "target-agent", Version: "7"})
+			},
+			golden: "hosted-wrapper.json",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := tt.build()
+			require.NoError(t, err)
+			actual, err := json.MarshalIndent(req.Definition, "", "  ")
+			require.NoError(t, err)
+			expected, err := os.ReadFile(filepath.Join("testdata", "voice-definition-goldens", tt.golden))
+			require.NoError(t, err)
+			require.JSONEq(t, string(expected), string(actual))
+		})
+	}
+}
 
 // ---------------------------------------------------------------------------
 // isOpenAIVoice / buildVoiceConfig
@@ -307,16 +380,40 @@ func TestCreateVoiceAgentAPIRequest_ExplicitOpenAIVoiceLowercasesName(t *testing
 
 func TestCreateVoiceAgentAPIRequest_RejectsInvalidAdvancedConfig(t *testing.T) {
 	t.Parallel()
-	parallelToolCalls := true
+	handoff := map[string]any{"target": "another-agent"}
 	agent := VoiceAgent{
-		AgentDefinition:   AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
-		Model:             &Model{Id: "gpt-realtime"},
-		ParallelToolCalls: &parallelToolCalls,
+		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-agent"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Handoff:         handoff,
 	}
 	_, err := CreateVoiceAgentAPIRequest(agent)
-	if err == nil || !strings.Contains(err.Error(), "parallelToolCalls is not currently supported") {
-		t.Fatalf("expected parallel_tool_calls validation error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "handoff is not supported by the GA voice agent API") {
+		t.Fatalf("expected handoff validation error, got: %v", err)
 	}
+}
+
+func TestCreateVoiceAgentAPIRequest_LegacyHandoffAndRateBoundaries(t *testing.T) {
+	t.Parallel()
+	blank := ""
+	base := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice-agent"},
+		Model:           &Model{Id: "gpt-realtime"},
+		Handoff:         map[string]any{},
+		Audio: &VoiceAudio{Output: &VoiceAudioOutput{Voice: &VoiceConfig{
+			Type: "openai", Name: "alloy", Rate: &blank,
+		}}},
+	}
+	_, err := CreateVoiceAgentAPIRequest(base)
+	require.NoError(t, err)
+
+	base.Handoff = map[string]any{"target": "agent"}
+	_, err = CreateVoiceAgentAPIRequest(base)
+	require.ErrorContains(t, err, "handoff is not supported")
+
+	base.Handoff = nil
+	base.Audio.Output.Voice.Rate = new("+10%")
+	_, err = CreateVoiceAgentAPIRequest(base)
+	require.ErrorContains(t, err, "use audio.output.speed")
 }
 
 func TestCreateVoiceAgentAPIRequest_DoesNotInheritPcmRateForG711Formats(t *testing.T) {
@@ -394,7 +491,6 @@ func TestCreateVoiceAgentAPIRequest_MarshalServiceWireShape(t *testing.T) {
 
 func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	t.Parallel()
-	inRate := 16000
 	outRate := 24000
 	threshold := 0.6
 	speechDurationMs := 120
@@ -405,8 +501,8 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	speed := 1.1
 	style := "cheerful"
 	pitch := "+0Hz"
-	rate := "+0%"
 	volume := "+0%"
+	parallelToolCalls := true
 	agent := VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindPromptVoice, Name: "voice-advanced"},
 		Model:           &Model{Id: "gpt-realtime"},
@@ -416,7 +512,7 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 		},
 		Audio: &VoiceAudio{
 			Input: &VoiceAudioInput{
-				Format:           &VoiceAudioFormat{Type: "audio/pcmu", Rate: &inRate},
+				Format:           &VoiceAudioFormat{Type: "audio/pcmu"},
 				NoiseReduction:   &VoiceNoiseReduction{Type: "near_field"},
 				EchoCancellation: map[string]any{"type": "server_echo_cancellation", "channels": 1},
 				TurnDetection: &VoiceTurnDetection{
@@ -437,18 +533,19 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: &outRate},
 				Voice: &VoiceConfig{
 					Type: "azure_standard", Name: "en-US-AvaNeural", Style: &style,
-					Pitch: &pitch, Rate: &rate, Locale: new("en-US"), Volume: &volume,
+					Pitch: &pitch, Locale: new("en-US"), Volume: &volume,
 				},
 				Speed: &speed,
 			},
 		},
-		OutputModalities: []string{"audio", "text"},
-		Tools:            []map[string]any{{"type": "system", "name": "end_conversation"}},
-		Avatar:           map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
-		Greeting:         map[string]any{"type": "template", "text": "Hello {{persona}}"},
-		ToolChoice:       "auto",
-		MaxOutputTokens:  "inf",
-		Include:          []string{"item.input_audio_transcription.phrases"},
+		OutputModalities:  []string{"audio", "text"},
+		Tools:             []map[string]any{{"type": "system", "name": "end_conversation"}},
+		Avatar:            map[string]any{"type": "video_avatar", "character": "lisa", "output_protocol": "webrtc"},
+		Greeting:          map[string]any{"type": "template", "text": "Hello {{persona}}"},
+		ToolChoice:        "auto",
+		ParallelToolCalls: &parallelToolCalls,
+		MaxOutputTokens:   "inf",
+		Include:           []string{"item.input_audio_transcription.phrases"},
 	}
 
 	req, err := CreateVoiceAgentAPIRequest(agent)
@@ -504,6 +601,9 @@ func TestCreateVoiceAgentAPIRequest_AdvancedSettingsWireShape(t *testing.T) {
 	}
 	if def["tool_choice"] != "auto" || def["max_output_tokens"] != "inf" {
 		t.Fatalf("response options not mapped: %#v", def)
+	}
+	if output["speed"] != speed || output["rate"] != nil {
+		t.Fatalf("output speed/rate not mapped to GA shape: %#v", output)
 	}
 	tools, ok := def["tools"].([]any)
 	if !ok {
@@ -636,6 +736,7 @@ func TestCreateHostedVoiceAgentAPIRequest_ConversationEngineWireShape(t *testing
 			Type: "hosted_agent",
 			Name: "voice-target",
 		},
+		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}
 	req, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{
 		Name:    "deployed-target",
@@ -667,6 +768,7 @@ func TestCreateHostedVoiceAgentAPIRequestRequiresResolvedTarget(t *testing.T) {
 			Type: "hosted_agent",
 			Name: "voice-target",
 		},
+		Greeting: map[string]any{"type": "template", "text": "Hello"},
 	}
 	if _, err := CreateHostedVoiceAgentAPIRequest(agent, agent_api.VoiceTargetAgentReference{}); err == nil {
 		t.Fatal("expected missing resolved target error")

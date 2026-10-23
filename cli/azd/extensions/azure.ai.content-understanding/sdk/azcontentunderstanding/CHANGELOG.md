@@ -4,6 +4,6 @@
 
 ### Features Added
 
-- Initial unpublished prototype for Content Understanding JSON/binary analysis,
-  inline analysis, analyzer lifecycle/copy, and service defaults.
+- Add Content Understanding JSON/binary analysis, inline analysis, analyzer
+  management and copying, and service-default operations.
 - Preserve raw analysis envelopes and usage without requiring a complete model hierarchy.

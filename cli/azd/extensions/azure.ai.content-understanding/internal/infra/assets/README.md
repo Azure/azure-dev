@@ -9,14 +9,17 @@ analyzers. The template also configures Content Understanding defaults that map
 model names to deployment names. It is purpose-built as a launchpad for
 **Azure Content Understanding in Foundry Tools** workflows and the
 native Go `azd ai cu` extension.
+
 ```sh
+azd auth login
 azd ai cu infra generate --output-dir provision --environment dev --models none
 cd provision
 azd up
 ```
 
-That's it. No app code, no Container Apps, no AI Search — just the bits you
-need to start authoring analyzers.
+The generated project contains infrastructure and postprovision hooks, not an
+application. `--models none` skips optional model deployments; use
+`--models recommended` or an interactive selection for generative AI workflows.
 
 ## Permissions required for `azd up`
 
@@ -36,7 +39,7 @@ The native extension is Entra-only, including projectless commands. Role assignm
 `false`; pass `--assign-roles`
 when generating the project.
 
-With Entra authentication, CU CLI also requires **Cognitive Services User** on
+With Entra authentication, `azd ai cu` also requires **Cognitive Services User** on
 the Microsoft Foundry resource to configure defaults and create, manage, and run
 analyzers. This is data-plane access and is not included in Owner or
 Contributor.
@@ -49,7 +52,7 @@ Contributor.
 | `Microsoft.CognitiveServices/accounts` (kind `AIServices`) | Microsoft Foundry resource that exposes Content Understanding and other Foundry Tools through one endpoint |
 | `Microsoft.CognitiveServices/accounts/projects` | Foundry project (defaults to `proj-<env>`) |
 | `Microsoft.CognitiveServices/accounts/deployments` | Models selected from the live Content Understanding and Microsoft Foundry resource catalogs, or none |
-| Role assignment on the calling user | `Cognitive Services User` — permits CU CLI to configure defaults and create, manage, and run analyzers with Entra authentication |
+| Optional role assignment on the calling identity | `Cognitive Services User`, only when role assignment is enabled for a new resource |
 
 The resource endpoint is `https://<resource-name>.services.ai.azure.com/` — the same
 host that serves `/contentunderstanding/...`, `/openai/...`, and the Foundry
@@ -106,32 +109,53 @@ are reported without blocking azd environment configuration. Resolve the model
 deployment issue and rerun `azd up`; `prebuilt-digitalParse`, `prebuilt-read`,
 and `prebuilt-layout` remain available without language or embeddings models.
 
+Successful model setup is recorded in the selected environment's
+`cu.modelSetupComplete` configuration setting. The legacy
+`CU_MODEL_SETUP_COMPLETE` environment value is not the completion marker used
+by this extension.
+
 Generated projects use the `_postprovision-v1` contract. Check extension release
 notes before upgrading and regenerate the project if a later release does not
 retain that contract. The hook does not require Python or the standalone `cu` CLI.
 
 ## Auto-configuring the azd environment
 
-After live model setup, the post-provision hook automatically runs:
+After live model setup, the post-provision hook saves `CU_ENDPOINT`, sets
+`cu.defaultAnalyzer` to `prebuilt-layout`, and saves available model mappings
+under `cu.modelDeployments`. Inspect the selected environment and check readiness:
 
 ```sh
-azd env set CU_ENDPOINT <FOUNDRY_ENDPOINT>
-azd env config set cu.defaultAnalyzer '"prebuilt-layout"'
+azd env get-values
+azd env config get cu
 azd ai cu doctor
-
-# safe first sanity check (no language or embeddings model required):
-azd ai cu analyze <file> --analyzer prebuilt-layout
-
-# When model deployments and Content Understanding defaults are ready:
-azd ai cu analyzer schema create --from-sample <file> --output-file schema.json
-azd ai cu analyzer create --name my-analyzer --schema schema.json
-azd ai cu analyze <file> --analyzer my-analyzer
 ```
 
-so the freshly provisioned resource is available in the selected azd environment
-immediately after `azd up`, with `prebuilt-layout` configured as the default
-analyzer. If CU configuration already exists, the hook preserves it and explains
-how to rerun `azd ai cu infra generate --force` before `azd up` to replace values.
+Download the public sample invoice for a first check that needs no language or
+embeddings model:
+
+```sh
+curl --fail --location --output invoice.pdf \
+  https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
+azd ai cu analyze --file invoice.pdf --analyzer prebuilt-layout
+```
+
+When model deployments and Content Understanding defaults are ready, generate a
+schema, review and edit its fields and model mappings, then validate and create
+a custom analyzer:
+
+```sh
+azd ai cu analyzer schema create --name invoice_v1 --from-sample invoice.pdf --output-file invoice-schema.json
+
+# Review and edit invoice-schema.json before continuing.
+azd ai cu analyzer validate --schema invoice-schema.json --spec --strict
+azd ai cu analyzer create --name invoice_v1 --schema invoice-schema.json
+azd ai cu analyze --file invoice.pdf --analyzer invoice_v1
+```
+
+Custom analyzer IDs use letters, numbers, or underscores, not hyphens.
+If CU configuration already exists, the hook preserves it. Regenerate the project
+with `azd ai cu infra generate --force` only when you intend to replace managed
+files and configuration.
 
 The post-provision hook only prints the custom-analyzer workflow after it
 verifies succeeded chat completion and embeddings model deployments and
@@ -148,9 +172,9 @@ model setup; use `azd env set CU_MODEL_SELECTION none` to skip model deployments
 azd down --purge
 ```
 
-The `--purge` flag is important — Microsoft Foundry resource names are
-soft-deleted for 48h after `azd down`, and a follow-up `azd up` in the same
-environment would otherwise fail.
+For resources created by this project, `--purge` removes soft-deleted resources
+so their names can be reused. Review the deployment and selected model resources
+before cleanup, especially when the project uses an existing account.
 
 ## Outputs
 
@@ -159,16 +183,16 @@ After `azd up`, `azd env get-values` exposes:
 | Variable | Notes |
 | --- | --- |
 | `FOUNDRY_ENDPOINT` | `https://<resource-name>.services.ai.azure.com/` |
-| `FOUNDRY_EXISTING_ENDPOINT` | Optional existing endpoint to reuse instead of provisioning a new resource |
-| `FOUNDRY_EXISTING_RESOURCE_GROUP` | Resource group for `FOUNDRY_EXISTING_ENDPOINT` |
-| `FOUNDRY_PROJECT_ENDPOINT` | Project-scoped URL (`/api/projects/<project>`) |
+| `FOUNDRY_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
 | `FOUNDRY_RESOURCE_NAME` | Account name (also the custom subdomain) |
-| `FOUNDRY_PROJECT_NAME` | Project name |
+| `FOUNDRY_PROJECT_NAME` | Project name when created by this deployment |
 | `CU_ENDPOINT` | Alias of `FOUNDRY_ENDPOINT` for clarity |
-| `MODEL_DEPLOYMENTS` | JSON array describing each deployment |
-| `CU_API_VERSION` | API version used for live `prebuilt-document` model discovery |
-| `CU_MODEL_SELECTION` | `prompt`, `recommended`, `none`, or explicit model selectors |
-| `CU_MODEL_SETUP_COMPLETE` | Prevents repeated prompting after successful setup |
+| `MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
+
+Generation also saves inputs such as `CU_API_VERSION`, `CU_MODEL_SELECTION`,
+and any existing-resource selectors in the azd environment. These are not Bicep
+outputs. Use `azd env config get cu` to inspect `defaultAnalyzer`,
+`modelDeployments`, and the `modelSetupComplete` marker set by successful setup.
 
 ## Layout
 
@@ -185,6 +209,8 @@ After `azd up`, `azd env get-values` exposes:
     └── postprovision.sh        # POSIX live model setup + azd environment config
 ```
 
-## Status
+## More information
 
-Experimental / personal starter. Not yet on awesome-azd.
+- [Content Understanding documentation](https://learn.microsoft.com/azure/ai-services/content-understanding/)
+- [Prebuilt analyzers](https://learn.microsoft.com/azure/ai-services/content-understanding/concepts/prebuilt-analyzers)
+- [Azure Developer CLI documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/)

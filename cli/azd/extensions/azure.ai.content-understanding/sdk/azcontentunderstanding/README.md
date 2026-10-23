@@ -1,125 +1,74 @@
-# Azure AI Content Understanding client prototype for Go
+# Content Understanding Go client for the azd extension
 
-**Prototype. Not ready for review or production use.** This module has not been
-released. Its API is intentionally small and may change without compatibility
-guarantees.
+This local Go module supplies the Content Understanding client used by
+`azd ai cu`. It is an extension dependency, not a separately published package.
+For installation, authentication, and command examples, see the
+[extension README](../../README.md).
 
-This handwritten client explores Content Understanding analysis, analyzer
-creation/listing/deletion/copy, and model deployment defaults. Wire contracts
-are based on `Azure/azure-rest-api-specs` commit
-`ca6afc6f24a2ef9ed210a164504718507b2e3659`, under
-`specification/ai/ContentUnderstanding`. It is not a complete service SDK and
-does not include a formatter, resource provisioning, or command-line policy.
+## Client behavior
 
-## Authentication and analysis
+The client supports JSON and binary analysis, asynchronous and preview inline
+analysis, analyzer management and copying, and service defaults. The default
+API version is `2025-11-01`; inline analysis requires `2026-06-01-preview`.
 
-Supply a resource endpoint such as `https://<resource>.services.ai.azure.com`
-and an `azcore.TokenCredential`. Applications can use `azidentity`; the client
-does not discover credentials or read application configuration.
+The extension supplies an azd-backed Microsoft Entra credential. It owns command
+configuration, confirmations, file access, model discovery, and output formatting.
+SDK credential constructors do not change the extension's Entra-only
+authentication contract.
 
-```go
-credential, err := azidentity.NewDefaultAzureCredential(nil)
-if err != nil {
-    return err
-}
-client, err := azcontentunderstanding.NewClient(endpoint, credential, nil)
-if err != nil {
-    return err
-}
-poller, err := client.BeginAnalyze(ctx, "prebuilt-layout",
-    azcontentunderstanding.AnalyzeRequest{
-        Inputs: []azcontentunderstanding.AnalysisInput{{URL: documentURL}},
-    })
-if err != nil {
-    return err
-}
-response, err := poller.PollUntilDone(ctx,
-    &runtime.PollUntilDoneOptions{Frequency: time.Second})
-if err != nil {
-    return err
-}
-// response.Result is the analysis JSON; response.Usage is the usage subtree.
-// response.RawJSON is the complete service envelope, including unknown fields.
+- Responses preserve complete JSON definitions and terminal envelopes, including
+  unknown fields, exact numbers, and usage.
+- Binary input requires an `io.ReadSeekCloser`; the caller retains ownership and
+  must keep it open until submission completes.
+- Analyzer create and copy do not replace an existing analyzer. The extension
+  owns destination checks and cross-resource authorization orchestration.
+- Reads and polling use the configured retry policy and honor cancellation.
+  Write submissions are not automatically retried or replayed after an
+  authentication challenge.
+- Service and operation failures preserve typed status and safe diagnostic codes
+  without exposing raw service messages.
+
+See [SDK integration requirements](AZD_PROVENANCE.md) for the behavior to verify
+when changing the SDK dependency.
+
+## Offline tests
+
+Run from this module directory:
+
+```bash
+go test -race ./... -count=1
+go fix ./...
+golangci-lint run ./...
 ```
 
-Resource keys are supported through `NewClientWithKeyCredential`.
-`ClientOptions.APIVersion` defaults to `2025-11-01`. Select
-`2026-06-01-preview` for `AnalyzeInline` and `AnalyzeBinaryInline`, which do
-not poll. Analysis requests use `codePoint` span offsets: Go callers must
-use rune-aware rather than byte slicing.
+Tests in [tests/unit/](tests/unit/) use the public client API with local HTTPS
+servers and fake credentials. They do not require Azure sign-in or make live
+service calls. Extension adapter and command tests remain under the parent
+extension's [internal/](../../internal/) directory.
 
-Binary methods require an `io.ReadSeekCloser` so the pipeline can determine the
-content length without buffering the input; callers
-can use `streaming.NopCloser` from `azcore/streaming` with an in-memory reader. Do not close the stream
-until the submission returns. No input files are opened by the client.
-Pollers use azcore's default interval unless the caller sets `Frequency`.
-One second is suitable for interactive use; service retry instructions and
-context deadlines take precedence.
+The extension's CI runs tests and lint for both Go modules.
 
-`Analyzer.RawJSON` preserves the complete definition. Supply a JSON object to
-`BeginCreateAnalyzer`; create/copy do not replace existing analyzers. The
-application owns sorting, dependency preflight and other lifecycle policy.
-Create/copy return `AnalyzerResponse`, which retains the terminal envelope and
-usage. When a succeeded operation has no embedded result, `Analyzer` is empty;
-the caller can retrieve the final resource with `GetAnalyzer`.
-Cross-resource copies require a source-side authorization grant followed by
-a destination-side copy request.
+## Optional live tests
 
-`UpdateDefaults` accepts a map of string pointers: nil removes a mapping.
-It does not populate aliases or merge application settings automatically.
-Service errors retain `*azcore.ResponseError` status/code information. Inline
-HTTP 200 responses with failed operation status return an error.
-Terminal operation failures return `*OperationError` with status, validated
-service codes, and sanitized nested diagnostic codes. They unwrap to
-`*azcore.ResponseError`, preserving the actual HTTP status even when it is 200.
-Operation IDs are checked against the operation location when present.
-Write submissions are not automatically retried or replayed after an
-authentication challenge; reads and polling retain the configured retry policy.
+Live tests in [tests/live/](tests/live/) are guarded by the `live` build tag and
+are not part of the ordinary test run. These SDK developer tests use Azure CLI
+credentials, independently of the extension's azd authentication.
 
-## Validation
+Requirements:
 
-### Source layout
+- Azure CLI sign-in with `az login`.
+- `CONTENTUNDERSTANDING_ENDPOINT` for the test resource.
+- `CONTENTUNDERSTANDING_RESOURCE_ID` and `CONTENTUNDERSTANDING_REGION` for
+  authorization checks against the same resource.
+- Existing supported model deployments and a `gpt-5.2` completion mapping.
 
-The module root contains the reusable client and models with no test-only source.
-Tests live in separate subdirectories and consume only the public SDK API:
+Only run with authorization to use the designated resource:
 
-```text
-azcontentunderstanding/
-  *.go                  # reusable client, operations and models
-  go.mod
-  go.sum
-  tests/
-    unit/               # offline HTTP contract tests
-    live/               # opt-in service tests, guarded by the live build tag
-```
-
-The SDK import path is unchanged. Reusing runtime source does not require copying
-the tests directory. All directories share one Go module; there are no nested
-test modules or additional runtime dependencies.
-
-Offline:
-
-```sh
-go test -race -coverpkg=. ./tests/unit/...
-go vet -tags live ./...
-go build ./...
-```
-
-Live tests require Azure CLI login, `CONTENTUNDERSTANDING_ENDPOINT`, and the
-same resource's `CONTENTUNDERSTANDING_RESOURCE_ID` and
-`CONTENTUNDERSTANDING_REGION` for authorization verification:
-
-```sh
+```bash
 go test -tags live -run TestLive -count=1 -timeout 30m -v ./tests/live/...
 ```
 
-These tests incur service charges, submit a public sample invoice, and create,
-copy and delete uniquely named analyzers, and verify that the service rejects
-a same-resource authorization request for a test-owned analyzer. The resource must already have the
-`gpt-5.2` completion mapping configured. They do not modify resource defaults.
-Credentials and endpoint values are not recorded in this repository.
-
-Successful cross-resource authorization/copy and defaults mutation have offline contract
-coverage; the default live suite does not mutate shared defaults or assume
-access to a second resource. Passing it alone does not establish those live
-contracts. There is no promise of complete API or SDK feature parity.
+These tests incur service charges, analyze a public sample invoice, and create,
+copy, and delete uniquely named test analyzers. They do not modify shared
+resource defaults or establish cross-resource copy behavior. Passing SDK live
+tests does not establish installed-host or release readiness for the extension.

@@ -33,7 +33,7 @@
     "hashes": {
       ".azure/config.json": "af4828d45c4063f3219e00ff63aa5bbeb2f152e7f988428d53b0a014b9f4a6d4",
       ".azure/dev/.env": "b19cbf5b83950292d79c8676901a3a32987012103ff7ba2b341ac1fbac3abaab",
-      "README.md": "c3ea1ccc931339614f5b07f7135a17e1a31a5fbe0cd602be725a8b6c0cec938b",
+      "README.md": "7d69e999fb555d91ecb0e1f81ccb749fe1502b5a696fe29ee532ab9180ebc4bc",
       "azure.yaml": "1d88ddc6e2fecf9e4ac03e277c401a7db6417c43dee3b4fc2d7b3a4a719f73d8",
       "hooks/postprovision.ps1": "b711730b50b36d2213f1a727c63f9250ce0c119151a349cd9b79145fdddab519",
       "hooks/postprovision.sh": "79034239fd255cfefae4e8b6f7da26ee8da5e1ce4964db9adb31dcfde362e009",

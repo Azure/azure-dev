@@ -18,15 +18,7 @@ overrides:
       - projectless
   - filename: "README.md"
     words:
-      - Btrfs
-      - tmpfs
-      - CODEOWNERS
-      - chienyuanchang
-      - cuclient
-      - multimodal
-      - contentunderstanding
       - projectless
-      - fnmatch
   - filename: "sdk/azcontentunderstanding/polling.go"
     words:
       - notstarted

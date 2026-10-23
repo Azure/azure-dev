@@ -1,22 +1,10 @@
-# Local Content Understanding Go SDK
+# Content Understanding SDK integration
 
-This module is copied from
-[`Azure/azure-sdk-for-go#27810`](https://github.com/Azure/azure-sdk-for-go/pull/27810)
-at commit `8ff358e8d3410d9bc96b9ed79487a0cad0252fac`.
+The `azd ai cu` extension uses this local SDK through its parent module's
+`replace` directive. Before switching to a published package, verify the
+following behavior with the extension's adapter and command tests.
 
-It is intentionally consumed through the parent extension module's relative
-`replace` directive while the Content Understanding Go SDK is unpublished.
-Ship and validate `azd ai cu` first. Track local runtime changes as candidate
-back-ports to the SDK pull request after the extension ships.
-
-The parent module selects its existing Azure SDK dependency versions. In
-particular, it continues to use `azcore` v1.23.3; the copied module does not
-require an `azcore` upgrade or downgrade.
-The copied module's Go directive is aligned with the repository's Go 1.26.4 baseline.
-Source and unit-test line wrapping follows the extension's 125-character lint limit;
-this formatting does not change SDK behavior or test payloads.
-
-## Local changes to disposition after azd ships
+## Required client behavior
 
 - Preserve analyzer create/copy terminal envelopes and operation-level usage.
 - Retain succeeded envelopes without embedded analyzer results so the adapter
@@ -39,10 +27,11 @@ this formatting does not change SDK behavior or test payloads.
   submissions while preserving configured request timeouts and retaining
   bounded retries for reads and polling.
 
-The adapter separately enforces the existing CLI continuation path/API-version
+## Extension responsibilities
+
+The adapter separately enforces the CLI continuation path/API-version
 contract using a shared link validator. Its pipeline policy also enforces the
 extension's configured retry and attempt-timeout bounds against caller context
-overrides. These are adapter policies, not additional patches to this SDK copy.
+overrides.
 Analyzer/analysis wire, polling and command integration tests use `SDKTransport`;
-the obsolete parallel REST implementation and its helper-only tests have been
-removed. This does not claim generic SDK resume-token parity.
+SDK resume-token support is not part of the CLI contract.

@@ -614,6 +614,12 @@ overrides:
       - southeastasia
       - uksouth
       - westeurope
+  - filename: extensions/azure.ai.content-understanding/cu-rest-client/*.go
+    words:
+      - curestclient
+  - filename: extensions/azure.ai.content-understanding/internal/cuclient/rest.go
+    words:
+      - restclient
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

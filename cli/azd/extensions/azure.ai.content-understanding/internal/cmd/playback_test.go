@@ -382,7 +382,7 @@ func newRecordedCommand(t *testing.T, transport *recordedTransport, analyzer str
 		require.Equal(t, "https://sanitized.services.ai.azure.com", options.Endpoint)
 		require.Equal(t, cuclient.DefaultAPIVersion, options.APIVersion)
 		require.Equal(t, analyzer, options.DefaultAnalyzer)
-		client, err := cuclient.NewSDKTransport(options.Endpoint, credential,
+		client, err := cuclient.NewRESTTransport(options.Endpoint, credential,
 			&cuclient.TransportOptions{APIVersion: options.APIVersion, Transport: transport})
 		if err != nil {
 			return nil, err
@@ -493,14 +493,14 @@ func TestRecordedTransportRejectsUnexpectedRequests(t *testing.T) {
 	fixture := loadRecordedFixture(t, "defaults_get")
 	transport := &recordedTransport{fixture: fixture}
 	require.ErrorContains(t, transport.complete(), "unconsumed")
-	client, err := cuclient.NewSDKTransport(server.URL, &recordedCredential{},
+	client, err := cuclient.NewRESTTransport(server.URL, &recordedCredential{},
 		&cuclient.TransportOptions{Transport: transport})
 	require.NoError(t, err)
 	_, err = client.GetDefaults(t.Context())
 	require.Error(t, err)
-	assert.Zero(t, hits.Load(), "the production SDK cannot fall back to network on playback mismatch")
+	assert.Zero(t, hits.Load(), "the production REST client cannot fall back to network on playback mismatch")
 	transport = &recordedTransport{fixture: fixture}
-	client, err = cuclient.NewSDKTransport("https://sanitized.services.ai.azure.com", &recordedCredential{},
+	client, err = cuclient.NewRESTTransport("https://sanitized.services.ai.azure.com", &recordedCredential{},
 		&cuclient.TransportOptions{Transport: transport})
 	require.NoError(t, err)
 	_, err = client.GetDefaults(t.Context())

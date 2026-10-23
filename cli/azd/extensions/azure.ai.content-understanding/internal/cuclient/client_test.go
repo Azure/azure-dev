@@ -27,7 +27,7 @@ func TestContractDependencyBoundary(t *testing.T) {
 			path, err := strconv.Unquote(spec.Path.Value)
 			require.NoError(t, err)
 			assert.NotContains(t, strings.Split(path, "/")[0], ".",
-				"domain contract %s must not import SDK, host, or transport types", name)
+				"domain contract %s must not import client, host, or transport types", name)
 		}
 	}
 	client := reflect.TypeFor[cuclient.Client]()

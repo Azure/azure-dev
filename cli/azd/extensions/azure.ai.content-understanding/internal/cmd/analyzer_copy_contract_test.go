@@ -130,7 +130,7 @@ func executeAnalyzerCopy(
 		}
 		require.Equal(t, "https://sanitized.services.ai.azure.com", options.Endpoint)
 		require.Equal(t, cuclient.DefaultAPIVersion, options.APIVersion)
-		client, err := cuclient.NewSDKTransport(options.Endpoint, credential,
+		client, err := cuclient.NewRESTTransport(options.Endpoint, credential,
 			&cuclient.TransportOptions{APIVersion: options.APIVersion, Transport: transport})
 		if err != nil {
 			return nil, err

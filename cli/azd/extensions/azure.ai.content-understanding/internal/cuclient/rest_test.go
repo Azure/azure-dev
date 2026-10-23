@@ -17,11 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newSDKTestTransport(
+func newRESTTransport(
 	t *testing.T, apiVersion string, fn transportFunc,
-) *SDKTransport {
+) *RESTTransport {
 	t.Helper()
-	client, err := NewSDKTransport("https://resource.test/contentunderstanding", &testCredential{}, &TransportOptions{
+	client, err := NewRESTTransport("https://resource.test/contentunderstanding", &testCredential{}, &TransportOptions{
 		APIVersion: apiVersion,
 		Transport:  fn,
 	})
@@ -29,7 +29,7 @@ func newSDKTestTransport(
 	return client
 }
 
-func sdkResponse(request *http.Request, status int, body string) *http.Response {
+func restResponse(request *http.Request, status int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: status,
 		Status:     http.StatusText(status),
@@ -39,52 +39,54 @@ func sdkResponse(request *http.Request, status int, body string) *http.Response 
 	}
 }
 
-func TestSDKTransportContract(t *testing.T) {
+func TestRESTTransportContract(t *testing.T) {
 	var listCalls int
-	client := newSDKTestTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, PreviewAPIVersion, func(
+		request *http.Request,
+	) (*http.Response, error) {
 		assert.Equal(t, PreviewAPIVersion, request.URL.Query().Get("api-version"))
 		assert.Equal(t, "Bearer private-access-token", request.Header.Get("Authorization"))
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/contentunderstanding/analyzers":
 			listCalls++
 			if listCalls == 1 {
-				return sdkResponse(request, http.StatusOK,
+				return restResponse(request, http.StatusOK,
 					`{"value":[{"analyzerId":"one","status":"ready"}],`+
 						`"nextLink":"https://resource.test/contentunderstanding/analyzers?skip=1"}`), nil
 			}
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"value":[{"analyzerId":"two","status":"ready"}]}`), nil
 		case request.Method == http.MethodGet && request.URL.Path == "/contentunderstanding/analyzers/one":
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"analyzerId":"one","status":"ready","description":"example","future":true}`), nil
 		case request.Method == http.MethodPut && request.URL.Path == "/contentunderstanding/analyzers/created":
 			assert.Equal(t, "false", request.URL.Query().Get("allowReplace"))
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"status":"Succeeded","result":{"analyzerId":"created","status":"ready"},`+
 					`"usage":{"documentPagesMinimal":0}}`), nil
 		case request.Method == http.MethodDelete && request.URL.Path == "/contentunderstanding/analyzers/one":
-			return sdkResponse(request, http.StatusNoContent, ""), nil
+			return restResponse(request, http.StatusNoContent, ""), nil
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/one:grantCopyAuthorization":
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"source":"source","targetAzureResourceId":"/target","expiresAt":"2026-10-20T12:00:00Z"}`), nil
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/copied:copy":
 			assert.Equal(t, "false", request.URL.Query().Get("allowReplace"))
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"status":"Succeeded","result":{"analyzerId":"copied","status":"ready"},`+
 					`"usage":{"tokens":{"model":4}}}`), nil
 		case request.Method == http.MethodGet && request.URL.Path == "/contentunderstanding/defaults":
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"modelDeployments":{"gpt-5.2":"deployment"},"future":true}`), nil
 		case request.Method == http.MethodPatch && request.URL.Path == "/contentunderstanding/defaults":
 			assert.Equal(t, "application/merge-patch+json", request.Header.Get("Content-Type"))
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"modelDeployments":{"gpt-5.2":"updated"}}`), nil
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/one:analyze":
 			assert.Equal(t, "codePoint", request.URL.Query().Get("stringEncoding"))
-			response := sdkResponse(request, http.StatusAccepted,
+			response := restResponse(request, http.StatusAccepted,
 				`{"id":"op","status":"Succeeded","result":{"analyzerId":"one",`+
 					`"apiVersion":"2026-06-01-preview","contents":[{"kind":"document",`+
 					`"mimeType":"text/markdown","fields":{"large":9007199254740993}}]},`+
@@ -95,12 +97,12 @@ func TestSDKTransportContract(t *testing.T) {
 		case request.Method == http.MethodPost &&
 			request.URL.Path == "/contentunderstanding/analyzers/one:analyzeBinaryInline":
 			assert.Equal(t, "codePoint", request.URL.Query().Get("stringEncoding"))
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"id":"op","status":"Succeeded","result":{"analyzerId":"one",`+
 					`"apiVersion":"2026-06-01-preview","contents":[{"kind":"document",`+
 					`"mimeType":"text/markdown","fields":{}}]}}`), nil
 		default:
-			t.Fatalf("unexpected SDK request: %s %s", request.Method, request.URL.String())
+			t.Fatalf("unexpected client request: %s %s", request.Method, request.URL.String())
 			return nil, nil
 		}
 	})
@@ -152,10 +154,10 @@ func TestSDKTransportContract(t *testing.T) {
 	assert.False(t, binary.closed, "the adapter must not close caller-owned input")
 }
 
-func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
+func TestRESTTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 	t.Run("nested service code is safe", func(t *testing.T) {
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
-			return sdkResponse(request, http.StatusBadRequest,
+		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+			return restResponse(request, http.StatusBadRequest,
 				`{"error":{"code":"InvalidRequest","message":"private value",`+
 					`"innererror":{"code":"DefaultsNotSet"}}}`), nil
 		})
@@ -168,9 +170,9 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 
 	t.Run("writes are not replayed", func(t *testing.T) {
 		var calls int
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 			calls++
-			return sdkResponse(request, http.StatusInternalServerError,
+			return restResponse(request, http.StatusInternalServerError,
 				`{"error":{"code":"ServiceUnavailable"}}`), nil
 		})
 		_, err := client.CreateAnalyzer(t.Context(), CreateAnalyzerRequest{
@@ -182,9 +184,9 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 
 	t.Run("authentication challenges do not replay writes", func(t *testing.T) {
 		var calls int
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 			calls++
-			response := sdkResponse(request, http.StatusUnauthorized,
+			response := restResponse(request, http.StatusUnauthorized,
 				`{"error":{"code":"AuthenticationFailed"}}`)
 			response.Header.Set("WWW-Authenticate",
 				`Bearer error="insufficient_claims", claims="e30="`)
@@ -199,14 +201,14 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 
 	t.Run("reads retain bounded retry", func(t *testing.T) {
 		var calls int
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+		client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 			calls++
 			if calls == 1 {
-				return sdkResponse(request, http.StatusInternalServerError,
+				return restResponse(request, http.StatusInternalServerError,
 					`{"error":{"code":"ServiceUnavailable"}}`), nil
 			}
 
-			return sdkResponse(request, http.StatusOK,
+			return restResponse(request, http.StatusOK,
 				`{"analyzerId":"one","status":"ready"}`), nil
 		})
 		_, err := client.GetAnalyzer(context.Background(), "one")
@@ -215,10 +217,10 @@ func TestSDKTransportSafeErrorsAndRetryPolicy(t *testing.T) {
 	})
 }
 
-func TestSDKTransportCallerCancellation(t *testing.T) {
+func TestRESTTransportCallerCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 		return nil, request.Context().Err()
 	})
 	_, err := client.Analyze(ctx, AnalyzeRequest{
@@ -230,7 +232,7 @@ func TestSDKTransportCallerCancellation(t *testing.T) {
 	assert.True(t, errors.Is(err, context.Canceled))
 }
 
-func TestSDKTransportTerminalOperationErrors(t *testing.T) {
+func TestRESTTransportTerminalOperationErrors(t *testing.T) {
 	for _, mode := range []string{"analysis", "inline", "create", "copy"} {
 		for _, tc := range []struct {
 			status string
@@ -251,14 +253,14 @@ func TestSDKTransportTerminalOperationErrors(t *testing.T) {
 				}
 				t.Run(fmt.Sprintf("%s/%s/%s/polled=%t", mode, tc.status, tc.code, polled), func(t *testing.T) {
 					var calls int
-					client := newSDKTestTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
+					client := newRESTTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
 						calls++
 						if polled && calls == 1 {
 							status := http.StatusOK
 							if mode == "analysis" {
 								status = http.StatusAccepted
 							}
-							response := sdkResponse(request, status, `{"status":"Running"}`)
+							response := restResponse(request, status, `{"status":"Running"}`)
 							location := "https://resource.test/contentunderstanding/analyzers/one/operations/op"
 							if mode == "analysis" {
 								location = "https://resource.test/contentunderstanding/analyzerResults/op"
@@ -274,7 +276,7 @@ func TestSDKTransportTerminalOperationErrors(t *testing.T) {
 						if mode == "analysis" && !polled {
 							status = http.StatusAccepted
 						}
-						response := sdkResponse(request, status, payload)
+						response := restResponse(request, status, payload)
 						if mode == "analysis" && !polled {
 							response.Header.Set("Operation-Location",
 								"https://resource.test/contentunderstanding/analyzerResults/op")

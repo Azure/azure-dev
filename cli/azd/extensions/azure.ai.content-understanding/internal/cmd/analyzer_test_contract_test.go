@@ -47,7 +47,7 @@ func (o *analysisRequestObserver) Analyze(
 	o.calls++
 	o.request = request
 	if request.Input.Body == nil {
-		return cuclient.AnalyzeResponse{}, errors.New("Synthetic sample did not reach the SDK as binary input.")
+		return cuclient.AnalyzeResponse{}, errors.New("Synthetic sample did not reach the REST client as binary input.")
 	}
 	position, err := request.Input.Body.Seek(0, io.SeekCurrent)
 	if err != nil {
@@ -121,7 +121,7 @@ func executeAnalyzerTestContract(
 		require.Equal(t, "invoice-v1", options.DefaultAnalyzer)
 		require.Equal(t, "https://sanitized.services.ai.azure.com", options.Endpoint)
 		require.Equal(t, cuclient.DefaultAPIVersion, options.APIVersion)
-		client, err := cuclient.NewSDKTransport(options.Endpoint, credential,
+		client, err := cuclient.NewRESTTransport(options.Endpoint, credential,
 			&cuclient.TransportOptions{APIVersion: options.APIVersion, Transport: transport})
 		if err != nil {
 			return nil, err

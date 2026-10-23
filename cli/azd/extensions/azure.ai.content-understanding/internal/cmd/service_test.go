@@ -31,7 +31,7 @@ func (s *confirmServer) Confirm(
 	return s.confirm(ctx, request)
 }
 
-func TestServiceSessionUsesHostAndSDKClient(t *testing.T) {
+func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 	for _, mode := range []string{"yes", "no", "missing decision", "host failure"} {
 		t.Run(mode, func(t *testing.T) {
 			startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
@@ -68,7 +68,7 @@ func TestServiceSessionUsesHostAndSDKClient(t *testing.T) {
 			})
 			require.NoError(t, err)
 			defer session.close()
-			assert.IsType(t, &cuclient.SDKTransport{}, session.client)
+			assert.IsType(t, &cuclient.RESTTransport{}, session.client)
 			assert.Equal(t, cuclient.PreviewAPIVersion, session.apiVersion)
 			assert.Equal(t, "configured-analyzer", session.analyzer)
 			assert.Equal(t, "https://configured.example/contentunderstanding", session.endpoint)
@@ -78,7 +78,7 @@ func TestServiceSessionUsesHostAndSDKClient(t *testing.T) {
 			assert.Equal(t, "selected-group", session.scope.ResourceGroup)
 			copyClient, err := session.clientForEndpoint("https://destination.example")
 			require.NoError(t, err)
-			assert.IsType(t, &cuclient.SDKTransport{}, copyClient)
+			assert.IsType(t, &cuclient.RESTTransport{}, copyClient)
 			_, err = session.clientForEndpoint("http://unsafe.example")
 			require.Error(t, err)
 			cancelled, cancel := context.WithCancel(cmd.Context())

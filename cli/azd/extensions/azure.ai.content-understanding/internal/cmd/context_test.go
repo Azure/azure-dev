@@ -383,7 +383,7 @@ func TestRuntimeAuthenticationRequired(t *testing.T) {
 			})
 			require.NoError(t, err)
 			defer r.Close()
-			client, err := cuclient.NewSDKTransport(r.Config.Endpoint, r.Credential, nil)
+			client, err := cuclient.NewRESTTransport(r.Config.Endpoint, r.Credential, nil)
 			require.NoError(t, err)
 			_, err = client.GetDefaults(t.Context())
 			require.Error(t, err)

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azcontentunderstanding_test
+package curestclient_test
 
 import (
 	"bytes"
@@ -17,24 +17,25 @@ import (
 	"testing"
 	"time"
 
+	restclient "azure.ai.content-understanding/cu-rest-client"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
-	sdk "github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func testClient(t *testing.T, apiVersion string, handler http.HandlerFunc) (*sdk.Client, *httptest.Server) {
+func testClient(t *testing.T, apiVersion string, handler http.HandlerFunc) (*restclient.Client, *httptest.Server) {
 	t.Helper()
 	server := httptest.NewTLSServer(handler)
 	t.Cleanup(server.Close)
-	client, err := sdk.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("test-key"), &sdk.ClientOptions{
-		APIVersion: apiVersion, ClientOptions: azcore.ClientOptions{
-			Transport: server.Client(), Retry: policy.RetryOptions{MaxRetries: -1},
-		},
-	})
+	client, err := restclient.NewClientWithKeyCredential(
+		server.URL, azcore.NewKeyCredential("test-key"), &restclient.ClientOptions{
+			APIVersion: apiVersion, ClientOptions: azcore.ClientOptions{
+				Transport: server.Client(), Retry: policy.RetryOptions{MaxRetries: -1},
+			},
+		})
 	require.NoError(t, err)
 	return client, server
 }
@@ -59,10 +60,10 @@ func TestAnalysisPaths(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				var calls atomic.Int32
 				var server *httptest.Server
-				client, srv := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+				client, srv := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
 					calls.Add(1)
 					assert.Equal(t, "test-key", r.Header.Get("Ocp-Apim-Subscription-Key"))
-					assert.Equal(t, sdk.APIVersionPreview, r.URL.Query().Get("api-version"))
+					assert.Equal(t, restclient.APIVersionPreview, r.URL.Query().Get("api-version"))
 					w.Header().Set("Content-Type", "application/json")
 					if r.Method == http.MethodGet {
 						assert.Equal(t, "/contentunderstanding/analyzerResults/op1", r.URL.Path)
@@ -93,15 +94,15 @@ func TestAnalysisPaths(t *testing.T) {
 						return
 					}
 					w.Header().Set("Operation-Location",
-						server.URL+"/contentunderstanding/analyzerResults/op1?api-version="+sdk.APIVersionPreview)
+						server.URL+"/contentunderstanding/analyzerResults/op1?api-version="+restclient.APIVersionPreview)
 					w.WriteHeader(http.StatusAccepted)
 					_, _ = io.WriteString(w, `{"status":"Running"}`)
 				})
 				server = srv
-				var got sdk.AnalyzeResponse
+				var got restclient.AnalyzeResponse
 				var err error
-				input := sdk.AnalyzeRequest{
-					Inputs: []sdk.AnalysisInput{{URL: "https://storage.test/a.pdf?sig=a%2Bb%3D&sp=r"}},
+				input := restclient.AnalyzeRequest{
+					Inputs: []restclient.AnalysisInput{{URL: "https://storage.test/a.pdf?sig=a%2Bb%3D&sp=r"}},
 				}
 				if inline {
 					if binary {
@@ -110,7 +111,7 @@ func TestAnalysisPaths(t *testing.T) {
 						got, err = client.AnalyzeInline(t.Context(), "prebuilt-layout", input)
 					}
 				} else {
-					var poller *runtime.Poller[sdk.AnalyzeResponse]
+					var poller *runtime.Poller[restclient.AnalyzeResponse]
 					if binary {
 						poller, err = client.BeginAnalyzeBinary(t.Context(), "prebuilt-layout", streamingBody("input"), "")
 					} else {
@@ -146,17 +147,18 @@ func TestWritePreservesRequestTimeout(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	t.Cleanup(server.Close)
-	client, err := sdk.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("test-key"), &sdk.ClientOptions{
-		ClientOptions: azcore.ClientOptions{
-			Transport: server.Client(),
-			Retry:     policy.RetryOptions{MaxRetries: 3, TryTimeout: 100 * time.Millisecond},
-		},
-	})
+	client, err := restclient.NewClientWithKeyCredential(
+		server.URL, azcore.NewKeyCredential("test-key"), &restclient.ClientOptions{
+			ClientOptions: azcore.ClientOptions{
+				Transport: server.Client(),
+				Retry:     policy.RetryOptions{MaxRetries: 3, TryTimeout: 100 * time.Millisecond},
+			},
+		})
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	_, err = client.BeginAnalyze(ctx, "prebuilt-layout", sdk.AnalyzeRequest{
-		Inputs: []sdk.AnalysisInput{{URL: "https://storage.test/a.pdf"}},
+	_, err = client.BeginAnalyze(ctx, "prebuilt-layout", restclient.AnalyzeRequest{
+		Inputs: []restclient.AnalysisInput{{URL: "https://storage.test/a.pdf"}},
 	})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.NoError(t, ctx.Err(), "write timeout must expire before the caller's deadline")
@@ -164,14 +166,14 @@ func TestWritePreservesRequestTimeout(t *testing.T) {
 }
 
 func TestBase64Input(t *testing.T) {
-	client, _ := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+	client, _ := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		assert.NoError(t, err)
 		assert.JSONEq(t, `{"inputs":[{"data":"aGVsbG8=","name":"sample.txt","mimeType":"text/plain"}]}`, string(data))
 		_, _ = io.WriteString(w, succeededAnalysis)
 	})
-	_, err := client.AnalyzeInline(t.Context(), "prebuilt-layout", sdk.AnalyzeRequest{
-		Inputs: []sdk.AnalysisInput{{Data: []byte("hello"), Name: "sample.txt", MIMEType: "text/plain"}},
+	_, err := client.AnalyzeInline(t.Context(), "prebuilt-layout", restclient.AnalyzeRequest{
+		Inputs: []restclient.AnalysisInput{{Data: []byte("hello"), Name: "sample.txt", MIMEType: "text/plain"}},
 	})
 	require.NoError(t, err)
 }
@@ -183,11 +185,11 @@ func TestInlineErrorsAndValidation(t *testing.T) {
 		`{"status":"Succeeded","result":[]}`, `{"status":`,
 	} {
 		t.Run(payload, func(t *testing.T) {
-			client, _ := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+			client, _ := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, payload)
 			})
-			_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{
-				Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+			_, err := client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{
+				Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 			})
 			require.Error(t, err)
 			if strings.Contains(payload, "InvalidContent") {
@@ -201,12 +203,12 @@ func TestInlineErrorsAndValidation(t *testing.T) {
 	client, _ := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
 		t.Error("invalid request reached transport")
 	})
-	_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{})
+	_, err := client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{})
 	require.ErrorContains(t, err, "preview")
-	for _, body := range []sdk.AnalyzeRequest{
+	for _, body := range []restclient.AnalyzeRequest{
 		{},
-		{Inputs: []sdk.AnalysisInput{{}}},
-		{Inputs: []sdk.AnalysisInput{{URL: "https://example.test", Data: []byte("both")}}},
+		{Inputs: []restclient.AnalysisInput{{}}},
+		{Inputs: []restclient.AnalysisInput{{URL: "https://example.test", Data: []byte("both")}}},
 	} {
 		_, err := client.BeginAnalyze(t.Context(), "a", body)
 		require.Error(t, err)
@@ -219,7 +221,7 @@ func TestDefaultsAndServiceErrors(t *testing.T) {
 	var count int
 	client, _ := testClient(t, "", func(w http.ResponseWriter, r *http.Request) {
 		count++
-		assert.Equal(t, sdk.APIVersionGA, r.URL.Query().Get("api-version"))
+		assert.Equal(t, restclient.APIVersionGA, r.URL.Query().Get("api-version"))
 		assert.Equal(t, "/contentunderstanding/defaults", r.URL.Path)
 		switch count {
 		case 1:
@@ -324,14 +326,14 @@ func TestImmediateAnalyzerAndMalformedDefaults(t *testing.T) {
 	assert.Contains(t, string(analyzer.RawJSON), `"future":true`)
 
 	_, err = client.GetDefaults(t.Context())
-	require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+	require.ErrorIs(t, err, restclient.ErrInvalidResponse)
 
-	var failed sdk.AnalyzerResponse
+	var failed restclient.AnalyzerResponse
 	err = json.Unmarshal([]byte(`{"status":"Failed","result":{"analyzerId":"a"}}`), &failed)
-	require.ErrorIs(t, err, sdk.ErrInvalidResponse)
-	var malformed sdk.Defaults
+	require.ErrorIs(t, err, restclient.ErrInvalidResponse)
+	var malformed restclient.Defaults
 	err = json.Unmarshal([]byte(`[]`), &malformed)
-	require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+	require.ErrorIs(t, err, restclient.ErrInvalidResponse)
 }
 
 func TestAnalyzerTerminalEnvelopeWithoutResult(t *testing.T) {
@@ -339,7 +341,7 @@ func TestAnalyzerTerminalEnvelopeWithoutResult(t *testing.T) {
 		t.Run(result, func(t *testing.T) {
 			payload := `{"status":"Succeeded"` + result +
 				`,"usage":{"tokens":{"model":9007199254740993}},"future":true}`
-			var response sdk.AnalyzerResponse
+			var response restclient.AnalyzerResponse
 			require.NoError(t, json.Unmarshal([]byte(payload), &response))
 			assert.Empty(t, response.Analyzer.RawJSON)
 			assert.JSONEq(t, payload, string(response.RawJSON))
@@ -372,17 +374,17 @@ func TestPollingOperationIdentity(t *testing.T) {
 						fmt.Sprintf(`"id":%q`, pollID), 1))
 				})
 				server = srv
-				poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
-					Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+				poller, err := client.BeginAnalyze(t.Context(), "a", restclient.AnalyzeRequest{
+					Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 				})
 				if phase == "initial" && id == "other" {
-					require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+					require.ErrorIs(t, err, restclient.ErrInvalidResponse)
 					return
 				}
 				require.NoError(t, err)
 				_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
 				if phase == "poll" && id == "other" {
-					require.ErrorIs(t, err, sdk.ErrInvalidResponse)
+					require.ErrorIs(t, err, restclient.ErrInvalidResponse)
 				} else {
 					require.NoError(t, err)
 				}
@@ -419,12 +421,12 @@ func TestCopyRequests(t *testing.T) {
 		}
 	})
 	server = srv
-	grant, err := client.GrantCopyAuthorization(t.Context(), "a", sdk.GrantCopyAuthorizationRequest{
+	grant, err := client.GrantCopyAuthorization(t.Context(), "a", restclient.GrantCopyAuthorizationRequest{
 		TargetAzureResourceID: "/subscriptions/target", TargetRegion: "westus",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "/subscriptions/target", grant.TargetAzureResourceID)
-	poller, err := client.BeginCopyAnalyzer(t.Context(), "b", sdk.CopyAnalyzerRequest{
+	poller, err := client.BeginCopyAnalyzer(t.Context(), "b", restclient.CopyAnalyzerRequest{
 		SourceAnalyzerID: "a", SourceAzureResourceID: "/subscriptions/source", SourceRegion: "eastus",
 	})
 	require.NoError(t, err)
@@ -450,17 +452,17 @@ func TestFailedAndCanceledPolling(t *testing.T) {
 					`"details":[{"code":"private value"}]}]}}`)
 			})
 			server = srv
-			poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
-				Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+			poller, err := client.BeginAnalyze(t.Context(), "a", restclient.AnalyzeRequest{
+				Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 			})
 			require.NoError(t, err)
 			_, err = poller.PollUntilDone(t.Context(), &runtime.PollUntilDoneOptions{Frequency: time.Millisecond})
-			var operationErr *sdk.OperationError
+			var operationErr *restclient.OperationError
 			require.ErrorAs(t, err, &operationErr)
 			assert.Equal(t, strings.ToLower(state), operationErr.Status)
 			assert.Equal(t, "AnalysisFailed", operationErr.Code)
-			assert.Equal(t, []sdk.OperationDiagnostic{{
-				Code: "InvalidField", Details: []sdk.OperationDiagnostic{{Code: "service_error"}},
+			assert.Equal(t, []restclient.OperationDiagnostic{{
+				Code: "InvalidField", Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
 			}}, operationErr.Details)
 			var responseErr *azcore.ResponseError
 			require.ErrorAs(t, err, &responseErr)
@@ -476,7 +478,7 @@ func TestInlineTerminalOperationErrors(t *testing.T) {
 	for _, state := range []string{"Failed", "Canceled", "Cancelled"} {
 		for _, code := range []string{"", "InvalidContent", "private value"} {
 			t.Run(state+"/"+code, func(t *testing.T) {
-				client, _ := testClient(t, sdk.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
+				client, _ := testClient(t, restclient.APIVersionPreview, func(w http.ResponseWriter, r *http.Request) {
 					payload, err := json.Marshal(map[string]any{
 						"status": state,
 						"error": map[string]any{
@@ -490,14 +492,14 @@ func TestInlineTerminalOperationErrors(t *testing.T) {
 					require.NoError(t, err)
 					_, _ = w.Write(payload)
 				})
-				_, err := client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{
-					Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+				_, err := client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{
+					Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 				})
-				var operationErr *sdk.OperationError
+				var operationErr *restclient.OperationError
 				require.ErrorAs(t, err, &operationErr)
 				assert.Equal(t, strings.ToLower(state), operationErr.Status)
-				assert.Equal(t, []sdk.OperationDiagnostic{{
-					Code: "InvalidField", Details: []sdk.OperationDiagnostic{{Code: "service_error"}},
+				assert.Equal(t, []restclient.OperationDiagnostic{{
+					Code: "InvalidField", Details: []restclient.OperationDiagnostic{{Code: "service_error"}},
 				}}, operationErr.Details)
 				var responseErr *azcore.ResponseError
 				require.ErrorAs(t, err, &responseErr)
@@ -530,8 +532,8 @@ func TestContinuationOriginAndCancellation(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = io.WriteString(w, `{"status":"Running"}`)
 	})
-	_, err = client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
-		Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+	_, err = client.BeginAnalyze(t.Context(), "a", restclient.AnalyzeRequest{
+		Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 	})
 	require.ErrorContains(t, err, "resource endpoint")
 	ctx, cancel := context.WithCancel(t.Context())
@@ -556,7 +558,7 @@ func TestBearerAuthAndConstructorValidation(t *testing.T) {
 	}))
 	defer server.Close()
 	credential := &testCredential{}
-	client, err := sdk.NewClient(server.URL, credential, &sdk.ClientOptions{
+	client, err := restclient.NewClient(server.URL, credential, &restclient.ClientOptions{
 		ClientOptions: azcore.ClientOptions{Transport: server.Client()},
 	})
 	require.NoError(t, err)
@@ -570,12 +572,12 @@ func TestBearerAuthAndConstructorValidation(t *testing.T) {
 		"https://example.test/path",
 		"https://example.test?key=x",
 	} {
-		_, err := sdk.NewClientWithKeyCredential(endpoint, azcore.NewKeyCredential("key"), nil)
+		_, err := restclient.NewClientWithKeyCredential(endpoint, azcore.NewKeyCredential("key"), nil)
 		require.Error(t, err)
 	}
-	_, err = sdk.NewClient(server.URL, nil, nil)
+	_, err = restclient.NewClient(server.URL, nil, nil)
 	require.Error(t, err)
-	_, err = sdk.NewClientWithKeyCredential(server.URL, nil, nil)
+	_, err = restclient.NewClientWithKeyCredential(server.URL, nil, nil)
 	require.Error(t, err)
 }
 
@@ -619,12 +621,13 @@ func TestWriteSubmissionIsNotRetried(t *testing.T) {
 		_, _ = io.WriteString(w, `{"error":{"code":"Unavailable"}}`)
 	}))
 	defer server.Close()
-	client, err := sdk.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("key"), &sdk.ClientOptions{
-		APIVersion: sdk.APIVersionPreview,
-		ClientOptions: azcore.ClientOptions{Transport: server.Client(), Retry: policy.RetryOptions{
-			MaxRetries: 1, RetryDelay: time.Millisecond, MaxRetryDelay: time.Millisecond,
-		}},
-	})
+	client, err := restclient.NewClientWithKeyCredential(
+		server.URL, azcore.NewKeyCredential("key"), &restclient.ClientOptions{
+			APIVersion: restclient.APIVersionPreview,
+			ClientOptions: azcore.ClientOptions{Transport: server.Client(), Retry: policy.RetryOptions{
+				MaxRetries: 1, RetryDelay: time.Millisecond, MaxRetryDelay: time.Millisecond,
+			}},
+		})
 	require.NoError(t, err)
 	_, err = client.AnalyzeBinaryInline(t.Context(), "a", streamingBody("input"), "")
 	require.Error(t, err)
@@ -642,8 +645,8 @@ func TestPollingHonorsRetryAfterAndDeadline(t *testing.T) {
 		_, _ = io.WriteString(w, `{"status":"Running"}`)
 	})
 	server = srv
-	poller, err := client.BeginAnalyze(t.Context(), "a", sdk.AnalyzeRequest{
-		Inputs: []sdk.AnalysisInput{{URL: "https://example.test/a"}},
+	poller, err := client.BeginAnalyze(t.Context(), "a", restclient.AnalyzeRequest{
+		Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a"}},
 	})
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
@@ -660,7 +663,7 @@ func TestAPIVersionOverridesApplyToContinuations(t *testing.T) {
 			var calls int
 			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				assert.Equal(t, sdk.APIVersionPreview, r.URL.Query().Get("api-version"))
+				assert.Equal(t, restclient.APIVersionPreview, r.URL.Query().Get("api-version"))
 				if calls == 1 {
 					_, _ = io.WriteString(w, `{"value":[],"nextLink":"`+server.URL+
 						`/contentunderstanding/analyzers?api-version=2025-11-01"}`)
@@ -669,14 +672,14 @@ func TestAPIVersionOverridesApplyToContinuations(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			options := &sdk.ClientOptions{ClientOptions: azcore.ClientOptions{
-				Transport: server.Client(), APIVersion: sdk.APIVersionPreview,
+			options := &restclient.ClientOptions{ClientOptions: azcore.ClientOptions{
+				Transport: server.Client(), APIVersion: restclient.APIVersionPreview,
 			}}
 			if explicit {
-				options.ClientOptions.APIVersion = sdk.APIVersionGA
-				options.APIVersion = sdk.APIVersionPreview
+				options.ClientOptions.APIVersion = restclient.APIVersionGA
+				options.APIVersion = restclient.APIVersionPreview
 			}
-			client, err := sdk.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("key"), options)
+			client, err := restclient.NewClientWithKeyCredential(server.URL, azcore.NewKeyCredential("key"), options)
 			require.NoError(t, err)
 			pager := client.NewListAnalyzersPager()
 			for pager.More() {
@@ -684,7 +687,7 @@ func TestAPIVersionOverridesApplyToContinuations(t *testing.T) {
 				require.NoError(t, err)
 			}
 			assert.Equal(t, 2, calls)
-			_, err = client.AnalyzeInline(t.Context(), "a", sdk.AnalyzeRequest{})
+			_, err = client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{})
 			require.ErrorContains(t, err, "at least one", "preview version must not be rejected as GA")
 		})
 	}

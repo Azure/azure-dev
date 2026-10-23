@@ -172,7 +172,7 @@ func TestAnalyzerListAndDeleteContracts(t *testing.T) {
 							require.NoError(t, err)
 							require.True(t, yes)
 						}
-						client, err := cuclient.NewSDKTransport(options.Endpoint, credential,
+						client, err := cuclient.NewRESTTransport(options.Endpoint, credential,
 							&cuclient.TransportOptions{APIVersion: options.APIVersion, Transport: transport})
 						if err != nil {
 							return nil, err

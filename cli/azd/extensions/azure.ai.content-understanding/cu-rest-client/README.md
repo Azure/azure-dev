@@ -1,9 +1,9 @@
-# Content Understanding Go client for the azd extension
+# Content Understanding client for the azd extension
 
-This local Go module supplies the Content Understanding client used by
+This Go module supplies the Content Understanding REST client used by
 `azd ai cu`. It is an extension dependency, not a separately published package.
 For installation, authentication, and command examples, see the
-[extension README](../../README.md).
+[extension README](../README.md).
 
 ## Client behavior
 
@@ -13,7 +13,7 @@ API version is `2025-11-01`; inline analysis requires `2026-06-01-preview`.
 
 The extension supplies an azd-backed Microsoft Entra credential. It owns command
 configuration, confirmations, file access, model discovery, and output formatting.
-SDK credential constructors do not change the extension's Entra-only
+Client credential constructors do not change the extension's Entra-only
 authentication contract.
 
 - Responses preserve complete JSON definitions and terminal envelopes, including
@@ -28,8 +28,8 @@ authentication contract.
 - Service and operation failures preserve typed status and safe diagnostic codes
   without exposing raw service messages.
 
-See [SDK integration requirements](AZD_PROVENANCE.md) for the behavior to verify
-when changing the SDK dependency.
+See [client integration requirements](AZD_PROVENANCE.md) for the behavior to verify
+when changing the client dependency.
 
 ## Offline tests
 
@@ -44,14 +44,14 @@ golangci-lint run ./...
 Tests in [tests/unit/](tests/unit/) use the public client API with local HTTPS
 servers and fake credentials. They do not require Azure sign-in or make live
 service calls. Extension adapter and command tests remain under the parent
-extension's [internal/](../../internal/) directory.
+extension's [internal/](../internal/) directory.
 
 The extension's CI runs tests and lint for both Go modules.
 
 ## Optional live tests
 
 Live tests in [tests/live/](tests/live/) are guarded by the `live` build tag and
-are not part of the ordinary test run. These SDK developer tests use Azure CLI
+are not part of the ordinary test run. These client developer tests use Azure CLI
 credentials, independently of the extension's azd authentication.
 
 Requirements:
@@ -70,5 +70,5 @@ go test -tags live -run TestLive -count=1 -timeout 30m -v ./tests/live/...
 
 These tests incur service charges, analyze a public sample invoice, and create,
 copy, and delete uniquely named test analyzers. They do not modify shared
-resource defaults or establish cross-resource copy behavior. Passing SDK live
+resource defaults or establish cross-resource copy behavior. Passing client live
 tests does not establish installed-host or release readiness for the extension.

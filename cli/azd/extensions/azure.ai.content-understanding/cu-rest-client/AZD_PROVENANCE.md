@@ -1,6 +1,6 @@
-# Content Understanding SDK integration
+# Content Understanding client integration
 
-The `azd ai cu` extension uses this local SDK through its parent module's
+The `azd ai cu` extension uses this Content Understanding client through its parent module's
 `replace` directive. Before switching to a published package, verify the
 following behavior with the extension's adapter and command tests.
 
@@ -33,5 +33,5 @@ The adapter separately enforces the CLI continuation path/API-version
 contract using a shared link validator. Its pipeline policy also enforces the
 extension's configured retry and attempt-timeout bounds against caller context
 overrides.
-Analyzer/analysis wire, polling and command integration tests use `SDKTransport`;
-SDK resume-token support is not part of the CLI contract.
+Analyzer/analysis wire, polling and command integration tests use `RESTTransport`;
+client resume-token support is not part of the CLI contract.

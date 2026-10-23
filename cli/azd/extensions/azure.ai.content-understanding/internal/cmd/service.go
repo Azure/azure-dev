@@ -40,7 +40,7 @@ func openServiceSession(
 	if err != nil {
 		return nil, err
 	}
-	client, err := cuclient.NewSDKTransport(runtime.Config.Endpoint, runtime.Credential, &cuclient.TransportOptions{
+	client, err := cuclient.NewRESTTransport(runtime.Config.Endpoint, runtime.Credential, &cuclient.TransportOptions{
 		APIVersion: runtime.Config.APIVersion, Version: Version,
 	})
 	if err != nil {
@@ -61,7 +61,7 @@ func openServiceSession(
 			return resolver.Resolve(ctx, resource, subscription, group, runtime.Config.Scope)
 		},
 		clientForEndpoint: func(endpoint string) (cuclient.Client, error) {
-			return cuclient.NewSDKTransport(endpoint, runtime.Credential, &cuclient.TransportOptions{
+			return cuclient.NewRESTTransport(endpoint, runtime.Credential, &cuclient.TransportOptions{
 				APIVersion: runtime.Config.APIVersion, Version: Version,
 			})
 		},

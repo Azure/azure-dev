@@ -36,7 +36,7 @@ type Usage struct {
 }
 
 // JSON retains complete service output, including dynamic schemas and fields,
-// without making commands depend on transport or SDK models.
+// without making commands depend on transport or client models.
 type Analyzer struct {
 	ID             string
 	Description    string

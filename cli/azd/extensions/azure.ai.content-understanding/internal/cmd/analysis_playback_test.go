@@ -163,7 +163,7 @@ func TestRecordedAnalysisSyntheticPollingFailures(t *testing.T) {
 				case "missing-binary-expectation":
 					transport.binaryBody = nil
 				}
-				client, err := cuclient.NewSDKTransport("https://sanitized.services.ai.azure.com",
+				client, err := cuclient.NewRESTTransport("https://sanitized.services.ai.azure.com",
 					&recordedCredential{}, &cuclient.TransportOptions{Transport: transport})
 				require.NoError(t, err)
 				_, err = client.Analyze(t.Context(), cuclient.AnalyzeRequest{

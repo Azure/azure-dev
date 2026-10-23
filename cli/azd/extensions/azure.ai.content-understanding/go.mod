@@ -21,9 +21,9 @@ require (
 )
 
 require (
+	azure.ai.content-understanding/cu-rest-client v0.0.0
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/AlecAivazis/survey/v2 v2.3.7 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding v0.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.13.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v2 v2.3.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.5.0 // indirect
@@ -108,4 +108,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding => ./sdk/azcontentunderstanding
+replace azure.ai.content-understanding/cu-rest-client => ./cu-rest-client

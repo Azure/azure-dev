@@ -50,7 +50,7 @@ func TestTransportOptionsValidation(t *testing.T) {
 	for _, endpoint := range []string{
 		"https://RESOURCE.test", " https://resource.test/ ", "https://resource.test/contentunderstanding/",
 	} {
-		client, err := NewSDKTransport(endpoint, &testCredential{}, nil)
+		client, err := NewRESTTransport(endpoint, &testCredential{}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, "https://resource.test/contentunderstanding", client.endpoint)
 		assert.Equal(t, DefaultAPIVersion, client.apiVersion)
@@ -61,19 +61,19 @@ func TestTransportOptionsValidation(t *testing.T) {
 		"https://resource.test/analyzers", "https://resource.test:99999", "https://resource.test:0",
 		"https://resource.test:invalid", "https://resource.test/%63ontentunderstanding", "https://resource.test/%",
 	} {
-		client, err := NewSDKTransport(endpoint, &testCredential{}, nil)
+		client, err := NewRESTTransport(endpoint, &testCredential{}, nil)
 		require.Nil(t, client)
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private-token")
 	}
-	client, err := NewSDKTransport("https://resource.test", nil, nil)
+	client, err := NewRESTTransport("https://resource.test", nil, nil)
 	assert.Nil(t, client)
 	require.Error(t, err)
 	for _, options := range []TransportOptions{
 		{APIVersion: "2027-01-01-preview"}, {APIVersion: "private-token"},
 		{RequestTimeout: -time.Second}, {Version: "invalid\r\nprivate-token"},
 	} {
-		client, err := NewSDKTransport("https://resource.test", &testCredential{}, &options)
+		client, err := NewRESTTransport("https://resource.test", &testCredential{}, &options)
 		assert.Nil(t, client)
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private-token")
@@ -83,43 +83,43 @@ func TestTransportOptionsValidation(t *testing.T) {
 func transportOperations() []struct {
 	name string
 	read bool
-	run  func(context.Context, *SDKTransport) error
+	run  func(context.Context, *RESTTransport) error
 } {
 	return []struct {
 		name string
 		read bool
-		run  func(context.Context, *SDKTransport) error
+		run  func(context.Context, *RESTTransport) error
 	}{
-		{"get", true, func(ctx context.Context, c *SDKTransport) error {
+		{"get", true, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.GetAnalyzer(ctx, "custom")
 			return err
 		}},
-		{"create", false, func(ctx context.Context, c *SDKTransport) error {
+		{"create", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.CreateAnalyzer(ctx, CreateAnalyzerRequest{AnalyzerID: "custom", Definition: []byte(`{}`)})
 			return err
 		}},
-		{"copy", false, func(ctx context.Context, c *SDKTransport) error {
+		{"copy", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.CopyAnalyzer(ctx, CopyAnalyzerRequest{SourceAnalyzerID: "source", DestinationAnalyzerID: "custom"})
 			return err
 		}},
-		{"grant", false, func(ctx context.Context, c *SDKTransport) error {
+		{"grant", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.GrantCopyAuthorization(ctx, GrantCopyAuthorizationRequest{
 				AnalyzerID: "custom", TargetAzureResourceID: "/target",
 			})
 			return err
 		}},
-		{"update", false, func(ctx context.Context, c *SDKTransport) error {
+		{"update", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.UpdateDefaults(ctx, UpdateDefaultsRequest{ModelDeployments: map[string]string{}})
 			return err
 		}},
-		{"delete", false, func(ctx context.Context, c *SDKTransport) error { return c.DeleteAnalyzer(ctx, "custom") }},
-		{"analyze", false, func(ctx context.Context, c *SDKTransport) error {
+		{"delete", false, func(ctx context.Context, c *RESTTransport) error { return c.DeleteAnalyzer(ctx, "custom") }},
+		{"analyze", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.Analyze(ctx, AnalyzeRequest{
 				AnalyzerID: "custom", Mode: AnalysisModeAsync, Input: Input{URL: "https://input.test/a"},
 			})
 			return err
 		}},
-		{"inline", false, func(ctx context.Context, c *SDKTransport) error {
+		{"inline", false, func(ctx context.Context, c *RESTTransport) error {
 			_, err := c.Analyze(ctx, AnalyzeRequest{
 				AnalyzerID: "custom", Mode: AnalysisModeInline, Input: Input{URL: "https://input.test/a"},
 			})
@@ -132,7 +132,7 @@ func TestContextCannotOverrideCURetrySafety(t *testing.T) {
 	for _, operation := range transportOperations() {
 		t.Run(operation.name, func(t *testing.T) {
 			calls := 0
-			client := newSDKTestTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, PreviewAPIVersion, func(request *http.Request) (*http.Response, error) {
 				calls++
 				deadline, present := request.Context().Deadline()
 				assert.True(t, present)
@@ -159,7 +159,7 @@ func TestPipelineHeadersAndVersions(t *testing.T) {
 	for _, version := range []string{DefaultAPIVersion, PreviewAPIVersion} {
 		t.Run(version, func(t *testing.T) {
 			credential := &testCredential{}
-			client, err := NewSDKTransport("https://resource.test", credential, &TransportOptions{
+			client, err := NewRESTTransport("https://resource.test", credential, &TransportOptions{
 				APIVersion: version, Version: "0.0.1",
 				Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
 					assert.Equal(t, "https", req.URL.Scheme)
@@ -200,7 +200,7 @@ func TestRetrySafetyMatrix(t *testing.T) {
 			t.Run(operation.name+"/"+failure, func(t *testing.T) {
 				calls := 0
 				var ids []string
-				client := newSDKTestTransport(t, PreviewAPIVersion, func(req *http.Request) (*http.Response, error) {
+				client := newRESTTransport(t, PreviewAPIVersion, func(req *http.Request) (*http.Response, error) {
 					calls++
 					ids = append(ids, req.Header.Get("x-ms-client-request-id"))
 					if calls > 1 {
@@ -235,7 +235,7 @@ func TestRetryStatusAndRetryAfter(t *testing.T) {
 	for _, status := range []int{400, 401, 403, 404, 409, 413, 429, 500, 502, 503, 504, 408} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			calls := 0
-			client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 				calls++
 				result := response(status, `{}`)
 				result.Header.Set("Retry-After", "3600")
@@ -253,7 +253,7 @@ func TestRetryStatusAndRetryAfter(t *testing.T) {
 
 func TestReadRetryExhaustion(t *testing.T) {
 	calls := 0
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 		calls++
 		result := response(http.StatusServiceUnavailable, `{"error":{"code":"Unavailable"}}`)
 		result.Header.Set("x-ms-retry-after-ms", "1")
@@ -271,7 +271,7 @@ func TestTransientReadStatusRetries(t *testing.T) {
 	for _, status := range []int{408, 429, 500, 502, 504} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			calls := 0
-			client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 				calls++
 				if calls == 1 {
 					result := response(status, `{}`)
@@ -289,7 +289,7 @@ func TestTransientReadStatusRetries(t *testing.T) {
 
 func TestLogicalRequestsUseDistinctIDs(t *testing.T) {
 	var ids []string
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(req *http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(req *http.Request) (*http.Response, error) {
 		ids = append(ids, req.Header.Get("x-ms-client-request-id"))
 		return response(http.StatusOK, `{"analyzerId":"a..b","status":"ready"}`), nil
 	})
@@ -305,7 +305,7 @@ func TestPipelineCancellationAndAuthentication(t *testing.T) {
 	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, errors.New("private-credential-detail")} {
 		t.Run(cause.Error(), func(t *testing.T) {
 			calls := 0
-			client, err := NewSDKTransport("https://resource.test", &testCredential{err: cause}, &TransportOptions{
+			client, err := NewRESTTransport("https://resource.test", &testCredential{err: cause}, &TransportOptions{
 				Transport: transportFunc(func(*http.Request) (*http.Response, error) {
 					calls++
 					return response(200, `{}`), nil
@@ -322,7 +322,7 @@ func TestPipelineCancellationAndAuthentication(t *testing.T) {
 		})
 	}
 	credential := &testCredential{empty: true}
-	client, err := NewSDKTransport("https://resource.test", credential, nil)
+	client, err := NewRESTTransport("https://resource.test", credential, nil)
 	require.NoError(t, err)
 	_, err = client.GetAnalyzer(t.Context(), "custom")
 	var domain *Error
@@ -341,7 +341,7 @@ func TestTimeoutAndInFlightCancellation(t *testing.T) {
 			ctx, stop := context.WithCancel(t.Context())
 			defer stop()
 			calls := 0
-			client, err := NewSDKTransport("https://resource.test", &testCredential{}, &TransportOptions{
+			client, err := NewRESTTransport("https://resource.test", &testCredential{}, &TransportOptions{
 				RequestTimeout: 10 * time.Millisecond,
 				Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
 					calls++
@@ -385,7 +385,7 @@ func TestBoundedErrorBodyAndRedaction(t *testing.T) {
 		`{"error":{"code":"invalid code private-token"}}`,
 	} {
 		body := &measuredBody{reader: strings.NewReader(payload)}
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+		client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 			result := response(http.StatusForbidden, "")
 			result.Header.Set("Authorization", "private-header")
 			result.Body = body
@@ -411,7 +411,7 @@ func TestResponseErrorCategories(t *testing.T) {
 		{300, ErrorService}, {400, ErrorValidation}, {401, ErrorAuthentication}, {403, ErrorAuthentication},
 		{404, ErrorNotFound}, {409, ErrorConflict}, {413, ErrorLimit}, {429, ErrorThrottled}, {500, ErrorService},
 	} {
-		client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+		client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 			result := response(test.status, `{"error":{"code":"BodyCode"}}`)
 			result.Header.Set("x-ms-error-code", "HeaderCode")
 			return result, nil
@@ -433,7 +433,7 @@ func TestPipelineLogsRedactTokensAndBodies(t *testing.T) {
 		log.SetListener(nil)
 		log.SetEvents()
 	})
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 		result := response(403, `{"error":{"code":"Forbidden","message":"private-response-body"}}`)
 		result.Header.Set("Set-Cookie", "private-cookie")
 		return result, nil
@@ -473,7 +473,7 @@ func TestBrokenAndMissingResponses(t *testing.T) {
 			return &http.Response{StatusCode: 403, Header: http.Header{}}, nil
 		},
 	} {
-		client := newSDKTestTransport(t, DefaultAPIVersion, fn)
+		client := newRESTTransport(t, DefaultAPIVersion, fn)
 		err := client.DeleteAnalyzer(t.Context(), "custom")
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private")
@@ -493,7 +493,7 @@ func TestDefaultTransportDoesNotFollowRedirect(t *testing.T) {
 	defer source.Close()
 	transport := newHTTPTransport(time.Second)
 	transport.Transport = source.Client().Transport
-	client, err := NewSDKTransport(source.URL, &testCredential{}, &TransportOptions{Transport: transport})
+	client, err := NewRESTTransport(source.URL, &testCredential{}, &TransportOptions{Transport: transport})
 	require.NoError(t, err)
 	_, err = client.GetAnalyzer(t.Context(), "custom")
 	require.Error(t, err)

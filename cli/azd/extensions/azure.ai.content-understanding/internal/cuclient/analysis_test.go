@@ -550,7 +550,7 @@ func TestAnalysisCancellationAndTransportFailure(t *testing.T) {
 			assert.False(t, reader.closed)
 		}
 		calls := 0
-		client = newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+		client = newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 			calls++
 			return nil, errors.New("private-network-details")
 		})
@@ -566,7 +566,7 @@ func TestAnalysisCancellationAndTransportFailure(t *testing.T) {
 
 func TestAnalysisSubmissionTimeout(t *testing.T) {
 	calls := 0
-	client, err := NewSDKTransport("https://resource.test", &testCredential{}, &TransportOptions{
+	client, err := NewRESTTransport("https://resource.test", &testCredential{}, &TransportOptions{
 		RequestTimeout: 10 * time.Millisecond,
 		Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
 			calls++
@@ -610,7 +610,7 @@ func TestAnalysisLocalHTTPSRoundTrip(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client, err := NewSDKTransport(server.URL, &testCredential{}, &TransportOptions{Transport: server.Client()})
+	client, err := NewRESTTransport(server.URL, &testCredential{}, &TransportOptions{Transport: server.Client()})
 	require.NoError(t, err)
 	request, _, reader := analysisSubmission(AnalysisModeAsync, true)
 	result, err := client.Analyze(t.Context(), request)
@@ -621,7 +621,7 @@ func TestAnalysisLocalHTTPSRoundTrip(t *testing.T) {
 	assert.False(t, reader.closed)
 }
 
-func TestAnalysisSDKLogsDoNotExposeInputOrResult(t *testing.T) {
+func TestAnalysisClientLogsDoNotExposeInputOrResult(t *testing.T) {
 	var messages []string
 	log.SetListener(func(_ log.Event, message string) { messages = append(messages, message) })
 	log.SetEvents(log.EventRequest, log.EventResponse)
@@ -647,7 +647,7 @@ func TestAnalysisResponseBodyFailures(t *testing.T) {
 	for _, binary := range []bool{false, true} {
 		for _, body := range []io.ReadCloser{brokenBody{}, closeErrorBody{strings.NewReader(`{}`)}} {
 			request, _, reader := analysisSubmission(AnalysisModeAsync, binary)
-			client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 				result := response(http.StatusAccepted, "")
 				result.Body = body
 				return result, nil
@@ -690,7 +690,7 @@ func TestAnalysisInputStreamFailures(t *testing.T) {
 				reader.seekErr = errors.New("private-seek-error")
 			}
 			calls := 0
-			client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 				calls++
 				_, err := io.ReadAll(request.Body)
 				return nil, err
@@ -716,7 +716,7 @@ func TestAnalysisCancellationDuringPollRequest(t *testing.T) {
 	defer cancel()
 	pollStarted := make(chan struct{})
 	submissions, polls := 0, 0
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 		if request.Method == http.MethodPost {
 			submissions++
 			result := response(http.StatusAccepted, `{"status":"NotStarted","id":"op1"}`)
@@ -754,7 +754,7 @@ func TestAnalysisResponseBodyTimeoutOverHTTPS(t *testing.T) {
 		<-request.Context().Done()
 	}))
 	defer server.Close()
-	client, err := NewSDKTransport(server.URL, &testCredential{}, &TransportOptions{
+	client, err := NewRESTTransport(server.URL, &testCredential{}, &TransportOptions{
 		APIVersion: PreviewAPIVersion, RequestTimeout: 100 * time.Millisecond, Transport: server.Client(),
 	})
 	require.NoError(t, err)
@@ -768,7 +768,7 @@ func TestAnalysisResponseBodyTimeoutOverHTTPS(t *testing.T) {
 	assert.False(t, reader.closed)
 }
 
-func TestAnalysisFullJSONCanBeDecodedWithoutSDKTypes(t *testing.T) {
+func TestAnalysisFullJSONCanBeDecodedWithoutClientTypes(t *testing.T) {
 	request, step, _ := analysisSubmission(AnalysisModeInline, false)
 	step.response = completedAnalysis(PreviewAPIVersion, AnalysisModeInline)
 	client := newWireClient(t, PreviewAPIVersion, step)

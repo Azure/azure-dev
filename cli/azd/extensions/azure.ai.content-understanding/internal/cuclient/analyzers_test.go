@@ -44,7 +44,7 @@ func newWireClient(t *testing.T, version string, steps ...wireStep) Client {
 	t.Helper()
 	calls := 0
 	credential := &testCredential{}
-	client, err := NewSDKTransport("https://resource.test", credential, &TransportOptions{
+	client, err := NewRESTTransport("https://resource.test", credential, &TransportOptions{
 		APIVersion: version,
 		Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
 			require.Less(t, calls, len(steps), "unexpected request: %s %s", request.Method, request.URL.Path)
@@ -597,7 +597,7 @@ func TestAnalyzerResponseFailures(t *testing.T) {
 			}
 			t.Run(operation.name+"/"+scenario, func(t *testing.T) {
 				calls := 0
-				client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+				client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 					calls++
 					status := http.StatusOK
 					if operation.name == "delete" {
@@ -635,7 +635,7 @@ type closeErrorBody struct{ io.Reader }
 func (closeErrorBody) Close() error { return errors.New("private-close-error") }
 
 func TestAnalyzerInvalidDefinitionDoesNotReachHTTP(t *testing.T) {
-	client := newSDKTestTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
+	client := newRESTTransport(t, DefaultAPIVersion, func(*http.Request) (*http.Response, error) {
 		t.Fatal("invalid JSON must not reach the transport")
 		return nil, nil
 	})
@@ -647,7 +647,7 @@ func TestAnalyzerResponsesCloseBodies(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusAccepted} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			body := &measuredBody{reader: strings.NewReader(readyAnalyzer)}
-			client := newSDKTestTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
+			client := newRESTTransport(t, DefaultAPIVersion, func(request *http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: status, Body: body, Request: request}, nil
 			})
 			_, err := client.GetAnalyzer(t.Context(), "custom")

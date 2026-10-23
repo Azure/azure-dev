@@ -34,7 +34,7 @@ type infraPlaybackHost struct {
 func (h *infraPlaybackHost) Capabilities(
 	_ context.Context, snapshot infraSnapshot, request infra.PostRequest,
 ) (infra.PostCapabilities, infra.ModelCapabilities, error) {
-	client, err := cuclient.NewSDKTransport(request.Endpoint, h.credential,
+	client, err := cuclient.NewRESTTransport(request.Endpoint, h.credential,
 		&cuclient.TransportOptions{APIVersion: request.APIVersion, Transport: h.transport})
 	if err != nil {
 		return nil, nil, err
@@ -51,7 +51,7 @@ func (h *infraPlaybackHost) Capabilities(
 	return capabilities, capabilities, nil
 }
 
-func TestGeneratedProjectPostprovisionThroughHostAndSDKPlayback(t *testing.T) {
+func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 	_ = infraCommandFixture(t)
 	rpc := &infraRPC{section: &azdext.GetConfigSectionResponse{}, writes: map[string]json.RawMessage{},
 		subscriptions: []*azdext.Subscription{{Id: "sub", Name: "Subscription", TenantId: "tenant", IsDefault: true}}}

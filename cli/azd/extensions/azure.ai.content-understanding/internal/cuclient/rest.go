@@ -12,27 +12,27 @@ import (
 	"strings"
 	"time"
 
+	restclient "azure.ai.content-understanding/cu-rest-client"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
-	sdk "github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
-// SDKTransport adapts the prototype CU Go SDK to the host-neutral command contract.
-type SDKTransport struct {
-	client       *sdk.Client
+// RESTTransport adapts the Content Understanding REST client to the host-neutral command contract.
+type RESTTransport struct {
+	client       *restclient.Client
 	endpoint     string
 	apiVersion   string
 	pollInterval time.Duration
 }
 
-var _ Client = (*SDKTransport)(nil)
+var _ Client = (*RESTTransport)(nil)
 
-func NewSDKTransport(
+func NewRESTTransport(
 	endpoint string, credential azcore.TokenCredential, options *TransportOptions,
-) (*SDKTransport, error) {
+) (*RESTTransport, error) {
 	normalized, err := NormalizeEndpoint(endpoint)
 	if err != nil {
 		return nil, err
@@ -49,16 +49,16 @@ func NewSDKTransport(
 		transport = newHTTPTransport(settings.RequestTimeout)
 	}
 	retryOptions := policy.RetryOptions{MaxRetries: 2, TryTimeout: settings.RequestTimeout}
-	client, err := sdk.NewClient(
+	client, err := restclient.NewClient(
 		strings.TrimSuffix(normalized, "/contentunderstanding"),
 		safeTokenCredential{inner: credential},
-		&sdk.ClientOptions{
+		&restclient.ClientOptions{
 			APIVersion: settings.APIVersion,
 			ClientOptions: azcore.ClientOptions{
 				Transport: &boundedErrorTransport{inner: transport},
 				Retry:     retryOptions,
 				PerCallPolicies: []policy.Policy{
-					&sdkPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
+					&restPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
 					azsdk.NewMsClientRequestIdPolicy(),
 					azsdk.NewMsCorrelationPolicy(),
 					azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
@@ -67,21 +67,21 @@ func NewSDKTransport(
 		},
 	)
 	if err != nil {
-		return nil, sdkDomainError(err)
+		return nil, restDomainError(err)
 	}
-	return &SDKTransport{
+	return &RESTTransport{
 		client: client, endpoint: normalized, apiVersion: settings.APIVersion, pollInterval: time.Second,
 	}, nil
 }
 
-func (c *SDKTransport) ListAnalyzers(ctx context.Context) ([]Analyzer, error) {
+func (c *RESTTransport) ListAnalyzers(ctx context.Context) ([]Analyzer, error) {
 	pager := c.client.NewListAnalyzersPager()
 	items := []Analyzer{}
 	seen := map[string]bool{(url.Values{"api-version": {c.apiVersion}}).Encode(): true}
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return nil, sdkDomainError(err)
+			return nil, restDomainError(err)
 		}
 		if page.Value == nil {
 			return nil, malformedResponse()
@@ -107,18 +107,18 @@ func (c *SDKTransport) ListAnalyzers(ctx context.Context) ([]Analyzer, error) {
 	return items, nil
 }
 
-func (c *SDKTransport) GetAnalyzer(ctx context.Context, id string) (Analyzer, error) {
+func (c *RESTTransport) GetAnalyzer(ctx context.Context, id string) (Analyzer, error) {
 	if err := ValidateAnalyzerID(id); err != nil {
 		return Analyzer{}, err
 	}
 	value, err := c.client.GetAnalyzer(ctx, id)
 	if err != nil {
-		return Analyzer{}, sdkDomainError(err)
+		return Analyzer{}, restDomainError(err)
 	}
 	return parseAnalyzer(value.RawJSON, id)
 }
 
-func (c *SDKTransport) CreateAnalyzer(
+func (c *RESTTransport) CreateAnalyzer(
 	ctx context.Context, request CreateAnalyzerRequest,
 ) (AnalyzerResponse, error) {
 	if err := request.Validate(); err != nil {
@@ -126,34 +126,34 @@ func (c *SDKTransport) CreateAnalyzer(
 	}
 	poller, err := c.client.BeginCreateAnalyzer(ctx, request.AnalyzerID, request.Definition)
 	if err != nil {
-		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
+		return AnalyzerResponse{}, restOperationDomainError(err, "analyzer")
 	}
 	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 	if err != nil {
-		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
+		return AnalyzerResponse{}, restOperationDomainError(err, "analyzer")
 	}
 	return c.analyzerResponse(ctx, value, request.AnalyzerID)
 }
 
-func (c *SDKTransport) DeleteAnalyzer(ctx context.Context, id string) error {
+func (c *RESTTransport) DeleteAnalyzer(ctx context.Context, id string) error {
 	if err := ValidateAnalyzerID(id); err != nil {
 		return err
 	}
-	return sdkDomainError(c.client.DeleteAnalyzer(ctx, id))
+	return restDomainError(c.client.DeleteAnalyzer(ctx, id))
 }
 
-func (c *SDKTransport) GrantCopyAuthorization(
+func (c *RESTTransport) GrantCopyAuthorization(
 	ctx context.Context, request GrantCopyAuthorizationRequest,
 ) (CopyAuthorization, error) {
 	if err := request.Validate(); err != nil {
 		return CopyAuthorization{}, err
 	}
-	value, err := c.client.GrantCopyAuthorization(ctx, request.AnalyzerID, sdk.GrantCopyAuthorizationRequest{
+	value, err := c.client.GrantCopyAuthorization(ctx, request.AnalyzerID, restclient.GrantCopyAuthorizationRequest{
 		TargetAzureResourceID: request.TargetAzureResourceID,
 		TargetRegion:          request.TargetRegion,
 	})
 	if err != nil {
-		return CopyAuthorization{}, sdkDomainError(err)
+		return CopyAuthorization{}, restDomainError(err)
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, value.ExpiresAt)
 	if err != nil || value.TargetAzureResourceID != request.TargetAzureResourceID ||
@@ -165,36 +165,36 @@ func (c *SDKTransport) GrantCopyAuthorization(
 	}, nil
 }
 
-func (c *SDKTransport) CopyAnalyzer(
+func (c *RESTTransport) CopyAnalyzer(
 	ctx context.Context, request CopyAnalyzerRequest,
 ) (AnalyzerResponse, error) {
 	if err := request.Validate(); err != nil {
 		return AnalyzerResponse{}, err
 	}
-	poller, err := c.client.BeginCopyAnalyzer(ctx, request.DestinationAnalyzerID, sdk.CopyAnalyzerRequest{
+	poller, err := c.client.BeginCopyAnalyzer(ctx, request.DestinationAnalyzerID, restclient.CopyAnalyzerRequest{
 		SourceAnalyzerID:      request.SourceAnalyzerID,
 		SourceAzureResourceID: request.SourceAzureResourceID,
 		SourceRegion:          request.SourceRegion,
 	})
 	if err != nil {
-		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
+		return AnalyzerResponse{}, restOperationDomainError(err, "analyzer")
 	}
 	value, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 	if err != nil {
-		return AnalyzerResponse{}, sdkOperationDomainError(err, "analyzer")
+		return AnalyzerResponse{}, restOperationDomainError(err, "analyzer")
 	}
 	return c.analyzerResponse(ctx, value, request.DestinationAnalyzerID)
 }
 
-func (c *SDKTransport) GetDefaults(ctx context.Context) (Defaults, error) {
+func (c *RESTTransport) GetDefaults(ctx context.Context) (Defaults, error) {
 	value, err := c.client.GetDefaults(ctx)
 	if err != nil {
-		return Defaults{}, sdkDomainError(err)
+		return Defaults{}, restDomainError(err)
 	}
 	return defaults(value)
 }
 
-func (c *SDKTransport) UpdateDefaults(
+func (c *RESTTransport) UpdateDefaults(
 	ctx context.Context, request UpdateDefaultsRequest,
 ) (Defaults, error) {
 	if err := request.Validate(); err != nil {
@@ -207,12 +207,12 @@ func (c *SDKTransport) UpdateDefaults(
 	}
 	result, err := c.client.UpdateDefaults(ctx, mappings)
 	if err != nil {
-		return Defaults{}, sdkDomainError(err)
+		return Defaults{}, restDomainError(err)
 	}
 	return defaults(result)
 }
 
-func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (AnalyzeResponse, error) {
+func (c *RESTTransport) Analyze(ctx context.Context, request AnalyzeRequest) (AnalyzeResponse, error) {
 	if err := request.Validate(); err != nil {
 		return AnalyzeResponse{}, err
 	}
@@ -225,26 +225,26 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 	if err != nil {
 		return AnalyzeResponse{}, err
 	}
-	var value sdk.AnalyzeResponse
+	var value restclient.AnalyzeResponse
 	if request.Input.Body != nil {
 		body := streaming.NopCloser(request.Input.Body)
 		if request.Mode == AnalysisModeInline {
 			value, err = c.client.AnalyzeBinaryInline(ctx, request.AnalyzerID, body, contentType)
 		} else {
-			var poller *runtime.Poller[sdk.AnalyzeResponse]
+			var poller *runtime.Poller[restclient.AnalyzeResponse]
 			poller, err = c.client.BeginAnalyzeBinary(ctx, request.AnalyzerID, body, contentType)
 			if err == nil {
 				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
 			}
 		}
 	} else {
-		input := sdk.AnalyzeRequest{Inputs: []sdk.AnalysisInput{{
+		input := restclient.AnalyzeRequest{Inputs: []restclient.AnalysisInput{{
 			URL: request.Input.URL, MIMEType: contentType,
 		}}}
 		if request.Mode == AnalysisModeInline {
 			value, err = c.client.AnalyzeInline(ctx, request.AnalyzerID, input)
 		} else {
-			var poller *runtime.Poller[sdk.AnalyzeResponse]
+			var poller *runtime.Poller[restclient.AnalyzeResponse]
 			poller, err = c.client.BeginAnalyze(ctx, request.AnalyzerID, input)
 			if err == nil {
 				value, err = poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{Frequency: c.pollInterval})
@@ -252,7 +252,7 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 		}
 	}
 	if err != nil {
-		return AnalyzeResponse{}, sdkOperationDomainError(err, "analysis")
+		return AnalyzeResponse{}, restOperationDomainError(err, "analysis")
 	}
 	result, err := parseAnalysisResult(value.Result, request.AnalyzerID, c.apiVersion)
 	if err != nil {
@@ -265,8 +265,8 @@ func (c *SDKTransport) Analyze(ctx context.Context, request AnalyzeRequest) (Ana
 	return AnalyzeResponse{Result: result, Usage: usage, JSON: value.RawJSON}, nil
 }
 
-func (c *SDKTransport) analyzerResponse(
-	ctx context.Context, value sdk.AnalyzerResponse, expectedID string,
+func (c *RESTTransport) analyzerResponse(
+	ctx context.Context, value restclient.AnalyzerResponse, expectedID string,
 ) (AnalyzerResponse, error) {
 	usage, err := parseUsage(value.Usage)
 	if err != nil {
@@ -290,7 +290,7 @@ func (c *SDKTransport) analyzerResponse(
 	return AnalyzerResponse{Analyzer: analyzer, Usage: usage}, nil
 }
 
-func defaults(value sdk.Defaults) (Defaults, error) {
+func defaults(value restclient.Defaults) (Defaults, error) {
 	if err := (UpdateDefaultsRequest{ModelDeployments: value.ModelDeployments}).Validate(); err != nil {
 		return Defaults{}, malformedResponse()
 	}
@@ -308,18 +308,18 @@ func parseUsage(raw json.RawMessage) (*Usage, error) {
 	return value.domain(), nil
 }
 
-func sdkOperationDomainError(err error, operation string) error {
-	if failure, ok := errors.AsType[*sdk.OperationError](err); ok {
+func restOperationDomainError(err error, operation string) error {
+	if failure, ok := errors.AsType[*restclient.OperationError](err); ok {
 		domain := operationError(operation, failure.Status, &wireDiagnostic{
 			Code: failure.Code, Details: operationDiagnosticDetails(failure.Details),
 		})
 		domain.StatusCode = failure.ResponseError.StatusCode
 		return domain
 	}
-	return sdkDomainError(err)
+	return restDomainError(err)
 }
 
-func operationDiagnosticDetails(values []sdk.OperationDiagnostic) []wireDiagnostic {
+func operationDiagnosticDetails(values []restclient.OperationDiagnostic) []wireDiagnostic {
 	if values == nil {
 		return nil
 	}
@@ -330,13 +330,13 @@ func operationDiagnosticDetails(values []sdk.OperationDiagnostic) []wireDiagnost
 	return result
 }
 
-type sdkPolicy struct {
+type restPolicy struct {
 	endpoint   string
 	apiVersion string
 	retry      policy.RetryOptions
 }
 
-func (p *sdkPolicy) Do(request *policy.Request) (*http.Response, error) {
+func (p *restPolicy) Do(request *policy.Request) (*http.Response, error) {
 	// Caller retry overrides must not weaken the extension's retry and timeout bounds.
 	retry := p.retry
 	if request.Raw().Method != http.MethodGet && request.Raw().Method != http.MethodHead {
@@ -377,14 +377,14 @@ func (p *sdkPolicy) Do(request *policy.Request) (*http.Response, error) {
 	return response, nil
 }
 
-func sdkDomainError(err error) error {
+func restDomainError(err error) error {
 	if err == nil {
 		return nil
 	}
 	if domain, ok := errors.AsType[*Error](err); ok {
 		return domain
 	}
-	if errors.Is(err, sdk.ErrInvalidResponse) {
+	if errors.Is(err, restclient.ErrInvalidResponse) {
 		return malformedResponse()
 	}
 	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {

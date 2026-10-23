@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package azcontentunderstanding provides a prototype Azure AI Content Understanding client.
-package azcontentunderstanding
+// Package curestclient provides the Content Understanding REST client used by the azd extension.
+package curestclient
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	moduleName = "github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding"
+	moduleName = "azure.ai.content-understanding/cu-rest-client"
 	version    = "v0.1.0"
 	// APIVersionGA is the stable service API version.
 	APIVersionGA = "2025-11-01"

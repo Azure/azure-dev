@@ -204,7 +204,7 @@ func TestRecordedAnalyzerCreateSyntheticFailures(t *testing.T) {
 						transport.fixture.Interactions = transport.fixture.Interactions[:3]
 					}
 				}
-				client, err := cuclient.NewSDKTransport("https://sanitized.services.ai.azure.com",
+				client, err := cuclient.NewRESTTransport("https://sanitized.services.ai.azure.com",
 					&recordedCredential{}, &cuclient.TransportOptions{Transport: transport})
 				require.NoError(t, err)
 				_, err = client.CreateAnalyzer(t.Context(), cuclient.CreateAnalyzerRequest{
@@ -237,7 +237,7 @@ func TestRecordedAnalyzerSyntheticFinalGetFallback(t *testing.T) {
 		fixture.Interactions[2].Response.Body = body
 		definition := recordedLifecycleDefinition(t, fixture, true)
 		transport := &recordedTransport{fixture: fixture, jsonBody: definition}
-		client, err := cuclient.NewSDKTransport("https://sanitized.services.ai.azure.com",
+		client, err := cuclient.NewRESTTransport("https://sanitized.services.ai.azure.com",
 			&recordedCredential{}, &cuclient.TransportOptions{Transport: transport})
 		require.NoError(t, err)
 		result, err := client.CreateAnalyzer(t.Context(), cuclient.CreateAnalyzerRequest{

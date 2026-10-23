@@ -114,7 +114,7 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 				resolver, err := armclient.NewResolver(credential, transport)
 				require.NoError(t, err)
 				clientFor := func(endpoint string) (cuclient.Client, error) {
-					return cuclient.NewSDKTransport(endpoint, credential, &cuclient.TransportOptions{
+					return cuclient.NewRESTTransport(endpoint, credential, &cuclient.TransportOptions{
 						APIVersion: version, Transport: transport,
 					})
 				}

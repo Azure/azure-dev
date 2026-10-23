@@ -1,4 +1,4 @@
-module github.com/Azure/azure-sdk-for-go/sdk/contentunderstanding/azcontentunderstanding
+module azure.ai.content-understanding/cu-rest-client
 
 go 1.26.4
 

@@ -324,6 +324,15 @@ variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
 `--on-existing` is absent. `FOUNDRY_ENDPOINT` is a selected-environment fallback,
 not an independent process override.
 
+The azd extension SDK also reads these inherited process inputs. Corresponding
+explicit flags take precedence over the SDK environment defaults:
+
+| Variable | Purpose | Default when unset |
+| --- | --- | --- |
+| `AZD_DEBUG` | Enables debug and diagnostics logging; use `true` or `false`. Corresponds to `--debug`. | `false` |
+| `AZD_NO_PROMPT` | Disables interactive prompts; use `true` or `false`. Corresponds to `--no-prompt` and does not imply `--yes`. | `false` |
+| `AZD_CWD` | Sets the working directory for command execution. Corresponds to `--cwd` / `-C`. | Inherits the process working directory. |
+
 ## Command overview
 
 | Command | Purpose |
@@ -381,23 +390,25 @@ packaging and registration steps.
 
 Tests live
 beside their Go packages under [internal/](internal/), including command,
-SDK-adapter, generated-project, and recorded-playback tests:
+REST-client adapter, generated-project, and recorded-playback tests:
 
 ```bash
 go test -race ./... -count=1
 go fix ./...
 golangci-lint run ./...
 
-cd sdk/azcontentunderstanding
+cd cu-rest-client
 go test -race ./... -count=1
 go fix ./...
 golangci-lint run ./...
-cd ../..
+cd ..
 
 cspell lint '**/*.go' '**/*.md' --config ./cspell.yaml --no-progress
 ```
 
-The extension uses a separately versioned [local Go SDK](sdk/azcontentunderstanding/README.md).
+The extension uses a [Content Understanding client](cu-rest-client/README.md)
+maintained for this extension. It is an extension-internal dependency, not a
+separately published package.
 CI tests and lints both modules. Ordinary tests use fakes, local
 servers, and strict recordings; they do not call Azure or require Python.
 Reused assets retain their [fixture provenance](testdata/parity/fixtures.yaml).

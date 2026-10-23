@@ -20,7 +20,7 @@ jobs:
     uses: ./.github/workflows/lint-go.yml
     with:
       working-directory: cli/azd/extensions/azure.ai.content-understanding
-  lint-sdk:
+  lint-client:
     uses: ./.github/workflows/lint-go.yml
     with:
-      working-directory: cli/azd/extensions/azure.ai.content-understanding/sdk/azcontentunderstanding
+      working-directory: cli/azd/extensions/azure.ai.content-understanding/cu-rest-client

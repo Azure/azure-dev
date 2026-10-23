@@ -1990,13 +1990,14 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 	cases := []struct {
 		name string
 		args []string
+		want string
 	}{
-		{"attached", []string{"-otable"}},
-		{"attached-json", []string{"-ojson"}},
-		{"space-separated", []string{"-o", "table"}},
-		{"equals", []string{"-o=table"}},
-		{"long-space", []string{"--output", "table"}},
-		{"long-equals", []string{"--output=table"}},
+		{"attached", []string{"-otable"}, "table"},
+		{"attached-json", []string{"-ojson"}, "json"},
+		{"space-separated", []string{"-o", "table"}, "table"},
+		{"equals", []string{"-o=table"}, "table"},
+		{"long-space", []string{"--output", "table"}, "table"},
+		{"long-equals", []string{"--output=table"}, "table"},
 	}
 
 	for _, tc := range cases {
@@ -2004,11 +2005,57 @@ func TestParseGlobalFlags_OutputAttachedShortForm(t *testing.T) {
 			t.Parallel()
 			opts := &internal.GlobalCommandOptions{}
 			err := ParseGlobalFlags(tc.args, opts)
-			// We only assert no error here. The -o/--output flag is registered on the
-			// pre-parse FlagSet solely to prevent pflag from walking attached short
-			// values char-by-char and failing on "-e"; the parsed value is intentionally
-			// not captured into GlobalCommandOptions (Cobra handles --output per command).
 			require.NoError(t, err, "ParseGlobalFlags must not error for args: %v", tc.args)
+			assert.Equal(t, tc.want, opts.PreParsedOutput)
+		})
+	}
+}
+
+func TestParseGlobalFlags_Output(t *testing.T) {
+	t.Parallel()
+
+	for _, flags := range [][]string{
+		{"--output", "json"},
+		{"-o", "json"},
+		{"--output=json"},
+		{"-o=json"},
+		{"-ojson"},
+	} {
+		for _, beforeCommand := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%v/before=%t", flags, beforeCommand), func(t *testing.T) {
+				t.Parallel()
+				args := slices.Concat([]string{"demo", "run"}, flags)
+				if beforeCommand {
+					args = slices.Concat(flags, []string{"demo", "run"})
+				}
+				opts := &internal.GlobalCommandOptions{}
+				require.NoError(t, ParseGlobalFlags(args, opts))
+				assert.Equal(t, "json", opts.PreParsedOutput)
+			})
+		}
+	}
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"default", []string{"demo", "run"}, ""},
+		{"last-json", []string{"-otable", "demo", "--output=json"}, "json"},
+		{"last-none", []string{"--output=json", "demo", "-o", "none"}, "none"},
+		{"last-empty", []string{"demo", "-ojson", "--output="}, ""},
+		{"terminator", []string{"demo", "--", "--output", "json", "-ojson"}, ""},
+		{"json-before-terminator", []string{"demo", "-ojson", "--", "--output=none"}, "json"},
+		{"none-before-terminator", []string{"demo", "-onone", "--", "-ojson"}, "none"},
+		{"normalized", []string{"demo", "--output", " JSON "}, "json"},
+		{"unknown-flags", []string{"demo", "--all", "--custom=value", "-ojson"}, "json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := &internal.GlobalCommandOptions{}
+			require.NoError(t, ParseGlobalFlags(tc.args, opts))
+			assert.Equal(t, tc.want, opts.PreParsedOutput)
 		})
 	}
 }

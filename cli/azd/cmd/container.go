@@ -116,6 +116,18 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 	return instance, nil
 }
 
+func getCommandFormatter(
+	rootOptions *internal.GlobalCommandOptions,
+	cmd *cobra.Command,
+) (output.Formatter, error) {
+	// Extension flags are parsed by the child process, but the host console must honor JSON output.
+	if cmd.DisableFlagParsing && rootOptions.PreParsedOutput == string(output.JsonFormat) {
+		return &output.JsonFormatter{}, nil
+	}
+
+	return output.GetCommandFormatter(cmd)
+}
+
 // newCommandConsole lets you create a new command console targeted at a given instance of cobra.Command.
 // Useful if you need to ensure you use the same streams and console formatting as a command, from the
 // outside.
@@ -164,7 +176,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(NewCobraBuilder)
 
 	// Standard Registrations
-	container.MustRegisterTransient(output.GetCommandFormatter)
+	container.MustRegisterTransient(getCommandFormatter)
 
 	container.MustRegisterScoped(newCommandConsole)
 

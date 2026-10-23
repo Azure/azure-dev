@@ -24,10 +24,6 @@ import (
 )
 
 func TestExtensionAction_Run_ExitCode(t *testing.T) {
-	originalArgs := os.Args
-	os.Args = []string{"azd", "--output=json"}
-	t.Cleanup(func() { os.Args = originalArgs })
-
 	processErr := errors.New("process failed")
 	localErr := &azdext.LocalError{
 		Message:    "quality gate not met",
@@ -103,7 +99,7 @@ func TestExtensionAction_Run_ExitCode(t *testing.T) {
 				lazyEnv:          lazy.From[*environment.Environment](nil),
 				extensionManager: manager,
 				azdServer:        newExtensionActionTestServer(),
-				globalOptions:    &internal.GlobalCommandOptions{},
+				globalOptions:    &internal.GlobalCommandOptions{PreParsedOutput: "json"},
 				cmd:              &cobra.Command{Annotations: map[string]string{"extension.id": extension.Id}},
 			}
 			result, err := action.Run(t.Context())

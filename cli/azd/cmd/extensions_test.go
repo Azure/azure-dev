@@ -6,6 +6,8 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -15,12 +17,92 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
+
+func TestExtensionCommand_ErrorOutput(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	for _, tc := range []struct {
+		name string
+		args []string
+		json bool
+	}{
+		{"long", []string{"demo", "--output", "json"}, true},
+		{"short", []string{"demo", "-o", "json"}, true},
+		{"long-equals", []string{"demo", "--output=json"}, true},
+		{"short-equals", []string{"demo", "-o=json"}, true},
+		{"short-attached", []string{"demo", "-ojson"}, true},
+		{"last-json", []string{"demo", "-onone", "--output=json"}, true},
+		{"last-none", []string{"demo", "-ojson", "--output=none"}, false},
+		{"terminator", []string{"demo", "--", "-ojson"}, false},
+		{"json-before-terminator", []string{"demo", "-ojson", "--", "-onone"}, true},
+		{"default", []string{"demo"}, false},
+		{"text", []string{"demo", "-onone"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, commandErr := range []error{
+				errors.New("extension failed"),
+				&extensions.ExtensionRunError{
+					ExtensionId: "test.extension",
+					Err:         &azdext.LocalError{Message: "extension failed"},
+				},
+			} {
+				opts := &internal.GlobalCommandOptions{}
+				require.NoError(t, ParseGlobalFlags(tc.args, opts))
+				container := ioc.NewNestedContainer(nil)
+				ioc.RegisterInstance(container, opts)
+				registerCommonDependencies(container)
+				root := newTestRoot().UseMiddleware("ux",
+					func(console input.Console, formatter output.Formatter) middleware.Middleware {
+						return middleware.NewUxMiddleware(&middleware.Options{}, console, nil, formatter)
+					})
+				require.NoError(t, bindExtension(root, &extensions.Extension{
+					Id: "test.extension", Namespace: "demo",
+				}))
+				root.Children()[0].Options.ActionResolver = func() actions.Action {
+					return actions.ActionFunc(func(context.Context) (*actions.ActionResult, error) {
+						return nil, commandErr
+					})
+				}
+
+				cmd, err := NewCobraBuilder(container).BuildCommand(root)
+				require.NoError(t, err)
+				cmd.SilenceUsage = true
+				var stdout, stderr bytes.Buffer
+				cmd.SetOut(&stdout)
+				cmd.SetErr(&stderr)
+				cmd.SetArgs(tc.args)
+				require.ErrorIs(t, cmd.ExecuteContext(t.Context()), commandErr)
+
+				const message = "\nERROR: extension failed\n"
+				if !tc.json {
+					require.Equal(t, message, stdout.String())
+					require.Empty(t, stderr.String())
+					continue
+				}
+				require.Empty(t, stdout.String())
+				require.Equal(t, 1, bytes.Count(stderr.Bytes(), []byte("\n")))
+				require.True(t, bytes.HasSuffix(stderr.Bytes(), []byte("\n")))
+				var event struct {
+					Type string `json:"type"`
+					Data struct {
+						Message string `json:"message"`
+					} `json:"data"`
+				}
+				require.NoError(t, json.Unmarshal(stderr.Bytes(), &event))
+				require.Equal(t, "consoleMessage", event.Type)
+				require.Equal(t, message, event.Data.Message)
+			}
+		})
+	}
+}
 
 // findChildByName returns the child action descriptor with the given name, or nil if not found.
 func findChildByName(parent *actions.ActionDescriptor, name string) *actions.ActionDescriptor {

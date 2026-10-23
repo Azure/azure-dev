@@ -19,7 +19,8 @@ import (
 
 // Settings to modify the way CmdTree is executed
 type CmdTreeOptions struct {
-	Interactive bool
+	Interactive        bool
+	WindowsCommandLine string
 }
 
 // CommandRunner executes console and shell commands.
@@ -108,6 +109,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	}
 
 	cmd.Dir = args.Cwd
+	cmd.WindowsCommandLine = args.WindowsCommandLine
 
 	var stdin io.Reader
 	if args.StdIn != nil {

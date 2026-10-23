@@ -261,6 +261,7 @@ Windows updates preserve MSI ownership. The default per-user installation contin
    - Machine installer failures include guidance to reinstall the stable MSI with ALLUSERS=1 and the existing INSTALLDIR.
 5. Run the installer
    - Machine: msiexec /i <pinned-MSI> /qn /norestart ALLUSERS=1 INSTALLDIR=<existing-directory>, with verbose logging and automatic application shutdown disabled.
+   - The native Windows command line quotes the INSTALLDIR value, rather than the entire property assignment, because msiexec does not use Go's default argument parsing.
    - Per-user: install-azd.ps1 with channel-specific arguments.
    - Stable: `-Version '<resolved-version>'` (pinned, see Version Pinning); daily: `-Version 'daily'`
    - Script handles MSI download, verification, and installation

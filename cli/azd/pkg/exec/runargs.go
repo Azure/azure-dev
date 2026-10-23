@@ -28,6 +28,10 @@ type RunArgs struct {
 	UseShell bool
 	shellSet bool
 
+	// WindowsCommandLine overrides Windows argument quoting for executables such as
+	// msiexec. Use with WithShell(false); Args are still retained for logging.
+	WindowsCommandLine string
+
 	// When set will attach commands to std input/output
 	Interactive bool
 

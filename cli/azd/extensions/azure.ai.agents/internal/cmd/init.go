@@ -1302,8 +1302,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
-			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
+		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
 	_ = cmd.Flags().MarkHidden("harness")
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)

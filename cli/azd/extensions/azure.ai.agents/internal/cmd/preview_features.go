@@ -44,6 +44,7 @@ const (
 	// helpLongPrefix and helpExamplePrefix key help blocks by feature ID.
 	helpLongPrefix    = "azure.ai.agents/help-long/"
 	helpExamplePrefix = "azure.ai.agents/help-example/"
+	helpTextPrefix    = "azure.ai.agents/help-text/"
 	helpBlockSep      = "\x1f"
 )
 
@@ -112,6 +113,14 @@ func previewHelp(cmd *cobra.Command, feature featureflags.Feature, long []string
 	if len(examples) > 0 {
 		setAnnotation(cmd, helpExamplePrefix+feature.ID, strings.Join(examples, helpBlockSep))
 	}
+}
+
+// previewHelpText replaces existing Short/Long text while off.
+func previewHelpText(cmd *cobra.Command, feature featureflags.Feature, onText, offText string) {
+	if !strings.Contains(cmd.Short, onText) && !strings.Contains(cmd.Long, onText) {
+		panic(fmt.Sprintf("help text for %q is not in %q", feature.ID, cmd.Name()))
+	}
+	setAnnotation(cmd, helpTextPrefix+feature.ID, onText+helpBlockSep+offText)
 }
 
 func setAnnotation(cmd *cobra.Command, key, value string) {
@@ -259,6 +268,13 @@ func applyPreviewVisibility(root *cobra.Command, states map[string]bool) {
 		}
 		for key, value := range cmd.Annotations {
 			switch {
+			case strings.HasPrefix(key, helpTextPrefix) && off(strings.TrimPrefix(key, helpTextPrefix)):
+				onText, offText, ok := strings.Cut(value, helpBlockSep)
+				if !ok {
+					panic(fmt.Sprintf("invalid preview help replacement on %q", cmd.Name()))
+				}
+				cmd.Short = strings.ReplaceAll(cmd.Short, onText, offText)
+				cmd.Long = strings.ReplaceAll(cmd.Long, onText, offText)
 			case strings.HasPrefix(key, helpLongPrefix) && off(strings.TrimPrefix(key, helpLongPrefix)):
 				cmd.Long = removeHelpBlocks(cmd.Long, value)
 			case strings.HasPrefix(key, helpExamplePrefix) && off(strings.TrimPrefix(key, helpExamplePrefix)):

@@ -61,8 +61,9 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		{
 			name: "root",
 			contains: []string{
-				"Ship agents with Microsoft Foundry", "Initialize a new agent project",
-				"Show the status of an agent", "Delete an agent",
+				"Ship prompt, hosted, and voice agents with Microsoft Foundry",
+				"Initialize a new prompt, hosted, or voice agent project",
+				"Show the status of a prompt, hosted, or voice agent", "Delete a prompt, hosted, or voice agent",
 			},
 		},
 		{
@@ -93,11 +94,13 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		},
 		{
 			name: "show", path: []string{"show"},
-			contains: []string{"Show the status of an agent"},
+			contains: []string{"Show the status of a prompt, hosted, or voice agent"},
 		},
 		{
 			name: "delete", path: []string{"delete"},
-			contains: []string{"Delete an agent", "telephony bindings", "does not guarantee binding cleanup"},
+			contains: []string{
+				"Delete a prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup",
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

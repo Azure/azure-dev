@@ -35,7 +35,7 @@ func newEndpointShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show [name]",
 		Short: "Show callable endpoints or hosted endpoint/card configuration.",
-		Long: `Show endpoint information for an agent.
+		Long: `Show endpoint information for a hosted, prompt, or voice agent.
 
 Hosted agents display live protocols, version selector (traffic split),
 authorization schemes, and agent card (A2A discovery). Prompt agents display
@@ -72,14 +72,15 @@ their deployed Responses endpoint.` + endpointShowVoiceHelp,
 		AllowedValues: []string{"json", "table"},
 		Default:       "table",
 	})
+	previewHelpText(cmd, featureflags.Voice, "a hosted, prompt, or voice agent", "an agent")
 	previewHelp(cmd, featureflags.Voice, []string{endpointShowVoiceHelp}, nil)
 
 	return cmd
 }
 
 // endpointShowVoiceHelp is removed from help while voice is off.
-const endpointShowVoiceHelp = ` Voice agents display their deployed
-WebSocket endpoint.`
+const endpointShowVoiceHelp = ` Voice agents display their deployed WebSocket
+endpoint.`
 
 func runEndpointShow(
 	ctx context.Context,

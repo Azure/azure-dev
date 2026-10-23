@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 )
 
@@ -381,8 +382,11 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			[]string{"--image, and prompt-voice agents", "For new managed prompt voice agents"}, nil},
 		{featureflags.Voice, []string{"delete"}, []string{"telephony bindings"}, nil},
 		{featureflags.Voice, []string{"endpoint", "show"}, []string{"Voice agents display"}, nil},
-		{featureflags.Voice, []string{"add"}, []string{"Voice and prompt-voice Agent definitions"}, nil},
-		{featureflags.ManagedHarness, []string{"init"}, nil, []string{"--harness string", "--voice string"}},
+		{featureflags.Voice, []string{"add"},
+			[]string{"deployment), voice, or prompt-voice Agent."},
+			[]string{"Voice and prompt-voice Agent definitions are also supported."}},
+		{featureflags.ManagedHarness, []string{"init"},
+			[]string{"including one using --harness"}, []string{"--harness string", "--voice string"}},
 	} {
 		t.Run(tc.feature.ID+"/"+strings.Join(tc.path, "_"), func(t *testing.T) {
 			setPreviewProcess(t, "")
@@ -397,6 +401,36 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreviewHelpEnabledPreservesStaticContent(t *testing.T) {
+	root, original := NewRootCommand(), NewRootCommand()
+	states := map[string]bool{}
+	for _, feature := range featureflags.All() {
+		states[feature.ID] = true
+	}
+	applyPreviewVisibility(root, states)
+
+	var compare func(*cobra.Command, *cobra.Command)
+	compare = func(actual, expected *cobra.Command) {
+		require.Equal(t, expected.Short, actual.Short, actual.CommandPath())
+		require.Equal(t, expected.Long, actual.Long, actual.CommandPath())
+		require.Equal(t, expected.Example, actual.Example, actual.CommandPath())
+		require.Equal(t, expected.Hidden, actual.Hidden, actual.CommandPath())
+		expectedFlags, actualFlags := expected.LocalFlags(), actual.LocalFlags()
+		require.Equal(t, expectedFlags.FlagUsages(), actualFlags.FlagUsages(), actual.CommandPath())
+		expectedFlags.VisitAll(func(flag *pflag.Flag) {
+			actualFlag := actualFlags.Lookup(flag.Name)
+			require.NotNil(t, actualFlag, actual.CommandPath(), flag.Name)
+			require.Equal(t, flag.Usage, actualFlag.Usage, actual.CommandPath(), flag.Name)
+			require.Equal(t, flag.Hidden, actualFlag.Hidden, actual.CommandPath(), flag.Name)
+		})
+		require.Len(t, actual.Commands(), len(expected.Commands()), actual.CommandPath())
+		for i, child := range actual.Commands() {
+			compare(child, expected.Commands()[i])
+		}
+	}
+	compare(root, original)
 }
 
 func TestPreviewHelpIgnoresHostAndEnvironmentSelection(t *testing.T) {

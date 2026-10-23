@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/helpformat"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -18,10 +19,11 @@ func NewRootCommand() *cobra.Command {
 		Name: "agent",
 		Use:  "agent <command> [options]",
 		Short: fmt.Sprintf(
-			"Ship agents with Microsoft Foundry from your terminal. %s",
+			"Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. %s",
 			color.YellowString("(Preview)"),
 		),
 	})
+	previewHelpText(rootCmd, featureflags.Voice, "Ship prompt, hosted, and voice agents", "Ship agents")
 	rootCmd.SilenceUsage = true
 	rootCmd.Example = `  # Initialize and deploy an agent project
   azd ai agent init

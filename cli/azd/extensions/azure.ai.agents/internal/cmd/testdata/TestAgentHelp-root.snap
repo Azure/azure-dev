@@ -9,7 +9,7 @@
 vdev
 Visit the docs at https://aka.ms/azd-ai-agent-docs
 
-Ship agents with Microsoft Foundry from your terminal. (Preview)
+Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Preview)
 
 Usage
   azd ai agent [command]
@@ -18,11 +18,11 @@ Available Commands
   add          : Add a file-backed Agent service to the current azd project.
   code         : Manage agent source code. (Preview)
   connection   : Manage connection service dependencies for an agent.
-  delete       : Delete an agent.
+  delete       : Delete a prompt, hosted, or voice agent.
   doctor       : Diagnose problems with an azd ai agent project.
   endpoint     : Inspect agent endpoints and manage hosted endpoint/card configuration.
   files        : Manage files in a hosted agent session.
-  init         : Initialize a new agent project. (Preview)
+  init         : Initialize a new prompt, hosted, or voice agent project. (Preview)
   invocations  : Inspect and manage work created by invoking an agent.
   invoke       : Send a message to your prompt or hosted agent.
   monitor      : Monitor logs from a hosted agent.
@@ -32,7 +32,7 @@ Available Commands
   run          : Run your agent locally for development.
   sample       : Browse the curated catalog of agent samples and azd templates.
   sessions     : Manage sessions for a hosted agent endpoint.
-  show         : Show the status of an agent.
+  show         : Show the status of a prompt, hosted, or voice agent.
   state-stores : Inspect hosted-agent State Stores and manage their items.
   toolbox      : Manage toolbox service dependencies for an agent.
   version      : Prints the version of the application
@@ -96,7 +96,6 @@ Preview Feature Switches
   The extension reads these switches from its process environment, including
   values the azd host already injected from the selected environment.
   It does not query azd config or load environment files from disk itself.
-  Each switch enables only its matching preview capability.
   Regular hosted and plain prompt agents are outside these preview scopes.
 
 Learn More

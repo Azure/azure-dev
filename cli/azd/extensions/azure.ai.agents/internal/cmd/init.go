@@ -676,8 +676,8 @@ func newInitCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "init [<path>] [-t <azure.yaml pointer>] [--src <source directory>]",
-		Short: fmt.Sprintf("Initialize a new agent project. %s", color.YellowString("(Preview)")),
-		Long: `Initialize a new agent project.
+		Short: fmt.Sprintf("Initialize a new prompt, hosted, or voice agent project. %s", color.YellowString("(Preview)")),
+		Long: `Initialize a new prompt, hosted, or voice agent project.
 
 Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
@@ -1256,7 +1256,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.description, "description", "",
 		"Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.")
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
+		"System instructions for a prompt agent, including one using --harness. "+
+			"Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
@@ -1317,6 +1318,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	previewFlag(cmd, "voice", featureflags.Voice)
 	previewFlagUsage(cmd, "acr-connection", featureflags.Voice, acrConnectionUsage+" and --image")
 	previewFlagUsage(cmd, "model", featureflags.Voice, modelUsage)
+	previewFlagUsage(cmd, "instructions", featureflags.ManagedHarness,
+		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
+	previewHelpText(cmd, featureflags.Voice, "a new prompt, hosted, or voice agent", "a new agent")
 	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+

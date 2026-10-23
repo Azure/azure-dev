@@ -38,8 +38,8 @@ func newDeleteCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete [name]",
-		Short: "Delete an agent.",
-		Long: `Delete an agent and all of its versions.
+		Short: "Delete a prompt, hosted, or voice agent.",
+		Long: `Delete a prompt, hosted, or voice agent and all of its versions.
 
 For hosted agents, --version deletes only that version. Prompt agents do not
 support version deletion and are always deleted as a whole.
@@ -90,6 +90,7 @@ The agent name is resolved from the azd environment when omitted.` + deleteVoice
 		AllowedValues: []string{"json", "none"},
 		Default:       "none",
 	})
+	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	previewHelp(cmd, featureflags.Voice, []string{deleteVoiceHelp}, nil)
 
 	return cmd

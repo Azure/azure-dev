@@ -120,9 +120,9 @@ func newAgentServiceAddCommandWithClientFactory(
 		Long: `Add or update a file-backed Agent service in the current project's azure.yaml.
 
 <name> is the azure.yaml service key, not the Foundry agent name. --file must
-refer to a direct YAML or JSON definition for a prompt or hosted (including code
-deployment) Agent. The service's root $ref resolves from the directory
-containing azure.yaml.` + agentServiceAddVoiceHelp + `
+refer to a direct YAML or JSON definition for a prompt, hosted (including code
+deployment), voice, or prompt-voice Agent. The service's root $ref resolves
+from the directory containing azure.yaml.
 
 The command validates locally and writes through azd's project API only. It
 does not authenticate to Azure, create remote resources, copy source files,
@@ -211,7 +211,9 @@ project tree. Deploy it with
 		"Override the Agent service's project directory.",
 	)
 	_ = cmd.MarkFlagRequired("file")
-	previewHelp(cmd, featureflags.Voice, []string{agentServiceAddVoiceHelp}, nil)
+	previewHelpText(cmd, featureflags.Voice,
+		"a prompt, hosted (including code\ndeployment), voice, or prompt-voice Agent.",
+		"a prompt or hosted (including code\ndeployment) Agent.")
 
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
@@ -219,11 +221,6 @@ project tree. Deploy it with
 		Default:       "default",
 	})
 }
-
-// agentServiceAddVoiceHelp is removed from help while voice is off.
-const agentServiceAddVoiceHelp = `
-
-Voice and prompt-voice Agent definitions are also supported.`
 
 func (a *agentServiceAddAction) Run(ctx context.Context) (runErr error) {
 	if a.projectClient == nil {

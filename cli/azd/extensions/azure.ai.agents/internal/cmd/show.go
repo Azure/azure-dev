@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
@@ -49,8 +50,8 @@ func newShowCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "show [name]",
-		Short: "Show the status of an agent.",
-		Long: `Show the status of an agent.
+		Short: "Show the status of a prompt, hosted, or voice agent.",
+		Long: `Show the status of a prompt, hosted, or voice agent.
 
 The agent name and version are resolved automatically from the azure.yaml service
 configuration and the current azd environment. Optionally specify the service name
@@ -134,6 +135,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
+	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},

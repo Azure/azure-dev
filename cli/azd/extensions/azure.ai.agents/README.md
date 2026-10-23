@@ -36,6 +36,8 @@ hosted and plain prompt agents need no opt-in.
 
 Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
+Enabling a feature preserves the existing help without adding new text or
+revealing flags that were already hidden, including `--harness`.
 This covers `invoke --long-running`, `invoke --no-wait`, the
 `invocations` group, `init --voice`, and the `prompt-voice` choice of
 `init --kind`. Hidden commands still run. Using a disabled preview fails with a

@@ -115,7 +115,8 @@ Normal project configuration, deployment environments, runtime settings, and com
 | `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
 | `previewHelp(cmd, feature, long, examples)` | Voice and long-running help blocks | The blocks are removed while off |
-| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `--protocol`, `--acr-connection`, `--model` | The flag keeps working. Its usage omits the feature while off |
+| `previewHelpText(cmd, feature, onText, offText)` | Existing inline preview mentions in command descriptions | Replaces the text only while off; enabled help retains its original wording |
+| `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `--protocol`, `--acr-connection`, `--model`, `--instructions` | The flag keeps working. Its usage omits the feature while off |
 | `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy`, `optimize apply`, `endpoint update` | Marks the context so shared selectors classify every selected agent service |
 
 **Service layer.** Shared service selectors call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the command carries `gateAgentServices`. Read and cleanup selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors return it unchanged instead of falling back to another lookup. Definition and service environment values do not enable a gate.
@@ -142,6 +143,8 @@ Manifest decoding reuses the service decoder used by `agent add`. Inline definit
 ## Help hiding
 
 `NewRootCommand` builds the tree without an azd client. Help skips `PersistentPreRunE`, so its hook reads the process switches directly before applying command/flag visibility, usage text, and help blocks. It does not query the host or load an environment, and it needs no timeout or fallback. The root switch list remains visible regardless of enabled state.
+
+Help filtering only hides existing preview content. Enabling a switch preserves the original descriptions, examples, and visibility; it does not add help text or expose previously hidden flags.
 
 Extension metadata and shell completion are built from the complete static tree. Hidden commands and flags still parse; hiding is discovery only, with enforcement at the operation entry points. `--harness` stays hidden in every state, as on `main`.
 

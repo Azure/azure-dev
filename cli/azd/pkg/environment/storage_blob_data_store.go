@@ -9,16 +9,20 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
@@ -26,17 +30,29 @@ import (
 var (
 	ErrAccessDenied     = errors.New("access denied connecting Azure Blob Storage container.")
 	ErrInvalidContainer = errors.New("storage container name is invalid.")
+
+	// ErrRemoteStateConflict is returned when remote environment blobs were
+	// changed by another process between load and save.
+	ErrRemoteStateConflict = errors.New(
+		"the remote environment was modified by another process")
 )
 
 type StorageBlobDataStore struct {
 	configManager config.Manager
 	blobClient    storage.BlobClient
+
+	// blobETags maps blob path to the ETag from the last load. A nil value
+	// means the blob did not exist (If-None-Match: *). Missing keys are
+	// resolved with a download before save.
+	etagMu    sync.Mutex
+	blobETags map[string]*azcore.ETag
 }
 
 func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient) RemoteDataStore {
 	return &StorageBlobDataStore{
 		configManager: configManager,
 		blobClient:    blobClient,
+		blobETags:     map[string]*azcore.ETag{},
 	}
 }
 
@@ -150,7 +166,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	if err := sbd.blobClient.Upload(ctx, configPath, cfgWriter); err != nil {
+	if err := sbd.uploadBlob(ctx, configPath, cfgWriter); err != nil {
 		return fmt.Errorf("uploading config: %w", describeError(err))
 	}
 
@@ -161,7 +177,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment, opt
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
-	if err := sbd.blobClient.Upload(ctx, envPath, buffer); err != nil {
+	if err := sbd.uploadBlob(ctx, envPath, buffer); err != nil {
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
@@ -180,27 +196,29 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	}
 
 	// Reload .env file
-	dotEnvBuffer, err := sbd.blobClient.Download(ctx, envPath)
+	dotEnvDownload, err := sbd.blobClient.Download(ctx, envPath)
 	if err != nil {
 		return describeError(err)
 	}
 
-	defer dotEnvBuffer.Close()
+	defer dotEnvDownload.Body.Close()
+	sbd.setBlobETag(envPath, new(dotEnvDownload.ETag))
 
-	envMap, err := godotenv.Parse(dotEnvBuffer)
+	envMap, err := godotenv.Parse(dotEnvDownload.Body)
 	if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	}
 
 	// Reload config file
-	configBuffer, err := sbd.blobClient.Download(ctx, configPath)
+	configDownload, err := sbd.blobClient.Download(ctx, configPath)
 	if err != nil {
 		return describeError(err)
 	}
 
-	defer configBuffer.Close()
+	defer configDownload.Body.Close()
+	sbd.setBlobETag(configPath, new(configDownload.ETag))
 
-	cfg, err := sbd.configManager.Load(configBuffer)
+	cfg, err := sbd.configManager.Load(configDownload.Body)
 	if errors.Is(err, os.ErrNotExist) {
 		cfg = config.NewEmptyConfig()
 	} else if err != nil {
@@ -255,6 +273,16 @@ func (sbd *StorageBlobDataStore) Delete(ctx context.Context, name string) error 
 }
 
 func describeError(err error) error {
+	if _, ok := errors.AsType[*storage.ConcurrencyConflictError](err); ok {
+		return &internal.ErrorWithSuggestion{
+			Err: fmt.Errorf("%w: %w", ErrRemoteStateConflict, err),
+			Message: "The remote environment was modified by another process " +
+				"and this save was not applied.",
+			Suggestion: "Refresh the environment from remote state and retry the operation.",
+			Links:      []errorhandler.ErrorLink{},
+		}
+	}
+
 	if responseErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		switch responseErr.ErrorCode {
 		case "AuthorizationPermissionMismatch":
@@ -268,4 +296,58 @@ func describeError(err error) error {
 	}
 
 	return err
+}
+
+func (sbd *StorageBlobDataStore) uploadBlob(ctx context.Context, blobPath string, reader *bytes.Buffer) error {
+	match, err := sbd.matchETag(ctx, blobPath)
+	if err != nil {
+		return err
+	}
+
+	etag, err := sbd.blobClient.Upload(ctx, blobPath, reader, match)
+	if err != nil {
+		return err
+	}
+
+	sbd.setBlobETag(blobPath, new(etag))
+	return nil
+}
+
+func (sbd *StorageBlobDataStore) matchETag(ctx context.Context, blobPath string) (azcore.ETag, error) {
+	sbd.etagMu.Lock()
+	if etag, ok := sbd.blobETags[blobPath]; ok {
+		sbd.etagMu.Unlock()
+		if etag == nil {
+			return "", nil
+		}
+		return *etag, nil
+	}
+	sbd.etagMu.Unlock()
+
+	download, err := sbd.blobClient.Download(ctx, blobPath)
+	if isBlobNotFound(err) {
+		sbd.setBlobETag(blobPath, nil)
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	defer download.Body.Close()
+	sbd.setBlobETag(blobPath, new(download.ETag))
+	return download.ETag, nil
+}
+
+func (sbd *StorageBlobDataStore) setBlobETag(blobPath string, etag *azcore.ETag) {
+	sbd.etagMu.Lock()
+	defer sbd.etagMu.Unlock()
+	sbd.blobETags[blobPath] = etag
+}
+
+func isBlobNotFound(err error) bool {
+	respErr, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok {
+		return false
+	}
+	return respErr.ErrorCode == "BlobNotFound" || respErr.StatusCode == http.StatusNotFound
 }

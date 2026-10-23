@@ -45,15 +45,16 @@ func Test_StorageBlobClient(t *testing.T) {
 
 			// Upload
 			reader := bytes.NewBuffer([]byte(envValues))
-			err := blobClient.Upload(*mockContext.Context, blobPath, reader)
+			_, err := blobClient.Upload(*mockContext.Context, blobPath, reader, "")
 			require.NoError(t, err)
 
 			// Download
-			downloadReader, err := blobClient.Download(*mockContext.Context, blobPath)
+			download, err := blobClient.Download(*mockContext.Context, blobPath)
 			require.NoError(t, err)
-			require.NotNil(t, downloadReader)
+			require.NotNil(t, download)
+			require.NotNil(t, download.Body)
 
-			downloadBytes, err := io.ReadAll(downloadReader)
+			downloadBytes, err := io.ReadAll(download.Body)
 			require.NoError(t, err)
 			require.Equal(t, envValues, string(downloadBytes))
 

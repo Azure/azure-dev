@@ -887,6 +887,9 @@ func mapVoiceStructuredInputs(inputs map[string]any) map[string]any {
 // voice agent. It translates the authoring kind "prompt-voice" into the
 // data-plane service kind "voice" and defaults the audio pipeline.
 func CreateVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.SubProtocol == VoiceSubProtocolLive {
+		return createLiveVoiceAgentAPIRequest(voiceAgent)
+	}
 	return createVoiceAgentAPIRequest(voiceAgent, nil)
 }
 
@@ -903,6 +906,12 @@ func createVoiceAgentAPIRequest(
 	voiceAgent VoiceAgent,
 	target *agent_api.VoiceTargetAgentReference,
 ) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.SubProtocol != "" && voiceAgent.SubProtocol != VoiceSubProtocolRealtime {
+		return nil, fmt.Errorf("subProtocol %q is not supported by the realtime voice runtime", voiceAgent.SubProtocol)
+	}
+	if voiceAgent.Delegation != nil || (voiceAgent.Audio != nil && voiceAgent.Audio.Format != nil) {
+		return nil, fmt.Errorf("GPT Live audio and delegation require subProtocol 'live'")
+	}
 	if voiceAgent.ModelType == VoiceModelTypeHostedAgent || voiceAgent.TargetAgent != nil {
 		return nil, fmt.Errorf("model_type hosted_agent and target_agent are not supported; use conversation_engine")
 	}
@@ -976,7 +985,11 @@ func createVoiceAgentAPIRequest(
 		}
 		if voiceAgent.Audio.Output != nil {
 			outputFormat = mapVoiceAudioFormat(voiceAgent.Audio.Output.Format, outputFormat)
-			outputVoice = mapVoiceConfig(voiceAgent.Audio.Output.Voice, voiceName)
+			voice, err := realtimeVoiceConfig(voiceAgent.Audio.Output.Voice)
+			if err != nil {
+				return nil, err
+			}
+			outputVoice = mapVoiceConfig(voice, voiceName)
 			outputSpeed = voiceAgent.Audio.Output.Speed
 		}
 	}
@@ -999,6 +1012,7 @@ func createVoiceAgentAPIRequest(
 			Kind: agent_api.AgentKindVoice,
 		},
 		ModelType:          voiceWireModelType(modelType, hostedAgent),
+		SubProtocol:        string(voiceAgent.SubProtocol),
 		Model:              modelID,
 		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
@@ -1031,6 +1045,112 @@ func createVoiceAgentAPIRequest(
 	}
 
 	return createAgentAPIRequest(voiceAgent.AgentDefinition, voiceDef, nil, nil)
+}
+
+func realtimeVoiceConfig(value any) (*VoiceConfig, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if voice, ok := value.(*VoiceConfig); ok {
+		return voice, nil
+	}
+	if voice, ok := value.(VoiceConfig); ok {
+		return &voice, nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("audio.output.voice is not valid: %w", err)
+	}
+	var voice VoiceConfig
+	if err := json.Unmarshal(data, &voice); err != nil {
+		return nil, fmt.Errorf("audio.output.voice must be an object with type and name for realtime voice agents")
+	}
+	return &voice, nil
+}
+
+func createLiveVoiceAgentAPIRequest(voiceAgent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+	if voiceAgent.ModelType != VoiceModelTypeSelfDeployed {
+		return nil, fmt.Errorf("GPT Live requires modelType %q", VoiceModelTypeSelfDeployed)
+	}
+	if voiceAgent.Model == nil || strings.TrimSpace(voiceAgent.Model.Id) == "" {
+		return nil, fmt.Errorf("model.id is required for a GPT Live voice agent")
+	}
+	if errors := validateLiveVoiceAgent(voiceAgent); len(errors) > 0 {
+		return nil, fmt.Errorf("invalid GPT Live configuration: %s", strings.Join(errors, "; "))
+	}
+	definition := agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{
+			Kind:      agent_api.AgentKindVoice,
+			RaiConfig: mapRaiConfig(voiceAgent.Policies),
+		},
+		SubProtocol:      string(VoiceSubProtocolLive),
+		ModelType:        agent_api.VoiceModelTypeSelfDeployed,
+		Model:            strings.TrimSpace(voiceAgent.Model.Id),
+		StructuredInputs: mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
+		Store:            voiceAgent.Store,
+		LiveAudio:        mapLiveVoiceAudio(voiceAgent.Audio),
+		Delegation:       mapLiveVoiceDelegation(voiceAgent.Delegation),
+	}
+	if voiceAgent.Instructions != nil {
+		definition.Instructions = *voiceAgent.Instructions
+	}
+	if len(voiceAgent.Greeting) > 0 {
+		definition.Greeting = voiceAgent.Greeting
+	}
+	return createAgentAPIRequest(voiceAgent.AgentDefinition, definition, nil, nil)
+}
+
+func mapLiveVoiceAudio(audio *VoiceAudio) *agent_api.LiveVoiceAudio {
+	if audio == nil {
+		return nil
+	}
+	result := &agent_api.LiveVoiceAudio{}
+	if audio.Format != nil {
+		result.Format = &agent_api.LiveAudioFormat{Type: strings.TrimSpace(audio.Format.Type), Rate: audio.Format.Rate}
+	}
+	if audio.Output != nil && audio.Output.Voice != nil {
+		result.Output = &agent_api.LiveAudioOutput{Voice: audio.Output.Voice}
+	}
+	return result
+}
+
+func mapLiveVoiceDelegation(delegation *LiveVoiceDelegation) *agent_api.LiveVoiceDelegation {
+	if delegation == nil {
+		return nil
+	}
+	result := &agent_api.LiveVoiceDelegation{
+		Type: delegation.Type, AgentName: delegation.AgentName, AgentVersion: delegation.AgentVersion,
+	}
+	if delegation.Responses != nil {
+		responses := delegation.Responses
+		result.Responses = &agent_api.LiveResponsesDelegation{
+			Model: responses.Model, Instructions: responses.Instructions,
+			MaxOutputTokens: responses.MaxOutputTokens, ParallelToolCalls: responses.ParallelToolCalls,
+			ServiceTier: responses.ServiceTier, ToolChoice: mapLiveToolChoice(responses.ToolChoice), Tools: responses.Tools,
+		}
+		if responses.Reasoning != nil {
+			result.Responses.Reasoning = &agent_api.LiveResponsesReasoning{
+				Effort: responses.Reasoning.Effort, Summary: responses.Reasoning.Summary,
+			}
+		}
+		if responses.Text != nil {
+			result.Responses.Text = &agent_api.LiveResponsesText{Verbosity: responses.Text.Verbosity}
+		}
+	}
+	return result
+}
+
+func mapLiveToolChoice(choice any) any {
+	object, ok := choice.(map[string]any)
+	if !ok {
+		return choice
+	}
+	mapped := maps.Clone(object)
+	if value, found := mapped["serverLabel"]; found {
+		mapped["server_label"] = value
+		delete(mapped, "serverLabel")
+	}
+	return mapped
 }
 
 func isHostedConversationEngine(engine *VoiceConversationEngine) bool {

@@ -89,6 +89,7 @@ type Application struct {
 	Dockerfile             string
 	ApplicationInputs      []ApplicationInput
 	InputEvidence          []Evidence
+	InputOwnershipEvidence []Evidence
 	InputReferences        map[string][]Evidence
 }
 
@@ -227,13 +228,14 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, invalidConfiguration("server.port must be between 1 and 65535")
 	}
 	inputEvidence := slices.Clone(c.traces["server.port"])
-	inputEvidence = append(inputEvidence, c.traces[webApplicationTypeProperty]...)
-	inputEvidence = append(inputEvidence, c.traces[serverSSLEnabledProperty]...)
+	ownershipEvidence := slices.Clone(inputEvidence)
+	ownershipEvidence = append(ownershipEvidence, c.traces[webApplicationTypeProperty]...)
+	ownershipEvidence = append(ownershipEvidence, c.traces[serverSSLEnabledProperty]...)
 	for _, setting := range deploymentOwnedConfigurationSettings {
-		inputEvidence = append(inputEvidence, c.traces[setting]...)
+		ownershipEvidence = append(ownershipEvidence, c.traces[setting]...)
 	}
 	for _, setting := range c.profileGroupKeys {
-		inputEvidence = append(inputEvidence, c.traces[setting]...)
+		ownershipEvidence = append(ownershipEvidence, c.traces[setting]...)
 	}
 	a := &Application{
 		ID:   "app",
@@ -244,6 +246,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
 		InputEvidence:          inputEvidence,
+		InputOwnershipEvidence: ownershipEvidence,
 	}
 	if info, err := root.Lstat("Dockerfile"); err == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
@@ -286,6 +289,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	a.InputEvidence = append(a.InputEvidence, c.traces["spring.datasource.url"]...)
+	a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces["spring.datasource.url"]...)
 	if embedded {
 		a.Embedded, err = resolveEmbedded(m, c)
 		if err != nil {
@@ -293,7 +297,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		}
 	}
 	for _, setting := range deploymentOwnedDatasourceSelectors {
-		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
+		a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces[setting]...)
 	}
 	if requirement != nil {
 		a.Requirements = []Requirement{*requirement}
@@ -303,7 +307,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	for _, setting := range deploymentOwnedFoundrySelectors {
-		a.InputEvidence = append(a.InputEvidence, c.traces[setting]...)
+		a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces[setting]...)
 	}
 	a.InputReferences = c.placeholderReferences()
 	return a, nil

@@ -285,15 +285,18 @@ func AnalyzeProject(
 			return nil, fmt.Errorf("deployment input %s cannot affect the selected configuration", key)
 		}
 	}
-	supportedEvidence := slices.Clone(application.InputEvidence)
+	generatedEvidence := slices.Clone(application.InputEvidence)
+	ownershipEvidence := slices.Clone(application.InputOwnershipEvidence)
 	for _, requirement := range application.Requirements {
-		supportedEvidence = append(supportedEvidence, requirement.Trace...)
+		generatedEvidence = append(generatedEvidence, requirement.Trace...)
+		ownershipEvidence = append(ownershipEvidence, requirement.Trace...)
 	}
 	if application.Embedded != nil {
-		supportedEvidence = append(supportedEvidence, application.Embedded.Evidence...)
+		generatedEvidence = append(generatedEvidence, application.Embedded.Evidence...)
+		ownershipEvidence = append(ownershipEvidence, application.Embedded.Evidence...)
 	}
 	if application.Foundry != nil {
-		supportedEvidence = append(supportedEvidence, application.Foundry.Evidence...)
+		ownershipEvidence = append(ownershipEvidence, application.Foundry.Evidence...)
 	}
 	for _, input := range applicationInputs {
 		keys := []string{canonical(input.Name)}
@@ -302,11 +305,11 @@ func AnalyzeProject(
 		}
 		for _, key := range keys {
 			for _, reference := range application.InputReferences[key] {
-				if containsEvidence(supportedEvidence, reference) {
+				if containsEvidence(ownershipEvidence, reference) {
 					reference = outermostSupportedReference(
 						reference,
 						application.InputReferences,
-						supportedEvidence,
+						ownershipEvidence,
 					)
 					return nil, fmt.Errorf(
 						"application input %s affects deployment-owned property %s in %s",
@@ -317,7 +320,7 @@ func AnalyzeProject(
 	}
 	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
 		for _, reference := range application.InputReferences[canonical(key)] {
-			if containsEvidence(supportedEvidence, reference) {
+			if containsEvidence(generatedEvidence, reference) {
 				continue
 			}
 			return nil, fmt.Errorf(
@@ -340,7 +343,7 @@ func AnalyzeProject(
 	requirements, embedded, foundry := application.Requirements, application.Embedded, application.Foundry
 	application.Requirements, application.Embedded, application.Foundry = nil, nil, nil
 	application.ApplicationInputs = applicationInputs
-	application.InputEvidence, application.InputReferences = nil, nil
+	application.InputEvidence, application.InputOwnershipEvidence, application.InputReferences = nil, nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
 		result.Resources = append(result.Resources, Resource{
@@ -401,6 +404,7 @@ func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]Applica
 }
 
 func indexedApplicationInputBase(name string) (string, bool) {
+	name = strings.TrimSuffix(name, "_")
 	separator := strings.LastIndexByte(name, '_')
 	if separator <= 0 || separator == len(name)-1 {
 		return "", false

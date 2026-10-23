@@ -220,6 +220,7 @@ func TestApplicationInputReservedIndexedConfigurationSources(t *testing.T) {
 		"SPRING_CONFIG_IMPORT_0",
 		"SPRING_PROFILES_ACTIVE_0",
 		"SPRING_PROFILES_INCLUDE_0",
+		"SPRING_PROFILES_INCLUDE_0_",
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
 			t.Run(name+"/"+string(kind), func(t *testing.T) {
@@ -382,6 +383,11 @@ func TestApplicationInputProfileGroupConflicts(t *testing.T) {
 			name:     "selected profile group indexed environment binding",
 			profiles: []string{"release"},
 			input:    "SPRING_PROFILES_GROUP_RELEASE_0",
+		},
+		{
+			name:     "selected profile group indexed trailing delimiter",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE_0_",
 		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
@@ -764,6 +770,17 @@ func TestResolutionAllowsPromptInputAliasChain(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 9090, result.Applications[0].Port)
+}
+
+func TestResolutionRejectsPromptInputSharedWithProfileInclude(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.profiles.include=${DB_NAME:local}\n"+
+			"spring.datasource.url=jdbc:postgresql://localhost/${DB_NAME}\n")
+	_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		Properties: map[string]string{"DB_NAME": "catalog"},
+	})
+	require.ErrorContains(t, err, "deployment input DB_NAME also affects unsupported property spring.profiles.include")
 }
 
 func TestResolutionRejectsUnusedOrUnreproducibleInputs(t *testing.T) {

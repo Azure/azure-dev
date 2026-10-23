@@ -181,8 +181,8 @@ func appendProcessTreeID(environ []string, processTreeID string) []string {
 	inheritedIDs := ""
 	updated := make([]string, 0, len(environ)+1)
 	for _, entry := range environ {
-		if strings.HasPrefix(entry, prefix) {
-			inheritedIDs = strings.TrimPrefix(entry, prefix)
+		if after, ok := strings.CutPrefix(entry, prefix); ok {
+			inheritedIDs = after
 			continue
 		}
 		updated = append(updated, entry)

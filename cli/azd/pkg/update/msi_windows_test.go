@@ -20,7 +20,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
 )
@@ -310,6 +312,10 @@ func TestResolveMSIInstallation(t *testing.T) {
 }
 
 func TestMSIInstallationValidate(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
 	tests := []struct {
 		name           string
 		perMachine     bool
@@ -346,7 +352,8 @@ func TestMSIInstallationValidate(t *testing.T) {
 					suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
 					require.True(t, ok, "elevation errors must carry a suggestion")
 					require.Contains(t, suggestion.Suggestion, "Run as administrator")
-					require.Contains(t, suggestion.Suggestion, "azd update --channel stable")
+					require.Contains(t, suggestion.Suggestion, output.WithHighLightFormat("azd update --channel stable"))
+					require.NotContains(t, suggestion.Suggestion, "`")
 					require.NotContains(t, suggestion.Suggestion, install.exePath)
 					require.Contains(t, err.Error(), filepath.Dir(install.exePath))
 				}

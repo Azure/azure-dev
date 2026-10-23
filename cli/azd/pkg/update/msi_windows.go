@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/errorhandler"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
@@ -207,8 +208,9 @@ func (install *msiInstallation) validate(target *VersionInfo, currentChannel Cha
 		return &UpdateError{Code: CodeElevationRequired, Err: &internal.ErrorWithSuggestion{
 			Err: fmt.Errorf("updating the machine-wide azd installation at %s requires an elevated terminal",
 				filepath.Dir(install.exePath)),
-			Suggestion: "Open a terminal with 'Run as administrator' and run " +
-				"azd update --channel stable, or contact your administrator.",
+			Suggestion: fmt.Sprintf(
+				"Open a terminal with 'Run as administrator' and run %s, or contact your administrator.",
+				output.WithHighLightFormat("azd update --channel stable")),
 		}}
 	}
 	return nil

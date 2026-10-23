@@ -37,6 +37,7 @@ type optimizeAgentContext struct {
 	serviceName  string // azd service name (env key prefix source); empty for standalone --agent
 	promptAgent  bool   // prompt agents use their deployed service-side definition
 	project      *azdext.ProjectConfig
+	service      *azdext.ServiceConfig
 }
 
 // resolveOptimizeAgent resolves the agent name and project directory.
@@ -88,6 +89,7 @@ func resolveOptimizeAgent(ctx context.Context, flagValue, envName string, noProm
 						serviceName:  svc.Name,
 						promptAgent:  promptAgent,
 						project:      project,
+						service:      svc,
 					}, nil
 				}
 			}
@@ -302,6 +304,9 @@ func (a *OptimizeAction) resolveConfig(
 			return nil, "", "", resolveErr
 		}
 		if resolveErr == nil && (a.flags.agent != "" || cfg.Agent.Name == resolved.agentName) {
+			if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath()); err != nil {
+				return nil, "", "", err
+			}
 			agentProject = resolved.agentProject
 			a.serviceName = resolved.serviceName
 			a.promptAgent = resolved.promptAgent
@@ -316,6 +321,9 @@ func (a *OptimizeAction) resolveConfig(
 
 	resolved, err := resolveOptimizeAgent(ctx, a.flags.agent, a.envName, a.noPrompt)
 	if err != nil {
+		return nil, "", "", err
+	}
+	if err := projectpkg.RequireAgentFeatures(resolved.service, resolved.project.GetPath()); err != nil {
 		return nil, "", "", err
 	}
 	agentProject = resolved.agentProject

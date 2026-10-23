@@ -6,12 +6,17 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/pkg/recordproxy"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -49,6 +54,21 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		t.Setenv(feature.EnvVar, "")
 	}
 	t.Setenv("AZD_ENVIRONMENT", "")
+	resourceID, err := arm.ParseResourceID("/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project")
+	require.NoError(t, err)
+	originalTransport := recordproxy.Transport
+	t.Cleanup(func() { recordproxy.Transport = originalTransport })
+	recordproxy.Transport = hostedResourceErrorTransport(func(request *http.Request) (*http.Response, error) {
+		require.Equal(t, http.MethodGet, request.Method)
+		require.Equal(t, resourceID.String(), request.URL.Path)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"name":"project","location":"eastus"}`)),
+			Request:    request,
+		}, nil
+	})
 	for _, tc := range []struct {
 		name       string
 		definition map[string]any
@@ -98,15 +118,23 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 					} else {
 						require.ErrorContains(t, err, tc.feature.ID)
 						require.Contains(t, err.Error(), "disabled")
-						provider := &AgentServiceTargetProvider{projectPath: root}
+						provider := &AgentServiceTargetProvider{
+							projectPath: root, deployContextReady: true,
+							foundryProject: resourceID, credential: hostedResourceErrorCredential{},
+						}
 						_, err = provider.Package(ctx, proto.CloneOf(service), nil, nil)
 						require.ErrorContains(t, err, tc.feature.ID)
 						_, err = provider.Deploy(ctx, proto.CloneOf(service), nil, nil, nil)
 						require.ErrorContains(t, err, tc.feature.ID)
 						_, err = provider.Publish(ctx, proto.CloneOf(service), nil, nil, nil, nil)
 						require.ErrorContains(t, err, tc.feature.ID)
-						_, err = provider.GetTargetResource(ctx, "", proto.CloneOf(service), nil)
-						require.ErrorContains(t, err, tc.feature.ID)
+						target, err := provider.GetTargetResource(ctx, "sub", proto.CloneOf(service), nil)
+						require.NoError(t, err, "target reads must work with previews off")
+						require.Equal(t, "sub", target.SubscriptionId)
+						if tc.definition["kind"] != "prompt" {
+							require.Equal(t, "project", target.ResourceName)
+							require.Equal(t, "eastus", target.Metadata["location"])
+						}
 						t.Setenv(tc.feature.EnvVar, "true")
 						require.NoError(t, RequireAgentFeatures(service, root))
 						t.Setenv(tc.feature.EnvVar, "")

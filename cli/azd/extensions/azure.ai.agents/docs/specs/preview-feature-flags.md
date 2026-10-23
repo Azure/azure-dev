@@ -120,7 +120,7 @@ Normal project configuration, deployment environments, runtime settings, and com
 
 **Service layer.** Shared service selectors call `requireSelectedServiceFeatures`. It runs `project.RequireAgentFeatures` only when the command carries `gateAgentServices`. Read and cleanup selectors stay outside the gate. A gate failure is wrapped so callers that recover from selection errors return it unchanged instead of falling back to another lookup. Definition and service environment values do not enable a gate.
 
-**Lifecycle layer.** The service target has one gate, `prepareGatedOperation`, used by `GetTargetResource`, `Package`, `Publish`, and `Deploy`. `Initialize` and `Endpoints` stay outside the gate so read and cleanup flows work. The `preprovision` and `predeploy` handlers classify services before writing environment values or project settings.
+**Lifecycle layer.** The service target has one gate, `prepareGatedOperation`, used by `Package`, `Publish`, and `Deploy`. `Initialize`, `GetTargetResource`, and `Endpoints` stay outside the gate so read and cleanup flows work. The `preprovision` and `predeploy` handlers classify services before writing environment values or project settings.
 
 ### Direct checks that remain
 
@@ -134,6 +134,7 @@ These entry points classify content that only exists at run time, so an annotati
 | Hosted `init` protocol picker | It omits `invocations_ws` while voice is off and validates selection before project/environment creation. Explicit ordinary protocols and the no-prompt Responses default need no feature check |
 | `agent add` | Definitions come from `--file` content |
 | `invoke --local` | The local path uses the gated selector when an agent service exists. A web-only project retains ordinary local invocation |
+| `optimize` submission | The actual target is resolved before checking its local service. Matching config-file targets are checked; independent remote targets retain their authored identity and version |
 | `optimize deploy` remote definition | The definition is already fetched before creating a new version |
 
 Manifest decoding reuses the service decoder used by `agent add`. Inline definitions and root/field `$ref` includes use the existing resolver. Template catalogs lack capability metadata, so entries remain visible; staged definitions are checked instead of inferring features from names.

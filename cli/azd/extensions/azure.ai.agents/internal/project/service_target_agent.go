@@ -847,7 +847,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	if p.isPromptAgentService() {

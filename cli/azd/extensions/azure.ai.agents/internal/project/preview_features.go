@@ -71,9 +71,9 @@ func RequireAgentFeatures(
 	return RequireDefinitionFeatures(resolved.AsMap())
 }
 
-// prepareGatedOperation adopts and resolves the service, then applies the
-// single service target preview check. GetTargetResource, Package, Publish,
-// and Deploy call it. Initialize and Endpoints stay outside the gate so read and
+// prepareGatedOperation adopts and resolves the service, then
+// checks the preview for Package, Publish, and Deploy. Initialize,
+// GetTargetResource, and Endpoints stay outside the gate so read and
 // cleanup flows keep working.
 func (p *AgentServiceTargetProvider) prepareGatedOperation(
 	ctx context.Context, serviceConfig *azdext.ServiceConfig,

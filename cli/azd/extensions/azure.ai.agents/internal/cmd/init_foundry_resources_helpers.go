@@ -1576,7 +1576,7 @@ func ensureLocationWithAllowedLocations(
 	envName string,
 	allowedLocations []string,
 ) error {
-	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
+	if azureContext.Scope.Location != "" && initLocationAllowed(ctx, azureContext.Scope.Location, allowedLocations) {
 		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
 			return err
 		}
@@ -1919,12 +1919,12 @@ func selectFoundryProject(
 	}
 
 	if projectResourceId != "" && len(projects) > 0 {
-		if err := validateInitLocation(projects[0].Location, allowedLocations); err != nil {
+		if err := validateInitLocation(ctx, projects[0].Location, allowedLocations); err != nil {
 			return nil, err
 		}
 	}
 	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
-		return !locationAllowed(p.Location, allowedLocations)
+		return !initLocationAllowed(ctx, p.Location, allowedLocations)
 	})
 
 	// Hosted agents (code deploy or a pre-built --image) must run in a region that

@@ -2,18 +2,11 @@
 
 ## 0.1.0-preview (Unreleased)
 
-### Features Added
-
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add `azd ai cu` commands to analyze files and URLs with azd sign-in, including batch analysis, default YAML front matter and Markdown output, and complete JSON results with `--llm-input=false`.
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add analyzer listing, inspection, creation, copying, deletion, schema authoring and validation, and testing against sample files.
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add service-default configuration, environment-variable inspection, and setup diagnostics.
-- Show human-readable `doctor` diagnostics by default, retaining `--output json` for structured reports.
-- Make `analyze --output json` select the complete response for console and saved results; reject explicit `--llm-input=true` conflicts.
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add `config set|get|list|unset` shortcuts for CU defaults in azd user configuration without a project, shared settings resolution, and effective-setting sources in `doctor`.
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add infrastructure generation with Bash and PowerShell hooks for model setup and Content Understanding configuration.
-- [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Default to API version `2025-11-01` and accept valid `YYYY-MM-DD-preview` versions for internal testing and future previews.
-
-### Bugs Fixed
-
-- Accept successful preview inline analysis responses without optional MIME metadata, preserving raw results and inline usage.
-- Honor `azd config defaults.subscription` during non-interactive infrastructure generation, and use the user-access tenant for existing-resource discovery credentials.
+- Initial preview of Azure Content Understanding commands under `azd ai cu`,
+  using Azure Developer CLI sign-in and environments.
+- Analyze documents and media from local files or URLs, including batch
+  processing and saved results. Create, manage, validate, and test custom
+  analyzers.
+- Save global CU defaults, configure resource model mappings, check setup
+  readiness, and generate an azd/Bicep project for resource provisioning and
+  model setup.

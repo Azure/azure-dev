@@ -26,7 +26,7 @@ goals:
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
     $existing_deployment for subsequent commands. Read the current allowed region IDs from
-    https://raw.githubusercontent.com/Azure/azure-dev/main/cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-regions.json.
+    https://aka.ms/azd-ai-agents/harness-region.
     If the manifest is unavailable, use the harness-agent-regions.json embedded in the build under test.
     Use this policy for every generated and adopted harness check below.
     Internal harness regions must not appear in region pickers or supported-region

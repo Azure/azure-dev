@@ -66,12 +66,12 @@ func validateInitLocation(ctx context.Context, location string, allowedLocations
 // It is a var so tests can override it.
 var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
 
-// harnessAgentRegionsURL reads main so region changes do not require an extension release.
-var harnessAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
-	"cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-regions.json"
+// harnessAgentRegionsURL points at the live public harness regions manifest.
+// Updating the manifest does not require an extension release.
+var harnessAgentRegionsURL = "https://aka.ms/azd-ai-agents/harness-region"
 
-var internalHarnessAgentRegionsURL = "https://raw.githubusercontent.com/Azure/azure-dev/main/" +
-	"cli/azd/extensions/azure.ai.agents/internal/cmd/harness-agent-internal-regions.json"
+// internalHarnessAgentRegionsURL points at the independently updated internal policy.
+var internalHarnessAgentRegionsURL = "https://aka.ms/azd-ai-agents/harness-internal-region"
 
 // embeddedHostedAgentRegionsJSON is the build-time fallback used when the live
 // manifest fetch fails (e.g. transient network issues, restrictive proxies).

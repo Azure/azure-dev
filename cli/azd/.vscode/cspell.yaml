@@ -620,7 +620,7 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/cuclient/rest.go
     words:
       - restclient
-  - filename: extensions/azure.ai.content-understanding/{internal/testutil/tempdir.go,docs/usage.md}
+  - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
 ignorePaths:

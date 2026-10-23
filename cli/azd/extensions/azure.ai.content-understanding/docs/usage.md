@@ -516,9 +516,6 @@ servers, and strict recordings; they do not call Azure or require Python.
 Reused assets retain their [fixture provenance](../testdata/parity/fixtures.yaml).
 Extension-local LF rules keep byte-level fixture and embedded-asset hashes stable
 across platforms.
-Output fixtures use `testutil.TempDir` to resolve platform aliases in test-owned
-temporary roots, including macOS `/var` paths. Deliberate symlinks inside those
-roots remain unresolved so rejection tests still exercise the production guards.
 
 [ci-test.ps1](../ci-test.ps1) is the shared release pipeline's test entry point.
 Its Windows and Mac jobs also run [ci-smoke.ps1](../ci-smoke.ps1), which verifies

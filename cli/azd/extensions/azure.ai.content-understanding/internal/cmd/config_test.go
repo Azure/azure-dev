@@ -252,7 +252,7 @@ func TestDoctorUsesUserDefaultsThroughSharedRuntimeWithoutProject(t *testing.T) 
 	var stdout, stderr bytes.Buffer
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
-	root.SetArgs([]string{"doctor"})
+	root.SetArgs([]string{"doctor", "--output", "json"})
 	require.NoError(t, root.ExecuteContext(t.Context()))
 	assert.Empty(t, stderr.String())
 	var result doctorResult

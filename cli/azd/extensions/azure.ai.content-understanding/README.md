@@ -65,10 +65,11 @@ These examples use Bash. In PowerShell, set the endpoint with
 Normal endpoint-only use does not require a tenant ID; the extension uses azd
 authentication. API-key authentication is not supported.
 
-`doctor` reports configuration, authentication, service access, and model
-readiness, including effective CU settings and their sources.
-Missing generative models can produce `ready: false` while
-`prebuilt-layout` remains usable. Inspect the report, not just the exit code.
+`doctor` shows human-readable configuration, authentication, service access, and
+model readiness checks, including effective CU settings and their sources.
+Use `azd ai cu doctor --output json` for scripts and CI.
+Missing generative models produce a readiness warning (`ready: false` in JSON)
+while `prebuilt-layout` remains usable. Inspect the report, not just the exit code.
 
 ### 2. Save a user default
 

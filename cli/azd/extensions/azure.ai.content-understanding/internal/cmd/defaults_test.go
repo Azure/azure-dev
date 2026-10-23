@@ -54,6 +54,7 @@ type defaultsFixture struct {
 	models        map[string]string
 	environment   string
 	analyzer      string
+	endpoint      string
 	options       config.Options
 	openErr       error
 	opens, closes int
@@ -72,6 +73,7 @@ func newDefaultsFixture(t *testing.T) *defaultsFixture {
 	return &defaultsFixture{
 		client: &defaultsFake{current: cuclient.Defaults{ModelDeployments: mapping}},
 		models: map[string]string{"gpt-5.2": "environment-deployment"}, environment: "dev",
+		endpoint: "https://configured.example/contentunderstanding",
 	}
 }
 
@@ -97,7 +99,7 @@ func (f *defaultsFixture) root() *cobra.Command {
 		}
 		return &serviceSession{
 			client: f.client, models: f.models, apiVersion: version, environment: environment,
-			endpoint: "https://configured.example/contentunderstanding", analyzer: f.analyzer,
+			endpoint: f.endpoint, analyzer: f.analyzer,
 			sources: f.sources,
 			close:   func() { f.closes++ },
 			confirm: func(context.Context, string) (bool, error) {

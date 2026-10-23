@@ -69,13 +69,17 @@ commands are not supported.
 `CU_API_KEY` and saved API-key entries are rejected rather than used, even when
 empty. `CU_AUTH_MODE`, if set, must be `login`.
 
-`doctor` checks configuration, authentication, service access, and model defaults.
-Its `sources` object identifies the source of each effective `CU_*` setting:
+`doctor` shows human-readable checks for configuration, authentication, service
+access, and model defaults, with effective `CU_*` settings and their sources.
+Use `azd ai cu doctor --output json` for the structured report in scripts and CI;
+its `sources` object identifies each setting's source:
 `flag: --<name>`, `process`, `azd environment: <name>`, `user config`, or `built-in`.
-A report with `ready: false` and missing model requirements can still exit
+A readiness warning (`ready: false` in JSON) with missing model requirements can still exit
 successfully: non-generative analyzers may remain usable. Authentication,
 configuration, and service failures return nonzero. Inspect the report rather
 than using the exit code alone as a generative-readiness gate.
+Scripts that previously parsed default `doctor` output should explicitly pass
+`--output json`.
 
 ## Analyze content
 
@@ -362,7 +366,7 @@ explicit flags take precedence over the SDK environment defaults:
 | `azd ai cu defaults` | Read or configure model-to-deployment defaults. |
 | `azd ai cu config` | Set, get, list, or unset CU user defaults in azd configuration. |
 | `azd ai cu infra generate` | Generate an azd/Bicep project and its postprovision hooks. |
-| `azd ai cu doctor` | Return structured connectivity and readiness checks. |
+| `azd ai cu doctor` | Show readable connectivity and readiness checks; use `--output json` for automation. |
 | `azd ai cu env-var list` | Inspect supported process inputs with secrets redacted. |
 | `azd ai cu version` | Show the installed extension version. |
 
@@ -373,7 +377,8 @@ set `NO_COLOR=1` for plain text.
 ## Usage guidance
 
 - Supported output formats are `default`, `json`, and `none`. Analysis defaults
-  to readable LLM-input text; other commands, analysis summaries, dry runs, and
+  to readable LLM-input text, and `doctor` defaults to readable diagnostics.
+  Other commands, analysis summaries, dry runs, and
   `--usage` wrappers use JSON. Use `--llm-input=false` for complete analysis JSON.
 - `--output none` suppresses successful stdout, not service operations, requested
   file writes, confirmations, or errors. Always check the exit code before parsing

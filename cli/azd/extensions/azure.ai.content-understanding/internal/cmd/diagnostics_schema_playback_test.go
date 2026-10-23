@@ -101,9 +101,39 @@ func TestRecordedDoctorCommands(t *testing.T) {
 								require.NoError(t, err)
 								if format == "none" {
 									assert.Empty(t, stdout.String())
-								} else {
+								} else if format == "json" {
 									assert.Equal(t, expected, recordedCommandObject(t, stdout.Bytes()),
 										"compare the complete report, not readiness or model names alone")
+								} else {
+									text := stdout.String()
+									assert.False(t, json.Valid(stdout.Bytes()))
+									assert.Contains(t, text, "Context: "+environment)
+									assert.Contains(t, text, "CU_ENDPOINT: https://sanitized.services.ai.azure.com")
+									assert.Contains(t, text, "CU_API_VERSION: "+cuclient.DefaultAPIVersion)
+									assert.Contains(t, text, "CU_DEFAULT_ANALYZER: (not set)")
+									assert.Contains(t, text,
+										"[OK] Authentication and CU service access (Microsoft Entra ID)")
+									if name == "healthy" {
+										assert.Contains(t, text, "[OK] Generative readiness: ready")
+										models, ok := expected["modelDeployments"].(map[string]any)
+										require.True(t, ok)
+										for model, deployment := range models {
+											value, ok := deployment.(string)
+											require.True(t, ok)
+											assert.Contains(t, text, model+": "+value)
+										}
+									} else {
+										assert.Contains(t, text, "[WARN] Generative readiness: not ready")
+										assert.Contains(t, text, "(none configured)")
+										missing, ok := expected["missingRequirements"].([]any)
+										require.True(t, ok)
+										for _, requirement := range missing {
+											value, ok := requirement.(string)
+											require.True(t, ok)
+											assert.Contains(t, text, value)
+										}
+										assert.Contains(t, text, "azd ai cu defaults set --model MODEL=DEPLOYMENT")
+									}
 								}
 							}
 							assert.Empty(t, stderr.String())

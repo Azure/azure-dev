@@ -5,7 +5,12 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
+	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/defaults"
 	"azure.ai.content-understanding/internal/exterrors"
@@ -43,7 +48,8 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 		Short: "Check azd context, Entra authentication, CU access, and generative readiness",
 		Long: "Resolve azd environment or projectless configuration, authenticate through azd, " +
 			"and read CU service defaults. Show effective CU settings and their configuration sources.\n" +
-			"Missing generative mappings return ready:false; " +
+			"Show human-readable diagnostics by default; use --output json for a structured report.\n" +
+			"Missing generative mappings report incomplete readiness without failing the command; " +
 			"configuration/auth/service failures use the host error channel.\n" +
 			"No resources or deployments are created. Only --fix-defaults permits a service-defaults update.",
 		Example: `  azd ai cu doctor
@@ -51,6 +57,9 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 
   azd ai cu doctor --endpoint https://resource.services.ai.azure.com/
     Check a resource directly without requiring an azd project.
+
+  azd ai cu doctor --output json
+    Return a structured report for scripts and CI.
 
   azd ai cu doctor --fix-defaults --environment dev
     Configure service defaults from the selected environment's model mappings.`,
@@ -60,7 +69,11 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		return exterrors.FromError(runDoctor(cmd, extCtx, open, *options, fix))
 	}
-	return serviceCommand(cmd, options)
+	serviceCommand(cmd, options)
+	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"default", "json", "none"},
+		Usage: "Output format: default (human-readable), json, or none",
+	})
 }
 
 func runDoctor(
@@ -106,11 +119,61 @@ func runDoctor(
 		analyzer = new(session.analyzer)
 	}
 	missing := defaults.MissingRequirements(mapping)
-	return writeServiceResult(cmd, extCtx.OutputFormat, doctorResult{
-		Ready: len(missing) == 0, Endpoint: session.endpoint, APIVersion: session.apiVersion,
+	result := doctorResult{
+		Ready: len(missing) == 0, Endpoint: analysis.RedactURL(session.endpoint), APIVersion: session.apiVersion,
 		Authentication: "Microsoft Entra ID", Profile: environment, Analyzer: analyzer,
 		Models: mapping, Missing: missing, Failures: []doctorFailure{}, Sources: session.sources,
-	})
+	}
+	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
+		return writeServiceResult(cmd, extCtx.OutputFormat, result)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), formatDoctorResult(result)); err != nil {
+		return fmt.Errorf("write CU diagnostics: %w", err)
+	}
+	return nil
+}
+
+func formatDoctorResult(result doctorResult) string {
+	var output strings.Builder
+	output.WriteString("Content Understanding diagnostics\n\n[OK] Configuration resolved\n")
+	fmt.Fprintf(&output, "  Context: %s\n", result.Profile)
+	setting := func(name, value string) {
+		fmt.Fprintf(&output, "  %s: %s", name, value)
+		if source := result.Sources[name]; source != "" {
+			fmt.Fprintf(&output, " (%s)", source)
+		}
+		output.WriteByte('\n')
+	}
+	setting("CU_ENDPOINT", result.Endpoint)
+	setting("CU_API_VERSION", result.APIVersion)
+	analyzer := "(not set)"
+	if result.Analyzer != nil {
+		analyzer = *result.Analyzer
+	}
+	setting("CU_DEFAULT_ANALYZER", analyzer)
+	fmt.Fprintf(&output, "\n[OK] Authentication and CU service access (%s)\n", result.Authentication)
+	output.WriteString("\nModel deployments:\n")
+	if len(result.Models) == 0 {
+		output.WriteString("  (none configured)\n")
+	}
+	for _, model := range slices.Sorted(maps.Keys(result.Models)) {
+		fmt.Fprintf(&output, "  %s: %s\n", model, result.Models[model])
+	}
+	if result.Ready {
+		output.WriteString("\n[OK] Generative readiness: ready\n")
+	} else {
+		output.WriteString("\n[WARN] Generative readiness: not ready\n")
+		for _, missing := range result.Missing {
+			fmt.Fprintf(&output, "  - %s\n", missing)
+		}
+		output.WriteString("\nConfigure mappings with azd ai cu defaults set --model MODEL=DEPLOYMENT.\n" +
+			"If the selected environment has cu.modelDeployments, run azd ai cu doctor --fix-defaults.\n" +
+			"Non-generative analyzers may still be usable.\n")
+	}
+	return output.String()
 }
 
 func doctorConfigurationError(err error) error {

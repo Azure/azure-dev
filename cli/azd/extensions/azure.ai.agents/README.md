@@ -447,11 +447,20 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
-Unlike the service-key references in `toolboxes`, singular `toolbox.name`
-retains the Foundry resource name. Local dependency wiring and deployment
-resolve its service key using the existing authoring convention: trim
-surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
-The original resource name remains unchanged in the definition.
+The legacy singular `toolbox` field is not supported; use `toolboxes` to
+reference local `azure.ai.toolbox` service keys.
+
+For harnessed prompt agents, each Toolbox service key becomes its generated MCP
+`server_label`. To customize approval or tool options, add an MCP entry under
+`tools` with that service key as its `server_label` and omit `server_url`; azd
+fills the deployed endpoint and authenticated connection. An existing MCP entry
+with the exact deployed URL keeps its authored label and options, while azd sets
+its authentication connection. A different explicit URL is not automatically
+repinned: remove it to follow the Toolbox service, or use a distinct label to
+keep it as an independent tool. Conflicting labels fail before connection setup.
+References to the same endpoint share one attachment. Configure at most one MCP
+entry for that endpoint or its service keys; competing overrides are rejected
+before connection setup rather than silently merging their options.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An

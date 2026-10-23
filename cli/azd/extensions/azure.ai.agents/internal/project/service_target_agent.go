@@ -39,7 +39,6 @@ import (
 	"azureaiagent/internal/pkg/containerref"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/pkg/paths"
-	"azureaiagent/internal/pkg/servicekey"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -1654,7 +1653,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 	if serviceTargetConfig != nil {
 		fmt.Println("Loaded custom service target configuration")
 	}
-	addAgentToolboxDependency(serviceTargetConfig, agentDef.Toolbox)
 	activityProfile, err := ResolveActivityProfileForDeploy(agentDef, serviceTargetConfig.Activity)
 	if err != nil {
 		return nil, exterrors.Validation(
@@ -1880,25 +1878,6 @@ func (p *AgentServiceTargetProvider) Deploy(
 		activityProfile,
 		serviceTargetConfig.Activity,
 	)
-}
-
-func addAgentToolboxDependency(
-	config *ServiceTargetAgentConfig,
-	reference *agent_yaml.ToolboxReference,
-) {
-	if config == nil || reference == nil {
-		return
-	}
-	toolboxName := servicekey.SanitizeServiceName(reference.Name)
-	if toolboxName == "" {
-		return
-	}
-	for _, toolbox := range config.Toolboxes {
-		if toolbox.Name == toolboxName {
-			return
-		}
-	}
-	config.Toolboxes = append(config.Toolboxes, Toolbox{Name: toolboxName})
 }
 
 func activityBotOwnership(

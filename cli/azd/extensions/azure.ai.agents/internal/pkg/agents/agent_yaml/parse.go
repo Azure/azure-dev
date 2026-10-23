@@ -62,6 +62,15 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 					errors = append(errors,
 						"conversationEngine is only valid for voice agents")
 				}
+				if _, hasToolbox := fields["toolbox"]; hasToolbox && !IsVoiceAgentKind(agentDef.Kind) {
+					if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+						errors = append(errors,
+							"cannot specify both 'toolbox' and 'toolboxes'; remove 'toolbox' and use 'toolboxes'")
+					} else {
+						errors = append(errors,
+							"field 'toolbox' is no longer supported; use 'toolboxes'")
+					}
+				}
 			}
 
 			// Only hosted agents carry policies to the service, so a moderation block on any
@@ -177,6 +186,11 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if _, hasToolbox := fields["toolbox"]; hasToolbox {
 							errors = append(errors,
 								"toolbox is not supported for a prompt-voice agent; "+
+									"remove it from the agent definition")
+						}
+						if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+							errors = append(errors,
+								"toolboxes is not supported for a prompt-voice agent; "+
 									"remove it from the agent definition")
 						}
 						if _, hasProtocols := fields["protocols"]; hasProtocols {

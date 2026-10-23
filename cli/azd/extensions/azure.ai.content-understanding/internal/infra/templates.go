@@ -109,6 +109,10 @@ func (c Choices) Normalize() (Choices, error) {
 		return c, err
 	}
 	if c.FoundryEndpoint != "" {
+		if c.AssignRoles {
+			return c, invalid("conflicting_role_assignment",
+				"--assign-roles cannot be combined with --foundry-endpoint.")
+		}
 		c.FoundryEndpoint, err = cuclient.NormalizeEndpoint(c.FoundryEndpoint)
 		if err != nil {
 			return c, err

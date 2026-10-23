@@ -40,13 +40,19 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	generate.Flags().StringVar(&endpoint, "foundry-endpoint", "", "Existing Foundry account name, ARM ID, or endpoint")
 	generate.Flags().StringVar(&prefix, "foundry-prefix", "", "Prefix for a new Foundry account")
 	generate.Flags().BoolVar(&roles, "assign-roles", false,
-		"Assign Cognitive Services User (requires role-assignment permissions)")
+		"Assign Cognitive Services User to a new Foundry account (requires role-assignment permissions)")
 	generate.Flags().BoolVar(&noRoles, "no-assign-roles", false, "Do not add data-plane role assignments (the default)")
 	generate.Flags().BoolVar(&force, "force", false, "Replace known generated files and force CU configuration setup")
 	generate.RunE = func(cmd *cobra.Command, _ []string) error {
 		if cmd.Flags().Changed("assign-roles") && cmd.Flags().Changed("no-assign-roles") {
 			return exterrors.FromError(commandError("conflicting_role_assignment",
 				"Role-assignment options cannot be combined.", "Use --assign-roles or --no-assign-roles."))
+		}
+		if cmd.Flags().Changed("foundry-endpoint") && cmd.Flags().Changed("assign-roles") {
+			return exterrors.FromError(commandError("conflicting_role_assignment",
+				"--assign-roles cannot be combined with --foundry-endpoint.",
+				"For an existing resource, omit --assign-roles and have an administrator "+
+					"grant Cognitive Services User on the resource."))
 		}
 		return exterrors.FromError(runInfraGenerate(
 			cmd, extCtx, open, output, location, api, models, endpoint, prefix, roles && !noRoles, force))

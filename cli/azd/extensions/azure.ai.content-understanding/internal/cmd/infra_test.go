@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -145,14 +146,14 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	assert.Len(t, result.Files, 10)
 	f.calls = nil
 	stdout, _, err = executeInfra(t, f, "infra", "generate", "-d", target, "-e", "new-env", "--models", "none",
-		"--foundry-endpoint", "foundry", "--assign-roles")
+		"--foundry-endpoint", "foundry")
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	assert.True(t, result.ReusedExistingTemplate)
 	assert.Equal(t, "westus3", result.Location)
 	assert.Equal(t, "https://foundry.services.ai.azure.com", result.FoundryEndpoint)
 	assert.Equal(t, "existing", result.FoundryResourceGroup)
-	assert.True(t, result.AssignRoles)
+	assert.False(t, result.AssignRoles)
 	assert.Equal(t, []string{"open", "subscription", "resolve", "close"}, f.calls)
 	for _, args := range [][]string{
 		{"infra", "generate", "-e", "../escape"}, {"infra", "generate", "--location", "invalid"},
@@ -165,6 +166,78 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 		require.Error(t, err)
 		assert.Empty(t, stdout)
 		assert.Empty(t, f.calls)
+	}
+}
+
+func TestInfraExistingResourceRejectsExplicitRoleAssignmentBeforeHostAccess(t *testing.T) {
+	for _, endpoint := range []string{
+		"foundry", "https://foundry.services.ai.azure.com",
+		"/subscriptions/sub/resourceGroups/group/providers/Microsoft.CognitiveServices/accounts/foundry", "",
+	} {
+		for _, flag := range []string{"--assign-roles", "--assign-roles=true", "--assign-roles=false"} {
+			for _, existing := range []bool{false, true} {
+				t.Run(endpoint+"/"+flag+fmt.Sprint("/existing=", existing), func(t *testing.T) {
+					host := infraCommandFixture(t)
+					target := filepath.Join(t.TempDir(), "project")
+					envFile := filepath.Join(target, ".azure", "dev", ".env")
+					const saved = "AZD_ASSIGN_ROLES=\"false\"\nCUSTOM=\"retained\"\n"
+					if existing {
+						require.NoError(t, os.MkdirAll(filepath.Dir(envFile), 0o700))
+						require.NoError(t, os.WriteFile(envFile, []byte(saved), 0o600))
+					}
+					stdout, stderr, err := executeInfra(t, host, "infra", "generate", "--output-dir", target,
+						"--models", "none", "--no-prompt", "--foundry-endpoint", endpoint, flag)
+					require.Error(t, err)
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, azdext.LocalErrorCategoryValidation, local.Category)
+					assert.Equal(t, "conflicting_role_assignment", local.Code)
+					assert.Contains(t, local.Message, "--assign-roles")
+					assert.Contains(t, local.Message, "--foundry-endpoint")
+					assert.Contains(t, local.Suggestion, "administrator")
+					assert.Empty(t, stdout)
+					assert.Empty(t, stderr)
+					assert.Empty(t, host.calls, "reject the flag conflict before authentication or resource discovery")
+					if existing {
+						body, err := os.ReadFile(envFile) // #nosec G304 -- Private test environment.
+						require.NoError(t, err)
+						assert.Equal(t, saved, string(body))
+					} else {
+						assert.NoDirExists(t, target)
+					}
+					assert.NoFileExists(t, filepath.Join(target, "azure.yaml"))
+				})
+			}
+		}
+	}
+}
+
+func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		flag string
+		want bool
+	}{
+		{"enabled", "--assign-roles", true},
+		{"explicitly disabled", "--assign-roles=false", false},
+		{"disabled", "--no-assign-roles", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			host := infraCommandFixture(t)
+			target := filepath.Join(t.TempDir(), "project")
+			stdout, stderr, err := executeInfra(t, host, "infra", "generate", "--output-dir", target,
+				"--models", "none", "--no-prompt", test.flag)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			var result infra.Generation
+			require.NoError(t, json.Unmarshal([]byte(stdout), &result))
+			assert.Equal(t, test.want, result.AssignRoles)
+			assert.Equal(t, []string{"open", "subscription", "close"}, host.calls)
+			// #nosec G304 -- Reads only the generated test environment.
+			body, err := os.ReadFile(filepath.Join(target, ".azure", "dev", ".env"))
+			require.NoError(t, err)
+			assert.Contains(t, string(body), fmt.Sprintf("AZD_ASSIGN_ROLES=\"%t\"", test.want))
+		})
 	}
 }
 

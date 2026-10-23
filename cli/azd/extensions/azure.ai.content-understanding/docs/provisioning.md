@@ -56,6 +56,9 @@ exists, then rerun `azd up` to complete Content Understanding setup.
 
 The existing-resource path creates no role assignments. Grant the signed-in
 identity access through the resource's **Access control (IAM)** page.
+`--assign-roles` is supported only for new resources and cannot be combined with
+`--foundry-endpoint`, including when explicitly set to `--assign-roles=false`.
+Omit that flag when targeting an existing resource.
 There is no API-key fallback.
 
 See [Azure built-in privileged roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged)

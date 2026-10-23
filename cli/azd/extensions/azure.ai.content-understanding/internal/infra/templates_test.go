@@ -111,6 +111,10 @@ func TestGenerationInputAndPathSafety(t *testing.T) {
 		},
 		func(c *Choices) { c.FoundryEndpoint = "http://account.services.ai.azure.com" },
 		func(c *Choices) { c.FoundryEndpoint = "https://account.services.ai.azure.com" },
+		func(c *Choices) {
+			c.FoundryEndpoint, c.FoundryResourceGroup = "https://account.services.ai.azure.com", "existing-group"
+			c.AssignRoles = true
+		},
 		func(c *Choices) { c.SubscriptionID = "\"$(touch injected)" },
 		func(c *Choices) { c.TenantID = "" },
 		func(c *Choices) { c.APIVersion = "invalid" },

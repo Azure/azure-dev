@@ -54,6 +54,22 @@ type FoundryRequirement struct {
 	Evidence                []Evidence
 }
 
+// ApplicationInputKind identifies how a user-declared runtime input is exposed to the application.
+type ApplicationInputKind string
+
+const (
+	// ApplicationInputValue exposes a nonsecret Container App environment value.
+	ApplicationInputValue ApplicationInputKind = "value"
+	// ApplicationInputSecret exposes a Container App secret reference.
+	ApplicationInputSecret ApplicationInputKind = "secret"
+)
+
+// ApplicationInput declares one explicit runtime environment binding.
+type ApplicationInput struct {
+	Name string
+	Kind ApplicationInputKind
+}
+
 // Application is the resolved, credential-free input to deployment planning.
 type Application struct {
 	ID                     string
@@ -71,6 +87,7 @@ type Application struct {
 	ExternalConfigurations []string
 	IdentityExtensions     bool
 	Dockerfile             string
+	ApplicationInputs      []ApplicationInput
 	InputEvidence          []Evidence
 	InputReferences        map[string][]Evidence
 }

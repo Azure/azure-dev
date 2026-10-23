@@ -36,6 +36,9 @@ param foundryEmbeddingModelName string = 'text-embedding-3-small'
 param foundryEmbeddingModelVersion string = '1'
 param foundryEmbeddingModelSku string = 'GlobalStandard'
 param foundryEmbeddingModelCapacity int = 1
+param applicationValues object = {}
+@secure()
+param applicationSecrets object = {}
 
 resource group 'Microsoft.Resources/resourceGroups@2024-03-01' = {
   name: 'rg-${environmentName}'
@@ -138,6 +141,8 @@ module application 'application.bicep' = {
     foundryChatDeploymentName: foundryChatDeploymentName
     foundryEmbeddingEnabled: foundryEmbeddingEnabled
     foundryEmbeddingDeploymentName: foundryEmbeddingDeploymentName
+    applicationValues: applicationValues
+    applicationSecrets: applicationSecrets
   }
   dependsOn: [access]
 }

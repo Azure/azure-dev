@@ -8,14 +8,51 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
 
 // DeploymentInputs contains deliberate deployment choices, never an ambient environment.
 type DeploymentInputs struct {
-	Profiles   []string
-	Properties map[string]string
+	Profiles          []string
+	Properties        map[string]string
+	ApplicationInputs map[string]ApplicationInputKind
+}
+
+var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+var reservedApplicationInputs = map[string]bool{
+	"AZURE_OPENAI_API_KEY":                   true,
+	"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME":      true,
+	"AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME": true,
+	"AZURE_OPENAI_ENDPOINT":                  true,
+	"MYSQL_DATABASE":                         true,
+	"MYSQL_HOST":                             true,
+	"MYSQL_PASSWORD":                         true,
+	"MYSQL_PORT":                             true,
+	"MYSQL_USERNAME":                         true,
+	"POSTGRES_DATABASE":                      true,
+	"POSTGRES_HOST":                          true,
+	"POSTGRES_PASSWORD":                      true,
+	"POSTGRES_PORT":                          true,
+	"POSTGRES_USERNAME":                      true,
+	"SERVER_ADDRESS":                         true,
+	"SERVER_PORT":                            true,
+	"SPRING_AI_AZURE_OPENAI_APIKEY":          true,
+	"SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME":      true,
+	"SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME": true,
+	"SPRING_AI_AZURE_OPENAI_ENDPOINT":                         true,
+	"SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY":                     true,
+	"SPRING_CONFIG_ADDITIONAL_LOCATION":                       true,
+	"SPRING_DATASOURCE_DRIVER_CLASS_NAME":                     true,
+	"SPRING_DATASOURCE_PASSWORD":                              true,
+	"SPRING_DATASOURCE_URL":                                   true,
+	"SPRING_DATASOURCE_USERNAME":                              true,
+	"SPRING_JPA_HIBERNATE_DDL_AUTO":                           true,
+	"SPRING_PROFILES_ACTIVE":                                  true,
+	"SPRING_PROFILES_DEFAULT":                                 true,
+	"SPRING_SQL_INIT_MODE":                                    true,
 }
 
 // Resource describes a logical dependency independently of Azure server placement.
@@ -114,6 +151,10 @@ func AnalyzeProject(
 	ctx context.Context, directory string, resolver ModelResolver, inputs DeploymentInputs,
 ) (*Analysis, error) {
 	result := &Analysis{Applications: []Application{{ID: "app"}}}
+	applicationInputs, err := resolveApplicationInputs(inputs.ApplicationInputs)
+	if err != nil {
+		return nil, err
+	}
 	properties := make(map[string]string, len(inputs.Properties)+1)
 	for key, value := range inputs.Properties {
 		if !propertyName.MatchString(key) {
@@ -231,6 +272,7 @@ func AnalyzeProject(
 	}
 	requirements, embedded, foundry := application.Requirements, application.Embedded, application.Foundry
 	application.Requirements, application.Embedded, application.Foundry = nil, nil, nil
+	application.ApplicationInputs = applicationInputs
 	application.InputEvidence, application.InputReferences = nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
@@ -262,6 +304,30 @@ func AnalyzeProject(
 			PropertyPrefix: "spring.ai.azure.openai", Authentication: foundry.Authentication,
 			Foundry: foundry, Evidence: deploymentEvidence(foundry.Evidence),
 		})
+	}
+	return result, nil
+}
+
+func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]ApplicationInput, error) {
+	result := make([]ApplicationInput, 0, len(inputs))
+	seen := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
+		kind := inputs[name]
+		if !applicationInputName.MatchString(name) {
+			return nil, fmt.Errorf("application input %q must be a valid environment variable name", name)
+		}
+		normalized := strings.ToUpper(name)
+		if previous, exists := seen[normalized]; exists {
+			return nil, fmt.Errorf("application inputs %s and %s differ only by case", previous, name)
+		}
+		seen[normalized] = name
+		if reservedApplicationInputs[normalized] {
+			return nil, fmt.Errorf("application input %s conflicts with a deployment-owned binding", name)
+		}
+		if kind != ApplicationInputValue && kind != ApplicationInputSecret {
+			return nil, fmt.Errorf("application input %s must be classified as value or secret", name)
+		}
+		result = append(result, ApplicationInput{Name: name, Kind: kind})
 	}
 	return result, nil
 }

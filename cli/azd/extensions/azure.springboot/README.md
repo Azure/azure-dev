@@ -41,6 +41,25 @@ and their sources; there is no generic property-override option.
 Other unresolved configuration requires application changes. `--yes` accepts
 confirmations, not missing choices. Interactive prompts use the azd host channel.
 
+Declare application-owned runtime inputs explicitly:
+
+```sh
+azd spring init \
+  --application-input FRONTEND_URL=value \
+  --application-input JWT_SECRET=secret
+azd env set FRONTEND_URL "https://example.com"
+azd env set-secret JWT_SECRET
+azd up
+```
+
+The flag classifies an environment variable; it never accepts its value.
+`value` inputs become ordinary Container Apps environment variables. `secret`
+inputs use secure Bicep parameters, Container Apps secrets, and `secretRef`
+bindings. Required values must exist in the selected azd environment before
+provisioning. Input names are shown during initialization, but values are not.
+Deployment-owned Spring, datasource, and Foundry variable names are rejected.
+Application inputs do not modify source or infer additional Azure resources.
+
 PostgreSQL managed identity is inferred from supported passwordless Spring
 properties or the Azure PostgreSQL JDBC authentication plugin. MySQL managed
 identity is deferred.
@@ -119,7 +138,8 @@ File-based embedded databases require a persistence policy and are not adopted.
 When the application has a root `Dockerfile`, initialization preserves and uses
 it instead of generating Docker assets. Deployment-owned Spring profiles, port,
 datasource, and Foundry bindings are supplied through Container Apps environment
-variables, including secret references for password or API-key authentication. The extension does not
+variables, including explicit application inputs and secret references for
+password, API-key, or application-secret authentication. The extension does not
 validate or rewrite the Dockerfile; it remains responsible for producing a runnable
 HTTP image and including any application-owned external configuration it needs.
 Without a root Dockerfile, the container builds through Maven

@@ -59,6 +59,9 @@ flowchart TD
   unspecified profiles from explicit selection; never silently capture local secrets.
   Expose profile selection, not a generic property-override flag; other answers
   come from targeted prompts or application configuration.
+- Explicit application inputs classify named runtime environment variables as
+  values or secrets. They do not carry values during initialization or imply
+  Azure resources. Reject names owned by generated deployment bindings.
 - Answers re-run analysis: a profile choice may affect several resources together.
   Explicit inputs win. Non-interactive execution reports unresolved decisions;
   `--yes` accepts confirmations, not missing configuration choices.
@@ -107,6 +110,9 @@ flowchart TD
   The application remains responsible for its image contents and external configuration files.
   Reject a root `.dockerignore` without a root Dockerfile before Maven inspection
   and again before writing; generated ignore rules must not bypass application exclusions.
+- **Application inputs:** bind explicit values directly and secrets through secure
+  parameters plus Container Apps `secretRef`. Require selected-environment values
+  before provisioning and never print them.
 - **Preservation:** do not rewrite application source/configuration except for an
   explicitly confirmed credential repair, and do not overwrite existing deployment files.
 

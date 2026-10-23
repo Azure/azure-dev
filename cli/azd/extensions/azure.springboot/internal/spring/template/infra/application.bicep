@@ -26,6 +26,9 @@ param foundryChatEnabled bool = false
 param foundryChatDeploymentName string = ''
 param foundryEmbeddingEnabled bool = false
 param foundryEmbeddingDeploymentName string = ''
+param applicationValues object = {}
+@secure()
+param applicationSecrets object = {}
 
 var prefix = engine == 'mysql' ? 'MYSQL' : 'POSTGRES'
 var usesPassword = engine != 'none' && authentication == 'password'
@@ -118,6 +121,24 @@ var foundryEnvironment = foundryEnabled
           foundryUsesApiKey ? [{ name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
         )
   : []
+var applicationValueEnvironment = [
+  for input in items(applicationValues): {
+    name: input.key
+    value: string(input.value)
+  }
+]
+var applicationSecretEntries = [
+  for input in items(applicationSecrets): {
+    name: input.key
+    value: input.value.value
+  }
+]
+var applicationSecretEnvironment = [
+  for input in items(applicationSecrets): {
+    name: input.value.name
+    secretRef: input.key
+  }
+]
 var placeholder = appImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
@@ -131,7 +152,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: placeholder ? 80 : port, transport: 'auto' }
       registries: [{ server: registryEndpoint, identity: 'system' }]
-      secrets: concat(usesPassword ? [{ name: 'database-password', value: password }] : [], foundrySecret)
+      secrets: concat(
+        usesPassword ? [{ name: 'database-password', value: password }] : [],
+        foundrySecret,
+        applicationSecretEntries
+      )
     }
     template: {
       containers: [
@@ -155,7 +180,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
                   ],
                   databaseEnv
                 ),
-            foundryEnvironment
+            foundryEnvironment,
+            applicationValueEnvironment,
+            applicationSecretEnvironment
           )
           probes: placeholder
             ? []

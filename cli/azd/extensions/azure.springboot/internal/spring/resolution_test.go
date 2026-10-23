@@ -76,6 +76,7 @@ func TestResolutionFixtures(t *testing.T) {
 					} else {
 						require.Equal(t, []string{"h2", "postgres"}, decision.Choices)
 					}
+
 					require.True(t, decision.Profiles)
 					require.Empty(t, decision.BindingIDs)
 				} else if tt.fixture == "missing-url" || tt.fixture == "prompt-driver" {
@@ -118,6 +119,63 @@ func TestResolutionFixtures(t *testing.T) {
 				require.Equal(t, Provisioned, result.Resources[0].Disposition)
 				require.Len(t, application.Requirements, 1)
 			}
+		})
+	}
+}
+
+func TestApplicationInputs(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	result, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		ApplicationInputs: map[string]ApplicationInputKind{
+			"FRONTEND_URL": ApplicationInputValue,
+			"JWT_SECRET":   ApplicationInputSecret,
+		},
+	})
+	require.NoError(t, err)
+	application, err := result.ResolvedApplication()
+	require.NoError(t, err)
+	require.Equal(t, []ApplicationInput{
+		{Name: "FRONTEND_URL", Kind: ApplicationInputValue},
+		{Name: "JWT_SECRET", Kind: ApplicationInputSecret},
+	}, application.ApplicationInputs)
+}
+
+func TestApplicationInputValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		inputs    map[string]ApplicationInputKind
+		errorText string
+	}{
+		{
+			name:      "invalid name",
+			inputs:    map[string]ApplicationInputKind{"JWT-SECRET": ApplicationInputSecret},
+			errorText: "valid environment variable name",
+		},
+		{
+			name: "case conflict",
+			inputs: map[string]ApplicationInputKind{
+				"JWT_SECRET": ApplicationInputSecret,
+				"jwt_secret": ApplicationInputSecret,
+			},
+			errorText: "differ only by case",
+		},
+		{
+			name:      "deployment binding conflict",
+			inputs:    map[string]ApplicationInputKind{"spring_datasource_url": ApplicationInputValue},
+			errorText: "deployment-owned binding",
+		},
+		{
+			name:      "invalid classification",
+			inputs:    map[string]ApplicationInputKind{"JWT_SECRET": "generated"},
+			errorText: "value or secret",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory, resolver := resolutionFixture(t, "three-engines")
+			_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+				ApplicationInputs: tt.inputs,
+			})
+			require.ErrorContains(t, err, tt.errorText)
 		})
 	}
 }

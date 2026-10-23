@@ -6,6 +6,8 @@ package mockexec
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -98,4 +100,70 @@ func TestRespondFnRemainsCompatible(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+func TestRunUsesMostRecentMatchingExpression(t *testing.T) {
+	mock := NewMockCommandRunner()
+	mock.When(func(exec.RunArgs, string) bool {
+		return true
+	}).Respond(exec.NewRunResult(0, "first", ""))
+	want := exec.NewRunResult(0, "second", "")
+	mock.When(func(exec.RunArgs, string) bool {
+		return true
+	}).Respond(want)
+
+	got, err := mock.Run(t.Context(), exec.NewRunArgs("tool"))
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestRunPanicsWhenNoExpressionMatches(t *testing.T) {
+	mock := NewMockCommandRunner()
+	mock.When(func(exec.RunArgs, string) bool {
+		return false
+	})
+
+	require.PanicsWithValue(t, "No mock found for command: 'tool arg'", func() {
+		_, _ = mock.Run(t.Context(), exec.NewRunArgs("tool", "arg"))
+	})
+}
+
+func TestRunListReturnsConfiguredResponseAndError(t *testing.T) {
+	mock := NewMockCommandRunner()
+	wantResult := exec.NewRunResult(1, "out", "err")
+	wantErr := errors.New("command failed")
+	expression := mock.When(func(args exec.RunArgs, command string) bool {
+		require.Equal(t, []string{"first", "second"}, args.Args)
+		require.Equal(t, "first && second", command)
+		return true
+	})
+	expression.Respond(wantResult)
+	expression.SetError(wantErr)
+
+	got, err := mock.RunList(t.Context(), []string{"first", "second"}, exec.RunArgs{})
+
+	require.ErrorIs(t, err, wantErr)
+	require.Equal(t, wantResult, got)
+}
+
+func TestToolInPath(t *testing.T) {
+	t.Run("Mocked", func(t *testing.T) {
+		mock := NewMockCommandRunner()
+		wantErr := errors.New("tool unavailable")
+		mock.MockToolInPath("missing", wantErr)
+		mock.MockToolInPath("available", nil)
+
+		require.ErrorIs(t, mock.ToolInPath("missing"), wantErr)
+		require.NoError(t, mock.ToolInPath("available"))
+	})
+
+	t.Run("Fallback", func(t *testing.T) {
+		mock := NewMockCommandRunner()
+		executable, err := os.Executable()
+		require.NoError(t, err)
+
+		require.NoError(t, mock.ToolInPath(executable))
+		require.Error(t, mock.ToolInPath(filepath.Join(t.TempDir(), "missing")))
+	})
 }

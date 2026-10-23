@@ -6,18 +6,18 @@
 package process
 
 import (
-	"os/exec"
+	"context"
 	"strconv"
 	"strings"
 )
 
-func processIDsWithEnvironment(marker string) []int {
-	if marker == "" {
+func processIDsWithTreeID(ctx context.Context, processTreeID string) []int {
+	if processTreeID == "" || ctx.Err() != nil {
 		return nil
 	}
 
-	output, err := exec.Command(
-		"ps",
+	output, err := processDiscoveryOutput(
+		ctx,
 		"eww",
 		"-A",
 		"-o",
@@ -31,8 +31,23 @@ func processIDsWithEnvironment(marker string) []int {
 
 	processIDs := []int{}
 	for line := range strings.SplitSeq(string(output), "\n") {
+		if ctx.Err() != nil {
+			break
+		}
+
 		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.Contains(line, marker) {
+		if len(fields) < 2 {
+			continue
+		}
+
+		owned := false
+		for _, field := range fields[1:] {
+			if processTreeEnvironmentEntryContainsID([]byte(field), processTreeID) {
+				owned = true
+				break
+			}
+		}
+		if !owned {
 			continue
 		}
 

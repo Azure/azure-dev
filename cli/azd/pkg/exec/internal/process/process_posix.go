@@ -7,6 +7,7 @@ package process
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -15,20 +16,26 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
-const processTreeEnv = "AZD_INTERNAL_PROCESS_TREE_ID"
+const (
+	processTreeEnv            = "AZD_INTERNAL_PROCESS_TREE_ID"
+	processTreeIDSeparator    = ","
+	processDiscoveryTimeout   = time.Second
+	processDiscoveryWaitDelay = 100 * time.Millisecond
+)
 
 // Scan again because descendants can detach or spawn while termination is in progress.
 const processTerminationDiscoveryPasses = 3
 
 type platformState struct {
-	processTreeMarker string
+	processTreeID string
 }
 
 func configure(t *Tree) {
-	t.platform.processTreeMarker = fmt.Sprintf("%s=%s", processTreeEnv, rand.Text())
-	t.Cmd.Env = append(t.Cmd.Environ(), t.platform.processTreeMarker)
+	t.platform.processTreeID = rand.Text()
+	t.Cmd.Env = appendProcessTreeID(t.Cmd.Environ(), t.platform.processTreeID)
 
 	if !t.options.Interactive {
 		if t.Cmd.SysProcAttr == nil {
@@ -98,9 +105,18 @@ func terminateOwnedTree(
 	t *Tree,
 	terminateRoot func() error,
 ) error {
+	// Cleanup runs after the execution context is canceled, so discovery needs
+	// an independent deadline to remain usable without delaying termination.
+	discoveryCtx, cancelDiscovery := context.WithTimeout(
+		context.Background(),
+		processDiscoveryTimeout,
+	)
+	defer cancelDiscovery()
+
 	descendants := ownedProcessIDs(
+		discoveryCtx,
 		t.Cmd.Process.Pid,
-		t.platform.processTreeMarker,
+		t.platform.processTreeID,
 	)
 
 	rootErr := terminateRoot()
@@ -115,8 +131,9 @@ func terminateOwnedTree(
 			break
 		}
 		descendants = ownedProcessIDs(
+			discoveryCtx,
 			t.Cmd.Process.Pid,
-			t.platform.processTreeMarker,
+			t.platform.processTreeID,
 		)
 		if len(descendants) == 0 {
 			break
@@ -159,10 +176,33 @@ func processTerminationError(rootErr, descendantErr error, terminatedDescendant 
 	return rootErr
 }
 
-func ownedProcessIDs(rootPID int, marker string) []int {
+func appendProcessTreeID(environ []string, processTreeID string) []string {
+	prefix := processTreeEnv + "="
+	inheritedIDs := ""
+	updated := make([]string, 0, len(environ)+1)
+	for _, entry := range environ {
+		if strings.HasPrefix(entry, prefix) {
+			inheritedIDs = strings.TrimPrefix(entry, prefix)
+			continue
+		}
+		updated = append(updated, entry)
+	}
+
+	value := processTreeID
+	if inheritedIDs != "" {
+		value = inheritedIDs + processTreeIDSeparator + processTreeID
+	}
+	return append(updated, prefix+value)
+}
+
+func ownedProcessIDs(
+	ctx context.Context,
+	rootPID int,
+	processTreeID string,
+) []int {
 	candidates := append(
-		descendantProcessIDs(rootPID),
-		processIDsWithEnvironment(marker)...,
+		descendantProcessIDs(ctx, rootPID),
+		processIDsWithTreeID(ctx, processTreeID)...,
 	)
 	seen := map[int]struct{}{rootPID: {}}
 	owned := make([]int, 0, len(candidates))
@@ -179,24 +219,47 @@ func ownedProcessIDs(rootPID int, marker string) []int {
 	return owned
 }
 
-func containsEnvironmentEntry(environ []byte, marker string) bool {
-	target := []byte(marker)
+func containsProcessTreeID(environ []byte, processTreeID string) bool {
 	for entry := range bytes.SplitSeq(environ, []byte{0}) {
-		if bytes.Equal(entry, target) {
+		if processTreeEnvironmentEntryContainsID(entry, processTreeID) {
 			return true
 		}
 	}
 	return false
 }
 
-func descendantProcessIDs(rootPID int) []int {
-	output, err := exec.Command("ps", "-A", "-o", "pid=", "-o", "ppid=").Output()
+func processTreeEnvironmentEntryContainsID(entry []byte, processTreeID string) bool {
+	value, ok := bytes.CutPrefix(entry, []byte(processTreeEnv+"="))
+	if !ok {
+		return false
+	}
+	for candidate := range bytes.SplitSeq(value, []byte(processTreeIDSeparator)) {
+		if bytes.Equal(candidate, []byte(processTreeID)) {
+			return true
+		}
+	}
+	return false
+}
+
+func descendantProcessIDs(ctx context.Context, rootPID int) []int {
+	output, err := processDiscoveryOutput(
+		ctx,
+		"-A",
+		"-o",
+		"pid=",
+		"-o",
+		"ppid=",
+	)
 	if err != nil {
 		return nil
 	}
 
 	childrenByParent := map[int][]int{}
 	for line := range strings.SplitSeq(string(output), "\n") {
+		if ctx.Err() != nil {
+			break
+		}
+
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
 			continue
@@ -213,6 +276,10 @@ func descendantProcessIDs(rootPID int) []int {
 	pending := []int{rootPID}
 	seen := map[int]struct{}{rootPID: {}}
 	for len(pending) > 0 {
+		if ctx.Err() != nil {
+			break
+		}
+
 		parentPID := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
 		for _, childPID := range childrenByParent[parentPID] {
@@ -225,6 +292,16 @@ func descendantProcessIDs(rootPID int) []int {
 		}
 	}
 	return descendants
+}
+
+func processDiscoveryOutput(ctx context.Context, args ...string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, "ps", args...) //nolint:gosec // fixed executable and internal arguments
+	cmd.WaitDelay = processDiscoveryWaitDelay
+	return cmd.Output()
 }
 
 func release(*Tree, bool) error {

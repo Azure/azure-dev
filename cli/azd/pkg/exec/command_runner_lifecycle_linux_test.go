@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	internalprocess "github.com/azure/azure-dev/cli/azd/pkg/exec/internal/process"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,6 +49,21 @@ func TestCommandRunnerDetachedHelperProcess(t *testing.T) {
 		if mode == "root-wait" {
 			waitForever()
 		}
+	case "nested-root-wait":
+		inner := osexec.Command( //nolint:gosec // test executable and fixed arguments
+			os.Args[0],
+			"-test.run=^TestCommandRunnerDetachedHelperProcess$",
+		)
+		inner.Env = append(
+			os.Environ(),
+			detachedHelperModeEnv+"=root-exit",
+			detachedHelperPIDEnv+"="+pidPath,
+		)
+		tree := internalprocess.New(context.Background(), inner, internalprocess.Options{})
+		require.NoError(t, tree.Start())
+		require.NoError(t, tree.Wait())
+		_ = detachedHelperPID(t, pidPath)
+		waitForever()
 	case "child":
 		//nolint:gosec // G703: path is supplied by the parent test process
 		require.NoError(t, os.WriteFile(
@@ -95,6 +111,56 @@ func TestCommandRunner_CancellationTerminatesDetachedProcess(t *testing.T) {
 	require.ErrorIs(t, waitForError(t, response), context.Canceled)
 	require.Eventually(t, func() bool {
 		return !posixProcessRunning(childPID)
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func TestCommandRunner_CancellationTerminatesNestedDetachedProcess(t *testing.T) {
+	runner := NewCommandRunner(nil)
+	tempDir := t.TempDir()
+	nestedPIDPath := filepath.Join(tempDir, "nested-child.pid")
+	siblingPIDPath := filepath.Join(tempDir, "sibling-child.pid")
+	outerCtx, cancelOuter := context.WithCancel(t.Context())
+	siblingCtx, cancelSibling := context.WithCancel(t.Context())
+	t.Cleanup(cancelOuter)
+	t.Cleanup(cancelSibling)
+
+	outerResponse := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(
+			outerCtx,
+			detachedHelperRunArgs("nested-root-wait", nestedPIDPath),
+		)
+		outerResponse <- err
+	}()
+	siblingResponse := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(
+			siblingCtx,
+			detachedHelperRunArgs("root-wait", siblingPIDPath),
+		)
+		siblingResponse <- err
+	}()
+
+	nestedPID := detachedHelperPID(t, nestedPIDPath)
+	siblingPID := detachedHelperPID(t, siblingPIDPath)
+	cleanupDetachedHelper(t, nestedPID)
+	cleanupDetachedHelper(t, siblingPID)
+	require.True(t, posixProcessRunning(nestedPID))
+	require.True(t, posixProcessRunning(siblingPID))
+
+	cancelOuter()
+
+	require.ErrorIs(t, waitForError(t, outerResponse), context.Canceled)
+	require.Eventually(t, func() bool {
+		return !posixProcessRunning(nestedPID)
+	}, 5*time.Second, 10*time.Millisecond)
+	require.True(t, posixProcessRunning(siblingPID))
+
+	cancelSibling()
+
+	require.ErrorIs(t, waitForError(t, siblingResponse), context.Canceled)
+	require.Eventually(t, func() bool {
+		return !posixProcessRunning(siblingPID)
 	}, 5*time.Second, 10*time.Millisecond)
 }
 

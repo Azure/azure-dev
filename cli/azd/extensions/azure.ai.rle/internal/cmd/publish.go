@@ -17,14 +17,21 @@ import (
 )
 
 type rlePublishFlags struct {
-	dockerfile  string
-	versionBump string
+	dockerfile      string
+	versionBump     string
+	enableTraces    bool
+	enableTracesSet bool
+	traceContent    string
+	traceContentSet bool
 }
 
 type publishAction struct {
 	cmd   *cobra.Command
 	flags *rlePublishFlags
 }
+
+var buildPublishImage = project.BuildRuntimeImage
+var pushPublishImage = project.PushImage
 
 func newPublishCommand() *cobra.Command {
 	flags := &rlePublishFlags{}
@@ -33,7 +40,10 @@ func newPublishCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "publish",
 		Short: "Build, push, and create or update the RLE environment",
-		Args:  cobra.NoArgs,
+		Long: "Build and push an RLE image, then create or update its environment. " +
+			"Traces are disabled unless --enable-traces is specified. When enabled, traces are sent to the owning " +
+			"RLE Foundry project and default to metadata-only content.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return (&publishAction{cmd: cmd, flags: flags}).Run()
 		},
@@ -47,14 +57,33 @@ func newPublishCommand() *cobra.Command {
 		flags.versionBump,
 		"Version bump to apply when creating or updating the environment: major, minor, or patch.",
 	)
+	cmd.Flags().BoolVar(
+		&flags.enableTraces,
+		"enable-traces",
+		false,
+		"Enable traces in the owning RLE Foundry project. Use --enable-traces=false to explicitly disable them.",
+	)
+	cmd.Flags().StringVar(
+		&flags.traceContent,
+		"trace-content",
+		"",
+		"Trace content to collect when traces are enabled: metadata or full. Defaults to metadata.",
+	)
 	return cmd
 }
 
 func (a *publishAction) Run() error {
+	a.flags.enableTracesSet = a.cmd.Flags().Changed("enable-traces")
+	a.flags.traceContentSet = a.cmd.Flags().Changed("trace-content")
 	versionBump, err := normalizeVersionBumpFlag(a.flags.versionBump)
 	if err != nil {
 		return err
 	}
+	traceContent, err := normalizeTraceContentFlag(a.flags)
+	if err != nil {
+		return err
+	}
+	a.flags.traceContent = traceContent
 
 	state, initialized, err := resolvePublishState()
 	if err != nil {
@@ -91,7 +120,7 @@ func (a *publishAction) Run() error {
 			Suggestion: "Set AZURE_CONTAINER_REGISTRY_ENDPOINT=<registry>.azurecr.io, then run publish again.",
 		}
 	}
-	if err := project.BuildRuntimeImage(
+	if err := buildPublishImage(
 		a.cmd.Context(),
 		a.cmd.OutOrStdout(),
 		a.cmd.ErrOrStderr(),
@@ -103,7 +132,7 @@ func (a *publishAction) Run() error {
 	); err != nil {
 		return err
 	}
-	if err := project.PushImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
+	if err := pushPublishImage(a.cmd.Context(), a.cmd.OutOrStdout(), a.cmd.ErrOrStderr(), image); err != nil {
 		return err
 	}
 	client, err := createRleClient(state.ProjectEndpoint)
@@ -111,6 +140,7 @@ func (a *publishAction) Run() error {
 		return err
 	}
 	request := buildEnvironmentCreateRequest(state.EnvironmentName, image, versionBump)
+	request.Traces = publishTracesConfiguration(a.flags)
 
 	var environment *environmentResource
 	created := state.EnvironmentId == ""
@@ -160,6 +190,7 @@ func (a *publishAction) Run() error {
 		AcrImage:               environment.AcrImagePath,
 		CreatedAt:              environment.CreatedAt,
 		UpdatedAt:              environment.UpdatedAt,
+		Traces:                 environment.Traces,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -167,7 +198,58 @@ func (a *publishAction) Run() error {
 	if _, err := fmt.Fprintln(a.cmd.OutOrStdout(), string(body)); err != nil {
 		return err
 	}
+	if a.flags.enableTracesSet {
+		if _, err := fmt.Fprintf(a.cmd.OutOrStdout(), "Traces enabled: %t\n", a.flags.enableTraces); err != nil {
+			return err
+		}
+	}
+	if environment.Traces != nil && environment.Traces.ContentMode != "" {
+		if _, err := fmt.Fprintf(
+			a.cmd.OutOrStdout(),
+			"Trace content: %s\n",
+			environment.Traces.ContentMode,
+		); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func publishTracesConfiguration(flags *rlePublishFlags) *tracesConfiguration {
+	if !flags.enableTracesSet {
+		return nil
+	}
+	return &tracesConfiguration{
+		Enabled:     flags.enableTraces,
+		ContentMode: flags.traceContent,
+	}
+}
+
+func normalizeTraceContentFlag(flags *rlePublishFlags) (string, error) {
+	if !flags.traceContentSet {
+		return "", nil
+	}
+
+	contentMode := strings.ToLower(strings.TrimSpace(flags.traceContent))
+	switch contentMode {
+	case "metadata", "full":
+	default:
+		return "", &azdext.LocalError{
+			Message:    fmt.Sprintf("Invalid trace content %q.", flags.traceContent),
+			Code:       "rle_invalid_trace_content",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Use --trace-content metadata or --trace-content full.",
+		}
+	}
+	if !flags.enableTracesSet || !flags.enableTraces {
+		return "", &azdext.LocalError{
+			Message:    "--trace-content requires --enable-traces=true.",
+			Code:       "rle_trace_content_requires_traces",
+			Category:   azdext.LocalErrorCategoryUser,
+			Suggestion: "Add --enable-traces or remove --trace-content.",
+		}
+	}
+	return contentMode, nil
 }
 
 func normalizeVersionBumpFlag(value string) (string, error) {
@@ -243,11 +325,12 @@ func resolvePublishImage(state rleState) (string, error) {
 }
 
 type environmentOutput struct {
-	EnvironmentId          string `json:"environmentId"`
-	EnvironmentVersion     string `json:"environmentVersion"`
-	EnvironmentName        string `json:"environmentName"`
-	FoundryProjectEndpoint string `json:"foundryProjectEndpoint"`
-	AcrImage               string `json:"acrImage"`
-	CreatedAt              string `json:"createdAt"`
-	UpdatedAt              string `json:"updatedAt"`
+	EnvironmentId          string             `json:"environmentId"`
+	EnvironmentVersion     string             `json:"environmentVersion"`
+	EnvironmentName        string             `json:"environmentName"`
+	FoundryProjectEndpoint string             `json:"foundryProjectEndpoint"`
+	AcrImage               string             `json:"acrImage"`
+	CreatedAt              string             `json:"createdAt"`
+	UpdatedAt              string             `json:"updatedAt"`
+	Traces                 *environmentTraces `json:"traces,omitempty"`
 }

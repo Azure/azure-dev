@@ -372,6 +372,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"name":"echo_env",
 						"version":"1.0.0",
 						"diskImageConversionStatus":"Failed",
+						"traces":{"enabled":true,"content_mode":"metadata"},
 						"updatedAtUtc":"2026-07-28T06:00:00Z",
 						"createdAtUtc":"2026-07-28T05:00:00Z",
 						"acrImagePath":"registry/echo:1.0.0"
@@ -381,6 +382,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"name":"echo_env",
 						"version":"1.2.0",
 						"diskImageConversionStatus":"Ready",
+						"traces":{"enabled":true,"content_mode":"full"},
 						"updatedAtUtc":"2026-07-30T05:00:00Z",
 						"createdAtUtc":"2026-07-30T05:00:00Z",
 						"acrImagePath":"registry/echo:1.2.0"
@@ -408,12 +410,15 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	for _, expected := range []string{
 		"VERSION",
 		"DISK IMAGE",
+		"TRACE CONTENT",
 		"ENVIRONMENT ID",
 		"UPDATED",
 		"1.2.0",
 		"Ready",
 		"1.0.0",
 		"Failed",
+		"metadata",
+		"full",
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("expected output to contain %q, got %s", expected, output.String())
@@ -477,8 +482,70 @@ func TestShowSupportsJSONOutput(t *testing.T) {
 	if len(versions) != 1 ||
 		versions[0].Name != "echo_env" ||
 		versions[0].AcrImagePath != "registry/echo:1.2.0" ||
-		versions[0].CreatedAt != "2026-07-30T04:00:00Z" {
+		versions[0].CreatedAt != "2026-07-30T04:00:00Z" ||
+		versions[0].Traces != nil {
 		t.Fatalf("unexpected version-list JSON: %#v", versions)
+	}
+}
+
+func TestShowJSONIncludesTraceContentMode(t *testing.T) {
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/saved-project",
+	)
+	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet ||
+			r.URL.Path != testFoundryProjectPath+environmentCollectionPath+"/echo_env/versions" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data": [{
+				"id": "env-1",
+				"name": "echo_env",
+				"version": "1.2.0",
+				"traces": {
+					"enabled": true,
+					"content_mode": "full"
+				},
+				"telemetry": {
+					"run_scope": "Environment",
+					"lime_run_id": "rle-v1|p=project|e=echo_env|v=1.2.0",
+					"run_id_format": "readable"
+				}
+			}]
+		}`))
+	}))
+	defer controlPlane.Close()
+	stubRleClientEndpoint(t, controlPlane.URL)
+
+	outputFormat := "json"
+	command := newShowCommand(&outputFormat)
+	command.SetArgs([]string{"echo_env"})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	var payload []map[string]any
+	if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
+		t.Fatalf("expected version-list JSON, got %s: %v", output.String(), err)
+	}
+	traces, ok := payload[0]["traces"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected traces object, got %#v", payload)
+	}
+	if traces["content_mode"] != "full" {
+		t.Fatalf("expected full trace content mode, got %#v", traces)
+	}
+	telemetry, ok := payload[0]["telemetry"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected telemetry object, got %#v", payload)
+	}
+	if telemetry["lime_run_id"] != "rle-v1|p=project|e=echo_env|v=1.2.0" {
+		t.Fatalf("expected stable trace run identity, got %#v", telemetry)
 	}
 }
 

@@ -34,6 +34,11 @@
 /cli/azd/extensions/azure.ai.training/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft
 /cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 
+
+# ── Shared Foundry modules ────────────────────────────────────────────────────
+/cli/shared/                                @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
+/cli/shared/foundry/                        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
+
 # ── Extensions ────────────────────────────────────────────────────────────────
 /ext/                                       @vhvb1989 @tg-msft @RickWinter
 /ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter

@@ -1,0 +1,38 @@
+name: shared-foundry-ci
+
+on:
+  pull_request:
+    paths:
+      - "cli/shared/foundry/**"
+      - "cli/shared/README.md"
+      - ".github/workflows/shared-foundry-ci.yml"
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    uses: ./.github/workflows/lint-go.yml
+    with:
+      working-directory: cli/shared/foundry
+      go-version-file: cli/shared/foundry/go.mod
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: cli/shared/foundry/go.mod
+      - name: go test
+        working-directory: cli/shared/foundry
+        run: go test ./...
+      - name: Import boundary check
+        working-directory: cli/shared/foundry
+        run: ./scripts/check_no_azd_import.sh

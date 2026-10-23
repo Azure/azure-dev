@@ -208,6 +208,55 @@ func TestApplicationInputReservedConfigurationSources(t *testing.T) {
 	}
 }
 
+func TestApplicationInputPlaceholderConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		configuration string
+		input         string
+		property      string
+	}{
+		{
+			name:          "direct web application type",
+			configuration: "spring.main.web-application-type=${APP_MODE:servlet}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name: "indirect web application type",
+			configuration: "spring.main.web-application-type=${WEB_MODE:servlet}\n" +
+				"WEB_MODE=${APP_MODE:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
+		{
+			name:          "direct server SSL",
+			configuration: "server.ssl.enabled=${ENABLE_SSL:false}\n",
+			input:         "ENABLE_SSL",
+			property:      "server.ssl.enabled",
+		},
+		{
+			name: "indirect server SSL",
+			configuration: "server.ssl.enabled=${SSL_MODE:false}\n" +
+				"SSL_MODE=${ENABLE_SSL:false}\n",
+			input:    "ENABLE_SSL",
+			property: "server.ssl.enabled",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					"spring.datasource.url=jdbc:h2:mem:catalog\n"+tt.configuration)
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{tt.input: kind},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property "+tt.property)
+			})
+		}
+	}
+}
+
 func TestResolutionIgnoresAmbientConfiguration(t *testing.T) {
 	t.Setenv("SPRING_PROFILES_ACTIVE", "postgres")
 	t.Setenv("SPRING_DATASOURCE_URL", "jdbc:postgresql://ignored/not_selected")

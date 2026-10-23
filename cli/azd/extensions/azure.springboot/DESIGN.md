@@ -193,8 +193,9 @@ configuration. The current reserved contract is:
 
 When the extension generates or relies on a runtime property, every
 higher-precedence environment spelling capable of overriding that property must
-be added to this contract and its conflict tests. Application-specific names
-outside this ownership boundary remain valid.
+be added to this contract and its conflict tests. Inputs referenced directly or
+indirectly by deployment-owned properties are also rejected. Application-specific
+names outside this ownership boundary remain valid.
 
 ## Appendix: Foundry model bindings
 

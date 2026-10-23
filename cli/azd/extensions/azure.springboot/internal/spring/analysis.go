@@ -211,6 +211,9 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if port < 1 || port > 65535 {
 		return nil, invalidConfiguration("server.port must be between 1 and 65535")
 	}
+	inputEvidence := slices.Clone(c.traces["server.port"])
+	inputEvidence = append(inputEvidence, c.traces[webApplicationTypeProperty]...)
+	inputEvidence = append(inputEvidence, c.traces[serverSSLEnabledProperty]...)
 	a := &Application{
 		ID:   "app",
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
@@ -219,7 +222,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		Port:           port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
-		InputEvidence:          slices.Clone(c.traces["server.port"]),
+		InputEvidence:          inputEvidence,
 		InputReferences:        c.placeholderReferences(),
 	}
 	if info, err := root.Lstat("Dockerfile"); err == nil {

@@ -261,11 +261,23 @@ func AnalyzeProject(
 	if application.Foundry != nil {
 		supportedEvidence = append(supportedEvidence, application.Foundry.Evidence...)
 	}
+	for _, input := range applicationInputs {
+		for _, reference := range application.InputReferences[canonical(input.Name)] {
+			if containsEvidence(supportedEvidence, reference) {
+				reference = outermostSupportedReference(
+					reference,
+					application.InputReferences,
+					supportedEvidence,
+				)
+				return nil, fmt.Errorf(
+					"application input %s affects deployment-owned property %s in %s",
+					input.Name, reference.Property, reference.Source)
+			}
+		}
+	}
 	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
 		for _, reference := range application.InputReferences[canonical(key)] {
-			if slices.ContainsFunc(supportedEvidence, func(e Evidence) bool {
-				return canonical(e.Property) == canonical(reference.Property) && e.Source == reference.Source
-			}) {
+			if containsEvidence(supportedEvidence, reference) {
 				continue
 			}
 			return nil, fmt.Errorf(
@@ -345,6 +357,33 @@ func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]Applica
 		result = append(result, ApplicationInput{Name: name, Kind: kind})
 	}
 	return result, nil
+}
+
+func containsEvidence(evidence []Evidence, reference Evidence) bool {
+	return slices.ContainsFunc(evidence, func(candidate Evidence) bool {
+		return canonical(candidate.Property) == canonical(reference.Property) &&
+			candidate.Source == reference.Source
+	})
+}
+
+func outermostSupportedReference(
+	reference Evidence,
+	references map[string][]Evidence,
+	supportedEvidence []Evidence,
+) Evidence {
+	visited := map[string]bool{}
+	for !visited[canonical(reference.Property)] {
+		visited[canonical(reference.Property)] = true
+		parents := references[canonical(reference.Property)]
+		index := slices.IndexFunc(parents, func(candidate Evidence) bool {
+			return containsEvidence(supportedEvidence, candidate)
+		})
+		if index < 0 {
+			break
+		}
+		reference = parents[index]
+	}
+	return reference
 }
 
 func deploymentEvidence(evidence []Evidence) []Evidence {

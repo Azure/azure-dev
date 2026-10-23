@@ -10,6 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.content-understanding/internal/localio"
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,9 +20,11 @@ import (
 func TestOutputCommandsRejectSharedDirectoriesBeforeServiceCalls(t *testing.T) {
 	for _, operation := range []string{"analysis result", "analysis report", "schema", "analyzer test report"} {
 		t.Run(operation, func(t *testing.T) {
-			directory := t.TempDir()
-			require.NoError(t, os.Chmod(directory, 0o777)) // #nosec G302 -- Deliberately unsafe test directory.
+			directory := testutil.TempDir(t)
 			path := filepath.Join(directory, "result")
+			_, checkErr := localio.Check(path)
+			require.NoError(t, checkErr)
+			require.NoError(t, os.Chmod(directory, 0o777)) // #nosec G302 -- Deliberately unsafe test directory.
 			sample := schemaFile(t, "sample")
 			fixture := newAnalyzeFixture(t)
 			var err error

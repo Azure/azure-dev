@@ -15,6 +15,7 @@ import (
 
 	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,11 +45,11 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 						require.Empty(t, fixture.Source.UnusedInteractions, "repeated polls must not be dropped")
 						transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
 						root := newRecordedCommand(t, transport, test.analyzer)
-						directory := t.TempDir()
+						directory := testutil.TempDir(t)
 						input := filepath.Join(directory, "sample_invoice.pdf")
 						require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
 						args := []string{"analyze", "--file", input}
-						output := filepath.Join(t.TempDir(), "results")
+						output := filepath.Join(testutil.TempDir(t), "results")
 						if test.directory {
 							args = []string{"analyze", "--source", directory, "--output-dir", output}
 						}
@@ -105,7 +106,7 @@ func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
 		fixture := loadRecordedFixture(t, "analyze_single")
 		transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
 		root := newRecordedCommand(t, transport, "prebuilt-layout")
-		input := filepath.Join(t.TempDir(), "invoice.pdf")
+		input := filepath.Join(testutil.TempDir(t), "invoice.pdf")
 		require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
 		root.SetArgs([]string{"analyze", input, "--analyzer", "prebuilt-layout", "--no-prompt",
 			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion})

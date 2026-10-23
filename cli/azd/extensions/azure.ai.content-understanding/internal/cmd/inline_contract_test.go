@@ -15,6 +15,7 @@ import (
 
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -29,7 +30,7 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 		for _, view := range []string{"llm", "full", "usage"} {
 			t.Run(input+"/"+view, func(t *testing.T) {
 				_ = newAnalyzeFixture(t)
-				path := filepath.Join(t.TempDir(), "invoice.pdf")
+				path := filepath.Join(testutil.TempDir(t), "invoice.pdf")
 				require.NoError(t, os.WriteFile(path, []byte(recordedBinaryInput), 0o600))
 				requests := 0
 				root := newRootCommand(func(
@@ -61,7 +62,7 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 					return &serviceSession{client: client, apiVersion: options.APIVersion,
 						analyzer: "prebuilt-layout", close: func() {}}, nil
 				})
-				report := filepath.Join(t.TempDir(), "inline-report.json")
+				report := filepath.Join(testutil.TempDir(t), "inline-report.json")
 				args := []string{"analyze", "--inline", "--api-version", cuclient.PreviewAPIVersion,
 					"--endpoint", "https://resource.services.ai.azure.com", "--analyzer", "prebuilt-layout",
 					"--report-file", report}

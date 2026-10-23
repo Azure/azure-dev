@@ -19,6 +19,7 @@ import (
 	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func TestAnalyzerTestOfflineDryRunAndLocalInputModes(t *testing.T) {
 			t.Setenv("AZD_ACCESS_TOKEN", "")
 			t.Setenv("CU_API_KEY", "private-key-must-not-be-read")
 			sample := schemaFile(t, "sample")
-			output := filepath.Join(t.TempDir(), "new-directory", "report.json")
+			output := filepath.Join(testutil.TempDir(t), "new-directory", "report.json")
 			args := []string{"invoice", sample, "--dry-run", "--output-file", output}
 			switch mode {
 			case "named":
@@ -71,7 +72,7 @@ func TestAnalyzerTestCommandMappingReportAndOutput(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			sample := schemaFile(t, "sample bytes")
-			output := filepath.Join(t.TempDir(), "report.json")
+			output := filepath.Join(testutil.TempDir(t), "report.json")
 			var reader io.ReadSeeker
 			f.client.call = func(_ context.Context, request cuclient.AnalyzeRequest) (cuclient.AnalyzeResponse, error) {
 				assert.Equal(t, "invoice", request.AnalyzerID)
@@ -142,7 +143,7 @@ func TestAnalyzerTestBillingConfirmationThresholdAndFailures(t *testing.T) {
 	for _, mode := range []string{"50 no prompt", "51 blocked", "51 declined", "51 accepted", "51 yes", "prompt error"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
-			directory := t.TempDir()
+			directory := testutil.TempDir(t)
 			count := 51
 			if mode == "50 no prompt" {
 				count = 50
@@ -189,7 +190,7 @@ func TestAnalyzerTestPartialFailureCancellationAndPublicationRace(t *testing.T) 
 		t.Run(mode, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			sample := schemaFile(t, "sample")
-			output := filepath.Join(t.TempDir(), "report.json")
+			output := filepath.Join(testutil.TempDir(t), "report.json")
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			f.client.call = func(context.Context, cuclient.AnalyzeRequest) (cuclient.AnalyzeResponse, error) {

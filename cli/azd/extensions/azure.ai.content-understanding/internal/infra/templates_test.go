@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +35,7 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 		"infra/models.json":           "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
 		"infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212",
 	}
-	directory := filepath.Join(t.TempDir(), "project with spaces")
+	directory := filepath.Join(testutil.TempDir(t), "project with spaces")
 	result, err := Materialize(t.Context(), directory, choices(), false)
 	require.NoError(t, err)
 	assert.Len(t, result.Files, 10)
@@ -57,7 +59,7 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 }
 
 func TestGenerationReuseForceAndPreflight(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	_, err := Materialize(t.Context(), directory, choices(), false)
 	require.NoError(t, err)
 	write := func(path, body string) {
@@ -123,7 +125,7 @@ func TestGenerationInputAndPathSafety(t *testing.T) {
 	} {
 		c := choices()
 		mutate(&c)
-		target := filepath.Join(t.TempDir(), "absent")
+		target := filepath.Join(testutil.TempDir(t), "absent")
 		_, err := Materialize(t.Context(), target, c, false)
 		require.Error(t, err)
 		_, err = os.Stat(target)
@@ -141,14 +143,14 @@ func TestGenerationInputAndPathSafety(t *testing.T) {
 	normalized, err = c.Normalize()
 	require.NoError(t, err)
 	assert.Equal(t, "https://account.services.ai.azure.com", normalized.FoundryEndpoint)
-	target := t.TempDir()
+	target := testutil.TempDir(t)
 	require.NoError(t, os.WriteFile(filepath.Join(target, "unrelated.txt"), []byte("keep"), 0o600))
 	_, err = Materialize(t.Context(), target, choices(), false)
 	require.Error(t, err)
 	_, err = os.Stat(filepath.Join(target, "azure.yaml"))
 	assert.True(t, os.IsNotExist(err))
 	if runtime.GOOS != "windows" {
-		other := t.TempDir()
+		other := testutil.TempDir(t)
 		require.NoError(t, os.Symlink(other, filepath.Join(target, ".azure")))
 		_, err = Materialize(t.Context(), target, choices(), true)
 		require.Error(t, err)
@@ -189,7 +191,7 @@ func TestGeneratedShellLaunchers(t *testing.T) {
 				{"missing environment", "0", ""}, {"empty environment", "0", ""},
 			} {
 				t.Run(test.name, func(t *testing.T) {
-					root := t.TempDir()
+					root := testutil.TempDir(t)
 					project := filepath.Join(root, "project")
 					_, err := Materialize(t.Context(), project, choices(), false)
 					require.NoError(t, err)

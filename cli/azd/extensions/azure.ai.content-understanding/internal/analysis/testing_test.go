@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,7 +181,7 @@ func TestAnalyzerTestMalformedFieldsAndPrivacy(t *testing.T) {
 
 func TestAnalyzerTestReportSafetyAndExplicitOverwrite(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf")
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	path := filepath.Join(directory, "reports", "test.json")
 	require.NoError(t, CheckTestReport("", inputs, false))
 	require.NoError(t, CheckTestReport(path, inputs, false))

@@ -10,13 +10,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 )
 
 func TestLinuxACLWriteMaskIsRejected(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
+	_, err := Check(filepath.Join(directory, "result"))
+	require.NoError(t, err)
 	acl := make([]byte, 4+5*8)
 	binary.LittleEndian.PutUint32(acl, 2)
 	for index, entry := range []struct {
@@ -28,7 +32,7 @@ func TestLinuxACLWriteMaskIsRejected(t *testing.T) {
 		binary.LittleEndian.PutUint16(acl[offset+2:], entry.permission)
 		binary.LittleEndian.PutUint32(acl[offset+4:], entry.id)
 	}
-	err := unix.Setxattr(directory, "system.posix_acl_access", acl, 0)
+	err = unix.Setxattr(directory, "system.posix_acl_access", acl, 0)
 	if errors.Is(err, unix.ENOTSUP) {
 		t.Skip("filesystem does not support POSIX ACLs")
 	}

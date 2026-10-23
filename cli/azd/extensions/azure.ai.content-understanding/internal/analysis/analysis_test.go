@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,7 +41,7 @@ func writeInput(t *testing.T, directory, name string) string {
 
 func discoverFiles(t *testing.T, names ...string) []Input {
 	t.Helper()
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	var paths []string
 	for _, name := range names {
 		paths = append(paths, writeInput(t, directory, name))
@@ -58,7 +59,7 @@ func requireCode(t *testing.T, err error, code string) {
 }
 
 func TestDiscoveryDeterministicPatternsAndRecursion(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	for _, name := range []string{
 		"a/nested.pdf", "a.pdf", "b.pdf", "c.txt", ".hidden.pdf", ".hidden-dir/x.pdf",
 		"a/result.result.json", "output.result.md", "a/.secret.pdf",
@@ -84,7 +85,7 @@ func TestDiscoveryDeterministicPatternsAndRecursion(t *testing.T) {
 }
 
 func TestDiscoveryInputModesAndValidation(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	file := writeInput(t, directory, "a.pdf")
 	for _, test := range []struct {
 		name string
@@ -116,13 +117,13 @@ func TestDiscoveryInputModesAndValidation(t *testing.T) {
 }
 
 func TestDiscoveryDeduplicatesPhysicalOverlapAndDoesNotFollowDirectoryLinks(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	file := writeInput(t, directory, "file.pdf")
 	require.NoError(t, os.Link(file, filepath.Join(directory, "hardlink.pdf")))
 	inputs, err := Discover(t.Context(), InputOptions{Positional: []string{file, directory}})
 	require.NoError(t, err)
 	require.Len(t, inputs, 1)
-	outside := t.TempDir()
+	outside := testutil.TempDir(t)
 	writeInput(t, outside, "outside.pdf")
 	if err := os.Symlink(outside, filepath.Join(directory, "linked-directory")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
@@ -186,7 +187,7 @@ func TestFnmatchPatterns(t *testing.T) {
 
 func TestOutputPlanningPoliciesCollisionsAndRelativePaths(t *testing.T) {
 	inputs := discoverFiles(t, "one/a.pdf", "two/a.pdf")
-	directory := filepath.Join(t.TempDir(), "not-created")
+	directory := filepath.Join(testutil.TempDir(t), "not-created")
 	plan, err := PlanOutputs(inputs, OutputOptions{Directory: directory, Existing: "error"})
 	require.NoError(t, err)
 	assert.NotEqual(t, *plan.Outputs[0].Path, *plan.Outputs[1].Path)
@@ -204,7 +205,7 @@ func TestOutputPlanningPoliciesCollisionsAndRelativePaths(t *testing.T) {
 	plan, err = PlanOutputs(discovered, OutputOptions{Directory: directory, Existing: "error", LLMInput: true})
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(directory, "one", "a.pdf.result.md"), *plan.Outputs[0].Path)
-	path := filepath.Join(t.TempDir(), "existing")
+	path := filepath.Join(testutil.TempDir(t), "existing")
 	require.NoError(t, os.WriteFile(path, []byte("existing"), 0o600))
 	for _, policy := range []string{"error", "skip", "reanalyze"} {
 		plan, err := PlanOutputs(inputs[:1], OutputOptions{File: path, Existing: policy})
@@ -220,7 +221,7 @@ func TestOutputPlanningPoliciesCollisionsAndRelativePaths(t *testing.T) {
 
 func TestOutputPlanningRejectsUnsafeAndIncompatiblePaths(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf", "b.pdf")
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	report := writeInput(t, directory, "report.json")
 	output := filepath.Join(directory, "output.json")
 	for _, test := range []struct {
@@ -295,7 +296,7 @@ func successfulClient() fakeAnalysisClient {
 
 func TestExecutionStreamingFileOutputUsageAndReportGolden(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf")
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	streamPlan, err := PlanOutputs(inputs, OutputOptions{Existing: "error"})
 	require.NoError(t, err)
 	result, err := Execute(t.Context(), successfulClient(), streamPlan, runOptions())
@@ -333,7 +334,7 @@ func TestExecutionStreamingFileOutputUsageAndReportGolden(t *testing.T) {
 
 func TestExecutionBoundedConcurrencyBodyLifetimeAndStableOrder(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf", "b.pdf", "c.pdf", "d.pdf", "e.pdf")
-	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir()})
+	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t)})
 	require.NoError(t, err)
 	var running, maximum, calls atomic.Int32
 	var mutex sync.Mutex
@@ -406,8 +407,8 @@ func TestExecutionBoundedConcurrencyBodyLifetimeAndStableOrder(t *testing.T) {
 
 func TestExecutionCancellationStopsPendingJobsAndSavesReport(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf", "b.pdf", "c.pdf")
-	reportPath := filepath.Join(t.TempDir(), "report.json")
-	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir(), Report: reportPath})
+	reportPath := filepath.Join(testutil.TempDir(t), "report.json")
+	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t), Report: reportPath})
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -443,7 +444,7 @@ func TestExecutionPartialFailureSkipAndRedaction(t *testing.T) {
 		"https://example.com/skip.pdf?sig=secret",
 	}})
 	require.NoError(t, err)
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	writeInput(t, directory, "skip.pdf.result.json")
 	reportPath := filepath.Join(directory, "report.json")
 	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "skip", Directory: directory, Report: reportPath})
@@ -479,7 +480,7 @@ func TestExecutionPartialFailureSkipAndRedaction(t *testing.T) {
 
 func TestExecutionPublicationFailureStopsPendingAndNeverClobbersReport(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf", "b.pdf", "c.pdf")
-	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir()})
+	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t)})
 	require.NoError(t, err)
 	var calls atomic.Int32
 	client := fakeAnalysisClient{analyze: func(
@@ -499,7 +500,7 @@ func TestExecutionPublicationFailureStopsPendingAndNeverClobbersReport(t *testin
 	body, err := os.ReadFile(*plan.Outputs[0].Path)
 	require.NoError(t, err)
 	assert.Equal(t, "other writer", string(body))
-	reportPath := writeInput(t, t.TempDir(), "report")
+	reportPath := writeInput(t, testutil.TempDir(t), "report")
 	plan, err = PlanOutputs(inputs[:1], OutputOptions{Existing: "error"})
 	require.NoError(t, err)
 	plan.Report = reportPath
@@ -541,7 +542,7 @@ func TestExecutionInvalidResponsesUsageFallbackAndInputReplacement(t *testing.T)
 
 func TestExecutionLLMFileAndAbsentUsage(t *testing.T) {
 	inputs := discoverFiles(t, "a.pdf")
-	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir(), LLMInput: true})
+	plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t), LLMInput: true})
 	require.NoError(t, err)
 	options := runOptions()
 	options.Usage = false
@@ -594,7 +595,7 @@ func TestExecutionValidationAndPreview(t *testing.T) {
 	cancel()
 	_, err = Execute(ctx, successfulClient(), plan, runOptions())
 	require.ErrorIs(t, err, context.Canceled)
-	require.Error(t, savePayload(filepath.Join(t.TempDir(), "out"), make(chan int), false))
+	require.Error(t, savePayload(filepath.Join(testutil.TempDir(t), "out"), make(chan int), false))
 	inputs[0].Path += ".missing"
 	_, _, err = analyzeOne(t.Context(), successfulClient(), inputs[0], false, runOptions())
 	requireCode(t, err, "input_read_failed")
@@ -608,12 +609,12 @@ func TestDiscoverySpecialPathsAndInvalidGlob(t *testing.T) {
 	assert.True(t, isURL("http:missing-file"))
 	assert.True(t, isURL("https://example.com/a"))
 	if runtime.GOOS != "windows" {
-		path := writeInput(t, t.TempDir(), "http:local-file.pdf")
+		path := writeInput(t, testutil.TempDir(t), "http:local-file.pdf")
 		assert.False(t, isURL(path))
 	}
 	_, err := Discover(t.Context(), InputOptions{Files: []string{""}})
 	requireCode(t, err, "empty_input")
 	_, err = globPattern("[z-a]")
 	requireCode(t, err, "invalid_pattern")
-	assert.True(t, filepath.IsAbs(pathKey("relative", t.TempDir())))
+	assert.True(t, filepath.IsAbs(pathKey("relative", testutil.TempDir(t))))
 }

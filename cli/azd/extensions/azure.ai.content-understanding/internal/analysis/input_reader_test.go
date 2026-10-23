@@ -10,12 +10,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSingleFileDiscoveryAndReaderIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "invoice[1].pdf")
+	path := filepath.Join(testutil.TempDir(t), "invoice[1].pdf")
 	require.NoError(t, os.WriteFile(path, []byte("original sample"), 0o600))
 	input, err := DiscoverFile(t.Context(), path)
 	require.NoError(t, err)

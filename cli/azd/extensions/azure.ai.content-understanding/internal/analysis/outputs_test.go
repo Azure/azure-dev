@@ -14,6 +14,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +25,7 @@ func TestOutputCollisionFallbacksAndStableMapping(t *testing.T) {
 	for _, llm := range []bool{false, true} {
 		for reserved := 0; reserved <= 8; reserved++ {
 			t.Run(fmt.Sprintf("llm=%t/reserved=%d", llm, reserved), func(t *testing.T) {
-				directory := t.TempDir()
+				directory := testutil.TempDir(t)
 				inputs := []Input{
 					{Path: "a", Reference: "a", Relative: "document.pdf"},
 					{Path: "b", Reference: "b", Relative: "document.pdf"},
@@ -85,7 +87,7 @@ func TestOutputCollisionNamesRespectUTF8ByteBudget(t *testing.T) {
 				{Path: "a", Reference: "a", Relative: strings.Repeat("界", 80)},
 				{Path: "b", Reference: "b", Relative: strings.Repeat("界", 80)},
 			}
-			plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir(), LLMInput: llm})
+			plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t), LLMInput: llm})
 			require.NoError(t, err)
 			suffix := ".result.json"
 			if llm {
@@ -110,7 +112,7 @@ func TestRemoteOutputNameByteBoundaryAndExplicitFile(t *testing.T) {
 			if llm {
 				suffix = ".result.md"
 			}
-			directory := t.TempDir()
+			directory := testutil.TempDir(t)
 			input := Input{URL: "https://example.com/document", Reference: "https://example.com/document"}
 			budget := 240 - len(suffix)
 			input.Relative = strings.Repeat("界", budget/3) + strings.Repeat("a", budget%3)

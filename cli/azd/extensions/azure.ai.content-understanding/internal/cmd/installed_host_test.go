@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +37,7 @@ func TestInstalledHostOffline(t *testing.T) {
 	digest := sha256.Sum256(body)
 	t.Logf("host=%s platform=%s/%s extension=%s sha256=%x", host, runtime.GOOS, runtime.GOARCH, version, digest)
 
-	work := filepath.Join(t.TempDir(), "host smoke 空白")
+	work := filepath.Join(testutil.TempDir(t), "host smoke 空白")
 	require.NoError(t, os.Mkdir(work, 0o700))
 	coverage := filepath.Join(work, "coverage")
 	require.NoError(t, os.Mkdir(coverage, 0o700))

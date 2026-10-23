@@ -14,6 +14,7 @@ import (
 
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/schema"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -208,7 +209,7 @@ func TestRecordedSchemaSuggestion(t *testing.T) {
 							require.NoError(t, err)
 							last.Response.Body = body
 						}
-						directory := t.TempDir()
+						directory := testutil.TempDir(t)
 						input := filepath.Join(directory, "sample_invoice.pdf")
 						output := filepath.Join(directory, "suggested.json")
 						require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))

@@ -18,6 +18,7 @@ import (
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/infra"
 	"azure.ai.content-understanding/internal/localio"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -143,7 +144,7 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 		assert.Empty(t, stderr.String())
 		return stdout.String(), err
 	}
-	directory := filepath.Join(t.TempDir(), "generated")
+	directory := filepath.Join(testutil.TempDir(t), "generated")
 	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", "recommended", "--no-prompt")
 	require.NoError(t, err)
 	assert.Empty(t, calls)

@@ -10,12 +10,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"azure.ai.content-understanding/internal/localio"
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGeneratedProjectsAndModelsRejectSharedOutputsBeforeMutation(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
+	_, checkErr := localio.Check(filepath.Join(directory, "models.json"))
+	require.NoError(t, checkErr)
 	require.NoError(t, os.Chmod(directory, 0o777)) // #nosec G302 -- Deliberately unsafe test directory.
 	_, err := Materialize(t.Context(), directory, choices(), false)
 	require.Error(t, err)

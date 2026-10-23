@@ -17,6 +17,7 @@ import (
 
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -81,7 +82,7 @@ func executeAnalyzerTestContract(
 ) {
 	t.Helper()
 	_ = newDefaultsFixture(t)
-	directory := filepath.Join(t.TempDir(), "sample folder with spaces")
+	directory := filepath.Join(testutil.TempDir(t), "sample folder with spaces")
 	require.NoError(t, os.Mkdir(directory, 0o700))
 	input := filepath.Join(directory, fixture.Input.Name)
 	output := filepath.Join(directory, "report.json")

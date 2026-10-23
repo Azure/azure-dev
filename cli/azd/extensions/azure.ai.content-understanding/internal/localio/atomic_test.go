@@ -14,12 +14,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBoundedStateReadsAndExecutablePublication(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state")
+	path := filepath.Join(testutil.TempDir(t), "state")
 	require.NoError(t, Write(path, []byte("state"), false))
 	body, err := Read(path)
 	require.NoError(t, err)
@@ -44,7 +46,7 @@ func TestBoundedStateReadsAndExecutablePublication(t *testing.T) {
 }
 
 func TestAtomicWritePoliciesAndPermissions(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	path := filepath.Join(directory, "new", "result.json")
 	exists, err := Check(path)
 	require.NoError(t, err)
@@ -79,7 +81,7 @@ func TestAtomicWritePoliciesAndPermissions(t *testing.T) {
 }
 
 func TestAtomicPublicationDoesNotClobberRacingWriter(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "result.json")
+	path := filepath.Join(testutil.TempDir(t), "result.json")
 	var winners atomic.Int32
 	var workers sync.WaitGroup
 	for range 16 {
@@ -100,7 +102,7 @@ func TestAtomicPublicationDoesNotClobberRacingWriter(t *testing.T) {
 }
 
 func TestAtomicWriteRejectsSymlinksAndChangedDirectories(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	target := filepath.Join(directory, "target")
 	require.NoError(t, os.Mkdir(target, 0o700))
 	link := filepath.Join(directory, "link")
@@ -133,7 +135,7 @@ func TestAtomicWriteRejectsSymlinksAndChangedDirectories(t *testing.T) {
 }
 
 func TestAtomicWriteFilesystemFailures(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	info, err := os.Stat(directory)
 	require.NoError(t, err)
 	require.Error(t, verifyDirectory(filepath.Join(directory, "missing"), info))
@@ -161,7 +163,7 @@ func TestAtomicWriteFilesystemFailures(t *testing.T) {
 func TestStagingSourceAndCleanupOwnership(t *testing.T) {
 	for _, substitute := range []string{"payload", "directory"} {
 		t.Run(substitute, func(t *testing.T) {
-			directory := t.TempDir()
+			directory := testutil.TempDir(t)
 			parent, err := openDirectory(directory, false)
 			require.NoError(t, err)
 			defer parent.Close()
@@ -203,7 +205,7 @@ func TestStagingSourceAndCleanupOwnership(t *testing.T) {
 }
 
 func TestOutputErrorsDoNotExposePaths(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	path := filepath.Join(directory, "private-file")
 	require.NoError(t, os.WriteFile(path, []byte("content"), 0o600))
 	for _, operation := range []func(string) error{

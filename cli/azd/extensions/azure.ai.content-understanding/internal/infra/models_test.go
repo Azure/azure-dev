@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -97,7 +98,7 @@ func TestLiveCandidatesAndExactModelSelection(t *testing.T) {
 }
 
 func TestModelSetupOfflineAndSideEffects(t *testing.T) {
-	output := filepath.Join(t.TempDir(), "infra", "models.json")
+	output := filepath.Join(testutil.TempDir(t), "infra", "models.json")
 	result, err := SetupModels(t.Context(), nil, " NONE ", output, true, true)
 	require.NoError(t, err)
 	assert.Empty(t, result.Models)
@@ -132,7 +133,7 @@ func TestModelSetupOfflineAndSideEffects(t *testing.T) {
 	for _, step := range []string{"supported", "catalog", "prompt", "deploy", "defaults"} {
 		f := modelFixture()
 		f.fail = step
-		output := filepath.Join(t.TempDir(), "models.json")
+		output := filepath.Join(testutil.TempDir(t), "models.json")
 		_, err := SetupModels(t.Context(), f, "prompt", output, true, true)
 		require.Error(t, err)
 		_, err = os.Stat(output)

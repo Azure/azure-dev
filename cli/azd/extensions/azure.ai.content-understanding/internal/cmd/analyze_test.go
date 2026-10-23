@@ -21,6 +21,7 @@ import (
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -124,7 +125,7 @@ func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
 					t.Error("endpoint-only analysis must not load deployment context")
 					return nil, errors.New("unexpected deployment call")
 				}})
-				t.Chdir(t.TempDir())
+				t.Chdir(testutil.TempDir(t))
 				require.NoError(t, os.WriteFile("invoice.pdf", []byte("%PDF-1.7\n"), 0o600))
 				t.Setenv("CU_ENDPOINT", "https://resource.services.ai.azure.com")
 				t.Setenv("CU_DEFAULT_ANALYZER", tt.configured)
@@ -236,7 +237,7 @@ func TestAnalyzeUsageAndLLMStreaming(t *testing.T) {
 
 func TestAnalyzeInvalidInputsFailBeforeSession(t *testing.T) {
 	path := schemaFile(t, "input")
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	for _, test := range []struct {
 		name string
 		args []string
@@ -279,7 +280,7 @@ func TestAnalyzeInvalidInputsFailBeforeSession(t *testing.T) {
 
 func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	f := newAnalyzeFixture(t)
-	directory := filepath.Join(t.TempDir(), "not-created")
+	directory := filepath.Join(testutil.TempDir(t), "not-created")
 	report := filepath.Join(directory, "report.json")
 	stdout, stderr, err := f.execute(t.Context(),
 		"--url", "https://example.com/a.pdf?sig=private#private", "--dry-run",
@@ -329,7 +330,7 @@ func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
 			t.Setenv("CU_ON_EXISTS", test.env)
 			path := schemaFile(t, "input")
 			output := schemaFile(t, "existing")
-			report := filepath.Join(t.TempDir(), "report.json")
+			report := filepath.Join(testutil.TempDir(t), "report.json")
 			args := []string{path, "--llm-input=false", "--output-file", output, "--report-file", report, "-o", "none"}
 			if test.flag != "" {
 				args = append(args, "--on-existing", test.flag)
@@ -359,7 +360,7 @@ func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
 }
 
 func TestAnalyzeCostConfirmationExactThreshold(t *testing.T) {
-	directory := t.TempDir()
+	directory := testutil.TempDir(t)
 	for index := range 51 {
 		require.NoError(t, os.WriteFile(filepath.Join(directory, fmt.Sprintf("%02d.pdf", index)), []byte("input"), 0o600))
 	}
@@ -381,7 +382,7 @@ func TestAnalyzeCostConfirmationExactThreshold(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			f.confirmed = test.confirmed
-			args := []string{"--source", directory, "-d", t.TempDir()}
+			args := []string{"--source", directory, "-d", testutil.TempDir(t)}
 			stdout, stderr, err := f.execute(t.Context(), append(args, test.flags...)...)
 			if test.wantErr {
 				require.Error(t, err)
@@ -444,7 +445,7 @@ func TestAnalyzeFailureReportsAndCancellationUseErrorChannel(t *testing.T) {
 					Kind: cuclient.ErrorService, Code: "ServiceFailed", Message: "Safe service failure.",
 				}
 			}
-			report := filepath.Join(t.TempDir(), "report.json")
+			report := filepath.Join(testutil.TempDir(t), "report.json")
 			stdout, stderr, err := f.execute(ctx, "https://example.com/input.pdf?sig=private", "--report-file", report)
 			require.Error(t, err)
 			assert.Empty(t, stdout)
@@ -554,7 +555,7 @@ func TestAnalyzeJSONViewConflictDoesNotOpenOrWrite(t *testing.T) {
 	} {
 		t.Run(strings.Join(flags, " "), func(t *testing.T) {
 			f := newAnalyzeFixture(t)
-			directory := filepath.Join(t.TempDir(), "not-created")
+			directory := filepath.Join(testutil.TempDir(t), "not-created")
 			args := append([]string{"--url", "https://example.com/a.pdf",
 				"--output-dir", directory, "--report-file", filepath.Join(directory, "report.json")}, flags...)
 			stdout, stderr, err := f.execute(t.Context(), args...)
@@ -576,14 +577,14 @@ func TestAnalyzeJSONSelectsSavedFullResponse(t *testing.T) {
 		for _, usage := range []bool{false, true} {
 			t.Run(fmt.Sprintf("batch=%t/usage=%t", batch, usage), func(t *testing.T) {
 				f := newAnalyzeFixture(t)
-				directory := t.TempDir()
+				directory := testutil.TempDir(t)
 				input := filepath.Join(directory, "invoice.pdf")
 				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
-				output := filepath.Join(t.TempDir(), "saved.md")
-				report := filepath.Join(t.TempDir(), "report.json")
+				output := filepath.Join(testutil.TempDir(t), "saved.md")
+				report := filepath.Join(testutil.TempDir(t), "report.json")
 				args := []string{input, "--output-file", output}
 				if batch {
-					output = filepath.Join(t.TempDir(), "results")
+					output = filepath.Join(testutil.TempDir(t), "results")
 					args = []string{"--source", directory, "--output-dir", output}
 					output = filepath.Join(output, "invoice.pdf.result.json")
 				}
@@ -618,11 +619,11 @@ func TestAnalyzeDefaultSavedView(t *testing.T) {
 		for _, batch := range []bool{false, true} {
 			t.Run(fmt.Sprintf("full=%t/batch=%t", full, batch), func(t *testing.T) {
 				f := newAnalyzeFixture(t)
-				directory := t.TempDir()
+				directory := testutil.TempDir(t)
 				input := filepath.Join(directory, "invoice.pdf")
 				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
-				output := filepath.Join(t.TempDir(), "saved")
-				report := filepath.Join(t.TempDir(), "report.json")
+				output := filepath.Join(testutil.TempDir(t), "saved")
+				report := filepath.Join(testutil.TempDir(t), "report.json")
 				args := []string{input, "--output-file", output, "--report-file", report, "--output", "none"}
 				if batch {
 					args = []string{"--source", directory, "--output-dir", output,

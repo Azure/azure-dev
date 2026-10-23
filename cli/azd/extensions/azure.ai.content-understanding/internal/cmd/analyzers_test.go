@@ -17,6 +17,7 @@ import (
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -127,7 +128,7 @@ func (f *analyzerFixture) execute(ctx context.Context, args ...string) (string, 
 
 func schemaFile(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "schema file.json")
+	path := filepath.Join(testutil.TempDir(t), "schema file.json")
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	return path
 }

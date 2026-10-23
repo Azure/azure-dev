@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"azure.ai.content-understanding/internal/infra"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func materializeContractProject(t *testing.T) (string, generatedProjectFixture) 
 	t.Helper()
 	var fixture generatedProjectFixture
 	loadCommandFixture(t, loadParityInventory(t).GeneratedProjects, &fixture)
-	project := filepath.Join(t.TempDir(), "project with spaces")
+	project := filepath.Join(testutil.TempDir(t), "project with spaces")
 	result, err := infra.Materialize(t.Context(), project, fixture.Choices, false)
 	require.NoError(t, err)
 	require.False(t, result.ReusedExistingTemplate)
@@ -90,8 +91,8 @@ func TestGeneratedBashHookArguments(t *testing.T) {
 	executable, err := exec.LookPath("bash")
 	require.NoError(t, err)
 	project, fixture := materializeContractProject(t)
-	bin := t.TempDir()
-	log := filepath.Join(t.TempDir(), "arguments.txt")
+	bin := testutil.TempDir(t)
+	log := filepath.Join(testutil.TempDir(t), "arguments.txt")
 	stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CU_TEST_LOG\"\n"
 	stubPath := filepath.Join(bin, "azd")
 	// #nosec G306 -- Private executable test host.
@@ -130,9 +131,9 @@ func TestGeneratedPowerShellHook(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			project, fixture := materializeContractProject(t)
-			bin := filepath.Join(t.TempDir(), "fake host with spaces")
+			bin := filepath.Join(testutil.TempDir(t), "fake host with spaces")
 			require.NoError(t, os.Mkdir(bin, 0o700))
-			log := filepath.Join(t.TempDir(), "arguments.txt")
+			log := filepath.Join(testutil.TempDir(t), "arguments.txt")
 			if !row.missing {
 				name := "azd"
 				stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CU_TEST_LOG\"\nexit \"$CU_TEST_EXIT\"\n"

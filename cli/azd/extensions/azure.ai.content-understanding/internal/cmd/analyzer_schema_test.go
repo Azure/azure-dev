@@ -18,6 +18,7 @@ import (
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/schema"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -53,7 +54,7 @@ func TestSchemaCreateOfflineTemplatesVersionAndOutput(t *testing.T) {
 				t.Setenv("CU_ENDPOINT", "invalid-not-read")
 				t.Setenv("CU_MODEL_DEPLOYMENTS", "invalid-not-read")
 				t.Setenv("CU_API_VERSION", cuclient.PreviewAPIVersion)
-				output := filepath.Join(t.TempDir(), "new", "schema.json")
+				output := filepath.Join(testutil.TempDir(t), "new", "schema.json")
 				stdout, stderr, err := executeSchemaCreate(f, t.Context(),
 					"--from-template", "--type", kind, "-a", "invoice_v1", "--modality", "video",
 					"--base", "prebuilt-document", "--output-file", output, "-o", format)
@@ -96,9 +97,9 @@ func TestSchemaCreateSampleMappingAndSafeDiagnostics(t *testing.T) {
 		for _, format := range []string{"json", "none"} {
 			t.Run(format+map[bool]string{true: "/empty", false: "/fields"}[empty], func(t *testing.T) {
 				f := newAnalyzeFixture(t)
-				sample := filepath.Join(t.TempDir(), "invoice[1].PDF")
+				sample := filepath.Join(testutil.TempDir(t), "invoice[1].PDF")
 				require.NoError(t, os.WriteFile(sample, []byte("sample bytes"), 0o600))
-				output := filepath.Join(t.TempDir(), "schema.json")
+				output := filepath.Join(testutil.TempDir(t), "schema.json")
 				var reader io.ReadSeeker
 				f.client.call = func(
 					_ context.Context, request cuclient.AnalyzeRequest,
@@ -154,7 +155,7 @@ func TestSchemaCreateSampleMappingAndSafeDiagnostics(t *testing.T) {
 
 func TestSchemaCreatePreflightAndOverwritePolicies(t *testing.T) {
 	f := newAnalyzeFixture(t)
-	sample := filepath.Join(t.TempDir(), "sample.pdf")
+	sample := filepath.Join(testutil.TempDir(t), "sample.pdf")
 	require.NoError(t, os.WriteFile(sample, []byte("sample bytes"), 0o600))
 	output := schemaFile(t, "keep original")
 	for _, args := range [][]string{
@@ -191,9 +192,9 @@ func TestSchemaCreateRejectsSampleAliasesAndUnsafeOutputParents(t *testing.T) {
 	for _, kind := range []string{"hardlink", "symlink", "parent-symlink", "parent-file"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
-			sample := filepath.Join(t.TempDir(), "sample.pdf")
+			sample := filepath.Join(testutil.TempDir(t), "sample.pdf")
 			require.NoError(t, os.WriteFile(sample, []byte("sample bytes"), 0o600))
-			parent := t.TempDir()
+			parent := testutil.TempDir(t)
 			output := filepath.Join(parent, "schema.json")
 			switch kind {
 			case "hardlink":
@@ -204,7 +205,7 @@ func TestSchemaCreateRejectsSampleAliasesAndUnsafeOutputParents(t *testing.T) {
 				}
 			case "parent-symlink":
 				target := filepath.Join(parent, "linked")
-				if err := os.Symlink(t.TempDir(), target); err != nil {
+				if err := os.Symlink(testutil.TempDir(t), target); err != nil {
 					t.Skipf("symlink creation unavailable: %v", err)
 				}
 				output = filepath.Join(target, "schema.json")
@@ -225,9 +226,9 @@ func TestSchemaCreateFailureCancellationAndLateOutputConflict(t *testing.T) {
 	for _, mode := range []string{"open", "service", "cancelled", "malformed", "late-conflict", "late-alias"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newAnalyzeFixture(t)
-			sample := filepath.Join(t.TempDir(), "sample.pdf")
+			sample := filepath.Join(testutil.TempDir(t), "sample.pdf")
 			require.NoError(t, os.WriteFile(sample, []byte("sample bytes"), 0o600))
-			output := filepath.Join(t.TempDir(), "new", "schema.json")
+			output := filepath.Join(testutil.TempDir(t), "new", "schema.json")
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			if mode == "open" {
@@ -293,7 +294,7 @@ func TestSchemaCreateOutputErrorsAndMetadata(t *testing.T) {
 			if mode == "stdout" {
 				root.SetOut(failingWriter{})
 			} else {
-				sample := filepath.Join(t.TempDir(), "sample.pdf")
+				sample := filepath.Join(testutil.TempDir(t), "sample.pdf")
 				require.NoError(t, os.WriteFile(sample, []byte("sample"), 0o600))
 				args = append(args, "--from-sample", sample)
 				root.SetErr(failingWriter{})
@@ -325,7 +326,7 @@ func TestSchemaCreateOutputErrorsAndMetadata(t *testing.T) {
 
 func TestSchemaCreateRelativeCwdAndRetainedFileOnStdoutFailure(t *testing.T) {
 	f := newAnalyzeFixture(t)
-	working := t.TempDir()
+	working := testutil.TempDir(t)
 	t.Chdir(working)
 	project := filepath.Join(working, "project")
 	require.NoError(t, os.Mkdir(project, 0o700))
@@ -343,7 +344,7 @@ func TestSchemaCreateRelativeCwdAndRetainedFileOnStdoutFailure(t *testing.T) {
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	root := f.root()
 	root.SetOut(failingWriter{})
-	output = filepath.Join(t.TempDir(), "schema.json")
+	output = filepath.Join(testutil.TempDir(t), "schema.json")
 	root.SetArgs([]string{"analyzer", "schema", "create", "--output-file", output})
 	require.Error(t, root.ExecuteContext(t.Context()))
 	assert.FileExists(t, output)
@@ -394,7 +395,7 @@ func TestSchemaCreateCommandThroughCUPipeline(t *testing.T) {
 				assert.Equal(t, schema.SuggestionAnalyzer, options.DefaultAnalyzer)
 				return &serviceSession{client: client, apiVersion: version, close: func() {}}, nil
 			})
-			sample := filepath.Join(t.TempDir(), "sample.pdf")
+			sample := filepath.Join(testutil.TempDir(t), "sample.pdf")
 			require.NoError(t, os.WriteFile(sample, []byte("sample bytes"), 0o600))
 			var stdout, stderr bytes.Buffer
 			root.SetOut(&stdout)

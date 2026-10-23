@@ -12,6 +12,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"azure.ai.content-understanding/internal/testutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,7 +112,7 @@ func TestRecordedTemplateClassifierLifecycle(t *testing.T) {
 			for _, format := range []string{"default", "json", "none"} {
 				t.Run(format, func(t *testing.T) {
 					synctest.Test(t, func(t *testing.T) {
-						directory := t.TempDir()
+						directory := testutil.TempDir(t)
 						path := filepath.Join(directory, "template.json")
 						definition := recordedTemplateGolden(t, test.kind, test.analyzer)
 						executeRecordedOfflineSchema(t, []string{"analyzer", "schema", "create",
@@ -215,7 +217,7 @@ func TestRecordedClassifierSyntheticPendingStart(t *testing.T) {
 		require.Len(t, fixture.Interactions, 3)
 		definition := recordedTemplateGolden(t, "classification", "cu_cli_tmpl_classifier_v1")
 		definition = recordedClassifierRouting(t, definition)
-		path := filepath.Join(t.TempDir(), "classifier.json")
+		path := filepath.Join(testutil.TempDir(t), "classifier.json")
 		require.NoError(t, os.WriteFile(path, definition, 0o600))
 		var initial map[string]json.RawMessage
 		require.NoError(t, json.Unmarshal(fixture.Interactions[0].Response.Body, &initial))

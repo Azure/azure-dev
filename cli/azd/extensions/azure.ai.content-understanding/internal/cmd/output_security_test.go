@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azure.ai.content-understanding/internal/cuclient"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ func TestDiagnosticRedactionDoesNotChangeIntentionalResultPayloads(t *testing.T)
 					return cuclient.AnalyzeResponse{JSON: json.RawMessage(envelope)}, nil
 				}
 				args := []string{"https://example.com/input.pdf", "--debug"}
-				path := filepath.Join(t.TempDir(), "result")
+				path := filepath.Join(testutil.TempDir(t), "result")
 				if full {
 					args = append(args, "--llm-input=false")
 				}

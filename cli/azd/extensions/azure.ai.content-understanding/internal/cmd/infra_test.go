@@ -19,6 +19,7 @@ import (
 	"azure.ai.content-understanding/internal/armclient"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/infra"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
@@ -132,7 +133,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	f := infraCommandFixture(t)
 	t.Setenv("CU_ENDPOINT", "invalid-not-read")
 	t.Setenv("CU_API_KEY", "private-not-read")
-	target := filepath.Join(t.TempDir(), "generated")
+	target := filepath.Join(testutil.TempDir(t), "generated")
 	stdout, stderr, err := executeInfra(t, f,
 		"infra", "generate", "-d", target, "-e", "new-env", "--models", "none", "--no-prompt")
 	require.NoError(t, err)
@@ -178,7 +179,7 @@ func TestInfraExistingResourceRejectsExplicitRoleAssignmentBeforeHostAccess(t *t
 			for _, existing := range []bool{false, true} {
 				t.Run(endpoint+"/"+flag+fmt.Sprint("/existing=", existing), func(t *testing.T) {
 					host := infraCommandFixture(t)
-					target := filepath.Join(t.TempDir(), "project")
+					target := filepath.Join(testutil.TempDir(t), "project")
 					envFile := filepath.Join(target, ".azure", "dev", ".env")
 					const saved = "AZD_ASSIGN_ROLES=\"false\"\nCUSTOM=\"retained\"\n"
 					if existing {
@@ -224,7 +225,7 @@ func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			host := infraCommandFixture(t)
-			target := filepath.Join(t.TempDir(), "project")
+			target := filepath.Join(testutil.TempDir(t), "project")
 			stdout, stderr, err := executeInfra(t, host, "infra", "generate", "--output-dir", target,
 				"--models", "none", "--no-prompt", test.flag)
 			require.NoError(t, err)
@@ -243,7 +244,7 @@ func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
 
 func TestInfraModelHookOfflineAndScopedDeployment(t *testing.T) {
 	f := infraCommandFixture(t)
-	output := filepath.Join(t.TempDir(), "models.json")
+	output := filepath.Join(testutil.TempDir(t), "models.json")
 	args := []string{"infra", "_models", "--resource-group", "group", "--account", "foundry",
 		"--selection", "none", "--out", output, "-o", "none"}
 	stdout, stderr, err := executeInfra(t, f, args...)
@@ -537,7 +538,7 @@ func TestInfraConfiguredDefaultGeneratesWithoutPromptsOrProvisioning(t *testing.
 		},
 	}
 	_ = infraRPCClient(t, rpc)
-	directory := filepath.Join(t.TempDir(), "provision")
+	directory := filepath.Join(testutil.TempDir(t), "provision")
 	stdout, stderr, err := executeRoot(t, "infra", "generate", "--models", "none",
 		"--output-dir", directory, "--no-prompt")
 	require.NoError(t, err)
@@ -567,7 +568,7 @@ func TestInfraSubscriptionFailuresDoNotGenerateFiles(t *testing.T) {
 				rpc.subscriptionErr = failure
 			}
 			_ = infraRPCClient(t, rpc)
-			directory := filepath.Join(t.TempDir(), "provision")
+			directory := filepath.Join(testutil.TempDir(t), "provision")
 			stdout, stderr, err := executeRoot(t, "infra", "generate", "--models", "none",
 				"--output-dir", directory, "--no-prompt")
 			require.Error(t, err)

@@ -153,6 +153,134 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	require.Equal(t, "deployed", got.ConversationEngine.Version)
 }
 
+func TestVoiceAgentInlineServicePropertiesRoundTrip_GPTLive(t *testing.T) {
+	store := false
+	rate := 24000
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "gpt-live"},
+		SubProtocol:     agent_yaml.VoiceSubProtocolLive,
+		ModelType:       agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:           &agent_yaml.Model{Id: "gpt-live-1"},
+		Store:           &store,
+		Audio: &agent_yaml.VoiceAudio{
+			Format: &agent_yaml.VoiceAudioFormat{Type: "audio/pcm", Rate: &rate},
+			Output: &agent_yaml.VoiceAudioOutput{Voice: "marin"},
+		},
+		Delegation: &agent_yaml.LiveVoiceDelegation{
+			Type: "foundry_managed_agent", AgentName: "teacher", AgentVersion: "3",
+		},
+	}, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "gpt-live", Host: "azure.ai.agent", AdditionalProperties: props}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.NotNil(t, got.Store)
+	require.False(t, *got.Store)
+}
+
+func TestBuildGPTLiveWSProtocolURL(t *testing.T) {
+	t.Parallel()
+	require.Equal(t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/live/endpoint/protocols/voice/live/sessions?api-version=v1",
+		buildGPTLiveWSProtocolURL("https://acct.services.ai.azure.com/api/projects/proj", "live"))
+	require.Empty(t, buildGPTLiveWSProtocolURL("not-a-url", "live"))
+}
+
+func TestBuildVoiceAgentWSProtocolURL_SelectsSubProtocol(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", ""), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolRealtime), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolLive), "/protocols/voice/live/sessions?api-version=v1")
+}
+
+func TestAgentDefinitionFromService_GPTLiveInline(t *testing.T) {
+	store := false
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"store": store,
+		"audio": map[string]any{
+			"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+			"output": map[string]any{"voice": map[string]any{"id": "custom-voice"}},
+		},
+		"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "gpt-5.6-terra", "maxOutputTokens": 128},
+		},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, voice.SubProtocol)
+	require.Equal(t, 24000, *voice.Audio.Format.Rate)
+	require.Equal(t, "gpt-5.6-terra", voice.Delegation.Responses.Model)
+	require.Equal(t, 128, *voice.Delegation.Responses.MaxOutputTokens)
+	require.NotNil(t, voice.Store)
+	require.False(t, *voice.Store)
+}
+
+func TestAgentDefinitionFromService_GPTLiveInlineRaiPolicy(t *testing.T) {
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID}},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, voice.Policies, 1)
+	require.Equal(t, raiPolicyID, voice.Policies[0].RaiPolicyName)
+	req, err := agent_yaml.CreateVoiceAgentAPIRequest(voice)
+	require.NoError(t, err)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	require.Equal(t, raiPolicyID, def.RaiConfig.RaiPolicyName)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRef(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model:
+  id: gpt-live-1
+store: false
+audio:
+  format: {type: audio/pcm, rate: 24000}
+  output: {voice: marin}
+delegation:
+  type: foundry_managed_agent
+  agent_name: teacher
+  agent_version: "3"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.Equal(t, "3", got.Delegation.AgentVersion)
+}
+
+func TestVoiceAgentDefinitionMarshalJSON_OmitsNilAudio(t *testing.T) {
+	t.Parallel()
+	encoded, err := json.Marshal(agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{Kind: agent_api.AgentKindVoice},
+		SubProtocol:     "live", ModelType: agent_api.VoiceModelTypeSelfDeployed, Model: "gpt-live-1",
+	})
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"audio"`)
+}
+
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
 	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},

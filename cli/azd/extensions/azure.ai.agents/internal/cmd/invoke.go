@@ -377,7 +377,8 @@ const invokeA2ALegacyExamples = `
 
 const invokeVoiceHelp = `Voice Agents:
 For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
+Microsoft Foundry portal at https://ai.azure.com to try it. GPT Live agents use
+the native /voice/live/sessions protocol and require a GPT Live-compatible client.
 For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
 'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
 hosted agent protocols such as responses, invocations, and a2a.

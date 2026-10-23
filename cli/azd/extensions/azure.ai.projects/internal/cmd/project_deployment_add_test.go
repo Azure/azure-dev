@@ -480,31 +480,44 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 		failValue   string
 		wantName    string
 		wantErr     bool
+		replacement bool
 	}{
 		{
-			name: "replacement uses environment list", override: "list",
-			initialName: "old-chat", wantName: "env-chat",
+			name: "replacement clears environment list", override: "list",
+			initialName: "old-chat", wantName: "yaml-chat", replacement: true,
 		},
 		{
-			name: "empty override stays empty", override: "empty",
-			initialName: "old-chat", wantName: "",
+			name: "replacement clears empty override", override: "empty",
+			initialName: "old-chat", wantName: "yaml-chat", replacement: true,
 		},
 		{
 			name: "missing override uses yaml", initialName: "old-chat",
-			wantName: "yaml-chat",
+			wantName: "yaml-chat", replacement: true,
 		},
 		{
-			name: "malformed override rolls back", override: "malformed",
-			initialName: "old-chat", wantErr: true, wantName: "old-chat",
+			name: "replacement clears malformed override", override: "malformed",
+			initialName: "old-chat", wantName: "yaml-chat", replacement: true,
 		},
 		{
 			name: "default write failure restores previous name", override: "list",
-			initialName: "old-chat", failValue: "env-chat",
-			wantErr: true, wantName: "old-chat",
+			initialName: "old-chat", failValue: "yaml-chat",
+			wantErr: true, wantName: "old-chat", replacement: true,
 		},
 		{
 			name: "ejection failure clears restored name", override: "list",
-			infra: "bicep", wantErr: true, wantName: "",
+			infra: "bicep", wantErr: true, wantName: "", replacement: true,
+		},
+		{
+			name: "initial setup uses environment list", override: "list",
+			wantName: "env-chat",
+		},
+		{
+			name: "initial setup preserves empty override", override: "empty",
+			wantName: "",
+		},
+		{
+			name: "initial setup rejects malformed override", override: "malformed",
+			wantErr: true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -523,13 +536,15 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 			}
 			projectServer.services["foundry"] = map[string]any{
 				"host":        aiProjectHost,
-				"endpoint":    endpoint,
 				"deployments": []any{deploymentMap(yamlDeployment)},
 			}
-			envServer.values["AZURE_AI_PROJECT_ID"] = oldID
-			envServer.values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
-			envServer.values["AZURE_AI_ACCOUNT_NAME"] = "old-account"
-			envServer.values["AZURE_AI_PROJECT_NAME"] = "old-project"
+			if test.replacement {
+				projectServer.services["foundry"]["endpoint"] = endpoint
+				envServer.values["AZURE_AI_PROJECT_ID"] = oldID
+				envServer.values["FOUNDRY_PROJECT_ENDPOINT"] = endpoint
+				envServer.values["AZURE_AI_ACCOUNT_NAME"] = "old-account"
+				envServer.values["AZURE_AI_PROJECT_NAME"] = "old-project"
+			}
 			if test.initialName != "" {
 				envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = test.initialName
 			}
@@ -541,6 +556,7 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 			case "malformed":
 				envServer.values[projectDeploymentsEnvKey] = "{"
 			}
+			beforeEnv := maps.Clone(envServer.values)
 			if test.failValue != "" {
 				envServer.failKey = "AZURE_AI_MODEL_DEPLOYMENT_NAME"
 				envServer.failValue = &test.failValue
@@ -558,18 +574,29 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 			err := action.Run(t.Context())
 			if test.wantErr {
 				require.Error(t, err)
+				for key, value := range envServer.values {
+					assert.Equal(t, beforeEnv[key], value, "restore %s", key)
+				}
 			} else {
 				require.NoError(t, err)
+				if test.replacement {
+					assert.Empty(t, envServer.values[projectDeploymentsEnvKey])
+				} else {
+					assert.Equal(t, beforeEnv[projectDeploymentsEnvKey], envServer.values[projectDeploymentsEnvKey])
+				}
 			}
 			assert.Equal(t, test.wantName, envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
-			if test.override == "list" {
+			if test.replacement {
+				assert.Contains(t, envServer.setLog, "AZURE_AI_MODEL_DEPLOYMENT_NAME=yaml-chat")
+				assert.NotContains(t, envServer.setLog, "AZURE_AI_MODEL_DEPLOYMENT_NAME=env-chat")
+			} else if test.override == "list" {
 				assert.Contains(
 					t,
 					envServer.setLog,
 					"AZURE_AI_MODEL_DEPLOYMENT_NAME=env-chat",
 				)
 			}
-			if test.override == "empty" {
+			if !test.replacement && test.override == "empty" {
 				assert.NotContains(
 					t,
 					envServer.setLog,

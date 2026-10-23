@@ -843,6 +843,7 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 		"AZURE_AI_DEPLOYMENTS_LOCATION":     "eastus",
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME":    "chat",
 		"AI_PROJECT_DEPLOYMENT_BINDINGS":    `{"template-chat":"chat"}`,
+		"AI_PROJECT_DEPLOYMENTS":            `[{"name":"chat"}]`,
 		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://old.azurecr.io",
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/acr-rg/providers/" +
 			"Microsoft.ContainerRegistry/registries/old",

@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"strings"
@@ -218,6 +219,12 @@ func TestToolboxNodePlanBeforeIOAndVerifyOnce(t *testing.T) {
 				factoryCalls++
 				return connections, nil
 			})
+			if tt.invalid {
+				require.NoError(t, node.Validate())
+				require.Error(t, node.Prepare())
+				require.Zero(t, factoryCalls)
+				return
+			}
 			require.NoError(t, node.Validate())
 			err := node.Resolve(t.Context())
 			if tt.invalid || tt.advertised != toolboxTestProject || tt.readError != nil {
@@ -323,13 +330,13 @@ func TestToolboxEndpointScopedNamesAndConcurrentReuse(t *testing.T) {
 
 func TestToolboxDiagnosticsRedactCredentials(t *testing.T) {
 	for _, endpoint := range []string{
-		"https://user:password@untrusted.example/mcp?sig=secret#fragment",
-		"https://user:password@acct.services.ai.azure.com/api/projects/proj/bad?sig=secret#fragment",
+		"https://user:password@untrusted.example/mcp?sig=secret#private-fragment-value",
+		"https://user:password@acct.services.ai.azure.com/api/projects/proj/bad?sig=secret#private-fragment-value",
 	} {
 		_, _, err := planToolboxAttachments(nil, []agent_yaml.ToolboxReference{{Name: "tools"}}, toolboxTestProject,
 			map[string]string{envkey.ToolboxMCPEndpoint("tools"): endpoint})
 		require.Error(t, err)
-		for _, secret := range []string{"password", "secret", "fragment"} {
+		for _, secret := range []string{"password", "secret", "private-fragment-value"} {
 			require.NotContains(t, err.Error(), secret)
 		}
 	}
@@ -391,4 +398,144 @@ func TestToolboxDependencies(t *testing.T) {
 func TestPromptAgentRejectsToolboxesWithoutHarness(t *testing.T) {
 	g := &promptGraph{managed: &agent_yaml.PromptAgent{Toolboxes: []agent_yaml.ToolboxReference{{Name: "tools"}}}}
 	require.ErrorContains(t, g.agentNode().Validate(), "harness")
+}
+
+func TestToolboxEndpointPayloadValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name, endpoint string
+		valid          bool
+	}{
+		{"api version", toolboxTestURL, true},
+		{"no query", strings.Split(toolboxTestURL, "?")[0], true},
+		{"userinfo", strings.Replace(toolboxTestURL, "https://", "https://user:password@", 1), false},
+		{"fragment", toolboxTestURL + "#secret", false},
+		{"empty fragment", toolboxTestURL + "#", false},
+		{"signature", toolboxTestURL + "&sig=secret", false},
+		{"unknown parameter", toolboxTestURL + "&other=value", false},
+		{"malformed query", toolboxTestURL + "&other=%zz", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &fakeToolboxConnectionsClient{endpoint: toolboxTestProject,
+				connections: map[string]azure.ToolboxConnectionProperties{}}
+			g := &promptGraph{managed: &agent_yaml.PromptAgent{}, env: map[string]string{
+				envkey.ToolboxMCPEndpoint("tools"): tt.endpoint}}
+			factoryCalls := 0
+			node := toolboxNode(g, []agent_yaml.ToolboxReference{{Name: "tools"}},
+				func() (toolboxConnectionEnsurer, error) {
+					factoryCalls++
+					return &foundryToolboxConnections{client: client, endpoint: toolboxTestProject}, nil
+				})
+			require.NoError(t, node.Validate())
+			err := node.Prepare()
+			if !tt.valid {
+				require.Error(t, err)
+				require.Zero(t, factoryCalls)
+				require.Empty(t, g.managed.Tools)
+				require.Empty(t, client.connections)
+				return
+			}
+			require.NoError(t, err)
+			require.NoError(t, node.Resolve(t.Context()))
+			require.Equal(t, 1, client.puts)
+			tool, ok := g.managed.Tools[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, tt.endpoint, tool["server_url"])
+			connection, ok := tool["project_connection_id"].(string)
+			require.True(t, ok)
+			require.Equal(t, tt.endpoint, client.connections[connection].Target)
+			payload, err := json.Marshal(struct {
+				Tools       []any
+				Connections map[string]azure.ToolboxConnectionProperties
+			}{g.managed.Tools, client.connections})
+			require.NoError(t, err)
+			require.NotContains(t, string(payload), "secret")
+			require.NotContains(t, string(payload), "password")
+		})
+	}
+}
+
+func TestToolboxMarkerCollisions(t *testing.T) {
+	for _, names := range [][]string{{"my-tool", "my_tool"}, {"tools", "TOOLS"}, {"my--tool", "my-tool"}} {
+		t.Run(strings.Join(names, "/"), func(t *testing.T) {
+			refs := []agent_yaml.ToolboxReference{{Name: names[0]}, {Name: names[1]}}
+			// Reject before looking up deployment markers, including an empty environment.
+			for _, env := range []map[string]string{nil, {envkey.ToolboxMCPEndpoint(names[0]): toolboxTestURL}} {
+				_, _, err := planToolboxAttachments(nil, refs, toolboxTestProject, env)
+				require.ErrorContains(t, err, "share environment key")
+			}
+		})
+	}
+	_, attachments, err := planToolboxAttachments(nil,
+		[]agent_yaml.ToolboxReference{{Name: "tools"}, {Name: "tools"}}, toolboxTestProject,
+		map[string]string{envkey.ToolboxMCPEndpoint("tools"): toolboxTestURL})
+	require.NoError(t, err)
+	require.Len(t, attachments, 1)
+}
+
+func TestToolboxPlanPrecedesMemoryCreation(t *testing.T) {
+	for _, ambiguous := range []bool{false, true} {
+		t.Run(map[bool]string{false: "valid plan preserves injected memory tool", true: "ambiguity blocks memory"}[ambiguous],
+			func(t *testing.T) {
+				memory := &agent_yaml.PromptMemory{Store: "store", ChatModel: "chat", EmbeddingModel: "embedding"}
+				g, client, memoryDependency := newMemoryTestGraph(memory)
+				g.managed.Tools = []any{map[string]any{"type": "mcp", "server_label": "two", "require_approval": "never"}}
+				if ambiguous {
+					g.managed.Tools = append(g.managed.Tools, map[string]any{"type": "mcp", "server_label": "one"})
+				}
+				g.env = map[string]string{envkey.ToolboxMCPEndpoint("one"): toolboxTestURL,
+					envkey.ToolboxMCPEndpoint("two"):   toolboxTestURL,
+					envkey.ToolboxMCPEndpoint("three"): strings.Replace(toolboxTestURL, "/research/", "/support/", 1)}
+				connections := &fakeToolboxConnectionsClient{endpoint: toolboxTestProject,
+					connections: map[string]azure.ToolboxConnectionProperties{}}
+				node := toolboxNode(g, []agent_yaml.ToolboxReference{{Name: "one"}, {Name: "two"}, {Name: "three"}},
+					func() (toolboxConnectionEnsurer, error) {
+						return &foundryToolboxConnections{client: connections, endpoint: toolboxTestProject}, nil
+					})
+				g.nodes = []promptNode{*memoryDependency, *node}
+				err := g.resolve(t.Context(), nil)
+				if ambiguous {
+					require.ErrorContains(t, err, "multiple authored MCP entries")
+					require.Nil(t, client.request)
+					require.Zero(t, connections.verifications)
+					return
+				}
+				require.NoError(t, err)
+				require.NotNil(t, client.request)
+				require.Len(t, g.managed.Tools, 3)
+				require.Equal(t, memorySearchToolType, g.managed.Tools[1].(map[string]any)["type"])
+				require.Equal(t, "three", g.managed.Tools[2].(map[string]any)["server_label"])
+				require.NoError(t, g.resolve(t.Context(), nil))
+				require.Len(t, g.managed.Tools, 3)
+				require.Equal(t, 2, connections.puts)
+			})
+	}
+}
+
+func TestToolboxSharedEndpointToolChoice(t *testing.T) {
+	for _, names := range [][]string{{"one", "two"}, {"two", "one"}} {
+		for _, authoredAlias := range []bool{false, true} {
+			t.Run(strings.Join(names, "/")+map[bool]string{false: " generated", true: " authored alias"}[authoredAlias],
+				func(t *testing.T) {
+					choice := map[string]any{"type": "mcp", "server_label": "two", "name": "web_search"}
+					managed := &agent_yaml.PromptAgent{ToolChoice: choice}
+					want := names[0]
+					if authoredAlias {
+						managed.Tools = []any{map[string]any{"type": "mcp", "server_label": "search", "server_url": toolboxTestURL}}
+						want = "search"
+					}
+					g := &promptGraph{managed: managed, env: map[string]string{
+						envkey.ToolboxMCPEndpoint("one"): toolboxTestURL, envkey.ToolboxMCPEndpoint("two"): toolboxTestURL}}
+					client := &fakeToolboxConnectionsClient{endpoint: toolboxTestProject,
+						connections: map[string]azure.ToolboxConnectionProperties{}}
+					node := toolboxNode(g, []agent_yaml.ToolboxReference{{Name: names[0]}, {Name: names[1]}},
+						func() (toolboxConnectionEnsurer, error) {
+							return &foundryToolboxConnections{client: client, endpoint: toolboxTestProject}, nil
+						})
+					require.NoError(t, node.Validate())
+					require.NoError(t, node.Resolve(t.Context()))
+					require.Equal(t, map[string]any{"type": "mcp", "server_label": want, "name": "web_search"}, managed.ToolChoice)
+					require.Equal(t, "two", choice["server_label"], "authored selector must not be mutated")
+				})
+		}
+	}
 }

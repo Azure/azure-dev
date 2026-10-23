@@ -21,6 +21,7 @@ type toolboxAttachment struct {
 	version   string
 	endpoint  string
 	toolIndex int
+	services  []string
 }
 
 type toolboxConnectionEnsurer interface {
@@ -35,6 +36,20 @@ func toolboxNode(
 	if len(refs) == 0 {
 		return nil
 	}
+	var plannedTools []any
+	var attachments []toolboxAttachment
+	var toolChoice any
+	var authoredCount int
+	prepare := func() error {
+		var err error
+		plannedTools, attachments, err = planToolboxAttachments(g.managed.Tools, refs, g.projectEndpoint(), g.env)
+		if err != nil {
+			return err
+		}
+		toolChoice = toolboxToolChoice(g.managed.ToolChoice, plannedTools, attachments)
+		authoredCount = len(g.managed.Tools)
+		return nil
+	}
 	return &promptNode{
 		Kind: nodeToolbox, ID: "toolboxes",
 		Validate: func() error {
@@ -44,15 +59,19 @@ func toolboxNode(
 						"toolbox reference is missing a name", "set each toolboxes entry to an azure.ai.toolbox service name")
 				}
 			}
-			return nil
+			return validateToolboxMarkerKeys(refs)
 		},
+		Prepare: prepare,
 		Resolve: func(ctx context.Context) error {
 			if err := validateToolboxDependencies(ctx, g, refs); err != nil {
 				return err
 			}
-			tools, attachments, err := planToolboxAttachments(g.managed.Tools, refs, g.projectEndpoint(), g.env)
-			if err != nil {
-				return err
+			// The graph prepares the pure plan before any node can write.
+			// Also support resolving this node independently.
+			if plannedTools == nil {
+				if err := prepare(); err != nil {
+					return err
+				}
 			}
 			ensurer, err := newEnsurer()
 			if err != nil {
@@ -61,14 +80,25 @@ func toolboxNode(
 			if err := ensurer.VerifyProject(ctx); err != nil {
 				return err
 			}
+			// Earlier nodes may have injected or replaced unrelated tools (memory,
+			// for example). Apply only the planned MCP entries to their current output.
+			tools := slices.Clone(g.managed.Tools)
 			for _, attachment := range attachments {
 				connection, err := ensurer.EnsureConnection(ctx, attachment)
 				if err != nil {
 					return err
 				}
-				tools[attachment.toolIndex].(map[string]any)["project_connection_id"] = connection
+				tool := maps.Clone(plannedTools[attachment.toolIndex].(map[string]any))
+				tool["project_connection_id"] = connection
+				if attachment.toolIndex < authoredCount {
+					tools[attachment.toolIndex] = tool
+				} else {
+					tools = append(tools, tool)
+				}
 			}
 			g.managed.Tools = tools
+			g.managed.ToolChoice = toolChoice
+			plannedTools = nil
 			return nil
 		},
 	}
@@ -79,6 +109,9 @@ func toolboxNode(
 func planToolboxAttachments(
 	authored []any, refs []agent_yaml.ToolboxReference, projectEndpoint string, env map[string]string,
 ) ([]any, []toolboxAttachment, error) {
+	if err := validateToolboxMarkerKeys(refs); err != nil {
+		return nil, nil, err
+	}
 	tools := slices.Clone(authored)
 	for i, raw := range tools {
 		if tool, ok := raw.(map[string]any); ok {
@@ -140,12 +173,51 @@ func planToolboxAttachments(
 		}
 		attachment := group.attachment
 		attachment.toolIndex = index
+		attachment.services = group.services
 		attachments = append(attachments, attachment)
 	}
 	if err := validateUniqueMcpServerLabels(tools); err != nil {
 		return nil, nil, err
 	}
 	return tools, attachments, nil
+}
+
+func validateToolboxMarkerKeys(refs []agent_yaml.ToolboxReference) error {
+	owners := map[string]string{}
+	for _, ref := range refs {
+		service := strings.TrimSpace(ref.Name)
+		for _, key := range []string{envkey.ToolboxMCPEndpoint(service), envkey.ToolboxProjectEndpoint(service)} {
+			if previous, exists := owners[key]; exists && previous != service {
+				return exterrors.Validation(exterrors.CodeInvalidAgentManifest,
+					fmt.Sprintf("toolbox services %q and %q share environment key %s", previous, service, key),
+					"rename the toolbox services so their normalized environment keys are distinct")
+			}
+			owners[key] = service
+		}
+	}
+	return nil
+}
+
+func toolboxToolChoice(choice any, tools []any, attachments []toolboxAttachment) any {
+	selector, ok := choice.(map[string]any)
+	if !ok || selector["type"] != "mcp" {
+		return choice
+	}
+	label, _ := selector["server_label"].(string)
+	// An authored label that survives planning already identifies a valid tool.
+	for _, raw := range tools {
+		if tool, ok := raw.(map[string]any); ok && tool["type"] == "mcp" && tool["server_label"] == label {
+			return choice
+		}
+	}
+	for _, attachment := range attachments {
+		if slices.Contains(attachment.services, label) {
+			selector = maps.Clone(selector)
+			selector["server_label"] = tools[attachment.toolIndex].(map[string]any)["server_label"]
+			return selector
+		}
+	}
+	return choice
 }
 
 func toolboxToolIndex(tools []any, services []string, endpoint string) (int, error) {
@@ -233,6 +305,18 @@ func parseToolboxMCPEndpoint(endpoint string) (string, string, error) {
 		return "", "", fmt.Errorf("endpoint must be an HTTPS Foundry project URL (*.services.ai.azure.com)")
 	}
 	u, _ := url.Parse(endpoint) // validated above; do not include raw URLs in parsing errors
+	if u.User != nil || u.Fragment != "" || u.RawFragment != "" || strings.Contains(endpoint, "#") {
+		return "", "", fmt.Errorf("endpoint must not contain user information or a fragment")
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return "", "", fmt.Errorf("endpoint query parameters must be valid")
+	}
+	for key := range query {
+		if key != "api-version" {
+			return "", "", fmt.Errorf("endpoint query parameters may only contain api-version")
+		}
+	}
 	parts := strings.Split(strings.Trim(u.EscapedPath(), "/"), "/")
 	if len(parts) != 8 || parts[0] != "api" || parts[1] != "projects" || parts[2] == "" ||
 		parts[3] != "toolboxes" || parts[5] != "versions" || parts[7] != "mcp" {

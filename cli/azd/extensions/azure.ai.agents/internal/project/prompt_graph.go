@@ -32,15 +32,18 @@ const (
 )
 
 // promptNode is a single dependency in the prompt-agent deploy graph. Validate
-// is pure and runs for every node before any Resolve executes, so a graph is
-// fully validated before the first live mutation. Resolve is idempotent and
+// is pure and supports offline definition validation. Prepare checks deployment
+// inputs for every node before any Resolve executes. Resolve is idempotent and
 // create-if-missing; it writes any outputs later nodes consume into
 // promptGraph.bindings.
 type promptNode struct {
 	Kind     promptNodeKind
 	ID       string
 	Validate func() error
-	Resolve  func(ctx context.Context) error
+	// Prepare validates deployment inputs available only after dependencies deploy.
+	// Every Prepare runs before the first Resolve can mutate remote resources.
+	Prepare func() error
+	Resolve func(ctx context.Context) error
 }
 
 // promptGraph is the internal, non-user-facing dependency graph for one
@@ -278,6 +281,13 @@ func (g *promptGraph) resolve(ctx context.Context, progress azdext.ProgressRepor
 
 	if err := g.validate(); err != nil {
 		return err
+	}
+	for _, n := range g.nodes {
+		if n.Prepare != nil {
+			if err := n.Prepare(); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Reported after validation and before any node injects its own tools, so

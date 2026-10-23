@@ -75,7 +75,7 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 				promptEnvironmentServer: promptEnvironmentServer{values: map[string]string{
 					"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "old-default",
 					projectDeploymentsEnvKey:           list,
-					synthesis.DeploymentBindingsEnvKey: `{"prior":"prior-selection"}`,
+					synthesis.DeploymentBindingsEnvKey: `{"prior":"prior-selection","Template-Chat":"old-selection"}`,
 				}},
 				failKey: test.failKey,
 			}
@@ -93,7 +93,7 @@ func TestReplaceAdoptedTemplateDeploymentPreservesStateOnFailure(t *testing.T) {
 			bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
 			require.NoError(t, err)
 			require.Equal(t, map[string]string{
-				"prior": "prior-selection", "template-chat": "existing",
+				"prior": "prior-selection", "Template-Chat": "existing",
 			}, bindings)
 		})
 	}

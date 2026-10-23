@@ -182,7 +182,7 @@ func reconcileAdoptedDeploymentChoices(
 		}
 		// Without a prompt, unmatched declarations are kept as configured.
 		if len(matches) == 0 && noPrompt {
-			bindings[expandedItem.Name] = expandedItem.Name
+			synthesis.SetDeploymentBinding(bindings, expandedItem.Name, expandedItem.Name)
 			remaining = append(remaining, item)
 			referenced = append(referenced, expandedItem)
 			continue
@@ -235,7 +235,7 @@ func reconcileAdoptedDeploymentChoices(
 			choice := choices[prompt.GetValue()].GetValue()
 			switch {
 			case choice == "deploy":
-				bindings[expandedItem.Name] = expandedItem.Name
+				synthesis.SetDeploymentBinding(bindings, expandedItem.Name, expandedItem.Name)
 				remaining = append(remaining, item)
 				referenced = append(referenced, expandedItem)
 				if !present {
@@ -243,7 +243,7 @@ func reconcileAdoptedDeploymentChoices(
 				}
 				continue
 			case choice == "skip":
-				bindings[expandedItem.Name] = ""
+				synthesis.SetDeploymentBinding(bindings, expandedItem.Name, "")
 				changed = true
 				continue
 			case choice == "change":
@@ -257,7 +257,7 @@ func reconcileAdoptedDeploymentChoices(
 					remaining = append(remaining, alternative)
 				}
 				referenced = append(referenced, alternative)
-				bindings[expandedItem.Name] = alternative.Name
+				synthesis.SetDeploymentBinding(bindings, expandedItem.Name, alternative.Name)
 				if explicitDefault == "" {
 					explicitDefault = alternative.Name
 				}
@@ -278,7 +278,7 @@ func reconcileAdoptedDeploymentChoices(
 			Model: selected.Model,
 			Sku:   selected.Sku,
 		})
-		bindings[expandedItem.Name] = selected.Name
+		synthesis.SetDeploymentBinding(bindings, expandedItem.Name, selected.Name)
 		changed = true
 	}
 	if len(referenced) == 0 && !changed {

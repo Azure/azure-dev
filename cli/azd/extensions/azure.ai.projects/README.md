@@ -105,7 +105,10 @@ Other adoption choices retain the existing default-selection behavior.
 `AI_PROJECT_DEPLOYMENT_BINDINGS` stores environment-local adoption bindings as a
 JSON object, for example `{"template-chat":"existing-chat"}`. Each declaration
 retains its own selected deployment independently of the global runtime default;
-an empty target records Skip. Prompt-agent deploy and invoke honor these explicit
+an empty target records Skip. Declaration names are matched case-insensitively,
+and updates preserve existing declaration-key spelling. Targets that differ only
+by case are equivalent; genuinely conflicting targets for case-equivalent keys
+are rejected. Prompt-agent deploy and invoke honor these explicit
 bindings even after infrastructure ejection. Bindings are cleared when the
 environment switches to a different project. Legacy environments without bindings
 retain the single-missing-declaration fallback and reject ambiguous replacements.

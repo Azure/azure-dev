@@ -161,13 +161,25 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			wantDefault: "existing-4o",
 			wantChanged: true,
 		},
+		{
+			name:        "skip replaces the existing binding",
+			live:        []liveProjectDeployment{matching},
+			selections:  []int32{3},
+			wantList:    []string{},
+			wantChanged: true,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prompt := &sequencedAdoptionPrompt{selections: test.selections}
 			client, project, env, ai, _ := newSelfInitializingDeploymentClient(t, t.TempDir(), prompt)
 			project.services["project"] = map[string]any{"deployments": []any{deploymentMap(declared)}}
-			values := map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": test.originalDefault}
+			const originalBindings = `{"Template-Chat":"old-selection","other":"untouched"}`
+			values := map[string]string{
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME":   test.originalDefault,
+				synthesis.DeploymentBindingsEnvKey: originalBindings,
+			}
 			env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"] = test.originalDefault
+			env.values[synthesis.DeploymentBindingsEnvKey] = originalBindings
 			defaultName, changed, restore, err := reconcileAdoptedDeploymentChoices(
 				t.Context(), client, "test", target,
 				[]synthesis.Deployment{declared}, test.live, values, test.noPrompt,
@@ -198,7 +210,9 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			if test.name == "ordinary reuse preserves a live default" {
 				wantBinding = matching.Name
 			}
-			require.Equal(t, wantBinding, bindings[declared.Name])
+			require.Equal(t, map[string]string{
+				"Template-Chat": wantBinding, "other": "untouched",
+			}, bindings)
 			got, present, err := provisioning.DecodeProjectDeployments(env.values[projectDeploymentsEnvKey])
 			require.NoError(t, err)
 			if test.wantList == nil {
@@ -213,7 +227,7 @@ func TestAdoptedDeploymentChoicesDifferentModel(t *testing.T) {
 			}
 			require.NoError(t, restore())
 			assert.Equal(t, test.originalDefault, env.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
-			assert.Empty(t, env.values[synthesis.DeploymentBindingsEnvKey])
+			assert.Equal(t, originalBindings, env.values[synthesis.DeploymentBindingsEnvKey])
 		})
 	}
 

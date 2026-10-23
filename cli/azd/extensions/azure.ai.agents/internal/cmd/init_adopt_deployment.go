@@ -165,7 +165,7 @@ func replaceAdoptedTemplateDeployment(
 		if err != nil {
 			return err
 		}
-		bindings[replaced] = existing
+		synthesis.SetDeploymentBinding(bindings, replaced, existing)
 		encoded, err := synthesis.EncodeDeploymentBindings(bindings)
 		if err != nil {
 			return err

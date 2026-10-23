@@ -41,6 +41,21 @@ func DecodeDeploymentBindings(value string) (map[string]string, error) {
 	return bindings, nil
 }
 
+// SetDeploymentBinding updates case-equivalent declaration keys without changing
+// their spelling, or adds the declaration when no matching key exists.
+func SetDeploymentBinding(bindings map[string]string, declaration, target string) {
+	matched := false
+	for name := range bindings {
+		if strings.EqualFold(name, declaration) {
+			bindings[name] = target
+			matched = true
+		}
+	}
+	if !matched {
+		bindings[declaration] = target
+	}
+}
+
 // EncodeDeploymentBindings writes environment-escaped JSON selections.
 func EncodeDeploymentBindings(bindings map[string]string) (string, error) {
 	data, err := json.Marshal(bindings)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
@@ -377,6 +378,32 @@ func TestResolvePromptAgentModelExplicitBindings(t *testing.T) {
 			env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = "{"
 			_, err = ResolvePromptAgentModel("chat", agent, services, root, env)
 			require.ErrorContains(t, err, "AI_PROJECT_DEPLOYMENT_BINDINGS")
+		})
+	}
+}
+
+func TestResolvePromptAgentModelEquivalentBindingCase(t *testing.T) {
+	for _, onDisk := range []bool{false, true} {
+		t.Run(map[bool]string{false: "embedded", true: "ejected"}[onDisk], func(t *testing.T) {
+			root := t.TempDir()
+			if onDisk {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+					"infra:\n  provider: terraform\n",
+				), 0600))
+			}
+			agent, services := promptModelServices(t, "Chat")
+			env := map[string]string{
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{"Chat":"Existing","CHAT":"existing"}`,
+			}
+			before := env["AI_PROJECT_DEPLOYMENT_BINDINGS"]
+			got, err := ResolvePromptAgentModel("chat", agent, services, root, env)
+			require.NoError(t, err)
+			require.True(t, strings.EqualFold("Existing", got), "resolved deployment: %q", got)
+			require.Equal(t, before, env["AI_PROJECT_DEPLOYMENT_BINDINGS"])
+
+			env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = `{"Chat":"","CHAT":""}`
+			_, err = ResolvePromptAgentModel("chat", agent, services, root, env)
+			require.ErrorContains(t, err, "was skipped")
 		})
 	}
 }

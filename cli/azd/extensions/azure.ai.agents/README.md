@@ -502,8 +502,9 @@ For adopted prompt agents, deploy and invoke resolve the template model against
 the active environment's deployment choices. `AI_PROJECT_DEPLOYMENT_BINDINGS` is
 an environment-local JSON object mapping each template deployment name to its
 selected deployment name. An empty target records an explicit skip. These
-names are matched case-insensitively without changing their stored spelling;
-conflicting targets for keys that differ only by case are rejected. Bindings
+names are matched case-insensitively, and updates preserve existing declaration-key
+spelling. Targets that differ only by case are equivalent; genuinely conflicting
+targets for keys that differ only by case are rejected. Bindings
 preserve independent choices for multiple declarations and take
 precedence over the project-wide runtime default. A skipped model, an ambiguous
 legacy replacement, or malformed deployment configuration returns an error

@@ -133,7 +133,7 @@ func promptModelDeploymentBinding(bindings map[string]string, model string) (str
 		if !strings.EqualFold(name, model) {
 			continue
 		}
-		if bound && replacement != target {
+		if bound && !strings.EqualFold(replacement, target) {
 			return "", false, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				fmt.Sprintf("AI_PROJECT_DEPLOYMENT_BINDINGS contains conflicting bindings for model %q", model),

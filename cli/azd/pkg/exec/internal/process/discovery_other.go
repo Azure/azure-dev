@@ -24,7 +24,7 @@ func processIDsWithTreeID(ctx context.Context, processTreeID string) []int {
 		"pid=",
 		"-o",
 		"command=",
-	).Output()
+	)
 	if err != nil {
 		return nil
 	}

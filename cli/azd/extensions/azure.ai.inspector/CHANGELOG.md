@@ -2,6 +2,12 @@
 
 <!-- cspell:ignore herohua -->
 
+## 1.0.0-beta.9 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
 ## 1.0.0-beta.8 (2026-09-24)
 
 ### Other Changes

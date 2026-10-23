@@ -20,7 +20,7 @@ azure.ai.agents/
 │   ├── project/                   # Future project/service callers
 │   └── featureflags/
 │       ├── featureflags.go        # Declaration validation and ENV read
-│       ├── featureflags_test.go   # Process-only contract tests
+│       ├── featureflags_test.go   # Process-environment contract tests
 │       ├── registry.go            # Feature declarations, All, Lookup
 │       └── registry_test.go       # Declaration rules
 └── docs/specs/
@@ -45,7 +45,7 @@ func All() []Feature
 func Lookup(id string) (Feature, bool)
 ```
 
-`ID` is a capability identity, not a user-config contract. `EnvVar` is the exact process environment key to read. `Description` is optional for evaluation and supplies a short scope summary in help.
+`ID` is a capability identity, not a user-config contract. `EnvVar` is the process environment key to read, including a value the azd host has already injected. `Description` is optional for evaluation and supplies a short scope summary in help.
 
 ```go
 enabled, err := featureflags.IsEnabled(featureflags.Voice)
@@ -54,7 +54,7 @@ if err != nil {
 }
 ```
 
-`IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. It does not require a context, azd client, selected environment, project, or login. Command input validation stays with the commands; there is no flag-specific `CheckEnvironmentFlag` helper.
+`IsEnabled` rejects an empty `ID` or `EnvVar` before reading the process environment. The function takes no context, azd client, selected-environment, project, or login argument. Values the host already injected are present in the process environment it reads. Command input validation stays with the commands; there is no flag-specific `CheckEnvironmentFlag` helper.
 
 ## Feature registry and help
 
@@ -68,7 +68,7 @@ if err != nil {
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
-## Process-only enablement
+## Process environment enablement
 
 We recommend setting the desired variable in the shell or CI process environment before running azd. For example:
 
@@ -92,9 +92,9 @@ Each feature is independent. There is no global toggle, experimentation default,
 
 ### Evaluator source boundary
 
-The evaluator reads the extension's own process environment. It does not query azd user config (including `alpha.all`), load selected or default azd environment files, or read project/service environment mappings itself.
+`IsEnabled` reads the declared key from the process environment with `os.Getenv`. That environment includes variables set in the shell or CI before azd starts and values the azd host has already placed there. On a normal agents command, the host appends the selected azd environment before it launches the extension. These commands do not opt out of that injection, so a value saved with `azd env set` is visible on the next `azd` invocation. The host appends those values after the parent process environment. When the same key appears twice, the child process keeps the last value, so the selected environment overrides the parent process for that key.
 
-Values that the azd host has already injected into the extension's process environment are still read, regardless of their original source. This boundary does not guarantee that the full azd launch path excludes dotenv values or that `--environment` cannot influence them. The evaluator does not filter the origin of process values.
+The evaluator does not query azd user config (including `alpha.all`), open selected or default environment files, or read project/service environment mappings. It does not filter process values by where they came from.
 
 Normal project configuration, deployment environments, runtime settings, and command input validation elsewhere in the extension are unchanged.
 
@@ -103,7 +103,7 @@ Normal project configuration, deployment environments, runtime settings, and com
 This intentionally narrows the earlier multi-source implementation:
 
 - `AZD_FOUNDRY_EXT_ENABLE_*` names are no longer recognized; there is no legacy alias.
-- The evaluator no longer explicitly reads user config or loads selected/default azd environment files.
+- The evaluator no longer reads user config or opens selected/default azd environment files. The azd host may still inject the selected environment into the process before launch.
 - Feature evaluation no longer loads project/service scopes or calls the azd host.
 - The old context/client/environment parameters, host-error sentinels, and flag-specific environment validation are removed.
 
@@ -115,11 +115,11 @@ Discoverability through `azd config list-alpha`, a public SDK API, and framework
 
 Only the three registered capabilities are candidates for future checks. Command discovery and runtime enforcement are separate caller responsibilities. A discovery check alone cannot gate preview flags, project/service flows, or direct invocation paths. Adoption should check the relevant capability before side effects without gating regular hosted or plain prompt agents.
 
-There is no cache, output, process-environment mutation, configuration write, authentication, or network call. Each evaluation reads the current process value. A declaration error returns `false, error`; valid declarations always return the process-only decision without a host-read failure path.
+There is no cache, output, process-environment mutation, configuration write, authentication, or network call. Each evaluation reads the current process value. A declaration error returns `false, error`. Valid declarations always return the process-environment decision. The evaluator has no host-read failure path.
 
 ## Validation
 
-Tests cover all three canonical keys, default-off behavior, accepted boolean forms, non-enabling values, independent feature combinations, ignored old/global/unrelated keys, and optional descriptions. Temporary local fixtures verify that direct evaluator calls do not load or modify user config, default/selected dotenv files, or project/service mappings. These tests do not exercise the host's extension launch path or rule out values it injects into the process environment. Repeated calls verify fresh reads and no process or declaration mutation.
+Tests cover all three canonical keys, default-off behavior, accepted boolean forms, non-enabling values, independent feature combinations, ignored old/global/unrelated keys, and optional descriptions. Temporary local fixtures verify that direct evaluator calls do not open or modify user config, default/selected dotenv files, or project/service mappings. A value already present in the process environment still enables the feature; that is the path host-injected azd environment values take. These tests call the evaluator directly and do not launch through the azd host. Repeated calls verify fresh reads and no process or declaration mutation.
 
 Registry tests cover the stable copy returned by `All` and `Lookup`. Help tests cover registry-derived switches and scopes, color/no-color headings, root-only placement, unchanged command discovery, and updated snapshots.
 

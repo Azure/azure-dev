@@ -47,8 +47,9 @@ Preview Feature Switches:
 	footer.WriteString(`
   All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
   False, empty, and invalid values do not enable a switch.
-  The extension reads these switches from its own process environment.
-  It does not query azd config or load azd environment files itself.
+  The extension reads these switches from its process environment, including
+  values the azd host already injected from the selected environment.
+  It does not query azd config or load environment files from disk itself.
   These declarations do not add command or runtime gates by themselves.
   Regular hosted and plain prompt agents are outside these preview scopes.
 

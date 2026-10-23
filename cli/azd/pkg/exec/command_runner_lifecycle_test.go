@@ -108,7 +108,7 @@ func TestCommandRunnerHelperProcess(t *testing.T) {
 	case "spawn-listener",
 		"spawn-listener-and-exit",
 		"spawn-listener-and-exit-42",
-		"spawn-detached-listener-and-exit":
+		"spawn-listener-without-pipes-and-exit":
 		childMode := "listen"
 		if mode == "spawn-listener-and-exit" || mode == "spawn-listener-and-exit-42" {
 			childMode = "listen-after-parent-exit"
@@ -123,7 +123,7 @@ func TestCommandRunnerHelperProcess(t *testing.T) {
 			child.Stderr = os.Stderr //nolint:forbidigo
 		}
 		require.NoError(t, child.Start())
-		if mode == "spawn-detached-listener-and-exit" {
+		if mode == "spawn-listener-without-pipes-and-exit" {
 			waitForPath(t, os.Getenv(commandRunnerHelperAddressEnv))
 			os.Exit(0)
 		}
@@ -465,7 +465,7 @@ func TestCommandRunner_NormalCompletionTerminatesRemainingChildProcess(t *testin
 			run: func(ctx context.Context, addressPath string) (RunResult, error) {
 				return runner.Run(
 					ctx,
-					helperRunArgs("spawn-detached-listener-and-exit", "", addressPath),
+					helperRunArgs("spawn-listener-without-pipes-and-exit", "", addressPath),
 				)
 			},
 		},
@@ -475,7 +475,7 @@ func TestCommandRunner_NormalCompletionTerminatesRemainingChildProcess(t *testin
 				return runner.RunList(ctx, []string{helperListCommand()}, RunArgs{
 					Env: []string{
 						commandRunnerHelperExeEnv + "=" + os.Args[0],
-						commandRunnerHelperModeEnv + "=spawn-detached-listener-and-exit",
+						commandRunnerHelperModeEnv + "=spawn-listener-without-pipes-and-exit",
 						commandRunnerHelperAddressEnv + "=" + addressPath,
 					},
 				})
@@ -578,7 +578,7 @@ func helperRunArgs(mode, readyPath, additionalPath string) RunArgs {
 	case "spawn-listener",
 		"spawn-listener-and-exit",
 		"spawn-listener-and-exit-42",
-		"spawn-detached-listener-and-exit":
+		"spawn-listener-without-pipes-and-exit":
 		env = append(env, commandRunnerHelperAddressEnv+"="+additionalPath)
 	}
 

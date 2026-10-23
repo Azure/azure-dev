@@ -19,11 +19,17 @@ import (
 
 const processTreeEnv = "AZD_INTERNAL_PROCESS_TREE_ID"
 
+// Scan again because descendants can detach or spawn while termination is in progress.
+const processTerminationDiscoveryPasses = 3
+
 type platformState struct {
 	processTreeMarker string
 }
 
 func configure(t *Tree) {
+	t.platform.processTreeMarker = fmt.Sprintf("%s=%s", processTreeEnv, rand.Text())
+	t.Cmd.Env = append(t.Cmd.Environ(), t.platform.processTreeMarker)
+
 	if !t.options.Interactive {
 		if t.Cmd.SysProcAttr == nil {
 			t.Cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -32,11 +38,7 @@ func configure(t *Tree) {
 			t.Cmd.SysProcAttr = &attributes
 		}
 		t.Cmd.SysProcAttr.Setpgid = true
-		return
 	}
-
-	t.platform.processTreeMarker = fmt.Sprintf("%s=%s", processTreeEnv, rand.Text())
-	t.Cmd.Env = append(t.Cmd.Environ(), t.platform.processTreeMarker)
 }
 
 func finishStart(*Tree) error {
@@ -80,45 +82,78 @@ func terminateTree(t *Tree, allowFinished bool) error {
 	}
 
 	if t.options.Interactive {
-		return terminateInteractiveTree(t)
+		return terminateOwnedTree(t, t.Cmd.Process.Kill)
 	}
 
-	err := syscall.Kill(-t.Cmd.Process.Pid, syscall.SIGKILL)
-	if errors.Is(err, syscall.ESRCH) {
-		return os.ErrProcessDone
-	}
-	return err
+	return terminateOwnedTree(t, func() error {
+		err := syscall.Kill(-t.Cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	})
 }
 
-func terminateInteractiveTree(t *Tree) error {
+func terminateOwnedTree(
+	t *Tree,
+	terminateRoot func() error,
+) error {
 	descendants := ownedProcessIDs(
 		t.Cmd.Process.Pid,
 		t.platform.processTreeMarker,
 	)
-	rootErr := t.Cmd.Process.Kill()
+
+	rootErr := terminateRoot()
 	terminatedDescendant := false
 	var descendantErr error
-	for _, pid := range descendants {
+	for attempt := range processTerminationDiscoveryPasses {
+		passTerminated, passErr := terminateProcessIDs(descendants)
+		terminatedDescendant = terminatedDescendant || passTerminated
+		descendantErr = errors.Join(descendantErr, passErr)
+
+		if attempt == processTerminationDiscoveryPasses-1 {
+			break
+		}
+		descendants = ownedProcessIDs(
+			t.Cmd.Process.Pid,
+			t.platform.processTreeMarker,
+		)
+		if len(descendants) == 0 {
+			break
+		}
+	}
+
+	return processTerminationError(rootErr, descendantErr, terminatedDescendant)
+}
+
+func terminateProcessIDs(processIDs []int) (bool, error) {
+	terminated := false
+	var errs error
+	for _, pid := range processIDs {
 		err := syscall.Kill(pid, syscall.SIGKILL)
 		switch {
 		case err == nil:
-			terminatedDescendant = true
+			terminated = true
 		case errors.Is(err, syscall.ESRCH):
 		default:
-			descendantErr = errors.Join(
-				descendantErr,
+			errs = errors.Join(
+				errs,
 				fmt.Errorf("killing descendant process %d: %w", pid, err),
 			)
 		}
 	}
+	return terminated, errs
+}
 
+func processTerminationError(rootErr, descendantErr error, terminatedDescendant bool) error {
 	if descendantErr != nil {
 		if rootErr != nil && !errors.Is(rootErr, os.ErrProcessDone) {
 			return errors.Join(rootErr, descendantErr)
 		}
 		return descendantErr
 	}
-	if rootErr == nil || terminatedDescendant {
+	if rootErr == nil ||
+		(terminatedDescendant && errors.Is(rootErr, os.ErrProcessDone)) {
 		return nil
 	}
 	return rootErr

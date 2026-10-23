@@ -106,6 +106,12 @@ func (t *Tree) Wait() error {
 
 	err := t.waitForCommand()
 	cause := t.cancellationCause()
+	// os/exec reports ctx.Err when its watcher cancels a command, even when
+	// the context has a more specific custom cause. Exact identity preserves
+	// wrapped process and I/O errors.
+	if cause != nil && t.ctx != nil && err == t.ctx.Err() { //nolint:errorlint
+		err = cause
+	}
 	waitDelayExpired := errors.Is(err, exec.ErrWaitDelay)
 	terminateRemainingOnWait := t.options.TerminateRemainingOnWait || waitDelayExpired
 

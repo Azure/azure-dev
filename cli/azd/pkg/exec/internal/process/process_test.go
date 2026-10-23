@@ -32,26 +32,37 @@ func TestTreeSupportsCommandWithoutCommandContext(t *testing.T) {
 	require.NoError(t, tree.Wait())
 }
 
-func TestInteractiveTreeUsesNonReusableOwnershipMarker(t *testing.T) {
+func TestPosixTreeUsesNonReusableOwnershipMarker(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows uses Job Objects instead of ownership markers")
 	}
 
-	first := configuredOwnershipMarker(t)
-	second := configuredOwnershipMarker(t)
+	for _, test := range []struct {
+		name        string
+		interactive bool
+	}{
+		{name: "non-interactive"},
+		{name: "interactive", interactive: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := Options{Interactive: test.interactive}
+			first := configuredOwnershipMarker(t, options)
+			second := configuredOwnershipMarker(t, options)
 
-	require.NotEqual(t, first, second)
+			require.NotEqual(t, first, second)
 
-	value := strings.TrimPrefix(first, "AZD_INTERNAL_PROCESS_TREE_ID=")
-	parts := strings.Split(value, "-")
-	if len(parts) == 2 {
-		_, pidErr := strconv.Atoi(parts[0])
-		_, sequenceErr := strconv.Atoi(parts[1])
-		require.True(
-			t,
-			pidErr != nil || sequenceErr != nil,
-			"ownership marker must not rely only on a reusable process ID and sequence",
-		)
+			value := strings.TrimPrefix(first, "AZD_INTERNAL_PROCESS_TREE_ID=")
+			parts := strings.Split(value, "-")
+			if len(parts) == 2 {
+				_, pidErr := strconv.Atoi(parts[0])
+				_, sequenceErr := strconv.Atoi(parts[1])
+				require.True(
+					t,
+					pidErr != nil || sequenceErr != nil,
+					"ownership marker must not rely only on a reusable process ID and sequence",
+				)
+			}
+		})
 	}
 }
 
@@ -111,11 +122,11 @@ func TestCleanupStartedProcessBoundsWait(t *testing.T) {
 	}
 }
 
-func configuredOwnershipMarker(t *testing.T) string {
+func configuredOwnershipMarker(t *testing.T, options Options) string {
 	t.Helper()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$") //nolint:gosec
-	tree := New(t.Context(), cmd, Options{Interactive: true})
+	tree := New(t.Context(), cmd, options)
 	configure(tree)
 
 	const prefix = "AZD_INTERNAL_PROCESS_TREE_ID="
@@ -124,6 +135,6 @@ func configuredOwnershipMarker(t *testing.T) string {
 			return entry
 		}
 	}
-	t.Fatal("interactive process ownership marker was not configured")
+	t.Fatal("process ownership marker was not configured")
 	return ""
 }

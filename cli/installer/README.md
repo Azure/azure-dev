@@ -136,7 +136,23 @@ When installing using the MSI directly (instead of the install script) the MSI b
 | `ALLUSERS` | `2`: Default. Install for current user (no privilege elevation required). <br/> `1`: Install for _all_ users (may require privilege elevation). |
 | `INSTALLDIR` | Installation path. <br/> `"%LOCALAPPDATA%\Programs\Azure Dev CLI"`: Default. <br/> `"%PROGRAMFILES%\Azure Dev CLI"`: Default all users. |
 
-> **Note:** Installing per-machine (`ALLUSERS=1`) means the administrator is responsible for managing updates. To suppress update notifications in environments where administrators manage updates, set the `AZD_SKIP_UPDATE_CHECK=1` environment variable.
+To update a stable x64 installation for all users, open a terminal with **Run as administrator** and run:
+
+```powershell
+azd update --channel stable
+```
+
+The update preserves the machine installation directory, including custom directories registered by the MSI. It requires an already elevated terminal and does not launch a UAC prompt. Use the full path to the machine-installed `azd.exe` if a separate per-user installation takes precedence on PATH.
+
+Machine-wide updates support only stable-to-stable updates. Use the MSI installer to change channels. Winget and Chocolatey installations continue to update through their package manager. Other custom installations must use their original installer.
+
+The updater does not restart Windows or automatically close other running azd processes. If MSI requires a restart to finish replacing files, the command reports that the update is installed but a Windows restart is required. Installer failures retain an MSI log and print its location.
+
+A failed MSI upgrade can remove the previous product's registration and system PATH entry. The updater restores the previous executable when the installer fails, but restoring that file does not restore the complete machine installation. Follow the error's reinstall guidance to run the stable MSI with `ALLUSERS=1` and the same `INSTALLDIR`.
+
+The executable backup is removed after azd exits. Cleanup retries for up to one minute if the file is still in use. If retries run out, the backup directory is retained with a `cleanup.log` file. If MSI succeeds but azd cannot verify the new executable, it keeps the installed files and backup and reports how to repair the installation.
+
+> **Note:** To suppress update notifications in centrally managed environments, set the `AZD_SKIP_UPDATE_CHECK=1` environment variable.
 
 ### Custom install location 
 

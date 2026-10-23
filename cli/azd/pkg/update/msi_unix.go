@@ -5,20 +5,15 @@
 
 package update
 
-// isStandardMSIInstall is a no-op on non-Windows platforms.
-func isStandardMSIInstall() error {
-	return nil
+import (
+	"context"
+	"io"
+)
+
+func (m *Manager) updateViaMSI(context.Context, *VersionInfo, io.Writer) error {
+	return newUpdateErrorf(CodeUnsupportedInstallMethod, "MSI updates are only supported on Windows")
 }
 
-// backupCurrentExe is a no-op stub on non-Windows platforms.
-func backupCurrentExe() (string, string, error) {
-	return "", "", nil
-}
-
-// restoreExeFromBackup is a no-op stub on non-Windows platforms.
-func restoreExeFromBackup(_, _ string) error { return nil }
-
-// buildInstallScriptArgs is a no-op on non-Windows platforms.
-func buildInstallScriptArgs(_ *VersionInfo) ([]string, error) {
-	return nil, nil
+func (m *Manager) verifyAuthenticode(context.Context, string, io.Writer) error {
+	return newUpdateErrorf(CodeUnsupportedInstallMethod, "Authenticode verification is only supported on Windows")
 }

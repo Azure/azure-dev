@@ -133,6 +133,13 @@ func resolvePromptHarnessTarget(
 		if err == nil {
 			err = validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations)
 		}
+		if err == nil && len(allowedLocations) > 0 {
+			location, locationErr := getEnvValue(ctx, azdClient, env.Name, "AZURE_LOCATION")
+			if locationErr != nil {
+				return nil, false, nil, nil, locationErr
+			}
+			err = validateNewProjectLocation(location, azureContext.Scope.Location)
+		}
 		return deployment, true, nil, cred, err
 	}
 

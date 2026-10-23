@@ -115,8 +115,9 @@ goals:
     above. Set AZURE_LOCATION to the seeded disallowed region and AZURE_AI_DEPLOYMENTS_LOCATION to '{region}'.
     Run the corresponding init with --no-prompt and --model '{model}', without --project-id or --model-deployment.
     Both flows must reject the configured AZURE_LOCATION before requesting any location prompt or changing
-    either location value. With two distinct allowed locations, both flows must preserve the configured split
-    when resolving the new project location. Do not provision or deploy any scaffold.
+    either location value. With two distinct allowed locations, both flows must reject the mismatch with
+    guidance to align AZURE_LOCATION and AZURE_AI_DEPLOYMENTS_LOCATION, preserving both values and avoiding
+    model selection. Matching supported locations must pass the location checks. Do not provision or deploy any scaffold.
   - >-
     Take screenshots of the region errors and plain-prompt completion. STOP: do not run azd up, provision, deploy,
     or down. Report a finding for any unfiltered picker, accepted unsupported harness target, plain-prompt

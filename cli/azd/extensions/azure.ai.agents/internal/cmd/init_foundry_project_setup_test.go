@@ -25,6 +25,34 @@ func (s *projectSetupAccountServer) LookupTenant(
 	return &azdext.LookupTenantResponse{TenantId: "tenant"}, nil
 }
 
+func TestValidateNewProjectLocation(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, project, model string
+		wantError            bool
+	}{
+		{"matching", "westus2", "westus2", false},
+		{"normalized", " WestUS2 ", "westus2", false},
+		{"unset project", "", "westus2", false},
+		{"unset model", "japaneast", "", false},
+		{"recovery changed location", "japaneast", "westus2", true},
+		{"internal mismatch", "eastus2euap", "westus2", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateNewProjectLocation(tt.project, tt.model)
+			if !tt.wantError {
+				require.NoError(t, err)
+				return
+			}
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeLocationMismatch, localErr.Code)
+			require.Contains(t, localErr.Suggestion, "same supported region")
+			require.NotContains(t, localErr.Message+localErr.Suggestion, "eastus2euap")
+		})
+	}
+}
+
 func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
@@ -35,9 +63,10 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 			name, location, deploymentLocation, wantLocation, wantDeploymentLocation, wantError string
 		}{
 			{"unsupported project", "eastus", "westus2", "eastus", "westus2", "configured AZURE_LOCATION"},
-			{"public split", "japaneast", "westus2", "japaneast", "westus2", ""},
+			{"public split", "japaneast", "westus2", "japaneast", "westus2", "must match"},
+			{"public both", "westus2", "westus2", "westus2", "westus2", ""},
 			{"missing project location", "", "westus2", "westus2", "westus2", ""},
-			{"internal split", "eastus2euap", "westus2", "eastus2euap", "westus2", ""},
+			{"internal split", "eastus2euap", "westus2", "eastus2euap", "westus2", "must match"},
 			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
 			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
 			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},
@@ -71,7 +100,7 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 					require.NotContains(t, err.Error(), "PromptLocation", "headless validation must not attempt a location prompt")
 				} else if flow == "generated" {
 					// No model service is registered: reaching it proves location setup
-					// succeeded without prompting or rewriting the split configuration.
+					// succeeded without prompting or rewriting configured locations.
 					require.ErrorContains(t, err, "AiModelService")
 				} else {
 					require.NoError(t, err)

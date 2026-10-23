@@ -282,8 +282,9 @@ func configureFoundryProject(
 	return result, nil
 }
 
-// ensureNewProjectLocation validates the project location independently from the
-// effective model location and preserves an existing valid split configuration.
+// ensureNewProjectLocation validates the project and effective model locations.
+// A new account hosts its model deployments in the same region, so model
+// selection and account provisioning must not target different locations.
 // Generated and adopted agents share this policy for new Foundry projects.
 func ensureNewProjectLocation(
 	ctx context.Context,
@@ -312,5 +313,21 @@ func ensureNewProjectLocation(
 			return err
 		}
 	}
+	if err := validateNewProjectLocation(location, azureContext.Scope.Location); err != nil {
+		return err
+	}
 	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func validateNewProjectLocation(projectLocation, modelLocation string) error {
+	if normalizeLocationName(projectLocation) == "" || normalizeLocationName(modelLocation) == "" ||
+		normalizeLocationName(projectLocation) == normalizeLocationName(modelLocation) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeLocationMismatch,
+		"AZURE_LOCATION and AZURE_AI_DEPLOYMENTS_LOCATION must match when creating a new Foundry project",
+		"set both environment values to the same supported region, or unset AZURE_AI_DEPLOYMENTS_LOCATION "+
+			"to use AZURE_LOCATION, then retry init",
+	)
 }

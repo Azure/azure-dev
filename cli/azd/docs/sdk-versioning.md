@@ -36,6 +36,17 @@ replace github.com/azure/azure-dev/cli/azd => ../..
 
 This takes precedence during local builds. The `require` version still specifies the minimum published version.
 
+### Concurrent service access
+
+An `AzdClient` supports concurrent calls to its service accessors, including their first use.
+Normal service-target and deployment-preview listeners share the client but open independent streams.
+This synchronization does not change the gRPC contracts or require a newer azd host.
+
+SDK fixes reach extensions through the normal module release process. After a fixed SDK is
+published, extension maintainers must update their module dependency, rebuild, and release
+their extension. Updating the installed azd host alone does not update the SDK compiled into
+an extension binary.
+
 ## Compatibility
 
 - **Patch versions** (1.23.x → 1.23.y): Backward compatible bug fixes

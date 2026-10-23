@@ -531,7 +531,7 @@ func TestValidateAgentDefinition_TransferTargetsMatchViennaWriteConstraints(t *t
 		},
 	}
 
-	validBoundary := []byte(fmt.Sprintf(`kind: voice
+	validBoundary := fmt.Appendf(nil, `kind: voice
 name: voice-agent
 model: {id: gpt-realtime}
 telephony:
@@ -543,7 +543,7 @@ telephony:
         - name: sip
           description: %q
           destination: {kind: sip, value: 'sip:user@example.com'}
-`, strings.Repeat("😀", 512)))
+`, strings.Repeat("😀", 512))
 	require.NoError(t, ValidateAgentDefinition(validBoundary))
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

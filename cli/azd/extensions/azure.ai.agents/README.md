@@ -1,5 +1,76 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Preview feature opt-ins
+
+Three capabilities are off by default. Each one is turned on separately.
+
+| Feature ID | Scope | Environment variable |
+| --- | --- | --- |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+
+Set the desired variable in your shell or CI before running azd:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
+export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+```
+
+In PowerShell, for example:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+```
+
+Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
+missing, and invalid values leave it off. The evaluator reads the current
+process environment without querying azd config or loading environment files.
+Values already injected by the azd host count; the selected azd environment
+can override the same key from the shell or CI.
+
+User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
+`AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
+hosted and plain prompt agents need no opt-in.
+
+Root help always lists the canonical switches and their scopes. While a
+feature is off, its command-specific flags and help sections are hidden.
+Enabling a feature preserves the existing help without adding new text or
+revealing flags that were already hidden, including `--harness`.
+This covers `invoke --long-running`, `invoke --no-wait`, the
+`invocations` group, `init --voice`, and the `prompt-voice` choice of
+`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+`feature_not_enabled` error that names the preview feature ID and suggests
+setting its canonical variable to `true` in the shell or CI.
+
+Checks cover preview flags on init and invoke, `agent add` definitions,
+existing and staged project definitions, the selected service for invoke, run,
+optimize submissions, optimize deploy, optimize apply, and endpoint update,
+provisioning, and package, publish, and deploy. The init
+picker omits voice while it is off. Hosted init also omits `invocations_ws`
+from protocol help and selection while voice is off. Explicit `--protocol`
+values, including repeated flags and comma-separated lists, require the voice
+opt-in for `invocations_ws`. Protocol selection completes before project or
+environment creation; ordinary protocols and the no-prompt Responses default
+need no additional feature check. Template catalogs do not identify
+capabilities, so templates are checked after staging and before adoption.
+Explicit remote `--template` inputs are staged and checked before Azure
+authentication, including `$ref` definitions. Adoption reuses that directory.
+
+### Enforcement limits
+
+- An explicit HTTP `--agent-endpoint` stays unclassified. The extension does
+  not query its remote definition, so the managed harness check does not cover
+  that route. The long-running check still applies. Text invoke does not
+  accept voice WebSocket endpoints.
+- Read and cleanup commands stay available with features off. This includes
+  show, endpoint show, invocations show, follow, and cancel, delete, and down.
+- These checks do not govern requests from the evaluations or routines
+  extensions.
+
+See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
 ## Hosted agent deployment preview
 
 With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
@@ -784,7 +855,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization is available without a private-preview environment switch.
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 

@@ -96,7 +96,6 @@ Preview Feature Switches
   The extension reads these switches from its process environment, including
   values the azd host already injected from the selected environment.
   It does not query azd config or load environment files from disk itself.
-  These declarations do not add command or runtime gates by themselves.
   Regular hosted and plain prompt agents are outside these preview scopes.
 
 Learn More

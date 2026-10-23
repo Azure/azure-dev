@@ -703,6 +703,8 @@ func newServiceTargetTestClient(
 	}
 	if len(projectSrvs) > 0 && projectSrvs[0] != nil {
 		azdext.RegisterProjectServiceServer(srv, projectSrvs[0])
+	} else {
+		azdext.RegisterProjectServiceServer(srv, &previewProjectServer{})
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

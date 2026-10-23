@@ -917,7 +917,7 @@ func (p *AgentServiceTargetProvider) Package(
 	serviceContext *azdext.ServiceContext,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePackageResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents have no container/code to build — the harness owns the
@@ -1065,7 +1065,7 @@ func (p *AgentServiceTargetProvider) Publish(
 	publishOptions *azdext.PublishOptions,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServicePublishResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents have no container image to publish.
@@ -1561,7 +1561,7 @@ func (p *AgentServiceTargetProvider) Deploy(
 	targetResource *azdext.TargetResource,
 	progress azdext.ProgressReporter,
 ) (*azdext.ServiceDeployResult, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.prepareGatedOperation(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	// Prompt agents are created on the managed harness, not the Foundry

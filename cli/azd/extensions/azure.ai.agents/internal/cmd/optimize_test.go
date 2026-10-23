@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/optconfig"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	projectpkg "azureaiagent/internal/project"
@@ -147,6 +148,114 @@ func TestResolveOptimizeAgent_ServiceDefinition(t *testing.T) {
 			require.Equal(t, []string{"gpt-5"}, request.OptimizationConfiguration.AgentOptimizationSpace.ModelSearchSpace)
 			require.Len(t, cfg.Options.OptimizationConfig, 5)
 		})
+	}
+}
+
+func TestOptimizePreviewTargets(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tc := range []struct {
+		name       string
+		definition map[string]any
+		feature    featureflags.Feature
+	}{
+		{"hosted", map[string]any{"kind": "hosted", "name": "agent"}, featureflags.Feature{}},
+		{"prompt", map[string]any{
+			"kind": "prompt", "model": "gpt-4.1-mini", "instructions": "Help.",
+		}, featureflags.Feature{}},
+		{"managed harness", map[string]any{
+			"kind": "prompt", "model": "gpt-4.1-mini", "instructions": "Help.",
+			"harness": map[string]any{"type": "microsoft_copilot_preview"},
+		}, featureflags.ManagedHarness},
+		{"voice", map[string]any{
+			"kind": "prompt-voice", "name": "agent", "modelType": "managed",
+			"model": map[string]any{"id": "gpt-realtime"},
+		}, featureflags.Voice},
+	} {
+		for _, mode := range []struct {
+			name     string
+			config   bool
+			remote   bool
+			explicit bool
+		}{
+			{name: "auto"},
+			{name: "explicit", explicit: true},
+			{name: "config", config: true},
+			{name: "remote config", config: true, remote: true},
+			{name: "explicit config", config: true, remote: true, explicit: true},
+		} {
+			for _, enabled := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/enabled=%t", tc.name, mode.name, enabled), func(t *testing.T) {
+					clearPreviewProcess(t)
+					if enabled && tc.feature.ID != "" {
+						t.Setenv(tc.feature.EnvVar, "true")
+					}
+					root := t.TempDir()
+					t.Chdir(root)
+					props, err := structpb.NewStruct(tc.definition)
+					require.NoError(t, err)
+					projectServer := &recordingProjectServer{
+						projectPath: root, existing: map[string]*azdext.ServiceConfig{
+							"assistant": {Name: "assistant", Host: AiAgentHost, AdditionalProperties: props},
+						},
+					}
+					envServer := &testEnvironmentServiceServer{
+						environments: map[string]*azdext.Environment{"dev": {Name: "dev"}},
+						values: map[string]map[string]string{
+							"dev": {"AGENT_ASSISTANT_NAME": "deployed-agent", "AGENT_ASSISTANT_VERSION": "8"},
+						},
+					}
+					t.Setenv("AZD_SERVER", newProjectRecorderServer(t, projectServer, envServer))
+					flags := &optimizeFlags{}
+					args := []string{"optimize", "--no-prompt", "-e", "dev"}
+					if mode.explicit {
+						flags.agent = "assistant"
+						args = append(args, "--agent", flags.agent)
+					}
+					wantName := "deployed-agent"
+					if mode.config {
+						content := gaOptimizationTestConfig
+						if mode.remote {
+							content = strings.ReplaceAll(content, "deployed-agent", "remote-agent")
+							if !mode.explicit {
+								wantName = "remote-agent"
+							}
+						}
+						flags.configFile = writeTestFile(t, root, "optimization.json", content)
+						args = append(args, "--config", flags.configFile)
+					}
+					action := &OptimizeAction{flags: flags, envName: "dev", noPrompt: true}
+					cfg, _, project, err := action.resolveConfig(t.Context())
+					if tc.feature.ID != "" && !enabled && (!mode.remote || mode.explicit) {
+						localErr, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok, "%v", err)
+						require.Equal(t, exterrors.CodeFeatureNotEnabled, localErr.Code)
+						_, err = executeRoot(t, args...)
+						localErr, ok = errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok, "%v", err)
+						require.Equal(t, exterrors.CodeFeatureNotEnabled, localErr.Code)
+					} else {
+						require.NoError(t, err)
+						require.Equal(t, wantName, cfg.Agent.Name)
+						if mode.remote && !mode.explicit {
+							require.Empty(t, project)
+							require.Empty(t, action.serviceName)
+						} else {
+							require.Equal(t, root, project)
+							require.Equal(t, "assistant", action.serviceName)
+						}
+						if mode.config && !mode.explicit {
+							require.Equal(t, "4", cfg.Agent.Version)
+						}
+					}
+					require.Empty(t, envServer.setKeys)
+					require.Zero(t, envServer.getCurrentCalls)
+					require.NoDirExists(t, filepath.Join(root, ".azure"))
+					entries, err := os.ReadDir(root)
+					require.NoError(t, err)
+					require.Len(t, entries, map[bool]int{false: 0, true: 1}[mode.config])
+				})
+			}
+		}
 	}
 }
 
@@ -288,6 +397,11 @@ func TestResolveOptimizeAgent_NoProjectUsesStandaloneAgentName(t *testing.T) {
 	resolved, err := resolveOptimizeAgent(t.Context(), "remote-agent", "dev", true)
 	require.NoError(t, err)
 	require.Equal(t, &optimizeAgentContext{agentName: "remote-agent"}, resolved)
+	action := &OptimizeAction{flags: &optimizeFlags{agent: "remote-agent"}, envName: "dev", noPrompt: true}
+	cfg, _, project, err := action.resolveConfig(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "remote-agent", cfg.Agent.Name)
+	require.Empty(t, project)
 }
 
 func optimizeTestDirectService(t *testing.T, _ string) *azdext.ServiceConfig {

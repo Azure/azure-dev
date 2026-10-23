@@ -808,12 +808,14 @@ func adoptedAgentNameConfig(
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
 // project folder name.
+// A supplied stagingDir avoids downloading the sample again.
 func runInitFromAzureYaml(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	content []byte,
+	stagingDir string,
 ) error {
 	projectName := foundryProjectName(content)
 	recordInitProjectContent(ctx, content)
@@ -842,15 +844,22 @@ func runInitFromAzureYaml(
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
-	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
-	if err != nil {
-		return err
+	if stagingDir == "" {
+		var cleanup func()
+		stagingDir, cleanup, err = stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 	}
-	defer cleanup()
 
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
+	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+		return err
+	}
+	//nolint:gosec // trusted staging directory
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
@@ -995,7 +1004,10 @@ func preflightAzdTemplate(
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return err
+	}
+	return requireStagedPreviewFeatures(stagingDir)
 }
 
 func stageAzdTemplateRepository(

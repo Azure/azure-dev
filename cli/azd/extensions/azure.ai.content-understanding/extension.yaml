@@ -2,8 +2,8 @@
 capabilities:
     - custom-commands
     - metadata
-description: Native Go azd commands for Azure Content Understanding (in development)
-displayName: Azure Content Understanding
+description: Extension for Azure Content Understanding. (Preview)
+displayName: Azure Content Understanding (Preview)
 id: azure.ai.content-understanding
 language: go
 namespace: ai.cu
@@ -12,4 +12,4 @@ tags:
     - ai
     - content-understanding
 usage: azd ai cu <command> [options]
-version: 0.0.1
+version: 0.1.0-preview

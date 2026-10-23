@@ -151,7 +151,10 @@ func TestDiagnosticsMetadataAndHelpHaveNoProfileSurface(t *testing.T) {
 func TestEnvironmentVariableDocumentationCoversListedInputs(t *testing.T) {
 	readme, err := os.ReadFile("../../README.md")
 	require.NoError(t, err)
+	require.Contains(t, string(readme), "(docs/usage.md)")
+	guide, err := os.ReadFile("../../docs/usage.md")
+	require.NoError(t, err)
 	for _, variable := range listEnvironmentVariables(func(string) (string, bool) { return "", true }) {
-		assert.Contains(t, string(readme), "`"+variable.Name+"`")
+		assert.Contains(t, string(guide), "`"+variable.Name+"`")
 	}
 }

@@ -12,70 +12,61 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRun_PreCanceledContextSkipsPredicatesAndResponses(t *testing.T) {
-	mock := NewMockCommandRunner()
-	predicateCalled := false
-	responseCalled := false
-	mock.When(func(exec.RunArgs, string) bool {
-		predicateCalled = true
-		return true
-	}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
-		responseCalled = true
-		return exec.RunResult{}, nil
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+func TestPreCanceledContext(t *testing.T) {
+	runners := []struct {
+		name string
+		run  func(*MockCommandRunner, context.Context) (exec.RunResult, error)
+	}{
+		{
+			name: "Run",
+			run: func(mock *MockCommandRunner, ctx context.Context) (exec.RunResult, error) {
+				return mock.Run(ctx, exec.NewRunArgs("tool"))
+			},
+		},
+		{
+			name: "RunList",
+			run: func(mock *MockCommandRunner, ctx context.Context) (exec.RunResult, error) {
+				return mock.RunList(ctx, []string{"tool"}, exec.RunArgs{})
+			},
+		},
+	}
 
-	_, err := mock.Run(ctx, exec.NewRunArgs("tool"))
+	for _, runner := range runners {
+		t.Run(runner.name, func(t *testing.T) {
+			t.Run("SkipsPredicatesAndResponses", func(t *testing.T) {
+				mock := NewMockCommandRunner()
+				predicateCalled := false
+				responseCalled := false
+				mock.When(func(exec.RunArgs, string) bool {
+					predicateCalled = true
+					return true
+				}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
+					responseCalled = true
+					return exec.RunResult{}, nil
+				})
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
 
-	require.ErrorIs(t, err, context.Canceled)
-	require.False(t, predicateCalled)
-	require.False(t, responseCalled)
-}
+				_, err := runner.run(mock, ctx)
 
-func TestRunList_PreCanceledContextSkipsPredicatesAndResponses(t *testing.T) {
-	mock := NewMockCommandRunner()
-	predicateCalled := false
-	responseCalled := false
-	mock.When(func(exec.RunArgs, string) bool {
-		predicateCalled = true
-		return true
-	}).RespondFn(func(exec.RunArgs) (exec.RunResult, error) {
-		responseCalled = true
-		return exec.RunResult{}, nil
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+				require.ErrorIs(t, err, context.Canceled)
+				require.False(t, predicateCalled)
+				require.False(t, responseCalled)
+			})
 
-	_, err := mock.RunList(ctx, []string{"tool"}, exec.RunArgs{})
+			t.Run("PreservesCause", func(t *testing.T) {
+				mock := NewMockCommandRunner()
+				cause := errors.New("custom cancellation cause")
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(cause)
 
-	require.ErrorIs(t, err, context.Canceled)
-	require.False(t, predicateCalled)
-	require.False(t, responseCalled)
-}
+				_, err := runner.run(mock, ctx)
 
-func TestRun_PreCanceledContextPreservesCause(t *testing.T) {
-	mock := NewMockCommandRunner()
-	cause := errors.New("custom cancellation cause")
-	ctx, cancel := context.WithCancelCause(t.Context())
-	cancel(cause)
-
-	_, err := mock.Run(ctx, exec.NewRunArgs("tool"))
-
-	require.ErrorIs(t, err, cause)
-	require.NotErrorIs(t, err, context.Canceled)
-}
-
-func TestRunList_PreCanceledContextPreservesCause(t *testing.T) {
-	mock := NewMockCommandRunner()
-	cause := errors.New("custom cancellation cause")
-	ctx, cancel := context.WithCancelCause(t.Context())
-	cancel(cause)
-
-	_, err := mock.RunList(ctx, []string{"tool"}, exec.RunArgs{})
-
-	require.ErrorIs(t, err, cause)
-	require.NotErrorIs(t, err, context.Canceled)
+				require.ErrorIs(t, err, cause)
+				require.NotErrorIs(t, err, context.Canceled)
+			})
+		})
+	}
 }
 
 func TestRespondContextFnReceivesCancellation(t *testing.T) {

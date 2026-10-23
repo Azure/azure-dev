@@ -38,48 +38,30 @@ func NewMockCommandRunner() *MockCommandRunner {
 // This implementation will find the first matching, most recent mocked expression and return the configured response or
 // error
 func (m *MockCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
-	if err := ctx.Err(); err != nil {
-		return exec.RunResult{}, context.Cause(ctx)
-	}
-
-	var match *CommandExpression
-
 	cmdArgs := []string{args.Cmd}
 	cmdArgs = append(cmdArgs, args.Args...)
 	command := strings.Join(cmdArgs, " ")
 
-	for _, expression := range slices.Backward(m.expressions) {
-		if expression.predicateFn(args, command) {
-			match = expression
-			break
-		}
-	}
-
-	if match == nil {
-		panic(fmt.Sprintf("No mock found for command: '%s %s'", args.Cmd, strings.Join(args.Args, " ")))
-	}
-
-	// If the response function has been set, return the value
-	if match.contextResponseFn != nil {
-		return match.contextResponseFn(ctx, args)
-	}
-	if match.responseFn != nil {
-		return match.responseFn(args)
-	}
-
-	return match.response, match.error
+	return m.run(ctx, args, command)
 }
 
 func (m *MockCommandRunner) RunList(ctx context.Context, commands []string, args exec.RunArgs) (exec.RunResult, error) {
-	if err := ctx.Err(); err != nil {
-		return exec.RunResult{}, context.Cause(ctx)
-	}
-
-	var match *CommandExpression
-
 	args.Args = commands
 	command := strings.Join(commands, " && ")
 
+	return m.run(ctx, args, command)
+}
+
+func (m *MockCommandRunner) run(
+	ctx context.Context,
+	args exec.RunArgs,
+	command string,
+) (exec.RunResult, error) {
+	if cause := context.Cause(ctx); cause != nil {
+		return exec.RunResult{}, cause
+	}
+
+	var match *CommandExpression
 	for _, expression := range slices.Backward(m.expressions) {
 		if expression.predicateFn(args, command) {
 			match = expression
@@ -91,7 +73,6 @@ func (m *MockCommandRunner) RunList(ctx context.Context, commands []string, args
 		panic(fmt.Sprintf("No mock found for command: '%s'", command))
 	}
 
-	// If the response function has been set, return the value
 	if match.contextResponseFn != nil {
 		return match.contextResponseFn(ctx, args)
 	}
@@ -128,7 +109,7 @@ func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpress
 	return &expr
 }
 
-// Represents an mocked expression against a dependent tool command
+// Represents a mocked expression against a dependent tool command
 type CommandExpression struct {
 	response          exec.RunResult
 	responseFn        ResponseFn

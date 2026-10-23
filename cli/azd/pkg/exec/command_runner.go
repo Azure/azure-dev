@@ -177,13 +177,14 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		outputAvailable := !args.Interactive
-		err = newExitErrorFromWait(
-			err,
-			exitErr,
+		err = newExitError(
+			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			outputAvailable)
+			outputAvailable,
+			err,
+		)
 	}
 
 	return result, err
@@ -236,13 +237,14 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	logMsg.result = &result
 
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		err = newExitErrorFromWait(
-			err,
-			exitErr,
+		err = newExitError(
+			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			true)
+			true,
+			err,
+		)
 	}
 
 	return result, err
@@ -331,11 +333,11 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 	if !useShell {
 		if cmd == "" {
 			return CmdTree{}, errors.New("command must be provided if shell is not used")
-		} else {
-			//nolint:gosec // G204: cmd/args are caller-controlled
-			command := exec.CommandContext(ctx, cmd, args...)
-			return newManagedCmdTree(ctx, command, options), nil
 		}
+
+		//nolint:gosec // G204: cmd/args are caller-controlled
+		command := exec.CommandContext(ctx, cmd, args...)
+		return newManagedCmdTree(ctx, command, options), nil
 	}
 
 	var shellName string
@@ -375,9 +377,7 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 		}
 	}
 
-	var allArgs []string
-	allArgs = append(allArgs, shellCommandPrefix)
-	allArgs = append(allArgs, args...)
+	allArgs := append([]string{shellCommandPrefix}, args...)
 
 	// #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive
 	command := exec.CommandContext( //nolint:gosec // G702: shellName is a known system shell path

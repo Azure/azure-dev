@@ -52,7 +52,8 @@ func NewExitError(
 	cmd string,
 	stdOut string,
 	stdErr string,
-	outputAvailable bool) error {
+	outputAvailable bool,
+) error {
 	return newExitError(exitErr, cmd, stdOut, stdErr, outputAvailable, nil)
 }
 
@@ -63,7 +64,7 @@ func newExitError(
 	stdErr string,
 	outputAvailable bool,
 	cause error,
-) error {
+) *ExitError {
 	return &ExitError{
 		ExitCode:        exitErr.ExitCode(),
 		Cmd:             cmd,
@@ -73,17 +74,6 @@ func newExitError(
 		outputAvailable: outputAvailable,
 		cause:           cause,
 	}
-}
-
-func newExitErrorFromWait(
-	waitErr error,
-	exitErr *exec.ExitError,
-	cmd string,
-	stdOut string,
-	stdErr string,
-	outputAvailable bool,
-) error {
-	return newExitError(*exitErr, cmd, stdOut, stdErr, outputAvailable, waitErr)
 }
 
 // Error augments the underlying exec.ExitError's Error with the stdout and stderr output of the command, if available.

@@ -279,14 +279,14 @@ func TestExitError_UnwrapsCancellation(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestNewExitErrorFromWaitPreservesAdditionalFailures(t *testing.T) {
+func TestExitError_UnwrapsAdditionalFailures(t *testing.T) {
 	t.Parallel()
 
 	osExitErr := makeOSExitError(t)
 	cleanupErr := errors.New("cleanup failed")
 	waitErr := errors.Join(&osExitErr, cleanupErr)
 
-	err := newExitErrorFromWait(waitErr, &osExitErr, "go", "out", "err", true)
+	err := newExitError(osExitErr, "go", "out", "err", true, waitErr)
 
 	require.ErrorIs(t, err, cleanupErr)
 	var unwrappedExitErr *osexec.ExitError

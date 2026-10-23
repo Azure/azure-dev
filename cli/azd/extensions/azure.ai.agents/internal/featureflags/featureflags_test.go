@@ -128,8 +128,10 @@ func TestIsEnabledIgnoresAliases(t *testing.T) {
 }
 
 func TestIsEnabledDoesNotLoadLocalConfiguration(t *testing.T) {
-	// These direct calls do not exercise the host launch path.
-	// Values injected by the host remain process environment values.
+	// Direct calls do not open azd config or dotenv files on disk.
+	// A value already in the process environment still enables the feature.
+	// That is how a value the azd host injected from the selected environment is observed.
+	// This test does not launch through the host.
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("AZD_CONFIG_DIR", filepath.Join(root, "config"))

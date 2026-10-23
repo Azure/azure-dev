@@ -461,8 +461,6 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 	if provider == "" {
 		return nil
 	}
-	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
-
 	projectRoot, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
 		return nil
@@ -486,6 +484,7 @@ func ejectInfraAfterInit(ctx context.Context, provider string, clients ...*azdex
 			return err
 		}
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 	return ejectInfra(projectRoot, provider, env)
 }
 

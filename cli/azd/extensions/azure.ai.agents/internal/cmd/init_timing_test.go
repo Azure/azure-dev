@@ -4,12 +4,15 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -18,9 +21,11 @@ import (
 	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -228,6 +233,7 @@ func TestInitStepTimingLocationIncludesLoadingAndPersistence(t *testing.T) {
 				} else {
 					_, _ = w.Write([]byte(`{"regions":["japaneast"]}`))
 				}
+
 			}))
 			t.Cleanup(server.Close)
 			previous := hostedAgentRegionsURL
@@ -271,6 +277,191 @@ func TestInitStepTimingLocationIncludesLoadingAndPersistence(t *testing.T) {
 			require.Len(t, durations, 1, "loading, prompting and persistence must form a single sample")
 			minimum := time.Duration(environment.writes+int(expectedLoads)) * locationTimingDelay
 			require.GreaterOrEqual(t, durations[0], float64(minimum.Milliseconds()))
+		})
+	}
+}
+
+func executeTimedInit(
+	t *testing.T,
+	args []string,
+	noPrompt bool,
+	project azdext.ProjectServiceServer,
+	prompts azdext.PromptServiceServer,
+	environment azdext.EnvironmentServiceServer,
+) (error, *initTimingRecorder) {
+	t.Helper()
+	t.Setenv("AZD_EXT_DEBUG", "")
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	t.Setenv("NO_COLOR", "1")
+	bin := t.TempDir()
+	executable, script := "azd", "#!/bin/sh\nprintf '{\"status\":\"authenticated\"}\\n'\n"
+	if runtime.GOOS == "windows" {
+		executable, script = "azd.cmd", "@echo {\"status\":\"authenticated\"}\r\n"
+	}
+	path := filepath.Join(bin, executable)
+	require.NoError(t, os.WriteFile(path, []byte(script), 0o600))
+	//nolint:gosec // the fake auth-status executable must run on Unix.
+	require.NoError(t, os.Chmod(path, 0o700))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	server := grpc.NewServer()
+	capture := &operationTelemetryServer{}
+	contracts.RegisterTelemetryServiceServer(server, capture)
+	azdext.RegisterAiModelServiceServer(server, &initAuthOrderingAiServer{})
+	if project != nil {
+		azdext.RegisterProjectServiceServer(server, project)
+	}
+	if prompts != nil {
+		azdext.RegisterPromptServiceServer(server, prompts)
+	}
+	if environment != nil {
+		azdext.RegisterEnvironmentServiceServer(server, environment)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	done := make(chan error, 1)
+	go func() { done <- server.Serve(listener) }()
+	t.Cleanup(func() { server.Stop(); require.NoError(t, <-done) })
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: noPrompt})
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SilenceUsage, command.SilenceErrors = true, true
+	command.SetArgs(args)
+	runErr := command.Execute()
+	recorder := &initTimingRecorder{}
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	for _, event := range capture.events {
+		if event.EventName == "agent.init.step" {
+			recorder.events = append(recorder.events, foundryTelemetry.Event{
+				Name: event.EventName, Attributes: event.Attributes,
+			})
+		}
+	}
+	return runErr, recorder
+}
+
+func TestInitStepTimingLateValidationExcludesAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		args           []string
+		wantErr        string
+		postAuth       bool
+		invalidProject bool
+		template       bool
+		standalone     bool
+	}{
+		{name: "infra parsing", args: []string{"--infra=invalid"}, wantErr: "unsupported --infra"},
+		{name: "standalone infra conflict", args: []string{"--infra", "--kind", "hosted"},
+			wantErr: "--kind", standalone: true},
+		{name: "kind", args: []string{"--kind", "invalid"}, wantErr: "unknown --kind", postAuth: true},
+		{name: "harness", args: []string{"--kind", "prompt", "--harness", "invalid"}, wantErr: "unknown --harness", postAuth: true},
+		{name: "registry conflict", args: []string{"--registry-connection", "connection"},
+			wantErr: "--registry-connection", postAuth: true},
+		{name: "project service", wantErr: "agent definition not found", postAuth: true, invalidProject: true},
+		{name: "unified template conflict", args: []string{"--kind", "hosted"},
+			wantErr: "project adoption cannot apply", postAuth: true, template: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			config := &azdext.ProjectConfig{Path: root}
+			if test.standalone {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+					"name: test\nservices:\n  project:\n    host: azure.ai.project\n",
+				), 0o600))
+			}
+			if test.invalidProject {
+				config.Services = map[string]*azdext.ServiceConfig{"agent": {Name: "agent", Host: AiAgentHost}}
+			}
+			args := append([]string(nil), test.args...)
+			if test.template {
+				pointer := filepath.Join(root, "azure.yaml")
+				require.NoError(t, os.WriteFile(pointer, []byte(
+					"services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: agent\n",
+				), 0o600))
+				args = append(args, "-t", pointer)
+			}
+			err, recorder := executeTimedInit(t, args, true, &helpersProjectServer{project: config}, nil, nil)
+			require.ErrorContains(t, err, test.wantErr)
+			validationSequences := []int{}
+			authSequence := 0
+			for _, event := range recorder.events {
+				sequence, parseErr := strconv.Atoi(event.Attributes["agent.init.step.sequence"])
+				require.NoError(t, parseErr)
+				switch event.Attributes["agent.init.step.id"] {
+				case string(inittelemetry.InputValidation):
+					validationSequences = append(validationSequences, sequence)
+				case string(inittelemetry.Authentication):
+					authSequence = sequence
+				}
+			}
+			if test.postAuth {
+				require.Len(t, validationSequences, 3, "the failing late group must have its own completed timing")
+				require.Greater(t, authSequence, validationSequences[1])
+				require.Less(t, authSequence, validationSequences[2])
+			} else {
+				require.Len(t, validationSequences, 2)
+				require.Zero(t, authSequence)
+			}
+		})
+	}
+}
+
+func TestInitStepTimingExistingProjectReuse(t *testing.T) {
+	for _, noPrompt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("noPrompt=%t", noPrompt), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			prompts := &testPromptServiceServer{confirmResponses: []bool{true}}
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root, Services: map[string]*azdext.ServiceConfig{"chat": inlineAgentService(t, "chat", "chat-agent")},
+			}}
+			environment := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+			err, recorder := executeTimedInit(t, nil, noPrompt, project, prompts, environment)
+			require.NoError(t, err)
+			if noPrompt {
+				require.Empty(t, prompts.confirmRequests)
+			} else {
+				require.Len(t, prompts.confirmRequests, 1)
+			}
+			require.Len(t, recordedStepDurations(t, recorder, inittelemetry.InitModeSelection), 1)
+			require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.ProjectScaffolding))
+		})
+	}
+}
+
+func TestInitStepTimingVoiceConfigurationBothEntryPoints(t *testing.T) {
+	for _, explicit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("explicit-kind=%t", explicit), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			project := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: root, Infra: &azdext.InfraOptions{Provider: "microsoft.foundry"},
+			}}
+			prompts := &helpersPromptServer{selectIndex: 1, promptValue: "voice-agent"}
+			environment := &helpersFailingEnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+				getValuesErr:                 status.Error(codes.Internal, "voice setup stopped"),
+			}
+			var args []string
+			if explicit {
+				args = []string{"--kind", "prompt-voice", "--agent-name", "voice-agent"}
+			}
+			err, recorder := executeTimedInit(t, args, explicit, project, prompts, environment)
+			require.ErrorContains(t, err, "voice setup stopped")
+			require.Len(t, recordedStepDurations(t, recorder, inittelemetry.AgentConfiguration), 1)
+			require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.ProjectConfiguration),
+				"agent setup must be timed even when it fails before updating the project")
+			if explicit {
+				require.Zero(t, prompts.selectCalls.Load())
+			} else {
+				require.EqualValues(t, 1, prompts.selectCalls.Load())
+				require.Contains(t, prompts.lastSelect.Options.Choices[1].Label, "voice")
+			}
 		})
 	}
 }

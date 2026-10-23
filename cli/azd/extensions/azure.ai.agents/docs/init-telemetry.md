@@ -40,6 +40,15 @@ configured-location validation, any prompt, and environment persistence. Direct
 callers that already supply allowed locations receive one sample without loading
 the region catalog.
 
+`input_validation` records separate validation groups as they execute, including
+branch-specific checks after authentication; no validation timer spans authentication.
+`init_mode_selection` also covers the decision to reuse existing project agents,
+including the automatic `--no-prompt` decision, but not subsequent environment work.
+Generated voice agents use the same inclusive `agent_configuration` step as the
+other generated-agent paths. `infra_generation` starts only when ejection runs,
+after project/Foundry skip checks and environment loading, on both standalone and
+post-Init paths.
+
 The Init call into `azure.ai.projects` is timed as `project_authoring` or
 `model_deployment_authoring`. No internal or standalone project-command telemetry
 is added. The SDK preserves the trace context, so step rows correlate with Init

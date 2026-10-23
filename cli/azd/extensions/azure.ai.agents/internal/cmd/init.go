@@ -783,7 +783,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}()
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
-			defer endValidation()
+			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
 			if flags.env == "" {
 				flags.env = extCtx.Environment
@@ -853,6 +853,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			endValidation()
 			printBanner(cmd.OutOrStdout())
 
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			var cachedExplicitAzureYaml []byte
 			if userProvidedTemplate {
 				content, cached, err := validateLocalExplicitAzureYaml(ctx, flags.templatePointer)
@@ -906,6 +907,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
+					endValidation()
 					env, err := readInfraEjectEnvironment(ctx, azdClient)
 					if err != nil {
 						return err
@@ -914,6 +916,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
 			}
+			endValidation()
 
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
@@ -947,9 +950,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				}
+				endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 				if err := validateUnifiedInitFlags(cmd); err != nil {
 					return err
 				}
+				endValidation()
 				if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
@@ -962,6 +967,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// With no explicit template, --kind selects the runtime directly. A
 			// harness is an optional capability of kind: prompt, not a separate
 			// agent kind. Omitting --kind preserves the existing hosted flow.
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
@@ -984,6 +990,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if harnessErr != nil {
 					return harnessErr
 				}
+				endValidation()
 				return runInitManaged(ctx, flags, azdClient, harness)
 			}
 			if strings.TrimSpace(flags.instructions) != "" {
@@ -1023,6 +1030,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
+			endValidation()
 
 			if flags.image != "" {
 				targetDir, folderDisplay := fastPathProjectTarget(
@@ -1051,6 +1059,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if projectErr != nil || projectResponse.GetProject() == nil {
+				endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -1062,6 +1071,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if legacyFile != "" {
 					return legacyInitSourceError(legacyFile)
 				}
+				endValidation()
 			}
 
 			// When the project's own manifest already declares agent
@@ -1090,24 +1100,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						detection.projectRoot,
 						detection.services,
 					) {
-					useExisting := flags.noPrompt
-					if !flags.noPrompt {
-						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-							Options: &azdext.ConfirmOptions{
-								Message: fmt.Sprintf(
-									"This project already configures %s. Use it?",
-									describeProjectAgentServices(detection.services),
-								),
-								DefaultValue: new(true),
-							},
-						})
-						if promptErr != nil {
-							if exterrors.IsCancellation(promptErr) {
-								return exterrors.Cancelled("initialization was cancelled")
-							}
-							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
-						}
-						useExisting = *confirmResp.Value
+					useExisting, err := confirmProjectAgentReuse(ctx, azdClient, flags.noPrompt, detection.services)
+					if err != nil {
+						return err
 					}
 					if useExisting {
 						recordInitProject(ctx, detection.project)
@@ -1146,9 +1141,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzureYaml:
 						// Unified azure.yaml template — download and adopt via
 						// the Foundry adoption flow (not git clone).
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzureYaml); err != nil {
 							return err
 						}
+						endValidation()
 						flags.templatePointer = selectedTemplate.Source
 						content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
 						if err != nil {
@@ -1189,9 +1186,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					case TemplateTypeAzd:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzd); err != nil {
 							return err
 						}
+						endValidation()
 						if err := runInitFromAzdTemplate(
 							ctx, flags, azdClient, httpClient, selectedTemplate,
 						); err != nil {
@@ -1201,6 +1200,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							return err
 						}
 					default:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						return exterrors.Validation(
 							exterrors.CodeInvalidAgentManifest,
 							fmt.Sprintf("unsupported agent template type %q", selectedTemplate.EffectiveType()),
@@ -1429,6 +1429,8 @@ func promptInitModeForVoice(
 	if err != nil {
 		return "", err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InputValidation)()
+
 	if voiceSpecified && mode != initModeVoice {
 		return "", unusedInitVoiceError()
 	}

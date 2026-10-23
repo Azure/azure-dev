@@ -469,6 +469,13 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
 				"remove --output raw so azd can save the Response identity",
 			)
 		}
+		if flags.protocol != "" && flags.protocol != "responses" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--long-running is not supported with the %s protocol", flags.protocol),
+				"use a deployed Responses agent or remove --long-running",
+			)
+		}
 	}
 	return nil
 }
@@ -567,13 +574,6 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
-	if a.flags.longRunning && a.flags.protocol != "" && a.flags.protocol != "responses" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidParameter,
-			fmt.Sprintf("--long-running is not supported with the %s protocol", a.flags.protocol),
-			"use a deployed Responses agent or remove --long-running",
-		)
-	}
 	if a.flags.inputFile != "" {
 		if _, _, err := a.resolveBody(); err != nil {
 			return err

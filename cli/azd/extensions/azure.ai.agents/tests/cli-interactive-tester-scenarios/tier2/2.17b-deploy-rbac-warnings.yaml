@@ -1,0 +1,20 @@
+# Tier 2: RBAC warning retention; costs Azure usage, needs restricted seed.
+name: "deploy-rbac-warnings"
+command: "bash"
+cwd: "~/working/azd-agents-shared/{shared_agent_name}"
+tags: ["tier:2", "cmd:deploy", "serial-only", "manual-seed"]
+requires: "tier2/2.00-setup-deploy-shared-agent.yaml"
+
+pre:
+  - run: "test -f azure.yaml && test -d .azure && test -s rbac-warning-seed.json"
+    name: "require current-run shared project and externally verified RBAC seed"
+
+goals:
+  - "Before any deployment, read rbac-warning-seed.json. Require runId equal to '{run_id}', agentName equal to '{shared_agent_name}', the target service key, the restricted principal and project/registry identifiers, current-run ownership evidence, and read-only evidence that this identity reproducibly produces the specified RBAC warning without granting itself a role. Require expectedMessage and expectedSuggestion, expectedExitCode, and an expectedDeploymentError when expectedExitCode is nonzero. Missing seed, mismatched identity, absent warning prerequisites, or missing cost consent means BLOCKED, never PASS."
+  - "Confirm the operator has already authenticated azd as the seeded restricted identity, using read-only auth and role-assignment inspection against the seeded subscription and scopes. Do not log in, create identities, grant or revoke roles, change cloud permissions, or execute suggested role-assignment commands. Confirm AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is not true in either the selected environment or process. If these prerequisites cannot be verified, stop as BLOCKED."
+  - "Run 'azd deploy <seeded-service-key> --no-prompt', replacing only the service placeholder with the seed's exact target service key. No product prompt is allowed. Wait for completion and require the exact seeded exit code. After the final deployment progress/table output, require the seeded RBAC warning and its actionable suggestion to remain visible exactly once for this service invocation. A transient preview/log line alone does not satisfy the goal."
+  - "If the seed expects a later deployment failure, require that failure to occur after predeploy produced the RBAC warning, require the seeded deployment error in the final output, and require a nonzero exit code alongside the retained warning. An unrelated failure or a failure before RBAC is not a pass. If the seed expects success, require exit code zero; do not reinterpret a failed deployment as success."
+  - "Run 'azd deploy <seeded-service-key> --no-prompt --output json' with the same service key. Require the seeded exit code and parse the host JSON result. Require exactly one matching messages entry with kind 'warning', extensionId 'azure.ai.agents', the seeded service key, event 'predeploy', and the seeded message and suggestion. No newly retained RBAC warning may appear as bare text in the JSON stream. On seeded failure, require the original deployment error as well as the warning."
+  - "Do not change the seed or permissions to manufacture success. A run without the expected warning is not passing coverage. Exercise success and later-failure retention only with separately prepared, explicitly declared seed outcomes; report which outcome was verified and which remains untested. Shared resources remain owned by the current run and must be cleaned by 2.99 teardown under its original authorized identity, even after a failed assertion."
+  - "Take a screenshot of the final readable output as best-effort evidence; capture failure is an observation and does not waive product assertions."
+  - "Report a finding for a missing or duplicated retained warning, incorrect service/event attribution, malformed JSON, leaked credentials, an unexpected prompt, changed exit semantics, or any mismatch with the seeded outcome."

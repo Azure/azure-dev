@@ -25,6 +25,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
@@ -207,7 +208,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
 				harness, _ := svcMap["harness"].(map[string]any)
-				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+				if harnessType, _ := harness["type"].(string); agent_api.IsCopilotHarness(harnessType) {
 					info.promptHarness = harnessType
 				}
 			} else {
@@ -917,10 +918,7 @@ func runInitFromAzdTemplate(
 		)
 	}
 
-	folderDisplay := ""
-	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
-		folderDisplay = filepath.ToSlash(targetDir)
-	}
+	folderDisplay := folderDisplayForSubdir(targetDir)
 	envName := deriveEnvName(flags, targetDir)
 	if err := scaffoldAzdTemplateProject(
 		ctx,
@@ -1309,7 +1307,11 @@ func finalizeAdoptedProject(
 	if err != nil {
 		return err
 	}
-	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
+	ctx = withHarnessRegionPolicy(ctx, manifestInfo.promptHarness)
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, manifestInfo.promptHarness)
+	if err != nil {
+		return err
+	}
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)
@@ -1705,13 +1707,13 @@ func adoptedAgentNameOverride(flags *initFlags) (string, error) {
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and
-// the display path for the "created folder" next-step hint. An explicit --src
-// (or positional directory) wins; otherwise a new folder named after the
+// the display path for the project folder next-step hint. An explicit --src
+// (or positional directory) wins; otherwise a folder named after the
 // sample's project name is used, falling back to the current directory when the
 // sample has no name.
 func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, folderDisplay string) {
 	if flags.src != "" {
-		return flags.src, folderDisplayIfNew(flags.src)
+		return flags.src, folderDisplayForSubdir(flags.src)
 	}
 	if projectName == "" {
 		return ".", ""
@@ -1720,19 +1722,24 @@ func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, fol
 	if folder == "" {
 		return ".", ""
 	}
-	return folder, folderDisplayIfNew(folder)
+	return folder, folderDisplayForSubdir(folder)
 }
 
-// folderDisplayIfNew returns a slash-formatted display path when dir does not
-// yet exist (so the cd hint is only shown for newly-created folders), else "".
-func folderDisplayIfNew(dir string) string {
-	if dir == "." {
+// folderDisplayForSubdir returns a slash-formatted display path whenever init
+// scaffolds outside the user's current directory, excluding equivalent paths to it.
+func folderDisplayForSubdir(dir string) string {
+	if dir == "" {
 		return ""
 	}
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return filepath.ToSlash(dir)
+	if filepath.Clean(dir) == "." {
+		return ""
 	}
-	return ""
+	if dirInfo, err := os.Stat(dir); err == nil {
+		if cwdInfo, err := os.Stat("."); err == nil && os.SameFile(dirInfo, cwdInfo) {
+			return ""
+		}
+	}
+	return filepath.ToSlash(dir)
 }
 
 func projectManifestExists(dir string) bool {

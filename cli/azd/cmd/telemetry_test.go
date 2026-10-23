@@ -357,6 +357,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		require.Equal(t, "validation.provision.outcome", string(kvOutcome.Key))
 		require.Equal(t, "passed", kvOutcome.Value.AsString())
 
+		kvNoPromptOutcome := fields.ProvisionValidationOutcomeKey.String("canceled_by_no_prompt")
+		require.Equal(t, "validation.provision.outcome", string(kvNoPromptOutcome.Key))
+		require.Equal(t, "canceled_by_no_prompt", kvNoPromptOutcome.Value.AsString())
+
 		kvDiagnostics := fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{"BCP081"})
 		require.Equal(t, "validation.provision.diagnostics", string(kvDiagnostics.Key))
 		require.Equal(t, []string{"BCP081"}, kvDiagnostics.Value.AsStringSlice())

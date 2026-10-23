@@ -505,8 +505,8 @@ remain defined to support a possible future redesign without changing the teleme
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
+| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings require interactive confirmation; command fails), `skipped`, `error` |
+| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_scope_unverified`, `role_assignment_conditional`) |
 | Rule IDs | `validation.provision.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
 | Extension rule IDs | `validation.provision.extension_rules` | SystemMetadata | FeatureInsight | List of rule IDs from extension-provided validation checks (fixed code-defined enum) |
 | Check type | `validation.provision.check_type` | SystemMetadata | FeatureInsight | Dispatch site: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Both share `validation.provision`; on Bicep provisions both fire, so consumers must group/filter by this to avoid double-counting |

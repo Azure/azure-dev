@@ -29,7 +29,6 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 		"delete",
 		"doctor",
 		"endpoint",
-		"eval",
 		"files",
 		"init",
 		"invoke",

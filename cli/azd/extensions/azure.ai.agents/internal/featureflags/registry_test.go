@@ -13,13 +13,17 @@ import (
 func TestRegistryDeclarations(t *testing.T) {
 	features := All()
 	require.Equal(t, []Feature{ManagedHarness, Voice, LongRunning}, features)
+	require.Equal(t,
+		[]string{"agents.managed_harness", "agents.voice", "agents.long_running"},
+		[]string{ManagedHarness.ID, Voice.ID, LongRunning.ID},
+	)
 
 	ids := map[string]bool{}
 	envVars := map[string]bool{}
 	for _, feature := range features {
 		require.True(t, strings.HasPrefix(feature.ID, "agents."), feature.ID)
 		require.Equal(t,
-			"AZD_FOUNDRY_EXT_ENABLE_"+strings.ToUpper(strings.ReplaceAll(feature.ID, ".", "_")),
+			"AZD_ALPHA_ENABLE_"+strings.ToUpper(strings.ReplaceAll(feature.ID, ".", "_")),
 			feature.EnvVar,
 		)
 		require.NotEmpty(t, feature.Description)

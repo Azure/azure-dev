@@ -1,9 +1,14 @@
 import: ../../.vscode/cspell.yaml
 overrides:
+  - filename: ["internal/inittelemetry/*.go", "internal/cmd/*.go", "docs/init-telemetry.md"]
+    words:
+      - inittelemetry
   - filename: ["internal/helpformat/*.go", "internal/cmd/root.go"]
     words:
       - helpformat
-  - filename: ["internal/cmd/testdata/TestAgentHelp-root.snap"]
+  - filename:
+      - "internal/cmd/testdata/TestAgentHelp-root.snap"
+      - "internal/cmd/testdata/TestAgentHelpPreviewsOff-root.snap"
     words:
       - vdev
 words:
@@ -56,6 +61,7 @@ words:
   - westeurope
   - westcentralus
   # Project terms
+  - featureflags
   - ABAC
   - abbrs
   - acrpush

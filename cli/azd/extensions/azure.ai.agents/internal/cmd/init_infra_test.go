@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -2399,10 +2400,14 @@ func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
 		},
 	}
 	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	ctx, timing := inittelemetry.NewContext(t.Context())
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfraAfterInit(t.Context(), "bicep", azdClient))
+		require.NoError(t, ejectInfraAfterInit(ctx, "bicep", azdClient))
 	})
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration), 1)
 
 	// G304: the test path comes from t.TempDir.
 	//nolint:gosec
@@ -2458,7 +2463,11 @@ func TestEjectInfraAfterInit_NoProject(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	t.Chdir(t.TempDir())
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
 }
 
 func TestEjectInfraAfterInit_SkipsProjectWithoutFoundryService(t *testing.T) {
@@ -2471,8 +2480,32 @@ services:
 `), 0600))
 	t.Chdir(projectRoot)
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
 	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+}
+
+func TestEjectInfraAfterInit_EnvironmentFailureIsNotGeneration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"name: test\nservices:\n  project:\n    host: azure.ai.project\n",
+	), 0o600))
+	t.Chdir(root)
+	environment := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		getValuesErr:                 errors.New("environment loading stopped"),
+	}
+	client := newTestAzdClient(t, environment, nil)
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	require.ErrorContains(t, ejectInfraAfterInit(ctx, "bicep", client), "environment loading stopped")
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+	require.NoDirExists(t, filepath.Join(root, "infra"))
 }
 
 func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {

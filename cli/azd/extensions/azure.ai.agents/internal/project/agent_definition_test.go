@@ -30,7 +30,6 @@ func sampleContainerAgent() agent_yaml.ContainerAgent {
 			Description: new("A basic agent hosted by Foundry."),
 		},
 		Language: "python",
-		Toolbox:  &agent_yaml.ToolboxReference{Name: "support-tools", Version: "2"},
 		Protocols: []agent_yaml.ProtocolVersionRecord{
 			{Protocol: "responses", Version: "2.0.0"},
 		},
@@ -83,9 +82,6 @@ func TestAgentDefinitionRoundTrip(t *testing.T) {
 	require.Equal(t, "A basic agent hosted by Foundry.", *got.Description)
 	require.Equal(t, ca.Protocols, got.Protocols)
 	require.Equal(t, "python", got.Language)
-	require.NotNil(t, got.Toolbox)
-	require.Equal(t, "support-tools", got.Toolbox.Name)
-	require.Equal(t, "2", got.Toolbox.Version)
 	require.Equal(t, ca.RegistryConnectionID, got.RegistryConnectionID)
 	require.NotNil(t, got.EnvironmentVariables)
 	require.Equal(t, *ca.EnvironmentVariables, *got.EnvironmentVariables)

@@ -1,9 +1,20 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+// cspell:ignore featureflags
+
 package cmd
 
-const agentHelpFooter = `Environments & Environment Variables:
+import (
+	"fmt"
+	"strings"
+
+	"azureaiagent/internal/featureflags"
+)
+
+func agentHelpFooter() string {
+	var footer strings.Builder
+	footer.WriteString(`Environments & Environment Variables:
   An azd environment is a named deployment configuration, such as dev or prod.
   Its values are stored locally in .azure/<environment>/.env.
   Use 'azd env new <name>' to create one, 'azd env select <name>' to change the
@@ -27,6 +38,22 @@ const agentHelpFooter = `Environments & Environment Variables:
   Use 'azd ai agent run' for local development and 'azd deploy' to apply changes
   to the deployed agent.
 
+Preview Feature Switches:
+  We recommend setting these in your shell or CI before running azd:
+`)
+	for _, feature := range featureflags.All() {
+		fmt.Fprintf(&footer, "  %s=true\n    %s.\n", feature.EnvVar, feature.Description)
+	}
+	footer.WriteString(`
+  All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
+  False, empty, and invalid values do not enable a switch.
+  The extension reads these switches from its process environment, including
+  values the azd host already injected from the selected environment.
+  It does not query azd config or load environment files from disk itself.
+  Regular hosted and plain prompt agents are outside these preview scopes.
+
 Learn More:
   Agent documentation: https://aka.ms/azd-ai-agent-docs
-  Environment commands: 'azd env --help'`
+  Environment commands: 'azd env --help'`)
+	return footer.String()
+}

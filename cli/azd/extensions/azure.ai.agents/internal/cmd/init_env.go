@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
@@ -109,6 +110,8 @@ func configureAzureYamlEnvironmentVariables(
 	projectDir string,
 	noPrompt bool,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.EnvironmentConfiguration)()
+
 	manifestPath := filepath.Join(projectDir, "azure.yaml")
 	//nolint:gosec // projectDir is the user-selected project root created by init
 	content, err := os.ReadFile(manifestPath)

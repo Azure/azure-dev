@@ -24,6 +24,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -260,6 +261,8 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
@@ -329,7 +332,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	)
 }
 
-func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+func validateLocalExplicitAzureYaml(ctx context.Context, templatePointer string) ([]byte, bool, error) {
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
@@ -337,6 +340,8 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}
@@ -808,12 +813,14 @@ func adoptedAgentNameConfig(
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
 // project folder name.
+// A supplied stagingDir avoids downloading the sample again.
 func runInitFromAzureYaml(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	content []byte,
+	stagingDir string,
 ) error {
 	projectName := foundryProjectName(content)
 	recordInitProjectContent(ctx, content)
@@ -842,15 +849,22 @@ func runInitFromAzureYaml(
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
-	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
-	if err != nil {
-		return err
+	if stagingDir == "" {
+		var cleanup func()
+		stagingDir, cleanup, err = stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 	}
-	defer cleanup()
 
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
+	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+		return err
+	}
+	//nolint:gosec // trusted staging directory
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
@@ -872,7 +886,10 @@ func runInitFromAzureYaml(
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName); err != nil {
+	endScaffolding := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)
+	err = scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName)
+	endScaffolding()
+	if err != nil {
 		return err
 	}
 
@@ -968,6 +985,7 @@ func scaffoldAzdTemplateProject(
 	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
 		return err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
 }
 
@@ -995,7 +1013,10 @@ func preflightAzdTemplate(
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return err
+	}
+	return requireStagedPreviewFeatures(stagingDir)
 }
 
 func stageAzdTemplateRepository(
@@ -1004,6 +1025,8 @@ func stageAzdTemplateRepository(
 	parseSource azdTemplateRepositoryParser,
 	downloadSource azdTemplateRepositoryDownloader,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	if !strings.Contains(templateSource, "://") {
 		info, statErr := os.Stat(templateSource)
@@ -1751,6 +1774,8 @@ func stageAzureYamlTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	pointer := flags.templatePointer
 

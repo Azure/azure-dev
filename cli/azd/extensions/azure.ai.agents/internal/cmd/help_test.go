@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
+
+	"azureaiagent/internal/featureflags"
 )
 
 func TestAgentHelp(t *testing.T) {
@@ -51,8 +53,22 @@ func TestAgentHelp(t *testing.T) {
 				require.Contains(t, text, "AGENT_<SERVICE>_NAME")
 				require.Contains(t, text, "AGENT_<SERVICE>_VERSION")
 				require.Contains(t, text, "AGENT_<SERVICE>_PROJECT_ENDPOINT")
+				require.Contains(t, text, "Preview Feature Switches\n")
+				for _, feature := range featureflags.All() {
+					require.Contains(t, text, feature.EnvVar+"=true")
+					require.Contains(t, text, feature.Description+".")
+				}
+				require.Contains(t, text, "All switches default to off.")
+				require.Contains(t, text, "Only 1, t, T, true, TRUE, or True enable them.")
+				require.Contains(t, text, "False, empty, and invalid values do not enable a switch.")
+				require.Contains(t, text, "Switch values are read only from the process environment, not azd config")
+				require.Contains(t, text, "--environment does not select their values.")
+				require.Contains(t, text, "These declarations do not add command or runtime gates by themselves.")
+				require.Contains(t, text, "Regular hosted and plain prompt agents are outside these preview scopes.")
+				require.NotContains(t, text, "AZD_FOUNDRY_EXT_ENABLE_")
 			} else {
 				require.NotContains(t, text, "Environments & Environment Variables")
+				require.NotContains(t, text, "Preview Feature Switches")
 				require.NotContains(t, text, bannerArt)
 			}
 			command.Flags().VisitAll(func(flag *pflag.Flag) {
@@ -98,8 +114,34 @@ func TestAgentHelpColor(t *testing.T) {
 			if len(path) == 0 {
 				require.Contains(t, text,
 					output.WithBold("%s", output.WithUnderline("Environments & Environment Variables")))
+				require.Contains(t, text,
+					output.WithBold("%s", output.WithUnderline("Preview Feature Switches")))
 			}
 		})
+	}
+}
+
+func TestAgentHelpIndependentOfPreviewSwitches(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	previous := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = previous })
+
+	var expected string
+	for _, value := range []string{"", "false", "true", "invalid"} {
+		for _, feature := range featureflags.All() {
+			t.Setenv(feature.EnvVar, value)
+		}
+		root := NewRootCommand()
+		var buf bytes.Buffer
+		root.SetOut(&buf)
+		root.SetErr(&buf)
+		root.SetArgs([]string{"--help"})
+		require.NoError(t, root.Execute())
+		if expected == "" {
+			expected = buf.String()
+		}
+		require.Equal(t, expected, buf.String())
 	}
 }
 

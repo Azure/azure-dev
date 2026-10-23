@@ -61,13 +61,17 @@ measures only the code that executes, without adding synthetic user-wait records
 
 ## Reliability and privacy
 
-Timings are buffered in memory and sent on return, including error and cancellation
-paths. One second bounds the entire reporting batch. Reporting uses the existing
+Timings are buffered in memory. Successful Init reports existing agent contexts
+and operation markers in the root post-run hook before flushing timings, so the
+new timing events cannot consume their remaining host budget first. Errors and
+cancellations flush on return because the success post-run hook does not run.
+One second bounds the entire reporting batch. Reporting uses the existing
 best-effort reporter; it does not retry or replace the command's result. It makes
 no extra Azure, model, project, or configuration queries.
 
-Each Init buffers at most 96 steps, leaving room under the host's shared
-100-event invocation budget for existing events. Exceeding the local limit or
+Each Init buffers at most 96 steps. Existing post-run events have priority under
+the host's shared 100-event invocation budget; timing events use the remaining
+slots and some may be dropped. Exceeding the local limit or
 reporting deadline produces a fixed debug diagnostic. The host budget, telemetry
 opt-out, nonofficial installation, process termination, or ingestion failures can
 still cause missing rows; absence is not proof that a step did not execute.

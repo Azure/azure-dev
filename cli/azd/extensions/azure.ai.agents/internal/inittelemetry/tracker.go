@@ -110,6 +110,14 @@ func (t *Tracker) Report(ctx context.Context) {
 	t.Flush(ctx, foundryTelemetry.NewReporter(client.Telemetry(), nil))
 }
 
+// Report flushes the invocation's timings after existing successful post-run
+// telemetry. Commands without an Init tracker do not report timing events.
+func Report(ctx context.Context) {
+	if tracker, ok := ctx.Value(contextKey{}).(*Tracker); ok {
+		tracker.Report(ctx)
+	}
+}
+
 // Flush preserves trace metadata on cancellation and bounds the entire batch
 // by one second, rather than adding a reporting timeout for every step.
 func (t *Tracker) Flush(ctx context.Context, reporter foundryTelemetry.Reporter) {

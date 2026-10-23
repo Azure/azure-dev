@@ -775,7 +775,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
 			ctx, timing := inittelemetry.NewContext(ctx)
-			defer timing.Report(ctx)
+			defer func() {
+				if runErr != nil {
+					timing.Report(ctx)
+				}
+			}()
 			cmd.SetContext(ctx)
 			defer func() {
 				if runErr != nil {

@@ -281,14 +281,7 @@ func TestInitStepTimingLocationIncludesLoadingAndPersistence(t *testing.T) {
 	}
 }
 
-func executeTimedInit(
-	t *testing.T,
-	args []string,
-	noPrompt bool,
-	project azdext.ProjectServiceServer,
-	prompts azdext.PromptServiceServer,
-	environment azdext.EnvironmentServiceServer,
-) (error, *initTimingRecorder) {
+func setTimedInitAuth(t *testing.T) {
 	t.Helper()
 	t.Setenv("AZD_EXT_DEBUG", "")
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
@@ -303,7 +296,18 @@ func executeTimedInit(
 	//nolint:gosec // the fake auth-status executable must run on Unix.
 	require.NoError(t, os.Chmod(path, 0o700))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
 
+func executeTimedInit(
+	t *testing.T,
+	args []string,
+	noPrompt bool,
+	project azdext.ProjectServiceServer,
+	prompts azdext.PromptServiceServer,
+	environment azdext.EnvironmentServiceServer,
+) (error, *initTimingRecorder) {
+	t.Helper()
+	setTimedInitAuth(t)
 	server := grpc.NewServer()
 	capture := &operationTelemetryServer{}
 	contracts.RegisterTelemetryServiceServer(server, capture)
@@ -324,12 +328,16 @@ func executeTimedInit(
 	t.Cleanup(func() { server.Stop(); require.NoError(t, <-done) })
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 
-	command := newInitCommand(&azdext.ExtensionContext{NoPrompt: noPrompt})
+	command := NewRootCommand()
 	var output bytes.Buffer
 	command.SetOut(&output)
 	command.SetErr(&output)
 	command.SilenceUsage, command.SilenceErrors = true, true
-	command.SetArgs(args)
+	commandArgs := []string{"init"}
+	if noPrompt {
+		commandArgs = append(commandArgs, "--no-prompt")
+	}
+	command.SetArgs(append(commandArgs, args...))
 	runErr := command.Execute()
 	recorder := &initTimingRecorder{}
 	capture.mu.Lock()

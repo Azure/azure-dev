@@ -179,12 +179,14 @@ func DecodeProjectDeploymentsEnv(value string) ([]Deployment, bool, error) {
 		}
 		value = unescaped
 	}
-if !strings.HasPrefix(value, "[") {
-	return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: expected a JSON array")
-}
-var deployments []Deployment
-if err := json.Unmarshal([]byte(value), &deployments); err != nil {
-	return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: %w", err)
+	if !strings.HasPrefix(value, "[") {
+		return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: expected a JSON array")
+	}
+	var deployments []Deployment
+	if err := json.Unmarshal([]byte(value), &deployments); err != nil {
+		return nil, true, fmt.Errorf("decoding AI_PROJECT_DEPLOYMENTS: %w", err)
+	}
+	return deployments, true, nil
 }
 
 // EncodeProjectDeploymentsEnv encodes deployments the way the Projects

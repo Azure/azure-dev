@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -133,6 +135,73 @@ func newResolveEnvTestClient(
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+func TestExistingProjectAcrModeValidation(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		persisted   string
+		virtual     string
+		skip        bool
+		readFailure bool
+		want        string
+		wantError   string
+	}{
+		{name: "create", persisted: "create", want: "create"},
+		{name: "reuse", persisted: "reuse-connect", want: "reuse-connect"},
+		{name: "connected", persisted: "already-connected", want: "already-connected"},
+		{name: "none", persisted: "none", want: "none"},
+		{name: "trimmed", persisted: " create ", want: "create"},
+		{name: "unset infers connection", want: "already-connected"},
+		{name: "invalid", persisted: "invalid", wantError: "unsupported value"},
+		{name: "case sensitive", persisted: "CREATE", wantError: "unsupported value"},
+		{name: "virtual wins", persisted: "invalid", virtual: "create", want: "create"},
+		{name: "empty virtual falls back", persisted: "none", virtual: " ", want: "none"},
+		{name: "invalid virtual wins", persisted: "create", virtual: "invalid", wantError: "unsupported value"},
+		{name: "skip ignores mode", persisted: "invalid", skip: true, want: "none"},
+		{name: "read failure", readFailure: true, wantError: "read failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			const projectID = "/subscriptions/sub/resourceGroups/rg/providers/" +
+				"Microsoft.CognitiveServices/accounts/account/projects/project"
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			env := &resolveEnvStubEnvServer{
+				get: map[string]string{
+					"AZURE_AI_PROJECT_ID":                  projectID,
+					"FOUNDRY_PROJECT_ENDPOINT":             endpoint,
+					"AZD_FOUNDRY_ACR_MODE":                 test.persisted,
+					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "selected-registry",
+					"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "registry-conn",
+				},
+			}
+			if test.readFailure {
+				env.getErr = map[string]error{
+					"AZD_FOUNDRY_ACR_MODE": status.Error(codes.Unavailable, "read failed"),
+				}
+			}
+			before := maps.Clone(env.get)
+			provider := &FoundryProvisioningProvider{
+				azdClient:          newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{}),
+				envName:            "dev",
+				brownfieldEndpoint: endpoint,
+				virtualEnv: map[string]string{
+					"AZD_FOUNDRY_ACR_MODE": test.virtual,
+					"AZD_AGENT_SKIP_ACR":   fmt.Sprint(test.skip),
+				},
+				synthResult: &synthesis.Result{Parameters: map[string]any{"includeAcr": true}},
+			}
+			err := provider.resolveExistingProjectInputs(t.Context())
+			require.Equal(t, before, env.get)
+			require.Empty(t, env.set)
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.want, provider.existingAcrMode)
+		})
+	}
 }
 
 func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {

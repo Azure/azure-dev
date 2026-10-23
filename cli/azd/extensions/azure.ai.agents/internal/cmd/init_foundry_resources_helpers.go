@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"azureaiagent/internal/envkeys"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/azure"
 	"context"
@@ -547,6 +548,7 @@ func configureFoundryProjectEnv(
 	if err := validateAcrConnectionInput(acrConnection, skipACR, false); err != nil {
 		return err
 	}
+	store := envkeys.EnvServiceStore{Client: azdClient.Environment(), EnvName: envName}
 
 	resourceId := project.ResourceId
 	if resourceId == "" {
@@ -585,7 +587,7 @@ func configureFoundryProjectEnv(
 		// The provisioning provider owns ACR/AppInsights for a new project, but a
 		// container agent on an existing project needs a registry it won't create.
 		if skipACR {
-			return setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none")
+			return envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrNone)
 		}
 		return configureExistingProjectAcr(
 			ctx, azdClient, credential, envName, project, subscriptionId, acrConnection,
@@ -630,7 +632,7 @@ func configureFoundryProjectEnv(
 		); err != nil {
 			return err
 		}
-	} else if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "none"); err != nil {
+	} else if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrNone); err != nil {
 		return err
 	}
 
@@ -733,6 +735,8 @@ func configureAcrConnectionWithRegistryLoader(
 	loadRegistries acrRegistryLoader,
 	projectPrincipalIDs ...string,
 ) error {
+	// Init records explicit registry choices with Name(); the input remains read-only in the typed API.
+	store := envkeys.EnvServiceStore{Client: azdClient.Environment(), EnvName: envName}
 	previousValues, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
 		return fmt.Errorf("reading existing ACR ownership state: %w", err)
@@ -780,19 +784,19 @@ func configureAcrConnectionWithRegistryLoader(
 	})
 
 	persistedConnection, err := getEnvValue(
-		ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+		ctx, azdClient, envName, envkeys.ProjectAcrConnectionName.Name(),
 	)
 	if err != nil {
 		return err
 	}
 	persistedEndpoint, err := getEnvValue(
-		ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+		ctx, azdClient, envName, envkeys.ContainerRegistryEndpoint.Name(),
 	)
 	if err != nil {
 		return err
 	}
 	persistedResourceId, err := getEnvValue(
-		ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		ctx, azdClient, envName, envkeys.ContainerRegistryResourceID.Name(),
 	)
 	if err != nil {
 		return err
@@ -838,18 +842,14 @@ func configureAcrConnectionWithRegistryLoader(
 		}
 		if found {
 			fmt.Printf("Using configured container registry: %s\n", loginServer)
-			if err := setEnvValue(
-				ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", "",
-			); err != nil {
+			if err := envkeys.ProjectAcrConnectionName.Set(ctx, store, ""); err != nil {
+				return err
+			}
+			if err := envkeys.ContainerRegistryEndpoint.Set(ctx, store, loginServer); err != nil {
 				return err
 			}
 			if err := setEnvValue(
-				ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer,
-			); err != nil {
-				return err
-			}
-			if err := setEnvValue(
-				ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId,
+				ctx, azdClient, envName, envkeys.ContainerRegistryResourceID.Name(), resourceId,
 			); err != nil {
 				return err
 			}
@@ -860,20 +860,18 @@ func configureAcrConnectionWithRegistryLoader(
 					return fmt.Errorf("check existing AcrPull assignment: %w", err)
 				}
 			}
-			mode := "reuse-connect"
+			mode := envkeys.AcrReuseConnect
 			previousConnection := validatedAcrConnection{
 				connection: azure.Connection{Name: persistedConnection},
 				resourceId: resourceId,
 			}
 			if shouldPreserveCreatedAcrMode(previous, previousConnection) {
-				mode = "create"
+				mode = envkeys.AcrCreate
 			}
-			if err := setEnvValue(
-				ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", fmt.Sprint(assigned),
-			); err != nil {
+			if err := envkeys.FoundryAcrPullAssigned.Set(ctx, store, fmt.Sprint(assigned)); err != nil {
 				return err
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", mode); err != nil {
+			if err := envkeys.FoundryAcrMode.Set(ctx, store, mode); err != nil {
 				return err
 			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
@@ -895,9 +893,9 @@ func configureAcrConnectionWithRegistryLoader(
 		if azdext.DetectInteractive().NoPrompt {
 			fmt.Println("No prompt mode enabled; a new container registry will be created during provisioning.")
 			for _, key := range []string{
-				"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+				envkeys.ContainerRegistryEndpoint.Name(),
+				envkeys.ContainerRegistryResourceID.Name(),
+				envkeys.ProjectAcrConnectionName.Name(),
 			} {
 				if err := setEnvValue(ctx, azdClient, envName, key, ""); err != nil {
 					return err
@@ -906,10 +904,10 @@ func configureAcrConnectionWithRegistryLoader(
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+			if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrCreate); err != nil {
 				return err
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "false"); err != nil {
+			if err := envkeys.FoundryAcrPullAssigned.Set(ctx, store, "false"); err != nil {
 				return err
 			}
 			return nil
@@ -932,13 +930,15 @@ func configureAcrConnectionWithRegistryLoader(
 				return fmt.Errorf("container registry with login server %q not found in subscription", loginServer)
 			}
 
-			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_ENDPOINT", loginServer); err != nil {
+			if err := envkeys.ContainerRegistryEndpoint.Set(ctx, store, loginServer); err != nil {
 				return err
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID", resourceId); err != nil {
+			if err := setEnvValue(
+				ctx, azdClient, envName, envkeys.ContainerRegistryResourceID.Name(), resourceId,
+			); err != nil {
 				return err
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_PROJECT_ACR_CONNECTION_NAME", ""); err != nil {
+			if err := envkeys.ProjectAcrConnectionName.Set(ctx, store, ""); err != nil {
 				return err
 			}
 			assigned := false
@@ -948,20 +948,20 @@ func configureAcrConnectionWithRegistryLoader(
 					return fmt.Errorf("check existing AcrPull assignment: %w", err)
 				}
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", fmt.Sprint(assigned)); err != nil {
+			if err := envkeys.FoundryAcrPullAssigned.Set(ctx, store, fmt.Sprint(assigned)); err != nil {
 				return err
 			}
 			if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "reuse-connect"); err != nil {
+			if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrReuseConnect); err != nil {
 				return err
 			}
 		} else {
 			for _, key := range []string{
-				"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+				envkeys.ContainerRegistryEndpoint.Name(),
+				envkeys.ContainerRegistryResourceID.Name(),
+				envkeys.ProjectAcrConnectionName.Name(),
 			} {
 				if err := setEnvValue(ctx, azdClient, envName, key, ""); err != nil {
 					return err
@@ -970,10 +970,10 @@ func configureAcrConnectionWithRegistryLoader(
 			if err := updatePendingACRSignal(ctx, azdClient, envName, false); err != nil {
 				log.Printf("warning: failed to update acr provision signal: %v", err)
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+			if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrCreate); err != nil {
 				return err
 			}
-			if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "false"); err != nil {
+			if err := envkeys.FoundryAcrPullAssigned.Set(ctx, store, "false"); err != nil {
 				return err
 			}
 		}
@@ -1030,12 +1030,11 @@ func configureAcrConnectionWithRegistryLoader(
 		selectedConnection = &validatedConnections[int(*selectResp.Value)]
 	}
 
-	if err := setEnvValue(
-		ctx,
-		azdClient,
-		envName,
-		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
-		selectedConnection.connection.Name,
+	if err := envkeys.ProjectAcrConnectionName.Set(ctx, store, selectedConnection.connection.Name); err != nil {
+		return err
+	}
+	if err := envkeys.ContainerRegistryEndpoint.Set(
+		ctx, store, normalizeLoginServer(selectedConnection.connection.Target),
 	); err != nil {
 		return err
 	}
@@ -1043,16 +1042,7 @@ func configureAcrConnectionWithRegistryLoader(
 		ctx,
 		azdClient,
 		envName,
-		"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-		normalizeLoginServer(selectedConnection.connection.Target),
-	); err != nil {
-		return err
-	}
-	if err := setEnvValue(
-		ctx,
-		azdClient,
-		envName,
-		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		envkeys.ContainerRegistryResourceID.Name(),
 		selectedConnection.resourceId,
 	); err != nil {
 		return err
@@ -1060,15 +1050,15 @@ func configureAcrConnectionWithRegistryLoader(
 	if err := updatePendingACRSignal(ctx, azdClient, envName, true); err != nil {
 		log.Printf("warning: failed to update acr provision signal: %v", err)
 	}
-	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "already-connected"); err != nil {
+	if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrAlreadyConnected); err != nil {
 		return err
 	}
 	if shouldPreserveCreatedAcrMode(previous, *selectedConnection) {
-		if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_MODE", "create"); err != nil {
+		if err := envkeys.FoundryAcrMode.Set(ctx, store, envkeys.AcrCreate); err != nil {
 			return err
 		}
 	}
-	if err := setEnvValue(ctx, azdClient, envName, "AZD_FOUNDRY_ACR_PULL_ASSIGNED", "true"); err != nil {
+	if err := envkeys.FoundryAcrPullAssigned.Set(ctx, store, "true"); err != nil {
 		return err
 	}
 
@@ -1101,11 +1091,11 @@ func findValidatedAcrConnectionByEndpoint(
 }
 
 func shouldPreserveCreatedAcrMode(previous map[string]string, selected validatedAcrConnection) bool {
-	if previous["AZD_FOUNDRY_ACR_MODE"] != "create" {
+	if previous[envkeys.FoundryAcrMode.Name()] != string(envkeys.AcrCreate) {
 		return false
 	}
 	resourceID := strings.TrimSuffix(strings.TrimSpace(selected.resourceId), "/")
-	previousResourceID := strings.TrimSuffix(previous["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], "/")
+	previousResourceID := strings.TrimSuffix(previous[envkeys.ContainerRegistryResourceID.Name()], "/")
 	if resourceID == "" || !strings.EqualFold(resourceID, previousResourceID) {
 		return false
 	}

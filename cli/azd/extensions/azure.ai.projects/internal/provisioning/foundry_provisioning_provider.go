@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.projects/internal/envkeys"
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/synthesis"
 
@@ -537,13 +538,13 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 		key   string
 		value *string
 	}{
-		{"AZURE_CONTAINER_REGISTRY_ENDPOINT", &p.existingAcrEndpoint},
-		{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID", &p.existingAcrResourceID},
-		{"AZURE_AI_PROJECT_ACR_CONNECTION_NAME", &p.existingAcrConnectionName},
-		{"AZD_FOUNDRY_ACR_MODE", &p.existingAcrMode},
+		{envkeys.ContainerRegistryEndpoint.Name(), &p.existingAcrEndpoint},
+		{envkeys.ContainerRegistryResourceID.Name(), &p.existingAcrResourceID},
+		{envkeys.ProjectAcrConnectionName.Name(), &p.existingAcrConnectionName},
+		{envkeys.FoundryAcrMode.Name(), &p.existingAcrMode},
 		{"AZD_RESOURCE_TOKEN_SALT", &p.resourceTokenSalt},
 	}
-	acrPullAssigned, err := p.envValue(ctx, "AZD_FOUNDRY_ACR_PULL_ASSIGNED")
+	acrPullAssigned, err := p.envValue(ctx, envkeys.FoundryAcrPullAssigned.Name())
 	if err != nil {
 		return fmt.Errorf("read AZD_FOUNDRY_ACR_PULL_ASSIGNED: %w", err)
 	}
@@ -556,14 +557,20 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 		*input.value = value
 	}
 	includeAcr, _ := p.synthResult.Parameters["includeAcr"].(bool)
-	if !includeAcr || strings.EqualFold(p.virtualEnv["AZD_AGENT_SKIP_ACR"], "true") {
-		p.existingAcrMode = "none"
+	if !includeAcr || strings.EqualFold(p.virtualEnv[envkeys.AgentSkipAcr.Name()], "true") {
+		p.existingAcrMode = string(envkeys.AcrNone)
 	} else if p.existingAcrMode == "" {
 		p.existingAcrMode = p.inferExistingProjectAcrMode()
 	}
-	switch p.existingAcrMode {
-	case "none", "create":
-	case "reuse-connect", "already-connected":
+	mode, err := envkeys.ParseAcrMode(p.existingAcrMode)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig, err.Error(),
+			"re-run `azd ai agent init` to select the container registry behavior",
+		)
+	}
+	switch mode {
+	case envkeys.AcrReuseConnect, envkeys.AcrAlreadyConnected:
 		if p.existingAcrEndpoint == "" || p.existingAcrResourceID == "" {
 			return exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
@@ -571,14 +578,8 @@ func (p *FoundryProvisioningProvider) resolveExistingProjectInputs(ctx context.C
 				"re-run `azd ai agent init` to select the container registry",
 			)
 		}
-	default:
-		return exterrors.Validation(
-			exterrors.CodeInvalidServiceConfig,
-			fmt.Sprintf("AZD_FOUNDRY_ACR_MODE has unsupported value %q", p.existingAcrMode),
-			"re-run `azd ai agent init` to select the container registry behavior",
-		)
 	}
-	if p.existingAcrMode == "already-connected" && p.existingAcrConnectionName == "" {
+	if p.existingAcrMode == string(envkeys.AcrAlreadyConnected) && p.existingAcrConnectionName == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig,
 			"already-connected requires AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
@@ -593,16 +594,16 @@ func (p *FoundryProvisioningProvider) inferExistingProjectAcrMode() string {
 	if p.synthResult != nil {
 		includeAcr, _ = p.synthResult.Parameters["includeAcr"].(bool)
 	}
-	if !includeAcr || strings.EqualFold(p.virtualEnv["AZD_AGENT_SKIP_ACR"], "true") {
-		return "none"
+	if !includeAcr || strings.EqualFold(p.virtualEnv[envkeys.AgentSkipAcr.Name()], "true") {
+		return string(envkeys.AcrNone)
 	}
 	if p.existingAcrEndpoint == "" && p.existingAcrResourceID == "" {
-		return "create"
+		return string(envkeys.AcrCreate)
 	}
 	if p.existingAcrConnectionName == "" {
-		return "reuse-connect"
+		return string(envkeys.AcrReuseConnect)
 	}
-	return "already-connected"
+	return string(envkeys.AcrAlreadyConnected)
 }
 
 func foundrySynthesisError(serviceName string, err error) error {
@@ -817,7 +818,7 @@ func (p *FoundryProvisioningProvider) normalizeOutputs(
 	outputs map[string]*azdext.ProvisioningOutputParameter,
 ) map[string]*azdext.ProvisioningOutputParameter {
 	trackSupportingResourceGroup := p.isLayer ||
-		(p.brownfieldEndpoint != "" && p.existingAcrMode == "create")
+		(p.brownfieldEndpoint != "" && p.existingAcrMode == string(envkeys.AcrCreate))
 	if trackSupportingResourceGroup {
 		if outputs == nil {
 			outputs = map[string]*azdext.ProvisioningOutputParameter{}
@@ -1231,7 +1232,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	}
 	resourceGroupExisted := false
 	trackSupportingResourceGroup := p.isLayer ||
-		(p.brownfieldEndpoint != "" && p.existingProjectAcrMode(ctx) == "create")
+		(p.brownfieldEndpoint != "" && p.existingProjectAcrMode(ctx) == string(envkeys.AcrCreate))
 	if trackSupportingResourceGroup && !resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, p.rgName) {
 		resourceGroupExisted, err = p.resourceGroupExists(ctx)
 		if err != nil {
@@ -1580,11 +1581,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return &azdext.ProvisioningDestroyResult{}, nil
 		}
 		mode := p.existingProjectAcrMode(ctx)
-		if mode == "none" || mode == "already-connected" {
+		if mode == string(envkeys.AcrNone) || mode == string(envkeys.AcrAlreadyConnected) {
 			progress("Existing Foundry project resources are not owned by azd; leaving them in place")
 			return &azdext.ProvisioningDestroyResult{}, nil
 		}
-		if mode != "create" {
+		if mode != string(envkeys.AcrCreate) {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				"azd down cannot safely remove resources created inside an existing Foundry project",
@@ -1792,12 +1793,12 @@ func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
 func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestroyResult {
 	if p.brownfieldEndpoint != "" {
 		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: []string{
-			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			envkeys.ContainerRegistryEndpoint.Name(),
+			envkeys.ContainerRegistryResourceID.Name(),
+			envkeys.ProjectAcrConnectionName.Name(),
 			"AZURE_FOUNDRY_RESOURCE_GROUP",
-			"AZD_FOUNDRY_ACR_MODE",
-			"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
+			envkeys.FoundryAcrMode.Name(),
+			envkeys.FoundryAcrPullAssigned.Name(),
 			envKeyFoundryRGOwner,
 		}}
 	}
@@ -2022,12 +2023,12 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZURE_AI_PROJECT_NAME",
 			"AZURE_OPENAI_ENDPOINT",
 			"FOUNDRY_PROJECT_ENDPOINT",
-			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+			envkeys.ContainerRegistryEndpoint.Name(),
+			envkeys.ContainerRegistryResourceID.Name(),
+			envkeys.ProjectAcrConnectionName.Name(),
 			"AZURE_FOUNDRY_RESOURCE_GROUP",
-			"AZD_FOUNDRY_ACR_MODE",
-			"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
+			envkeys.FoundryAcrMode.Name(),
+			envkeys.FoundryAcrPullAssigned.Name(),
 			envKeyFoundryRGOwner,
 		},
 	}
@@ -2063,7 +2064,7 @@ func (p *FoundryProvisioningProvider) Parameters(
 			{
 				Name:               "acrMode",
 				Value:              p.existingAcrMode,
-				EnvVarMapping:      []string{"AZD_FOUNDRY_ACR_MODE"},
+				EnvVarMapping:      []string{envkeys.FoundryAcrMode.Name()},
 				UsingEnvVarMapping: true,
 			},
 		}, nil
@@ -2125,12 +2126,12 @@ var canonicalOutputNames = []string{
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_OPENAI_ENDPOINT",
 	"FOUNDRY_PROJECT_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	envkeys.ContainerRegistryEndpoint.Name(),
+	envkeys.ContainerRegistryResourceID.Name(),
+	envkeys.ProjectAcrConnectionName.Name(),
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
-	"AZD_FOUNDRY_ACR_MODE",
+	envkeys.FoundryAcrMode.Name(),
 }
 
 var greenfieldOutputNames = []string{
@@ -2141,9 +2142,9 @@ var greenfieldOutputNames = []string{
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_OPENAI_ENDPOINT",
 	"FOUNDRY_PROJECT_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	envkeys.ContainerRegistryEndpoint.Name(),
+	envkeys.ContainerRegistryResourceID.Name(),
+	envkeys.ProjectAcrConnectionName.Name(),
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 }
@@ -2155,10 +2156,10 @@ var existingProjectOutputNames = []string{
 	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_OPENAI_ENDPOINT",
 	"FOUNDRY_PROJECT_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
-	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
-	"AZD_FOUNDRY_ACR_MODE",
+	envkeys.ContainerRegistryEndpoint.Name(),
+	envkeys.ContainerRegistryResourceID.Name(),
+	envkeys.ProjectAcrConnectionName.Name(),
+	envkeys.FoundryAcrMode.Name(),
 }
 
 // --- helpers ---

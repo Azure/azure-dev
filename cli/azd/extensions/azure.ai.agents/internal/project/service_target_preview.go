@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"azureaiagent/internal/envkeys"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -205,7 +206,7 @@ func preparePreviewRequest(
 	}
 	prebuilt := definition.Image != "" && (service.GetDocker().GetImagePassthrough() ||
 		definition.RegistryConnectionID != "" ||
-		strings.EqualFold(strings.TrimSpace(environment["AZD_AGENT_SKIP_ACR"]), "true"))
+		strings.EqualFold(strings.TrimSpace(environment[envkeys.AgentSkipAcr.Name()]), "true"))
 	switch {
 	case definition.CodeConfiguration != nil:
 		// The code path has no azd container build/push intent or authored image.

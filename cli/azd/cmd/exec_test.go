@@ -14,13 +14,24 @@ import (
 	"testing"
 	"time"
 
+	cmdmiddleware "github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec/scripting"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const execInterruptedHelperEnv = "AZD_EXEC_INTERRUPTED_HELPER"
+
+func TestExecActionInterruptedHelperProcess(t *testing.T) {
+	if os.Getenv(execInterruptedHelperEnv) == "" {
+		return
+	}
+	os.Exit(130)
+}
 
 // envSliceToMap converts an env slice ([]string{"KEY=VALUE", ...}) to a map.
 // When duplicate keys exist, the last value wins (matching exec.Cmd behavior).
@@ -829,6 +840,75 @@ func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecAction_InterruptedExitThroughCancellationMiddleware(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	t.Cleanup(func() {
+		for len(input.SnapshotInterruptStack()) > initialHandlers {
+			handlers := input.SnapshotInterruptStack()
+			handlers[len(handlers)-1]()
+			if len(input.SnapshotInterruptStack()) >= len(handlers) {
+				return
+			}
+		}
+	})
+
+	executable, err := filepath.Abs(os.Args[0])
+	require.NoError(t, err)
+	t.Setenv(
+		"PATH",
+		filepath.Dir(executable)+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	action := &execAction{
+		env: environment.NewWithValues("test", map[string]string{
+			execInterruptedHelperEnv: "1",
+		}),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global:      &internal.GlobalCommandOptions{},
+			interactive: true,
+		},
+		args: []string{
+			filepath.Base(executable),
+			"-test.run=^TestExecActionInterruptedHelperProcess$",
+		},
+	}
+
+	t.Run("interrupted child uses cancellation message", func(t *testing.T) {
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(
+			t.Context(),
+			action.Run,
+		)
+
+		handlers := input.SnapshotInterruptStack()
+		if len(handlers) > initialHandlers {
+			assert.True(t, handlers[len(handlers)-1]())
+		}
+		require.Len(t, handlers, initialHandlers+1)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+
+		require.EqualError(t, err, "command execution was canceled by the user")
+		require.ErrorIs(t, err, context.Canceled)
+		_, hasExitCode := errors.AsType[*internal.ExitCodeError](err)
+		require.False(t, hasExitCode)
+		execErr, ok := errors.AsType[*scripting.ExecutionError](err)
+		require.True(t, ok)
+		require.True(t, execErr.Interrupted())
+	})
+
+	t.Run("deadline remains authoritative", func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(t.Context())
+		cancel(context.DeadlineExceeded)
+
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(ctx, action.Run)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.NotErrorIs(t, err, context.Canceled)
+		_, userCancellation := errors.AsType[*execCancellationError](err)
+		require.False(t, userCancellation)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+	})
 }
 
 func TestExecCancellationErrorPreservesExecutionDetails(t *testing.T) {

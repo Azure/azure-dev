@@ -201,6 +201,9 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 		if execErr, ok := errors.AsType[*scripting.ExecutionError](err); ok {
+			if execErr.Interrupted() {
+				return nil, &execCancellationError{err: err}
+			}
 			return nil, &internal.ExitCodeError{
 				ExitCode: execErr.ExitCode,
 				Err:      err,

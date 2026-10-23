@@ -147,6 +147,10 @@ The generated Bash and PowerShell hooks invoke the extension's versioned
 `azd ai cu infra _postprovision-v1` contract. Keep the extension installed when
 running `azd up`.
 
+Both hooks pass the provisioned `AZURE_ENV_NAME` explicitly as `--environment`,
+so provisioning a nondefault environment does not configure the project default
+instead. A missing or empty `AZURE_ENV_NAME` fails before invoking the extension.
+
 After resource provisioning, the hook:
 
 1. Sets up selected model deployments, unless model setup already completed.

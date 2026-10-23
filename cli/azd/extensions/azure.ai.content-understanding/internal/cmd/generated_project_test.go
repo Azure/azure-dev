@@ -22,10 +22,12 @@ import (
 )
 
 type generatedProjectFixture struct {
-	Choices       infra.Choices     `json:"choices"`
-	Hashes        map[string]string `json:"hashes"`
-	HookArguments []string          `json:"hook_arguments"`
-	Config        json.RawMessage   `json:"config"`
+	Choices             infra.Choices     `json:"choices"`
+	Hashes              map[string]string `json:"hashes"`
+	NativeHashes        map[string]string `json:"native_hashes"`
+	HookArguments       []string          `json:"hook_arguments"`
+	NativeHookArguments []string          `json:"native_hook_arguments"`
+	Config              json.RawMessage   `json:"config"`
 }
 
 func materializeContractProject(t *testing.T) (string, generatedProjectFixture) {
@@ -66,6 +68,10 @@ func TestGeneratedProjectTree(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+	for path, hash := range fixture.NativeHashes {
+		require.Contains(t, fixture.Hashes, path)
+		fixture.Hashes[path] = hash
+	}
 	require.Equal(t, fixture.Hashes, actual)
 	config, err := directory.ReadFile(".azure/config.json")
 	require.NoError(t, err)
@@ -93,15 +99,16 @@ func TestGeneratedBashHookArguments(t *testing.T) {
 	command := exec.CommandContext(t.Context(), executable, "hooks/postprovision.sh") // #nosec G204 -- Test shell.
 	command.Dir = project
 	command.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"CU_TEST_LOG="+log)
+		"CU_TEST_LOG="+log, "AZURE_ENV_NAME=prod", "AZD_ENVIRONMENT=dev")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
 	require.Empty(t, output)
 	recorded, err := os.ReadFile(log) // #nosec G304 -- Private fake-host argument log.
 	require.NoError(t, err)
 	actual := strings.Split(strings.TrimSuffix(string(recorded), "\n"), "\n")
-	require.Equal(t, []string{"ai", "cu", "infra", "_postprovision-v1"}, actual)
-	require.Equal(t, fixture.HookArguments, actual)
+	require.Equal(t, []string{"ai", "cu", "infra", "_postprovision-v1", "--environment", "prod"}, actual)
+	require.Equal(t, fixture.NativeHookArguments, actual)
+	require.Equal(t, fixture.HookArguments, actual[:4])
 }
 
 func TestGeneratedPowerShellHook(t *testing.T) {
@@ -111,13 +118,15 @@ func TestGeneratedPowerShellHook(t *testing.T) {
 	}
 	require.NoError(t, err)
 	for _, row := range []struct {
-		name    string
-		exit    int
-		missing bool
+		name             string
+		exit             int
+		missing          bool
+		emptyEnvironment bool
 	}{
 		{name: "success"},
 		{name: "failure", exit: 37},
 		{name: "missing azd", exit: 1, missing: true},
+		{name: "empty environment", exit: 1, emptyEnvironment: true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			project, fixture := materializeContractProject(t)
@@ -138,7 +147,12 @@ func TestGeneratedPowerShellHook(t *testing.T) {
 				"-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 				"-File", "hooks/postprovision.ps1")
 			command.Dir = project
+			environment := "prod"
+			if row.emptyEnvironment {
+				environment = ""
+			}
 			command.Env = append(os.Environ(), "PATH="+bin, "CU_TEST_LOG="+log,
+				"AZURE_ENV_NAME="+environment, "AZD_ENVIRONMENT=dev",
 				fmt.Sprintf("CU_TEST_EXIT=%d", row.exit))
 			output, err := command.CombinedOutput()
 			if row.exit == 0 {
@@ -154,10 +168,15 @@ func TestGeneratedPowerShellHook(t *testing.T) {
 				require.ErrorIs(t, err, os.ErrNotExist)
 				return
 			}
+			if row.emptyEnvironment {
+				assert.Contains(t, string(output), "Postprovision requires AZURE_ENV_NAME")
+				assert.NoFileExists(t, log)
+				return
+			}
 			require.Empty(t, output)
 			recorded, err := os.ReadFile(log) // #nosec G304 -- Private fake-host argument log.
 			require.NoError(t, err)
-			require.Equal(t, fixture.HookArguments, strings.Fields(string(recorded)))
+			require.Equal(t, fixture.NativeHookArguments, strings.Fields(string(recorded)))
 		})
 	}
 }

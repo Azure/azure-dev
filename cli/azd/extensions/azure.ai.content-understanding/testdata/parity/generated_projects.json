@@ -12,7 +12,8 @@
     },
     "adaptations": [
       "Native README documents Go/Entra-only operation rather than Python/key setup. This complete-tree content replacement remains unapproved; retain the source README hash.",
-      "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys."
+      "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys.",
+      "Native hooks pass AZURE_ENV_NAME explicitly as --environment and reject missing names. Retain the source hook hashes and arguments alongside native expectations."
     ]
   },
   "data": {
@@ -42,11 +43,23 @@
       "infra/models.json": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
       "infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212"
     },
+    "native_hashes": {
+      "hooks/postprovision.ps1": "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
+      "hooks/postprovision.sh": "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8"
+    },
     "hook_arguments": [
       "ai",
       "cu",
       "infra",
       "_postprovision-v1"
+    ],
+    "native_hook_arguments": [
+      "ai",
+      "cu",
+      "infra",
+      "_postprovision-v1",
+      "--environment",
+      "prod"
     ],
     "config": {
       "version": 1,

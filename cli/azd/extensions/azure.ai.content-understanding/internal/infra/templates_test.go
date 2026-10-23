@@ -23,11 +23,11 @@ func choices() Choices {
 }
 
 func TestCanonicalInfrastructureAssets(t *testing.T) {
-	// Pinned Python test_infra.py hashes, excluding the deliberately native-only README.
+	// Source asset hashes, with native hook updates for explicit environment binding.
 	golden := map[string]string{
 		"azure.yaml":                  "1d88ddc6e2fecf9e4ac03e277c401a7db6417c43dee3b4fc2d7b3a4a719f73d8",
-		"hooks/postprovision.ps1":     "b711730b50b36d2213f1a727c63f9250ce0c119151a349cd9b79145fdddab519",
-		"hooks/postprovision.sh":      "79034239fd255cfefae4e8b6f7da26ee8da5e1ce4964db9adb31dcfde362e009",
+		"hooks/postprovision.ps1":     "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
+		"hooks/postprovision.sh":      "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8",
 		"infra/main.bicep":            "b0482c22955e88706f9c4c5f709d553507627d7c8d39a94655c68bb3b66ade86",
 		"infra/main.parameters.json":  "c6a46f4caa1468b7c04a14f4ad15fabeda362dc16043be9f94a4b4e7b91bcf79",
 		"infra/models.json":           "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
@@ -178,41 +178,59 @@ func TestGeneratedShellLaunchers(t *testing.T) {
 			if err != nil {
 				t.Skip("shell not installed")
 			}
-			for _, exitCode := range []string{"0", "7", "missing"} {
-				root := t.TempDir()
-				project := filepath.Join(root, "project")
-				_, err := Materialize(t.Context(), project, choices(), false)
-				require.NoError(t, err)
-				bin := filepath.Join(root, "bin")
-				require.NoError(t, os.Mkdir(bin, 0o700))
-				log := filepath.Join(root, "calls")
-				if exitCode != "missing" {
-					stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" > " + shellQuote(log) + "\nexit " + exitCode + "\n"
-					stubPath := filepath.Join(bin, "azd")
-					require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o600))
-					require.NoError(t, os.Chmod(stubPath, 0o700)) // #nosec G302 -- Executable test-owned CLI stub.
-				}
-				args := []string{filepath.Join(project, "hooks/postprovision.sh")}
-				if shell == "pwsh" {
-					args = []string{"-NoLogo", "-NoProfile", "-File", filepath.Join(project, "hooks/postprovision.ps1")}
-				}
-				command := exec.CommandContext(t.Context(), executable, args...) // #nosec G204 -- Test-owned script.
-				command.Env = []string{"PATH=" + bin, "HOME=" + root}
-				body, err := command.CombinedOutput()
-				switch exitCode {
-				case "0":
-					require.NoError(t, err, string(body))
-				case "7":
-					require.Error(t, err)
-					assert.Equal(t, 7, command.ProcessState.ExitCode(), string(body))
-				default:
-					require.Error(t, err)
-					assert.Contains(t, string(body), "azd")
-					continue
-				}
-				body, err = os.ReadFile(log) // #nosec G304 -- Test-owned invocation log.
-				require.NoError(t, err)
-				assert.Equal(t, "ai cu infra _postprovision-v1\n", string(body))
+			for _, test := range []struct {
+				name, exitCode, environment string
+			}{
+				{"success", "0", "prod"}, {"failure", "7", "prod"}, {"missing azd", "missing", "prod"},
+				{"missing environment", "0", ""}, {"empty environment", "0", ""},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					root := t.TempDir()
+					project := filepath.Join(root, "project")
+					_, err := Materialize(t.Context(), project, choices(), false)
+					require.NoError(t, err)
+					bin := filepath.Join(root, "bin")
+					require.NoError(t, os.Mkdir(bin, 0o700))
+					log := filepath.Join(root, "calls")
+					if test.exitCode != "missing" {
+						stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + shellQuote(log) + "\nexit " + test.exitCode + "\n"
+						stubPath := filepath.Join(bin, "azd")
+						require.NoError(t, os.WriteFile(stubPath, []byte(stub), 0o600))
+						require.NoError(t, os.Chmod(stubPath, 0o700)) // #nosec G302 -- Executable test-owned CLI stub.
+					}
+					args := []string{filepath.Join(project, "hooks/postprovision.sh")}
+					if shell == "pwsh" {
+						args = []string{"-NoLogo", "-NoProfile", "-File", filepath.Join(project, "hooks/postprovision.ps1")}
+					}
+					command := exec.CommandContext(t.Context(), executable, args...) // #nosec G204 -- Test-owned script.
+					command.Env = []string{"PATH=" + bin, "HOME=" + root, "AZD_ENVIRONMENT=dev"}
+					if test.name != "missing environment" {
+						command.Env = append(command.Env, "AZURE_ENV_NAME="+test.environment)
+					}
+					body, err := command.CombinedOutput()
+					if test.environment == "" {
+						require.Error(t, err)
+						assert.Equal(t, 1, command.ProcessState.ExitCode(), string(body))
+						assert.Contains(t, string(body), "Postprovision requires AZURE_ENV_NAME")
+						assert.NoFileExists(t, log, "a missing hook environment must not fall back to dev")
+						return
+					}
+					switch test.exitCode {
+					case "0":
+						require.NoError(t, err, string(body))
+					case "7":
+						require.Error(t, err)
+						assert.Equal(t, 7, command.ProcessState.ExitCode(), string(body))
+					default:
+						require.Error(t, err)
+						assert.Contains(t, string(body), "azd")
+						assert.NoFileExists(t, log)
+						return
+					}
+					body, err = os.ReadFile(log) // #nosec G304 -- Test-owned invocation log.
+					require.NoError(t, err)
+					assert.Equal(t, "ai\ncu\ninfra\n_postprovision-v1\n--environment\nprod\n", string(body))
+				})
 			}
 		})
 	}

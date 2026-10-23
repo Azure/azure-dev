@@ -265,6 +265,7 @@ type infraRPC struct {
 	subscriptionErr     error
 	tenantResponse      *azdext.LookupTenantResponse
 	tenantErr           error
+	defaultEnvironment  string
 }
 
 func (h *infraRPC) record(value string) {
@@ -278,7 +279,9 @@ func (h *infraRPC) Get(_ context.Context, request *azdext.GetEnvironmentRequest)
 }
 func (h *infraRPC) GetCurrent(context.Context, *azdext.EmptyRequest) (*azdext.EnvironmentResponse, error) {
 	h.record("current")
-	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: "default"}}, nil
+	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{
+		Name: firstInfra(h.defaultEnvironment, "default"),
+	}}, nil
 }
 func (h *infraRPC) GetValues(
 	_ context.Context, request *azdext.GetEnvironmentRequest,

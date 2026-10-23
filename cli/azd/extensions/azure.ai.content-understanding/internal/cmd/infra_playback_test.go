@@ -200,3 +200,67 @@ func playbackDeployment(name string) map[string]any {
 		"provisioningState": "Succeeded", "model": map[string]string{"name": name, "version": "1", "format": "OpenAI"},
 	}}
 }
+
+func TestPostprovisionUsesExplicitHookEnvironmentInsteadOfDefault(t *testing.T) {
+	_ = infraCommandFixture(t)
+	project, fixture := materializeContractProject(t)
+	t.Chdir(project)
+	t.Setenv("AZURE_ENV_NAME", "prod")
+	t.Setenv("AZD_ENVIRONMENT", "dev")
+	rpc := &infraRPC{
+		defaultEnvironment: "dev",
+		section:            &azdext.GetConfigSectionResponse{},
+		writes:             map[string]json.RawMessage{},
+		values: []*azdext.KeyValue{
+			{Key: "CU_ENDPOINT", Value: "https://prod-foundry.services.ai.azure.com"},
+			{Key: "FOUNDRY_RESOURCE_NAME", Value: "prod-foundry"},
+			{Key: "AZURE_SUBSCRIPTION_ID", Value: "prod-sub"},
+			{Key: "AZURE_RESOURCE_GROUP", Value: "prod-group"},
+			{Key: "AZURE_TENANT_ID", Value: "prod-tenant"},
+			{Key: "CU_MODEL_SELECTION", Value: "none"},
+		},
+	}
+	_ = infraRPCClient(t, rpc)
+	requests := 0
+	transport := copyWireTransport(func(request *http.Request) (*http.Response, error) {
+		requests++
+		assert.Equal(t, http.MethodGet, request.Method)
+		assert.Equal(t, "management.azure.com", request.URL.Host)
+		assert.Equal(t,
+			"/subscriptions/prod-sub/resourceGroups/prod-group/providers/Microsoft.CognitiveServices/"+
+				"accounts/prod-foundry/deployments", request.URL.Path)
+		return &http.Response{StatusCode: http.StatusOK, Request: request, Header: http.Header{},
+			Body: io.NopCloser(strings.NewReader(`{"value":[]}`))}, nil
+	})
+	root := newRootCommandWithInfra(nil, func(cmd *cobra.Command, extCtx *azdext.ExtensionContext) (infraHost, error) {
+		base, err := openInfraHost(cmd, extCtx)
+		if err != nil {
+			return nil, err
+		}
+		host, ok := base.(*azdInfraHost)
+		require.True(t, ok)
+		return &infraPlaybackHost{azdInfraHost: host, transport: transport, credential: &copyWireCredential{}}, nil
+	})
+	var stdout, stderr bytes.Buffer
+	root.SetOut(&stdout)
+	root.SetErr(&stderr)
+	root.SetArgs(append(fixture.NativeHookArguments[2:], "--no-prompt"))
+	require.NoError(t, root.ExecuteContext(t.Context()))
+	assert.Empty(t, stderr.String())
+	var result infra.PostResult
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.True(t, result.Succeeded)
+	assert.True(t, result.EnvironmentConfigured)
+	assert.Equal(t, 1, requests)
+	rpc.mu.Lock()
+	defer rpc.mu.Unlock()
+	assert.NotContains(t, rpc.calls, "current", "the hook must not select the project default")
+	assert.Contains(t, rpc.calls, "get:prod")
+	assert.Contains(t, rpc.calls, "values:prod")
+	assert.Contains(t, rpc.calls, "config:prod:cu")
+	assert.Contains(t, rpc.calls, "env:prod:CU_ENDPOINT:https://prod-foundry.services.ai.azure.com")
+	assert.Contains(t, rpc.calls, "env:prod:CU_DEFAULT_ANALYZER:prebuilt-layout")
+	for _, call := range rpc.calls {
+		assert.NotContains(t, call, ":dev", "postprovision must not read or write the default environment")
+	}
+}

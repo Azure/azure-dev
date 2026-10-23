@@ -19,6 +19,7 @@ import (
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1703,6 +1704,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 			Value any `json:"value"`
 		} `json:"parameters"`
 	}
+
 	require.NoError(t, json.Unmarshal(raw, &doc),
 		"main.parameters.json must be valid JSON")
 
@@ -1729,6 +1731,61 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	} {
 		assert.NotContains(t, doc.Parameters, k,
 			"%s is supplied at provision time and must not be hard-coded in the ejected file", k)
+	}
+}
+
+func TestEjectInfraPreservesAdoptionChoices(t *testing.T) {
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			dir := t.TempDir()
+			endpoint := "https://acct.services.ai.azure.com/api/projects/p1"
+			template, _, _ := strings.Cut(validFoundryAzureYAML, "    agents:")
+			template = strings.Replace(template, "host: azure.ai.project",
+				"host: azure.ai.project\n    endpoint: "+endpoint, 1)
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), template)
+			env := map[string]string{
+				projectDeploymentsEnvKey:   "[]",
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				synthesis.DeploymentBindingsEnvKey: `{"gpt-4-1-mini":"selected-existing"}`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "unrelated-default",
+			}
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, provider, env))
+			})
+			filename := "main.parameters.json"
+			if provider == "terraform" {
+				filename = "main.tfvars.json"
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "infra", filename))
+			require.NoError(t, err)
+			var doc map[string]any
+			require.NoError(t, json.Unmarshal(raw, &doc))
+			var value any
+			if provider == "bicep" {
+				parameters, ok := doc["parameters"].(map[string]any)
+				require.True(t, ok)
+				deployments, ok := parameters["deployments"].(map[string]any)
+				require.True(t, ok)
+				value = deployments["value"]
+			} else {
+				value = doc["deployments"]
+			}
+			require.Equal(t, []any{}, value)
+			agent := &azdext.ServiceConfig{Uses: []string{"my-foundry"}}
+			services := map[string]*azdext.ServiceConfig{
+				"my-foundry": {
+					Host: project.FoundryProjectHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"deployments": []any{map[string]any{"name": "gpt-4-1-mini"}},
+					}),
+				},
+			}
+			model, err := project.ResolvePromptAgentModel("gpt-4-1-mini", agent, services, dir, env)
+			require.NoError(t, err)
+			require.Equal(t, "selected-existing", model)
+		})
 	}
 }
 

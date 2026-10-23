@@ -48,17 +48,19 @@ import (
 )
 
 type initFlags struct {
-	projectResourceId string
-	acrConnection     string
-	modelDeployment   string
-	model             string
-	templatePointer   string
-	agentName         string
-	agentNameExplicit bool
-	description       string
-	src               string
-	env               string
-	protocols         []string
+	projectResourceId       string
+	acrConnection           string
+	modelDeployment         string
+	model                   string
+	modelDeploymentExplicit bool
+	modelExplicit           bool
+	templatePointer         string
+	agentName               string
+	agentNameExplicit       bool
+	description             string
+	src                     string
+	env                     string
+	protocols               []string
 	// deploy mode flags for non-interactive code deploy support
 	deployMode    string // "container" or "code"; empty = prompt interactively
 	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
@@ -758,6 +760,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
+			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
+			flags.modelExplicit = cmd.Flags().Changed("model")
+			if err := validateInitModelSelectors(flags, false); err != nil {
+				return err
+			}
 			if flags.env == "" {
 				flags.env = extCtx.Environment
 			}
@@ -781,6 +788,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// set flags.templatePointer. This drives the opinionated-defaults path.
 			userProvidedTemplate := flags.templatePointer != ""
 			if userProvidedTemplate {
+				if err := validateInitModelSelectors(flags, true); err != nil {
+					return err
+				}
 				if err := checkNotDirectory(flags.templatePointer); err != nil {
 					return err
 				}
@@ -1271,7 +1281,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"For hosted and prompt agents, name of the AI model to deploy. "+
 			"Defaults to '%s' during interactive model selection; "+
 			"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-			"--model-deployment takes precedence.",
+			"--model-deployment takes precedence except during template adoption, where the flags conflict.",
 		defaultAgentModel,
 	)
 	cmd.Flags().StringVar(&flags.model, "model", "",

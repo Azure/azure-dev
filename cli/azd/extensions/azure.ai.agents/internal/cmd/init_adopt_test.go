@@ -994,12 +994,13 @@ func TestPreflightAzdTemplateIsReadOnly(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
 			before, cwdErr := os.Getwd()
 			require.NoError(t, cwdErr)
-			err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir)
+			replaced, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{})
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
+			require.Empty(t, replaced)
 			require.Zero(t, workflow.runCalls)
 			after, cwdErr := os.Getwd()
 			require.NoError(t, cwdErr)
@@ -1067,9 +1068,9 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
 			ctx, timing := inittelemetry.NewContext(t.Context())
 
-			err := scaffoldAzdTemplateProject(
+			replaced, err := scaffoldAzdTemplateProject(
 				ctx, client, http.DefaultClient,
-				"project", templateDir, "dev",
+				"project", templateDir, "dev", &initFlags{},
 			)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
@@ -1078,6 +1079,7 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 				require.NoError(t, err)
 				require.DirExists(t, filepath.Join(root, "project"))
 			}
+			require.Empty(t, replaced)
 			require.Equal(t, tt.wantRuns, workflow.runCalls)
 			recorder := &initTimingRecorder{}
 			timing.Flush(ctx, recorder)

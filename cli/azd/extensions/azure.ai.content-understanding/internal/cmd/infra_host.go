@@ -68,12 +68,35 @@ func (h *azdInfraHost) Subscription(ctx context.Context, noPrompt bool) (*azdext
 		}
 		return subscription, nil
 	}
+	configured, err := h.client.UserConfig().Get(ctx, &azdext.GetUserConfigRequest{Path: "defaults.subscription"})
+	if err != nil {
+		return nil, err
+	}
+	if configured == nil {
+		return nil, commandError("invalid_user_config", "The host returned no default-subscription configuration.",
+			"Retry through azd and check azd config get defaults.subscription.")
+	}
+	var defaultID string
+	if configured.GetFound() {
+		if err := json.Unmarshal(configured.GetValue(), &defaultID); err != nil ||
+			defaultID == "" || strings.TrimSpace(defaultID) != defaultID {
+			return nil, commandError("invalid_default_subscription", "The configured default subscription is invalid.",
+				"Set defaults.subscription to an accessible subscription ID using azd config set.")
+		}
+	}
 	response, err := h.client.Account().ListSubscriptions(ctx, &azdext.ListSubscriptionsRequest{})
 	if err != nil {
 		return nil, err
 	}
 	var selected *azdext.Subscription
 	for _, subscription := range response.GetSubscriptions() {
+		if defaultID != "" {
+			if strings.EqualFold(subscription.GetId(), defaultID) {
+				selected = subscription
+				break
+			}
+			continue
+		}
 		if subscription.GetIsDefault() {
 			if selected != nil {
 				return nil, commandError("ambiguous_subscription", "The host returned multiple default subscriptions.",
@@ -81,6 +104,11 @@ func (h *azdInfraHost) Subscription(ctx context.Context, noPrompt bool) (*azdext
 			}
 			selected = subscription
 		}
+	}
+	if defaultID != "" && selected == nil {
+		return nil, commandError("default_subscription_unavailable",
+			"The configured default subscription is not accessible to the signed-in account.",
+			"Run azd auth login with the intended account or update defaults.subscription using azd config set.")
 	}
 	if selected == nil && len(response.GetSubscriptions()) == 1 {
 		selected = response.GetSubscriptions()[0]
@@ -95,8 +123,20 @@ func (h *azdInfraHost) Subscription(ctx context.Context, noPrompt bool) (*azdext
 func (h *azdInfraHost) Resolve(
 	ctx context.Context, subscription *azdext.Subscription, resource string,
 ) (armclient.Account, error) {
+	tenant := subscription.GetUserTenantId()
+	if tenant == "" {
+		response, err := h.client.Account().LookupTenant(ctx,
+			&azdext.LookupTenantRequest{SubscriptionId: subscription.GetId()})
+		if err != nil {
+			return armclient.Account{}, err
+		}
+		tenant = response.GetTenantId()
+		if tenant == "" {
+			return armclient.Account{}, exterrors.MissingTenant()
+		}
+	}
 	credential, err := azdext.NewTokenProvider(ctx, h.client,
-		&azdext.TokenProviderOptions{TenantID: subscription.GetTenantId()})
+		&azdext.TokenProviderOptions{TenantID: tenant})
 	if err != nil {
 		return armclient.Account{}, err
 	}

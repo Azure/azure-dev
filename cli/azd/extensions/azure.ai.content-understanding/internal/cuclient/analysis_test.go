@@ -304,7 +304,7 @@ func TestAnalysisMalformedSubmissionResponses(t *testing.T) {
 			`{"status":"Succeeded","result":null}`, `{"status":"Succeeded","result":{}}`,
 			`{"status":"Succeeded","result":{"contents":null}}`, `{"status":"Succeeded","result":{"contents":"invalid"}}`,
 			`{"status":"Succeeded","result":{"contents":[null]}}`, `{"status":"Succeeded","result":{"contents":[{}]}}`,
-			`{"status":"Succeeded","result":{"contents":[{"kind":"document"}]}}`,
+			`{"status":"Succeeded","result":{"contents":[{"kind":"document","mimeType":7}]}}`,
 			`{"status":"Succeeded","result":{"contents":[{"kind":"document","mimeType":"application/pdf","fields":[]}]}}`,
 			`{"status":"Succeeded","result":{"contents":[],"analyzerId":"other"}}`,
 			`{"status":"Succeeded","result":{"contents":[],"apiVersion":"other"}}`,
@@ -337,6 +337,7 @@ func TestAnalysisInlineRejectsPendingAndWrongHTTPStatus(t *testing.T) {
 		_, err := client.Analyze(t.Context(), request)
 		require.Error(t, err)
 	}
+
 	for _, mode := range []AnalysisMode{AnalysisModeAsync, AnalysisModeInline} {
 		request, step, _ := analysisSubmission(mode, false)
 		step.status = http.StatusOK
@@ -347,6 +348,27 @@ func TestAnalysisInlineRejectsPendingAndWrongHTTPStatus(t *testing.T) {
 		client := newWireClient(t, PreviewAPIVersion, step)
 		_, err := client.Analyze(t.Context(), request)
 		require.Error(t, err, "do not silently switch between inline and async")
+	}
+}
+
+func TestAnalysisInlineWithoutMIMEType(t *testing.T) {
+	const body = `{"status":"Succeeded","result":{"contents":[{"kind":"document","markdown":"# Invoice",` +
+		`"startPageNumber":1,"endPageNumber":1}]},"usage":{"documentPagesStandardInline":1}}`
+	for _, binary := range []bool{false, true} {
+		t.Run(fmt.Sprintf("binary_%t", binary), func(t *testing.T) {
+			request, step, _ := analysisSubmission(AnalysisModeInline, binary)
+			step.response = body
+			client := newWireClient(t, PreviewAPIVersion, step)
+			result, err := client.Analyze(t.Context(), request)
+			require.NoError(t, err)
+			require.Len(t, result.Result.Contents, 1)
+			assert.Equal(t, "document", result.Result.Contents[0].Kind)
+			assert.Equal(t, "# Invoice", result.Result.Contents[0].Markdown)
+			assert.NotContains(t, string(result.Result.Contents[0].JSON), "mimeType")
+			assert.Equal(t, body, string(result.JSON))
+			require.NotNil(t, result.Usage)
+			assert.Equal(t, new(int64(1)), result.Usage.DocumentPagesStandardInline)
+		})
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -253,12 +254,17 @@ func TestInfraMetadataAndPostEnvironmentPrecedence(t *testing.T) {
 type infraRPC struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	azdext.UnimplementedAccountServiceServer
-	mu            sync.Mutex
-	calls         []string
-	values        []*azdext.KeyValue
-	section       *azdext.GetConfigSectionResponse
-	subscriptions []*azdext.Subscription
-	writes        map[string]json.RawMessage
+	mu                  sync.Mutex
+	calls               []string
+	values              []*azdext.KeyValue
+	section             *azdext.GetConfigSectionResponse
+	subscriptions       []*azdext.Subscription
+	writes              map[string]json.RawMessage
+	defaultSubscription *azdext.GetUserConfigResponse
+	configErr           error
+	subscriptionErr     error
+	tenantResponse      *azdext.LookupTenantResponse
+	tenantErr           error
 }
 
 func (h *infraRPC) record(value string) {
@@ -315,6 +321,9 @@ func (h *infraRPC) ListSubscriptions(
 	h.record("subscriptions")
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.subscriptionErr != nil {
+		return nil, h.subscriptionErr
+	}
 	return &azdext.ListSubscriptionsResponse{Subscriptions: h.subscriptions}, nil
 }
 func (h *infraRPC) PromptSubscription(context.Context, *azdext.PromptSubscriptionRequest,
@@ -329,12 +338,40 @@ func (h *infraRPC) LookupTenant(
 	_ context.Context, request *azdext.LookupTenantRequest,
 ) (*azdext.LookupTenantResponse, error) {
 	h.record("tenant:" + request.SubscriptionId)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.tenantErr != nil {
+		return nil, h.tenantErr
+	}
+	if h.tenantResponse != nil {
+		return h.tenantResponse, nil
+	}
 	return &azdext.LookupTenantResponse{TenantId: "tenant"}, nil
 }
 
 type infraPromptRPC struct {
 	azdext.UnimplementedPromptServiceServer
 	rpc *infraRPC
+}
+
+type infraUserConfigRPC struct {
+	azdext.UnimplementedUserConfigServiceServer
+	rpc *infraRPC
+}
+
+func (h *infraUserConfigRPC) Get(
+	_ context.Context, request *azdext.GetUserConfigRequest,
+) (*azdext.GetUserConfigResponse, error) {
+	h.rpc.mu.Lock()
+	defer h.rpc.mu.Unlock()
+	h.rpc.calls = append(h.rpc.calls, "user-config:"+request.Path)
+	if h.rpc.configErr != nil {
+		return nil, h.rpc.configErr
+	}
+	if h.rpc.defaultSubscription != nil {
+		return h.rpc.defaultSubscription, nil
+	}
+	return &azdext.GetUserConfigResponse{}, nil
 }
 
 func (h *infraPromptRPC) PromptSubscription(
@@ -350,6 +387,7 @@ func infraRPCClient(t *testing.T, h *infraRPC) *azdInfraHost {
 	azdext.RegisterEnvironmentServiceServer(server, h)
 	azdext.RegisterAccountServiceServer(server, h)
 	azdext.RegisterPromptServiceServer(server, &infraPromptRPC{rpc: h})
+	azdext.RegisterUserConfigServiceServer(server, &infraUserConfigRPC{rpc: h})
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -369,6 +407,154 @@ func infraRPCClient(t *testing.T, h *infraRPC) *azdInfraHost {
 	actual, ok := host.(*azdInfraHost)
 	require.True(t, ok)
 	return actual
+}
+
+func TestInfraHostConfiguredDefaultSubscription(t *testing.T) {
+	for _, test := range []struct {
+		name, raw, selected string
+		subscriptions       []*azdext.Subscription
+	}{
+		{"configured without host default", `"second"`, "second", []*azdext.Subscription{
+			{Id: "first", TenantId: "tenant"}, {Id: "second", TenantId: "tenant"},
+		}},
+		{"configured overrides host default", `"second"`, "second", []*azdext.Subscription{
+			{Id: "first", TenantId: "tenant", IsDefault: true}, {Id: "second", TenantId: "tenant"},
+		}},
+		{"case-insensitive ID", `"SECOND"`, "second", []*azdext.Subscription{
+			{Id: "first", TenantId: "tenant"}, {Id: "second", TenantId: "tenant"},
+		}},
+		{"inaccessible does not choose sole subscription", `"missing"`, "", []*azdext.Subscription{
+			{Id: "first", TenantId: "tenant", IsDefault: true},
+		}},
+		{"invalid type", `123`, "", nil},
+		{"null", `null`, "", nil},
+		{"empty", `""`, "", nil},
+		{"whitespace", `" second "`, "", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc := &infraRPC{subscriptions: test.subscriptions,
+				defaultSubscription: &azdext.GetUserConfigResponse{Found: true, Value: []byte(test.raw)}}
+			host := infraRPCClient(t, rpc)
+			subscription, err := host.Subscription(azdext.WithAccessToken(t.Context()), true)
+			if test.selected == "" {
+				require.Error(t, err)
+				assert.Nil(t, subscription)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, test.selected, subscription.GetId())
+			}
+			rpc.mu.Lock()
+			assert.Contains(t, rpc.calls, "user-config:defaults.subscription")
+			assert.NotContains(t, rpc.calls, "prompt-subscription")
+			rpc.mu.Unlock()
+		})
+	}
+}
+
+func TestInfraConfiguredDefaultGeneratesWithoutPromptsOrProvisioning(t *testing.T) {
+	_ = infraCommandFixture(t)
+	rpc := &infraRPC{
+		defaultSubscription: &azdext.GetUserConfigResponse{Found: true, Value: []byte(`"configured-sub"`)},
+		subscriptions: []*azdext.Subscription{
+			{Id: "other-sub", TenantId: "other-tenant"},
+			{Id: "configured-sub", Name: "Configured subscription", TenantId: "configured-tenant"},
+		},
+	}
+	_ = infraRPCClient(t, rpc)
+	directory := filepath.Join(t.TempDir(), "provision")
+	stdout, stderr, err := executeRoot(t, "infra", "generate", "--models", "none",
+		"--output-dir", directory, "--no-prompt")
+	require.NoError(t, err)
+	assert.Empty(t, stderr)
+	assert.Contains(t, stdout, "provision")
+	// #nosec G304 -- Reads the generated fixture in this test's private directory.
+	values, err := os.ReadFile(filepath.Join(directory, ".azure", "dev", ".env"))
+	require.NoError(t, err)
+	assert.Contains(t, string(values), `AZURE_SUBSCRIPTION_ID="configured-sub"`)
+	assert.Contains(t, string(values), `AZURE_TENANT_ID="configured-tenant"`)
+	rpc.mu.Lock()
+	assert.Equal(t, []string{"user-config:defaults.subscription", "subscriptions"}, rpc.calls)
+	rpc.mu.Unlock()
+}
+
+func TestInfraSubscriptionFailuresDoNotGenerateFiles(t *testing.T) {
+	for _, step := range []string{"configuration", "subscriptions"} {
+		t.Run(step, func(t *testing.T) {
+			_ = infraCommandFixture(t)
+			rpc := &infraRPC{
+				defaultSubscription: &azdext.GetUserConfigResponse{Found: true, Value: []byte(`"configured-sub"`)},
+			}
+			failure := errors.New("private-subscription-detail")
+			if step == "configuration" {
+				rpc.configErr = failure
+			} else {
+				rpc.subscriptionErr = failure
+			}
+			_ = infraRPCClient(t, rpc)
+			directory := filepath.Join(t.TempDir(), "provision")
+			stdout, stderr, err := executeRoot(t, "infra", "generate", "--models", "none",
+				"--output-dir", directory, "--no-prompt")
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "private")
+			assert.Empty(t, stdout)
+			assert.Empty(t, stderr)
+			_, err = os.Stat(directory)
+			assert.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+func TestInfraResolveUsesUserAccessTenant(t *testing.T) {
+	for _, test := range []struct{ name, userTenant, expectedTenant string }{
+		{"selected subscription tenant", "guest-access-tenant", "guest-access-tenant"},
+		{"tenant lookup when absent", "", "tenant"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc := &infraRPC{}
+			host := infraRPCClient(t, rpc)
+			argsPath := installAuthenticationCLI(t, false)
+			_, err := host.Resolve(azdext.WithAccessToken(t.Context()), &azdext.Subscription{
+				Id: "sub", TenantId: "resource-tenant", UserTenantId: test.userTenant,
+			}, "https://resource.example")
+			require.Error(t, err, "the fake azd auth command fails before any ARM network request")
+			// #nosec G304 -- Reads this test's private fake-azd argument log.
+			args, err := os.ReadFile(argsPath)
+			require.NoError(t, err)
+			assert.Contains(t, string(args), test.expectedTenant)
+			assert.NotContains(t, string(args), "resource-tenant")
+			rpc.mu.Lock()
+			if test.userTenant == "" {
+				assert.Contains(t, rpc.calls, "tenant:sub")
+			} else {
+				assert.Empty(t, rpc.calls)
+			}
+			rpc.mu.Unlock()
+		})
+	}
+}
+
+func TestInfraResolveRejectsUnavailableAccessTenant(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		response *azdext.LookupTenantResponse
+		err      error
+		want     string
+	}{
+		{name: "empty tenant", response: &azdext.LookupTenantResponse{}, want: "No Azure tenant"},
+		{name: "failed lookup", err: errors.New("tenant lookup failed"), want: "tenant lookup failed"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc := &infraRPC{tenantResponse: test.response, tenantErr: test.err}
+			host := infraRPCClient(t, rpc)
+			argsPath := installAuthenticationCLI(t, false)
+			_, err := host.Resolve(azdext.WithAccessToken(t.Context()), &azdext.Subscription{
+				Id: "sub", TenantId: "resource-tenant",
+			}, "https://resource.example")
+			require.ErrorContains(t, err, test.want)
+			_, err = os.Stat(argsPath)
+			assert.True(t, os.IsNotExist(err), "tenant lookup failure must not invoke azd auth")
+		})
+	}
 }
 
 func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {

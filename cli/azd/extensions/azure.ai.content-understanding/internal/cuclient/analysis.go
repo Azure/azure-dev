@@ -49,7 +49,7 @@ func parseAnalysisResult(body json.RawMessage, analyzerID, apiVersion string) (A
 		if err := decodeWire(raw, &content); err != nil {
 			return AnalysisResult{}, err
 		}
-		if content.Kind == "" || content.MIMEType == "" {
+		if content.Kind == "" {
 			return AnalysisResult{}, malformedResponse()
 		}
 		contents = append(contents, Content{

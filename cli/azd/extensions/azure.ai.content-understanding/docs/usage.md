@@ -264,6 +264,11 @@ Offline authoring checks accept the same preview versions, but `analyzer validat
 `2025-11-01` and `2026-06-01-preview`. For other preview versions, omit `--spec`;
 the CLI reports a clear error rather than silently substituting a contract.
 
+Successful inline responses can omit detected MIME metadata. Full JSON output
+preserves that response as returned; the readable LLM-input view uses
+`mimeType: unknown` when the service supplies no MIME type. Inline success does
+not trigger asynchronous polling or fallback.
+
 Endpoint, default analyzer, and API version use the exact, case-sensitive names
 `CU_ENDPOINT`, `CU_DEFAULT_ANALYZER`, and `CU_API_VERSION` across process
 variables, azd environment values, and CU user defaults. There are no alternate

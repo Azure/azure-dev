@@ -10,3 +10,8 @@
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add `config set|get|list|unset` shortcuts for CU defaults in azd user configuration without a project, shared settings resolution, and effective-setting sources in `doctor`.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Add infrastructure generation with Bash and PowerShell hooks for model setup and Content Understanding configuration.
 - [[#10668]](https://github.com/Azure/azure-dev/pull/10668) Default to API version `2025-11-01` and accept valid `YYYY-MM-DD-preview` versions for internal testing and future previews.
+
+### Bugs Fixed
+
+- Accept successful preview inline analysis responses without optional MIME metadata, preserving raw results and inline usage.
+- Honor `azd config defaults.subscription` during non-interactive infrastructure generation, and use the user-access tenant for existing-resource discovery credentials.

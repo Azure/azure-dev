@@ -98,6 +98,20 @@ Use `--foundry-prefix my-cu` to customize the new account's naming prefix.
 For a model-free resource suitable for `prebuilt-layout`, use `--models none`.
 Data-plane access is still required.
 
+For unattended generation, configure the azd default subscription first:
+
+```bash
+azd config set defaults.subscription "<subscription-id>"
+azd ai cu infra generate --models none --output-dir provision --no-prompt
+```
+
+Generation honors that configured subscription even when the host's subscription
+list does not mark it as the default. If the configured subscription is
+inaccessible, generation fails rather than selecting another one. Without a
+configured default, it uses a host-marked default or the sole accessible
+subscription; ambiguous choices require configuration or interactive generation.
+This command writes project files only; it does not provision resources.
+
 Recognized generated projects preserve editable assets and environment settings
 unless `--force` is supplied. Force replaces known generated assets and resets
 model/configuration setup; unrelated files are not deleted.

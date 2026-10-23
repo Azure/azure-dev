@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -388,6 +389,8 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		}
 	}
 	if infra := a.flags.infra; infra != "" {
+		ejectValues := maps.Clone(effectiveValues)
+		ejectValues["AZURE_ENV_NAME"] = envName
 		if err := ejectProjectInfraWithTarget(
 			ctx,
 			client,
@@ -396,7 +399,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			infra,
 			target.Endpoint,
 			target.ResourceId,
-			effectiveValues,
+			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
 				err,
@@ -1795,19 +1798,43 @@ func ejectProjectInfra(
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
+	environment = maps.Clone(environment)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	groupKey := "AZURE_RESOURCE_GROUP"
+	if target.layer {
+		groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	}
+	group := environment[groupKey]
+	if group == "" && environment["AZURE_ENV_NAME"] != "" {
+		group = "rg-" + environment["AZURE_ENV_NAME"]
+		if target.layer {
+			group += "-foundry"
+		}
+	}
+	environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
 	result, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:    raw,
-		ServiceName:     serviceName,
-		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
-		Env:             environment,
-		ProjectRoot:     projectRoot,
-		PreserveVarRefs: true,
+		RawAzureYAML:      raw,
+		ServiceName:       serviceName,
+		AcceptedHosts:     provisioning.FoundryProvisioningServiceHosts,
+		Env:               environment,
+		ResourceGroupName: group,
+		ProjectRoot:       projectRoot,
+		PreserveVarRefs:   true,
 	})
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
 			fmt.Sprintf("cannot synthesize Foundry infrastructure: %s", err),
 			"fix the project service configuration and retry",
+		)
+	}
+	if provider == provisioning.TerraformProviderName && result.ACRMode == "reuse-connect" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead, or set AZD_FOUNDRY_ACR_MODE to create",
 		)
 	}
 	if err := applyProjectEjectDeployments(result, environment); err != nil {
@@ -1929,6 +1956,15 @@ func ejectProjectInfra(
 			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
+		}
+	}
+	if envName := environment["AZURE_ENV_NAME"]; client != nil && envName != "" {
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZD_FOUNDRY_ACR_MODE",
+			Value:   result.ACRMode,
+		}); err != nil {
+			return rollback(fmt.Errorf("persist ACR mode after infrastructure ejection: %w", err))
 		}
 	}
 	return nil

@@ -558,6 +558,26 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		// on-disk provision flow resolves them from the azd environment.
 		PreserveVarRefs: true,
 	}
+	if !existingProject {
+		environment = maps.Clone(environment)
+		if environment == nil {
+			environment = map[string]string{}
+		}
+		groupKey := "AZURE_RESOURCE_GROUP"
+		if plan.layer {
+			groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+		}
+		group := environment[groupKey]
+		if group == "" && environment["AZURE_ENV_NAME"] != "" {
+			group = "rg-" + environment["AZURE_ENV_NAME"]
+			if plan.layer {
+				group += "-foundry"
+			}
+		}
+		environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
+		synthesisInput.Env = environment
+		synthesisInput.ResourceGroupName = group
+	}
 	var res *synthesis.Result
 	if existingProject {
 		res, err = synthesis.SynthesizeExistingProject(synthesisInput)
@@ -574,6 +594,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		)
 	}
 	acrMode := infraEjectAcrNone
+	if !existingProject && provider == project.TerraformProviderName && res.ACRMode == "reuse-connect" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+			"eject Bicep instead with `azd ai agent init --infra=bicep`, or set AZD_FOUNDRY_ACR_MODE to create",
+		)
+	}
 	if existingProject {
 		values := environment
 		acrMode, err = resolveInfraEjectAcrMode(res.Parameters, values)
@@ -1192,6 +1219,13 @@ func writeExistingProjectBicepTemplates(
 			relPath: filepath.ToSlash(filepath.Join(artifactRoot, "modules/container-registry.bicep")),
 			bytes:   registry.Len(),
 		})
+		if acrMode == infraEjectAcrReuseConnect {
+			// The reuse-connect registry module grants pull access through this nested module.
+			files = append(files, struct {
+				source string
+				target string
+			}{"templates/modules/acr-pull-role-assignment.bicep", "modules/acr-pull-role-assignment.bicep"})
+		}
 	}
 	for _, file := range files {
 		data, err := fs.ReadFile(synthesis.TemplatesFS(), file.source)
@@ -1731,8 +1765,7 @@ func findFoundryServiceForEject(raw []byte) (string, error) {
 // Provider-runtime and existing-project files are skipped:
 //   - main.arm.json (the pre-compiled ARM JSON): would be stale once the user
 //     edits main.bicep.
-//   - existing-project.bicep and its modules: emitted only by the dedicated
-//     existing-project writer.
+//   - existing-project.bicep and its eject-only templates.
 func writeEmbeddedTemplates(
 	infraDir string,
 	artifactRoot string,
@@ -1795,8 +1828,7 @@ func writeEmbeddedTemplates(
 		}
 		switch base {
 		case "main.arm.json", "existing-project.bicep",
-			"existing-project-eject.bicep", "existing-project.arm.json",
-			"container-registry.bicep", "foundry-project.bicep":
+			"existing-project-eject.bicep", "existing-project.arm.json":
 			return nil
 		}
 

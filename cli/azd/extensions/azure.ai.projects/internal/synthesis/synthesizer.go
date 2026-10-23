@@ -52,9 +52,13 @@ type Input struct {
 	// value is not checked (only existence and endpoint: are).
 	AcceptedHosts []string
 
-	// Env maps project-wide azd values used by network fields and conditions.
+	// Env maps project-wide azd values used by registry selection, network fields, and conditions.
 	// Missing values may fall back to the process environment.
 	Env map[string]string
+
+	// ResourceGroupName is the greenfield deployment group that azd down deletes.
+	// Callers supply the effective group, including any layer-specific default.
+	ResourceGroupName string
 
 	// PreserveVarRefs keeps ${VAR} references verbatim instead of resolving
 	// them. Used by the eject path, where the synthesized main.parameters.json
@@ -82,6 +86,9 @@ type Result struct {
 	// NetworkMode is "none", "byo", or "managed" — derived from the
 	// network: block (or its absence). Exposed for telemetry.
 	NetworkMode string
+
+	// ACRMode is the greenfield registry mode: create, reuse-connect, or none.
+	ACRMode string
 }
 
 // Deployment mirrors the deploymentType in main.bicep.
@@ -210,7 +217,6 @@ func Synthesize(in Input) (*Result, error) {
 	if endpoint != "" {
 		return nil, ErrEndpointBrownfield
 	}
-
 	includeAcr, err := deriveIncludeAcr(
 		root.Services,
 		svc,
@@ -219,6 +225,28 @@ func Synthesize(in Input) (*Result, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+	mode := in.Env["AZD_FOUNDRY_ACR_MODE"]
+	if !includeAcr {
+		mode = "none"
+	} else if mode == "" {
+		mode = "create"
+	}
+	var existingAcrResourceID string
+	switch mode {
+	case "create", "none":
+	case "reuse-connect":
+		existingAcrResourceID, err = existingContainerRegistry(in)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q; "+
+			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`", mode)
+	}
+	if includeAcr && mode == "none" {
+		return nil, errors.New("synthesis: AZD_FOUNDRY_ACR_MODE cannot be none when a registry is required; " +
+			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`")
 	}
 
 	deployments := svc.Deployments
@@ -230,7 +258,7 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	if includeAcr && netMode != NetworkModeNone {
+	if includeAcr && existingAcrResourceID == "" && netMode != NetworkModeNone {
 		return nil, errors.New(
 			"synthesis: private networking does not support an auto-created Azure Container Registry; specify an image instead",
 		)
@@ -240,12 +268,66 @@ func Synthesize(in Input) (*Result, error) {
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
 	}
+	if existingAcrResourceID != "" {
+		params["existingAcrResourceId"] = existingAcrResourceID
+		if in.PreserveVarRefs {
+			params["existingAcrResourceId"] = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+		}
+	}
 	maps.Copy(params, netParams)
 
 	return &Result{
 		Parameters:  params,
 		NetworkMode: netMode,
+		ACRMode:     mode,
 	}, nil
+}
+
+// GreenfieldACRMode selects a mode from an environment snapshot before synthesis.
+// A recorded mode wins over registry outputs from previous provisioning. With no
+// recorded mode, a non-empty AZURE_CONTAINER_REGISTRY_RESOURCE_ID selects
+// reuse-connect, except when it points into resourceGroup: that is the output
+// of a registry azd created before the mode was recorded (environments from
+// earlier versions), so create mode is kept instead of failing validation.
+func GreenfieldACRMode(env map[string]string, resourceGroup string) string {
+	if mode := env["AZD_FOUNDRY_ACR_MODE"]; mode != "" {
+		return mode
+	}
+	id := env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if id == "" {
+		return "create"
+	}
+	if containerRegistryIDPattern.MatchString(id) && resourceGroup != "" {
+		parts := strings.Split(id, "/")
+		sub := env["AZURE_SUBSCRIPTION_ID"]
+		if strings.EqualFold(parts[4], resourceGroup) && (sub == "" || strings.EqualFold(parts[2], sub)) {
+			return "create"
+		}
+	}
+	return "reuse-connect"
+}
+
+var containerRegistryIDPattern = regexp.MustCompile(
+	`(?i)^/subscriptions/[^/\s]+/resourceGroups/[^/\s]+/providers/Microsoft\.ContainerRegistry/registries/[^/\s]+$`,
+)
+
+func existingContainerRegistry(in Input) (string, error) {
+	id := in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if id == "" {
+		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
+	}
+	if !containerRegistryIDPattern.MatchString(id) {
+		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be a full ARM ID " +
+			"of a Microsoft.ContainerRegistry/registries resource")
+	}
+	parts := strings.Split(id, "/")
+	if strings.EqualFold(parts[2], in.Env["AZURE_SUBSCRIPTION_ID"]) &&
+		strings.EqualFold(parts[4], in.ResourceGroupName) {
+		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
+			"resource group because azd down deletes that group")
+	}
+	return id, nil
 }
 
 // SynthesizeExistingProject derives parameters for editable infrastructure that
@@ -575,7 +657,7 @@ func validateAgentRootRefCoreFields(
 	return nil
 }
 
-// deriveIncludeAcr reports whether provisioning should create an ACR. An ACR is
+// deriveIncludeAcr reports whether provisioning needs an ACR. An ACR is
 // needed when any agent is a hosted, build-from-source agent: azd builds its
 // image and pushes it to the registry. Agents live on sibling azure.ai.agent
 // services in the split shape, or under agents[] in the legacy inline shape;

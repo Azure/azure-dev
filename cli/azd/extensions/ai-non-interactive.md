@@ -39,6 +39,52 @@ are not forwarded; `--help` remains available. Use the standalone
 
 ## `azure.ai.projects`
 
+For a new Foundry project that needs a container registry, set
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
+Provisioning reuses it, grants the project identity pull access, and creates the
+project connection without changing the registry's networking. Classic registries
+receive `AcrPull`; registries with `AbacRepositoryPermissions` receive
+`Container Registry Repository Reader` instead (`AcrPull` is not honored there).
+Ensure the registry is reachable from the agent network. The registry must be
+outside the Foundry resource group (which `azd down` deletes). This is supported
+by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
+external registry.
+
+Greenfield provisioning records its registry decision in `AZD_FOUNDRY_ACR_MODE`:
+`reuse-connect` when the registry ID is non-empty, otherwise `create` (the default,
+which creates a registry in the Foundry resource group). A project that does not
+need a registry records `none`. Once recorded, the mode wins over the ID value,
+so writing a created registry's ID back to `AZURE_CONTAINER_REGISTRY_RESOURCE_ID`
+does not accidentally enable reuse on the next provision. `reuse-connect`
+requires a non-empty, valid registry ID outside the Foundry resource group.
+For environments provisioned before the mode was recorded, an ID that points into
+the Foundry resource group is treated as a registry azd created, so `create` is
+recorded instead of `reuse-connect`.
+
+To switch modes, clear the recorded decision with
+`azd env set AZD_FOUNDRY_ACR_MODE ""` (or unset the key), then set
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` to reuse a registry, or clear/unset it to
+create one. Alternatively, run `azd down`, which clears the mode; it preserves
+the registry ID in reuse mode and clears it in create mode. Then set or unset
+the registry ID before the next `azd up`. Switching from create to reuse in a
+live environment leaves the previously created registry in the Foundry resource
+group until `azd down`.
+
+The deployer needs permission to create role assignments on the external
+registry (for example, Owner, User Access Administrator, or Role Based Access
+Control Administrator scoped to the registry) to grant the project identity
+`AcrPull` or `Container Registry Repository Reader` (for ABAC registries). The
+image publisher also needs `AcrPush` (or `Container Registry Repository Writer`
+on ABAC registries) to push images.
+
+Ejected Bicep parameters include
+`existingAcrResourceId = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"` only in reuse
+mode, rather than embedding a literal registry ID. Eject uses the recorded mode
+when present, otherwise the same registry-ID decision rule. Create mode ignores
+the registry ID and supports either Bicep or Terraform eject; reuse mode requires
+Bicep eject.
+
 | Command or area | Interactive decision | Non-interactive input | Behavior when omitted in no-prompt mode |
 | --- | --- | --- | --- |
 | `microsoft.foundry` provisioning | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |

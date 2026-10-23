@@ -217,6 +217,9 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	for _, setting := range deploymentOwnedConfigurationSettings {
 		inputEvidence = append(inputEvidence, c.traces[setting]...)
 	}
+	for _, setting := range c.profileGroupKeys {
+		inputEvidence = append(inputEvidence, c.traces[setting]...)
+	}
 	a := &Application{
 		ID:   "app",
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",

@@ -35,13 +35,15 @@ type property struct {
 }
 
 type configuration struct {
-	values        map[string]property
-	profileGroups map[string]property
-	profiles      []string
-	lookup        LookupEnv
-	externalFiles []string
-	traces        map[string][]Evidence
-	trace         []Evidence
+	values           map[string]property
+	profileGroups    map[string]property
+	profiles         []string
+	lookup           LookupEnv
+	externalFiles    []string
+	traces           map[string][]Evidence
+	trace            []Evidence
+	referenceSources []property
+	profileGroupKeys []string
 }
 
 type document struct {
@@ -207,6 +209,8 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 	var included strings.Builder
 	var includeEvidence []Evidence
 	for _, p := range includeSources {
+		p.key = profileIncludeProperty
+		c.referenceSources = append(c.referenceSources, p)
 		c.trace = nil
 		text, err := c.expandProperty(profileIncludeProperty, p, map[string]bool{})
 		if err != nil {
@@ -1030,7 +1034,7 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 func lookupEnvProperty(lookup LookupEnv, key string) (property, bool) {
 	for _, name := range environmentPropertyNames(key) {
 		if text, ok := lookup(name); ok {
-			return property{text: text, source: "environment"}, true
+			return property{text: text, source: "environment", key: key}, true
 		}
 	}
 	return property{}, false
@@ -1056,15 +1060,30 @@ func (c *configuration) resolve(key string) (string, error) {
 
 func (c *configuration) resolveProfileGroup(name string) (string, error) {
 	key := "spring.profiles.group." + name
+	if !slices.Contains(c.profileGroupKeys, key) {
+		c.profileGroupKeys = append(c.profileGroupKeys, key)
+	}
+	c.trace = nil
+	var p property
+	var ok bool
 	if p, ok := c.profileGroups[name]; ok && p.source == "SPRING_APPLICATION_JSON" {
-		return c.expandProperty(key, p, map[string]bool{})
+		p.key = key
+		c.referenceSources = append(c.referenceSources, p)
+		value, err := c.expandProperty(key, p, map[string]bool{})
+		c.traces[key] = slices.Clone(c.trace)
+		return value, err
 	}
-	if p, ok := lookupEnvProperty(c.lookup, key); ok {
-		return c.expandProperty(key, p, map[string]bool{})
+	if p, ok = lookupEnvProperty(c.lookup, key); !ok {
+		p, ok = c.profileGroups[name]
 	}
-	if p, ok := c.profileGroups[name]; ok {
-		return c.expandProperty(key, p, map[string]bool{})
+	if ok {
+		p.key = key
+		c.referenceSources = append(c.referenceSources, p)
+		value, err := c.expandProperty(key, p, map[string]bool{})
+		c.traces[key] = slices.Clone(c.trace)
+		return value, err
 	}
+	c.traces[key] = []Evidence{{Property: key, Source: "profile selection"}}
 	return "", nil
 }
 
@@ -1127,12 +1146,31 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 
 func (c *configuration) placeholderReferences() map[string][]Evidence {
 	result := map[string][]Evidence{}
+	sources := make([]property, 0, len(c.values)+len(c.referenceSources))
 	for _, p := range c.values {
+		sources = append(sources, p)
+	}
+	sources = append(sources, c.referenceSources...)
+	for _, p := range sources {
 		references := map[string]bool{}
 		c.collectPlaceholderReferences(p.text, references, map[string]bool{})
 		evidence := Evidence{Property: p.key, Source: p.source}
 		for name := range references {
-			result[name] = append(result[name], evidence)
+			for _, alias := range environmentPropertyNames(name) {
+				key := canonical(alias)
+				if !slices.Contains(result[key], evidence) {
+					result[key] = append(result[key], evidence)
+				}
+			}
+		}
+	}
+	for _, setting := range c.profileGroupKeys {
+		evidence := c.traces[setting][0]
+		for _, alias := range environmentPropertyNames(setting)[1:] {
+			key := canonical(alias)
+			if !slices.Contains(result[key], evidence) {
+				result[key] = append(result[key], evidence)
+			}
 		}
 	}
 	return result
@@ -1141,13 +1179,9 @@ func (c *configuration) placeholderReferences() map[string][]Evidence {
 func (c *configuration) collectPlaceholderReferences(
 	text string, references map[string]bool, visiting map[string]bool,
 ) {
-	for _, match := range placeholder.FindAllStringSubmatch(text, -1) {
-		name, _, _ := strings.Cut(match[1], ":")
-		if !propertyName.MatchString(name) {
-			continue
-		}
+	for _, name := range placeholderNames(text) {
 		key := canonical(name)
-		references[key] = true
+		references[name] = true
 		if visiting[key] {
 			continue
 		}
@@ -1157,6 +1191,26 @@ func (c *configuration) collectPlaceholderReferences(
 			delete(visiting, key)
 		}
 	}
+}
+
+func placeholderNames(text string) []string {
+	var result []string
+	for range 32 {
+		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
+		if len(matches) == 0 {
+			break
+		}
+		for i := len(matches) - 1; i >= 0; i-- {
+			match := matches[i]
+			inner := text[match[2]:match[3]]
+			name, fallback, _ := strings.Cut(inner, ":")
+			if propertyName.MatchString(name) && !slices.Contains(result, name) {
+				result = append(result, name)
+			}
+			text = text[:match[0]] + fallback + text[match[1]:]
+		}
+	}
+	return result
 }
 
 func splitList(text string) []string {

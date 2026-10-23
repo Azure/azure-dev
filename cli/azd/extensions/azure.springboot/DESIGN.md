@@ -183,7 +183,7 @@ configuration. The current reserved contract is:
 | Category | Reserved environment variables |
 | --- | --- |
 | Global override channels | `_JAVA_OPTIONS`, `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `SPRING_APPLICATION_JSON` |
-| Hosting and configuration | `SERVER_ADDRESS`, `SERVER_PORT`, `SERVER_SSL_ENABLED`, `SPRING_MAIN_WEBAPPLICATIONTYPE`, `SPRING_MAIN_WEB_APPLICATION_TYPE`, `SPRING_CONFIG_IMPORT`, `SPRING_CONFIG_LOCATION`, `SPRING_CONFIG_NAME`, `SPRING_CONFIG_ADDITIONALLOCATION`, `SPRING_CONFIG_ADDITIONAL_LOCATION`, `SPRING_PROFILES_ACTIVE`, `SPRING_PROFILES_DEFAULT`, `SPRING_PROFILES_INCLUDE` |
+| Hosting and configuration | `SERVER_ADDRESS`, `SERVER_PORT`, `SERVER_SSL_ENABLED`, `SPRING_MAIN_WEBAPPLICATIONTYPE`, `SPRING_MAIN_WEB_APPLICATION_TYPE`, `SPRING_CONFIG_IMPORT`, `SPRING_CONFIG_LOCATION`, `SPRING_CONFIG_NAME`, `SPRING_CONFIG_ADDITIONALLOCATION`, `SPRING_CONFIG_ADDITIONAL_LOCATION`, `SPRING_PROFILES_ACTIVE`, `SPRING_PROFILES_DEFAULT`, `SPRING_PROFILES_INCLUDE`, and `SPRING_PROFILES_GROUP_<PROFILE>` for every selected profile |
 | Datasource | `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATASOURCE_DRIVERCLASSNAME`, `SPRING_DATASOURCE_DRIVER_CLASS_NAME`, `SPRING_JPA_HIBERNATE_DDLAUTO`, `SPRING_JPA_HIBERNATE_DDL_AUTO`, `SPRING_SQL_INIT_MODE` |
 | Hikari overrides | `SPRING_DATASOURCE_HIKARI_USERNAME`, `SPRING_DATASOURCE_HIKARI_PASSWORD`, `SPRING_DATASOURCE_HIKARI_JDBCURL`, `SPRING_DATASOURCE_HIKARI_JDBC_URL`, `SPRING_DATASOURCE_HIKARI_DATASOURCECLASSNAME`, `SPRING_DATASOURCE_HIKARI_DATA_SOURCE_CLASS_NAME`, `SPRING_DATASOURCE_HIKARI_DRIVERCLASSNAME`, `SPRING_DATASOURCE_HIKARI_DRIVER_CLASS_NAME` |
 | Tomcat overrides | `SPRING_DATASOURCE_TOMCAT_URL`, `SPRING_DATASOURCE_TOMCAT_USERNAME`, `SPRING_DATASOURCE_TOMCAT_PASSWORD`, `SPRING_DATASOURCE_TOMCAT_DRIVERCLASSNAME`, `SPRING_DATASOURCE_TOMCAT_DRIVER_CLASS_NAME` |
@@ -194,8 +194,10 @@ configuration. The current reserved contract is:
 When the extension generates or relies on a runtime property, every
 higher-precedence environment spelling capable of overriding that property must
 be added to this contract and its conflict tests. Inputs referenced directly or
-indirectly by deployment-owned properties are also rejected. Application-specific
-names outside this ownership boundary remain valid.
+indirectly by deployment-owned properties are also rejected, including references
+from every profile-include source, selected profile groups, nested placeholder
+defaults, and dotted names resolved through relaxed environment aliases.
+Application-specific names outside this ownership boundary remain valid.
 
 ## Appendix: Foundry model bindings
 

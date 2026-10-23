@@ -260,6 +260,31 @@ func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 			input:    "EXTRA_PROFILES",
 			property: "spring.profiles.include",
 		},
+		{
+			name:          "nested placeholder outer name",
+			configuration: "spring.main.web-application-type=${APP_MODE:${DEFAULT_MODE:servlet}}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name:          "nested placeholder fallback dependency",
+			configuration: "spring.main.web-application-type=${APP_MODE:${DEFAULT_MODE:servlet}}\n",
+			input:         "DEFAULT_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name:          "dotted placeholder environment alias",
+			configuration: "spring.main.web-application-type=${app.mode:servlet}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name: "indirect dotted placeholder environment alias",
+			configuration: "spring.main.web-application-type=${web.mode:servlet}\n" +
+				"web.mode=${app.mode:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
 			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
@@ -271,6 +296,87 @@ func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 				})
 				require.ErrorContains(t, err, "application input "+tt.input+
 					" affects deployment-owned property "+tt.property)
+			})
+		}
+	}
+}
+
+func TestApplicationInputProfileGroupConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		configuration string
+		profiles      []string
+		input         string
+	}{
+		{
+			name: "profile group placeholder",
+			configuration: "spring.profiles.active=release\n" +
+				"spring.profiles.group.release=${EXTRA_PROFILES:}\n",
+			input: "EXTRA_PROFILES",
+		},
+		{
+			name: "profile group environment binding",
+			configuration: "spring.profiles.active=release\n" +
+				"spring.profiles.group.release=worker\n",
+			input: "SPRING_PROFILES_GROUP_RELEASE",
+		},
+		{
+			name:     "selected profile group environment binding",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					"spring.datasource.url=jdbc:h2:mem:catalog\n"+tt.configuration)
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					Profiles: tt.profiles,
+					ApplicationInputs: map[string]ApplicationInputKind{
+						tt.input: kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property spring.profiles.group.release")
+			})
+		}
+	}
+}
+
+func TestApplicationInputProfileIncludeSourceConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "packaged include overridden externally",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=${EXTRA_PROFILES:}\n",
+				"config/application.properties":             "spring.profiles.include=\n",
+			},
+		},
+		{
+			name: "earlier YAML document include",
+			files: map[string]string{
+				"src/main/resources/application.yaml": "spring:\n  profiles:\n    include: ${EXTRA_PROFILES:}\n---\n" +
+					"spring:\n  profiles:\n    include:\n",
+			},
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				for file, content := range tt.files {
+					writeFixture(t, directory, file, content)
+				}
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{
+						"EXTRA_PROFILES": kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input EXTRA_PROFILES"+
+					" affects deployment-owned property spring.profiles.include")
 			})
 		}
 	}

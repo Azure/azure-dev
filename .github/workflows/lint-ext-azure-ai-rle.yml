@@ -20,3 +20,4 @@ jobs:
     uses: ./.github/workflows/lint-go.yml
     with:
       working-directory: cli/azd/extensions/azure.ai.rle
+      golangci-lint-version: v2.12.2

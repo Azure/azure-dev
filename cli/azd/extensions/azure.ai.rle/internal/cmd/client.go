@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -35,23 +37,48 @@ type rleClient struct {
 
 var createRleClient = newRleClient
 
+type rleHarness struct {
+	Type     string  `json:"type"`
+	Endpoint *string `json:"endpoint,omitempty"`
+	Protocol string  `json:"protocol,omitempty"`
+	Name     string  `json:"name,omitempty"`
+}
+
+type rleTaskFormat struct {
+	Format string `json:"format"`
+}
+
 type v1EnvironmentRequest struct {
-	Name         string `json:"name,omitempty"`
-	AcrImagePath string `json:"acrImagePath"`
-	VersionBump  string `json:"versionBump,omitempty"`
+	Name          string                      `json:"name,omitempty"`
+	AcrImagePath  string                      `json:"acrImagePath,omitempty"`
+	Tasks         []harborTask                `json:"tasks,omitempty"`
+	Version       string                      `json:"version"`
+	Harness       rleHarness                  `json:"harness"`
+	Task          *rleTaskFormat              `json:"task,omitempty"`
+	SchemaVersion *string                     `json:"schema_version,omitempty"`
+	Model         *project.RleModelDefaults   `json:"model,omitempty"`
+	Train         *project.RleTrainDefaults   `json:"train,omitempty"`
+	Rollout       *project.RleRolloutDefaults `json:"rollout,omitempty"`
 }
 
 type environmentResource struct {
-	Id                        string `json:"id"`
-	ProjectId                 string `json:"projectId,omitempty"`
-	Name                      string `json:"name,omitempty"`
-	AcrImagePath              string `json:"acrImagePath,omitempty"`
-	Version                   string `json:"version,omitempty"`
-	CreatedAt                 string `json:"createdAtUtc,omitempty"`
-	UpdatedAt                 string `json:"updatedAtUtc,omitempty"`
-	VersionLabel              string `json:"versionLabel,omitempty"`
-	DiskImageConversionStatus string `json:"diskImageConversionStatus,omitempty"`
-	DiskImageConversionError  string `json:"diskImageConversionError,omitempty"`
+	Id                        string                      `json:"id"`
+	ProjectId                 string                      `json:"projectId,omitempty"`
+	Name                      string                      `json:"name,omitempty"`
+	AcrImagePath              string                      `json:"acrImagePath,omitempty"`
+	Version                   string                      `json:"version,omitempty"`
+	Harness                   rleHarness                  `json:"harness"`
+	SchemaVersion             *string                     `json:"schema_version,omitempty"`
+	Model                     *project.RleModelDefaults   `json:"model,omitempty"`
+	Train                     *project.RleTrainDefaults   `json:"train,omitempty"`
+	Rollout                   *project.RleRolloutDefaults `json:"rollout,omitempty"`
+	CreatedAt                 string                      `json:"createdAtUtc,omitempty"`
+	UpdatedAt                 string                      `json:"updatedAtUtc,omitempty"`
+	VersionLabel              string                      `json:"versionLabel,omitempty"`
+	DiskImageConversionStatus string                      `json:"diskImageConversionStatus,omitempty"`
+	DiskImageConversionError  string                      `json:"diskImageConversionError,omitempty"`
+	// Tasks is filled by show from the tasks list API; the environment response never carries it.
+	Tasks []harborTaskStatus `json:"tasks,omitempty"`
 }
 
 type pagedEnvironmentResponse struct {
@@ -70,28 +97,34 @@ type instanceGroupResource struct {
 	MaxActiveInstances int    `json:"maxActiveInstances"`
 }
 
-type instanceResource struct {
-	InstanceId      string `json:"instanceId"`
-	InstanceGroupId string `json:"instanceGroupId"`
-	BaseUrl         string `json:"baseUrl,omitempty"`
-	Status          string `json:"status,omitempty"`
-	Error           string `json:"error,omitempty"`
-}
-
 type rleHTTPError struct {
 	statusCode int
 	body       string
 	details    *rleErrorBody
+	requestID  string
 }
 
 type rleErrorBody struct {
-	Code    string        `json:"code,omitempty"`
-	Message string        `json:"message,omitempty"`
-	Error   *rleErrorBody `json:"error,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+	// Diagnostic and Exception are only returned when the request sets include_upstream_diagnostics.
+	Diagnostic string        `json:"diagnostic,omitempty"`
+	Exception  string        `json:"exception,omitempty"`
+	Error      *rleErrorBody `json:"error,omitempty"`
 }
 
 func (e *rleHTTPError) Error() string {
-	return fmt.Sprintf("RLE service returned HTTP %d: %s", e.statusCode, e.message())
+	text := fmt.Sprintf("RLE service returned HTTP %d: %s", e.statusCode, e.message())
+	if e.details != nil {
+		primary := e.details.primary()
+		if d := strings.TrimSpace(primary.Diagnostic); d != "" {
+			text += "\nUpstream diagnostic: " + d
+		}
+		if d := strings.TrimSpace(primary.Exception); d != "" {
+			text += "\nException: " + d
+		}
+	}
+	return withRequestID(text, e.requestID)
 }
 
 func (e *rleHTTPError) code() string {
@@ -110,10 +143,16 @@ func (e *rleHTTPError) message() string {
 	return strings.TrimSpace(e.body)
 }
 
+func isRleNotFound(err error) bool {
+	httpErr, ok := errors.AsType[*rleHTTPError](err)
+	return ok && httpErr.statusCode == http.StatusNotFound
+}
+
 func newRleHTTPError(statusCode int, body []byte) *rleHTTPError {
 	result := &rleHTTPError{
 		statusCode: statusCode,
 		body:       string(body),
+		requestID:  serviceRequestID(nil, body),
 	}
 	var details rleErrorBody
 	if err := json.Unmarshal(body, &details); err == nil {
@@ -178,7 +217,13 @@ func newRleClientWithCredential(endpoint string, credential azcore.TokenCredenti
 		baseUrl:    strings.TrimRight(endpoint, "/"),
 		credential: credential,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			// Applies to every rleClient call, including executeRollout. A blind 30s
+			// wall masked RLE's real, sometimes much longer, processing time (a full
+			// Harness/BYOH rollout can run 60-90s+ end to end) as a generic transport
+			// timeout with no server-side detail. 300s gives real rollouts headroom
+			// to return their actual result (success or a specific RLE error) instead
+			// of a client-side "context deadline exceeded" with no diagnostic value.
+			Timeout: 300 * time.Second,
 		},
 	}
 }
@@ -192,6 +237,23 @@ func (c *rleClient) createV1Environment(
 		return nil, err
 	}
 
+	return &result, nil
+}
+
+func (c *rleClient) getEnvironmentByName(
+	ctx context.Context,
+	name string,
+) (*environmentResource, error) {
+	var result environmentResource
+	if err := c.do(
+		ctx,
+		http.MethodGet,
+		environmentCollectionPath+"/"+url.PathEscape(name),
+		nil,
+		&result,
+	); err != nil {
+		return nil, err
+	}
 	return &result, nil
 }
 
@@ -235,6 +297,29 @@ func (c *rleClient) listEnvironmentVersions(
 	return &result, nil
 }
 
+func (c *rleClient) listEnvironmentVersionTasks(
+	ctx context.Context,
+	name string,
+	version string,
+	continuationToken string,
+	limit int,
+) (*pagedHarborTaskResponse, error) {
+	query := url.Values{}
+	query.Set("limit", fmt.Sprintf("%d", limit))
+	query.Set("order", "asc")
+	if continuationToken != "" {
+		query.Set("continuationToken", continuationToken)
+	}
+	suffix := fmt.Sprintf("/%s/versions/%s/tasks?%s", url.PathEscape(name), url.PathEscape(version), query.Encode())
+
+	var result pagedHarborTaskResponse
+	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 func (c *rleClient) createInstanceGroup(
 	ctx context.Context,
 	environmentName string,
@@ -250,81 +335,6 @@ func (c *rleClient) createInstanceGroup(
 	return &result, nil
 }
 
-func (c *rleClient) deleteInstanceGroup(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) error {
-	suffix := instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId)
-	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
-}
-
-func (c *rleClient) createInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) (*instanceResource, error) {
-	suffix := instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId)
-
-	var result instanceResource
-	if err := c.do(ctx, http.MethodPost, environmentCollectionPath+suffix, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *rleClient) getInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) (*instanceResource, error) {
-	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
-
-	var result instanceResource
-	if err := c.do(ctx, http.MethodGet, environmentCollectionPath+suffix, nil, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *rleClient) deleteInstance(
-	ctx context.Context,
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) error {
-	suffix := instanceSuffix(environmentName, environmentVersion, instanceGroupId, instanceId)
-	return c.do(ctx, http.MethodDelete, environmentCollectionPath+suffix, nil, nil)
-}
-
-func instanceSuffix(
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-	instanceId string,
-) string {
-	return instanceCollectionSuffix(environmentName, environmentVersion, instanceGroupId) +
-		"/" + url.PathEscape(instanceId)
-}
-
-func instanceCollectionSuffix(
-	environmentName string,
-	environmentVersion string,
-	instanceGroupId string,
-) string {
-	return instanceGroupSuffix(environmentName, environmentVersion, instanceGroupId) + "/instances"
-}
-
-func instanceGroupSuffix(environmentName string, environmentVersion string, instanceGroupId string) string {
-	return instanceGroupCollectionSuffix(environmentName, environmentVersion) +
-		"/" + url.PathEscape(instanceGroupId)
-}
-
 func instanceGroupCollectionSuffix(environmentName string, environmentVersion string) string {
 	path := "/" + url.PathEscape(environmentName)
 	if environmentVersion != "" {
@@ -334,6 +344,17 @@ func instanceGroupCollectionSuffix(environmentName string, environmentVersion st
 }
 
 func (c *rleClient) do(ctx context.Context, method string, path string, body any, target any) error {
+	return c.doWithHeaders(ctx, method, path, nil, body, target)
+}
+
+func (c *rleClient) doWithHeaders(
+	ctx context.Context,
+	method string,
+	path string,
+	headers map[string]string,
+	body any,
+	target any,
+) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -364,6 +385,9 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -375,11 +399,13 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read RLE response: %w", err)
+		return withRequestIDError(fmt.Errorf("read RLE response: %w", err), serviceRequestID(resp.Header, nil))
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return newRleHTTPError(resp.StatusCode, respBody)
+		httpErr := newRleHTTPError(resp.StatusCode, respBody)
+		httpErr.requestID = serviceRequestID(resp.Header, respBody)
+		return httpErr
 	}
 
 	if target == nil || len(respBody) == 0 {
@@ -387,7 +413,7 @@ func (c *rleClient) do(ctx context.Context, method string, path string, body any
 	}
 
 	if err := json.Unmarshal(respBody, target); err != nil {
-		return fmt.Errorf("decode RLE response: %w", err)
+		return withRequestIDError(fmt.Errorf("decode RLE response: %w", err), serviceRequestID(resp.Header, nil))
 	}
 
 	return nil

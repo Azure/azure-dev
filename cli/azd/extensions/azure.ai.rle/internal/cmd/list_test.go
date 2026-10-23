@@ -11,10 +11,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
+	"azure.ai.rle/internal/project"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
@@ -47,6 +51,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 					"id": "env-1",
 					"name": "echo_env",
 					"version": "1.2.0",
+					"harness": {"type": "gym"},
 					"diskImageConversionStatus": "Ready",
 					"updatedAtUtc": "2026-07-30T05:00:00Z"
 				},
@@ -54,6 +59,7 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 					"id": "env-2",
 					"name": "code_rl",
 					"version": "2.0.0",
+					"harness": {"type": "byoh", "endpoint": "https://h.example.com/", "protocol": "rle-invocation"},
 					"diskImageConversionStatus": "Pending",
 					"updatedAtUtc": "2026-07-30T06:00:00Z"
 				}
@@ -79,17 +85,30 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 	for _, expected := range []string{
 		"NAME",
 		"VERSION",
+		"TYPE",
+		"PROTOCOL",
 		"DISK IMAGE",
-		"ENVIRONMENT ID",
 		"echo_env",
 		"1.2.0",
-		"env-1",
+		"gym",
+		"byoh",
+		"rle-invocation",
 		"code_rl",
 		"Pending",
 	} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("expected output to contain %q, got %s", expected, output.String())
 		}
+	}
+	for _, unexpected := range []string{"ENVIRONMENT ID", "env-1", "env-2"} {
+		if strings.Contains(output.String(), unexpected) {
+			t.Fatalf("expected table to omit %q, got %s", unexpected, output.String())
+		}
+	}
+	if got := strings.Fields(strings.Split(strings.TrimSpace(output.String()), "\n")[0]); !slices.Equal(
+		got, []string{"NAME", "VERSION", "TYPE", "PROTOCOL", "DISK", "IMAGE", "UPDATED"},
+	) {
+		t.Fatalf("unexpected list columns: %v", got)
 	}
 	if !strings.HasPrefix(output.String(), "\n") || !strings.HasSuffix(output.String(), "\n\n") {
 		t.Fatalf("expected blank lines around table, got %q", output.String())
@@ -99,11 +118,10 @@ func TestEnvironmentListListsProjectEnvironments(t *testing.T) {
 func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
-	if err := saveRleState(rleState{
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-from-env",
+	)
 
 	controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -130,6 +148,94 @@ func TestEnvironmentListSupportsJSONOutput(t *testing.T) {
 	}
 	if len(result) != 1 || result[0].Id != "env-1" || result[0].Name != "echo_env" {
 		t.Fatalf("unexpected environments JSON: %#v", result)
+	}
+}
+
+func TestEnvironmentTablesDisplayMissingValues(t *testing.T) {
+	for _, commandName := range []string{"list", "show"} {
+		for _, tt := range []struct {
+			name     string
+			typeName string
+			protocol string
+			status   string
+			want     []string
+		}{
+			{name: "absent", want: []string{"-", "-", "-"}},
+			{name: "whitespace", typeName: " ", protocol: "\t", status: " \t", want: []string{"-", "-", "-"}},
+			{
+				name: "ready", typeName: "gym", status: "Ready",
+				want: []string{"gym", "-", "Ready"},
+			},
+			{
+				name: "pending", typeName: "byoh", protocol: "rle-invocation", status: "Pending",
+				want: []string{"byoh", "rle-invocation", "Pending"},
+			},
+			{
+				name: "failed", typeName: "byoh", protocol: "responses", status: "Failed",
+				want: []string{"byoh", "responses", "Failed"},
+			},
+			{name: "missing status", typeName: "gym", want: []string{"gym", "-", "-"}},
+		} {
+			t.Run(commandName+"/"+tt.name, func(t *testing.T) {
+				resource := environmentResource{
+					Id: "opaque-id", Name: "math_rl", Version: "1.0.0",
+					Harness: rleHarness{
+						Type: tt.typeName, Protocol: tt.protocol, Endpoint: new(string),
+					},
+					DiskImageConversionStatus: tt.status,
+					UpdatedAt:                 "2026-07-30T05:00:00Z",
+					ProjectId:                 "project-id", AcrImagePath: "example.azurecr.io/math-rl:1.0.0",
+					SchemaVersion: new(project.CurrentRleManifestSchemaVersion),
+					Model:         &project.RleModelDefaults{Name: new("test-model")},
+					CreatedAt:     "2026-07-30T04:00:00Z", VersionLabel: "test-label",
+					DiskImageConversionError: "test-error",
+				}
+				controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.Method != http.MethodGet {
+						t.Fatalf("unexpected request method: %s", r.Method)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					response := pagedEnvironmentResponse{Data: []environmentResource{resource}}
+					if err := json.NewEncoder(w).Encode(response); err != nil {
+						t.Error(err)
+					}
+				}))
+				defer controlPlane.Close()
+				stubRleClientEndpoint(t, controlPlane.URL)
+
+				outputFormat := "default"
+				command := newListCommand(&outputFormat)
+				if commandName == "show" {
+					command = newShowCommand(&outputFormat)
+					command.SetArgs([]string{"math_rl"})
+				}
+				var output bytes.Buffer
+				command.SetOut(&output)
+				command.SetErr(&output)
+				if err := command.Execute(); err != nil {
+					t.Fatal(err)
+				}
+				lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+				row := strings.Fields(lines[len(lines)-1])
+				want := append([]string{"1.0.0"}, tt.want...)
+				want = append(want, resource.UpdatedAt)
+				if commandName == "list" {
+					want = append([]string{resource.Name}, want...)
+				}
+				if !slices.Equal(row, want) {
+					t.Fatalf("table row = %v, want %v", row, want)
+				}
+				if strings.Contains(output.String(), resource.Id) {
+					t.Fatalf("table must not show the opaque ID: %s", output.String())
+				}
+				output.Reset()
+				outputFormat = "json"
+				require.NoError(t, command.Execute())
+				wantJSON, err := json.Marshal([]environmentResource{resource})
+				require.NoError(t, err)
+				require.JSONEq(t, string(wantJSON), output.String())
+			})
+		}
 	}
 }
 
@@ -371,6 +477,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"id":"env-version-1",
 						"name":"echo_env",
 						"version":"1.0.0",
+						"harness":{"type":"gym"},
 						"diskImageConversionStatus":"Failed",
 						"updatedAtUtc":"2026-07-28T06:00:00Z",
 						"createdAtUtc":"2026-07-28T05:00:00Z",
@@ -380,6 +487,7 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 						"id":"env-1",
 						"name":"echo_env",
 						"version":"1.2.0",
+						"harness":{"type":"byoh","endpoint":"https://acct.services.ai.azure.com/api/projects/p/agents/a/endpoint/protocols/openai/responses","protocol":"responses"},
 						"diskImageConversionStatus":"Ready",
 						"updatedAtUtc":"2026-07-30T05:00:00Z",
 						"createdAtUtc":"2026-07-30T05:00:00Z",
@@ -407,9 +515,13 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 
 	for _, expected := range []string{
 		"VERSION",
+		"TYPE",
+		"PROTOCOL",
 		"DISK IMAGE",
-		"ENVIRONMENT ID",
 		"UPDATED",
+		"gym",
+		"byoh",
+		"responses",
 		"1.2.0",
 		"Ready",
 		"1.0.0",
@@ -421,6 +533,9 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 	}
 	for _, unexpected := range []string{
 		"NAME",
+		"ENVIRONMENT ID",
+		"env-version-1",
+		"env-1",
 		"ACR IMAGE",
 		"echo_env",
 		"registry/echo:1.2.0",
@@ -433,6 +548,66 @@ func TestShowDisplaysEnvironmentHistory(t *testing.T) {
 		if strings.Contains(output.String(), unexpected) {
 			t.Fatalf("expected one consolidated table without %q, got %s", unexpected, output.String())
 		}
+	}
+	if got := strings.Fields(strings.Split(strings.TrimSpace(output.String()), "\n")[0]); !slices.Equal(
+		got, []string{"VERSION", "TYPE", "PROTOCOL", "DISK", "IMAGE", "UPDATED"},
+	) {
+		t.Fatalf("unexpected show columns: %v", got)
+	}
+}
+
+func TestShowSanitizesTaskDiagnosticsOnlyForTextOutput(t *testing.T) {
+	const diagnostic = "failed\nforged\r\x1b[31m\u009b[2J"
+	for _, format := range []string{"default", "json"} {
+		t.Run(format, func(t *testing.T) {
+			t.Setenv(foundryProjectEndpointEnvVar, "https://account.services.ai.azure.com/api/projects/project")
+			controlPlane := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case testFoundryProjectPath + environmentCollectionPath + "/echo_env/versions":
+					_, _ = w.Write([]byte(`{"data":[{"name":"echo_env","version":"1.0.0"}]}`))
+				case testFoundryProjectPath + environmentCollectionPath + "/echo_env/versions/1.0.0/tasks":
+					if err := json.NewEncoder(w).Encode(map[string][]harborTaskStatus{
+						"data": {{
+							Name:                      "task-1",
+							DiskImageConversionStatus: "Failed",
+							DiskImageConversionError:  diagnostic,
+						}},
+					}); err != nil {
+						t.Error(err)
+					}
+				default:
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer controlPlane.Close()
+			stubRleClientEndpoint(t, controlPlane.URL)
+
+			command := newShowCommand(new(format))
+			command.SetArgs([]string{"echo_env"})
+			var output bytes.Buffer
+			command.SetOut(&output)
+			command.SetErr(&output)
+			require.NoError(t, command.Execute())
+
+			if format == "json" {
+				var versions []environmentResource
+				require.NoError(t, json.Unmarshal(output.Bytes(), &versions))
+				require.Len(t, versions, 1)
+				require.Len(t, versions[0].Tasks, 1)
+				require.Equal(t, diagnostic, versions[0].Tasks[0].DiskImageConversionError)
+				return
+			}
+			require.Contains(t, output.String(), "failed forged  [31m [2J")
+			require.False(t, strings.ContainsAny(output.String(), "\r\x1b\u009b"),
+				"conversion diagnostic must not inject terminal controls")
+		})
 	}
 }
 
@@ -475,6 +650,7 @@ func TestShowSupportsJSONOutput(t *testing.T) {
 		t.Fatalf("expected version-list JSON, got %s: %v", output.String(), err)
 	}
 	if len(versions) != 1 ||
+		versions[0].Id != "env-1" ||
 		versions[0].Name != "echo_env" ||
 		versions[0].AcrImagePath != "registry/echo:1.2.0" ||
 		versions[0].CreatedAt != "2026-07-30T04:00:00Z" {
@@ -687,16 +863,21 @@ func TestResolveEnvironmentVersionsStopsAtSafetyLimit(t *testing.T) {
 	}
 }
 
-func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
+func TestShowUsesEnvironmentNameFromManifestAndRuntimeProjectEndpoint(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Chdir(tempDir)
 	t.Setenv(
 		foundryProjectEndpointEnvVar,
-		"https://other.services.ai.azure.com/api/projects/different-project",
+		"https://account.services.ai.azure.com/api/projects/project-from-env",
 	)
-	if err := saveRleState(rleState{
-		EnvironmentName: "echo_env",
-		ProjectEndpoint: "https://account.services.ai.azure.com/api/projects/saved-project",
+	if err := project.WriteRleConfig(tempDir, project.RleConfig{
+		Rle: project.RleManifest{
+			Name:    "echo_env",
+			Version: "1.0.0",
+		},
+		Harness: project.RleHarnessManifest{
+			Type: project.HarnessTypeGym,
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -742,24 +923,23 @@ func TestShowUsesEnvironmentNameAndProjectEndpointFromState(t *testing.T) {
 	if strings.Contains(output.String(), "echo_env") {
 		t.Fatalf("expected environment name to be omitted from the version table, got %s", output.String())
 	}
-	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/saved-project" {
-		t.Fatalf("expected saved project endpoint, got %q", resolvedProjectEndpoint)
+	if resolvedProjectEndpoint != "https://account.services.ai.azure.com/api/projects/project-from-env" {
+		t.Fatalf("expected runtime project endpoint, got %q", resolvedProjectEndpoint)
 	}
 }
 
 func stubRleClientEndpoint(t *testing.T, endpoint string) {
 	t.Helper()
+	t.Setenv(
+		foundryProjectEndpointEnvVar,
+		"https://account.services.ai.azure.com/api/projects/project-1",
+	)
 	oldCreateRleClient := createRleClient
-	oldValidateSandboxURL := validateSandboxURL
-	validateSandboxURL = func(string, string) error {
-		return nil
-	}
 	createRleClient = func(string) (*rleClient, error) {
 		return testRleClientForServer(t, endpoint), nil
 	}
 	t.Cleanup(func() {
 		createRleClient = oldCreateRleClient
-		validateSandboxURL = oldValidateSandboxURL
 	})
 }
 

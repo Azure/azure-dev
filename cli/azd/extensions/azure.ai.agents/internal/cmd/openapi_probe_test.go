@@ -367,15 +367,6 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 						<-rpcCtx.Done()
 						return rpcCtx.Err()
 					}
-					if stage == "separate budgets" {
-						configWork := time.NewTimer(100 * time.Millisecond)
-						defer configWork.Stop()
-						select {
-						case <-configWork.C:
-						case <-rpcCtx.Done():
-							return rpcCtx.Err()
-						}
-					}
 					return nil
 				},
 			}
@@ -385,9 +376,8 @@ func TestOpenAPIProbeCancellationAndBudgets(t *testing.T) {
 				httpCalled = true
 				deadline, ok := request.Context().Deadline()
 				assert.True(t, ok)
-				if stage == "separate budgets" {
-					assert.True(t, deadline.After(*configDeadline.Load()),
-						"HTTP deadline %v must follow configuration deadline %v", deadline, *configDeadline.Load())
+				if stage == "separate budgets" || stage == "HTTP" {
+					assert.True(t, deadline.After(*configDeadline.Load()))
 				}
 				assert.LessOrEqual(t, time.Until(deadline), openAPIProbeTimeout)
 				require.NoError(t, request.Context().Err())

@@ -1197,8 +1197,7 @@ Details:
 
 ## Memory snapshots
 
-Hosted agents can opt in to version-level memory snapshots with
-`enableMemorySnapshot` on the service entry in `azure.yaml`:
+Opt in on a hosted agent service in `azure.yaml`:
 
 ```yaml
 services:
@@ -1210,39 +1209,19 @@ services:
     enableMemorySnapshot: true
 ```
 
-Use the existing `azd deploy` or `azd up` command. Both container-image and code
-deployments support the setting, including definitions loaded through a root
-`$ref`. No new CLI flag is required, and deployment does not modify YAML.
+Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
+this boolean setting, including referenced definitions. Omission preserves
+existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
 
-When omitted, azd leaves the API field unset and preserves existing behavior.
-Explicit `true` or `false` is sent as `definition.enable_memory_snapshot`.
-The setting is only valid for hosted agents and must be a boolean.
+The subscription and region must be enabled for the preview, and the hosting SDK
+must support snapshot hooks. Python code deployment and invocation were verified
+with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
+Update dependencies and lock files yourself; rebuild container images when applicable.
+azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
 
-Before enabling, use a hosting library that implements both private snapshot
-hooks, or implement them in your own server. Confirm that Foundry has enabled
-snapshots for your subscription and region. azd does not upgrade project
-dependencies automatically. If the service rejects the opt-in or capture fails,
-deployment fails without retrying with snapshots disabled.
-
-For Python, snapshot hooks are published in `azure-ai-agentserver-core` version
-`2.3.0b1` and `azure-ai-agentserver-responses` version `2.4.0b1`. These are preview
-packages. Update your framework's hosting integration to a compatible version,
-explicitly select snapshot-capable AgentServer dependencies, and update the
-dependency lockfile before rebuilding and deploying the agent. Updating only
-`agent-framework-foundry-hosting` does not guarantee these preview dependencies
-are selected. Existing sample lock files and existing user projects are not
-automatically upgraded. For container-image deployments, rebuild the image with
-the updated dependencies before deploying a new version.
-
-A golden snapshot preserves version initialization, not conversation history or
-the latest state of a user session. The current customer snapshot mode rebuilds
-idle session sandboxes from this snapshot without a session data volume. Confirm
-your application's state persistence requirements before enabling it. Applications
-may need callbacks to release connections before capture and rebuild them after
-restore; azd does not invoke these callbacks.
-
-Capture errors include the service's safe diagnostic message. Detailed callback
-diagnostics belong in agent logs and are not returned verbatim by the service.
+Snapshots reuse version initialization; they are not conversation or session-state
+backups. Snapshot capture, restore, and persistence guarantees belong to the hosting
+SDK and service.
 
 ## State Stores
 

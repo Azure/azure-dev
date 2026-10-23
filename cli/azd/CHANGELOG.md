@@ -1,14 +1,18 @@
 # Release History
 
-## 1.38.0-beta.1 (Unreleased)
-
-### Features Added
+## 1.38.0 (2026-10-23)
 
 ### Breaking Changes
 
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Update provisioning validation to default to No for critical missing-role-permission warnings at checked subscription scopes and exit with code 1 in `--no-prompt` or automatically enabled non-interactive mode; resolve the warnings or rerun interactively to explicitly continue. Thanks @hyoshis for the contribution!
+
 ### Bugs Fixed
 
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning cancellation running post-provision actions, hiding failures in parallel layers, or silently accepting exhausted critical-confirmation input. Thanks @hyoshis for the contribution!
+
 ### Other Changes
+
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Improve provisioning validation warnings with clearer details, suggestions, totals, and guidance when role-assignment permissions at the target scope have not been verified. Thanks @hyoshis for the contribution!
 
 ## 1.37.1 (2026-10-21)
 

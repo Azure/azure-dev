@@ -26,7 +26,7 @@ func (s *projectSetupAccountServer) LookupTenant(
 }
 
 func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2-euap"})
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
 	allowed, err := parseAgentRegionsManifest(embeddedHarnessAgentRegionsJSON)
 	require.NoError(t, err)
 	resetAgentRegionsCache(t, &harnessRegionsCache, allowed)
@@ -37,9 +37,9 @@ func TestConfigureFoundryProjectRestrictedSplitLocation(t *testing.T) {
 			{"unsupported project", "eastus", "westus2", "eastus", "westus2", "configured AZURE_LOCATION"},
 			{"public split", "japaneast", "westus2", "japaneast", "westus2", ""},
 			{"missing project location", "", "westus2", "westus2", "westus2", ""},
-			{"internal split", "eastus2-euap", "westus2", "eastus2-euap", "westus2", ""},
-			{"internal both", "eastus2-euap", "eastus2-euap", "eastus2-euap", "eastus2-euap", ""},
-			{"internal fallback", "eastus2-euap", "", "eastus2-euap", "eastus2-euap", ""},
+			{"internal split", "eastus2euap", "westus2", "eastus2euap", "westus2", ""},
+			{"internal both", "eastus2euap", "eastus2euap", "eastus2euap", "eastus2euap", ""},
+			{"internal fallback", "eastus2euap", "", "eastus2euap", "eastus2euap", ""},
 			{"unsupported fallback", "eastus", "", "eastus", "", "configured AZURE_LOCATION"},
 			{"unsupported deployment", "japaneast", "eastus", "japaneast", "eastus", "location \"eastus\""},
 		} {

@@ -22,7 +22,7 @@ import (
 )
 
 func TestPromptHarnessRegionsForInit(t *testing.T) {
-	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2-euap"})
+	resetAgentRegionsCache(t, &internalHarnessRegionsCache, []string{"eastus2euap"})
 	previousURL := harnessAgentRegionsURL
 	t.Cleanup(func() { harnessAgentRegionsURL = previousURL })
 	// Preserve any cached result populated by other init tests.
@@ -90,13 +90,13 @@ func TestInternalHarnessRegions_LiveManifest(t *testing.T) {
 			require.True(t, initLocationAllowed(ctx, "japaneast", public))
 			require.Zero(t, hits.Load(), "public regions do not require the internal manifest")
 			require.Equal(t, tt.wantInternal, initLocationAllowed(ctx, "newinternal", public))
-			require.Equal(t, tt.fallback, initLocationAllowed(ctx, "eastus2-euap", public))
+			require.Equal(t, tt.fallback, initLocationAllowed(ctx, "eastus2euap", public))
 			require.EqualValues(t, 1, hits.Load(), "including empty policies, results are cached")
 			err := validateInitLocation(ctx, "unsupported", public)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
 			require.NotContains(t, localErr.Suggestion, "newinternal")
-			require.NotContains(t, localErr.Suggestion, "eastus2-euap")
+			require.NotContains(t, localErr.Suggestion, "eastus2euap")
 			require.Equal(t, []string{"japaneast"}, public)
 		})
 	}

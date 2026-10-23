@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/stretchr/testify/assert"
@@ -325,6 +326,7 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 }
 
 func TestResponsesRemoteLatency(t *testing.T) {
+	t.Setenv(featureflags.LongRunning.EnvVar, "true")
 	const stream = "event: response.created\ndata: " +
 		`{"response":{"id":"resp_latency","status":"in_progress"}}` + "\n\n" +
 		"event: response.output_text.delta\ndata: " + `{"delta":"agent-result"}` + "\n\n" +

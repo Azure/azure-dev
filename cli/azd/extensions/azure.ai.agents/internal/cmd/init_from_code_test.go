@@ -498,7 +498,11 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 	var definition *agent_yaml.ContainerAgent
 	output, err := captureStdout(t, func() error {
 		var runErr error
-		definition, runErr = action.createDefinitionFromLocalAgent(t.Context())
+		protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+		if err != nil {
+			return err
+		}
+		definition, runErr = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 		return runErr
 	})
 	if err != nil {
@@ -551,7 +555,9 @@ func TestCreateDefinitionFromLocalAgent_PreBuiltImageIsDirect(t *testing.T) {
 		},
 	}
 
-	definition, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	require.NoError(t, err)
+	definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 	require.NoError(t, err)
 	require.Equal(t, image, definition.Image)
 	require.Equal(t, "private-registry", definition.RegistryConnectionID)
@@ -587,7 +593,9 @@ func TestCreateDefinitionFromLocalAgent_LoadsPersistedProjectBeforeAcrValidation
 		},
 	}
 
-	_, err := action.createDefinitionFromLocalAgent(t.Context())
+	protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, nil)
+	require.NoError(t, err)
+	_, err = action.createDefinitionFromLocalAgent(t.Context(), protocols)
 
 	require.ErrorContains(t, err, "invalid --project-id value")
 	require.Equal(t, "invalid-project-id", action.flags.projectResourceId)
@@ -737,7 +745,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols)
+			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -768,7 +776,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	t.Parallel()
 
-	got, err := promptProtocols(t.Context(), nil, true, nil)
+	got, err := promptProtocols(t.Context(), nil, true, nil, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -922,7 +930,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			t.Parallel()
 
 			client := &fakePromptClient{multiSelectFn: tt.multiSelectFn}
-			got, err := promptProtocols(t.Context(), client, false, nil)
+			got, err := promptProtocols(t.Context(), client, false, nil, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -975,7 +983,7 @@ func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *te
 		return &azdext.MultiSelectResponse{Values: choices}, nil
 	}}
 
-	got, err := promptProtocols(t.Context(), client, false, nil)
+	got, err := promptProtocols(t.Context(), client, false, nil, true)
 	require.NoError(t, err)
 	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "2.0.0"},

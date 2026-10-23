@@ -37,6 +37,8 @@ func TestPlanAgentServiceUsesOrdersAndDeduplicates(t *testing.T) {
 name: new-agent
 model: gpt-4.1-mini
 instructions: Help the user.
+harness:
+  type: microsoft_copilot_preview
 connections:
   - search-resource
   - search
@@ -61,6 +63,7 @@ skills:
 		"name":         "old-agent",
 		"model":        "gpt-4.1-mini",
 		"instructions": "Old instructions.",
+		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
 		"connections":  []any{"old-resource"},
 		"toolboxes":    []any{"old-tools"},
 		"skills": []any{
@@ -132,7 +135,7 @@ skills:
 	require.Equal(t, beforeAgentProperties, oldAgent.GetAdditionalProperties().AsMap())
 }
 
-func TestPlanAgentServiceUsesIncludesSingularToolboxAndCleansOldUse(t *testing.T) {
+func TestPlanAgentServiceUsesIncludesToolboxesAndCleansOldUse(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -142,8 +145,8 @@ model: gpt-4.1-mini
 instructions: Help the user.
 harness:
   type: microsoft_copilot_preview
-toolbox:
-  name: new-tools
+toolboxes:
+  - new-tools
 `)
 	oldAgent := agentDependencyService(t, "agent", AiAgentHost, map[string]any{
 		"kind":         "prompt",
@@ -153,9 +156,7 @@ toolbox:
 		"harness": map[string]any{
 			"type": "microsoft_copilot_preview",
 		},
-		"toolbox": map[string]any{
-			"name": "old-tools",
-		},
+		"toolboxes": []any{"old-tools"},
 	}, "old-tools", "manual-agent", "project")
 	services := map[string]*azdext.ServiceConfig{
 		"project":      agentDependencyService(t, "project", AiProjectHost, nil),
@@ -178,7 +179,7 @@ toolbox:
 	require.Empty(t, plan.Warnings)
 }
 
-func TestPlanAgentServiceUsesHostedSingularToolbox(t *testing.T) {
+func TestPlanAgentServiceUsesHostedToolboxes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -189,13 +190,13 @@ func TestPlanAgentServiceUsesHostedSingularToolbox(t *testing.T) {
 	}{
 		{
 			name:     "add",
-			extra:    "toolbox:\n  name: new-tools\n",
+			extra:    "toolboxes:\n  - new-tools\n",
 			wantUses: []string{"project", "new-tools"},
 		},
 		{
 			name:     "update and deduplicate plural toolbox",
 			existing: true,
-			extra:    "toolbox:\n  name: new-tools\ntoolboxes:\n  - new-tools\n",
+			extra:    "toolboxes:\n  - new-tools\n  - name: new-tools\n",
 			wantUses: []string{"project", "new-tools", "manual-agent"},
 		},
 		{
@@ -224,11 +225,7 @@ codeConfiguration:
 			var beforeAgent *azdext.ServiceConfig
 			if test.existing {
 				oldAgent := hostedAgentDependencyService(t, "agent")
-				oldAgent.AdditionalProperties.Fields["toolbox"] = structpb.NewStructValue(
-					&structpb.Struct{Fields: map[string]*structpb.Value{
-						"name": structpb.NewStringValue("old-tools"),
-					}},
-				)
+				oldAgent.AdditionalProperties.Fields["toolboxes"] = agentServiceStringListValue([]string{"old-tools"})
 				oldAgent.Uses = []string{"old-tools", "manual-agent", "project"}
 				services["agent"] = oldAgent
 				beforeAgent = proto.Clone(oldAgent).(*azdext.ServiceConfig)
@@ -245,50 +242,28 @@ codeConfiguration:
 	}
 }
 
-func TestPlanAgentServiceUsesToolboxResourceNames(t *testing.T) {
+func TestLoadAgentDefinitionFileRejectsSingularToolbox(t *testing.T) {
 	t.Parallel()
 
 	for _, kind := range []string{"prompt", "hosted"} {
-		for _, remove := range []bool{false, true} {
-			t.Run(kind+map[bool]string{false: "/replace", true: "/remove"}[remove], func(t *testing.T) {
+		for _, mixed := range []bool{false, true} {
+			t.Run(kind+map[bool]string{false: "/singular", true: "/mixed"}[mixed], func(t *testing.T) {
 				t.Parallel()
 				root := t.TempDir()
 				content := "kind: " + kind + "\nname: agent\n"
-				properties := map[string]any{"kind": kind, "name": "agent"}
 				if kind == "prompt" {
 					content += "model: gpt-4.1-mini\ninstructions: Help.\nharness:\n  type: microsoft_copilot_preview\n"
-					properties["model"] = "gpt-4.1-mini"
-					properties["instructions"] = "Help."
-					properties["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 				} else {
 					content += "codeConfiguration:\n  runtime: python_3_13\n  entryPoint: app.py\n"
-					properties["codeConfiguration"] = map[string]any{
-						"runtime": "python_3_13", "entryPoint": "app.py",
-					}
 				}
-				if !remove {
-					content += "toolboxes:\n  - NewTools\ntoolbox:\n  name: New Tools\n"
+				content += "toolbox:\n  name: new-tools\n"
+				if mixed {
+					content += "toolboxes:\n  - new-tools\n"
 				}
-				definition := loadAgentDependencyDefinition(t, root, "agent", content)
-				properties["toolbox"] = map[string]any{"name": "Old Tools"}
-				old := agentDependencyService(t, "agent", AiAgentHost, properties,
-					"manual-b", "OldTools", "manual-a", "project")
-				before := proto.Clone(old).(*azdext.ServiceConfig)
-				services := map[string]*azdext.ServiceConfig{
-					"agent":    old,
-					"project":  agentDependencyService(t, "project", AiProjectHost, nil),
-					"OldTools": agentDependencyService(t, "OldTools", AiToolboxHost, nil),
-					"NewTools": agentDependencyService(t, "NewTools", AiToolboxHost, nil),
-				}
-				plan, err := planAgentServiceUses("agent", definition, nil, services, root)
-				require.NoError(t, err)
-				want := []string{"project", "manual-b", "manual-a"}
-				if !remove {
-					want = []string{"project", "NewTools", "manual-b", "manual-a"}
-				}
-				require.Equal(t, want, plan.Uses)
-				require.Empty(t, plan.Warnings)
-				require.True(t, proto.Equal(before, old))
+				path := filepath.Join(root, "agent.yaml")
+				require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+				_, err := projectpkg.LoadAgentDefinitionFile(root, "agent.yaml", "agent")
+				require.Error(t, err)
 			})
 		}
 	}
@@ -458,41 +433,35 @@ codeConfiguration:
 		},
 		{
 			name:       "missing Toolbox",
-			definition: promptDefinition("toolboxes:\n  - missing\n"),
+			definition: promptDefinition("harness:\n  type: microsoft_copilot_preview\ntoolboxes:\n  - missing\n"),
 			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
 			wantError:  "does not match a local service with host \"azure.ai.toolbox\"",
 		},
 		{
 			name:       "plural Toolbox remains a service key",
-			definition: promptDefinition("toolboxes:\n  - My Tools\n"),
+			definition: promptDefinition("harness:\n  type: microsoft_copilot_preview\ntoolboxes:\n  - My Tools\n"),
 			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
 				services["MyTools"] = agentDependencyService(t, "MyTools", AiToolboxHost, nil)
 			},
 			wantError: `toolbox reference "My Tools" does not match`,
 		},
 		{
-			name:       "singular Toolbox preserves resource name in diagnostics",
-			definition: promptDefinition("harness:\n  type: microsoft_copilot_preview\ntoolbox:\n  name: Missing Tools\n"),
-			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
-			wantError:  `toolbox reference "Missing Tools" does not match`,
-		},
-		{
 			name:       "wrong Toolbox host",
-			definition: promptDefinition("toolboxes:\n  - wrong\n"),
+			definition: promptDefinition("harness:\n  type: microsoft_copilot_preview\ntoolboxes:\n  - wrong\n"),
 			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
 				services["wrong"] = agentDependencyService(t, "wrong", AiConnectionHost, nil)
 			},
 			wantError: "instead of \"azure.ai.toolbox\"",
 		},
 		{
-			name:       "missing hosted singular Toolbox",
-			definition: hostedDefinition("toolbox:\n  name: missing\n"),
+			name:       "missing hosted Toolbox",
+			definition: hostedDefinition("toolboxes:\n  - missing\n"),
 			setup:      func(*testing.T, map[string]*azdext.ServiceConfig) {},
 			wantError:  "does not match a local service with host \"azure.ai.toolbox\"",
 		},
 		{
-			name:       "wrong hosted singular Toolbox host",
-			definition: hostedDefinition("toolbox:\n  name: wrong\n"),
+			name:       "wrong hosted Toolbox host",
+			definition: hostedDefinition("toolboxes:\n  - wrong\n"),
 			setup: func(t *testing.T, services map[string]*azdext.ServiceConfig) {
 				services["wrong"] = agentDependencyService(t, "wrong", AiConnectionHost, nil)
 			},

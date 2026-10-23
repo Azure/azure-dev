@@ -392,7 +392,7 @@ func TestAdoptedDeploymentPreflightBeforeScaffolding(t *testing.T) {
 					}
 					var err error
 					if templateType == TemplateTypeAzureYaml {
-						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content)
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content, "")
 					} else {
 						err = runInitFromAzdTemplate(t.Context(), flags, client, http.DefaultClient,
 							&AgentTemplate{Source: source})

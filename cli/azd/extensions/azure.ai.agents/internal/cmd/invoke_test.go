@@ -69,6 +69,56 @@ func newInvokeTestAzdClient(
 	return newInvokeTestAzdClientWithProject(t, userConfigServer, nil, environmentServers...)
 }
 
+func TestResolveInvokeArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		inputFile string
+		wantName  string
+		wantMsg   string
+	}{
+		{name: "message", args: []string{"hello"}, wantMsg: "hello"},
+		{name: "name and message", args: []string{"agent", "hello"}, wantName: "agent", wantMsg: "hello"},
+		{name: "name and file", args: []string{"agent"}, inputFile: "input.json", wantName: "agent"},
+		{name: "file", inputFile: "input.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := invokeFlags{
+				inputFile: tc.inputFile, version: " 3 ", protocol: "responses",
+				clientHeaders: []string{"x-client-test: value"},
+			}
+			before := flags
+			resolved := resolveInvokeArgs(flags, tc.args, outputRaw)
+			require.Equal(t, before, flags)
+			require.Equal(t, tc.wantName, resolved.name)
+			require.Equal(t, tc.wantMsg, resolved.message)
+			require.Equal(t, outputRaw, resolved.outputFmt)
+			require.Equal(t, flags.inputFile, resolved.inputFile)
+			require.Equal(t, flags.version, resolved.version)
+			require.Equal(t, flags.protocol, resolved.protocol)
+			require.Equal(t, flags.clientHeaders, resolved.clientHeaders)
+		})
+	}
+}
+
+func TestInvokeRunEPreservesSharedFlags(t *testing.T) {
+	command := newInvokeCommand(&azdext.ExtensionContext{OutputFormat: outputRaw})
+	command.SetContext(t.Context())
+	require.NoError(t, command.ParseFlags([]string{
+		"--agent-endpoint", "https://acct.services.ai.azure.com/api/projects/project/" +
+			"agents/agent/endpoint/protocols/a2a?api-version=v1",
+		"--version", " 3 ", "--debug-latency=true", "hello",
+	}))
+	// Stop at the action's route validation before authentication or network calls.
+	requireLatencyRouteConflict(t, command.RunE(command, command.Flags().Args()))
+	version, err := command.Flags().GetString("version")
+	require.NoError(t, err)
+	require.Equal(t, "3", version)
+	protocol, err := command.Flags().GetString("protocol")
+	require.NoError(t, err)
+	require.Equal(t, "a2a", protocol)
+}
+
 func newInvokeTestAzdClientWithProject(
 	t *testing.T,
 	userConfigServer azdext.UserConfigServiceServer,

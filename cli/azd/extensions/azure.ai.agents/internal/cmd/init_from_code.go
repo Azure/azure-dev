@@ -6,6 +6,7 @@ package cmd
 import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 	"context"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -80,7 +82,15 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		}
 	}
 
-	var err error
+	if err := validateCodeDeployInput(
+		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
+	); err != nil {
+		return err
+	}
+	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols)
+	if err != nil {
+		return err
+	}
 	a.projectConfig, err = a.ensureProject(ctx)
 	if err != nil {
 		return err
@@ -105,13 +115,6 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		a.flags.src = relPath
 	}
 
-	// Validate code deploy flags
-	if err := validateCodeDeployInput(
-		a.flags.noPrompt, a.flags.deployMode, a.flags.runtime, a.flags.entryPoint, a.flags.depResolution,
-	); err != nil {
-		return err
-	}
-
 	// Default src to current directory when not specified
 	srcDir = a.flags.src
 	if srcDir == "" {
@@ -120,7 +123,7 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 
 	// No manifest pointer provided - process local agent code
 	// Create a definition based on user prompts
-	localDefinition, err := a.createDefinitionFromLocalAgent(ctx)
+	localDefinition, err := a.createDefinitionFromLocalAgent(ctx, protocols)
 	if err != nil {
 		return fmt.Errorf("failed to create definition from local agent: %w", err)
 	}
@@ -268,7 +271,9 @@ func (a *InitFromCodeAction) ensureProject(ctx context.Context) (*azdext.Project
 
 // createDefinitionFromLocalAgent creates a ContainerAgent for local agent code
 // This is used when no manifest pointer is provided and we need to scaffold a new agent
-func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context) (*agent_yaml.ContainerAgent, error) {
+func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
+	ctx context.Context, protocols []agent_yaml.ProtocolVersionRecord,
+) (*agent_yaml.ContainerAgent, error) {
 	// Default agent name to sanitized cwd
 	defaultName := "my-agent"
 	if cwd, err := os.Getwd(); err == nil {
@@ -286,7 +291,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 			a.environment = env
 			a.flags.env = env.Name
 		} else {
-			envName := sanitizeAgentName(agentName + "-dev")
+			envName := a.flags.env
+			if envName == "" {
+				envName = sanitizeAgentName(agentName + "-dev")
+			}
 			env, err := createNewEnvironment(ctx, a.azdClient, envName)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create azd environment: %w", err)
@@ -355,11 +363,6 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(ctx context.Context)
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	protocols, err := promptProtocols(ctx, a.azdClient.Prompt(), a.flags.noPrompt, a.flags.protocols)
-	if err != nil {
-		return nil, err
 	}
 
 	// Step 1: Foundry project selection
@@ -1067,6 +1070,41 @@ var knownProtocols = []protocolInfo{
 	{Name: "activity", Version: "2.0.0"},
 }
 
+func protocolNames(voiceEnabled bool) []string {
+	names := make([]string, 0, len(knownProtocols))
+	for _, protocol := range knownProtocols {
+		if protocol.Name != "invocations_ws" || voiceEnabled {
+			names = append(names, protocol.Name)
+		}
+	}
+	return names
+}
+
+func selectHostedProtocols(
+	ctx context.Context, client *azdext.AzdClient, noPrompt bool, explicit []string,
+) ([]agent_yaml.ProtocolVersionRecord, error) {
+	if len(explicit) > 0 {
+		records, err := validateExplicitProtocols(explicit)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(explicit, "invocations_ws") {
+			if err := featureflags.Require(featureflags.Voice); err != nil {
+				return nil, err
+			}
+		}
+		return records, nil
+	}
+	if noPrompt {
+		return promptProtocols(ctx, nil, true, nil, false)
+	}
+	enabled, err := featureflags.IsEnabled(featureflags.Voice)
+	if err != nil {
+		return nil, err
+	}
+	return promptProtocols(ctx, client.Prompt(), false, nil, enabled)
+}
+
 // promptProtocols asks the user which protocols their agent supports.
 // When flagProtocols is non-empty the prompt is skipped and those values are used directly.
 // When noPrompt is true and no flag values are provided, defaults to [responses/2.0.0].
@@ -1075,6 +1113,7 @@ func promptProtocols(
 	promptClient azdext.PromptServiceClient,
 	noPrompt bool,
 	flagProtocols []string,
+	voiceEnabled bool,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
 	// If explicit flag values were provided, use them directly (with dedup).
 	if len(flagProtocols) > 0 {
@@ -1089,9 +1128,13 @@ func promptProtocols(
 	}
 
 	// Build multi-select choices; "responses" is pre-selected.
-	versionOf := knownProtocolVersions()
+	versionOf := make(map[string]string)
 	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
 	for _, p := range knownProtocols {
+		if p.Name == "invocations_ws" && !voiceEnabled {
+			continue
+		}
+		versionOf[p.Name] = p.Version
 		choices = append(choices, &azdext.MultiSelectChoice{
 			Value:    p.Name,
 			Label:    p.Name,
@@ -1179,11 +1222,7 @@ func validateExplicitProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVer
 
 // knownProtocolNames returns a comma-separated list of known protocol names.
 func knownProtocolNames() string {
-	names := make([]string, 0, len(knownProtocols))
-	for _, p := range knownProtocols {
-		names = append(names, p.Name)
-	}
-	return strings.Join(names, ", ")
+	return strings.Join(protocolNames(true), ", ")
 }
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.

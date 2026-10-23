@@ -8,6 +8,7 @@ import (
 	"errors"
 	"testing"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -88,6 +89,7 @@ func TestInvokeUsageReportsSelectedRemoteModeBeforeAuthentication(t *testing.T) 
 			}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(featureflags.LongRunning.EnvVar, "true")
 			client := &telemetryRecordingClient{}
 			action := &InvokeAction{
 				flags: &invokeFlags{

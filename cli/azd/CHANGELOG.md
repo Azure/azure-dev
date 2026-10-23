@@ -1,5 +1,40 @@
 # Release History
 
+## 1.38.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.37.1 (2026-10-21)
+
+### Bugs Fixed
+
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix Ctrl+C cancellation not propagating across extension processes, RPC calls, and extension-started workflows, leaving work running after cancellation.
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix extension cancellations and timeouts being reported as generic failures.
+
+## 1.37.0 (2026-10-19)
+
+### Features Added
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Add per-command `launch.noAzdEnvironment` extension metadata to skip loading the selected azd environment and resolving its Key Vault references.
+- [[#10628]](https://github.com/Azure/azure-dev/pull/10628) Add stable v1 deployment-preview gRPC contracts and SDK APIs while preserving existing beta compatibility.
+- [[#10362]](https://github.com/Azure/azure-dev/pull/10362) Add beta `azd env unset`.
+
+### Bugs Fixed
+
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension service edits rewriting unrelated `azure.yaml` settings, including empty mappings, large integers, and environment templates.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension selection prompts mixing terminal UI into JSON output instead of using the injected stderr writer.
+- [[#10479]](https://github.com/Azure/azure-dev/pull/10479) Fix extension command metadata, canonical paths, and flag resolution when using parent or child aliases and global flags.
+
+### Other Changes
+
+- [[#10572]](https://github.com/Azure/azure-dev/pull/10572) Update Go dependencies across core and first-party extensions, including gRPC v1.84.0 and OpenTelemetry v1.47.0.
+
 ## 1.36.0 (2026-10-14)
 
 ### Features Added

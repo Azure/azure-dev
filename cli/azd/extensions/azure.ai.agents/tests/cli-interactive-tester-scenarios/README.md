@@ -323,7 +323,7 @@ in any order, any time.
 | `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
-| `tier0/0.12-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `tier0/0.12-eval-migration-guidance.yaml` | Deprecated `eval list` gives migration guidance and exits non-zero without prompts or service requests, including with old flags |
 | `tier0/0.13-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
 | `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |

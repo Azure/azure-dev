@@ -74,6 +74,8 @@ go build
 
 When your extension is stable and ready for production use, add an entry to `cli/azd/extensions/registry.json` with version, capabilities, and download URLs.
 
+`ext-registry-ci` validates `requiredAzdVersion` for added or modified versions in both registries against [the latest published azd version](https://aka.ms/azure-dev/versions/cli/latest). This endpoint is updated by the core release pipeline's final `PublishVersionTxt` stage. Extension binaries may be published earlier, but registry updates must wait for core publishing to finish. Rerun the workflow once publishing completes.
+
 ### 6. Publish to the Dev Registry First (Recommended)
 
 For extensions that are still in development or preview, consider publishing to the **dev (experimental) registry** first to gather feedback before graduating to the main registry:
@@ -139,10 +141,13 @@ multiple handlers and workflow steps are resolved.
   first-party `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`
 - **Deployment preview** — To support `azd deploy --preview`, register the host with
-  `WithBetaServiceTargetPreview` and implement `preview.ServiceTargetPreviewProvider`
-  from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
-  is experimental. A preview runs on a fresh provider without `Initialize` and must not
-  build, deploy, or persist deployment state.
+  `WithServiceTargetPreview` and implement `azdext.ServiceTargetPreviewProvider`
+  using stable `azdext.ServiceConfig` and `azdext.ServiceDeployPreviewResult`.
+  This [stable v1 contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+  targets host and SDK 1.37.0. Once published, pin SDK v1.37.0 or later and set
+  `requiredAzdVersion: ">=1.37.0"`. Deprecated beta APIs remain supported.
+  A preview runs on a fresh provider without `Initialize` and must not build,
+  deploy, or persist deployment state.
 
 ## Detailed Reference
 

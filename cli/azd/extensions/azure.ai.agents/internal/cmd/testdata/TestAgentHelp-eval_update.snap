@@ -1,20 +1,12 @@
-Reads the eval config and uploads new versions for:
-  - Evaluators with a local_uri (rubric dimensions file)
-  - Datasets with a local_uri (JSONL data directory)
-The version fields in the config are updated after successful uploads.
+Command "update" is deprecated, use 'azd deploy' from 'azure.ai.evaluations' instead
+The legacy agent evaluation workflow has been removed. This command only provides migration guidance.
 
-In interactive mode, you will be prompted for each asset type that has
-local changes. Use --dataset-only or --evaluator-only to skip prompts.
+Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use 'azd deploy'. Legacy evaluation configuration and arguments are not automatically converted.
+
+Invocations fail without authentication, service requests, or changes to project or environment files. No arguments are forwarded to the new commands.
 
 Usage
   azd ai agent eval update [flags]
-
-Flags
-      --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
-      --config string           : Local eval config YAML (default "eval.yaml")
-      --dataset-only            : Only update the dataset
-      --evaluator-only          : Only update evaluators
-  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -25,5 +17,5 @@ Global Flags
   -o, --output string      : The output format (default "default")
 
 Examples
-  Upload changes to the local dataset
-    azd ai agent eval update --dataset-only
+    azd extension install azure.ai.evaluations
+    azd deploy

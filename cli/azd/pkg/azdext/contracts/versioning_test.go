@@ -35,22 +35,34 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	)
 }
 
-func TestServiceTargetPreviewIsBetaOnly(t *testing.T) {
+func TestServiceTargetPreviewGraduatedToStable(t *testing.T) {
 	t.Parallel()
 	stable := v1.File_azd_extensions_v1_service_target_proto
 	beta := v1beta.File_azd_extensions_v1beta_service_target_proto
 	for _, name := range []protoreflect.Name{
 		"ServiceTargetPreviewRequest", "ServiceTargetPreviewResponse", "ServiceDeployPreviewResult",
 	} {
-		require.Nil(t, stable.Messages().ByName(name), "%s must not graduate to v1 yet", name)
-		require.NotNil(t, beta.Messages().ByName(name))
+		require.NotNil(t, stable.Messages().ByName(name))
+		betaMessage := beta.Messages().ByName(name)
+		require.NotNil(t, betaMessage)
+		require.True(t, betaMessage.Options().(*descriptorpb.MessageOptions).GetDeprecated())
 	}
 	for _, name := range []protoreflect.Name{"preview_request", "preview_response"} {
-		require.Nil(t, stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
-		require.NotNil(t, beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+		stableField := stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name)
+		betaField := beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name)
+		require.NotNil(t, stableField)
+		require.NotNil(t, betaField)
+		require.Equal(t, betaField.Number(), stableField.Number())
+		require.Equal(t, protoreflect.Name("message_type"), stableField.ContainingOneof().Name())
+		require.True(t, betaField.Options().(*descriptorpb.FieldOptions).GetDeprecated())
 	}
-	require.Nil(t, stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
-	require.NotNil(t, beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
+	stableField := stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview")
+	betaField := beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview")
+	require.NotNil(t, stableField)
+	require.NotNil(t, betaField)
+	require.Equal(t, protoreflect.FieldNumber(2), stableField.Number())
+	require.Equal(t, betaField.Number(), stableField.Number())
+	require.True(t, betaField.Options().(*descriptorpb.FieldOptions).GetDeprecated())
 }
 
 func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {

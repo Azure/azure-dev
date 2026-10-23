@@ -132,6 +132,27 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvCount := fields.EnvCountKey.Int(3)
 		require.Equal(t, "env.count", string(kvCount.Key))
 		require.Equal(t, int64(3), kvCount.Value.AsInt64())
+
+		for _, tt := range []struct {
+			field fields.AttributeKey
+			key   string
+		}{
+			{fields.EnvUnsetRemovedCountKey, "env.unset.removed_count"},
+			{fields.EnvUnsetMissingCountKey, "env.unset.missing_count"},
+		} {
+			require.Equal(t, tt.key, string(tt.field.Key))
+			require.Equal(t, fields.SystemMetadata, tt.field.Classification)
+			require.Equal(t, fields.FeatureInsight, tt.field.Purpose)
+			require.True(t, tt.field.IsMeasurement)
+			require.Equal(t, int64(2), tt.field.Int(2).Value.AsInt64())
+		}
+		require.Equal(t, "env.unset.outcome", string(fields.EnvUnsetOutcomeKey.Key))
+		require.Equal(t, fields.SystemMetadata, fields.EnvUnsetOutcomeKey.Classification)
+		require.Equal(t, fields.FeatureInsight, fields.EnvUnsetOutcomeKey.Purpose)
+		require.False(t, fields.EnvUnsetOutcomeKey.IsMeasurement)
+		for _, outcome := range []string{"success", "no_change", "user_declined", "failed"} {
+			require.Equal(t, outcome, fields.EnvUnsetOutcomeKey.String(outcome).Value.AsString())
+		}
 	})
 
 	t.Run("GDPRMeasurementMetadata", func(t *testing.T) {
@@ -335,6 +356,10 @@ func TestTelemetryFieldConstants(t *testing.T) {
 		kvOutcome := fields.ProvisionValidationOutcomeKey.String("passed")
 		require.Equal(t, "validation.provision.outcome", string(kvOutcome.Key))
 		require.Equal(t, "passed", kvOutcome.Value.AsString())
+
+		kvNoPromptOutcome := fields.ProvisionValidationOutcomeKey.String("canceled_by_no_prompt")
+		require.Equal(t, "validation.provision.outcome", string(kvNoPromptOutcome.Key))
+		require.Equal(t, "canceled_by_no_prompt", kvNoPromptOutcome.Value.AsString())
 
 		kvDiagnostics := fields.ProvisionValidationDiagnosticsKey.StringSlice([]string{"BCP081"})
 		require.Equal(t, "validation.provision.diagnostics", string(kvDiagnostics.Key))
@@ -1325,18 +1350,19 @@ var _ = 1
 //   - The lists are not sorted (maintainability)
 func TestCommandTelemetryCoverage(t *testing.T) {
 	t.Parallel()
-	// Commands that have command-specific telemetry attributes emitted via
+	// Commands that attach command-specific attributes directly to their span or via
 	// tracing.SetUsageAttributes (beyond the global middleware that tracks
 	// command name, flags, duration, and errors for all commands).
 	//
 	// When adding a command here, ensure the command's action sets at least one
-	// command-specific attribute (e.g., auth.method, config.operation, env.operation).
+	// command-specific attribute (e.g., auth.method, env.count, env.unset.outcome).
 	commandsWithSpecificTelemetry := []string{
 		"auth login",        // auth.method
 		"build",             // (via hooks middleware)
 		"deploy",            // service attributes (via hooks middleware)
 		"down",              // infra.provider (resolved provider, via provisioning manager)
 		"env list",          // env.count
+		"env unset",         // env.unset.outcome, env.unset.removed_count, env.unset.missing_count
 		"extension install", // extension.source.kind
 		"extension list",    // extension.source.kind
 		"extension show",    // extension.source.kind

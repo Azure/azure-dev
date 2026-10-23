@@ -92,7 +92,7 @@ func TestHostedJSONSchemaRejectsConnectionResources(t *testing.T) {
 	}))
 }
 
-func TestPromptJSONSchemaAcceptsOptionalToolboxProjectConnectionID(t *testing.T) {
+func TestPromptJSONSchemaAcceptsToolboxesAndRejectsSingularToolbox(t *testing.T) {
 	schema := loadDocSchema(t, filepath.Join("..", ".."))
 	base := map[string]any{
 		"kind":         "prompt",
@@ -102,15 +102,11 @@ func TestPromptJSONSchemaAcceptsOptionalToolboxProjectConnectionID(t *testing.T)
 		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
 	}
 
-	base["toolbox"] = map[string]any{"name": "public-tools"}
+	base["toolboxes"] = []any{"research-tools", map[string]any{"name": "support-tools"}}
 	require.NoError(t, schema.validate(base))
 
-	base["toolbox"] = map[string]any{
-		"name": "authenticated-tools", "projectConnectionId": "toolbox-auth",
-	}
-	require.NoError(t, schema.validate(base))
-
-	base["toolbox"] = map[string]any{"name": "legacy-tools", "connection": "toolbox-auth"}
+	delete(base, "toolboxes")
+	base["toolbox"] = map[string]any{"name": "legacy-tools"}
 	require.Error(t, schema.validate(base))
 }
 

@@ -121,15 +121,15 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "version", "-o", "json"), &actual))
 	require.Equal(t, map[string]string{"name": extensionID, "version": version}, actual)
 
-	run(true, "ai", "cu", "config", "set", "CU_ENDPOINT", "https://resource.example")
+	run(true, "ai", "cu", "config", "set", "CU_ENDPOINT", "https://resource.services.ai.azure.com")
 	var userDefaults map[string]string
 	require.NoError(t, json.Unmarshal(run(true, "config", "get",
 		"extensions.ai-content-understanding"), &userDefaults))
-	require.Equal(t, map[string]string{"CU_ENDPOINT": "https://resource.example"}, userDefaults)
+	require.Equal(t, map[string]string{"CU_ENDPOINT": "https://resource.services.ai.azure.com"}, userDefaults)
 	run(true, "config", "set", "extensions.ai-content-understanding.CU_API_VERSION", "2027-01-01-preview")
 	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "config", "list", "-o", "json"), &userDefaults))
 	require.Equal(t, map[string]string{
-		"CU_ENDPOINT": "https://resource.example", "CU_API_VERSION": "2027-01-01-preview",
+		"CU_ENDPOINT": "https://resource.services.ai.azure.com", "CU_API_VERSION": "2027-01-01-preview",
 	}, userDefaults)
 	run(true, "ai", "cu", "config", "unset", "CU_ENDPOINT")
 	run(false, "ai", "cu", "config", "get", "CU_ENDPOINT")

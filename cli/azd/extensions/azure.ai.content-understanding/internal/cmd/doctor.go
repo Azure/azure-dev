@@ -116,8 +116,9 @@ func doctorConfigurationError(err error) error {
 			result.Suggestion = "Pass --endpoint, set process CU_ENDPOINT, or use azd env select and " +
 				"azd env set CU_ENDPOINT https://<resource>.services.ai.azure.com."
 		case exterrors.CodeMissingTenant:
-			result.Suggestion = "Set process AZURE_TENANT_ID for projectless use, or select an environment with " +
-				"azd env select and set AZURE_TENANT_ID using azd env set. Then run azd auth login."
+			result.Suggestion = "Set AZURE_TENANT_ID or AZURE_SUBSCRIPTION_ID in the selected environment using " +
+				"azd env set. For projectless use, pass an endpoint without selecting an environment. " +
+				"Authenticate using azd auth login."
 		case exterrors.CodeEnvironmentUnavailable:
 			result.Suggestion = "Use azd env list/select to choose an existing project environment. " +
 				"For projectless diagnostics, supply --endpoint and process AZURE_TENANT_ID without --environment."

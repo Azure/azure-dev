@@ -11,6 +11,7 @@ import (
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ import (
 type runtimeContext struct {
 	Context    context.Context
 	Client     *azdext.AzdClient
-	Credential *azdext.TokenProvider
+	Credential *azidentity.AzureDeveloperCLICredential
 	Logger     *azdext.Logger
 	Config     config.Resolved
 }
@@ -48,7 +49,9 @@ func newRuntimeContext(
 		logger.Debug("Failed to resolve CU configuration")
 		return nil, exterrors.FromError(err)
 	}
-	credential, err := azdext.NewTokenProvider(ctx, client, &azdext.TokenProviderOptions{TenantID: resolved.TenantID})
+	credential, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
+		TenantID: resolved.TenantID,
+	})
 	if err != nil {
 		client.Close()
 		logger.Debug("Failed to initialize azd credential")

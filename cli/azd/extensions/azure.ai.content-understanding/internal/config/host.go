@@ -95,7 +95,19 @@ func Load(
 			result.Scope.ResourceGroup = first(result.Scope.ResourceGroup, scope.GetResourceGroup())
 		}
 	}
-	if result.TenantID == "" {
+	if result.TenantID == "" && !useDefault && result.Scope.SubscriptionID != "" {
+		tenant, err := client.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
+			SubscriptionId: result.Scope.SubscriptionID,
+		})
+		if err != nil {
+			return Resolved{}, environmentError(err)
+		}
+		result.TenantID = tenant.GetTenantId()
+		if result.TenantID == "" {
+			return Resolved{}, exterrors.MissingTenant()
+		}
+	}
+	if result.TenantID == "" && environment != "" {
 		return Resolved{}, exterrors.MissingTenant()
 	}
 	return result, nil
@@ -106,8 +118,8 @@ func environmentError(err error) error {
 	if local, ok := errors.AsType[*azdext.LocalError](safe); ok && local.Code == exterrors.CodeUnexpected {
 		return &azdext.LocalError{
 			Code: exterrors.CodeEnvironmentUnavailable, Category: azdext.LocalErrorCategoryDependency,
-			Message: "The azd environment or deployment context could not be loaded.",
-			Suggestion: "Select a valid environment, or supply a runtime endpoint and AZURE_TENANT_ID " +
+			Message: "The azd environment, subscription, or deployment context could not be loaded.",
+			Suggestion: "Select a valid environment, or supply a runtime endpoint " +
 				"without --environment or AZD_ENVIRONMENT.",
 		}
 	}

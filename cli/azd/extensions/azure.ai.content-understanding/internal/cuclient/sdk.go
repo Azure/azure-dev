@@ -411,7 +411,8 @@ func (c safeTokenCredential) GetToken(
 		}
 		return azcore.AccessToken{}, &Error{
 			Kind: ErrorAuthentication, Code: "authentication_failed", Message: "Azure authentication failed.",
-			Suggestion: "Run `azd auth login` with the intended account and retry.",
+			Suggestion: "Run `azd auth login` with the intended account and retry. " +
+				"Set AZURE_TENANT_ID explicitly if a different tenant is required.",
 		}
 	}
 	if token.Token == "" {

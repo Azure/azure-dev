@@ -170,7 +170,6 @@ func TestDoctorActualProjectlessConfigurationErrorsNeverReachService(t *testing.
 	for _, test := range []struct {
 		name, endpoint, tenant, version, key, code string
 	}{
-		{"missing tenant", "https://configured.example", "", "", "", exterrors.CodeMissingTenant},
 		{"invalid endpoint", "http://configured.example?sig=private", "tenant", "", "", "invalid_endpoint"},
 		{"invalid version", "https://configured.example", "tenant", "private", "", "unsupported_api_version"},
 		{"blocked key", "https://configured.example", "tenant", "", "private-key", "unsupported_authentication"},

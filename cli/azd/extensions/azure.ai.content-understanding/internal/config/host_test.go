@@ -26,10 +26,12 @@ import (
 type configHost struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	azdext.UnimplementedDeploymentServiceServer
+	azdext.UnimplementedAccountServiceServer
 	name     string
 	values   []*azdext.KeyValue
 	section  *azdext.GetConfigSectionResponse
 	scope    *azdext.AzureScope
+	tenant   string
 	fail     string
 	err      error
 	block    string
@@ -44,6 +46,7 @@ func validHost() *configHost {
 			{Key: "FOUNDRY_ENDPOINT", Value: "https://env.example"},
 		},
 		section: &azdext.GetConfigSectionResponse{},
+		tenant:  "user-access-tenant",
 		scope: &azdext.AzureScope{
 			TenantId: "default-tenant", SubscriptionId: "default-sub", ResourceGroup: "default-rg",
 		},
@@ -115,6 +118,15 @@ func (h *configHost) GetDeploymentContext(
 	return &azdext.GetDeploymentContextResponse{AzureContext: &azdext.AzureContext{Scope: h.scope}}, nil
 }
 
+func (h *configHost) LookupTenant(
+	ctx context.Context, request *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	if err := h.record(ctx, "tenant:"+request.SubscriptionId); err != nil {
+		return nil, err
+	}
+	return &azdext.LookupTenantResponse{TenantId: h.tenant}, nil
+}
+
 func hostClient(t *testing.T, service *configHost) *azdext.AzdClient {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -122,6 +134,7 @@ func hostClient(t *testing.T, service *configHost) *azdext.AzdClient {
 	server := grpc.NewServer()
 	azdext.RegisterEnvironmentServiceServer(server, service)
 	azdext.RegisterDeploymentServiceServer(server, service)
+	azdext.RegisterAccountServiceServer(server, service)
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -215,14 +228,88 @@ func TestLoadProjectless(t *testing.T) {
 	}
 }
 
-func TestLoadProjectlessMissingTenant(t *testing.T) {
+func TestLoadProjectlessDefaultAuthentication(t *testing.T) {
 	h := validHost()
-	_, err := Load(azdext.WithAccessToken(t.Context(), "private-host-token"), hostClient(t, h), "",
+	result, err := Load(azdext.WithAccessToken(t.Context(), "private-host-token"), hostClient(t, h), "",
 		Options{Endpoint: "https://explicit.example"}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, result.TenantID, "leave tenant resolution to azd authentication")
+	assert.Empty(t, result.Environment)
+	assert.Empty(t, h.calls(), "must not switch to the default environment to find a tenant")
+}
+
+func TestLoadSubscriptionTenant(t *testing.T) {
+	for _, tt := range []struct {
+		name, selected, subscription string
+		options                      Options
+		process                      map[string]string
+	}{
+		{"selected environment", "test", "selected-sub", Options{}, nil},
+		{"process environment selection", "", "selected-sub", Options{}, map[string]string{"AZD_ENVIRONMENT": "test"}},
+		{"process subscription overrides environment", "test", "process-sub", Options{},
+			map[string]string{"AZURE_SUBSCRIPTION_ID": "process-sub"}},
+		{"explicit subscription overrides environment", "test", "explicit-sub",
+			Options{SubscriptionID: "explicit-sub"}, nil},
+		{"ARM resource overrides environment", "test", "embedded-sub", Options{Resource: accountID}, nil},
+		{"projectless explicit scope", "", "explicit-sub",
+			Options{Endpoint: "https://explicit.example", SubscriptionID: "explicit-sub"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := validHost()
+			h.name = "test"
+			h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
+			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+			result, err := Load(ctx, hostClient(t, h), tt.selected, tt.options, tt.process)
+			require.NoError(t, err)
+			assert.Equal(t, "user-access-tenant", result.TenantID)
+			assert.NotEqual(t, h.scope.TenantId, result.TenantID, "do not use the default deployment's resource tenant")
+			assert.Equal(t, tt.subscription, result.Scope.SubscriptionID)
+			expected := []string{"tenant:" + tt.subscription}
+			if result.Environment != "" {
+				expected = append([]string{"get:test", "values:test", "config:test:cu"}, expected...)
+			}
+			assert.Equal(t, expected, h.calls())
+		})
+	}
+}
+
+func TestLoadConfiguredTenantSkipsSubscriptionLookup(t *testing.T) {
+	for _, tt := range []struct {
+		name, want string
+		options    Options
+		process    map[string]string
+	}{
+		{"environment", "environment-tenant", Options{}, nil},
+		{"process", "process-tenant", Options{}, map[string]string{"AZURE_TENANT_ID": "process-tenant"}},
+		{"explicit", "explicit-tenant", Options{TenantID: "explicit-tenant"},
+			map[string]string{"AZURE_TENANT_ID": "process-tenant"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := validHost()
+			h.values = append(h.values,
+				&azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "environment-tenant"},
+				&azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"},
+			)
+			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+			result, err := Load(ctx, hostClient(t, h), "dev", tt.options, tt.process)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, result.TenantID)
+			assert.Equal(t, []string{"get:dev", "values:dev", "config:dev:cu"}, h.calls())
+		})
+	}
+}
+
+func TestLoadEmptySubscriptionTenant(t *testing.T) {
+	h := validHost()
+	h.tenant = ""
+	h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
+	ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
+	result, err := Load(ctx, hostClient(t, h), "dev", Options{}, nil)
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
 	assert.Equal(t, exterrors.CodeMissingTenant, local.Code)
-	assert.Empty(t, h.calls(), "must not switch to the default environment to find a tenant")
+	assert.Equal(t, Resolved{}, result)
+	assert.Equal(t, []string{"get:dev", "values:dev", "config:dev:cu", "tenant:selected-sub"}, h.calls())
 }
 
 func TestLoadExplicitScopeAndTenant(t *testing.T) {
@@ -255,7 +342,9 @@ func TestLoadExplicitScopeAndTenant(t *testing.T) {
 }
 
 func TestLoadFailuresAreNotProjectlessFallbacks(t *testing.T) {
-	for _, step := range []string{"current", "get:test", "values:dev", "config:dev:cu", "deployment"} {
+	for _, step := range []string{
+		"current", "get:test", "values:dev", "config:dev:cu", "deployment", "tenant:selected-sub",
+	} {
 		for _, code := range []codes.Code{
 			codes.Unknown, codes.NotFound, codes.FailedPrecondition, codes.Unauthenticated,
 			codes.PermissionDenied, codes.Unavailable, codes.Canceled, codes.DeadlineExceeded,
@@ -266,6 +355,10 @@ func TestLoadFailuresAreNotProjectlessFallbacks(t *testing.T) {
 				selected := ""
 				if step == "get:test" {
 					selected = "test"
+				}
+				if step == "tenant:selected-sub" {
+					selected = "dev"
+					h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
 				}
 				ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
 				_, err := Load(ctx, hostClient(t, h), selected, Options{}, nil)
@@ -342,7 +435,7 @@ func TestLoadCancellationAndDeadline(t *testing.T) {
 	cancel()
 	_, err := Load(ctx, nil, "", Options{}, nil)
 	assert.ErrorIs(t, err, context.Canceled)
-	for _, step := range []string{"current", "get:dev", "values:dev", "config:dev:cu", "deployment"} {
+	for _, step := range []string{"current", "get:dev", "values:dev", "config:dev:cu", "deployment", "tenant:selected-sub"} {
 		t.Run(step, func(t *testing.T) {
 			h := validHost()
 			h.block = step
@@ -352,6 +445,10 @@ func TestLoadCancellationAndDeadline(t *testing.T) {
 			selected := ""
 			if step == "get:dev" {
 				selected = "dev"
+			}
+			if step == "tenant:selected-sub" {
+				selected = "dev"
+				h.values = append(h.values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
 			}
 			_, err := Load(azdext.WithAccessToken(ctx, "private-host-token"), client, selected, Options{}, nil)
 			local, ok := errors.AsType[*azdext.LocalError](err)

@@ -9,12 +9,17 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"azure.ai.content-understanding/internal/config"
+	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -27,13 +32,24 @@ import (
 
 type deploymentServer struct {
 	azdext.UnimplementedDeploymentServiceServer
-	get func(context.Context) (*azdext.GetDeploymentContextResponse, error)
+	azdext.UnimplementedAccountServiceServer
+	get    func(context.Context) (*azdext.GetDeploymentContextResponse, error)
+	lookup func(context.Context, *azdext.LookupTenantRequest) (*azdext.LookupTenantResponse, error)
 }
 
 func (s *deploymentServer) GetDeploymentContext(
 	ctx context.Context, _ *azdext.EmptyRequest,
 ) (*azdext.GetDeploymentContextResponse, error) {
 	return s.get(ctx)
+}
+
+func (s *deploymentServer) LookupTenant(
+	ctx context.Context, request *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	if s.lookup == nil {
+		return nil, status.Error(codes.Unimplemented, "unexpected tenant lookup")
+	}
+	return s.lookup(ctx, request)
 }
 
 type environmentServer struct {
@@ -59,6 +75,9 @@ func (*environmentServer) GetValues(
 	if request.Name == "test" {
 		values = append(values, &azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "named-tenant"})
 	}
+	if request.Name == "subscription" {
+		values = append(values, &azdext.KeyValue{Key: "AZURE_SUBSCRIPTION_ID", Value: "selected-sub"})
+	}
 	return &azdext.KeyValueListResponse{KeyValues: values}, nil
 }
 
@@ -79,6 +98,7 @@ func startHost(t *testing.T, server *deploymentServer, prompts ...azdext.PromptS
 	host := grpc.NewServer()
 	azdext.RegisterDeploymentServiceServer(host, server)
 	azdext.RegisterEnvironmentServiceServer(host, &environmentServer{})
+	azdext.RegisterAccountServiceServer(host, server)
 	if len(prompts) != 0 {
 		azdext.RegisterPromptServiceServer(host, prompts[0])
 	}
@@ -90,6 +110,53 @@ func startHost(t *testing.T, server *deploymentServer, prompts ...azdext.PromptS
 	})
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Setenv("AZD_ACCESS_TOKEN", "private-host-token")
+}
+
+func installAuthenticationCLI(t *testing.T, authenticated bool) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "azd authentication")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	argsPath := filepath.Join(dir, "args.txt")
+	t.Setenv("CU_TEST_AZD_ARGS", argsPath)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	name := "azd"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CU_TEST_AZD_ARGS\"\n"
+	if runtime.GOOS == "windows" {
+		name = "azd.cmd"
+		script = "@echo off\r\necho %* > \"%CU_TEST_AZD_ARGS%\"\r\n"
+	}
+	if authenticated {
+		if runtime.GOOS == "windows" {
+			script += "echo {\"token\":\"test-access-token\",\"expiresOn\":\"2099-01-01T00:00:00Z\"}\r\n"
+		} else {
+			script += "printf '%s\\n' '{\"token\":\"test-access-token\",\"expiresOn\":\"2099-01-01T00:00:00Z\"}'\n"
+		}
+	} else if runtime.GOOS == "windows" {
+		script += "echo private-auth-detail 1>&2\r\nexit /b 1\r\n"
+	} else {
+		script += "printf '%s\\n' 'private-auth-detail' >&2\nexit 1\n"
+	}
+	// #nosec G306 -- Private executable test host.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700))
+	return argsPath
+}
+
+func assertRuntimeAuthentication(t *testing.T, r *runtimeContext, tenant string) {
+	t.Helper()
+	argsPath := installAuthenticationCLI(t, true)
+	token, err := r.Credential.GetToken(t.Context(), policy.TokenRequestOptions{
+		Scopes: []string{"https://cognitiveservices.azure.com/.default"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "test-access-token", token.Token)
+	args, err := os.ReadFile(argsPath) // #nosec G304 -- Reads only this test's private fake-host argument log.
+	require.NoError(t, err)
+	expected := []string{"auth", "token", "-o", "json", "--no-prompt",
+		"--scope", "https://cognitiveservices.azure.com/.default"}
+	if tenant != "" {
+		expected = append(expected, "--tenant-id", tenant)
+	}
+	assert.Equal(t, expected, strings.Fields(string(args)))
 }
 
 func TestRuntimeContext(t *testing.T) {
@@ -112,8 +179,8 @@ func TestRuntimeContext(t *testing.T) {
 	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, config.Options{})
 	require.NoError(t, err)
 	defer runtime.Close()
-	assert.Equal(t, "selected-tenant", runtime.Credential.TenantID())
-	assert.Equal(t, runtime.Config.TenantID, runtime.Credential.TenantID())
+	assert.Equal(t, "selected-tenant", runtime.Config.TenantID)
+	assertRuntimeAuthentication(t, runtime, "selected-tenant")
 	assert.Equal(t, "dev", runtime.Config.Environment)
 	assert.Equal(t, "https://selected.example/contentunderstanding", runtime.Config.Endpoint)
 	assert.Empty(t, stdout.String())
@@ -205,7 +272,8 @@ func TestRuntimeExplicitTenant(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer runtime.Close()
-	assert.Equal(t, "explicit-tenant", runtime.Credential.TenantID())
+	assert.Equal(t, "explicit-tenant", runtime.Config.TenantID)
+	assertRuntimeAuthentication(t, runtime, "explicit-tenant")
 	assert.Empty(t, runtime.Config.Environment)
 	assert.Empty(t, stderr.String())
 }
@@ -238,9 +306,96 @@ func TestRuntimeNamedEnvironmentCredential(t *testing.T) {
 	defer runtime.Close()
 	assert.Equal(t, "test", runtime.Config.Environment)
 	assert.Equal(t, "named-tenant", runtime.Config.TenantID)
-	assert.Equal(t, runtime.Config.TenantID, runtime.Credential.TenantID())
+	assertRuntimeAuthentication(t, runtime, "named-tenant")
 	assert.NotContains(t, stderr.String(), "named-tenant")
 	assert.NotContains(t, stderr.String(), "private-host-token")
+}
+
+func TestRuntimeProjectlessDefaultAuthentication(t *testing.T) {
+	for _, source := range []string{"option", "process", "inside project"} {
+		t.Run(source, func(t *testing.T) {
+			startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+				t.Error("projectless authentication must not query deployment context")
+				return nil, errors.New("unexpected deployment call")
+			}})
+			options := config.Options{Endpoint: "https://explicit.example"}
+			if source == "process" {
+				options.Endpoint = ""
+				t.Setenv("CU_ENDPOINT", "https://process.example")
+			}
+			if source == "inside project" {
+				t.Chdir(t.TempDir())
+				require.NoError(t, os.WriteFile("azure.yaml", []byte("name: unrelated-project\n"), 0o600))
+			}
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			r, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true}, options)
+			require.NoError(t, err)
+			defer r.Close()
+			assert.Empty(t, r.Config.TenantID)
+			assert.Empty(t, r.Config.Environment)
+			assertRuntimeAuthentication(t, r, "")
+			assert.Empty(t, stdout.String())
+			assert.NotContains(t, stderr.String(), "test-access-token")
+			assert.NotContains(t, stderr.String(), "private-host-token")
+		})
+	}
+}
+
+func TestRuntimeSelectedSubscriptionCredential(t *testing.T) {
+	startHost(t, &deploymentServer{
+		get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+			t.Error("selected environment must not query the default deployment")
+			return nil, errors.New("unexpected deployment call")
+		},
+		lookup: func(ctx context.Context, request *azdext.LookupTenantRequest) (*azdext.LookupTenantResponse, error) {
+			md, _ := metadata.FromIncomingContext(ctx)
+			assert.Equal(t, []string{"private-host-token"}, md.Get("authorization"))
+			assert.Equal(t, "selected-sub", request.SubscriptionId)
+			return &azdext.LookupTenantResponse{TenantId: "user-access-tenant"}, nil
+		},
+	})
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	r, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Environment: "subscription"}, config.Options{})
+	require.NoError(t, err)
+	defer r.Close()
+	assert.Equal(t, "subscription", r.Config.Environment)
+	assert.Equal(t, "user-access-tenant", r.Config.TenantID)
+	assertRuntimeAuthentication(t, r, "user-access-tenant")
+}
+
+func TestRuntimeAuthenticationRequired(t *testing.T) {
+	for _, tenant := range []string{"", "explicit-tenant"} {
+		t.Run(tenant, func(t *testing.T) {
+			startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+				t.Error("projectless authentication must not query deployment context")
+				return nil, errors.New("unexpected deployment call")
+			}})
+			installAuthenticationCLI(t, false)
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			r, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{
+				Endpoint: "https://explicit.example", TenantID: tenant,
+			})
+			require.NoError(t, err)
+			defer r.Close()
+			client, err := cuclient.NewSDKTransport(r.Config.Endpoint, r.Credential, nil)
+			require.NoError(t, err)
+			_, err = client.GetDefaults(t.Context())
+			require.Error(t, err)
+			local, ok := errors.AsType[*azdext.LocalError](exterrors.FromError(err))
+			require.True(t, ok)
+			assert.Equal(t, "authentication_failed", local.Code)
+			assert.Contains(t, local.Suggestion, "azd auth login")
+			assert.Contains(t, local.Suggestion, "AZURE_TENANT_ID")
+			assert.NotContains(t, local.Error(), "private-auth-detail")
+			assert.NotContains(t, local.Error(), "private-host-token")
+		})
+	}
 }
 
 func TestRuntimeConfigurationFailureRedaction(t *testing.T) {

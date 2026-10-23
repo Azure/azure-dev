@@ -48,29 +48,35 @@ Content Understanding. LLM-based prebuilt analyzers and custom analyzers also
 require supported language and embeddings model deployments plus Content
 Understanding defaults.
 
-Sign in, set the resource endpoint and tenant for projectless use, and check
+Sign in, set the resource endpoint for projectless use, and check
 readiness:
 
 ```bash
 azd auth login
 export CU_ENDPOINT="https://<resource-name>.services.ai.azure.com/"
-export AZURE_TENANT_ID="<tenant-id>"
 azd ai cu doctor
 ```
 
-These examples use Bash. In PowerShell, set process inputs with
-`$env:CU_ENDPOINT = "https://<resource-name>.services.ai.azure.com/"` and
-`$env:AZURE_TENANT_ID = "<tenant-id>"`.
+These examples use Bash. In PowerShell, set the endpoint with
+`$env:CU_ENDPOINT = "https://<resource-name>.services.ai.azure.com/"`.
+Projectless use delegates tenant selection to azd authentication unless you
+configure a tenant or subscription. To select a tenant explicitly, set
+`AZURE_TENANT_ID` (`export AZURE_TENANT_ID="<tenant-id>"` in Bash or
+`$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
+do not replace `azd auth login` or supported noninteractive azd authentication.
 
 In an existing azd project, you can instead save settings in an environment:
 
 ```bash
 azd env select dev
 azd env set CU_ENDPOINT "https://<resource-name>.services.ai.azure.com/"
-azd env set AZURE_TENANT_ID "<tenant-id>"
+azd env set AZURE_SUBSCRIPTION_ID "<subscription-id>"
 azd env config set cu.defaultAnalyzer '"prebuilt-layout"'
 azd ai cu doctor --environment dev
 ```
+
+The selected environment can supply `AZURE_TENANT_ID` directly; otherwise its
+resolved subscription is used to look up the user-access tenant.
 
 Use `azd env new dev` if the project does not yet have that environment.
 Explicit options and process inputs take precedence over saved settings; clear
@@ -142,7 +148,7 @@ azd ai cu analyze \
 ```
 
 Use `--dry-run` without `--yes` to inspect the execution plan before CU calls or
-writes. Analysis dry runs still require resolved endpoint, tenant, and analyzer
+writes. Analysis dry runs still require resolved endpoint and analyzer
 configuration. Select inputs using one mode: positional inputs, `--file`,
 `--source`, or `--url`.
 
@@ -285,14 +291,32 @@ instead of CU profiles.
 | API version | `--api-version`; process `CU_API_VERSION`; environment config `cu.apiVersion`; environment `CU_API_VERSION`; GA. |
 | Default analyzer | `--analyzer`; process `CU_DEFAULT_ANALYZER`; environment config `cu.defaultAnalyzer`; environment `CU_DEFAULT_ANALYZER`. |
 | Model mappings | Explicit mappings; environment config `cu.modelDeployments`; empty mapping. |
-| Tenant | Process `AZURE_TENANT_ID`; selected environment `AZURE_TENANT_ID`; default deployment context when applicable. |
+| Tenant | Process `AZURE_TENANT_ID`; selected environment `AZURE_TENANT_ID`; default deployment context for the default environment, or resolved subscription lookup for explicitly selected environments and projectless use. Projectless use without a tenant or subscription delegates to azd authentication. |
 | Subscription/resource group | Explicit resource selectors; process `AZURE_SUBSCRIPTION_ID` / `AZURE_RESOURCE_GROUP`; selected environment values; default deployment scope when applicable. |
 
 No implicit default analyzer is selected. With no explicit `--environment` or
 process `AZD_ENVIRONMENT`, a process or command-line endpoint selects projectless
 mode; otherwise the default azd environment is used. Explicitly selected
 environments do not borrow tenant or scope from an unrelated environment.
-Projectless service execution requires a tenant as well as an endpoint.
+When tenant selection is delegated to azd, `azd auth token` uses its normal
+resolution: the current project's subscription, process `AZURE_SUBSCRIPTION_ID`,
+then the signed-in identity's home tenant. Being inside a project can therefore
+affect authentication even though the extension does not load project settings
+for endpoint-only operation.
+
+| Scenario | Tenant behavior |
+|---|---|
+| Default project environment with a tenant or deployment context | Uses the configured tenant, or the default deployment context. |
+| Explicitly selected environment with a configured tenant | Uses that tenant; process `AZURE_TENANT_ID` takes precedence over saved values. |
+| Explicitly selected environment without a tenant | Looks up the user-access tenant for the resolved subscription. If neither can be resolved, reports an error instead of using another environment. |
+| Endpoint without an environment selection, with a configured tenant | Uses the configured tenant. |
+| Endpoint without an environment selection, no configured tenant | Looks up the resolved subscription if present; otherwise delegates tenant selection to azd authentication. |
+| No valid azd authentication, even with endpoint and tenant | Authentication is still required. Azure CLI-only login is not used. |
+| Help or version | No authentication or tenant configuration is required. |
+
+For guest or cross-tenant access, the signed-in identity must have access through
+the appropriate tenant. A tenant ID does not grant resource permissions, and the
+extension does not infer a tenant from the endpoint.
 
 Use `azd ai cu env-var list` to inspect supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated

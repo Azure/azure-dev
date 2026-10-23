@@ -22,6 +22,20 @@ type DeploymentInputs struct {
 
 var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+var deploymentOwnedRuntimeSettings = []string{
+	"spring.ai.azure.openai.api-key",
+	"spring.ai.azure.openai.chat.options.deployment-name",
+	"spring.ai.azure.openai.embedding.options.deployment-name",
+	"spring.ai.azure.openai.endpoint",
+	"spring.ai.azure.openai.openai-api-key",
+	"spring.datasource.driver-class-name",
+	"spring.datasource.password",
+	"spring.datasource.url",
+	"spring.datasource.username",
+	"spring.jpa.hibernate.ddl-auto",
+	"spring.sql.init.mode",
+}
+
 var reservedApplicationInputs = func() map[string]bool {
 	result := map[string]bool{
 		"_JAVA_OPTIONS":                          true,
@@ -41,23 +55,19 @@ var reservedApplicationInputs = func() map[string]bool {
 		"POSTGRES_PASSWORD":                      true,
 		"POSTGRES_PORT":                          true,
 		"POSTGRES_USERNAME":                      true,
-		"SPRING_AI_AZURE_OPENAI_APIKEY":          true,
-		"SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME":      true,
-		"SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME": true,
-		"SPRING_AI_AZURE_OPENAI_ENDPOINT":                         true,
-		"SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY":                     true,
-		"SPRING_APPLICATION_JSON":                                 true,
-		"SPRING_CONFIG_ADDITIONAL_LOCATION":                       true,
-		"SPRING_DATASOURCE_DRIVER_CLASS_NAME":                     true,
-		"SPRING_DATASOURCE_PASSWORD":                              true,
-		"SPRING_DATASOURCE_URL":                                   true,
-		"SPRING_DATASOURCE_USERNAME":                              true,
-		"SPRING_JPA_HIBERNATE_DDL_AUTO":                           true,
-		"SPRING_PROFILES_ACTIVE":                                  true,
-		"SPRING_PROFILES_DEFAULT":                                 true,
-		"SPRING_SQL_INIT_MODE":                                    true,
+		"SPRING_APPLICATION_JSON":                true,
 	}
 	for _, setting := range deploymentOwnedHostingSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	for _, setting := range deploymentOwnedConfigurationSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	for _, setting := range deploymentOwnedRuntimeSettings {
 		for _, name := range environmentPropertyNames(setting)[1:] {
 			result[name] = true
 		}

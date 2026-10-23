@@ -190,6 +190,12 @@ func TestApplicationInputReservedConfigurationSources(t *testing.T) {
 	for _, setting := range deploymentOwnedHostingSettings {
 		names = append(names, environmentPropertyNames(setting)[1:]...)
 	}
+	for _, setting := range deploymentOwnedConfigurationSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
+	for _, setting := range deploymentOwnedRuntimeSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
 	for _, setting := range unsupportedDatasourceSettings {
 		names = append(names, environmentPropertyNames(setting.key)[1:]...)
 	}
@@ -240,6 +246,19 @@ func TestApplicationInputPlaceholderConflicts(t *testing.T) {
 				"SSL_MODE=${ENABLE_SSL:false}\n",
 			input:    "ENABLE_SSL",
 			property: "server.ssl.enabled",
+		},
+		{
+			name:          "direct profile include",
+			configuration: "spring.profiles.include=${EXTRA_PROFILES:}\n",
+			input:         "EXTRA_PROFILES",
+			property:      "spring.profiles.include",
+		},
+		{
+			name: "indirect profile include",
+			configuration: "spring.profiles.include=${INCLUDE_ALIAS:}\n" +
+				"INCLUDE_ALIAS=${EXTRA_PROFILES:}\n",
+			input:    "EXTRA_PROFILES",
+			property: "spring.profiles.include",
 		},
 	} {
 		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {

@@ -66,6 +66,21 @@ var configurationLocations = [][]string{
 	{".", "config"},
 }
 
+const profileIncludeProperty = "spring.profiles.include"
+
+var configurationLocationSettings = []string{
+	"spring.config.import",
+	"spring.config.location",
+	"spring.config.additional-location",
+	"spring.config.name",
+}
+
+var deploymentOwnedConfigurationSettings = append([]string{
+	"spring.profiles.active",
+	"spring.profiles.default",
+	profileIncludeProperty,
+}, configurationLocationSettings...)
+
 func canonical(key string) string {
 	return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(key))
 }
@@ -171,12 +186,11 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		}
 		return nil, err
 	}
-	includeKey := "spring.profiles.include"
 	var includeSources []property
-	if p, ok := jsonProperties[canonical(includeKey)]; ok {
+	if p, ok := jsonProperties[canonical(profileIncludeProperty)]; ok {
 		includeSources = append(includeSources, p)
 	}
-	if p, ok := lookupEnvProperty(lookup, includeKey); ok {
+	if p, ok := lookupEnvProperty(lookup, profileIncludeProperty); ok {
 		includeSources = append(includeSources, p)
 	}
 	for _, doc := range slices.Backward(base) {
@@ -186,19 +200,23 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		if _, activated := doc.values[canonical("spring.config.activate.on-profile")]; activated {
 			continue
 		}
-		if p, ok := doc.values[canonical(includeKey)]; ok {
+		if p, ok := doc.values[canonical(profileIncludeProperty)]; ok {
 			includeSources = append(includeSources, p)
 		}
 	}
 	var included strings.Builder
+	var includeEvidence []Evidence
 	for _, p := range includeSources {
-		text, err := c.expandProperty(includeKey, p, map[string]bool{})
+		c.trace = nil
+		text, err := c.expandProperty(profileIncludeProperty, p, map[string]bool{})
 		if err != nil {
 			return nil, fmt.Errorf("resolving profile includes in %s: %w", p.source, err)
 		}
+		includeEvidence = append(includeEvidence, c.trace...)
 		included.WriteString(text)
 		included.WriteByte(',')
 	}
+	c.traces[profileIncludeProperty] = includeEvidence
 	names := splitList(included.String() + active)
 	if len(names) == 0 {
 		defaults, err := c.resolve("spring.profiles.default")
@@ -273,8 +291,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 				"indexed profile properties require list-binding analysis not yet supported")
 		}
 	}
-	for _, key := range []string{"spring.config.import", "spring.config.location",
-		"spring.config.additional-location", "spring.config.name"} {
+	for _, key := range configurationLocationSettings {
 		value, err := c.resolve(key)
 		if err != nil {
 			return nil, err

@@ -20,7 +20,8 @@ import (
 
 // Settings to modify the way CmdTree is executed
 type CmdTreeOptions struct {
-	Interactive bool
+	Interactive        bool
+	WindowsCommandLine string
 }
 
 // CommandRunner exposes the contract for executing console/shell commands for the specified runArgs
@@ -91,19 +92,21 @@ type commandRunner struct {
 //   - If the underlying command exits unsuccessfully, *ExitError is returned. Other possible errors would likely be I/O
 //     errors or context cancellation.
 //
-// NOTE: on Windows the command will automatically be run within a shell. This means .bat/.cmd
-// file based commands should just work.
+// NOTE: Windows commands use a shell by default so .bat/.cmd files work.
+// WithShell(false) runs an executable directly and preserves literal arguments.
 func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error) {
-	// use the shell on Windows since most commands are actually just batch files wrapping
-	// real commands. And even if they're not, this will work fine without having to do any
-	// probing or checking.
-	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
+	useShell := args.UseShell || runtime.GOOS == "windows"
+	if args.shellSet {
+		useShell = args.UseShell
+	}
+	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, useShell, args.Interactive)
 
 	if err != nil {
 		return RunResult{}, err
 	}
 
 	cmd.Dir = args.Cwd
+	cmd.WindowsCommandLine = args.WindowsCommandLine
 
 	var stdin io.Reader
 	if args.StdIn != nil {

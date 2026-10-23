@@ -4,22 +4,28 @@
 package update
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/windows"
 )
-
-// NOTE: Automated testing of updateViaMSI invoking PowerShell with the correct
-// arguments and isStandardMSIInstall succeeding on a standard path are limited
-// because go test compiles to temp directories that never match the expected MSI
-// install path (Programs\Azure Dev CLI), and backupCurrentExe cannot rename the
-// running test binary. We rely on manual testing on actual per-user MSI installs
-// to validate these code paths.
 
 func TestExpectedPerUserInstallDir(t *testing.T) {
 	tests := []struct {
@@ -200,31 +206,6 @@ func TestBuildInstallScriptArgs_Structure(t *testing.T) {
 	require.Contains(t, scriptDaily, "Remove-Item")
 }
 
-func TestIsStandardMSIInstall_NonStandardPath(t *testing.T) {
-	// Set LOCALAPPDATA to a directory that definitely doesn't match the test binary location
-	t.Setenv("LOCALAPPDATA", `C:\SomeOtherLocation`)
-
-	err := isStandardMSIInstall()
-	require.Error(t, err)
-
-	var updateErr *UpdateError
-	require.ErrorAs(t, err, &updateErr)
-	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
-	require.Contains(t, err.Error(), "managed by an administrator")
-	require.Contains(t, err.Error(), "AZD_SKIP_UPDATE_CHECK=1")
-}
-
-func TestIsStandardMSIInstall_MissingLocalAppData(t *testing.T) {
-	t.Setenv("LOCALAPPDATA", "")
-
-	err := isStandardMSIInstall()
-	require.Error(t, err)
-
-	var updateErr *UpdateError
-	require.ErrorAs(t, err, &updateErr)
-	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
-	require.Contains(t, err.Error(), "LOCALAPPDATA")
-}
 func TestRestoreExeFromBackup(t *testing.T) {
 	installDir := t.TempDir()
 	originalPath := filepath.Join(installDir, "azd.exe")
@@ -273,8 +254,6 @@ func TestRestoreExeFromBackup_RemovesPartialInstall(t *testing.T) {
 	require.Equal(t, "good-backup", string(data), "should have restored backup content")
 }
 
-// TestUpdateViaMSI_NonStandardInstallBlocks verifies that updateViaMSI returns an error
-// when the install location doesn't match the expected per-user path.
 func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	// Set LOCALAPPDATA to something that won't match the test binary location
 	t.Setenv("LOCALAPPDATA", `C:\NonExistentPath`)
@@ -290,4 +269,380 @@ func TestUpdateViaMSI_NonStandardInstallBlocks(t *testing.T) {
 	var updateErr *UpdateError
 	require.True(t, errors.As(err, &updateErr))
 	require.Equal(t, CodeNonStandardInstall, updateErr.Code)
+}
+
+func TestResolveMSIInstallation(t *testing.T) {
+	userDir := `C:\Users\test\AppData\Local\Programs\Azure Dev CLI`
+	tests := []struct {
+		name       string
+		exePath    string
+		machineDir string
+		userDir    string
+		perMachine bool
+		wantErr    bool
+	}{
+		{"default user", userDir + `\azd.exe`, "", userDir, false, false},
+		{"user with machine install", userDir + `\azd.exe`, `C:\Program Files\Azure Dev CLI`, userDir, false, false},
+		{"machine", `C:\Program Files\Azure Dev CLI\azd.exe`, `C:\Program Files\Azure Dev CLI`, userDir, true, false},
+		{"custom machine", `D:\Tools\azd\azd.exe`, `D:\Tools\azd`, userDir, true, false},
+		{"case insensitive", `D:\TOOLS\azd\azd.exe`, `d:\tools\azd\`, userDir, true, false},
+		{"machine without LOCALAPPDATA", `D:\Tools\azd\azd.exe`, `D:\Tools\azd`, "", true, false},
+		{"machine takes precedence", userDir + `\azd.exe`, userDir, userDir, true, false},
+		{"unregistered Program Files", `C:\Program Files\Azure Dev CLI\azd.exe`, "", userDir, false, true},
+		{"different executable", `D:\Other\azd.exe`, `D:\Tools\azd`, userDir, false, true},
+		{"unregistered custom user", `C:\Tools\azd.exe`, "", userDir, false, true},
+		{"unknown without LOCALAPPDATA", `D:\Other\azd.exe`, "", "", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			install, err := resolveMSIInstallation(tt.exePath, tt.machineDir, tt.userDir)
+			if tt.wantErr {
+				require.Error(t, err)
+				var updateErr *UpdateError
+				require.ErrorAs(t, err, &updateErr)
+				require.Equal(t, CodeNonStandardInstall, updateErr.Code)
+				require.Nil(t, install)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.exePath, install.exePath)
+			require.Equal(t, tt.perMachine, install.perMachine)
+		})
+	}
+}
+
+func TestMSIInstallationValidate(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
+	tests := []struct {
+		name           string
+		perMachine     bool
+		currentChannel Channel
+		targetChannel  Channel
+		elevated       bool
+		code           string
+	}{
+		{"elevated stable machine", true, ChannelStable, ChannelStable, true, ""},
+		{"unelevated machine", true, ChannelStable, ChannelStable, false, CodeElevationRequired},
+		{"machine to daily", true, ChannelStable, ChannelDaily, true, CodeUnsupportedInstallMethod},
+		{"daily machine to stable", true, ChannelDaily, ChannelStable, true, CodeUnsupportedInstallMethod},
+		{"daily machine", true, ChannelDaily, ChannelDaily, true, CodeUnsupportedInstallMethod},
+		{"user stable", false, ChannelStable, ChannelStable, false, ""},
+		{"user to daily", false, ChannelStable, ChannelDaily, false, ""},
+		{"user to stable", false, ChannelDaily, ChannelStable, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			install := &msiInstallation{exePath: `D:\Shared Tools\azd.exe`, perMachine: tt.perMachine}
+			err := install.validate(&VersionInfo{Channel: tt.targetChannel}, tt.currentChannel, tt.elevated)
+			wantCode := tt.code
+			if tt.perMachine && runtime.GOARCH != "amd64" {
+				wantCode = CodeUnsupportedInstallMethod
+			}
+			if wantCode == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				var updateErr *UpdateError
+				require.ErrorAs(t, err, &updateErr)
+				require.Equal(t, wantCode, updateErr.Code)
+				if wantCode == CodeElevationRequired {
+					suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+					require.True(t, ok, "elevation errors must carry a suggestion")
+					require.Contains(t, suggestion.Suggestion, "Run as administrator")
+					require.Contains(t, suggestion.Suggestion, output.WithHighLightFormat("azd update --channel stable"))
+					require.NotContains(t, suggestion.Suggestion, "`")
+					require.NotContains(t, suggestion.Suggestion, install.exePath)
+					require.Contains(t, err.Error(), filepath.Dir(install.exePath))
+				}
+			}
+		})
+	}
+}
+
+func TestVerifyAuthenticodeLiteralPath(t *testing.T) {
+	powershell, err := systemPowerShell()
+	require.NoError(t, err)
+	dir := filepath.Join(t.TempDir(), "O'Connor [1] & Tools")
+	require.NoError(t, os.Mkdir(dir, 0755))
+	signedFile := filepath.Join(dir, "signed.exe")
+	require.NoError(t, copyFileWindows(powershell, signedFile))
+
+	var output bytes.Buffer
+	manager := NewManager(exec.NewCommandRunner(nil), nil)
+	require.NoError(t, manager.verifyAuthenticode(t.Context(), signedFile, &output))
+	require.Contains(t, output.String(), "Code signature verified.")
+}
+
+func TestLockMSIInstallation(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := lockMSIInstallation(dir)
+	require.NoError(t, err)
+	defer unlock()
+	_, err = lockMSIInstallation(strings.ToUpper(dir))
+	require.ErrorContains(t, err, "another azd update")
+
+	otherUnlock, err := lockMSIInstallation(t.TempDir())
+	require.NoError(t, err)
+	otherUnlock()
+}
+
+func TestBackupExeRunningProcess(t *testing.T) {
+	if mode := os.Getenv("AZD_TEST_MSI_BACKUP"); mode != "" {
+		exePath, err := currentExePath()
+		require.NoError(t, err)
+		before, err := hashFile(exePath)
+		require.NoError(t, err)
+		backup, err := backupExe(exePath, filepath.Dir(exePath))
+		require.NoError(t, err)
+		require.Equal(t, filepath.Dir(exePath), filepath.Dir(filepath.Dir(backup)))
+		after, err := hashFile(exePath)
+		require.NoError(t, err)
+		require.Equal(t, before, after)
+		require.NoError(t, restoreExeFromBackup(exePath, backup))
+		var output bytes.Buffer
+		cleanMSIBackup(backup, &output)
+		if mode == "restricted" {
+			require.Contains(t, output.String(), "WARNING: could not start executable backup cleanup")
+			require.Contains(t, output.String(), "remove the backup at "+backup+" manually")
+		} else {
+			require.Empty(t, output.String(), "routine backup cleanup must not print to the console")
+		}
+		return
+	}
+
+	source, err := os.Executable()
+	require.NoError(t, err)
+	for _, restricted := range []bool{false, true} {
+		name := "normal terminal"
+		if restricted {
+			name = "job prohibits breakaway"
+		}
+		t.Run(name, func(t *testing.T) {
+			installDir := filepath.Join(t.TempDir(), "O'Connor & Tools")
+			require.NoError(t, os.Mkdir(installDir, 0755))
+			testExe := filepath.Join(installDir, "azd.exe")
+			require.NoError(t, copyFileWindows(source, testExe))
+			if restricted {
+				args := exec.NewRunArgs(testExe, "-test.run=^TestBackupExeRunningProcess$").
+					WithShell(false).
+					WithEnv([]string{"AZD_TEST_MSI_BACKUP=restricted"})
+				result, err := exec.NewCommandRunner(nil).Run(t.Context(), args)
+				require.NoError(t, err, "%s%s", result.Stdout, result.Stderr)
+				backups, err := filepath.Glob(filepath.Join(installDir, "azd-update-backup*"))
+				require.NoError(t, err)
+				require.Len(t, backups, 1, "failed cleanup must retain the backup for manual removal")
+				return
+			}
+			//nolint:gosec // Executes a copy of this test binary without a job that prohibits child breakaway.
+			cmd := osexec.CommandContext(t.Context(), testExe, "-test.run=^TestBackupExeRunningProcess$")
+			cmd.Env = append(os.Environ(), "AZD_TEST_MSI_BACKUP=1")
+			result, err := cmd.CombinedOutput()
+			require.NoError(t, err, "%s", result)
+			require.Eventually(t, func() bool {
+				backups, err := filepath.Glob(filepath.Join(installDir, "azd-update-backup*"))
+				return err == nil && len(backups) == 0
+			}, 15*time.Second, 50*time.Millisecond, "cleanup helper must survive the updating process")
+		})
+	}
+}
+
+func TestUpdateMSIMachine(t *testing.T) {
+	tests := []struct {
+		name            string
+		downloadStatus  int
+		signatureErr    bool
+		cancelBeforeMSI bool
+		exitCode        int
+		runErr          bool
+		newContent      string
+		removeInstalled bool
+		wantContent     string
+		wantCode        string
+		restart         bool
+		preserveBackup  bool
+	}{
+		{name: "success", newContent: "new executable", wantContent: "new executable"},
+		{name: "download failure", downloadStatus: 404, wantContent: "old executable", wantCode: CodeDownloadFailed},
+		{name: "invalid signature", signatureErr: true, wantContent: "old executable", wantCode: CodeSignatureInvalid},
+		{name: "canceled before MSI", cancelBeforeMSI: true, wantContent: "old executable", wantCode: CodeReplaceFailed},
+		{name: "installer error", exitCode: 1603, runErr: true, newContent: "partial", wantContent: "old executable",
+			wantCode: CodeReplaceFailed},
+		{name: "nonzero result without error", exitCode: 1618, wantContent: "old executable", wantCode: CodeReplaceFailed},
+		{name: "unchanged executable", wantContent: "old executable", wantCode: CodeReplaceFailed, preserveBackup: true},
+		{name: "missing executable after MSI success", removeInstalled: true,
+			wantCode: CodeReplaceFailed, preserveBackup: true},
+		{name: "restart required", exitCode: int(windows.ERROR_SUCCESS_REBOOT_REQUIRED),
+			runErr: true, newContent: "new executable",
+			wantContent: "new executable", restart: true},
+		{name: "deferred replacement", exitCode: int(windows.ERROR_SUCCESS_REBOOT_REQUIRED),
+			runErr: true, wantContent: "old executable", restart: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			installDir := filepath.Join(t.TempDir(), "O'Connor & Tools")
+			require.NoError(t, os.Mkdir(installDir, 0755))
+			exePath := filepath.Join(installDir, "azd.exe")
+			require.NoError(t, os.WriteFile(exePath, []byte("old executable"), 0600))
+			target := &VersionInfo{Channel: ChannelStable, Version: "1.28.1"}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expected := fmt.Sprintf("/azd/standalone/release/1.28.1/azd-windows-%s.msi", runtime.GOARCH)
+				if r.URL.Path != expected {
+					t.Errorf("unexpected MSI URL path %q, want %q", r.URL.Path, expected)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if tt.downloadStatus != 0 {
+					w.WriteHeader(tt.downloadStatus)
+					return
+				}
+				_, err := w.Write([]byte("signed MSI"))
+				require.NoError(t, err)
+			}))
+			defer server.Close()
+			runner := mockexec.NewMockCommandRunner()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var writer bytes.Buffer
+			signatureChecked := false
+			installerRun := false
+			runner.When(func(args exec.RunArgs, command string) bool {
+				return filepath.Base(args.Cmd) == "powershell.exe"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				signatureChecked = true
+				require.Contains(t, args.Args[2], "O''Connor & Tools")
+				require.Contains(t, args.Args[2], "$env:PSModulePath")
+				require.Contains(t, args.Args[2], "Get-AuthenticodeSignature -LiteralPath")
+				entries, err := filepath.Glob(filepath.Join(installDir, "azd-update-backup*"))
+				require.NoError(t, err)
+				require.Empty(t, entries, "signature verification must precede executable mutation")
+				if tt.signatureErr {
+					return exec.RunResult{ExitCode: 1}, errors.New("invalid signature")
+				}
+				if tt.cancelBeforeMSI {
+					cancel()
+				}
+				return exec.RunResult{}, nil
+			})
+			runner.When(func(args exec.RunArgs, command string) bool {
+				return filepath.Base(args.Cmd) == "msiexec.exe"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				installerRun = true
+				require.True(t, signatureChecked)
+				require.Equal(t, []string{
+					"/i", args.Args[1], "/qn", "/norestart", "/L*v", args.Args[5],
+					"ALLUSERS=1", "INSTALLDIR=" + installDir, "MSIRESTARTMANAGERCONTROL=DisableShutdown",
+				}, args.Args)
+				require.Equal(t, installDir, filepath.Dir(filepath.Dir(args.Args[1])))
+				require.Contains(t, args.WindowsCommandLine, `INSTALLDIR="`+installDir+`"`)
+				require.NotContains(t, args.WindowsCommandLine, `"INSTALLDIR=`)
+				require.Same(t, &writer, args.StdOut)
+				require.Same(t, &writer, args.Stderr)
+				require.NoError(t, os.WriteFile(args.Args[5], []byte("MSI diagnostics"), 0600))
+				if tt.newContent != "" {
+					require.NoError(t, os.WriteFile(exePath, []byte(tt.newContent), 0600))
+				}
+				if tt.removeInstalled {
+					require.NoError(t, os.Remove(exePath))
+				}
+				var err error
+				if tt.runErr {
+					err = errors.New("installer exit")
+				}
+				return exec.RunResult{ExitCode: tt.exitCode}, err
+			})
+			manager := NewManager(runner, testClientWithRewrite(server.URL))
+			installErr := manager.updateMSI(ctx, target, &msiInstallation{
+				exePath: exePath, perMachine: true,
+			}, &writer)
+			switch {
+			case tt.restart:
+				require.ErrorIs(t, installErr, ErrRestartRequired)
+				require.NotContains(t, writer.String(), "Restoring")
+			case tt.wantCode != "":
+				require.Error(t, installErr)
+				var updateErr *UpdateError
+				require.ErrorAs(t, installErr, &updateErr)
+				require.Equal(t, tt.wantCode, updateErr.Code)
+			default:
+				require.NoError(t, installErr)
+			}
+			content, err := os.ReadFile(exePath)
+			if tt.removeInstalled {
+				require.ErrorIs(t, err, os.ErrNotExist, "verification failure must not restore the old executable")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.wantContent, string(content))
+			}
+			if tt.preserveBackup {
+				require.NotContains(t, writer.String(), "Restoring")
+				require.Contains(t, writer.String(), "Original executable retained at")
+			}
+			require.Equal(t, tt.downloadStatus == 0, signatureChecked)
+			require.Equal(t, tt.downloadStatus == 0 && !tt.signatureErr && !tt.cancelBeforeMSI, installerRun)
+			entries, err := os.ReadDir(installDir)
+			require.NoError(t, err)
+			backupFound := false
+			for _, entry := range entries {
+				if entry.IsDir() {
+					require.True(t, installerRun && (tt.wantCode != "" || tt.restart))
+					files, err := os.ReadDir(filepath.Join(installDir, entry.Name()))
+					require.NoError(t, err)
+					require.Len(t, files, 1)
+					if strings.HasPrefix(entry.Name(), "azd-update-backup") {
+						backupFound = true
+						require.True(t, tt.preserveBackup)
+						backup, err := os.ReadFile(filepath.Join(installDir, entry.Name(), files[0].Name()))
+						require.NoError(t, err)
+						require.Equal(t, "old executable", string(backup))
+					} else {
+						require.Equal(t, "install.log", files[0].Name())
+						require.Contains(t, writer.String(), "MSI log:")
+					}
+				}
+			}
+			require.Equal(t, tt.preserveBackup, backupFound)
+			if installerRun && tt.exitCode != 0 && !tt.restart {
+				suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](installErr)
+				require.True(t, ok, "machine installer failures must explain how to reinstall")
+				require.Contains(t, suggestion.Suggestion, "does not restore MSI registration or the system PATH")
+				require.Contains(t, suggestion.Suggestion, "ALLUSERS=1")
+				require.Contains(t, suggestion.Suggestion, "INSTALLDIR=\""+installDir+"\"")
+				require.NotEmpty(t, suggestion.Links)
+			}
+		})
+	}
+}
+
+func TestUpdateMSIPerUser(t *testing.T) {
+	for _, channel := range []Channel{ChannelStable, ChannelDaily} {
+		t.Run(string(channel), func(t *testing.T) {
+			t.Setenv("LOCALAPPDATA", t.TempDir())
+			dir := expectedPerUserInstallDir()
+			require.NoError(t, os.MkdirAll(dir, 0755))
+			exePath := filepath.Join(dir, "azd.exe")
+			require.NoError(t, os.WriteFile(exePath, []byte("old"), 0600))
+			runner := mockexec.NewMockCommandRunner()
+			runner.When(func(args exec.RunArgs, command string) bool {
+				return args.Cmd == "powershell"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				script := args.Args[4]
+				if channel == ChannelStable {
+					require.Contains(t, script, "-Version '1.28.1'")
+					require.NotContains(t, script, "-InstallFolder")
+				} else {
+					require.Contains(t, script, "-Version 'daily'")
+					require.Contains(t, script, "-InstallFolder '"+escapeForPSSingleQuote(dir)+"'")
+				}
+				require.NotContains(t, script, "ALLUSERS=1")
+				require.NoError(t, os.WriteFile(exePath, []byte("updated"), 0600))
+				return exec.RunResult{}, nil
+			})
+			target := &VersionInfo{Channel: channel, Version: "1.28.1"}
+			require.NoError(t, NewManager(runner, nil).updateMSI(
+				t.Context(), target, &msiInstallation{exePath: exePath}, &bytes.Buffer{}))
+		})
+	}
 }

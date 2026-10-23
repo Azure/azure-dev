@@ -6,6 +6,7 @@ package exec
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"regexp"
 	"runtime"
@@ -63,6 +64,34 @@ func TestRunCommand(t *testing.T) {
 	if !regexp.MustCompile(`git version\s+\d+\.\d+\.\d+`).Match([]byte(res.Stdout)) {
 		t.Errorf("stdout did not contain 'git version' and a version number")
 	}
+}
+
+func TestRunWithoutShell(t *testing.T) {
+	if os.Getenv("AZD_TEST_NATIVE_ARGS") == "1" {
+		for i, arg := range os.Args {
+			if arg == "--" {
+				data, err := json.Marshal(os.Args[i+1:])
+				require.NoError(t, err)
+				t.Logf("native arguments: %s", data)
+				return
+			}
+		}
+		t.Fatal("missing argument separator")
+	}
+	exePath, err := os.Executable()
+	require.NoError(t, err)
+	expected := []string{`INSTALLDIR=C:\Tools&More`, `%SYSTEMROOT%`, `O'Connor | Tools`, `value="quoted"`}
+	args := NewRunArgs(exePath, "-test.run=^TestRunWithoutShell$", "-test.v", "--").
+		AppendParams(expected...).
+		WithShell(false).
+		WithEnv([]string{"AZD_TEST_NATIVE_ARGS=1"})
+	result, err := NewCommandRunner(nil).Run(t.Context(), args)
+	require.NoError(t, err)
+	match := regexp.MustCompile(`native arguments: (.+)`).FindStringSubmatch(result.Stdout)
+	require.Len(t, match, 2)
+	var actual []string
+	require.NoError(t, json.Unmarshal([]byte(match[1]), &actual))
+	require.Equal(t, expected, actual)
 }
 
 func TestKillCommand(t *testing.T) {

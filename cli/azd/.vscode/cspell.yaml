@@ -607,6 +607,15 @@ overrides:
       - elts
       - fset
       - unkeyed
+  - filename: pkg/update/msi_windows.go
+    words:
+      - norestart
+      - MSIRESTARTMANAGERCONTROL
+      - INSTALLEDBY
+  - filename: docs/design/azd-update.md
+    words:
+      - HKLM
+      - norestart
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

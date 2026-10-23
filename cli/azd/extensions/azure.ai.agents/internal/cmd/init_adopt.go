@@ -24,6 +24,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
@@ -260,6 +261,8 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
@@ -329,7 +332,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	)
 }
 
-func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+func validateLocalExplicitAzureYaml(ctx context.Context, templatePointer string) ([]byte, bool, error) {
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
@@ -337,6 +340,8 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}
@@ -888,7 +893,10 @@ func runInitFromAzureYaml(
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName); err != nil {
+	endScaffolding := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)
+	err = scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName)
+	endScaffolding()
+	if err != nil {
 		return err
 	}
 
@@ -993,6 +1001,7 @@ func scaffoldAzdTemplateProject(
 	if err != nil {
 		return "", err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
 	if err := scaffoldProject(ctx, azdClient, targetDir, templateSource, envName); err != nil {
 		return "", err
 	}
@@ -1039,6 +1048,8 @@ func stageAzdTemplateRepository(
 	parseSource azdTemplateRepositoryParser,
 	downloadSource azdTemplateRepositoryDownloader,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	if !strings.Contains(templateSource, "://") {
 		info, statErr := os.Stat(templateSource)
@@ -1814,6 +1825,8 @@ func stageAzureYamlTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	pointer := flags.templatePointer
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -47,6 +48,8 @@ func resolvePromptHarnessTarget(
 	harness string,
 ) (*project.Deployment, bool, *FoundryProjectInfo, azcore.TokenCredential, error) {
 	ctx = withHarnessRegionPolicy(ctx, harness)
+	defer inittelemetry.Start(ctx, inittelemetry.PromptAgentConfiguration)()
+
 	allowedLocations, err := promptHarnessRegionsForInit(ctx, harness)
 	if err != nil {
 		return nil, false, nil, nil, err

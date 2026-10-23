@@ -24,6 +24,7 @@ import (
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -163,6 +164,8 @@ const agentsV2ModelCapability = "agentsV2"
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
 func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+	defer inittelemetry.Start(ctx, inittelemetry.AiServiceCheck)()
+
 	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
 	if err == nil {
 		return nil
@@ -192,6 +195,8 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 // getAuthStatusJSON is the function that runs the command and returns stdout. Production
 // callers pass authStatusFromCLI; tests inject a stub.
 func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Context) ([]byte, error)) error {
+	defer inittelemetry.Start(ctx, inittelemetry.Authentication)()
+
 	out, err := getAuthStatusJSON(ctx)
 
 	// Context cancellation / deadline always takes priority.
@@ -256,6 +261,8 @@ func resolveInitAgentName(
 	flags *initFlags,
 	defaultName string,
 ) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentNameSelection)()
+
 	if flags.agentName != "" {
 		return validateInitAgentName(flags.agentName)
 	}
@@ -738,12 +745,20 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
+			ctx, timing := inittelemetry.NewContext(ctx)
+			defer func() {
+				if runErr != nil {
+					timing.Report(ctx)
+				}
+			}()
 			cmd.SetContext(ctx)
 			defer func() {
 				if runErr != nil {
 					reportInitOperation(ctx)
 				}
 			}()
+			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
+			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
 			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
 			flags.modelExplicit = cmd.Flags().Changed("model")
@@ -821,8 +836,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
 			}
+			endValidation()
 			printBanner(cmd.OutOrStdout())
 
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			httpClient := &http.Client{
 				Timeout: 30 * time.Second,
 			}
@@ -832,7 +849,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := validateUnifiedInitFlags(cmd); err != nil {
 					return err
 				}
-				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
+				content, cached, err := validateLocalExplicitAzureYaml(ctx, flags.templatePointer)
 				if err != nil {
 					return err
 				}
@@ -912,13 +929,16 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
+					endValidation()
 					env, err := readInfraEjectEnvironment(ctx, azdClient)
 					if err != nil {
 						return err
 					}
+					defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
 			}
+			endValidation()
 
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
 
@@ -968,6 +988,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// With no explicit template, --kind selects the runtime directly. A
 			// harness is an optional capability of kind: prompt, not a separate
 			// agent kind. Omitting --kind preserves the existing hosted flow.
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
@@ -980,6 +1001,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if harnessErr != nil {
 					return harnessErr
 				}
+				endValidation()
 				return runInitManaged(ctx, flags, azdClient, harness)
 			}
 			if strings.TrimSpace(flags.instructions) != "" {
@@ -1019,6 +1041,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
+			endValidation()
 
 			if flags.image != "" {
 				targetDir, folderDisplay := fastPathProjectTarget(
@@ -1047,6 +1070,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if projectErr != nil || projectResponse.GetProject() == nil {
+				endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -1058,6 +1082,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if legacyFile != "" {
 					return legacyInitSourceError(legacyFile)
 				}
+				endValidation()
 			}
 
 			// When the project's own manifest already declares agent
@@ -1086,24 +1111,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						detection.projectRoot,
 						detection.services,
 					) {
-					useExisting := flags.noPrompt
-					if !flags.noPrompt {
-						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-							Options: &azdext.ConfirmOptions{
-								Message: fmt.Sprintf(
-									"This project already configures %s. Use it?",
-									describeProjectAgentServices(detection.services),
-								),
-								DefaultValue: new(true),
-							},
-						})
-						if promptErr != nil {
-							if exterrors.IsCancellation(promptErr) {
-								return exterrors.Cancelled("initialization was cancelled")
-							}
-							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
-						}
-						useExisting = *confirmResp.Value
+					useExisting, err := confirmProjectAgentReuse(ctx, azdClient, flags.noPrompt, detection.services)
+					if err != nil {
+						return err
 					}
 					if useExisting {
 						recordInitProject(ctx, detection.project)
@@ -1142,9 +1152,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzureYaml:
 						// Unified azure.yaml template — download and adopt via
 						// the Foundry adoption flow (not git clone).
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzureYaml); err != nil {
 							return err
 						}
+						endValidation()
 						flags.templatePointer = selectedTemplate.Source
 						content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
 						if err != nil {
@@ -1185,9 +1197,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					case TemplateTypeAzd:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzd); err != nil {
 							return err
 						}
+						endValidation()
 						if err := runInitFromAzdTemplate(
 							ctx, flags, azdClient, httpClient, selectedTemplate,
 						); err != nil {
@@ -1197,6 +1211,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							return err
 						}
 					default:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						return exterrors.Validation(
 							exterrors.CodeInvalidAgentManifest,
 							fmt.Sprintf("unsupported agent template type %q", selectedTemplate.EffectiveType()),
@@ -1522,6 +1537,8 @@ func promptInitModeForVoice(
 	if err != nil {
 		return "", err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InputValidation)()
+
 	if voiceSpecified && mode != initModeVoice {
 		return "", unusedInitVoiceError()
 	}
@@ -1653,6 +1670,8 @@ func ensureProject(
 ) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		envName := deriveEnvName(flags, targetDir)
@@ -2035,6 +2054,8 @@ func printAgentAddedMessage(agentName string) {
 func (a *InitAction) addVoiceAgentToProject(
 	ctx context.Context, targetDir string, voiceDef *agent_yaml.VoiceAgent,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	if targetDir == "." {
 		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
 			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {

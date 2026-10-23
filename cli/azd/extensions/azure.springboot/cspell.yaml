@@ -1,0 +1,16 @@
+import: ../../.vscode/cspell.yaml
+words:
+  - azdadmin
+  - azuredocs
+  - dbcp
+  - Dmaven
+  - Hikari
+  - hsqldb
+  - jndi
+  - magiconair
+  - passwordless
+  - Petclinic
+  - springboot
+  - sslmode
+  - sslrootcert
+  - temurin

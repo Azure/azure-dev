@@ -86,6 +86,32 @@ func TestProcessTerminationError(t *testing.T) {
 }
 
 func TestTerminateOwnedTreeBoundsProcessDiscovery(t *testing.T) {
+	configureStalledProcessDiscovery(t)
+
+	tree := &Tree{
+		Cmd: &exec.Cmd{
+			Process: &os.Process{Pid: os.Getpid()},
+		},
+		platform: platformState{
+			processTreeID: "missing",
+		},
+	}
+	rootTerminated := false
+	start := time.Now()
+
+	err := terminateOwnedTree(tree, func() error {
+		rootTerminated = true
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.True(t, rootTerminated)
+	require.Less(t, time.Since(start), 2*time.Second)
+}
+
+func configureStalledProcessDiscovery(t *testing.T) {
+	t.Helper()
+
 	tempDir := t.TempDir()
 	pidPath := filepath.Join(tempDir, "discovery-child.pid")
 	psPath := filepath.Join(tempDir, "ps")
@@ -113,26 +139,6 @@ wait
 			}
 		}
 	})
-
-	tree := &Tree{
-		Cmd: &exec.Cmd{
-			Process: &os.Process{Pid: os.Getpid()},
-		},
-		platform: platformState{
-			processTreeID: "missing",
-		},
-	}
-	rootTerminated := false
-	start := time.Now()
-
-	err := terminateOwnedTree(tree, func() error {
-		rootTerminated = true
-		return nil
-	})
-
-	require.NoError(t, err)
-	require.True(t, rootTerminated)
-	require.Less(t, time.Since(start), 2*time.Second)
 }
 
 func TestConfigurePreservesInheritedProcessTreeIDs(t *testing.T) {

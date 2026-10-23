@@ -21,6 +21,56 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const movedProcessGroupReadyEnv = "AZD_MOVED_PROCESS_GROUP_READY"
+
+func TestTreeRootMovesProcessGroupHelper(t *testing.T) {
+	readyPath := os.Getenv(movedProcessGroupReadyEnv)
+	if readyPath == "" {
+		return
+	}
+
+	parentProcessGroup, err := unix.Getpgid(os.Getppid())
+	require.NoError(t, err)
+	require.NoError(t, unix.Setpgid(0, parentProcessGroup))
+	//nolint:gosec // G703: path is supplied by the parent test process
+	require.NoError(t, os.WriteFile(readyPath, []byte("ready"), 0o600))
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+func TestTreeCancellationKillsRootAfterProcessGroupChange(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cause := errors.New("custom cancellation cause")
+	readyPath := filepath.Join(t.TempDir(), "ready")
+
+	cmd := exec.CommandContext( //nolint:gosec // current test executable and fixed arguments
+		ctx,
+		os.Args[0],
+		"-test.run=^TestTreeRootMovesProcessGroupHelper$",
+	)
+	cmd.Env = append(os.Environ(), movedProcessGroupReadyEnv+"="+readyPath)
+	tree := New(ctx, cmd, Options{})
+	require.NoError(t, tree.Start())
+	t.Cleanup(func() {
+		_ = tree.Cmd.Process.Kill()
+	})
+
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(readyPath)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	processGroup, err := unix.Getpgid(tree.Cmd.Process.Pid)
+	require.NoError(t, err)
+	require.NotEqual(t, tree.Cmd.Process.Pid, processGroup)
+
+	cancel(cause)
+	err = tree.Wait()
+
+	require.ErrorIs(t, err, cause)
+	require.NotErrorIs(t, err, context.Canceled)
+}
+
 func TestTreeWaitUsesCustomCauseAfterSuccessfulRootExit(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(t.Context())
 	cause := errors.New("custom cancellation cause")
@@ -62,6 +112,44 @@ func TestTreeWaitUsesCustomCauseAfterSuccessfulRootExit(t *testing.T) {
 
 	require.ErrorIs(t, err, cause)
 	require.NotErrorIs(t, err, context.Canceled)
+}
+
+func TestTerminateOwnedTreeDiscoversMarkerBeforeStalledAncestry(t *testing.T) {
+	configureStalledProcessDiscovery(t)
+	const processTreeID = "marker-before-ancestry"
+
+	owned := exec.Command("/bin/sleep", "30") //nolint:gosec // fixed test executable and argument
+	owned.Env = append(os.Environ(), processTreeEnv+"="+processTreeID)
+	require.NoError(t, owned.Start())
+	waitDone := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = owned.Wait()
+		close(waitDone)
+	}()
+	t.Cleanup(func() {
+		_ = owned.Process.Kill()
+		<-waitDone
+	})
+
+	tree := &Tree{
+		Cmd: &exec.Cmd{
+			Process: &os.Process{Pid: os.Getpid()},
+		},
+		platform: platformState{
+			processTreeID: processTreeID,
+		},
+	}
+
+	require.NoError(t, terminateOwnedTree(tree, func() error {
+		return nil
+	}))
+	select {
+	case <-waitDone:
+		require.Error(t, waitErr)
+	case <-time.After(2 * time.Second):
+		t.Fatal("marker-owned process survived stalled ancestry discovery")
+	}
 }
 
 func waitForProcessPID(t *testing.T, path string) int {

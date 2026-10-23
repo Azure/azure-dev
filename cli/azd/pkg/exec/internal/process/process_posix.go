@@ -93,12 +93,30 @@ func terminateTree(t *Tree, allowFinished bool) error {
 	}
 
 	return terminateOwnedTree(t, func() error {
-		err := syscall.Kill(-t.Cmd.Process.Pid, syscall.SIGKILL)
-		if errors.Is(err, syscall.ESRCH) {
-			return os.ErrProcessDone
-		}
-		return err
+		return terminateProcessGroupAndRoot(t.Cmd.Process)
 	})
+}
+
+func terminateProcessGroupAndRoot(process *os.Process) error {
+	groupErr := syscall.Kill(-process.Pid, syscall.SIGKILL)
+	if errors.Is(groupErr, syscall.ESRCH) {
+		groupErr = os.ErrProcessDone
+	}
+	rootErr := process.Kill()
+
+	switch {
+	case rootErr == nil:
+		if groupErr == nil || errors.Is(groupErr, os.ErrProcessDone) {
+			return nil
+		}
+		return groupErr
+	case errors.Is(rootErr, os.ErrProcessDone):
+		return groupErr
+	case groupErr == nil || errors.Is(groupErr, os.ErrProcessDone):
+		return rootErr
+	default:
+		return errors.Join(groupErr, rootErr)
+	}
 }
 
 func terminateOwnedTree(
@@ -201,8 +219,8 @@ func ownedProcessIDs(
 	processTreeID string,
 ) []int {
 	candidates := append(
-		descendantProcessIDs(ctx, rootPID),
-		processIDsWithTreeID(ctx, processTreeID)...,
+		processIDsWithTreeID(ctx, processTreeID),
+		descendantProcessIDs(ctx, rootPID)...,
 	)
 	seen := map[int]struct{}{rootPID: {}}
 	owned := make([]int, 0, len(candidates))

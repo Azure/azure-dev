@@ -33,10 +33,10 @@ func TestCommandRunnerDetachedHelperProcess(t *testing.T) {
 	pidPath := os.Getenv(detachedHelperPIDEnv)
 	switch mode {
 	case "root-exit", "root-wait":
-		child := osexec.Command(
+		child := osexec.Command( //nolint:gosec // test executable and fixed arguments
 			os.Args[0],
 			"-test.run=^TestCommandRunnerDetachedHelperProcess$",
-		) //nolint:gosec
+		)
 		child.Env = append(
 			os.Environ(),
 			detachedHelperModeEnv+"=child",
@@ -44,7 +44,7 @@ func TestCommandRunnerDetachedHelperProcess(t *testing.T) {
 		)
 		child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		require.NoError(t, child.Start())
-		waitForPath(t, pidPath)
+		_ = detachedHelperPID(t, pidPath)
 		if mode == "root-wait" {
 			waitForever()
 		}
@@ -86,7 +86,6 @@ func TestCommandRunner_CancellationTerminatesDetachedProcess(t *testing.T) {
 		response <- err
 	}()
 
-	waitForPath(t, pidPath)
 	childPID := detachedHelperPID(t, pidPath)
 	cleanupDetachedHelper(t, childPID)
 	require.True(t, posixProcessRunning(childPID))
@@ -113,10 +112,16 @@ func detachedHelperRunArgs(mode, pidPath string) RunArgs {
 func detachedHelperPID(t *testing.T, path string) int {
 	t.Helper()
 
-	content := strings.TrimSpace(string(mustReadFile(t, path)))
-	pid, err := strconv.Atoi(content)
-	require.NoError(t, err)
-	require.Positive(t, pid)
+	var pid int
+	require.Eventually(t, func() bool {
+		//nolint:gosec // G703: path is supplied by the parent test process
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		pid, err = strconv.Atoi(strings.TrimSpace(string(content)))
+		return err == nil && pid > 0
+	}, 5*time.Second, 10*time.Millisecond)
 	return pid
 }
 

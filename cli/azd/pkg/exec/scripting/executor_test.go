@@ -473,6 +473,40 @@ func TestExecuteDirect_BackgroundChildLifecycle(t *testing.T) {
 		address := strings.TrimSpace(string(mustReadScriptingFile(t, addressPath)))
 		requireListenerStopped(t, address)
 	})
+
+	t.Run("interrupt exit terminates child", func(t *testing.T) {
+		tempDir := t.TempDir()
+		addressPath := filepath.Join(tempDir, "address")
+		pidPath := filepath.Join(tempDir, "pid")
+		env := append(os.Environ(),
+			scriptingHelperModeEnv+"=spawn-listener-and-interrupt",
+			scriptingHelperAddressEnv+"="+addressPath,
+			scriptingHelperPIDEnv+"="+pidPath,
+		)
+		executor, err := New(Config{Interactive: true, Env: env})
+		require.NoError(t, err)
+
+		cmdErr := executor.ExecuteDirect(
+			t.Context(),
+			os.Args[0],
+			[]string{"-test.run=TestScriptingHelperProcess"},
+		)
+
+		require.Error(t, cmdErr)
+		execErr, ok := errors.AsType[*ExecutionError](cmdErr)
+		require.True(t, ok)
+		require.True(t, execErr.Interrupted())
+
+		address := strings.TrimSpace(string(mustReadScriptingFile(t, addressPath)))
+		t.Cleanup(func() {
+			conn, err := net.DialTimeout("tcp", address, 50*time.Millisecond)
+			if err == nil {
+				_ = conn.Close()
+				_ = stopScriptingProcess(pidPath)
+			}
+		})
+		requireListenerStopped(t, address)
+	})
 }
 
 type manualDeadlineContext struct {
@@ -528,7 +562,7 @@ func TestScriptingHelperProcess(t *testing.T) {
 		for {
 			time.Sleep(time.Hour)
 		}
-	case "spawn-listener-and-exit", "spawn-listener-and-wait":
+	case "spawn-listener-and-exit", "spawn-listener-and-wait", "spawn-listener-and-interrupt":
 		child := osexec.Command(os.Args[0], "-test.run=TestScriptingHelperProcess") //nolint:gosec
 		child.Env = append(os.Environ(),
 			scriptingHelperModeEnv+"=listen",
@@ -546,6 +580,9 @@ func TestScriptingHelperProcess(t *testing.T) {
 			for {
 				time.Sleep(time.Hour)
 			}
+		}
+		if os.Getenv(scriptingHelperModeEnv) == "spawn-listener-and-interrupt" {
+			os.Exit(130)
 		}
 	case "listen":
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -691,11 +728,24 @@ func requireListenerStopped(t *testing.T, address string) {
 
 func killScriptingProcess(t *testing.T, pidPath string) {
 	t.Helper()
-	pid, err := strconv.Atoi(strings.TrimSpace(string(mustReadScriptingFile(t, pidPath))))
-	require.NoError(t, err)
+	require.NoError(t, stopScriptingProcess(pidPath))
+}
+
+func stopScriptingProcess(pidPath string) error {
+	//nolint:gosec // G703: path is supplied by the parent test process
+	content, err := os.ReadFile(pidPath)
+	if err != nil {
+		return err
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
+	if err != nil {
+		return err
+	}
 	process, err := os.FindProcess(pid)
-	require.NoError(t, err)
-	require.NoError(t, process.Kill())
+	if err != nil {
+		return err
+	}
+	return process.Kill()
 }
 
 func platformShell() string {

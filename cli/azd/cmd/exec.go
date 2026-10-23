@@ -194,7 +194,8 @@ func (a *execAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	if err != nil {
 		if cause := context.Cause(ctx); cause != nil && errors.Is(err, cause) {
-			if errors.Is(ctx.Err(), context.Canceled) {
+			if errors.Is(ctx.Err(), context.Canceled) &&
+				!errors.Is(cause, context.DeadlineExceeded) {
 				return nil, &execCancellationError{err: err}
 			}
 			return nil, err

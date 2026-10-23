@@ -790,6 +790,15 @@ func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
 			err: context.DeadlineExceeded,
 		},
 		{
+			name: "deadline cancellation cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(context.DeadlineExceeded)
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
 			name: "custom cause",
 			ctx: func() context.Context {
 				ctx, cancel := context.WithCancelCause(t.Context())
@@ -813,6 +822,8 @@ func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
 			require.ErrorIs(t, err, test.err)
 			_, ok := errors.AsType[*internal.ExitCodeError](err)
 			require.False(t, ok)
+			_, userCancellation := errors.AsType[*execCancellationError](err)
+			require.Equal(t, test.wantMessage != "", userCancellation)
 			if test.wantMessage != "" {
 				require.Equal(t, test.wantMessage, err.Error())
 			}

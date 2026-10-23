@@ -113,7 +113,13 @@ func (t *Tree) Wait() error {
 		err = cause
 	}
 	waitDelayExpired := errors.Is(err, exec.ErrWaitDelay)
-	terminateRemainingOnWait := t.options.TerminateRemainingOnWait || waitDelayExpired
+	exitErr, _ := errors.AsType[*exec.ExitError](err)
+	interrupted := exitErr != nil && IsInterruptExit(exitErr, exitErr.ExitCode())
+	// Successful scripting commands may intentionally leave background children,
+	// but an interrupted root must not release them before host cancellation arrives.
+	terminateRemainingOnWait := t.options.TerminateRemainingOnWait ||
+		waitDelayExpired ||
+		interrupted
 
 	if terminateRemainingOnWait {
 		if terminateErr := terminateRemaining(t); terminateErr != nil &&

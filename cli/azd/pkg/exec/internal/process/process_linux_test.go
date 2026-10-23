@@ -26,7 +26,7 @@ func TestTreeWaitUsesCustomCauseAfterSuccessfulRootExit(t *testing.T) {
 	cause := errors.New("custom cancellation cause")
 	childPIDPath := filepath.Join(t.TempDir(), "child.pid")
 
-	cmd := exec.CommandContext(
+	cmd := exec.CommandContext( //nolint:gosec // fixed shell with a test-controlled temporary path
 		ctx,
 		"/bin/sh",
 		"-c",

@@ -187,6 +187,9 @@ func TestApplicationInputReservedConfigurationSources(t *testing.T) {
 		"JDK_JAVA_OPTIONS",
 		"_JAVA_OPTIONS",
 	}
+	for _, setting := range deploymentOwnedHostingSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
 	for _, setting := range unsupportedDatasourceSettings {
 		names = append(names, environmentPropertyNames(setting.key)[1:]...)
 	}

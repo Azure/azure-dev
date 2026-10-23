@@ -41,8 +41,6 @@ var reservedApplicationInputs = func() map[string]bool {
 		"POSTGRES_PASSWORD":                      true,
 		"POSTGRES_PORT":                          true,
 		"POSTGRES_USERNAME":                      true,
-		"SERVER_ADDRESS":                         true,
-		"SERVER_PORT":                            true,
 		"SPRING_AI_AZURE_OPENAI_APIKEY":          true,
 		"SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME":      true,
 		"SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME": true,
@@ -58,6 +56,11 @@ var reservedApplicationInputs = func() map[string]bool {
 		"SPRING_PROFILES_ACTIVE":                                  true,
 		"SPRING_PROFILES_DEFAULT":                                 true,
 		"SPRING_SQL_INIT_MODE":                                    true,
+	}
+	for _, setting := range deploymentOwnedHostingSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
 	}
 	for _, setting := range unsupportedDatasourceSettings {
 		for _, name := range environmentPropertyNames(setting.key)[1:] {

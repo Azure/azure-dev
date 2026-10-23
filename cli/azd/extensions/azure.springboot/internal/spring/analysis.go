@@ -92,6 +92,18 @@ type Application struct {
 	InputReferences        map[string][]Evidence
 }
 
+const (
+	webApplicationTypeProperty = "spring.main.web-application-type"
+	serverSSLEnabledProperty   = "server.ssl.enabled"
+)
+
+var deploymentOwnedHostingSettings = []string{
+	"server.address",
+	"server.port",
+	webApplicationTypeProperty,
+	serverSSLEnabledProperty,
+}
+
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
 var modelDeploymentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
 
@@ -176,7 +188,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, err
 	}
-	webApplicationType, err := c.resolve("spring.main.web-application-type")
+	webApplicationType, err := c.resolve(webApplicationTypeProperty)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +196,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, unsupportedConfiguration(
 			"spring.main.web-application-type=none is not supported; current deployment requires an HTTP web application")
 	}
-	serverSSL, err := c.resolve("server.ssl.enabled")
+	serverSSL, err := c.resolve(serverSSLEnabledProperty)
 	if err != nil {
 		return nil, err
 	}

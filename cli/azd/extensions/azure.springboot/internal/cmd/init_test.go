@@ -237,11 +237,9 @@ func TestInitApplicationInputs(t *testing.T) {
 
 	data, err := os.ReadFile(filepath.Join("infra", "main.parameters.json"))
 	require.NoError(t, err)
-	require.Contains(t, string(data),
-		`"FRONTEND_URL": "${FRONTEND_URL:?Configure FRONTEND_URL with azd env set}"`)
+	require.Contains(t, string(data), `"FRONTEND_URL": "${FRONTEND_URL}"`)
 	require.Contains(t, string(data), `"name": "JWT_SECRET"`)
-	require.Contains(t, string(data),
-		`"value": "${JWT_SECRET:?Configure JWT_SECRET with azd env set-secret}"`)
+	require.Contains(t, string(data), `"value": "${JWT_SECRET}"`)
 }
 
 func TestInitNoPromptChannelRequiredForResolvedConfiguration(t *testing.T) {

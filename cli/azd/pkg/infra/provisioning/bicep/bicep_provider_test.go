@@ -1973,6 +1973,276 @@ func TestObjectParameterEnvSubst(t *testing.T) {
 	require.False(t, substResult.hasUnsetEnvVar)
 }
 
+func TestResolveComplexParameterValue(t *testing.T) {
+	special := "say \"hello\"\nC:\\secrets\\value"
+	env := environment.NewWithValues("test-env", map[string]string{
+		"SPECIAL_VALUE": special,
+		"OTHER_VALUE":   "suffix",
+	})
+	provider := &BicepProvider{env: env}
+
+	resolved, substResult, err := provider.resolveComplexParameterValue(
+		t.Context(),
+		map[string]any{
+			"plain": "${SPECIAL_VALUE}",
+			"nested": []any{
+				"prefix-${OTHER_VALUE}",
+				map[string]any{"unchanged": true},
+			},
+		},
+		"principal-id",
+		"ServicePrincipal",
+		"applicationValues",
+	)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"plain": special,
+		"nested": []any{
+			"prefix-suffix",
+			map[string]any{"unchanged": true},
+		},
+	}, resolved)
+	require.ElementsMatch(t, []string{"SPECIAL_VALUE", "OTHER_VALUE"}, substResult.mappedEnvVars)
+}
+
+func TestLoadParametersExpandsComplexLeaves(t *testing.T) {
+	special := "say \"hello\"\nC:\\secrets\\value"
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tempDir, "main.parameters.json"),
+		[]byte(`{
+			"parameters": {
+				"applicationValues": {
+					"value": {
+						"SPECIAL_VALUE": "${SPECIAL_VALUE}",
+						"STATIC_VALUE": "unchanged"
+					}
+				}
+			}
+		}`),
+		0o600,
+	))
+	provider := &BicepProvider{
+		path:         filepath.Join(tempDir, "main.bicep"),
+		options:      provisioning.Options{Module: "main"},
+		env:          environment.NewWithValues("test-env", map[string]string{"SPECIAL_VALUE": special}),
+		curPrincipal: &mockCurrentPrincipal{},
+	}
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"applicationValues": {Type: "object"},
+		},
+	}
+
+	result, err := provider.loadParameters(t.Context(), &template)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"SPECIAL_VALUE": special,
+		"STATIC_VALUE":  "unchanged",
+	}, result.parameters["applicationValues"].Value)
+	require.Equal(t, []string{"SPECIAL_VALUE"}, result.envMapping["applicationValues"])
+}
+
+func TestResolveComplexParameterValueRequiresBareReferences(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "missing", values: map[string]string{}},
+		{name: "empty", values: map[string]string{"REQUIRED_VALUE": ""}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &BicepProvider{env: environment.NewWithValues("test-env", tt.values)}
+			_, substResult, err := provider.resolveComplexParameterValue(
+				t.Context(),
+				map[string]any{"value": "${REQUIRED_VALUE}"},
+				"",
+				"",
+				"applicationValues",
+			)
+			require.NoError(t, err)
+			require.Equal(t, []string{"REQUIRED_VALUE"}, substResult.missingRequiredEnvVars)
+		})
+	}
+
+	provider := &BicepProvider{env: environment.NewWithValues("test-env", nil)}
+	resolved, _, err := provider.resolveComplexParameterValue(
+		t.Context(),
+		map[string]any{"value": "${OPTIONAL_VALUE=}"},
+		"",
+		"",
+		"applicationValues",
+	)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{"value": ""}, resolved)
+}
+
+func TestLoadParametersRejectsMissingComplexLeaf(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		values map[string]string
+	}{
+		{name: "missing", values: nil},
+		{name: "empty", values: map[string]string{"JWT_SECRET": ""}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			require.NoError(t, os.WriteFile(
+				filepath.Join(tempDir, "main.parameters.json"),
+				[]byte(`{
+					"parameters": {
+						"applicationSecrets": {
+							"value": {
+								"secret": {
+									"name": "JWT_SECRET",
+									"value": "${JWT_SECRET}"
+								}
+							}
+						}
+					}
+				}`),
+				0o600,
+			))
+			provider := &BicepProvider{
+				path:         filepath.Join(tempDir, "main.bicep"),
+				options:      provisioning.Options{Module: "main"},
+				env:          environment.NewWithValues("test-env", tt.values),
+				curPrincipal: &mockCurrentPrincipal{},
+			}
+			template := azure.ArmTemplate{
+				Parameters: azure.ArmTemplateParameterDefinitions{
+					"applicationSecrets": {Type: "secureObject"},
+				},
+			}
+
+			_, err := provider.loadParameters(t.Context(), &template)
+			require.ErrorContains(t, err, "required environment variable JWT_SECRET")
+			require.NotContains(t, err.Error(), "akvs://")
+		})
+	}
+}
+
+type resolvingKeyVaultService struct {
+	keyvault.KeyVaultService
+	resolve func(context.Context, string) (string, error)
+}
+
+func (s *resolvingKeyVaultService) SecretFromAkvs(ctx context.Context, reference string) (string, error) {
+	return s.resolve(ctx, reference)
+}
+
+func TestEnsureParametersResolvesNestedKeyVaultReference(t *testing.T) {
+	const reference = "akvs://subscription/vault/secret"
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tempDir, "main.parameters.json"),
+		[]byte(`{
+			"parameters": {
+				"applicationSecrets": {
+					"value": {
+						"secret": {
+							"name": "JWT_SECRET",
+							"value": "${JWT_SECRET}"
+						}
+					}
+				}
+			}
+		}`),
+		0o600,
+	))
+	provider := &BicepProvider{
+		path:         filepath.Join(tempDir, "main.bicep"),
+		options:      provisioning.Options{Module: "main"},
+		env:          environment.NewWithValues("test-env", map[string]string{"JWT_SECRET": reference}),
+		curPrincipal: &mockCurrentPrincipal{},
+		keyvaultService: &resolvingKeyVaultService{
+			resolve: func(_ context.Context, value string) (string, error) {
+				require.Equal(t, reference, value)
+				return "resolved-secret", nil
+			},
+		},
+	}
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"applicationSecrets": {Type: "secureObject"},
+		},
+	}
+
+	parameters, err := provider.ensureParameters(t.Context(), template)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"secret": map[string]any{
+			"name":  "JWT_SECRET",
+			"value": "resolved-secret",
+		},
+	}, parameters["applicationSecrets"].Value)
+}
+
+func TestLoadParametersDefersComplexValueWithVirtualReference(t *testing.T) {
+	tempDir := t.TempDir()
+	require.NoError(t, os.WriteFile(
+		filepath.Join(tempDir, "main.parameters.json"),
+		[]byte(`{
+			"parameters": {
+				"applicationValues": {
+					"value": {
+						"MISSING": "${MISSING_VALUE}",
+						"VIRTUAL": "${VIRTUAL_VALUE}"
+					}
+				}
+			}
+		}`),
+		0o600,
+	))
+	provider := &BicepProvider{
+		path: filepath.Join(tempDir, "main.bicep"),
+		options: provisioning.Options{
+			Module:     "main",
+			VirtualEnv: map[string]string{"VIRTUAL_VALUE": "layer--OUTPUT"},
+		},
+		env:          environment.NewWithValues("test-env", nil),
+		curPrincipal: &mockCurrentPrincipal{},
+	}
+	template := azure.ArmTemplate{
+		Parameters: azure.ArmTemplateParameterDefinitions{
+			"applicationValues": {Type: "object"},
+		},
+	}
+
+	result, err := provider.loadParameters(t.Context(), &template)
+	require.NoError(t, err)
+	require.Contains(t, result.virtualMapping, "applicationValues")
+	require.NotContains(t, result.parameters, "applicationValues")
+}
+
+func TestResolveNestedKeyVaultReferences(t *testing.T) {
+	const reference = "akvs://subscription/vault/secret"
+	resolved, err := resolveNestedKeyVaultReferences(
+		t.Context(),
+		map[string]any{
+			"name":  "JWT_SECRET",
+			"value": reference,
+			"nested": []any{
+				"plain",
+				map[string]any{"secret": reference},
+			},
+		},
+		func(_ context.Context, value string) (string, error) {
+			require.Equal(t, reference, value)
+			return "resolved\n\"secret\"", nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, map[string]any{
+		"name":  "JWT_SECRET",
+		"value": "resolved\n\"secret\"",
+		"nested": []any{
+			"plain",
+			map[string]any{"secret": "resolved\n\"secret\""},
+		},
+	}, resolved)
+}
+
 func TestParameterTypeFromArmTypeIdentification(t *testing.T) {
 	// Test that ParameterTypeFromArmType correctly identifies parameter types
 	require.Equal(t, provisioning.ParameterTypeArray, provisioning.ParameterTypeFromArmType("array"))

@@ -147,7 +147,7 @@ func TestGenerateApplicationInputs(t *testing.T) {
 	var values map[string]string
 	require.NoError(t, json.Unmarshal(parameters.Parameters["applicationValues"].Value, &values))
 	require.Equal(t, map[string]string{
-		"FRONTEND_URL": "${FRONTEND_URL:?Configure FRONTEND_URL with azd env set}",
+		"FRONTEND_URL": "${FRONTEND_URL}",
 	}, values)
 	var secrets map[string]struct {
 		Name  string `json:"name"`
@@ -158,7 +158,7 @@ func TestGenerateApplicationInputs(t *testing.T) {
 	for name, secret := range secrets {
 		require.Regexp(t, `^app-[0-9a-f]{12}$`, name)
 		require.Equal(t, "JWT_SECRET", secret.Name)
-		require.Equal(t, "${JWT_SECRET:?Configure JWT_SECRET with azd env set-secret}", secret.Value)
+		require.Equal(t, "${JWT_SECRET}", secret.Value)
 	}
 
 	var applicationParameters struct {

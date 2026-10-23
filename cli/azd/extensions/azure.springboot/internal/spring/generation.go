@@ -116,10 +116,10 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	for _, input := range application.ApplicationInputs {
 		switch input.Kind {
 		case ApplicationInputValue:
-			applicationValues[input.Name] = applicationInputReference(input)
+			applicationValues[input.Name] = applicationInputReference(input.Name)
 		case ApplicationInputSecret:
 			applicationSecrets[applicationInputSecretName(input.Name)] = map[string]string{
-				"name": input.Name, "value": applicationInputReference(input),
+				"name": input.Name, "value": applicationInputReference(input.Name),
 			}
 		default:
 			return nil, fmt.Errorf("application input %s has unsupported kind %q", input.Name, input.Kind)
@@ -354,12 +354,8 @@ func applicationInputSecretName(name string) string {
 	return fmt.Sprintf("app-%x", hash[:6])
 }
 
-func applicationInputReference(input ApplicationInput) string {
-	command := "azd env set"
-	if input.Kind == ApplicationInputSecret {
-		command = "azd env set-secret"
-	}
-	return fmt.Sprintf("${%s:?Configure %s with %s}", input.Name, input.Name, command)
+func applicationInputReference(name string) string {
+	return "${" + name + "}"
 }
 
 func validateOutputDirectory(directory, setting string, externalConfigurations []string) error {

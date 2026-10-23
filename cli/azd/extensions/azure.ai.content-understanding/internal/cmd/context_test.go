@@ -70,7 +70,10 @@ func (*environmentServer) GetValues(
 	_ context.Context, request *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
 	values := []*azdext.KeyValue{
-		{Key: "CU_ENDPOINT", Value: "https://selected.example"},
+		{Key: "CU_ENDPOINT", Value: "https://selected.services.ai.azure.com"},
+	}
+	if request.Name == "untrusted" {
+		values[0].Value = "https://private-attacker.example"
 	}
 	if request.Name == "test" {
 		values = append(values, &azdext.KeyValue{Key: "AZURE_TENANT_ID", Value: "named-tenant"})
@@ -183,7 +186,7 @@ func TestRuntimeContext(t *testing.T) {
 	assert.Equal(t, "selected-tenant", runtime.Config.TenantID)
 	assertRuntimeAuthentication(t, runtime, "selected-tenant")
 	assert.Equal(t, "dev", runtime.Config.Environment)
-	assert.Equal(t, "https://selected.example/contentunderstanding", runtime.Config.Endpoint)
+	assert.Equal(t, "https://selected.services.ai.azure.com/contentunderstanding", runtime.Config.Endpoint)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "Initialized azd runtime")
 	assert.NotContains(t, stderr.String(), "private-host-token")
@@ -269,7 +272,7 @@ func TestRuntimeExplicitTenant(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.SetErr(&stderr)
 	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{
-		Endpoint: "https://explicit.example", TenantID: "explicit-tenant",
+		Endpoint: "https://explicit.services.ai.azure.com", TenantID: "explicit-tenant",
 	})
 	require.NoError(t, err)
 	defer runtime.Close()
@@ -319,10 +322,10 @@ func TestRuntimeProjectlessDefaultAuthentication(t *testing.T) {
 				t.Error("projectless authentication must not query deployment context")
 				return nil, errors.New("unexpected deployment call")
 			}})
-			options := config.Options{Endpoint: "https://explicit.example"}
+			options := config.Options{Endpoint: "https://explicit.services.ai.azure.com"}
 			if source == "process" {
 				options.Endpoint = ""
-				t.Setenv("CU_ENDPOINT", "https://process.example")
+				t.Setenv("CU_ENDPOINT", "https://process.services.ai.azure.com")
 			}
 			if source == "inside project" {
 				t.Chdir(t.TempDir())
@@ -380,7 +383,7 @@ func TestRuntimeAuthenticationRequired(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.SetContext(t.Context())
 			r, err := newRuntimeContext(cmd, &azdext.ExtensionContext{}, config.Options{
-				Endpoint: "https://explicit.example", TenantID: tenant,
+				Endpoint: "https://explicit.services.ai.azure.com", TenantID: tenant,
 			})
 			require.NoError(t, err)
 			defer r.Close()
@@ -410,7 +413,7 @@ func TestRuntimeConfigurationFailureRedaction(t *testing.T) {
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 	runtime, err := newRuntimeContext(cmd, &azdext.ExtensionContext{Debug: true},
-		config.Options{Endpoint: "https://explicit.example", TenantID: "explicit-tenant"})
+		config.Options{Endpoint: "https://explicit.services.ai.azure.com", TenantID: "explicit-tenant"})
 	require.Nil(t, runtime)
 	local, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)

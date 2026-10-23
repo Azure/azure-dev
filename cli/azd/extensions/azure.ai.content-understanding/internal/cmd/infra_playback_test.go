@@ -99,7 +99,7 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 				body = playbackDeployment(filepath.Base(request.URL.Path))
 			}
 		} else {
-			assert.Equal(t, "foundry.example", request.URL.Host)
+			assert.Equal(t, "foundry.services.ai.azure.com", request.URL.Host)
 			assert.Equal(t, cuclient.DefaultAPIVersion, request.URL.Query().Get("api-version"))
 			switch {
 			case strings.HasSuffix(request.URL.Path, "/analyzers/prebuilt-document"):
@@ -152,8 +152,9 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 	assert.Contains(t, string(env), `CU_MODEL_SELECTION="recommended"`)
 	rpc.mu.Lock()
 	rpc.values = []*azdext.KeyValue{
-		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.example"}, {Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
-		{Key: "CU_ENDPOINT", Value: "https://foundry.example"},
+		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
+		{Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
+		{Key: "CU_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
 		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
 		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: "recommended"},
 	}

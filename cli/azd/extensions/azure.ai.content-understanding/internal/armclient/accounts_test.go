@@ -76,14 +76,14 @@ func TestAccountSelectorScopeAndValidation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "sub", selector.Scope.SubscriptionID)
 	assert.Equal(t, "group", selector.Scope.ResourceGroup)
-	selector, err = ParseSelector("https://ACCOUNT.example/", "explicit-sub", "explicit-group", fallback)
+	selector, err = ParseSelector("https://ACCOUNT.services.ai.azure.com/", "explicit-sub", "explicit-group", fallback)
 	require.NoError(t, err)
-	assert.Equal(t, "https://account.example/contentunderstanding", selector.Endpoint)
+	assert.Equal(t, "https://account.services.ai.azure.com/contentunderstanding", selector.Endpoint)
 	assert.Equal(t, "explicit-sub", selector.Scope.SubscriptionID)
 	for _, test := range []struct{ resource, subscription, group string }{
 		{"", "", ""}, {accountID, "conflicting", ""}, {accountID, "", "conflicting"},
-		{"http://account.example", "", ""}, {"https://user:secret@account.example", "", ""},
-		{"https://account.example/?key=secret", "", ""}, {"../account", "", ""},
+		{"http://account.services.ai.azure.com", "", ""}, {"https://user:secret@account.services.ai.azure.com", "", ""},
+		{"https://account.services.ai.azure.com/?key=secret", "", ""}, {"../account", "", ""},
 		{"account", "../sub", ""}, {"account", "..", ""}, {"account", "", "."},
 		{"account?secret", "", ""}, {accountID + "/keys", "", ""},
 	} {
@@ -99,16 +99,17 @@ func TestAccountResolutionDirectAndEndpointPreferences(t *testing.T) {
 	for _, test := range []struct {
 		name, resource, subscription, group, properties, expected string
 	}{
-		{"full ID", accountID, "", "", `{"endpoint":"https://account.example"}`,
-			"https://account.example/contentunderstanding"},
+		{"full ID", accountID, "", "", `{"endpoint":"https://account.services.ai.azure.com"}`,
+			"https://account.services.ai.azure.com/contentunderstanding"},
 		{"name and group", "ACCOUNT", "sub", "group", `{}`, "https://account.services.ai.azure.com/contentunderstanding"},
-		{"preferred", accountID, "", "", `{"endpoint":"https://base.example","endpoints":` +
-			`{"Content Understanding":"https://cu.example","ContentUnderstanding":"https://other.example"}}`,
-			"https://cu.example/contentunderstanding"},
-		{"alternate", accountID, "", "", `{"endpoints":{"ContentUnderstanding":"https://alternate.example"}}`,
-			"https://alternate.example/contentunderstanding"},
-		{"OpenAI", accountID, "", "", `{"endpoints":{"OpenAI":"https://openai.example"}}`,
-			"https://openai.example/contentunderstanding"},
+		{"preferred", accountID, "", "", `{"endpoint":"https://base.services.ai.azure.com","endpoints":` +
+			`{"Content Understanding":"https://cu.services.ai.azure.com",` +
+			`"ContentUnderstanding":"https://other.services.ai.azure.com"}}`,
+			"https://cu.services.ai.azure.com/contentunderstanding"},
+		{"alternate", accountID, "", "", `{"endpoints":{"ContentUnderstanding":"https://alternate.services.ai.azure.com"}}`,
+			"https://alternate.services.ai.azure.com/contentunderstanding"},
+		{"OpenAI", accountID, "", "", `{"endpoints":{"OpenAI":"https://openai.services.ai.azure.com"}}`,
+			"https://openai.services.ai.azure.com/contentunderstanding"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			calls := 0
@@ -135,16 +136,17 @@ func TestAccountResolutionPagingFilteringAndAmbiguity(t *testing.T) {
 				assert.Equal(t, "/subscriptions/sub/providers/Microsoft.CognitiveServices/accounts", request.URL.Path)
 				if calls == 1 {
 					other := accountWire(
-						strings.Replace(accountID, "/group/", "/other/", 1), "account", "https://other.example")
+						strings.Replace(accountID, "/group/", "/other/", 1), "account",
+						"https://other.services.ai.azure.com")
 					return response(request, 200, `{"value":[`+other+`],"nextLink":"`+listURL+
 						`?api-version=`+accountsAPIVersion+`&$skiptoken=next"}`), nil
 				}
-				account := accountWire(accountID, "account", "https://account.example")
+				account := accountWire(accountID, "account", "https://account.services.ai.azure.com")
 				return response(request, 200, `{"value":[`+account+`]}`), nil
 			})
 			resource, group := "account", ""
 			if mode == "endpoint" || mode == "group filter" {
-				resource = "https://account.example"
+				resource = "https://account.services.ai.azure.com"
 			}
 			if mode == "group filter" {
 				group = "group"
@@ -153,7 +155,7 @@ func TestAccountResolutionPagingFilteringAndAmbiguity(t *testing.T) {
 				resource = "absent"
 			}
 			if mode == "name" {
-				resource = "https://other.example"
+				resource = "https://other.services.ai.azure.com"
 			}
 			got, err := resolver.Resolve(t.Context(), resource, "sub", group, config.ResourceScope{})
 			switch mode {
@@ -169,7 +171,7 @@ func TestAccountResolutionPagingFilteringAndAmbiguity(t *testing.T) {
 				assert.Equal(t, cuclient.ErrorNotFound, domain.Kind)
 			default:
 				require.NoError(t, err)
-				assert.Contains(t, got.Endpoint, ".example/contentunderstanding")
+				assert.Contains(t, got.Endpoint, ".services.ai.azure.com/contentunderstanding")
 			}
 			assert.Equal(t, 2, calls)
 		})
@@ -207,7 +209,7 @@ func TestAccountResolutionMalformedAndServiceFailures(t *testing.T) {
 		`{"value":[{"id":"` + accountID + `","name":"wrong","location":"westus"}]}`,
 		`{"value":[{"id":"` + accountID + `","name":"account","location":""}]}`,
 		`{"value":[{"id":"` + accountID + `","name":"account","location":"westus",` +
-			`"properties":{"endpoint":"https://account.example?secret"}}]}`,
+			`"properties":{"endpoint":"https://account.services.ai.azure.com?secret"}}]}`,
 		`{"value":[` + accountWire(strings.Replace(accountID, "/sub/", "/other-sub/", 1), "account", "") + `]}`,
 	} {
 		t.Run(body, func(t *testing.T) {

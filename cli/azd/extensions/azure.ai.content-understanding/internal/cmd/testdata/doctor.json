@@ -1,6 +1,6 @@
 {
   "ready": true,
-  "endpoint": "https://configured.example/contentunderstanding",
+  "endpoint": "https://configured.services.ai.azure.com/contentunderstanding",
   "apiVersion": "2025-11-01",
   "authentication": "Microsoft Entra ID",
   "profile": "dev",

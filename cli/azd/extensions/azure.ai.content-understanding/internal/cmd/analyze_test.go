@@ -126,7 +126,7 @@ func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
 				}})
 				t.Chdir(t.TempDir())
 				require.NoError(t, os.WriteFile("invoice.pdf", []byte("%PDF-1.7\n"), 0o600))
-				t.Setenv("CU_ENDPOINT", "https://resource.example")
+				t.Setenv("CU_ENDPOINT", "https://resource.services.ai.azure.com")
 				t.Setenv("CU_DEFAULT_ANALYZER", tt.configured)
 				client := &analyzeFake{call: func(
 					_ context.Context, request cuclient.AnalyzeRequest,
@@ -194,7 +194,7 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 			}
 			stdout, stderr, err := f.execute(t.Context(),
 				"--file", path, "--llm-input=false", "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
-				"--endpoint", "https://explicit.example", "--api-version", cuclient.PreviewAPIVersion)
+				"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			if format == "none" {
@@ -205,7 +205,7 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 			}
 			assert.Equal(t, 1, f.opens)
 			assert.Equal(t, 1, f.closes)
-			assert.Equal(t, "https://explicit.example", f.options.Endpoint)
+			assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 			_, err = body.Read(make([]byte, 1))
 			require.Error(t, err)
 		})

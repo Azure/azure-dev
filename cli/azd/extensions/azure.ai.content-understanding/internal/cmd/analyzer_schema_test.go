@@ -120,14 +120,14 @@ func TestSchemaCreateSampleMappingAndSafeDiagnostics(t *testing.T) {
 				}
 				stdout, stderr, err := executeSchemaCreate(f, t.Context(),
 					"--from-sample", sample, "-n", "invoice_v1", "--output-file", output,
-					"--endpoint", "https://explicit.example", "--api-version", cuclient.PreviewAPIVersion,
+					"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion,
 					"--no-prompt", "-o", format)
 				require.NoError(t, err)
 				assert.Equal(t, 1, f.opens)
 				assert.Equal(t, 1, f.closes)
 				assert.Empty(t, f.prompts)
 				assert.Equal(t, schema.SuggestionAnalyzer, f.options.DefaultAnalyzer)
-				assert.Equal(t, "https://explicit.example", f.options.Endpoint)
+				assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 				assert.Equal(t, cuclient.PreviewAPIVersion, f.options.APIVersion)
 				assert.Contains(t, stderr, "1 schema-suggestion warning")
 				assert.NotContains(t, stdout+stderr, "private-service-detail")
@@ -373,7 +373,7 @@ func TestSchemaCreateCommandThroughCUPipeline(t *testing.T) {
 					require.NoError(t, err)
 					assert.Equal(t, "sample bytes", string(data))
 					result.StatusCode = http.StatusAccepted
-					result.Header.Set("Operation-Location", "https://resource.example/contentunderstanding/"+
+					result.Header.Set("Operation-Location", "https://resource.services.ai.azure.com/contentunderstanding/"+
 						"analyzerResults/schema-operation?api-version="+version)
 					body = `{"id":"schema-operation","status":"Running"}`
 				} else {
@@ -384,7 +384,7 @@ func TestSchemaCreateCommandThroughCUPipeline(t *testing.T) {
 				result.Body = io.NopCloser(strings.NewReader(body))
 				return result, nil
 			})
-			client, err := cuclient.NewRESTTransport("https://resource.example", credential,
+			client, err := cuclient.NewRESTTransport("https://resource.services.ai.azure.com", credential,
 				&cuclient.TransportOptions{APIVersion: version, Transport: transport})
 			require.NoError(t, err)
 			root := newRootCommand(func(

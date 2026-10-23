@@ -280,7 +280,7 @@ func TestCreateAnalyzerMappingAndWarnings(t *testing.T) {
 	f.client.analyzer.JSON = json.RawMessage(
 		`{"analyzerId":"invoice_v1","warnings":[{"code":"Warning","message":"Service warning"}],"future":9007199254740993}`)
 	stdout, stderr, err := f.execute(t.Context(), "create", "invoice_v1", "-s", schemaFile(t, body),
-		"--endpoint", "https://explicit.example", "--api-version", cuclient.PreviewAPIVersion)
+		"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion)
 	require.NoError(t, err)
 	assert.JSONEq(t, string(f.client.analyzer.JSON), stdout)
 	assert.Contains(t, stdout, "9007199254740993")
@@ -288,7 +288,9 @@ func TestCreateAnalyzerMappingAndWarnings(t *testing.T) {
 	assert.Equal(t, "invoice_v1", f.client.create.AnalyzerID)
 	assert.Contains(t, string(f.client.create.Definition), "9007199254740993123456789")
 	assert.JSONEq(t, body, string(f.client.create.Definition))
-	assert.Equal(t, config.Options{Endpoint: "https://explicit.example", APIVersion: cuclient.PreviewAPIVersion}, f.options)
+	assert.Equal(t, config.Options{
+		Endpoint: "https://explicit.services.ai.azure.com", APIVersion: cuclient.PreviewAPIVersion,
+	}, f.options)
 	assert.Equal(t, []string{"create:invoice_v1"}, f.client.calls, "create must not preflight or replace existing analyzers")
 }
 

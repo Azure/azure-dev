@@ -86,7 +86,8 @@ func openServiceSession(
 }
 
 func serviceCommand(cmd *cobra.Command, options *config.Options) *cobra.Command {
-	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "", "Microsoft Foundry resource endpoint")
+	cmd.Flags().StringVar(&options.Endpoint, "endpoint", "",
+		"Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)")
 	cmd.Flags().StringVar(&options.APIVersion, "api-version", "",
 		"CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)")
 	return jsonCommand(cmd)

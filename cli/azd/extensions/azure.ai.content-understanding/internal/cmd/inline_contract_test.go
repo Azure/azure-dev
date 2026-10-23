@@ -63,7 +63,8 @@ func TestInlineAnalysisWithoutMIMETypeThroughCommand(t *testing.T) {
 				})
 				report := filepath.Join(t.TempDir(), "inline-report.json")
 				args := []string{"analyze", "--inline", "--api-version", cuclient.PreviewAPIVersion,
-					"--endpoint", "https://resource.example", "--analyzer", "prebuilt-layout", "--report-file", report}
+					"--endpoint", "https://resource.services.ai.azure.com", "--analyzer", "prebuilt-layout",
+					"--report-file", report}
 				if input == "file" {
 					args = append(args, "--file", path)
 				} else {

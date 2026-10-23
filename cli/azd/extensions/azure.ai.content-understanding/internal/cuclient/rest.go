@@ -33,7 +33,7 @@ var _ Client = (*RESTTransport)(nil)
 func NewRESTTransport(
 	endpoint string, credential azcore.TokenCredential, options *TransportOptions,
 ) (*RESTTransport, error) {
-	normalized, err := NormalizeEndpoint(endpoint)
+	normalized, err := normalizeEndpoint(endpoint, options != nil && options.Transport != nil)
 	if err != nil {
 		return nil, err
 	}

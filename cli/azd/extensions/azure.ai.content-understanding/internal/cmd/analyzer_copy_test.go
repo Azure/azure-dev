@@ -75,9 +75,10 @@ func newCommandCopyFixture(t *testing.T) *commandCopyFixture {
 	return &commandCopyFixture{
 		source: fake(), destination: fake(),
 		sourceAccount: armclient.Account{
-			ID: "/source/account", Endpoint: "https://source.example/contentunderstanding", Region: "westus"},
+			ID: "/source/account", Endpoint: "https://source.services.ai.azure.com/contentunderstanding", Region: "westus"},
 		destinationAccount: armclient.Account{
-			ID: "/destination/account", Endpoint: "https://destination.example/contentunderstanding", Region: "eastus"},
+			ID: "/destination/account", Endpoint: "https://destination.services.ai.azure.com/contentunderstanding",
+			Region: "eastus"},
 	}
 }
 
@@ -91,7 +92,7 @@ func (f *commandCopyFixture) execute(ctx context.Context, args ...string) (strin
 			return nil, f.openErr
 		}
 		return &serviceSession{
-			client: f.source, endpoint: "https://configured.example/contentunderstanding",
+			client: f.source, endpoint: "https://configured.services.ai.azure.com/contentunderstanding",
 			close: func() { f.closes++ },
 			resolveAccount: func(_ context.Context, resource, subscription, group string) (armclient.Account, error) {
 				f.resolutions = append(f.resolutions, [3]string{resource, subscription, group})
@@ -127,7 +128,7 @@ func TestAnalyzerCopySameResourceOutputAndFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"source", "destination"},
 		{"--source", "source", "--destination", "destination", "-o", "json"},
-		{"source", "--destination", "destination", "--endpoint", "https://explicit.example",
+		{"source", "--destination", "destination", "--endpoint", "https://explicit.services.ai.azure.com",
 			"--api-version", cuclient.PreviewAPIVersion},
 		{"source", "destination", "-o", "none"},
 	} {
@@ -150,7 +151,7 @@ func TestAnalyzerCopySameResourceOutputAndFlags(t *testing.T) {
 				assert.Contains(t, stdout, "9007199254740993")
 			}
 			if strings.Contains(strings.Join(args, " "), "--endpoint") {
-				assert.Equal(t, "https://explicit.example", f.options.Endpoint)
+				assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 				assert.Equal(t, cuclient.PreviewAPIVersion, f.options.APIVersion)
 			}
 		})
@@ -199,7 +200,7 @@ func TestAnalyzerCopyCrossResourceAndOmittedDestination(t *testing.T) {
 				assert.Equal(t, "westus", f.destination.copy.SourceRegion)
 			}
 			if mode == "source endpoint fallback" {
-				assert.Equal(t, "https://configured.example/contentunderstanding", f.resolutions[0][0])
+				assert.Equal(t, "https://configured.services.ai.azure.com/contentunderstanding", f.resolutions[0][0])
 			}
 			if mode == "cross" {
 				assert.Equal(t, [][3]string{

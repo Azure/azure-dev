@@ -85,11 +85,11 @@ func TestAnalyzerTestCommandMappingReportAndOutput(t *testing.T) {
 					`{"Amount":{"valueNumber":0,"confidence":0.6}}}],"warnings":[{"code":"Ignored"}]}}`)}, nil
 			}
 			stdout, err := executeAnalyzerTest(f, t.Context(), "-n", "invoice", "--file", sample,
-				"--output-file", output, "--endpoint", "https://explicit.example",
+				"--output-file", output, "--endpoint", "https://explicit.services.ai.azure.com",
 				"--api-version", cuclient.PreviewAPIVersion, "-j", "16", "-o", format)
 			require.NoError(t, err)
 			assert.Equal(t, "invoice", f.options.DefaultAnalyzer)
-			assert.Equal(t, "https://explicit.example", f.options.Endpoint)
+			assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 			assert.Equal(t, cuclient.PreviewAPIVersion, f.options.APIVersion)
 			assert.Equal(t, 1, f.closes)
 			body, err := os.ReadFile(output) // #nosec G304 -- Reads only this test's private temporary file.
@@ -242,7 +242,7 @@ func TestAnalyzerTestWirePipelineForBothAPIVersions(t *testing.T) {
 			f := newAnalyzeFixture(t)
 			sample := schemaFile(t, "wire sample")
 			var calls []string
-			client, err := cuclient.NewRESTTransport("https://resource.example", &copyWireCredential{},
+			client, err := cuclient.NewRESTTransport("https://resource.services.ai.azure.com", &copyWireCredential{},
 				&cuclient.TransportOptions{APIVersion: version, Transport: copyWireTransport(func(
 					request *http.Request,
 				) (*http.Response, error) {
@@ -260,7 +260,7 @@ func TestAnalyzerTestWirePipelineForBothAPIVersions(t *testing.T) {
 						assert.Equal(t, "application/octet-stream", request.Header.Get("Content-Type"))
 						result.StatusCode = 202
 						result.Header.Set("Operation-Location",
-							"https://resource.example/contentunderstanding/analyzerResults/test-op")
+							"https://resource.services.ai.azure.com/contentunderstanding/analyzerResults/test-op")
 						body = `{"id":"test-op","status":"Running"}`
 					}
 					result.Body = io.NopCloser(strings.NewReader(body))

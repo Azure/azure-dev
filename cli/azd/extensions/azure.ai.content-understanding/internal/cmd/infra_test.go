@@ -42,8 +42,8 @@ func infraCommandFixture(t *testing.T) *infraCommandHost {
 	}
 	return &infraCommandHost{capabilities: &infraCommandCapabilities{}, snapshot: infraSnapshot{
 		environment: "dev", section: map[string]json.RawMessage{}, values: map[string]string{
-			"FOUNDRY_ENDPOINT": "https://foundry.example", "FOUNDRY_RESOURCE_NAME": "foundry",
-			"CU_ENDPOINT":           "https://foundry.example",
+			"FOUNDRY_ENDPOINT": "https://foundry.services.ai.azure.com", "FOUNDRY_RESOURCE_NAME": "foundry",
+			"CU_ENDPOINT":           "https://foundry.services.ai.azure.com",
 			"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_TENANT_ID": "tenant", "AZURE_RESOURCE_GROUP": "group",
 			"CU_MODEL_SELECTION": "none",
 		},
@@ -57,7 +57,7 @@ func (f *infraCommandHost) Resolve(_ context.Context, _ *azdext.Subscription, re
 	f.calls = append(f.calls, "resolve")
 	return armclient.Account{
 		ID:       "/subscriptions/sub/resourceGroups/existing/providers/Microsoft.CognitiveServices/accounts/foundry",
-		Endpoint: "https://foundry.example/contentunderstanding", Region: "westus3"}, nil
+		Endpoint: "https://foundry.services.ai.azure.com/contentunderstanding", Region: "westus3"}, nil
 }
 func (f *infraCommandHost) Snapshot(_ context.Context, name string) (infraSnapshot, error) {
 	f.calls = append(f.calls, "snapshot")
@@ -150,7 +150,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	assert.True(t, result.ReusedExistingTemplate)
 	assert.Equal(t, "westus3", result.Location)
-	assert.Equal(t, "https://foundry.example", result.FoundryEndpoint)
+	assert.Equal(t, "https://foundry.services.ai.azure.com", result.FoundryEndpoint)
 	assert.Equal(t, "existing", result.FoundryResourceGroup)
 	assert.True(t, result.AssignRoles)
 	assert.Equal(t, []string{"open", "subscription", "resolve", "close"}, f.calls)
@@ -202,7 +202,7 @@ func TestInfraPostHookResultsWarningsAndRequiredFailure(t *testing.T) {
 		f.capabilities.fail = fail
 		stdout, stderr, err := executeInfra(t, f, "infra", "_postprovision-v1", "-e", "selected", "-o", "json", "--debug")
 		assert.Equal(t, "selected", f.selected)
-		assert.Equal(t, "https://foundry.example", f.request.Endpoint)
+		assert.Equal(t, "https://foundry.services.ai.azure.com", f.request.Endpoint)
 		assert.NotContains(t, stdout+stderr, "private-service-token")
 		switch fail {
 		case "endpoint", "inspect":
@@ -232,13 +232,13 @@ func TestInfraMetadataAndPostEnvironmentPrecedence(t *testing.T) {
 		assert.True(t, command.Launch.NoAzdEnvironment)
 	}
 	f := infraCommandFixture(t)
-	f.snapshot.values["CU_ENDPOINT"] = "https://other.example"
+	f.snapshot.values["CU_ENDPOINT"] = "https://other.services.ai.azure.com"
 	f.snapshot.values["CU_MODEL_SETUP_COMPLETE"] = "true"
 	f.snapshot.values["CU_CONFIG_SETUP_FORCE"] = "true"
 	f.snapshot.values["CU_API_VERSION"] = "2026-06-01-preview"
 	request, err := postRequest(f.snapshot)
 	require.NoError(t, err)
-	assert.Equal(t, "https://other.example", request.Endpoint)
+	assert.Equal(t, "https://other.services.ai.azure.com", request.Endpoint)
 	assert.Equal(t, cuclient.PreviewAPIVersion, request.APIVersion)
 	assert.False(t, request.SetupComplete)
 	assert.True(t, request.ForceConfiguration)
@@ -515,7 +515,7 @@ func TestInfraResolveUsesUserAccessTenant(t *testing.T) {
 			argsPath := installAuthenticationCLI(t, false)
 			_, err := host.Resolve(azdext.WithAccessToken(t.Context()), &azdext.Subscription{
 				Id: "sub", TenantId: "resource-tenant", UserTenantId: test.userTenant,
-			}, "https://resource.example")
+			}, "https://resource.services.ai.azure.com")
 			require.Error(t, err, "the fake azd auth command fails before any ARM network request")
 			// #nosec G304 -- Reads this test's private fake-azd argument log.
 			args, err := os.ReadFile(argsPath)
@@ -549,7 +549,7 @@ func TestInfraResolveRejectsUnavailableAccessTenant(t *testing.T) {
 			argsPath := installAuthenticationCLI(t, false)
 			_, err := host.Resolve(azdext.WithAccessToken(t.Context()), &azdext.Subscription{
 				Id: "sub", TenantId: "resource-tenant",
-			}, "https://resource.example")
+			}, "https://resource.services.ai.azure.com")
 			require.ErrorContains(t, err, test.want)
 			_, err = os.Stat(argsPath)
 			assert.True(t, os.IsNotExist(err), "tenant lookup failure must not invoke azd auth")
@@ -572,7 +572,7 @@ func TestInfraHostScopedRPCAndDottedModelNames(t *testing.T) {
 	_, err = host.Subscription(ctx, false)
 	require.NoError(t, err)
 	capabilities := &infraCapabilities{host: host, snapshot: snapshot}
-	require.NoError(t, capabilities.SetConfiguration(ctx, "endpoint", "https://account.example"))
+	require.NoError(t, capabilities.SetConfiguration(ctx, "endpoint", "https://account.services.ai.azure.com"))
 	require.NoError(t, capabilities.SetConfiguration(ctx, "default_analyzer", "prebuilt-layout"))
 	require.NoError(t, capabilities.SetConfiguration(ctx, "model_deployments.gpt-5.2", "deployment"))
 	require.NoError(t, capabilities.SetConfiguration(ctx, "model_deployments.text-embedding-3-large", "embedding"))
@@ -626,13 +626,13 @@ func TestInfraHostNoninteractiveDecisionsAndInvalidState(t *testing.T) {
 	rpc.mu.Unlock()
 	_, err = host.Snapshot(ctx, "selected")
 	require.Error(t, err)
-	request := infra.PostRequest{Endpoint: "https://foundry.example", Account: "foundry", Subscription: "sub",
+	request := infra.PostRequest{Endpoint: "https://foundry.services.ai.azure.com", Account: "foundry", Subscription: "sub",
 		ResourceGroup: "group", APIVersion: cuclient.DefaultAPIVersion, Selection: "none"}
 	post, _, err := host.Capabilities(ctx, snapshot, request)
 	require.NoError(t, err)
 	actual, ok := post.(*infraCapabilities)
 	require.True(t, ok)
-	assert.Equal(t, "https://foundry.example", actual.request.Endpoint)
+	assert.Equal(t, "https://foundry.services.ai.azure.com", actual.request.Endpoint)
 	require.NoError(t, actual.SetConfiguration(ctx, "default_analyzer", "prebuilt-layout"))
 	actual.snapshot.section["modelDeployments"] = json.RawMessage(`[]`)
 	require.Error(t, actual.SetConfiguration(ctx, "model_deployments.gpt-5.2", "deployment"))

@@ -48,11 +48,12 @@ func response(status int, body string) *http.Response {
 
 func TestTransportOptionsValidation(t *testing.T) {
 	for _, endpoint := range []string{
-		"https://RESOURCE.test", " https://resource.test/ ", "https://resource.test/contentunderstanding/",
+		"https://RESOURCE.services.ai.azure.com", " https://resource.services.ai.azure.com/ ",
+		"https://resource.services.ai.azure.com/contentunderstanding/",
 	} {
 		client, err := NewRESTTransport(endpoint, &testCredential{}, nil)
 		require.NoError(t, err)
-		assert.Equal(t, "https://resource.test/contentunderstanding", client.endpoint)
+		assert.Equal(t, "https://resource.services.ai.azure.com/contentunderstanding", client.endpoint)
 		assert.Equal(t, DefaultAPIVersion, client.apiVersion)
 	}
 	for _, endpoint := range []string{
@@ -66,14 +67,14 @@ func TestTransportOptionsValidation(t *testing.T) {
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private-token")
 	}
-	client, err := NewRESTTransport("https://resource.test", nil, nil)
+	client, err := NewRESTTransport("https://resource.services.ai.azure.com", nil, nil)
 	assert.Nil(t, client)
 	require.Error(t, err)
 	for _, options := range []TransportOptions{
 		{APIVersion: "2027-01-01"}, {APIVersion: "private-token"},
 		{RequestTimeout: -time.Second}, {Version: "invalid\r\nprivate-token"},
 	} {
-		client, err := NewRESTTransport("https://resource.test", &testCredential{}, &options)
+		client, err := NewRESTTransport("https://resource.services.ai.azure.com", &testCredential{}, &options)
 		assert.Nil(t, client)
 		require.Error(t, err)
 		assert.NotContains(t, err.Error(), "private-token")
@@ -322,7 +323,7 @@ func TestPipelineCancellationAndAuthentication(t *testing.T) {
 		})
 	}
 	credential := &testCredential{empty: true}
-	client, err := NewRESTTransport("https://resource.test", credential, nil)
+	client, err := NewRESTTransport("https://resource.services.ai.azure.com", credential, nil)
 	require.NoError(t, err)
 	_, err = client.GetAnalyzer(t.Context(), "custom")
 	var domain *Error

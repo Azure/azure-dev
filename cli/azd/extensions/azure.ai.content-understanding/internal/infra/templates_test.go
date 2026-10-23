@@ -106,9 +106,11 @@ func TestGenerationInputAndPathSafety(t *testing.T) {
 		func(c *Choices) { c.Location = "invalid" },
 		func(c *Choices) { c.FoundryPrefix = "-unsafe" },
 		func(c *Choices) { c.FoundryPrefix = strings.Repeat("a", 21) },
-		func(c *Choices) { c.FoundryPrefix, c.FoundryEndpoint = "prefix", "https://account.example" },
-		func(c *Choices) { c.FoundryEndpoint = "http://account.example" },
-		func(c *Choices) { c.FoundryEndpoint = "https://account.example" },
+		func(c *Choices) {
+			c.FoundryPrefix, c.FoundryEndpoint = "prefix", "https://account.services.ai.azure.com"
+		},
+		func(c *Choices) { c.FoundryEndpoint = "http://account.services.ai.azure.com" },
+		func(c *Choices) { c.FoundryEndpoint = "https://account.services.ai.azure.com" },
 		func(c *Choices) { c.SubscriptionID = "\"$(touch injected)" },
 		func(c *Choices) { c.TenantID = "" },
 		func(c *Choices) { c.APIVersion = "invalid" },
@@ -130,10 +132,11 @@ func TestGenerationInputAndPathSafety(t *testing.T) {
 	assert.Equal(t, "dev", normalized.Environment)
 	assert.Equal(t, "eastus2", normalized.Location)
 	assert.Equal(t, "new-resource", normalized.FoundryPrefix)
-	c.FoundryPrefix, c.FoundryEndpoint, c.FoundryResourceGroup = "", "https://ACCOUNT.example/", "existing-group"
+	c.FoundryPrefix, c.FoundryEndpoint = "", "https://ACCOUNT.services.ai.azure.com/"
+	c.FoundryResourceGroup = "existing-group"
 	normalized, err = c.Normalize()
 	require.NoError(t, err)
-	assert.Equal(t, "https://account.example", normalized.FoundryEndpoint)
+	assert.Equal(t, "https://account.services.ai.azure.com", normalized.FoundryEndpoint)
 	target := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(target, "unrelated.txt"), []byte("keep"), 0o600))
 	_, err = Materialize(t.Context(), target, choices(), false)

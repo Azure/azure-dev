@@ -44,7 +44,7 @@ func validHost() *configHost {
 	return &configHost{
 		name: "dev",
 		values: []*azdext.KeyValue{
-			{Key: "CU_ENDPOINT", Value: "https://env.example"},
+			{Key: "CU_ENDPOINT", Value: "https://env.services.ai.azure.com"},
 		},
 		section: &azdext.GetConfigSectionResponse{},
 		tenant:  "user-access-tenant",
@@ -176,7 +176,7 @@ func TestLoadDefaultEnvironment(t *testing.T) {
 	result, err := Load(azdext.WithAccessToken(t.Context(), "private-host-token"), hostClient(t, h), "", Options{}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "dev", result.Environment)
-	assert.Equal(t, "https://env.example/contentunderstanding", result.Endpoint)
+	assert.Equal(t, "https://env.services.ai.azure.com/contentunderstanding", result.Endpoint)
 	assert.Equal(t, "default-tenant", result.TenantID)
 	assert.Equal(t, ResourceScope{SubscriptionID: "default-sub", ResourceGroup: "default-rg"}, result.Scope)
 	assert.Equal(t, []string{"current", "values:dev", "config:dev:cu", "user:" + UserConfigPath, "deployment"}, h.calls())
@@ -231,11 +231,12 @@ func TestLoadProjectless(t *testing.T) {
 		options Options
 		process map[string]string
 	}{
-		{"explicit", Options{Endpoint: "https://explicit.example", TenantID: "explicit-tenant"}, nil},
+		{"explicit", Options{Endpoint: "https://explicit.services.ai.azure.com", TenantID: "explicit-tenant"}, nil},
 		{"process", Options{}, map[string]string{
-			"CU_ENDPOINT": "https://process.example", "AZURE_TENANT_ID": "process-tenant",
+			"CU_ENDPOINT": "https://process.services.ai.azure.com", "AZURE_TENANT_ID": "process-tenant",
 		}},
-		{"mixed", Options{Endpoint: "https://explicit.example"}, map[string]string{"AZURE_TENANT_ID": "process-tenant"}},
+		{"mixed", Options{Endpoint: "https://explicit.services.ai.azure.com"},
+			map[string]string{"AZURE_TENANT_ID": "process-tenant"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := validHost()
@@ -253,7 +254,7 @@ func TestLoadProjectless(t *testing.T) {
 func TestLoadProjectlessDefaultAuthentication(t *testing.T) {
 	h := validHost()
 	result, err := Load(azdext.WithAccessToken(t.Context(), "private-host-token"), hostClient(t, h), "",
-		Options{Endpoint: "https://explicit.example"}, nil)
+		Options{Endpoint: "https://explicit.services.ai.azure.com"}, nil)
 	require.NoError(t, err)
 	assert.Empty(t, result.TenantID, "leave tenant resolution to azd authentication")
 	assert.Empty(t, result.Environment)
@@ -274,7 +275,7 @@ func TestLoadSubscriptionTenant(t *testing.T) {
 			Options{SubscriptionID: "explicit-sub"}, nil},
 		{"ARM resource overrides environment", "test", "embedded-sub", Options{Resource: accountID}, nil},
 		{"projectless explicit scope", "", "explicit-sub",
-			Options{Endpoint: "https://explicit.example", SubscriptionID: "explicit-sub"}, nil},
+			Options{Endpoint: "https://explicit.services.ai.azure.com", SubscriptionID: "explicit-sub"}, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h := validHost()
@@ -436,7 +437,7 @@ func TestLoadInvalidSnapshots(t *testing.T) {
 			tt.edit(h)
 			options := Options{}
 			if tt.selected != "" {
-				options = Options{Endpoint: "https://explicit.example", TenantID: "explicit-tenant"}
+				options = Options{Endpoint: "https://explicit.services.ai.azure.com", TenantID: "explicit-tenant"}
 			}
 			ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
 			result, err := Load(ctx, hostClient(t, h), tt.selected, options, nil)
@@ -460,13 +461,13 @@ func TestUserDefaultsWithoutProjectOrCurrentEnvironment(t *testing.T) {
 	} {
 		h := validHost()
 		h.fail, h.err = "current", status.Error(codes.Unknown, message)
-		h.user = []byte(`{"CU_ENDPOINT":"https://user.example","CU_API_VERSION":"2027-01-01-preview"}`)
+		h.user = []byte(`{"CU_ENDPOINT":"https://user.services.ai.azure.com","CU_API_VERSION":"2027-01-01-preview"}`)
 		ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
 		result, err := Load(ctx, hostClient(t, h), "", Options{}, nil)
 		require.NoError(t, err)
 		assert.Empty(t, result.Environment)
 		assert.Empty(t, result.TenantID)
-		assert.Equal(t, "https://user.example/contentunderstanding", result.Endpoint)
+		assert.Equal(t, "https://user.services.ai.azure.com/contentunderstanding", result.Endpoint)
 		assert.Equal(t, "2027-01-01-preview", result.APIVersion)
 		assert.Equal(t, "user config", result.Sources["CU_ENDPOINT"])
 		assert.Equal(t, []string{"current", "user:" + UserConfigPath}, h.calls())
@@ -477,9 +478,9 @@ func TestUserDefaultsDoNotHideExplicitEnvironmentFailures(t *testing.T) {
 	h := validHost()
 	h.fail = "get:missing"
 	h.err = status.Error(codes.Unknown, "no project exists; to create a new project, run `azd init`")
-	h.user = []byte(`{"CU_ENDPOINT":"https://user.example"}`)
+	h.user = []byte(`{"CU_ENDPOINT":"https://user.services.ai.azure.com"}`)
 	ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
-	_, err := Load(ctx, hostClient(t, h), "missing", Options{Endpoint: "https://flag.example"}, nil)
+	_, err := Load(ctx, hostClient(t, h), "missing", Options{Endpoint: "https://flag.services.ai.azure.com"}, nil)
 	require.Error(t, err)
 	assert.Equal(t, []string{"get:missing"}, h.calls())
 }
@@ -487,10 +488,10 @@ func TestUserDefaultsDoNotHideExplicitEnvironmentFailures(t *testing.T) {
 func TestUserDefaultsWithApplicableEnvironmentAndRuntimeEndpoint(t *testing.T) {
 	for _, runtimeEndpoint := range []bool{false, true} {
 		h := validHost()
-		h.user = []byte(`{"CU_ENDPOINT":"https://user.example","CU_DEFAULT_ANALYZER":"prebuilt-invoice"}`)
+		h.user = []byte(`{"CU_ENDPOINT":"https://user.services.ai.azure.com","CU_DEFAULT_ANALYZER":"prebuilt-invoice"}`)
 		options := Options{}
 		if runtimeEndpoint {
-			options.Endpoint = "https://flag.example"
+			options.Endpoint = "https://flag.services.ai.azure.com"
 		}
 		ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
 		result, err := Load(ctx, hostClient(t, h), "", options, nil)
@@ -502,7 +503,7 @@ func TestUserDefaultsWithApplicableEnvironmentAndRuntimeEndpoint(t *testing.T) {
 			assert.Equal(t, []string{"user:" + UserConfigPath}, h.calls())
 		} else {
 			assert.Equal(t, "dev", result.Environment)
-			assert.Equal(t, "https://env.example/contentunderstanding", result.Endpoint)
+			assert.Equal(t, "https://env.services.ai.azure.com/contentunderstanding", result.Endpoint)
 			assert.Equal(t, "azd environment: dev", result.Sources["CU_ENDPOINT"])
 		}
 	}
@@ -523,7 +524,7 @@ func TestUserConfigFailuresAreNotSilentDefaults(t *testing.T) {
 	h := validHost()
 	h.fail, h.err = "user:"+UserConfigPath, status.Error(codes.Unavailable, "private-user-config-detail")
 	ctx := azdext.WithAccessToken(t.Context(), "private-host-token")
-	_, err := Load(ctx, hostClient(t, h), "", Options{Endpoint: "https://flag.example"}, nil)
+	_, err := Load(ctx, hostClient(t, h), "", Options{Endpoint: "https://flag.services.ai.azure.com"}, nil)
 	require.Error(t, err)
 	assert.NotContains(t, err.Error(), "private")
 }

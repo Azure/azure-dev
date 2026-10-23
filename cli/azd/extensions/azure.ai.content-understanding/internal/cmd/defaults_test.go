@@ -73,7 +73,7 @@ func newDefaultsFixture(t *testing.T) *defaultsFixture {
 	return &defaultsFixture{
 		client: &defaultsFake{current: cuclient.Defaults{ModelDeployments: mapping}},
 		models: map[string]string{"gpt-5.2": "environment-deployment"}, environment: "dev",
-		endpoint: "https://configured.example/contentunderstanding",
+		endpoint: "https://configured.services.ai.azure.com/contentunderstanding",
 	}
 }
 
@@ -128,7 +128,7 @@ func TestDefaultsShowPreservesCompleteResponseAndFormats(t *testing.T) {
 				ModelDeployments: map[string]string{"gpt-4.1": "deployment"}, JSON: json.RawMessage(raw),
 			}
 			stdout, stderr, err := f.execute(t.Context(), "defaults", "show", "-o", format,
-				"--endpoint", "https://explicit.example", "--api-version", cuclient.PreviewAPIVersion)
+				"--endpoint", "https://explicit.services.ai.azure.com", "--api-version", cuclient.PreviewAPIVersion)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			if format == "none" {
@@ -139,7 +139,7 @@ func TestDefaultsShowPreservesCompleteResponseAndFormats(t *testing.T) {
 			}
 			assert.Equal(t, []string{"get"}, f.client.calls)
 			assert.Equal(t, f.opens, f.closes)
-			assert.Equal(t, "https://explicit.example", f.options.Endpoint)
+			assert.Equal(t, "https://explicit.services.ai.azure.com", f.options.Endpoint)
 			assert.Equal(t, cuclient.PreviewAPIVersion, f.options.APIVersion)
 		})
 	}

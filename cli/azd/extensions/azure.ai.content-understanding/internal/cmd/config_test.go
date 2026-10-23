@@ -120,8 +120,9 @@ func TestCUConfigUsesAzdUserStoreWithoutProjectOrAuthentication(t *testing.T) {
 		want string
 	}{
 		{[]string{"config", "list"}, `{}`},
-		{[]string{"config", "set", "CU_ENDPOINT", "https://resource.example"}, `{"CU_ENDPOINT":"https://resource.example"}`},
-		{[]string{"config", "get", "CU_ENDPOINT"}, `{"CU_ENDPOINT":"https://resource.example"}`},
+		{[]string{"config", "set", "CU_ENDPOINT", "https://resource.services.ai.azure.com"},
+			`{"CU_ENDPOINT":"https://resource.services.ai.azure.com"}`},
+		{[]string{"config", "get", "CU_ENDPOINT"}, `{"CU_ENDPOINT":"https://resource.services.ai.azure.com"}`},
 		{[]string{"config", "set", "CU_DEFAULT_ANALYZER", "prebuilt-invoice"}, `{"CU_DEFAULT_ANALYZER":"prebuilt-invoice"}`},
 		{[]string{"config", "set", "CU_API_VERSION", "2027-01-01-preview"}, `{"CU_API_VERSION":"2027-01-01-preview"}`},
 	} {
@@ -136,15 +137,15 @@ func TestCUConfigUsesAzdUserStoreWithoutProjectOrAuthentication(t *testing.T) {
 	defer client.Close()
 	ctx := azdext.WithAccessToken(t.Context())
 	_, err = client.UserConfig().Set(ctx, &azdext.SetUserConfigRequest{
-		Path: config.UserConfigPath + ".CU_ENDPOINT", Value: []byte(`"https://direct.example"`),
+		Path: config.UserConfigPath + ".CU_ENDPOINT", Value: []byte(`"https://direct.services.ai.azure.com"`),
 	})
 	require.NoError(t, err)
-	t.Setenv("CU_ENDPOINT", "https://process.example")
+	t.Setenv("CU_ENDPOINT", "https://process.services.ai.azure.com")
 	t.Setenv("AZD_ENVIRONMENT", "missing")
 	stdout, stderr, err := executeRoot(t, "config", "get", "CU_ENDPOINT", "--output", "json")
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
-	assert.JSONEq(t, `{"CU_ENDPOINT":"https://direct.example"}`, stdout)
+	assert.JSONEq(t, `{"CU_ENDPOINT":"https://direct.services.ai.azure.com"}`, stdout)
 	stdout, _, err = executeRoot(t, "config", "list", "--output", "none")
 	require.NoError(t, err)
 	assert.Empty(t, stdout)
@@ -158,17 +159,17 @@ func TestCUConfigValidatesBeforeHostAccess(t *testing.T) {
 	t.Setenv("AZD_SERVER", "")
 	t.Setenv("AZD_ACCESS_TOKEN", "")
 	for _, args := range [][]string{
-		{"config", "set", "endpoint", "https://resource.example"},
+		{"config", "set", "endpoint", "https://resource.services.ai.azure.com"},
 		{"config", "set", "CU_API_KEY", "private-key"},
 		{"config", "set", "CU_ENDPOINT",
-			"https://user:private-password@resource.example?sig=private-signature#private-fragment"},
+			"https://user:private-password@resource.services.ai.azure.com?sig=private-signature#private-fragment"},
 		{"config", "set", "CU_ENDPOINT", ""},
 		{"config", "set", "CU_DEFAULT_ANALYZER", "private/analyzer"},
 		{"config", "set", "CU_API_VERSION", "2027-02-29-preview"},
 		{"config", "get", "cu_endpoint"},
 		{"config", "unset", "apiVersion"},
 		{"config", "list", "--environment", ""},
-		{"config", "set", "CU_ENDPOINT", "https://resource.example", "--environment", "dev"},
+		{"config", "set", "CU_ENDPOINT", "https://resource.services.ai.azure.com", "--environment", "dev"},
 	} {
 		stdout, stderr, err := executeRoot(t, args...)
 		require.Error(t, err)
@@ -179,9 +180,27 @@ func TestCUConfigValidatesBeforeHostAccess(t *testing.T) {
 	}
 }
 
+func TestCUConfigRejectsUntrustedEndpointWithoutChangingStoredDefaults(t *testing.T) {
+	const endpoint = `"https://resource.services.ai.azure.com"`
+	user := &userConfigServer{settings: map[string]json.RawMessage{
+		"CU_ENDPOINT": json.RawMessage(endpoint),
+	}}
+	startUserConfigHost(t, user)
+	stdout, stderr, err := executeRoot(t, "config", "set", "CU_ENDPOINT", "https://private-attacker.example")
+	require.ErrorContains(t, err, "Azure resource endpoint")
+	assert.NotContains(t, err.Error(), "private")
+	assert.Empty(t, stdout)
+	assert.Empty(t, stderr)
+	user.mu.Lock()
+	defer user.mu.Unlock()
+	assert.Empty(t, user.requests, "invalid configuration must not access or mutate the host store")
+	assert.JSONEq(t, endpoint, string(user.settings["CU_ENDPOINT"]))
+}
+
 func TestCUConfigInvalidStoredValuesAndHostFailures(t *testing.T) {
 	user := &userConfigServer{settings: map[string]json.RawMessage{
-		"CU_ENDPOINT": json.RawMessage(`"https://user:private-password@resource.example?sig=private-signature"`),
+		"CU_ENDPOINT": json.RawMessage(
+			`"https://user:private-password@resource.services.ai.azure.com?sig=private-signature"`),
 	}}
 	startUserConfigHost(t, user)
 	for _, args := range [][]string{{"config", "get", "CU_ENDPOINT"}, {"config", "list"}} {
@@ -234,7 +253,7 @@ func (*projectlessConfigEnvironment) GetCurrent(
 
 func TestDoctorUsesUserDefaultsThroughSharedRuntimeWithoutProject(t *testing.T) {
 	user := &userConfigServer{settings: map[string]json.RawMessage{
-		"CU_ENDPOINT":         json.RawMessage(`"https://user.example"`),
+		"CU_ENDPOINT":         json.RawMessage(`"https://user.services.ai.azure.com"`),
 		"CU_API_VERSION":      json.RawMessage(`"2027-01-01-preview"`),
 		"CU_DEFAULT_ANALYZER": json.RawMessage(`"prebuilt-invoice"`),
 	}}
@@ -257,7 +276,7 @@ func TestDoctorUsesUserDefaultsThroughSharedRuntimeWithoutProject(t *testing.T) 
 	assert.Empty(t, stderr.String())
 	var result doctorResult
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-	assert.Equal(t, "https://user.example/contentunderstanding", result.Endpoint)
+	assert.Equal(t, "https://user.services.ai.azure.com/contentunderstanding", result.Endpoint)
 	assert.Equal(t, "2027-01-01-preview", result.APIVersion)
 	require.NotNil(t, result.Analyzer)
 	assert.Equal(t, "prebuilt-invoice", *result.Analyzer)

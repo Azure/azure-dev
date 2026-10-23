@@ -376,6 +376,12 @@ falls back to user defaults. Other environment-loading failures also fail.
 Explicitly selected environments do not borrow tenant or scope from an unrelated environment.
 
 Invalid effective values fail instead of falling back to a lower-priority source.
+Public-cloud resource endpoints must use HTTPS with a resource hostname under
+`services.ai.azure.com` or `cognitiveservices.azure.com`, on the default port or
+explicit port `443`. Arbitrary hosts, IP addresses, and other ports are rejected
+before service authentication to prevent sending access tokens to an untrusted server.
+This applies to endpoints supplied through flags, process variables, azd environments,
+user defaults, and Azure resource discovery.
 Explicitly empty command flags are rejected; empty process/environment values
 are treated as unset. `config set` rejects empty values; use `config unset` to
 remove a user default.

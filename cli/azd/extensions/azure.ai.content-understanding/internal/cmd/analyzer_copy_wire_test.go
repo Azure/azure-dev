@@ -63,28 +63,29 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 							name, id = "target", targetID
 						}
 						body = `{"id":"` + id + `","name":"` + name + `","location":"westus",` +
-							`"properties":{"endpoint":"https://` + name + `.example"}}`
+							`"properties":{"endpoint":"https://` + name + `.services.ai.azure.com"}}`
 					} else {
 						assert.Equal(t, version, request.URL.Query().Get("api-version"))
 						assert.NotEmpty(t, request.Header.Get("x-ms-client-request-id"))
 						assert.Empty(t, request.Header.Get("Ocp-Apim-Subscription-Key"))
 						switch action {
-						case "GET source.example/contentunderstanding/analyzers/source":
+						case "GET source.services.ai.azure.com/contentunderstanding/analyzers/source":
 							body = `{"analyzerId":"source","status":"ready",` +
 								`"config":{"contentCategories":{"custom":{"analyzerId":"dependency"}}}}`
-						case "GET target.example/contentunderstanding/analyzers/dependency":
+						case "GET target.services.ai.azure.com/contentunderstanding/analyzers/dependency":
 							body = `{"analyzerId":"dependency","status":"ready"}`
-						case "GET target.example/contentunderstanding/analyzers/destination":
+						case "GET target.services.ai.azure.com/contentunderstanding/analyzers/destination":
 							result.StatusCode = 404
 							body = `{"error":{"code":"NotFound","message":"private backend secret"}}`
-						case "POST source.example/contentunderstanding/analyzers/source:grantCopyAuthorization":
+						case "POST source.services.ai.azure.com/contentunderstanding/analyzers/" +
+							"source:grantCopyAuthorization":
 							var grant map[string]string
 							require.NoError(t, json.NewDecoder(request.Body).Decode(&grant))
 							assert.Equal(t, map[string]string{
 								"targetAzureResourceId": targetID, "targetRegion": "westus"}, grant)
 							body = `{"targetAzureResourceId":"` + targetID +
 								`","targetRegion":"westus","expiresAt":"2099-01-01T00:00:00Z"}`
-						case "POST target.example/contentunderstanding/analyzers/destination:copy":
+						case "POST target.services.ai.azure.com/contentunderstanding/analyzers/destination:copy":
 							var copyBody map[string]string
 							require.NoError(t, json.NewDecoder(request.Body).Decode(&copyBody))
 							assert.Equal(t, map[string]string{
@@ -92,10 +93,11 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 								"sourceRegion": "westus"}, copyBody)
 							result.StatusCode = 201
 							result.Header.Set("Operation-Location",
-								"https://target.example/contentunderstanding/analyzers/destination/operations/"+
-									"copy-operation")
+								"https://target.services.ai.azure.com/contentunderstanding/analyzers/"+
+									"destination/operations/copy-operation")
 							body = `{"analyzerId":"destination","status":"creating"}`
-						case "GET target.example/contentunderstanding/analyzers/destination/operations/copy-operation":
+						case "GET target.services.ai.azure.com/contentunderstanding/analyzers/" +
+							"destination/operations/copy-operation":
 							status := "ready"
 							if failed {
 								status = "failed"
@@ -122,7 +124,7 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 				root := newRootCommand(func(
 					_ *cobra.Command, _ *azdext.ExtensionContext, _ config.Options,
 				) (*serviceSession, error) {
-					client, err := clientFor("https://source.example")
+					client, err := clientFor("https://source.services.ai.azure.com")
 					require.NoError(t, err)
 					return &serviceSession{client: client, close: func() {},
 						resolveAccount: func(
@@ -150,12 +152,12 @@ func TestAnalyzerCopyCommandThroughARMAndCUPipelines(t *testing.T) {
 				assert.Contains(t, credential.scopes, "https://cognitiveservices.azure.com/.default")
 				assert.Equal(t, []string{
 					"GET management.azure.com" + sourceID, "GET management.azure.com" + targetID,
-					"GET source.example/contentunderstanding/analyzers/source",
-					"GET target.example/contentunderstanding/analyzers/dependency",
-					"GET target.example/contentunderstanding/analyzers/destination",
-					"POST source.example/contentunderstanding/analyzers/source:grantCopyAuthorization",
-					"POST target.example/contentunderstanding/analyzers/destination:copy",
-					"GET target.example/contentunderstanding/analyzers/destination/operations/copy-operation",
+					"GET source.services.ai.azure.com/contentunderstanding/analyzers/source",
+					"GET target.services.ai.azure.com/contentunderstanding/analyzers/dependency",
+					"GET target.services.ai.azure.com/contentunderstanding/analyzers/destination",
+					"POST source.services.ai.azure.com/contentunderstanding/analyzers/source:grantCopyAuthorization",
+					"POST target.services.ai.azure.com/contentunderstanding/analyzers/destination:copy",
+					"GET target.services.ai.azure.com/contentunderstanding/analyzers/destination/operations/copy-operation",
 				}, calls)
 			})
 		}

@@ -61,7 +61,7 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)
 			session, err := openServiceSession(cmd, &azdext.ExtensionContext{}, config.Options{
-				Endpoint: "https://configured.example", TenantID: "configured-tenant",
+				Endpoint: "https://configured.services.ai.azure.com", TenantID: "configured-tenant",
 				APIVersion: cuclient.PreviewAPIVersion, DefaultAnalyzer: "configured-analyzer",
 				ModelDeployments: map[string]string{"gpt-5.2": "configured-deployment"},
 				SubscriptionID:   "selected-subscription", ResourceGroup: "selected-group",
@@ -71,12 +71,12 @@ func TestServiceSessionUsesHostAndRESTClient(t *testing.T) {
 			assert.IsType(t, &cuclient.RESTTransport{}, session.client)
 			assert.Equal(t, cuclient.PreviewAPIVersion, session.apiVersion)
 			assert.Equal(t, "configured-analyzer", session.analyzer)
-			assert.Equal(t, "https://configured.example/contentunderstanding", session.endpoint)
+			assert.Equal(t, "https://configured.services.ai.azure.com/contentunderstanding", session.endpoint)
 			assert.Empty(t, session.environment)
 			assert.Equal(t, map[string]string{"gpt-5.2": "configured-deployment"}, session.models)
 			assert.Equal(t, "selected-subscription", session.scope.SubscriptionID)
 			assert.Equal(t, "selected-group", session.scope.ResourceGroup)
-			copyClient, err := session.clientForEndpoint("https://destination.example")
+			copyClient, err := session.clientForEndpoint("https://destination.services.ai.azure.com")
 			require.NoError(t, err)
 			assert.IsType(t, &cuclient.RESTTransport{}, copyClient)
 			_, err = session.clientForEndpoint("http://unsafe.example")
@@ -107,4 +107,24 @@ func TestServiceSessionConfigurationFailure(t *testing.T) {
 	session, err := openServiceSession(cmd, &azdext.ExtensionContext{}, config.Options{})
 	require.Error(t, err)
 	assert.Nil(t, session)
+}
+
+func TestServiceSessionRejectsUntrustedEnvironmentBeforeAuthentication(t *testing.T) {
+	startHost(t, &deploymentServer{get: func(context.Context) (*azdext.GetDeploymentContextResponse, error) {
+		t.Error("invalid endpoints must fail before loading deployment context")
+		return nil, status.Error(codes.Internal, "unexpected deployment lookup")
+	}})
+	argsPath := installAuthenticationCLI(t, true)
+	cmd := &cobra.Command{}
+	cmd.SetContext(t.Context())
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	session, err := openServiceSession(cmd, &azdext.ExtensionContext{Environment: "untrusted"}, config.Options{})
+	require.ErrorContains(t, err, "Azure resource endpoint")
+	assert.Nil(t, session)
+	assert.NotContains(t, err.Error(), "private")
+	assert.NoFileExists(t, argsPath, "an invalid environment endpoint must not invoke azd auth token")
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
 }

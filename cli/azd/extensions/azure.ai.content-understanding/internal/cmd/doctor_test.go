@@ -75,7 +75,7 @@ func TestDoctorHumanReadableDefault(t *testing.T) {
 
 [OK] Configuration resolved
   Context: %s
-  CU_ENDPOINT: https://configured.example/contentunderstanding (user config)
+  CU_ENDPOINT: https://configured.services.ai.azure.com/contentunderstanding (user config)
   CU_API_VERSION: 2025-11-01 (built-in)
   CU_DEFAULT_ANALYZER: prebuilt-invoice (process)
 

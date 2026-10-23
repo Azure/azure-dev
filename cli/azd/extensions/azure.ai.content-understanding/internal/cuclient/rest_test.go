@@ -39,6 +39,45 @@ func restResponse(request *http.Request, status int, body string) *http.Response
 	}
 }
 
+func TestFuturePreviewTransport(t *testing.T) {
+	const version = "2027-01-01-preview"
+	for _, mode := range []AnalysisMode{AnalysisModeAsync, AnalysisModeInline} {
+		t.Run(string(mode), func(t *testing.T) {
+			calls := 0
+			client := newRESTTransport(t, version, func(request *http.Request) (*http.Response, error) {
+				calls++
+				assert.Equal(t, version, request.URL.Query().Get("api-version"))
+				if mode == AnalysisModeAsync && calls == 1 {
+					response := restResponse(request, http.StatusAccepted, `{"id":"op","status":"Running"}`)
+					response.Header.Set("Operation-Location",
+						"https://resource.test/contentunderstanding/analyzerResults/op")
+					return response, nil
+				}
+				if mode == AnalysisModeAsync {
+					assert.Equal(t, http.MethodGet, request.Method)
+					assert.Equal(t, "/contentunderstanding/analyzerResults/op", request.URL.Path)
+				} else {
+					assert.Equal(t, "/contentunderstanding/analyzers/one:analyzeInline", request.URL.Path)
+				}
+				return restResponse(request, http.StatusOK,
+					`{"id":"op","status":"Succeeded","result":{"analyzerId":"one","apiVersion":"`+version+
+						`","contents":[{"kind":"document","mimeType":"text/markdown","markdown":"text"}]}}`), nil
+			})
+			client.pollInterval = 0
+			response, err := client.Analyze(t.Context(), AnalyzeRequest{
+				AnalyzerID: "one", Mode: mode, Input: Input{URL: "https://example.test/a.pdf"},
+			})
+			require.NoError(t, err)
+			assert.Equal(t, version, response.Result.APIVersion)
+			if mode == AnalysisModeAsync {
+				assert.Equal(t, 2, calls)
+			} else {
+				assert.Equal(t, 1, calls)
+			}
+		})
+	}
+}
+
 func TestRESTTransportContract(t *testing.T) {
 	var listCalls int
 	client := newRESTTransport(t, PreviewAPIVersion, func(

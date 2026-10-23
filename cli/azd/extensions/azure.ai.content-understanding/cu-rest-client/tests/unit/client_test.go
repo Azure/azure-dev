@@ -40,6 +40,77 @@ func testClient(t *testing.T, apiVersion string, handler http.HandlerFunc) (*res
 	return client, server
 }
 
+func TestAPIVersionValidation(t *testing.T) {
+	for _, value := range []string{
+		"", restclient.APIVersionGA, restclient.APIVersionPreview, "2027-01-01-preview", "2024-02-29-preview",
+	} {
+		t.Run("valid/"+value, func(t *testing.T) {
+			want := value
+			if want == "" {
+				want = restclient.APIVersionGA
+			}
+			normalized, err := restclient.NormalizeAPIVersion(value)
+			require.NoError(t, err)
+			assert.Equal(t, want, normalized)
+			client, _ := testClient(t, value, func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, want, r.URL.Query().Get("api-version"))
+				_, _ = io.WriteString(w, `{"modelDeployments":{}}`)
+			})
+			_, err = client.GetDefaults(t.Context())
+			require.NoError(t, err)
+		})
+	}
+	for _, value := range []string{
+		"2027-01-01", "2026-02-29-preview", "2027-13-01-preview", "2027-01-32-preview",
+		"2027-1-01-preview", "2027-01-1-preview", "2027-01-01-preview-extra",
+		"2027-01-01-PREVIEW", " 2027-01-01-preview", "2027-01-01-preview\n", "private-token",
+	} {
+		t.Run("invalid/"+value, func(t *testing.T) {
+			_, err := restclient.NormalizeAPIVersion(value)
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "private-token")
+			for _, embedded := range []bool{false, true} {
+				options := &restclient.ClientOptions{APIVersion: value}
+				if embedded {
+					options.APIVersion = ""
+					options.ClientOptions.APIVersion = value
+				}
+				_, err = restclient.NewClient("https://resource.test", &testCredential{}, options)
+				require.Error(t, err)
+				_, err = restclient.NewClientWithKeyCredential(
+					"https://resource.test", azcore.NewKeyCredential("key"), options)
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
+func TestFuturePreviewInline(t *testing.T) {
+	const version = "2027-01-01-preview"
+	for _, binary := range []bool{false, true} {
+		t.Run(fmt.Sprint(binary), func(t *testing.T) {
+			client, _ := testClient(t, version, func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, version, r.URL.Query().Get("api-version"))
+				action := ":analyzeInline"
+				if binary {
+					action = ":analyzeBinaryInline"
+				}
+				assert.True(t, strings.HasSuffix(r.URL.Path, action))
+				_, _ = io.WriteString(w, `{"status":"Succeeded","result":{"contents":[]}}`)
+			})
+			var err error
+			if binary {
+				_, err = client.AnalyzeBinaryInline(t.Context(), "a", streamingBody("input"), "")
+			} else {
+				_, err = client.AnalyzeInline(t.Context(), "a", restclient.AnalyzeRequest{
+					Inputs: []restclient.AnalysisInput{{URL: "https://example.test/a.pdf"}},
+				})
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 const succeededAnalysis = `{"id":"op1","status":"Succeeded",` +
 	`"usage":{"documentPagesMinimal":0,"tokens":{"large":9007199254740993}},` +
 	`"result":{"analyzerId":"prebuilt-layout","stringEncoding":"codePoint",` +

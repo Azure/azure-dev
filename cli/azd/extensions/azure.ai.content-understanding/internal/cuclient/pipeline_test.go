@@ -70,7 +70,7 @@ func TestTransportOptionsValidation(t *testing.T) {
 	assert.Nil(t, client)
 	require.Error(t, err)
 	for _, options := range []TransportOptions{
-		{APIVersion: "2027-01-01-preview"}, {APIVersion: "private-token"},
+		{APIVersion: "2027-01-01"}, {APIVersion: "private-token"},
 		{RequestTimeout: -time.Second}, {Version: "invalid\r\nprivate-token"},
 	} {
 		client, err := NewRESTTransport("https://resource.test", &testCredential{}, &options)

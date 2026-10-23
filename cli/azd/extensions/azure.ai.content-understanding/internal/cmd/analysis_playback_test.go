@@ -13,6 +13,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/cuclient"
 
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,8 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 						if test.directory {
 							args = []string{"analyze", "--source", directory, "--output-dir", output}
 						}
-						args = append(args, "--analyzer", test.analyzer, "-o", format, "--debug", "--no-prompt",
+						args = append(args, "--llm-input=false", "--analyzer", test.analyzer,
+							"-o", format, "--debug", "--no-prompt",
 							"--endpoint", "https://sanitized.services.ai.azure.com",
 							"--api-version", cuclient.DefaultAPIVersion)
 						var stdout, stderr bytes.Buffer
@@ -95,6 +97,32 @@ func TestRecordedAnalysisCommands(t *testing.T) {
 	}
 }
 
+func TestRecordedAnalysisDefaultLLMInput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fixture := loadRecordedFixture(t, "analyze_single")
+		transport := &recordedTransport{fixture: fixture, binaryBody: []byte(recordedBinaryInput)}
+		root := newRecordedCommand(t, transport, "prebuilt-layout")
+		input := filepath.Join(t.TempDir(), "invoice.pdf")
+		require.NoError(t, os.WriteFile(input, []byte(recordedBinaryInput), 0o600))
+		root.SetArgs([]string{"analyze", input, "--analyzer", "prebuilt-layout", "--no-prompt",
+			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion})
+		var stdout, stderr bytes.Buffer
+		root.SetOut(&stdout)
+		root.SetErr(&stderr)
+		require.NoError(t, root.ExecuteContext(t.Context()))
+		require.NoError(t, transport.complete())
+		assert.Empty(t, stderr.String())
+		var envelope struct {
+			Result json.RawMessage `json:"result"`
+		}
+		require.NoError(t, json.Unmarshal(fixture.Interactions[len(fixture.Interactions)-1].Response.Body, &envelope))
+		expected, err := analysis.RenderLLM(envelope.Result)
+		require.NoError(t, err)
+		assert.Equal(t, expected+"\n", stdout.String())
+		assert.False(t, json.Valid(stdout.Bytes()))
+	})
+}
+
 func TestRecordedAnalysisSyntheticURLContract(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fixture := loadRecordedFixture(t, "analyze_single")
@@ -106,7 +134,7 @@ func TestRecordedAnalysisSyntheticURLContract(t *testing.T) {
 		first.Request.Headers["Content-Type"] = "application/json"
 		transport := &recordedTransport{fixture: fixture}
 		root := newRecordedCommand(t, transport, "prebuilt-layout")
-		args := []string{"analyze", "--url", "https://example.com/sample_invoice.pdf",
+		args := []string{"analyze", "--llm-input=false", "--url", "https://example.com/sample_invoice.pdf",
 			"--analyzer", "prebuilt-layout", "-o", "json", "--no-prompt",
 			"--endpoint", "https://sanitized.services.ai.azure.com", "--api-version", cuclient.DefaultAPIVersion}
 		var stdout, stderr bytes.Buffer

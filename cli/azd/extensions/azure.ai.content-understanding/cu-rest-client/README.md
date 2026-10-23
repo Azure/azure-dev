@@ -9,7 +9,9 @@ For installation, authentication, and command examples, see the
 
 The client supports JSON and binary analysis, asynchronous and preview inline
 analysis, analyzer management and copying, and service defaults. The default
-API version is `2025-11-01`; inline analysis requires `2026-06-01-preview`.
+API version is `2025-11-01`. Any valid `YYYY-MM-DD-preview` date is also accepted,
+including `2026-06-01-preview`; the service determines version availability.
+Inline analysis requires a preview version.
 
 The extension supplies an azd-backed Microsoft Entra credential. It owns command
 configuration, confirmations, file access, model discovery, and output formatting.

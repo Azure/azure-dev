@@ -42,7 +42,7 @@ func newAnalyzerCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *c
 		flags := cmd.Flags()
 		flags.StringVar(&options.service.Endpoint, "endpoint", "", "Microsoft Foundry resource endpoint")
 		flags.StringVar(&options.service.APIVersion, "api-version", "",
-			"CU API version: 2025-11-01 or 2026-06-01-preview (default: resolved setting or GA)")
+			"CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)")
 		if action != "list" {
 			cmd.Use += " [ANALYZER_NAME]"
 			flags.StringVarP(&options.name, "name", "n", "", "Analyzer name (-a is also accepted)")

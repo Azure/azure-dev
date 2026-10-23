@@ -26,6 +26,13 @@ func (offlineContractLoader) Load(string) (any, error) {
 }
 
 func validateSpec(data []byte, version string) ([]Finding, error) {
+	if version != cuclient.DefaultAPIVersion && version != cuclient.PreviewAPIVersion {
+		return nil, &cuclient.Error{
+			Kind: cuclient.ErrorValidation, Code: "unsupported_validation_contract",
+			Message:    "No bundled analyzer validation contract exists for the selected preview version.",
+			Suggestion: "Omit --spec for authoring checks, or select 2025-11-01 or 2026-06-01-preview.",
+		}
+	}
 	raw, err := contracts.ReadFile("specs/" + version + ".json")
 	if err != nil {
 		return nil, contractError()

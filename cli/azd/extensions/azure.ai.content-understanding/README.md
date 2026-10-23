@@ -60,7 +60,7 @@ azd ai cu doctor
 These examples use Bash. In PowerShell, set the endpoint with
 `$env:CU_ENDPOINT = "https://<resource-name>.services.ai.azure.com/"`.
 Normal endpoint-only use does not require a tenant ID; the extension uses azd
-authentication. It does not use an `az login` session or API keys.
+authentication. API-key authentication is not supported.
 
 `doctor` reports configuration, authentication, service access, and model
 readiness. Missing generative models can produce `ready: false` while
@@ -71,9 +71,11 @@ For saved azd environment settings or cross-tenant access, see
 
 ## Supported Content Understanding API versions
 
-The extension supports `2025-11-01` (default) and `2026-06-01-preview`. Use
-`--api-version` to select a version for a command. The extension's Preview
-release status does not change the default service API version.
+The default API version is `2025-11-01`. Use `--api-version` to select
+`2026-06-01-preview` or any valid `YYYY-MM-DD-preview` version for internal
+testing or future previews. Acceptance by the CLI does not guarantee that the
+service supports that version. The extension's Preview release status does not
+change the default service API version.
 
 See [API versions and configuration](docs/usage.md#configuration-and-api-versions)
 for precedence and preview-only inline analysis.
@@ -87,23 +89,25 @@ model deployments. Download the public sample invoice and analyze it:
 curl --fail --location --output invoice.pdf \
   https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
 
-azd ai cu analyzer list --output json
-azd ai cu analyze invoice.pdf
+azd ai cu analyze invoice.pdf --llm-input
 ```
 
 Without a specified or configured analyzer, analysis uses `prebuilt-layout`.
 Use `--analyzer` to override the default.
 
-Save the complete JSON response:
+Analysis displays YAML front matter and Markdown in the console by default.
+`--llm-input` is enabled by default, so you can omit it. To save that text:
 
 ```bash
-azd ai cu analyze invoice.pdf --output-file invoice.result.json
+azd ai cu analyze invoice.pdf --output-file invoice.result.md
 ```
 
-Or format the extracted content for generative AI model input:
+For the complete JSON response, including service warnings and usage, disable
+the LLM-input view. Display it in the console or save it to a file:
 
 ```bash
-azd ai cu analyze invoice.pdf --llm-input --output-file invoice.result.md
+azd ai cu analyze invoice.pdf --llm-input=false --output json
+azd ai cu analyze invoice.pdf --llm-input=false --output-file invoice.result.json
 ```
 
 See [analysis examples](docs/usage.md#analyze-content) for URLs, batches, dry runs,

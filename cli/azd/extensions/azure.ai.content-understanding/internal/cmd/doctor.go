@@ -128,7 +128,7 @@ func doctorConfigurationError(err error) error {
 			result.Suggestion = "Use azd env list/select to choose an existing project environment. " +
 				"For projectless diagnostics, supply --endpoint and process AZURE_TENANT_ID without --environment."
 		case "unsupported_api_version":
-			result.Suggestion = "Pass --api-version 2025-11-01 or 2026-06-01-preview, " +
+			result.Suggestion = "Pass --api-version 2025-11-01 or a valid YYYY-MM-DD-preview date, " +
 				"or correct CU_API_VERSION / azd env config set cu.apiVersion."
 		}
 		return &result

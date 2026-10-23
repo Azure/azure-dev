@@ -62,7 +62,7 @@ func invalidLLM() error {
 	return &cuclient.Error{
 		Kind: cuclient.ErrorService, Code: "invalid_llm_result",
 		Message:    "The analysis result cannot be rendered as LLM input.",
-		Suggestion: "Use the complete JSON result to inspect the service response.",
+		Suggestion: "Use --llm-input=false to inspect the complete JSON service response.",
 	}
 }
 

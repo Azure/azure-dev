@@ -33,7 +33,7 @@ func newAnalyzerValidateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 		Args: cobra.MaximumNArgs(1),
 	}
 	cmd.Flags().StringVarP(&path, "schema", "s", "", "Path to a local UTF-8 JSON analyzer schema")
-	cmd.Flags().StringVar(&version, "api-version", "", "CU contract version: 2025-11-01 or 2026-06-01-preview (default: GA)")
+	cmd.Flags().StringVar(&version, "api-version", "", "CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: GA)")
 	cmd.Flags().BoolVar(&strict, "strict", false, "Treat authoring warnings as validation failures")
 	cmd.Flags().BoolVar(&spec, "spec", false, "Also validate against the bundled offline CU create contract")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

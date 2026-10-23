@@ -46,12 +46,13 @@ Use `azd env new dev` if the project does not yet have that environment.
 Explicit options and process inputs take precedence over saved settings; clear
 process overrides when switching resources.
 
-The extension uses Microsoft Entra ID through `azd auth login`, not `az login`
-or a separate credential chain. It does not expose API-key authentication or
-CU profile commands.
-Remove `CU_API_KEY` from the process and selected environment, and remove
-`cu.apiKey` or legacy `api_key` settings; even empty persisted key entries are
-rejected. `CU_AUTH_MODE`, if set, must be `login`.
+The extension only supports Microsoft Entra ID authentication through azd.
+Use `azd auth login` or supported noninteractive azd authentication.
+API-key authentication and CU profile
+commands are not supported.
+
+`CU_API_KEY` and saved API-key entries are rejected rather than used, even when
+empty. `CU_AUTH_MODE`, if set, must be `login`.
 
 `doctor` checks configuration, authentication, service access, and model defaults.
 A report with `ready: false` and missing model requirements can still exit
@@ -68,16 +69,15 @@ not require language or embeddings model deployments:
 curl --fail --location --output invoice.pdf \
   https://raw.githubusercontent.com/Azure-Samples/azure-ai-content-understanding-assets/main/document/invoice.pdf
 
-azd ai cu analyzer list --output json
-azd ai cu analyze invoice.pdf
+azd ai cu analyze invoice.pdf --llm-input
 ```
 
 When no analyzer is specified or configured, analysis defaults to
 `prebuilt-layout`. Use `--analyzer` to override a configured default.
 
-By default, a single analysis returns the complete terminal response envelope,
-including the result, service warnings, and usage when present. Use `--llm-input`
-to format the extracted content for generative AI model input:
+By default, a single analysis displays YAML front matter and Markdown in the
+console. This LLM-input view is enabled by default; `--llm-input` can be omitted.
+Save the same text with `--output-file`:
 
 ```bash
 azd ai cu analyze \
@@ -87,9 +87,19 @@ azd ai cu analyze \
   --output-file invoice.result.md
 ```
 
-Saved LLM input is plain text; streamed LLM input is a JSON string. Use
-`--output-file invoice.result.json` without `--llm-input` to save the full JSON
-response instead.
+For the complete JSON response envelope, including the result, service warnings,
+and usage when present, set `--llm-input=false`. These examples display the JSON
+in the console and save it to a file, respectively:
+
+```bash
+azd ai cu analyze invoice.pdf --llm-input=false --output json
+azd ai cu analyze invoice.pdf --llm-input=false --output-file invoice.result.json
+```
+
+The view determines the result content, not the filename extension.
+`--output json` JSON-encodes the selected console value: with LLM input enabled,
+that is a JSON string rather than the full response. `--usage` wraps a streamed
+result and usage metadata in a JSON object. Saved LLM input remains plain text.
 
 Analyze an HTTPS or Azure Blob SAS URL without downloading it first:
 
@@ -111,6 +121,16 @@ azd ai cu analyze \
   --analyzer prebuilt-layout \
   --yes
 ```
+
+| Argument | Meaning |
+| --- | --- |
+| `--source ./documents` | Select files from this directory. |
+| `--pattern "*.pdf"` | Match source-relative paths using this pattern. Quoting keeps the shell from expanding it. |
+| `--recursive` | Include nested directories, excluding hidden directories. |
+| `--output-dir ./results` | Save results here, preserving source-relative paths. The default suffix is `.result.md`; use `--llm-input=false` for `.result.json`. |
+| `--report-file ./report.json` | Write a new JSON report of per-input outcomes, separate from extracted results. |
+| `--analyzer prebuilt-layout` | Explicitly select the analyzer instead of a configured default. |
+| `--yes` | Confirm the cost of batches larger than 50 inputs without prompting. |
 
 Use `--dry-run` without `--yes` to inspect the execution plan before CU calls or
 writes. Analysis dry runs still require resolved endpoint and analyzer
@@ -205,9 +225,14 @@ mappings. It does not deploy models or provision resources.
 
 ## Configuration and API versions
 
-The extension supports `2025-11-01` (default) and `2026-06-01-preview`.
-Override the version for a command with `--api-version`. Inline analysis
-requires the preview version and does not fall back to asynchronous analysis:
+The default API version is `2025-11-01`. `--api-version` also accepts
+`2026-06-01-preview` and any valid calendar date in `YYYY-MM-DD-preview` format
+for internal testing or future previews. The selected version is sent unchanged;
+the service determines whether it is available and supports the requested
+operation. Other GA versions, malformed dates, and extra suffixes are rejected.
+
+Inline analysis requires a preview version and does not fall back to
+asynchronous analysis:
 
 ```bash
 azd ai cu analyze \
@@ -216,6 +241,11 @@ azd ai cu analyze \
   --inline \
   --api-version 2026-06-01-preview
 ```
+
+Offline authoring checks accept the same preview versions, but `analyzer validate
+--spec` requires a bundled contract. Contracts are available only for
+`2025-11-01` and `2026-06-01-preview`. For other preview versions, omit `--spec`;
+the CLI reports a clear error rather than silently substituting a contract.
 
 For persisted settings, use azd environments and `cu.*` environment configuration
 instead of CU profiles.
@@ -245,7 +275,7 @@ for endpoint-only operation.
 | Explicitly selected environment without a tenant | Looks up the user-access tenant for the resolved subscription. If neither can be resolved, reports an error instead of using another environment. |
 | Endpoint without an environment selection, with a configured tenant | Uses the configured tenant. |
 | Endpoint without an environment selection, no configured tenant | Looks up the resolved subscription if present; otherwise delegates tenant selection to azd authentication. |
-| No valid azd authentication, even with endpoint and tenant | Authentication is still required. Azure CLI-only login is not used. |
+| No valid azd authentication, even with endpoint and tenant | Authentication is still required; sign in through azd. |
 | Help or version | No authentication or tenant configuration is required. |
 
 For guest or cross-tenant access, the signed-in identity must have access through
@@ -286,8 +316,9 @@ set `NO_COLOR=1` for plain text.
 
 ## Usage guidance
 
-- Supported result formats are the default JSON presentation, `--output json`,
-  and `--output none`. Do not assume Azure CLI table or query behavior.
+- Supported output formats are `default`, `json`, and `none`. Analysis defaults
+  to readable LLM-input text; other commands, analysis summaries, dry runs, and
+  `--usage` wrappers use JSON. Use `--llm-input=false` for complete analysis JSON.
 - `--output none` suppresses successful stdout, not service operations, requested
   file writes, confirmations, or errors. Always check the exit code before parsing
   output: the azd host can render extension errors on stdout.

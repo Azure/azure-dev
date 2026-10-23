@@ -33,9 +33,8 @@ sign in through Azure Developer CLI:
 azd auth login
 ```
 
-Both the extension and `azd up` use azd authentication. Unlike the standalone
-CU CLI provisioning workflow, this extension does not require `az login`,
-Python, a CU profile, or an API key.
+Both the extension and `azd up` use azd authentication. Python, a CU profile,
+and API-key authentication are not required or used by the extension.
 
 ## Azure permissions
 

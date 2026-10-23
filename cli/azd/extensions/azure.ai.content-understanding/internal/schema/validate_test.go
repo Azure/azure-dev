@@ -65,6 +65,18 @@ func TestValidationMatchesPythonParityVectors(t *testing.T) {
 	}
 }
 
+func TestFuturePreviewValidationContract(t *testing.T) {
+	body := []byte(`{"baseAnalyzerId":"prebuilt-document","apiVersion":"2027-01-01-preview"}`)
+	result, err := Validate(body, "2027-01-01-preview", false)
+	require.NoError(t, err)
+	assert.True(t, result.OK)
+	_, err = Validate(body, "2027-01-01-preview", true)
+	var domain *cuclient.Error
+	require.ErrorAs(t, err, &domain)
+	assert.Equal(t, "unsupported_validation_contract", domain.Code)
+	assert.Contains(t, domain.Suggestion, "Omit --spec")
+}
+
 func TestValidationErrorsAreAggregatedAndDoNotEchoValues(t *testing.T) {
 	result, err := Validate([]byte(`{
 		"analyzerId":"private-invalid-id","models":[],

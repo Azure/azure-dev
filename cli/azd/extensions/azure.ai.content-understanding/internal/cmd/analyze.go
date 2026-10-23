@@ -34,12 +34,12 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		Use: "analyze [INPUTS...]", Short: "Analyze local files, directories, or HTTPS URLs",
 		Long: "Analyze local files, directories, or HTTPS URLs using Microsoft Entra authentication.\n\n" +
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
-			"Single results stream as complete JSON. Batches save source-relative result files.\n" +
-			"Use --llm-input for YAML front matter and Markdown, or --dry-run to inspect the plan without service calls.",
+			"Results use YAML front matter and Markdown by default. Batches save source-relative result files.\n" +
+			"Use --llm-input=false for complete JSON, or --dry-run to inspect the plan without service calls.",
 		Example: `  azd ai cu analyze invoice.pdf
     Analyze one file using the configured analyzer, or prebuilt-layout if unset.
 
-  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice --output json
+  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice --llm-input=false --output json
     Extract invoice fields and return the complete response as JSON.
 
   azd ai cu analyze --url "https://example.com/document.pdf" --analyzer prebuilt-layout
@@ -71,8 +71,8 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 		"CU API version (default: resolved setting or 2025-11-01)")
 	flags.BoolVarP(&options.inline, "inline", "i", false, "Use preview inline analysis; never falls back to async")
 	flags.BoolVar(&options.usage, "usage", false, "Include usage metadata in streamed results or per-input summaries")
-	flags.BoolVar(&options.output.LLMInput, "llm-input", false,
-		"Render YAML front matter and Markdown instead of the full envelope")
+	flags.BoolVar(&options.output.LLMInput, "llm-input", true,
+		"Render YAML front matter and Markdown; set false for the complete JSON envelope")
 	flags.StringVar(&options.output.File, "output-file", "", "Save one result to this file")
 	flags.StringVarP(&options.output.Directory, "output-dir", "d", "", "Save source-relative result files in this directory")
 	flags.StringVar(&options.output.Existing, "on-existing", "",
@@ -84,7 +84,7 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 	flags.IntVarP(&options.concurrency, "concurrency", "j", 4, "Concurrent analyses (1-32)")
 	return azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name: "output", AllowedValues: []string{"default", "json", "none"},
-		Usage: "Output format: default (JSON), json, or none; file writes are unaffected",
+		Usage: "Output format: default (text for LLM input, otherwise JSON), json, or none; file writes are unaffected",
 	})
 }
 
@@ -153,9 +153,9 @@ func runAnalyzeCommand(
 	}
 	mode := cuclient.AnalysisModeAsync
 	if options.inline {
-		if session.apiVersion != cuclient.PreviewAPIVersion {
-			return commandError("inline_requires_preview", "Inline analysis requires 2026-06-01-preview.",
-				"Select --api-version 2026-06-01-preview or omit --inline.")
+		if session.apiVersion == cuclient.DefaultAPIVersion {
+			return commandError("inline_requires_preview", "Inline analysis requires a preview API version.",
+				"Select a YYYY-MM-DD-preview API version or omit --inline.")
 		}
 		mode = cuclient.AnalysisModeInline
 	}
@@ -181,6 +181,15 @@ func runAnalyzeCommand(
 		return err
 	}
 	if execution.Stream != nil {
+		if text, ok := execution.Stream.(string); ok && extCtx.OutputFormat == "default" {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
+				return fmt.Errorf("write CU result: %w", err)
+			}
+			return nil
+		}
 		return writeServiceResult(cmd, extCtx.OutputFormat, execution.Stream)
 	}
 	return writeServiceResult(cmd, extCtx.OutputFormat, execution.Records)

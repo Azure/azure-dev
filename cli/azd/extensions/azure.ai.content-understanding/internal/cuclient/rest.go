@@ -216,9 +216,9 @@ func (c *RESTTransport) Analyze(ctx context.Context, request AnalyzeRequest) (An
 	if err := request.Validate(); err != nil {
 		return AnalyzeResponse{}, err
 	}
-	if request.Mode == AnalysisModeInline && c.apiVersion != PreviewAPIVersion {
+	if request.Mode == AnalysisModeInline && c.apiVersion == DefaultAPIVersion {
 		return AnalyzeResponse{}, validationError(
-			"inline_requires_preview", "Inline analysis requires the tested preview API version.",
+			"inline_requires_preview", "Inline analysis requires a preview API version.",
 		)
 	}
 	contentType, err := validateContentType(request.Input.ContentType)

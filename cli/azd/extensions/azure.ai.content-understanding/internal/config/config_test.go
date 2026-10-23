@@ -86,6 +86,29 @@ func TestResolvePrecedence(t *testing.T) {
 	}
 }
 
+func TestResolveFuturePreviewVersions(t *testing.T) {
+	const version = "2027-01-01-preview"
+	for _, tt := range []struct {
+		name    string
+		options Options
+		process map[string]string
+		values  map[string]string
+		section string
+	}{
+		{"flag", Options{APIVersion: version}, nil, nil, ""},
+		{"process", Options{}, map[string]string{"CU_API_VERSION": version}, nil, ""},
+		{"environment", Options{}, nil, map[string]string{"CU_API_VERSION": version}, ""},
+		{"config", Options{}, nil, nil, `{"apiVersion":"2027-01-01-preview"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.options.Endpoint = "https://resource.example"
+			result, err := resolve(tt.options, tt.process, tt.values, []byte(tt.section))
+			require.NoError(t, err)
+			assert.Equal(t, version, result.APIVersion)
+		})
+	}
+}
+
 func TestResolveInvalidConfiguration(t *testing.T) {
 	for _, tt := range []struct {
 		name    string

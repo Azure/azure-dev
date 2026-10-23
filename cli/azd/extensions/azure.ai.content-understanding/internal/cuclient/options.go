@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	client "azure.ai.content-understanding/cu-rest-client"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
@@ -45,15 +46,14 @@ func NormalizeEndpoint(endpoint string) (string, error) {
 	return parsed.String(), nil
 }
 
-// NormalizeAPIVersion applies the default and rejects untested API versions.
+// NormalizeAPIVersion applies the default and validates GA or date-formatted preview versions.
 func NormalizeAPIVersion(version string) (string, error) {
-	if version == "" {
-		return DefaultAPIVersion, nil
+	value, err := client.NormalizeAPIVersion(version)
+	if err != nil {
+		return "", validationError("unsupported_api_version",
+			"Select 2025-11-01 or a valid YYYY-MM-DD-preview API version.")
 	}
-	if version != DefaultAPIVersion && version != PreviewAPIVersion {
-		return "", validationError("unsupported_api_version", "Select a tested GA or preview CU API version.")
-	}
-	return version, nil
+	return value, nil
 }
 
 func normalizeOptions(options *TransportOptions) (TransportOptions, error) {

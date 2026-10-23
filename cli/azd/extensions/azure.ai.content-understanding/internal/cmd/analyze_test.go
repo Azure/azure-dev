@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azure.ai.content-understanding/internal/analysis"
 	"azure.ai.content-understanding/internal/config"
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
@@ -165,7 +166,8 @@ func TestAnalyzeResolvedDefaultAnalyzer(t *testing.T) {
 					assert.Equal(t, tt.want, plan.Analyzer)
 					assert.Zero(t, client.calls.Load())
 				} else {
-					assert.JSONEq(t, analyzeEnvelope, stdout.String())
+					assert.Contains(t, stdout.String(), "Picture")
+					assert.False(t, json.Valid(stdout.Bytes()))
 					assert.EqualValues(t, 1, client.calls.Load())
 				}
 			})
@@ -191,7 +193,7 @@ func TestAnalyzePublicFlagsRequestMappingAndOutput(t *testing.T) {
 				return cuclient.AnalyzeResponse{JSON: json.RawMessage(analyzeEnvelope)}, nil
 			}
 			stdout, stderr, err := f.execute(t.Context(),
-				"--file", path, "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
+				"--file", path, "--llm-input=false", "-a", "custom-analyzer", "-i", "-j", "1", "-o", format,
 				"--endpoint", "https://explicit.example", "--api-version", cuclient.PreviewAPIVersion)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
@@ -219,10 +221,9 @@ func TestAnalyzeUsageAndLLMStreaming(t *testing.T) {
 			assert.Empty(t, stderr)
 			assert.Contains(t, stdout, "Picture")
 			if len(flags) == 1 && flags[0] == "--llm-input" {
-				var text string
-				require.NoError(t, json.Unmarshal([]byte(stdout), &text))
-				assert.Contains(t, text, "mimeType: image/png")
-				assert.Contains(t, text, "warnings:")
+				assert.Contains(t, stdout, "mimeType: image/png")
+				assert.Contains(t, stdout, "warnings:")
+				assert.False(t, json.Valid([]byte(stdout)))
 			} else {
 				var wrapper map[string]json.RawMessage
 				require.NoError(t, json.Unmarshal([]byte(stdout), &wrapper))
@@ -300,7 +301,7 @@ func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	assert.Equal(t, "prebuilt-image", plan.Analyzer)
 	require.Len(t, plan.Outputs, 1)
 	assert.Equal(t, "https://example.com/a.pdf?REDACTED", plan.Outputs[0].Input)
-	assert.Equal(t, filepath.Join(directory, "a.pdf.result.json"), plan.Outputs[0].Output)
+	assert.Equal(t, filepath.Join(directory, "a.pdf.result.md"), plan.Outputs[0].Output)
 	assert.NotContains(t, stdout, "private")
 	assert.Empty(t, f.prompts)
 	assert.Zero(t, f.client.calls.Load())
@@ -329,7 +330,7 @@ func TestAnalyzeExistingPolicyEnvironmentAndNoOutputStillWrites(t *testing.T) {
 			path := schemaFile(t, "input")
 			output := schemaFile(t, "existing")
 			report := filepath.Join(t.TempDir(), "report.json")
-			args := []string{path, "--output-file", output, "--report-file", report, "-o", "none"}
+			args := []string{path, "--llm-input=false", "--output-file", output, "--report-file", report, "-o", "none"}
 			if test.flag != "" {
 				args = append(args, "--on-existing", test.flag)
 			}
@@ -486,5 +487,133 @@ func TestAnalyzeHelpAndMetadataRemainOffline(t *testing.T) {
 				assert.Contains(t, stdout.String(), flag)
 			}
 		}
+	}
+}
+
+func TestAnalyzeDefaultViewAndExplicitJSON(t *testing.T) {
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(analyzeEnvelope), &envelope))
+	text, err := analysis.RenderLLM(envelope.Result)
+	require.NoError(t, err)
+	for _, tt := range []struct {
+		name, format string
+		flags        []string
+		full         bool
+	}{
+		{"default", "default", nil, false},
+		{"explicit LLM", "default", []string{"--llm-input"}, false},
+		{"LLM JSON string", "json", nil, false},
+		{"full default", "default", []string{"--llm-input=false"}, true},
+		{"full JSON", "json", []string{"--llm-input=false"}, true},
+		{"suppressed", "none", nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newAnalyzeFixture(t)
+			args := append([]string{"https://example.com/a.pdf", "--output", tt.format}, tt.flags...)
+			stdout, stderr, err := f.execute(t.Context(), args...)
+			require.NoError(t, err)
+			assert.Empty(t, stderr)
+			switch {
+			case tt.format == "none":
+				assert.Empty(t, stdout)
+			case tt.full:
+				assert.JSONEq(t, analyzeEnvelope, stdout)
+			case tt.format == "json":
+				var actual string
+				require.NoError(t, json.Unmarshal([]byte(stdout), &actual))
+				assert.Equal(t, text, actual)
+			default:
+				assert.Equal(t, text+"\n", stdout)
+			}
+			assert.EqualValues(t, 1, f.client.calls.Load())
+		})
+	}
+}
+
+func TestAnalyzeDefaultSavedView(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		for _, batch := range []bool{false, true} {
+			t.Run(fmt.Sprintf("full=%t/batch=%t", full, batch), func(t *testing.T) {
+				f := newAnalyzeFixture(t)
+				directory := t.TempDir()
+				input := filepath.Join(directory, "invoice.pdf")
+				require.NoError(t, os.WriteFile(input, []byte("input"), 0o600))
+				output := filepath.Join(t.TempDir(), "saved")
+				report := filepath.Join(t.TempDir(), "report.json")
+				args := []string{input, "--output-file", output, "--report-file", report, "--output", "none"}
+				if batch {
+					args = []string{"--source", directory, "--output-dir", output,
+						"--report-file", report, "--output", "none"}
+					suffix := ".result.md"
+					if full {
+						suffix = ".result.json"
+					}
+					output = filepath.Join(output, "invoice.pdf"+suffix)
+				}
+				if full {
+					args = append(args, "--llm-input=false")
+				}
+				stdout, stderr, err := f.execute(t.Context(), args...)
+				require.NoError(t, err)
+				assert.Empty(t, stdout)
+				assert.Empty(t, stderr)
+				// #nosec G304 -- Reads only this test's private temporary output.
+				body, err := os.ReadFile(output)
+				require.NoError(t, err)
+				if full {
+					assert.JSONEq(t, analyzeEnvelope, string(body))
+				} else {
+					assert.Contains(t, string(body), "mimeType: image/png")
+					assert.Contains(t, string(body), "Picture")
+					assert.False(t, json.Valid(body))
+				}
+				// #nosec G304 -- Reads only this test's private temporary report.
+				body, err = os.ReadFile(report)
+				require.NoError(t, err)
+				var summary struct {
+					View string `json:"result_view"`
+				}
+				require.NoError(t, json.Unmarshal(body, &summary))
+				want := "llm-input"
+				if full {
+					want = "full"
+				}
+				assert.Equal(t, want, summary.View)
+			})
+		}
+	}
+}
+
+func TestAnalyzeFuturePreviewInline(t *testing.T) {
+	f := newAnalyzeFixture(t)
+	f.client.call = func(_ context.Context, request cuclient.AnalyzeRequest) (cuclient.AnalyzeResponse, error) {
+		assert.Equal(t, cuclient.AnalysisModeInline, request.Mode)
+		return cuclient.AnalyzeResponse{JSON: json.RawMessage(analyzeEnvelope)}, nil
+	}
+	stdout, _, err := f.execute(t.Context(), "https://example.com/a.pdf", "--inline", "--api-version", "2027-01-01-preview")
+	require.NoError(t, err)
+	assert.Contains(t, stdout, "Picture")
+	assert.EqualValues(t, 1, f.client.calls.Load())
+}
+
+func TestAnalyzeResultWriteFailure(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		t.Run(fmt.Sprint(full), func(t *testing.T) {
+			f := newAnalyzeFixture(t)
+			root := f.root()
+			root.SetOut(failingWriter{})
+			root.SetErr(&bytes.Buffer{})
+			args := []string{"analyze", "https://example.com/a.pdf"}
+			if full {
+				args = append(args, "--llm-input=false")
+			}
+			root.SetArgs(args)
+			err := root.ExecuteContext(t.Context())
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "output unavailable")
+			assert.Equal(t, f.opens, f.closes)
+		})
 	}
 }

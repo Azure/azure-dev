@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -34,6 +35,22 @@ const (
 const maxErrorBodyBytes = 64 * 1024
 
 var serviceErrorCodePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
+
+// NormalizeAPIVersion accepts the GA version or a date-formatted preview version.
+func NormalizeAPIVersion(value string) (string, error) {
+	if value == "" {
+		return APIVersionGA, nil
+	}
+	if value == APIVersionGA {
+		return value, nil
+	}
+	if date, ok := strings.CutSuffix(value, "-preview"); ok && len(date) == len(time.DateOnly) {
+		if _, err := time.Parse(time.DateOnly, date); err == nil {
+			return value, nil
+		}
+	}
+	return "", errors.New("API version must be 2025-11-01 or a valid YYYY-MM-DD-preview date")
+}
 
 // ClientOptions configures a Client.
 type ClientOptions struct {
@@ -90,8 +107,9 @@ func newClient(endpoint string, auth policy.Policy, options *ClientOptions) (*Cl
 	if opts.APIVersion == "" {
 		opts.APIVersion = opts.ClientOptions.APIVersion
 	}
-	if opts.APIVersion == "" {
-		opts.APIVersion = APIVersionGA
+	opts.APIVersion, err = NormalizeAPIVersion(opts.APIVersion)
+	if err != nil {
+		return nil, err
 	}
 	opts.ClientOptions.APIVersion = opts.APIVersion
 	client, err := azcore.NewClient(moduleName, version, runtime.PipelineOptions{

@@ -24,6 +24,14 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	var output, location, api, models, endpoint, prefix string
 	var roles, noRoles, force bool
 	generate := &cobra.Command{Use: "generate", Short: "Generate the canonical azd/Bicep project", Args: cobra.NoArgs}
+	generate.Example = `  azd ai cu infra generate
+    Interactively generate an azd/Bicep project without deploying resources.
+
+  azd ai cu infra generate --location eastus2 --models recommended --output-dir provision
+    Generate a project with recommended models and no role assignments by default.
+
+  azd ai cu infra generate --foundry-endpoint https://resource.services.ai.azure.com/ --models none
+    Generate a project targeting an existing Foundry resource without model deployments.`
 	generate.Flags().StringVarP(&output, "output-dir", "d", "provision", "Generated project directory")
 	generate.Flags().StringVarP(&location, "location", "l", "", "CU-supported Azure region (default: eastus2)")
 	generate.Flags().StringVar(&api, "api-version", "", "Content Understanding API version (default: GA)")

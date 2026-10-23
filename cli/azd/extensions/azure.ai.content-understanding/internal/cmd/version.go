@@ -20,10 +20,14 @@ var (
 
 func newVersionCommand(outputFormat *string) *cobra.Command {
 	return azdext.RegisterFlagOptions(&cobra.Command{
-		Use:     "version",
-		Short:   "Display the extension version",
-		Args:    cobra.NoArgs,
-		Example: "  azd ai cu version --output json",
+		Use:   "version",
+		Short: "Display the extension version",
+		Args:  cobra.NoArgs,
+		Example: `  azd ai cu version
+    Show the installed extension version.
+
+  azd ai cu version --output json
+    Return the extension ID and version as JSON.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if *outputFormat == "json" {
 				if err := json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{

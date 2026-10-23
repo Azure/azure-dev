@@ -42,12 +42,16 @@ func newRootCommandWithInfra(open sessionFactory, infraOpen infraHostFactory) *c
 	rootCmd.AddCommand(newDoctorCommand(extCtx, open))
 	rootCmd.AddCommand(newEnvVarCommand(extCtx))
 	rootCmd.AddCommand(newInfraCommand(extCtx, infraOpen))
-	rootCmd.Example = `  # Show extension help
-  azd ai cu --help
+	rootCmd.Example = `  azd ai cu analyze invoice.pdf
+    Analyze one file using the configured analyzer, or prebuilt-layout if unset.
 
-  # Display the extension version as JSON
-  azd ai cu version --output json`
+  azd ai cu analyzer list
+    List the analyzers available in the connected resource.
 
+  azd ai cu doctor
+    Check authentication, resource access, and model configuration.`
+
+	installHelp(rootCmd)
 	protectCommandErrors(rootCmd)
 	return rootCmd
 }

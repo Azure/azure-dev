@@ -25,8 +25,11 @@ func newAnalyzerValidateCommand(extCtx *azdext.ExtensionContext) *cobra.Command 
 			"--strict treats authoring warnings as errors. " +
 			"--spec also checks the bundled service create contract offline.\n" +
 			"Uses the explicit --api-version or GA default; environment credentials and configuration are not required.",
-		Example: "  azd ai cu analyzer validate schema.json\n" +
-			"  azd ai cu analyzer validate --schema schema.json --strict --spec -o json",
+		Example: `  azd ai cu analyzer validate schema.json
+    Check a local analyzer schema without authentication or service calls.
+
+  azd ai cu analyzer validate schema.json --strict --spec --output json
+    Also check the bundled service contract and treat warnings as errors.`,
 		Args: cobra.MaximumNArgs(1),
 	}
 	cmd.Flags().StringVarP(&path, "schema", "s", "", "Path to a local UTF-8 JSON analyzer schema")

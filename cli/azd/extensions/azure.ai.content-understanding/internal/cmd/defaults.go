@@ -23,7 +23,8 @@ func newDefaultsCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *c
 		cmd := &cobra.Command{Use: action, Args: cobra.NoArgs}
 		if action == "show" {
 			cmd.Short = "Show the complete Content Understanding service defaults"
-			cmd.Example = "  azd ai cu defaults show -o json"
+			cmd.Example = `  azd ai cu defaults show --output json
+    Show the resource's current model deployment mappings as JSON.`
 		} else {
 			cmd.Short = "Update Content Understanding service model deployment mappings"
 			cmd.Flags().StringArrayVar(&models, "model", nil, "Model mapping MODEL=DEPLOYMENT (repeatable)")
@@ -31,8 +32,11 @@ func newDefaultsCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *c
 				"Include resolved cu.modelDeployments; explicit --model mappings take precedence")
 			cmd.Flags().BoolVar(&replace, "replace", false,
 				"Skip the client-side merge with existing defaults; service merge-patch semantics still apply")
-			cmd.Example = "  azd ai cu defaults set --model gpt-5.2=my-deployment\n" +
-				"  azd ai cu defaults set --from-environment -e dev"
+			cmd.Example = `  azd ai cu defaults set --model gpt-5.2=gpt52 --model text-embedding-3-large=embedding3
+    Add or update model deployment mappings on the resource.
+
+  azd ai cu defaults set --from-environment --environment dev
+    Apply the selected azd environment's cu.modelDeployments mappings.`
 		}
 		cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 			return exterrors.FromError(runDefaults(cmd, extCtx, open, options, action, models, fromEnvironment, replace))

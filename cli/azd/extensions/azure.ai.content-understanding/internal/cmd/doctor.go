@@ -45,9 +45,14 @@ func newDoctorCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *cob
 			"Missing generative mappings return ready:false; " +
 			"configuration/auth/service failures use the host error channel.\n" +
 			"No resources or deployments are created. Only --fix-defaults permits a service-defaults update.",
-		Example: "  azd ai cu doctor -e dev\n" +
-			"  azd ai cu doctor --endpoint https://resource.services.ai.azure.com\n" +
-			"  azd ai cu doctor --fix-defaults -e dev",
+		Example: `  azd ai cu doctor
+    Check authentication, resource access, and model readiness.
+
+  azd ai cu doctor --endpoint https://resource.services.ai.azure.com/
+    Check a resource directly without requiring an azd project.
+
+  azd ai cu doctor --fix-defaults --environment dev
+    Configure service defaults from the selected environment's model mappings.`,
 	}
 	cmd.Flags().BoolVar(&fix, "fix-defaults", false,
 		"Merge resolved cu.modelDeployments into service defaults and derive prebuilt aliases")

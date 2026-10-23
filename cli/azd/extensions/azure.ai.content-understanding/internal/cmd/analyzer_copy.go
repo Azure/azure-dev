@@ -25,9 +25,13 @@ func newAnalyzerCopyCommand(extCtx *azdext.ExtensionContext, open sessionFactory
 	var source, destination copySide
 	cmd := &cobra.Command{
 		Use: "copy [SOURCE] [DESTINATION]", Short: "Copy an analyzer without replacing an existing destination",
-		Example: "  azd ai cu analyzer copy invoice_v1 invoice_v2\n" +
-			"  azd ai cu analyzer copy invoice_v1 invoice_v1 --source-resource source-account " +
-			"--destination-resource target-account --destination-subscription target-subscription",
+		Example: `  azd ai cu analyzer copy invoice_v1 invoice_v2
+    Copy an analyzer to a new ID in the connected resource.
+
+  azd ai cu analyzer copy invoice_v1 invoice_v1 \
+    --source-resource https://source.services.ai.azure.com/ --source-subscription source-sub \
+    --destination-resource https://target.services.ai.azure.com/ --destination-subscription target-sub
+    Copy between resources with explicit subscriptions for ARM discovery.`,
 		Args: cobra.MaximumNArgs(2),
 	}
 	for _, side := range []struct {

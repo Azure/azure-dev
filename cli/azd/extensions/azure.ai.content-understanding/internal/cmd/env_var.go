@@ -28,6 +28,11 @@ func newEnvVarCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"Does not read selected-environment values, host credentials, or unrelated process variables.\n" +
 			"CU_API_KEY is always redacted and remains unsupported for authentication.\n" +
 			"See the extension README for accepted values, defaults, and configuration precedence.",
+		Example: `  azd ai cu env-var list
+    Inspect supported process variables with sensitive values redacted.
+
+  azd ai cu env-var list --output json
+    Return the redacted variable list as JSON.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return exterrors.FromError(writeServiceResult(cmd, extCtx.OutputFormat, listEnvironmentVariables(os.LookupEnv)))
 		},

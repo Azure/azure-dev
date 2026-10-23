@@ -73,22 +73,37 @@ func newAnalyzerCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *c
 			cmd.Short = "List analyzers in the Microsoft Foundry resource"
 			flags.StringVar(&options.kind, "kind", "all", "Filter by kind: all, prebuilt, custom")
 			flags.StringVar(&options.sortBy, "sort-by", "analyzerId", "Sort by analyzerId, createdAt, lastModifiedAt")
-			cmd.Example = "  azd ai cu analyzer list --kind custom --sort-by createdAt -o json"
+			cmd.Example = `  azd ai cu analyzer list
+    List all analyzers in the connected resource.
+
+  azd ai cu analyzer list --kind prebuilt
+    List the available prebuilt analyzers.
+
+  azd ai cu analyzer list --kind custom --sort-by createdAt --output json
+    List custom analyzers sorted by creation time.`
 		case "show":
 			cmd.Short = "Show a complete analyzer definition as JSON"
-			cmd.Example = "  azd ai cu analyzer show prebuilt-document\n  azd ai cu analyzer show -n invoice_v1 -o json"
+			cmd.Example = `  azd ai cu analyzer show prebuilt-layout
+    Show the complete definition of a prebuilt analyzer.
+
+  azd ai cu analyzer show invoice_v1 --output json
+    Show a custom analyzer definition as JSON.`
 		case "create":
 			cmd.Short = "Create an analyzer from a JSON schema file"
 			flags.Lookup("name").Usage = "Custom analyzer ID: 1-64 ASCII letters, numbers, " +
 				"or underscores (-a is also accepted)"
 			flags.StringVarP(&options.schema, "schema", "s", "", "Path to a JSON analyzer schema")
 			_ = cmd.MarkFlagRequired("schema")
-			cmd.Example = "  azd ai cu analyzer create invoice_v1 --schema schema.json"
+			cmd.Example = `  azd ai cu analyzer create invoice_v1 --schema schema.json
+    Create a custom analyzer from a local JSON schema.`
 		case "delete":
 			cmd.Short = "Delete an analyzer"
 			flags.BoolVarP(&options.yes, "yes", "y", false, "Confirm deletion without prompting")
-			cmd.Example = "  azd ai cu analyzer delete invoice_v1\n" +
-				"  azd ai cu analyzer delete -n invoice_v1 --yes --no-prompt"
+			cmd.Example = `  azd ai cu analyzer delete invoice_v1
+    Confirm and delete a custom analyzer.
+
+  azd ai cu analyzer delete invoice_v1 --yes --no-prompt
+    Delete an analyzer without an interactive confirmation.`
 		}
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzerCommand(cmd, extCtx, open, action, options, args))

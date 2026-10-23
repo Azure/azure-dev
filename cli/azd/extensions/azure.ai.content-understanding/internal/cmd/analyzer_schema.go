@@ -38,9 +38,14 @@ func newAnalyzerSchemaCommand(extCtx *azdext.ExtensionContext, open sessionFacto
 			"--from-sample sends one local document to Content Understanding to suggest extraction fields; " +
 			"this may incur cost and requires an endpoint and azd sign-in.\n" +
 			"Review the generated schema before creating an analyzer. No analyzer or service defaults are changed.",
-		Example: "  azd ai cu analyzer schema create -n invoice_v1 --output-file schema.json\n" +
-			"  azd ai cu analyzer schema create --type classification -o json\n" +
-			"  azd ai cu analyzer schema create --from-sample invoice.pdf --output-file suggested.json",
+		Example: `  azd ai cu analyzer schema create --name invoice_v1 --output-file schema.json
+    Write an extraction starter schema locally without service calls.
+
+  azd ai cu analyzer schema create --type classification --output json
+    Print an offline classification starter schema as JSON.
+
+  azd ai cu analyzer schema create --from-sample invoice.pdf --output-file suggested.json
+    Suggest extraction fields from one document using the service; this may incur cost.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return exterrors.FromError(runSchemaCreate(cmd, extCtx, open, options))

@@ -337,7 +337,9 @@ not an independent process override.
 | `azd ai cu env-var list` | Inspect supported process inputs with secrets redacted. |
 | `azd ai cu version` | Show the installed extension version. |
 
-Run `azd ai cu <command> --help` for command-specific options.
+Run `azd ai cu <command> --help` for command-specific options and common-use
+examples with descriptions. Help uses azd-style headings and colors when enabled;
+set `NO_COLOR=1` for plain text.
 
 ## Usage guidance
 

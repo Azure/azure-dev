@@ -36,10 +36,23 @@ func newAnalyzeCommand(extCtx *azdext.ExtensionContext, open sessionFactory) *co
 			"Uses prebuilt-layout when no analyzer is specified or configured.\n" +
 			"Single results stream as complete JSON. Batches save source-relative result files.\n" +
 			"Use --llm-input for YAML front matter and Markdown, or --dry-run to inspect the plan without service calls.",
-		Example: "  azd ai cu analyze invoice.pdf\n" +
-			"  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice\n" +
-			"  azd ai cu analyze --source ./documents --pattern '*.pdf' -r -d ./results --report-file ./report.json\n" +
-			"  azd ai cu analyze --url https://example.com/document.pdf --llm-input --output-file ./document.md",
+		Example: `  azd ai cu analyze invoice.pdf
+    Analyze one file using the configured analyzer, or prebuilt-layout if unset.
+
+  azd ai cu analyze invoice.pdf --analyzer prebuilt-invoice --output json
+    Extract invoice fields and return the complete response as JSON.
+
+  azd ai cu analyze --url "https://example.com/document.pdf" --analyzer prebuilt-layout
+    Analyze an HTTPS URL without downloading the file locally.
+
+  azd ai cu analyze --source ./documents --output-dir ./results
+    Analyze immediate files in a directory and save results under ./results.
+
+  azd ai cu analyze --source ./documents --pattern '*.pdf' --recursive --output-dir ./results
+    Analyze matching PDF files recursively and preserve their relative paths.
+
+  azd ai cu analyze invoice.pdf --llm-input --output-file invoice.md
+    Save YAML front matter and Markdown for generative AI model input.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzeCommand(cmd, extCtx, open, options, args))
 		},

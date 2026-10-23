@@ -30,8 +30,14 @@ func newAnalyzerTestCommand(extCtx *azdext.ExtensionContext, open sessionFactory
 		Use: "test [ANALYZER_NAME] [INPUTS...]", Short: "Report field coverage and confidence over local samples",
 		Long: "Run an analyzer over local samples and report extracted-field coverage and confidence.\n\n" +
 			"This is not an accuracy benchmark. Dry run works offline without a project, endpoint, or sign-in.",
-		Example: "  azd ai cu analyzer test invoice_v1 --source ./samples --pattern '*.pdf' -r --dry-run\n" +
-			"  azd ai cu analyzer test -n invoice_v1 --file invoice.pdf --output-file test-report.json",
+		Example: `  azd ai cu analyzer test invoice_v1 --file invoice.pdf
+    Report extracted-field coverage and confidence for one sample.
+
+  azd ai cu analyzer test invoice_v1 --source ./samples --pattern '*.pdf' --output-file test-report.json
+    Test matching PDF samples and save the complete report.
+
+  azd ai cu analyzer test invoice_v1 --source ./samples --recursive --dry-run
+    Preview local sample discovery without service calls or writes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return exterrors.FromError(runAnalyzerTest(cmd, extCtx, open, options, args))
 		},

@@ -4,6 +4,7 @@
 
 ### Bugs Fixed
 
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix template adoption to offer existing deployments and catalog models for every declared deployment while preserving per-environment selections without rewriting `azure.yaml`.
 - [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix Foundry provisioning to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings, prompt for model deployments in a new environment, and preserve YAML defaults in no-prompt mode.
 - [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix `azd ai project deployment add` to persist the complete deployment list in the active environment and preserve other deployments when replacing an entry.
 

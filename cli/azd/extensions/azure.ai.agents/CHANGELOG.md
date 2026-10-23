@@ -18,6 +18,8 @@
 
 ### Bugs Fixed
 
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix adopted prompt agents to use each environment's selected model deployments during deployment and invocation, including after infrastructure ejection.
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix `azd ai agent init --model-deployment` to replace the selected template deployment without provisioning the original and reject ambiguous or conflicting model selectors before writing project files.
 - [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Fix prompt-agent deployment to attach every declared toolbox with an authenticated Foundry project connection instead of ignoring references or failing invocation with HTTP 401.
 - [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix Copilot harness initialization to use live region policies with embedded fallback, including support for West US and Central US.
 - [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix generated and adopted Copilot harness initialization to reject mismatched project and model deployment locations before model selection.
@@ -27,6 +29,7 @@
 
 ### Other Changes
 
+- [[#10548]](https://github.com/Azure/azure-dev/pull/10548) Add step-level timing telemetry to `azd ai agent init` to help diagnose slow initialization without recording user input or resource names.
 - [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
 - [[#10683]](https://github.com/Azure/azure-dev/pull/10683) Read preview opt-ins only from the extension process environment and list the supported switches in root help.
 

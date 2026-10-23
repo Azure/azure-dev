@@ -104,7 +104,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newDoctorCommand())
 
 	rootCmd.AddCommand(newCodeCommand(extCtx))
-	rootCmd.AddCommand(newEvalCommand(extCtx))
+	rootCmd.AddCommand(newEvalCommand())
 	rootCmd.AddCommand(newOptimizeCommand(extCtx))
 
 	helpformat.Install(rootCmd, "azd ai", agentHelpFooter)

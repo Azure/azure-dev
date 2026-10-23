@@ -41,6 +41,13 @@ func TestWarnBaselineAdvancementFailure(t *testing.T) {
 	assert.Contains(t, output.String(), assert.AnError.Error())
 }
 
+func TestFormatCandidateRowWithoutEvaluation(t *testing.T) {
+	t.Parallel()
+	row := formatCandidateRow("pending-candidate", nil, "", nil, false, false)
+	assert.Contains(t, row, "-")
+	assert.NotContains(t, row, "0.000", "an unavailable GA score is not zero")
+}
+
 func TestOptimizeConnectionFlags_Resolve_AllEmpty(t *testing.T) {
 	t.Setenv("FOUNDRY_PROJECT_ENDPOINT", "")
 	t.Setenv("AZURE_AI_PROJECT_ENDPOINT", "")
@@ -76,6 +83,22 @@ func TestOptimizeConnectionFlags_Resolve_ProjectEndpointFlag(t *testing.T) {
 	endpoint, err := f.resolve(context.Background(), "")
 	assert.NoError(t, err)
 	assert.Equal(t, "https://my-project.services.ai.azure.com", endpoint)
+}
+
+func TestOptimizeEndpointErrorsDoNotDiscloseCredentials(t *testing.T) {
+	t.Parallel()
+	for _, endpoint := range []string{
+		"https://private-user:private-password@example.com?sig=private-signature#private-fragment",
+		"https://example.com?sig=private-signature",
+		"https://example.com/#private-fragment",
+		"https://example.com/%private-malformed-token",
+	} {
+		flags := &optimizeConnectionFlags{endpoint: endpoint}
+		_, err := flags.resolve(t.Context(), "")
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "private-")
+		assert.NotContains(t, err.Error(), endpoint)
+	}
 }
 
 // newOptimizeTestAzdClient creates a test AzdClient backed by a gRPC server
@@ -160,6 +183,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 			"dev": {
 				"AGENT_MY_AGENT_OPTIMIZATION_CANDIDATE_ID": "cand-123",
 				"AGENT_MY_AGENT_VERSION":                   "v2",
+				"AGENT_MY_AGENT_NAME":                      "custom-foundry-agent",
 				"OPTIMIZE_LAST_OPERATION_ID":               "opt-1",
 			},
 		},
@@ -184,7 +208,7 @@ func TestReportOptimizationDeployments_Success_ClearsCandidate(t *testing.T) {
 	)
 
 	assert.Contains(t, gotURL, "/agent_optimization_jobs/opt-1/candidates/cand-123:promote")
-	assert.Equal(t, "my-agent", gotBody.AgentName)
+	assert.Equal(t, "custom-foundry-agent", gotBody.AgentName)
 	assert.Equal(t, "v2", gotBody.AgentVersion)
 	// CandidateID is json:"-", so it should not appear in the body.
 	assert.Empty(t, gotBody.CandidateID)
@@ -259,6 +283,7 @@ func TestReportOptimizationDeployments_APIFailure_DoesNotClearCandidate(t *testi
 			"dev": {
 				"AGENT_SVC_OPTIMIZATION_CANDIDATE_ID": "cand-789",
 				"AGENT_SVC_VERSION":                   "v3",
+				"AGENT_SVC_NAME":                      "deployed-svc",
 				"OPTIMIZE_LAST_OPERATION_ID":          "opt-1",
 			},
 		},
@@ -288,11 +313,13 @@ func TestReportOptimizationDeployments_MultipleAgents(t *testing.T) {
 			"dev": {
 				"AGENT_ALPHA_OPTIMIZATION_CANDIDATE_ID": "c-a",
 				"AGENT_ALPHA_VERSION":                   "v1",
+				"AGENT_ALPHA_NAME":                      "deployed-alpha",
 				// beta has no candidate — should be skipped.
 				"AGENT_BETA_VERSION": "v2",
 				// gamma has candidate but API will fail for it.
 				"AGENT_GAMMA_OPTIMIZATION_CANDIDATE_ID": "c-g",
 				"AGENT_GAMMA_VERSION":                   "v3",
+				"AGENT_GAMMA_NAME":                      "deployed-gamma",
 				"OPTIMIZE_LAST_OPERATION_ID":            "opt-1",
 			},
 		},
@@ -340,6 +367,7 @@ func TestReportOptimizationDeployments_ServiceNameWithDashes(t *testing.T) {
 			"dev": {
 				"AGENT_MY_COOL_AGENT_OPTIMIZATION_CANDIDATE_ID": "cand-dash",
 				"AGENT_MY_COOL_AGENT_VERSION":                   "v5",
+				"AGENT_MY_COOL_AGENT_NAME":                      "deployed-cool-agent",
 				"OPTIMIZE_LAST_OPERATION_ID":                    "opt-1",
 			},
 		},
@@ -528,33 +556,33 @@ func TestCandidateTableHeader(t *testing.T) {
 
 func TestFormatCandidateRow_EmptyEvalShowsDash(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("candidate_1", 0.95, "", nil, true, false)
+	row := formatCandidateRow("candidate_1", new(0.95), "", nil, true, false)
 	assert.Contains(t, row, "-")
 	assert.Contains(t, row, "0.950")
 }
 
 func TestFormatCandidateRow_NonEmptyEvalPreserved(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("candidate_1", 0.95, "View", nil, true, false)
+	row := formatCandidateRow("candidate_1", new(0.95), "View", nil, true, false)
 	assert.Contains(t, row, "View")
 }
 
 func TestFormatCandidateRow_EmptyStrategyShowsDash(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("candidate_1", 0.90, "", nil, false, true)
+	row := formatCandidateRow("candidate_1", new(0.90), "", nil, false, true)
 	assert.Contains(t, row, "-")
 }
 
 func TestFormatCandidateRow_NonEmptyStrategyPreserved(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("candidate_1", 0.90, "", []string{"skills", "system_prompt"}, false, true)
+	row := formatCandidateRow("candidate_1", new(0.90), "", []string{"skills", "system_prompt"}, false, true)
 	assert.Contains(t, row, "skills")
 	assert.Contains(t, row, "system_prompt")
 }
 
 func TestFormatCandidateRow_BothColumnsEmpty(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("baseline", 0.80, "", nil, true, true)
+	row := formatCandidateRow("baseline", new(0.80), "", nil, true, true)
 	// Both eval and strategy should show dashes.
 	assert.Contains(t, row, "baseline")
 	assert.Contains(t, row, "0.800")
@@ -570,7 +598,7 @@ func TestFormatCandidateRow_BothColumnsEmpty(t *testing.T) {
 
 func TestFormatCandidateRow_HiddenColumnsOmitted(t *testing.T) {
 	t.Parallel()
-	row := formatCandidateRow("candidate_1", 0.95, "View", []string{"skills"}, false, false)
+	row := formatCandidateRow("candidate_1", new(0.95), "View", []string{"skills"}, false, false)
 	// Neither eval nor strategy should appear when both are hidden.
 	assert.NotContains(t, row, "View")
 	assert.NotContains(t, row, "skills")

@@ -133,6 +133,15 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 		stdin := strings.NewReader("")
 		writer := colorable.NewNonColorable(stdout)
 
+		var externalPromptCfg *input.ExternalPromptConfiguration
+		if s.externalServicesEndpoint != "" && s.externalServicesKey != "" {
+			externalPromptCfg = &input.ExternalPromptConfiguration{
+				Endpoint:    s.externalServicesEndpoint,
+				Key:         s.externalServicesKey,
+				Transporter: s.externalServicesClient,
+			}
+		}
+
 		return input.NewConsole(true, false, input.Writers{
 			Output:  writer,
 			Spinner: colorable.NewNonColorable(spinnerWriter)},
@@ -142,11 +151,7 @@ func (s *serverSession) newContainer(rc RequestContext) (*container, error) {
 				Stderr: stderr,
 			},
 			&output.NoneFormatter{},
-			&input.ExternalPromptConfiguration{
-				Endpoint:    s.externalServicesEndpoint,
-				Key:         s.externalServicesKey,
-				Transporter: s.externalServicesClient,
-			})
+			externalPromptCfg)
 	})
 
 	c.MustRegisterScoped(func(console input.Console) io.Writer {

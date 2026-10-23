@@ -15,7 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/fatih/color"
@@ -23,8 +23,8 @@ import (
 
 // resolveOptimizeSystemPrompt resolves the agent's system prompt:
 //
-//  1. Config dir pointer (agent.config): instruction from metadata.yaml (already resolved).
-//  2. Config (eval.yaml / --config): inline instruction or file reference.
+//  1. Saved baseline: instruction from metadata.yaml (already resolved).
+//  2. Resolved instruction: inline text or a file reference.
 //  3. Interactive prompt: ask the user to provide inline text or a file path.
 //
 // Relative file paths are resolved against agentProject.
@@ -59,8 +59,9 @@ func resolveOptimizeSystemPrompt(
 	if noPrompt {
 		return fmt.Errorf("instruction is required for optimization.\n\n" +
 			"Provide it via one of:\n" +
-			"  1. Set agent.config in eval.yaml to point to a config dir with metadata.yaml\n" +
-			"  2. Set instruction in eval.yaml (agent section): inline string or file reference\n" +
+			"  1. Set optimization_configuration.baseline_agent_configuration.system_prompt " +
+			"in your --config file\n" +
+			"  2. Save baseline instructions in .agent_configs/baseline/metadata.yaml\n" +
 			"  3. Run without --no-prompt to enter it interactively")
 	}
 
@@ -121,7 +122,7 @@ func resolveOptimizeSystemPrompt(
 }
 
 // resolveOptimizeSkillDir resolves the agent's skill directory:
-//  1. Config dir pointer (agent.config): skill_dir from metadata.yaml (already resolved).
+//  1. Saved baseline: skill_dir from metadata.yaml (already resolved).
 //  2. Auto-detect: look for a "skills/" folder in the agent project — confirm with user.
 //  3. Interactive prompt: ask the user to provide a path or skip.
 func resolveOptimizeSkillDir(
@@ -312,7 +313,7 @@ func resolveOptimizeEvalModel(
 	envName string,
 ) error {
 	if noPrompt {
-		return fmt.Errorf("options.eval_model is required: use --eval-model <model> to specify the evaluation model")
+		return fmt.Errorf("eval_model is required: use --eval-model <model> to specify the evaluation model")
 	}
 
 	if azdClient == nil {
@@ -341,8 +342,8 @@ func resolveOptimizeDataset(
 ) error {
 	if noPrompt {
 		return fmt.Errorf(
-			"a dataset is required: use --dataset <file-or-name>, or provide a dataset " +
-				"in your config, or run 'azd ai agent eval generate' to generate one")
+			"a dataset is required: use --dataset <file-or-name:version>, or provide a dataset " +
+				"in your evaluation configuration, or run 'azd ai eval generate' to generate one")
 	}
 
 	if azdClient == nil {
@@ -360,7 +361,7 @@ func resolveOptimizeDataset(
 
 // hasModelConfig reports whether OptimizationConfig contains a
 // "model_search_space" entry.
-func hasModelConfig(oc opt_eval.OptimizationConfig) bool {
+func hasModelConfig(oc optconfig.OptimizationConfig) bool {
 	if oc == nil {
 		return false
 	}
@@ -419,7 +420,7 @@ func resolveOptimizeTargetModels(
 	if len(models) > 0 {
 		modelJSON, _ := json.Marshal(models)
 		if cfg.Options.OptimizationConfig == nil {
-			cfg.Options.OptimizationConfig = make(opt_eval.OptimizationConfig)
+			cfg.Options.OptimizationConfig = make(optconfig.OptimizationConfig)
 		}
 		cfg.Options.OptimizationConfig["model_search_space"] = modelJSON
 	}

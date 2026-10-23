@@ -1320,8 +1320,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
-			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
+		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
 	_ = cmd.Flags().MarkHidden("harness")
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
@@ -1356,10 +1355,7 @@ func fastPathProjectTarget(
 		return ".", ""
 	}
 	targetDir := sanitizeAgentName(agentName)
-	if _, err := os.Stat(targetDir); errors.Is(err, fs.ErrNotExist) {
-		return targetDir, filepath.ToSlash(targetDir)
-	}
-	return targetDir, ""
+	return targetDir, filepath.ToSlash(targetDir)
 }
 
 func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {

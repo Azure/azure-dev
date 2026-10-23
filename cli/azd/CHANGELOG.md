@@ -1,5 +1,22 @@
 # Release History
 
+## 1.38.0-beta.1 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.37.1 (2026-10-21)
+
+### Bugs Fixed
+
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix Ctrl+C cancellation not propagating across extension processes, RPC calls, and extension-started workflows, leaving work running after cancellation.
+- [[#10353]](https://github.com/Azure/azure-dev/pull/10353) Fix extension cancellations and timeouts being reported as generic failures.
+
 ## 1.37.0 (2026-10-19)
 
 ### Features Added

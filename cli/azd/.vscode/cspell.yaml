@@ -459,6 +459,9 @@ overrides:
   - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
     words:
       - ABAC
+  - filename: docs/design/provision-validation.md
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
@@ -481,6 +484,9 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
+  - filename: "extensions/azure.ai.agents/internal/{cmd/optimize*.go,pkg/agents/optconfig/*.go}"
+    words:
+      - optconfig
   - filename: docs/code-coverage-guide.md
     words:
       - covdata

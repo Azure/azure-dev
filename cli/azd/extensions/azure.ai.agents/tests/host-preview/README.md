@@ -12,7 +12,7 @@ injected through Go's `-overlay` option. No file is written into the core source
 tree, no module replacement is used, and no Azure resources or persistent user
 configuration are accessed.
 
-The test exercises stable registration, beta preview registration and forwarding,
+The test exercises stable deployment and preview registration and forwarding,
 fresh providers without `Initialize`, create/update/no-change/unknown results,
 six-group presence-aware comparison, omitted normalization-only defaults and
 absent/code-only/unchanged container groups, conditional build/push booleans,
@@ -32,7 +32,9 @@ remains in readable/JSON output. The host-owned successful progress row remains;
 project JSON explicitly says `noOp`, `deployment`, and no infrastructure preview.
 Foundry reads and host project/environment/tenant reads for agent previews are
 stubbed; the real host stream, authentication middleware, contract conversion,
-and published SDK preview lifecycle run end to end. All other host services are
+and published SDK preview lifecycle run end to end. The fixture rejects beta and
+legacy service-target routes, proving both extensions use stable v1 for deployment
+preview. All other host services are
 unimplemented, so an unexpected extension write or prompt fails. The projects
 fixture enables provisioning, validation, and event registration only; no such
 operation or lifecycle hook is invoked.

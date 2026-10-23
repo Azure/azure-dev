@@ -79,6 +79,36 @@ func TestResolvePromptAgentModel(t *testing.T) {
 			want: "existing-41",
 		},
 		{
+			name:     "legacy declaration membership ignores case",
+			model:    "template-chat",
+			declared: []string{"Template-Chat", "TEMPLATE-CHAT"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         "[]",
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "existing-41",
+		},
+		{
+			name:     "managed deployment membership ignores case",
+			model:    "template-chat",
+			declared: []string{"Template-Chat"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         `[{"name":"TEMPLATE-CHAT"}]`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+			},
+			want: "template-chat",
+		},
+		{
+			name:     "retained declarations ignore case when finding legacy replacements",
+			model:    "template-chat",
+			declared: []string{"Template-Chat", "Embeddings"},
+			env: map[string]string{
+				"AI_PROJECT_DEPLOYMENTS":         `[{"name":"EMBEDDINGS"}]`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing-41",
+			},
+			want: "existing-41",
+		},
+		{
 			name:     "escaped environment list is decoded",
 			model:    "template-chat",
 			declared: []string{"template-chat"},
@@ -181,13 +211,18 @@ func TestResolvePromptAgentModelExpandsReferencedDeclarations(t *testing.T) {
 	require.NoError(t, err)
 	services["ai-project"].AdditionalProperties = props
 	t.Setenv("CHAT", "process-chat")
-	got, err := ResolvePromptAgentModel("${CHAT}", agent, services, root, map[string]string{
+	env := map[string]string{
 		"CHAT":                           "template-chat",
 		"AI_PROJECT_DEPLOYMENTS":         "[]",
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME": "existing",
-	})
+	}
+	got, err := ResolvePromptAgentModel("${CHAT}", agent, services, root, env)
 	require.NoError(t, err)
 	require.Equal(t, "existing", got)
+	env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = `{"TEMPLATE-CHAT":"Selected-Chat"}`
+	got, err = ResolvePromptAgentModel("Template-Chat", agent, services, root, env)
+	require.NoError(t, err)
+	require.Equal(t, "Selected-Chat", got)
 }
 
 func TestResolvePromptAgentModelWithOnDiskInfrastructure(t *testing.T) {
@@ -318,28 +353,46 @@ func TestResolvePromptAgentModelExplicitBindings(t *testing.T) {
 					"infra:\n  provider: terraform\n",
 				), 0600))
 			}
-			agent, services := promptModelServices(t, "${CHAT}", "embeddings", "skipped")
+			agent, services := promptModelServices(t, "${CHAT}", "Embeddings", "Skipped")
 			env := map[string]string{
-				"CHAT": "chat", "AI_PROJECT_DEPLOYMENTS": "[]",
+				"CHAT": "Chat", "AI_PROJECT_DEPLOYMENTS": "[]",
 				"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
-				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{\"chat\":\"selected-chat\",` +
-					`\"embeddings\":\"selected-embeddings\",\"skipped\":\"\",\"undeclared\":\"wrong\"}`,
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{\"cHaT\":\"Selected-Chat\",` +
+					`\"embeddings\":\"Selected-Embeddings\",\"skipped\":\"\",\"undeclared\":\"wrong\"}`,
 			}
 			for _, test := range []struct{ model, want string }{
-				{"${CHAT}", "selected-chat"},
-				{"embeddings", "selected-embeddings"},
+				{"${CHAT}", "Selected-Chat"},
+				{"chat", "Selected-Chat"},
+				{"EMBEDDINGS", "Selected-Embeddings"},
 				{"undeclared", "undeclared"},
+				{"UNDECLARED", "UNDECLARED"},
 				{"${AZURE_AI_MODEL_DEPLOYMENT_NAME}", "unrelated-default"},
 			} {
 				got, err := ResolvePromptAgentModel(test.model, agent, services, root, env)
 				require.NoError(t, err)
 				require.Equal(t, test.want, got)
 			}
-			_, err := ResolvePromptAgentModel("skipped", agent, services, root, env)
+			_, err := ResolvePromptAgentModel("sKiPpEd", agent, services, root, env)
 			require.ErrorContains(t, err, "was skipped")
 			env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = "{"
 			_, err = ResolvePromptAgentModel("chat", agent, services, root, env)
 			require.ErrorContains(t, err, "AI_PROJECT_DEPLOYMENT_BINDINGS")
+		})
+	}
+}
+
+func TestResolvePromptAgentModelConflictingBindingCase(t *testing.T) {
+	for _, target := range []string{"other-chat", ""} {
+		t.Run("target="+target, func(t *testing.T) {
+			agent, services := promptModelServices(t, "Chat")
+			_, err := ResolvePromptAgentModel("chat", agent, services, t.TempDir(), map[string]string{
+				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{"Chat":"selected-chat","CHAT":"` + target + `"}`,
+			})
+			localErr, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok)
+			require.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+			require.ErrorContains(t, err, "conflicting bindings")
+			require.Contains(t, localErr.Suggestion, "single binding")
 		})
 	}
 }

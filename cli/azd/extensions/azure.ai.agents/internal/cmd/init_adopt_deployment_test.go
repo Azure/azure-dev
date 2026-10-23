@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gopkg.in/yaml.v3"
 )
 
 type adoptedReplacementEnvironment struct {
@@ -124,6 +126,37 @@ func noChoice(t *testing.T) adoptedDeploymentChooser {
 	}
 }
 
+func writeAdoptedDeploymentTemplate(
+	t *testing.T, root string, referenced bool, names ...string,
+) []byte {
+	t.Helper()
+	deployments := make([]any, 0, len(names))
+	for _, name := range names {
+		deployments = append(deployments, map[string]any{"name": name})
+	}
+	properties := map[string]any{"deployments": deployments}
+	if referenced {
+		content, err := yaml.Marshal(properties)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), content, 0600))
+		properties = map[string]any{"$ref": "./project.yaml"}
+	}
+	properties["host"] = project.FoundryProjectHost
+	content, err := yaml.Marshal(map[string]any{
+		"name": "adoption",
+		"services": map[string]any{
+			"project": properties,
+			"agent": map[string]any{
+				"host": AiAgentHost, "kind": "prompt", "name": "sample-agent",
+				"model": "template-chat", "uses": []string{"project"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0600))
+	return content
+}
+
 func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 	chat := adoptedTestDeployment("template-chat", "gpt-4.1-nano")
 	embed := adoptedTestDeployment("template-embed", "text-embedding-3-small")
@@ -132,6 +165,21 @@ func TestPlanAdoptedDeploymentReplacement(t *testing.T) {
 		value, write, err := planAdoptedDeploymentReplacement(
 			[]project.Deployment{chat}, "", "template-chat",
 		)
+		require.NoError(t, err)
+		require.True(t, write)
+		require.Empty(t, decodedNames(t, value))
+	})
+
+	t.Run("selected declaration must still exist", func(t *testing.T) {
+		_, _, err := planAdoptedDeploymentReplacement([]project.Deployment{chat}, "", "removed-template")
+		localErr, ok := errors.AsType[*azdext.LocalError](err)
+		require.True(t, ok)
+		require.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+		require.ErrorContains(t, err, "no longer declared")
+	})
+
+	t.Run("selected declaration matches case-insensitively", func(t *testing.T) {
+		value, write, err := planAdoptedDeploymentReplacement([]project.Deployment{chat}, "", "TEMPLATE-CHAT")
 		require.NoError(t, err)
 		require.True(t, write)
 		require.Empty(t, decodedNames(t, value))
@@ -268,7 +316,7 @@ func TestValidateInitModelSelectors(t *testing.T) {
 			require.Contains(t, localErr.Suggestion, "--model")
 			// No client is available, so reaching any project or Azure operation would fail.
 			err = finalizeAdoptedProject(t.Context(), &test.flags, nil, "test", "", false,
-				"renamed-agent", TemplateTypeAzureYaml)
+				"renamed-agent", TemplateTypeAzureYaml, "")
 			require.EqualError(t, err, localErr.Error())
 		})
 	}
@@ -295,69 +343,100 @@ func TestInitModelSelectorsValidateExplicitFlagsBeforeClientCreation(t *testing.
 	}
 }
 
-func TestAdoptedDeploymentPreflightBeforeMutations(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		noPrompt  bool
-		promptErr error
-		code      string
-	}{
-		{"ambiguous headless selection", true, nil, exterrors.CodeConflictingArguments},
-		{"cancelled interactive selection", false, status.Error(codes.Canceled, "cancelled"), ""},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			path := filepath.Join(root, "azure.yaml")
-			content := []byte("name: unchanged\n")
-			require.NoError(t, os.WriteFile(path, content, 0600))
-			server := &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: root,
-				Services: map[string]*azdext.ServiceConfig{
-					"project": {Host: project.FoundryProjectHost,
-						AdditionalProperties: mustStruct(t, map[string]any{"deployments": []any{
-							map[string]any{"name": "chat"}, map[string]any{"name": "embed"},
-						}})},
-				},
-			}}
-			env := &adoptedReplacementEnvironment{promptEnvironmentServer: promptEnvironmentServer{
-				values: map[string]string{"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unchanged"},
-			}}
-			before := maps.Clone(env.values)
-			prompt := &helpersPromptServer{selectErr: test.promptErr}
-			client := newHelpersTestAzdClient(t, server, prompt, env)
-			flags := &initFlags{modelDeployment: "existing", noPrompt: test.noPrompt}
-			_, err := preflightAdoptedDeploymentReplacement(t.Context(), client, "test", flags)
-			require.Error(t, err)
-			// Provider/agent writes and Azure services are intentionally unimplemented.
-			err = finalizeAdoptedProject(t.Context(), flags, client, "test", "", false,
-				"renamed-agent", TemplateTypeAzureYaml)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			if test.code != "" {
-				require.Equal(t, test.code, localErr.Code)
-				require.Zero(t, prompt.selectCalls.Load())
-			} else {
-				require.Equal(t, exterrors.CodeCancelled, localErr.Code)
-				require.EqualValues(t, 2, prompt.selectCalls.Load())
+func TestAdoptedDeploymentPreflightBeforeScaffolding(t *testing.T) {
+	for _, templateType := range []string{TemplateTypeAzureYaml, TemplateTypeAzd} {
+		for _, layout := range []struct {
+			name           string
+			referenced     bool
+			existingTarget bool
+		}{
+			{"inline-new-target", false, false},
+			{"referenced-existing-target", true, true},
+		} {
+			for _, test := range []struct {
+				name      string
+				noPrompt  bool
+				promptErr error
+				code      string
+			}{
+				{"ambiguous headless selection", true, nil, exterrors.CodeConflictingArguments},
+				{"cancelled interactive selection", false,
+					status.Error(codes.Canceled, "cancelled"), exterrors.CodeCancelled},
+			} {
+				t.Run(templateType+"/"+layout.name+"/"+test.name, func(t *testing.T) {
+					root := t.TempDir()
+					t.Chdir(root)
+					target := filepath.Join(root, "target")
+					envPath := filepath.Join(target, ".azure", "test", ".env")
+					originalEnv := []byte("UNCHANGED=yes\n")
+					if layout.existingTarget {
+						require.NoError(t, os.MkdirAll(filepath.Dir(envPath), 0700))
+						require.NoError(t, os.WriteFile(envPath, originalEnv, 0600))
+					}
+					source := t.TempDir()
+					content := writeAdoptedDeploymentTemplate(t, source, layout.referenced, "chat", "embed")
+					env := &testEnvironmentServiceServer{values: map[string]map[string]string{
+						"test": {"UNCHANGED": "yes"},
+					}}
+					before := maps.Clone(env.values["test"])
+					workflow := &testWorkflowServiceServer{runHook: func() {
+						require.NoError(t, os.MkdirAll(filepath.Dir(envPath), 0700))
+						require.NoError(t, os.WriteFile(filepath.Join(target, "azure.yaml"), content, 0600))
+						require.NoError(t, os.WriteFile(envPath, []byte("CREATED=yes\n"), 0600))
+					}}
+					prompt := &helpersPromptServer{selectErr: test.promptErr}
+					client := newTestAzdClient(t, env, workflow, prompt)
+					flags := &initFlags{
+						src: target, env: "test", templatePointer: filepath.Join(source, "azure.yaml"),
+						modelDeployment: "existing", noPrompt: test.noPrompt,
+					}
+					var err error
+					if templateType == TemplateTypeAzureYaml {
+						err = runInitFromAzureYaml(t.Context(), flags, client, http.DefaultClient, content)
+					} else {
+						err = runInitFromAzdTemplate(t.Context(), flags, client, http.DefaultClient,
+							&AgentTemplate{Source: source})
+					}
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected a selection error, got %v", err)
+					require.Equal(t, test.code, localErr.Code)
+					require.Zero(t, workflow.runCalls)
+					require.Zero(t, env.getValuesCalls)
+					require.Empty(t, env.setKeys)
+					require.Equal(t, before, env.values["test"])
+					require.NoFileExists(t, filepath.Join(target, "azure.yaml"))
+					if layout.existingTarget {
+						after, err := os.ReadFile(envPath)
+						require.NoError(t, err)
+						require.Equal(t, originalEnv, after)
+					} else {
+						require.NoDirExists(t, target)
+					}
+					wantPrompts := int32(1)
+					if test.noPrompt {
+						wantPrompts = 0
+					}
+					require.Equal(t, wantPrompts, prompt.selectCalls.Load())
+					cwd, err := os.Getwd()
+					require.NoError(t, err)
+					require.Equal(t, root, cwd)
+				})
 			}
-			require.Zero(t, env.writes)
-			require.Equal(t, before, env.values)
-			after, err := os.ReadFile(path)
-			require.NoError(t, err)
-			require.Equal(t, content, after)
-		})
+		}
 	}
 }
 
 func TestAdoptedDeploymentPreflightAndApply(t *testing.T) {
 	for _, count := range []int{0, 1, 2} {
 		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			root := t.TempDir()
+			writeAdoptedDeploymentTemplate(t, root, false, []string{"chat", "embed"}[:count]...)
 			raw := []any{}
 			for _, name := range []string{"chat", "embed"}[:count] {
 				raw = append(raw, map[string]any{"name": name})
 			}
 			server := &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+				Path: root, Services: map[string]*azdext.ServiceConfig{
 					"project": {Host: project.FoundryProjectHost,
 						AdditionalProperties: mustStruct(t, map[string]any{"deployments": raw})},
 				},
@@ -367,7 +446,7 @@ func TestAdoptedDeploymentPreflightAndApply(t *testing.T) {
 			}}
 			prompt := &helpersPromptServer{selectIndex: 1}
 			client := newHelpersTestAzdClient(t, server, prompt, env)
-			replaced, err := preflightAdoptedDeploymentReplacement(t.Context(), client, "test",
+			replaced, err := preflightAdoptedDeploymentReplacement(t.Context(), client, root,
 				&initFlags{modelDeployment: "existing", noPrompt: count < 2})
 			require.NoError(t, err)
 			require.Zero(t, env.writes)
@@ -399,4 +478,33 @@ func TestAdoptedDeploymentPreflightAndApply(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdoptedDeploymentPreflightExpandsSelectedNameAtApply(t *testing.T) {
+	root := t.TempDir()
+	writeAdoptedDeploymentTemplate(t, root, true, "${CHAT_NAME}")
+	t.Setenv("CHAT_NAME", "process-chat")
+	server := &helpersProjectServer{project: &azdext.ProjectConfig{
+		Path: root, Services: map[string]*azdext.ServiceConfig{
+			"project": {Host: project.FoundryProjectHost,
+				AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./project.yaml"})},
+		},
+	}}
+	env := &adoptedReplacementEnvironment{promptEnvironmentServer: promptEnvironmentServer{
+		values: map[string]string{},
+	}}
+	prompt := &helpersPromptServer{}
+	client := newHelpersTestAzdClient(t, server, prompt, env)
+	replaced, err := preflightAdoptedDeploymentReplacement(t.Context(), client, root,
+		&initFlags{modelDeployment: "existing", noPrompt: true})
+	require.NoError(t, err)
+	require.Equal(t, "${CHAT_NAME}", replaced)
+	require.Zero(t, env.writes)
+	env.values["CHAT_NAME"] = "persisted-chat"
+	require.NoError(t, replaceAdoptedTemplateDeployment(t.Context(), client, "test", "existing", replaced))
+	require.Empty(t, decodedNames(t, env.values[projectDeploymentsEnvKey]))
+	bindings, err := synthesis.DecodeDeploymentBindings(env.values[synthesis.DeploymentBindingsEnvKey])
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"persisted-chat": "existing"}, bindings)
+	require.Zero(t, prompt.selectCalls.Load())
 }

@@ -871,6 +871,10 @@ func runInitFromAzureYaml(
 		}
 	}
 
+	replacedDeployment, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	if err != nil {
+		return err
+	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
@@ -887,6 +891,7 @@ func runInitFromAzureYaml(
 		promptOnly,
 		agentNameOverride,
 		TemplateTypeAzureYaml,
+		replacedDeployment,
 	)
 }
 
@@ -920,14 +925,16 @@ func runInitFromAzdTemplate(
 		folderDisplay = filepath.ToSlash(targetDir)
 	}
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldAzdTemplateProject(
+	replacedDeployment, err := scaffoldAzdTemplateProject(
 		ctx,
 		azdClient,
 		httpClient,
 		targetDir,
 		selectedTemplate.Source,
 		envName,
-	); err != nil {
+		flags,
+	)
+	if err != nil {
 		return err
 	}
 	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
@@ -962,6 +969,7 @@ func runInitFromAzdTemplate(
 		info.promptOnly(),
 		agentNameOverride,
 		TemplateTypeAzd,
+		replacedDeployment,
 	)
 }
 
@@ -972,11 +980,16 @@ func scaffoldAzdTemplateProject(
 	targetDir string,
 	templateSource string,
 	envName string,
-) error {
-	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
-		return err
+	flags *initFlags,
+) (string, error) {
+	replaced, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags)
+	if err != nil {
+		return "", err
 	}
-	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
+	if err := scaffoldProject(ctx, azdClient, targetDir, templateSource, envName); err != nil {
+		return "", err
+	}
+	return replaced, nil
 }
 
 type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
@@ -987,7 +1000,8 @@ func preflightAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	templateSource string,
-) error {
+	flags *initFlags,
+) (string, error) {
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -999,11 +1013,14 @@ func preflightAzdTemplate(
 		},
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return "", err
+	}
+	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
 }
 
 func stageAzdTemplateRepository(
@@ -1237,15 +1254,11 @@ func finalizeAdoptedProject(
 	promptOnly bool,
 	agentNameOverride string,
 	templateType string,
+	replacedDeployment string,
 ) error {
 	if err := validateInitModelSelectors(flags, true); err != nil {
 		return err
 	}
-	replacedDeployment, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, envName, flags)
-	if err != nil {
-		return err
-	}
-
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.

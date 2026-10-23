@@ -53,12 +53,16 @@ func ResolvePromptAgentModel(
 	if err != nil {
 		return "", err
 	}
-	if replacement, bound := bindings[model]; bound {
+	replacement, bound, err := promptModelDeploymentBinding(bindings, model)
+	if err != nil {
+		return "", err
+	}
+	if bound {
 		declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
 		if err != nil {
 			return "", err
 		}
-		if slices.Contains(declared, model) {
+		if containsDeploymentName(declared, model) {
 			if _, err := promptModelInfrastructureOnDisk(projectRoot); err != nil {
 				return "", err
 			}
@@ -85,18 +89,18 @@ func ResolvePromptAgentModel(
 	if err != nil {
 		return "", err
 	}
-	if model == "" || !ok || slices.Contains(selected, model) {
+	if model == "" || !ok || containsDeploymentName(selected, model) {
 		return model, nil
 	}
 	declared, err := usedProjectDeploymentNames(agentService, services, projectRoot, lookup)
 	if err != nil {
 		return "", err
 	}
-	if !slices.Contains(declared, model) {
+	if !containsDeploymentName(declared, model) {
 		return model, nil
 	}
 	missing := slices.DeleteFunc(slices.Clone(declared), func(name string) bool {
-		return slices.Contains(selected, name)
+		return containsDeploymentName(selected, name)
 	})
 	if len(missing) > 1 {
 		return "", exterrors.Dependency(
@@ -104,7 +108,9 @@ func ResolvePromptAgentModel(
 			fmt.Sprintf(
 				"model deployment %q is not created in this environment, and neither are %s, "+
 					"so its replacement cannot be inferred",
-				model, strings.Join(slices.DeleteFunc(missing, func(name string) bool { return name == model }), ", "),
+				model, strings.Join(slices.DeleteFunc(missing, func(name string) bool {
+					return strings.EqualFold(name, model)
+				}), ", "),
 			),
 			"set the agent's model to the deployment to use, then run `azd deploy` again",
 		)
@@ -118,6 +124,31 @@ func ResolvePromptAgentModel(
 		)
 	}
 	return fallback, nil
+}
+
+func promptModelDeploymentBinding(bindings map[string]string, model string) (string, bool, error) {
+	var replacement string
+	bound := false
+	for name, target := range bindings {
+		if !strings.EqualFold(name, model) {
+			continue
+		}
+		if bound && replacement != target {
+			return "", false, exterrors.Validation(
+				exterrors.CodeInvalidServiceConfig,
+				fmt.Sprintf("AI_PROJECT_DEPLOYMENT_BINDINGS contains conflicting bindings for model %q", model),
+				"keep a single binding for this deployment name, ignoring case",
+			)
+		}
+		replacement, bound = target, true
+	}
+	return replacement, bound, nil
+}
+
+func containsDeploymentName(names []string, name string) bool {
+	return slices.ContainsFunc(names, func(candidate string) bool {
+		return strings.EqualFold(candidate, name)
+	})
 }
 
 // environmentDeploymentNames lists the names in AI_PROJECT_DEPLOYMENTS. The
@@ -198,7 +229,7 @@ func usedProjectDeploymentNames(
 			if err != nil {
 				return nil, fmt.Errorf("expanding project deployment name: %w", err)
 			}
-			if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
+			if name = strings.TrimSpace(name); name != "" && !containsDeploymentName(names, name) {
 				names = append(names, name)
 			}
 		}

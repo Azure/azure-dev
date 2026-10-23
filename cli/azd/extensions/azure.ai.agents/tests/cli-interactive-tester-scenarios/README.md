@@ -345,6 +345,8 @@ in any order, any time.
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
+| `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
+| `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -354,6 +356,11 @@ cloud create/follow/cancel flow is claimed by these scenarios.
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
 Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
+
+The two replacement-preflight scenarios use the local
+`fixtures/adopt-model-replacement/azure.yaml` fixture and abort before Azure
+authentication or scaffolding. They need no externally seeded deployment and
+never provision the fixture.
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not

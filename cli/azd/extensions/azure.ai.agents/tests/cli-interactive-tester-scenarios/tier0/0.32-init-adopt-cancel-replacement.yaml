@@ -1,0 +1,31 @@
+# Tier 0: cancel the replacement picker before any local writes.
+name: "init-adopt-cancel-replacement"
+command: 'azd ai agent init -t "{fixtures_dir}/adopt-model-replacement/azure.yaml" --src . --model-deployment existing-chat'
+cwd: "~/working/azd-agents-adopt-cancel-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "picker", "parallel-safe"]
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+
+pre:
+  - run: "rm -rf ~/working/azd-agents-adopt-cancel-{instance}"
+    cwd: "~/working"
+    name: "reset isolated adoption working dir"
+
+goals:
+  - >-
+    Wait for 'Which template deployment does "existing-chat" replace?'.
+    Confirm the choices include template-chat and template-embed. No Azure
+    authentication, subscription, project, or model-selection prompt is allowed.
+  - >-
+    Before answering the picker, confirm the working directory contains neither
+    azure.yaml nor .azure. Cancel the replacement picker without selecting a
+    deployment.
+  - >-
+    Confirm init exits non-zero without a stack trace and still leaves neither
+    azure.yaml nor .azure in the working directory.
+  - "Take a screenshot of the final cancellation output."
+  - >-
+    Report a finding if the replacement picker appears after scaffolding, any
+    unlisted product prompt appears, cancellation succeeds as an initialization,
+    or project files or an environment remain.

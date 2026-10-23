@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"google.golang.org/protobuf/types/known/structpb"
+	"gopkg.in/yaml.v3"
 )
 
 const projectDeploymentsEnvKey = "AI_PROJECT_DEPLOYMENTS"
@@ -52,14 +55,14 @@ func readAdoptedDeploymentState(
 func preflightAdoptedDeploymentReplacement(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
-	envName string,
+	projectRoot string,
 	flags *initFlags,
 ) (string, error) {
 	existing := strings.TrimSpace(flags.modelDeployment)
 	if existing == "" {
 		return "", nil
 	}
-	declared, _, err := readAdoptedDeploymentState(ctx, azdClient, envName)
+	declared, err := readStagedAdoptedDeployments(projectRoot)
 	if err != nil {
 		return "", err
 	}
@@ -85,6 +88,51 @@ func preflightAdoptedDeploymentReplacement(
 	return selectAdoptedDeploymentReplacement(declared, existing, flags.noPrompt, choose)
 }
 
+func readStagedAdoptedDeployments(projectRoot string) ([]project.Deployment, error) {
+	content, err := os.ReadFile(filepath.Join(projectRoot, "azure.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("reading staged azure.yaml: %w", err)
+	}
+	var document struct {
+		Services map[string]map[string]any `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(content, &document); err != nil {
+		return nil, fmt.Errorf("parsing staged azure.yaml: %w", err)
+	}
+	services := map[string]*azdext.ServiceConfig{}
+	for name, service := range document.Services {
+		host, _ := service["host"].(string)
+		if host != project.FoundryProjectHost {
+			continue
+		}
+		props, err := structpb.NewStruct(service)
+		if err != nil {
+			return nil, fmt.Errorf("encoding project service %q: %w", name, err)
+		}
+		services[name] = &azdext.ServiceConfig{
+			Name: name, Host: host, AdditionalProperties: props,
+		}
+	}
+	raw, err := adoptedTemplateDeploymentEntries(services, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	declared := make([]project.Deployment, 0, len(raw))
+	for i, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("template deployment %d must be an object", i)
+		}
+		name, ok := entry["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("template deployment %d must have a non-empty string name", i)
+		}
+		// Resolve names against the final environment when applying.
+		declared = append(declared, project.Deployment{Name: name})
+	}
+	return declared, nil
+}
+
 // replaceAdoptedTemplateDeployment applies the preselected replacement using
 // current environment values. azure.yaml is not changed and no prompt is shown.
 func replaceAdoptedTemplateDeployment(
@@ -97,6 +145,10 @@ func replaceAdoptedTemplateDeployment(
 	declared, values, err := readAdoptedDeploymentState(ctx, azdClient, envName)
 	if err != nil {
 		return err
+	}
+	replaced, err = project.ExpandEnv(replaced, adoptedDeploymentEnvironmentLookup(values))
+	if err != nil {
+		return fmt.Errorf("expanding adopted deployment name: %w", err)
 	}
 	value, write, err := planAdoptedDeploymentReplacement(
 		declared, values[projectDeploymentsEnvKey], replaced,
@@ -148,6 +200,15 @@ func planAdoptedDeploymentReplacement(
 ) (string, bool, error) {
 	if replaced == "" {
 		return "", false, nil
+	}
+	if !slices.ContainsFunc(declared, func(deployment project.Deployment) bool {
+		return strings.EqualFold(deployment.Name, replaced)
+	}) {
+		return "", false, exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("template deployment %q selected for --model-deployment is no longer declared", replaced),
+			"retry initialization using the same template revision",
+		)
 	}
 	current, present, err := project.DecodeProjectDeploymentsEnv(envValue)
 	if err != nil {
@@ -203,27 +264,11 @@ func adoptedTemplateDeployments(
 	projectRoot string,
 	env map[string]string,
 ) ([]project.Deployment, error) {
-	names := make([]string, 0, 1)
-	for name, service := range services {
-		if service.GetHost() == project.FoundryProjectHost {
-			names = append(names, name)
-		}
-	}
-	if len(names) != 1 {
-		return nil, nil
-	}
-	props, err := project.ResolveServiceConfigProps(services[names[0]], projectRoot)
-	if err != nil || props == nil {
+	raw, err := adoptedTemplateDeploymentEntries(services, projectRoot)
+	if err != nil {
 		return nil, err
 	}
-	raw, _ := props.AsMap()["deployments"].([]any)
-	lookup := func(name string) string {
-		if value, ok := env[name]; ok {
-			return value
-		}
-		value, _ := os.LookupEnv(name)
-		return value
-	}
+	lookup := adoptedDeploymentEnvironmentLookup(env)
 	deployments := make([]project.Deployment, 0, len(raw))
 	for i, item := range raw {
 		expanded, err := expandDeploymentValue(item, lookup)
@@ -250,6 +295,37 @@ func adoptedTemplateDeployments(
 		deployments = append(deployments, deployment)
 	}
 	return deployments, nil
+}
+
+func adoptedTemplateDeploymentEntries(
+	services map[string]*azdext.ServiceConfig,
+	projectRoot string,
+) ([]any, error) {
+	names := make([]string, 0, 1)
+	for name, service := range services {
+		if service.GetHost() == project.FoundryProjectHost {
+			names = append(names, name)
+		}
+	}
+	if len(names) != 1 {
+		return nil, nil
+	}
+	props, err := project.ResolveServiceConfigProps(services[names[0]], projectRoot)
+	if err != nil || props == nil {
+		return nil, err
+	}
+	raw, _ := props.AsMap()["deployments"].([]any)
+	return raw, nil
+}
+
+func adoptedDeploymentEnvironmentLookup(env map[string]string) func(string) string {
+	return func(name string) string {
+		if value, ok := env[name]; ok {
+			return value
+		}
+		value, _ := os.LookupEnv(name)
+		return value
+	}
 }
 
 func expandDeploymentValue(value any, lookup func(string) string) (any, error) {

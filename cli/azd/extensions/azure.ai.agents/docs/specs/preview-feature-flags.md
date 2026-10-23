@@ -130,7 +130,7 @@ These entry points classify content that only exists at run time, so an annotati
 | Call site | Why it stays direct |
 | --- | --- |
 | `init` existing project and explicit local `azure.yaml` | Services come from content read during the command |
-| `init` staged template adoption | Effective definitions are checked after staging, before adoption |
+| `init` staged template adoption | Effective definitions are checked after staging, before adoption. Explicit remote `--template` inputs are staged and checked before Azure authentication; adoption reuses the validated directory |
 | `init` picker | Discovery only. It omits the voice choice while off |
 | Hosted `init` protocol picker | It omits `invocations_ws` while voice is off and validates selection before project/environment creation. Explicit ordinary protocols and the no-prompt Responses default need no feature check |
 | `agent add` | Definitions come from `--file` content |
@@ -172,5 +172,7 @@ Discoverability through `azd config list-alpha`, a public SDK API, and framework
 Evaluator tests cover canonical keys, default-off behavior, accepted boolean forms, non-enabling values, all independent combinations, ignored old/global/unrelated keys, optional descriptions, fresh reads, and no input mutation. Temporary local fixtures verify that direct calls do not load configuration or dotenv files. These tests do not launch through the host.
 
 Root-command regressions cover parsed flags, local-validation precedence, independent gates, ignored persisted config, no host reads for evaluation/help, fresh and existing init scopes, preserved SDK-selected creation names, disabled no-auth/no-write rejection, protocol pickers, staged manifests, local invocation, fallback error propagation, and retained read access. Project tests cover inline and referenced definitions, harness whitespace normalization, and lifecycle entry points. Help tests preserve the always-visible switch list while checking conditional command discovery; snapshots cover enabled and disabled states.
+
+Remote-template regressions cover inline and `$ref` previews, rejection before Azure authentication, retained authentication when enabled, single-download adoption, and temporary-directory cleanup on failure.
 
 Run offline tests, the full agents module build, and scoped static checks with Go 1.26.4. Tier 0 scenarios cover switch discovery and enabled/disabled help. Scenario execution remains opt-in through the `foundry-extension-scenario-orchestrator` agent; no Azure scenarios are required for this integration.

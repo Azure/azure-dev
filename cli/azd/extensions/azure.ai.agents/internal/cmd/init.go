@@ -813,19 +813,51 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 			printBanner(cmd.OutOrStdout())
 
+			httpClient := &http.Client{
+				Timeout: 30 * time.Second,
+			}
 			var cachedExplicitAzureYaml []byte
+			var explicitTemplateDir string
 			if userProvidedTemplate {
+				if err := validateUnifiedInitFlags(cmd); err != nil {
+					return err
+				}
 				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
 				if err != nil {
 					return err
 				}
 				if cached {
-					cachedExplicitAzureYaml = content
 					root := filepath.Dir(flags.templatePointer)
 					if err := requireManifestPreviewFeatures(content, root); err != nil {
 						return err
 					}
+				} else {
+					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					defer cleanup()
+					explicitTemplateDir = stagingDir
+					//nolint:gosec // trusted staging directory
+					content, err = os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+					if err != nil {
+						return fmt.Errorf("reading staged azure.yaml: %w", err)
+					}
+					content, err = validateExplicitAzureYamlContent(flags.templatePointer, content)
+					if err != nil {
+						return err
+					}
+					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
+						return err
+					}
+					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+						return err
+					}
 				}
+				cachedExplicitAzureYaml = content
 			}
 			sourceValidated := false
 			explicitSource := cmd.Flags().Changed("src") ||
@@ -910,24 +942,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 
-			var httpClient = &http.Client{
-				Timeout: 30 * time.Second,
-			}
-
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
 			if userProvidedTemplate {
-				content := cachedExplicitAzureYaml
-				if content == nil {
-					var err error
-					content, err = loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
-					if err != nil {
-						return err
-					}
-				}
-				if err := validateUnifiedInitFlags(cmd); err != nil {
-					return err
-				}
-				if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+				if err := runInitFromAzureYaml(
+					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir,
+				); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -1148,7 +1167,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							flags.src = sanitizeAgentName(resolvedName)
 						}
 
-						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, ""); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}

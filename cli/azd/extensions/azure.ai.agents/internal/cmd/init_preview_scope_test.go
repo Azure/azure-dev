@@ -5,7 +5,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +19,7 @@ import (
 	"sync"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -328,4 +333,200 @@ func TestInitOrdinaryProtocolsPreserveCreationSelection(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestInitExplicitRemoteTemplatePreviewBeforeAuth(t *testing.T) {
+	const (
+		source = "https://github.com/example/repo/blob/main/samples/azure.yaml"
+		apiDir = "/repos/example/repo/contents/samples"
+	)
+	for _, definition := range []struct {
+		name    string
+		content string
+		feature featureflags.Feature
+	}{
+		{
+			name: "voice",
+			content: "kind: prompt-voice\nname: remote-agent\nmodelType: managed\n" +
+				"model:\n  id: gpt-realtime",
+			feature: featureflags.Voice,
+		},
+		{
+			name: "managed harness",
+			content: "kind: prompt\nname: remote-agent\nmodelType: managed\n" +
+				"model:\n  id: gpt-4.1-mini\nharness:\n  type: microsoft_copilot_preview",
+			feature: featureflags.ManagedHarness,
+		},
+	} {
+		for _, form := range []string{"inline", "root ref"} {
+			for _, mode := range []struct {
+				name          string
+				enabled       bool
+				authenticated bool
+			}{
+				{name: "disabled"},
+				{name: "enabled", enabled: true},
+				{name: "adopt", enabled: true, authenticated: true},
+			} {
+				t.Run(definition.name+"/"+form+"/"+mode.name, func(t *testing.T) {
+					clearPreviewProcess(t)
+					root := t.TempDir()
+					t.Chdir(root)
+					require.NoError(t, os.WriteFile("sentinel.txt", []byte("unchanged"), 0o600))
+					tempRoot := t.TempDir()
+					for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+						t.Setenv(name, tempRoot)
+					}
+					t.Setenv(templateCacheDirEnv, "")
+					if mode.enabled {
+						t.Setenv(definition.feature.EnvVar, "true")
+					}
+					manifest := "name: remote-template\nservices:\n  agent:\n    host: azure.ai.agent\n"
+					files := map[string]string{}
+					if form == "root ref" {
+						manifest += "    $ref: ./agent.yaml\n"
+						files["agent.yaml"] = definition.content + "\n"
+					} else {
+						manifest += "    " + strings.ReplaceAll(definition.content, "\n", "\n    ") + "\n"
+					}
+					files["azure.yaml"] = manifest
+					var listing []map[string]string
+					for name := range files {
+						listing = append(listing, map[string]string{"name": name, "type": "file"})
+					}
+					directoryJSON, err := json.Marshal(listing)
+					require.NoError(t, err)
+
+					type adoptionSnapshot struct {
+						args  []string
+						files map[string]string
+						err   error
+					}
+					adoptions := make(chan adoptionSnapshot, 1)
+					host := &initScopeHost{}
+					host.workflow.runHook = func() {
+						snapshot := adoptionSnapshot{files: map[string]string{}}
+						steps := host.workflow.request.GetWorkflow().GetSteps()
+						if len(steps) != 1 {
+							snapshot.err = errors.New("expected one init step")
+						} else {
+							snapshot.args = steps[0].GetCommand().GetArgs()
+							if len(snapshot.args) != 6 {
+								snapshot.err = errors.New("unexpected init arguments")
+							} else {
+								for name := range files {
+									content, readErr := os.ReadFile(filepath.Join(snapshot.args[2], name))
+									if readErr != nil {
+										snapshot.err = readErr
+										break
+									}
+									snapshot.files[name] = string(content)
+								}
+							}
+						}
+						adoptions <- snapshot
+					}
+					host.start(t)
+					auth := initScopeAuthFixture(t, mode.authenticated)
+					requests := map[string]int{}
+					previousTransport := http.DefaultTransport
+					t.Cleanup(func() { http.DefaultTransport = previousTransport })
+					http.DefaultTransport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+						require.NoFileExists(t, auth, "templates must not be downloaded after authentication")
+						require.Equal(t, "api.github.com", request.URL.Host)
+						require.Equal(t, "ref=main", request.URL.RawQuery)
+						requests[request.URL.Path]++
+						body := string(directoryJSON)
+						if request.URL.Path != apiDir {
+							require.True(t, strings.HasPrefix(request.URL.Path, apiDir+"/"))
+							name := strings.TrimPrefix(request.URL.Path, apiDir+"/")
+							var found bool
+							body, found = files[name]
+							require.True(t, found, "unexpected template file: %s", name)
+						}
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Header:     make(http.Header),
+							Body:       io.NopCloser(strings.NewReader(body)),
+						}, nil
+					})
+
+					err = runInitScopeRoot(t, "--template", source, "-e", "selected-env", "--no-prompt")
+					if !mode.enabled {
+						localErr, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok, "expected a feature error, got %v", err)
+						require.Equal(t, exterrors.CodeFeatureNotEnabled, localErr.Code)
+						require.Contains(t, localErr.Message, definition.feature.ID)
+						require.NoFileExists(t, auth)
+						require.False(t, host.called("AiModelService/ListModels"))
+					} else if !mode.authenticated {
+						localErr, ok := errors.AsType[*azdext.LocalError](err)
+						require.True(t, ok, "expected an authentication error, got %v", err)
+						require.Equal(t, exterrors.CodeNotLoggedIn, localErr.Code)
+						require.FileExists(t, auth)
+					} else {
+						require.ErrorContains(t, err, "fixture stopped before init writes")
+						require.FileExists(t, auth)
+						require.Equal(t, 1, host.workflow.runCalls)
+						select {
+						case snapshot := <-adoptions:
+							require.NoError(t, snapshot.err)
+							require.Equal(t, files, snapshot.files)
+							require.Equal(t, []string{"init", "-t"}, snapshot.args[:2])
+							require.Equal(t, []string{
+								"remote-template", "--environment", "selected-env",
+							}, snapshot.args[3:])
+							require.NoDirExists(t, snapshot.args[2])
+						default:
+							t.Fatal("core init did not receive the staged template")
+						}
+					}
+					if !mode.authenticated {
+						require.Zero(t, host.workflow.runCalls)
+					}
+					require.False(t, host.called("EnvironmentService/GetValues"))
+					require.Len(t, requests, len(files)+1)
+					for path, count := range requests {
+						require.Equal(t, 1, count, "template content must be fetched once: %s", path)
+					}
+					staging, globErr := filepath.Glob(filepath.Join(tempRoot, "azd-foundry-adopt-*"))
+					require.NoError(t, globErr)
+					require.Empty(t, staging)
+					content, readErr := os.ReadFile("sentinel.txt")
+					require.NoError(t, readErr)
+					require.Equal(t, "unchanged", string(content))
+					entries, readErr := os.ReadDir(root)
+					require.NoError(t, readErr)
+					require.Len(t, entries, 1)
+				})
+			}
+		}
+	}
+}
+
+func TestInitExplicitRemoteTemplateFlagsBeforeDownload(t *testing.T) {
+	clearPreviewProcess(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	host := &initScopeHost{}
+	host.start(t)
+	auth := initScopeAuthFixture(t, false)
+	previousTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+	http.DefaultTransport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("conflicting flags must be rejected before downloading")
+		return nil, nil
+	})
+
+	err := runInitScopeRoot(t, "--template", "https://github.com/example/repo/blob/main/samples/azure.yaml",
+		"--kind=", "--no-prompt")
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeConflictingArguments, localErr.Code)
+	require.Contains(t, localErr.Message, "--kind")
+	require.NoFileExists(t, auth)
+	require.Empty(t, host.methods)
+	entries, readErr := os.ReadDir(root)
+	require.NoError(t, readErr)
+	require.Empty(t, entries)
 }

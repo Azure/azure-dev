@@ -55,6 +55,8 @@ opt-in for `invocations_ws`. Protocol selection completes before project or
 environment creation; ordinary protocols and the no-prompt Responses default
 need no additional feature check. Template catalogs do not identify
 capabilities, so templates are checked after staging and before adoption.
+Explicit remote `--template` inputs are staged and checked before Azure
+authentication, including `$ref` definitions. Adoption reuses that directory.
 
 ### Enforcement limits
 

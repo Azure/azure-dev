@@ -4,6 +4,7 @@
 package tool
 
 import (
+	"context"
 	"errors"
 	osexec "os/exec"
 	"runtime"
@@ -118,6 +119,46 @@ func TestDetect(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, platform.AvailableManagers)
+	})
+
+	t.Run("ReturnsPreCanceledContextCause", func(t *testing.T) {
+		t.Parallel()
+
+		cause := errors.New("custom cancellation cause")
+		ctx, cancel := context.WithCancelCause(t.Context())
+		cancel(cause)
+
+		platform, err := NewPlatformDetector(mockexec.NewMockCommandRunner()).Detect(ctx)
+
+		require.Nil(t, platform)
+		require.ErrorIs(t, err, cause)
+	})
+
+	t.Run("ReturnsCancellationDuringManagerProbe", func(t *testing.T) {
+		t.Parallel()
+
+		runner := mockexec.NewMockCommandRunner()
+		for _, managers := range platformManagers {
+			for _, mgr := range managers {
+				runner.MockToolInPath(mgr, osexec.ErrNotFound)
+			}
+		}
+
+		manager := platformManagers[runtime.GOOS][0]
+		runner.MockToolInPath(manager, nil)
+		cause := errors.New("custom cancellation cause")
+		ctx, cancel := context.WithCancelCause(t.Context())
+		runner.When(func(args exec.RunArgs, _ string) bool {
+			return args.Cmd == manager
+		}).RespondContextFn(func(context.Context, exec.RunArgs) (exec.RunResult, error) {
+			cancel(cause)
+			return exec.RunResult{}, cause
+		})
+
+		platform, err := NewPlatformDetector(runner).Detect(ctx)
+
+		require.Nil(t, platform)
+		require.ErrorIs(t, err, cause)
 	})
 }
 

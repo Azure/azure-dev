@@ -541,26 +541,43 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 	registerTrackedDeployMocks(mockContext)
 
 	pollCount := 0
+	var pollDeadlines []time.Time
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
 			strings.Contains(request.URL.Path, "/deploymentStatus/")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		pollCount++
+		deadline, ok := request.Context().Deadline()
+		if !ok {
+			return nil, errors.New("deployment status request has no deadline")
+		}
+		pollDeadlines = append(pollDeadlines, deadline)
+
+		operationStatus := "InProgress"
 		status := armappservice.DeploymentBuildStatusBuildInProgress
-		if pollCount > 1 {
+		successfulInstances := 0
+		inProgressInstances := 1
+		if pollCount == 3 {
+			// Make the reset visible even on platforms with coarse clock resolution.
+			time.Sleep(5 * time.Millisecond)
 			status = armappservice.DeploymentBuildStatusRuntimeStarting
+		} else if pollCount == 4 {
+			operationStatus = "Succeeded"
+			status = armappservice.DeploymentBuildStatusRuntimeSuccessful
+			successfulInstances = 1
+			inProgressInstances = 0
 		}
 
 		response, err := mocks.CreateHttpResponseWithBody(
 			request,
 			http.StatusAccepted,
 			map[string]any{
-				"status": "InProgress",
+				"status": operationStatus,
 				"properties": map[string]any{
 					"status":                      status,
-					"numberOfInstancesSuccessful": 0,
+					"numberOfInstancesSuccessful": successfulInstances,
 					"numberOfInstancesFailed":     0,
-					"numberOfInstancesInProgress": 1,
+					"numberOfInstancesInProgress": inProgressInstances,
 				},
 			},
 		)
@@ -577,15 +594,15 @@ func TestDeployTrackStatus_StatusChangeResetsTimeout(t *testing.T) {
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP_ID",
 		"APP_NAME",
-		40*time.Millisecond,
-		20*time.Millisecond,
+		time.Second,
+		0,
 		func(string) {},
 	)
 
-	timeoutErr, ok := errors.AsType[*DeploymentStatusTimeoutError](err)
-	require.True(t, ok)
-	require.Equal(t, 40*time.Millisecond, timeoutErr.Timeout)
-	require.GreaterOrEqual(t, pollCount, 3)
+	require.NoError(t, err)
+	require.Equal(t, 4, pollCount)
+	require.Len(t, pollDeadlines, 4)
+	require.True(t, pollDeadlines[3].After(pollDeadlines[2]))
 }
 
 func registerTrackedDeployMocks(mockContext *mocks.MockContext) {

@@ -14,6 +14,12 @@ words:
   - hemarina
 overrides:
   - filename:
+      - internal/onboarding/authorization_rules.go
+      - internal/onboarding/operator_inheritance_contract_test.go
+      - cspell.yaml
+    words:
+      - hasgroups
+  - filename:
       - internal/onboarding/deployment_bindings.go
       - cspell.yaml
     words:

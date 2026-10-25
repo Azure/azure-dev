@@ -83,8 +83,9 @@ func permissionAllows(permissions []*armauthorization.Permission, action string)
 }
 
 type callerIdentity struct {
-	objectID string
-	groups   map[string]bool
+	objectID     string
+	groups       map[string]bool
+	groupOverage bool
 }
 
 func identityFromToken(token string) (callerIdentity, error) {
@@ -97,13 +98,18 @@ func identityFromToken(token string) (callerIdentity, error) {
 		return callerIdentity{}, fmt.Errorf("decode operator identity evidence: %w", err)
 	}
 	var claims struct {
-		ObjectID string   `json:"oid"`
-		Groups   []string `json:"groups"`
+		ObjectID   string            `json:"oid"`
+		Groups     []string          `json:"groups"`
+		HasGroups  bool              `json:"hasgroups"`
+		ClaimNames map[string]string `json:"_claim_names"`
 	}
 	if err := json.Unmarshal(raw, &claims); err != nil || claims.ObjectID == "" {
 		return callerIdentity{}, fmt.Errorf("operator token has no supported object-ID evidence")
 	}
-	caller := callerIdentity{objectID: claims.ObjectID, groups: map[string]bool{}}
+	caller := callerIdentity{
+		objectID: claims.ObjectID, groups: map[string]bool{},
+		groupOverage: claims.HasGroups || claims.ClaimNames["groups"] != "",
+	}
 	for _, g := range claims.Groups {
 		caller.groups[strings.ToLower(g)] = true
 	}

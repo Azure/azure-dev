@@ -6,6 +6,7 @@ package onboarding
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,8 +17,16 @@ import (
 const registryPullAction = "Microsoft.ContainerRegistry/registries/pull/read"
 const repositoryReadAction = "Microsoft.ContainerRegistry/registries/repositories/content/read"
 
+var operatorObjectIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$`)
+
 func applicableAssignments(
 	ctx context.Context, credential azcore.TokenCredential, options *arm.ClientOptions, scope string,
+) ([]*armauthorization.RoleAssignment, error) {
+	return filteredAssignments(ctx, credential, options, scope, "atScope()")
+}
+
+func filteredAssignments(
+	ctx context.Context, credential azcore.TokenCredential, options *arm.ClientOptions, scope, filter string,
 ) ([]*armauthorization.RoleAssignment, error) {
 	id, err := arm.ParseResourceID(scope)
 	if err != nil || id.SubscriptionID == "" {
@@ -28,7 +37,7 @@ func applicableAssignments(
 		return nil, err
 	}
 	pager := client.NewListForScopePager(scope,
-		&armauthorization.RoleAssignmentsClientListForScopeOptions{Filter: new("atScope()")})
+		&armauthorization.RoleAssignmentsClientListForScopeOptions{Filter: new(filter)})
 	var assignments []*armauthorization.RoleAssignment
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -143,12 +152,46 @@ func (a *scopedAuthorizer) basicAssignmentWrite(
 	return status, observed, err
 }
 
+// operatorAssignmentApplies consumes only assignments returned by the target's ARM scope query.
+// ARM establishes management-group ancestry; its resource IDs are not subscription path prefixes.
+func operatorAssignmentApplies(assignment *armauthorization.RoleAssignment, scope string) bool {
+	p := assignment.Properties
+	if scopeContains(authString(p.Scope), scope) {
+		return true
+	}
+	parent := authString(p.Scope)
+	parts := strings.Split(parent, "/")
+	if len(parts) != 5 || parts[0] != "" || !strings.EqualFold(parts[1], "providers") ||
+		!strings.EqualFold(parts[2], "Microsoft.Management") || !strings.EqualFold(parts[3], "managementGroups") ||
+		parts[4] == "" || strings.ContainsAny(parts[4], "?#%\\@:\x00 \t\r\n") {
+		return false
+	}
+	id, err := arm.ParseResourceID(authString(assignment.ID))
+	return err == nil && id.Name != "" && strings.EqualFold(id.ResourceType.String(),
+		"Microsoft.Authorization/roleAssignments") && strings.EqualFold(id.Parent.String(), parent)
+}
+
 func (a *scopedAuthorizer) basicAction(
 	ctx context.Context, scope string, caller callerIdentity, action string, unconditionalOnly bool,
 ) (Status, string, error) {
 	assignments, err := applicableAssignments(ctx, a.credential, a.options, scope)
 	if err != nil {
 		return Unverified, "operator role assignments could not be read", err
+	}
+	provenAssignments := map[*armauthorization.RoleAssignment]bool{}
+	if caller.groupOverage {
+		if !operatorObjectIDPattern.MatchString(caller.objectID) {
+			return Unverified, "operator object ID is invalid for ARM group-assignment evidence", nil
+		}
+		proven, err := filteredAssignments(ctx, a.credential, a.options, scope,
+			"assignedTo('"+caller.objectID+"')")
+		if err != nil {
+			return Unverified, "ARM operator group-assignment evidence could not be read", err
+		}
+		for _, assignment := range proven {
+			provenAssignments[assignment] = true
+		}
+		assignments = append(assignments, proven...)
 	}
 	client, err := armauthorization.NewRoleDefinitionsClient(a.credential, a.options)
 	if err != nil {
@@ -170,13 +213,13 @@ func (a *scopedAuthorizer) basicAction(
 		if authString(p.PrincipalID) == "" {
 			return Unverified, "operator role assignment evidence is incomplete", nil
 		}
-		if !caller.includes(*p.PrincipalID) {
+		if !caller.includes(*p.PrincipalID) && !provenAssignments[assignment] {
 			continue
 		}
 		if authString(p.Scope) == "" || authString(p.RoleDefinitionID) == "" {
 			return Unverified, "operator assignment scope or role definition is unavailable", nil
 		}
-		if !scopeContains(*p.Scope, scope) {
+		if !operatorAssignmentApplies(assignment, scope) {
 			continue
 		}
 		role, err := client.GetByID(ctx, *p.RoleDefinitionID, nil)

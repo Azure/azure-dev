@@ -267,7 +267,7 @@ ARM still authorizes every actual operation during deployment.
 P02-P05 and P09 match the operator object ID and explicit token group claims against
 applicable direct or inherited assignments and check role definitions'
 `Actions/NotActions` for the selected action. They do not read deny assignments,
-discover group membership, evaluate conditions/delegation or require complete
+query Graph, evaluate conditions/delegation or require complete
 future resource or identity-recipient evidence. Unknown groups supply no confirmed
 allow and do not themselves cause `UNVERIFIED`. Condition, condition-version and
 delegated-identity fields do not by themselves negate a basic action allow.
@@ -275,6 +275,16 @@ No confirmed matching action allow is `FAIL`; missing, unreadable or undecodable
 basic token, assignment or role-definition evidence is `UNVERIFIED`. Both remain
 mandatory. A pass establishes only the basic action allow; ARM authorizes actual
 conditions, deny and policy.
+Operator assignments returned by ARM's target-scope `atScope()` query may also
+inherit from a management group. ARM supplies that applicability evidence; azd
+does not infer management-group ancestry from resource-ID prefixes or discover
+additional group memberships locally. If the ARM token reports group overage,
+azd also queries ARM `assignedTo('<operator-object-id>')` to obtain service-proven
+operator assignments, including transitive group assignments. Their actual
+scopes, role permissions and local `NotActions` still apply; child-scope grants
+cannot authorize parent operations. Missing required ARM evidence remains
+`UNVERIFIED`. P06 still rejects conditioned/delegated grants and requires an
+unconditional allow; supplied identities retain their separate principal checks.
 P02 checks identity write only for created identities, with necessary read/assign
 actions retained. P04/P05 follow the selected Storage/ACR create or reference
 operation; referencing already-created owned Storage on retry does not require a

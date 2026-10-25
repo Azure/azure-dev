@@ -30,6 +30,22 @@ type DeploymentSelection struct {
 	Network *LegacyNetwork
 }
 
+// ValidateHostingNetwork requires the standard non-managed subnet injection supported by AKS hosting.
+func ValidateHostingNetwork(selected DeploymentSelection) error {
+	n := selected.Network
+	if n == nil || !n.Enabled || n.ManagedEgress {
+		return fmt.Errorf("BYO AKS agentHosting requires network.agentSubnet and network.peSubnet; " +
+			"Microsoft-managed egress and an omitted network cannot host this configuration")
+	}
+	if err := validateLegacyNetwork(Plan{LegacyNetwork: n}); err != nil {
+		return err
+	}
+	if strings.EqualFold(n.AgentSubnetName, n.PESubnetName) {
+		return fmt.Errorf("network.agentSubnet.name and network.peSubnet.name must differ")
+	}
+	return nil
+}
+
 // ResolveRegistrySelection distinguishes customer input from an owned registry's persisted environment output.
 func ResolveRegistrySelection(ctx context.Context, plan Plan, journal Journal) (Plan, error) {
 	if !plan.RegistryCustomerSupplied {

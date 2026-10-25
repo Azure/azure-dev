@@ -69,6 +69,12 @@ func (p *FoundryProvisioningProvider) planBYO(
 	if err != nil {
 		return err
 	}
+	if err := onboarding.ValidateHostingNetwork(selected); err != nil {
+		return exterrors.Validation(exterrors.CodeInvalidParameter, err.Error(),
+			"Set network.agentSubnet and network.peSubnet to distinct named subnets in the same existing VNet. "+
+				"Omit prefix to reference a subnet, or set an explicit available prefix to create it. "+
+				"The provisioning and deployment host needs private connectivity and DNS to the Foundry endpoint.")
+	}
 	for key, expected := range map[string]string{"resourceGroupName": p.rgName, "location": p.location} {
 		value, ok := byoParameterValue(source, key).(string)
 		if !ok || !strings.EqualFold(value, expected) {

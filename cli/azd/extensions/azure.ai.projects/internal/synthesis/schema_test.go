@@ -78,6 +78,7 @@ func TestSchema_AgentHostingStructuralInvariants(t *testing.T) {
 
 	var doc struct {
 		Properties  map[string]json.RawMessage `json:"properties"`
+		AllOf       []json.RawMessage          `json:"allOf"`
 		Definitions struct {
 			AgentHosting struct {
 				Required             []string                   `json:"required"`
@@ -89,6 +90,16 @@ func TestSchema_AgentHostingStructuralInvariants(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &doc), "schema must be valid JSON")
 
 	assert.Contains(t, doc.Properties, "agentHosting")
+	require.Len(t, doc.AllOf, 1)
+	assert.JSONEq(t, `{
+      "if": { "required": ["agentHosting"] },
+      "then": {
+        "required": ["network"],
+        "properties": {
+          "network": { "required": ["agentSubnet", "peSubnet"] }
+        }
+      }
+    }`, string(doc.AllOf[0]), "hosting requires explicit standard subnet injection")
 	hosting := doc.Definitions.AgentHosting
 	assert.False(t, hosting.AdditionalProperties)
 	assert.ElementsMatch(t, []string{

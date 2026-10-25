@@ -56,11 +56,18 @@ func (byoCredentialContract) GetToken(context.Context, policy.TokenRequestOption
 const byoProviderCluster = "/subscriptions/aks-sub/resourceGroups/aks-rg/providers/" +
 	"Microsoft.ContainerService/managedClusters/customer"
 
+const byoProviderVNet = "/subscriptions/network-sub/resourceGroups/network-rg/providers/" +
+	"Microsoft.Network/virtualNetworks/test"
+
+const byoProviderNetwork = "    network:\n" +
+	"      agentSubnet: {vnet: " + byoProviderVNet + ", name: agents}\n" +
+	"      peSubnet: {vnet: " + byoProviderVNet + ", name: pe}\n"
+
 func byoContractProvider(t *testing.T) *FoundryProvisioningProvider {
 	t.Helper()
 	result, err := synthesis.Synthesize(synthesis.Input{
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
-			"      clusterResourceId: " + byoProviderCluster + "\n"),
+			"      clusterResourceId: " + byoProviderCluster + "\n" + byoProviderNetwork),
 		ServiceName: "project", AcceptedHosts: []string{"azure.ai.project"},
 	})
 	require.NoError(t, err)

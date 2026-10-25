@@ -5,6 +5,17 @@
   "description": "Service-level configuration for a host: azure.ai.project entry. The project owns its model deployments and an optional endpoint to an existing project. When endpoint is omitted, azd provisions a new project; when set, azd connects to that existing project instead of creating one.",
   "type": "object",
   "additionalProperties": true,
+  "allOf": [
+    {
+      "if": { "required": ["agentHosting"] },
+      "then": {
+        "required": ["network"],
+        "properties": {
+          "network": { "required": ["agentSubnet", "peSubnet"] }
+        }
+      }
+    }
+  ],
   "properties": {
     "endpoint": {
       "type": "string",
@@ -70,7 +81,7 @@
   "definitions": {
     "AgentHosting": {
       "type": "object",
-      "description": "Customer-owned AKS configuration. Hosting and workload identities may each be supplied or created independently. Read-only preflight precedes one ARM deployment.",
+      "description": "Customer-owned AKS configuration. Requires network.agentSubnet and network.peSubnet in an existing VNet. Hosting and workload identities may each be supplied or created independently. Read-only preflight precedes one ARM deployment.",
       "additionalProperties": false,
       "required": [
         "clusterResourceId"

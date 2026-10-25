@@ -173,7 +173,33 @@ services:
     host: azure.ai.project
     agentHosting:
       clusterResourceId: ${AZURE_AKS_CLUSTER_ID}
+    network:
+      agentSubnet:
+        vnet: ${FOUNDRY_VNET_RESOURCE_ID}
+        name: ${FOUNDRY_AGENT_SUBNET_NAME}
+      peSubnet:
+        vnet: ${FOUNDRY_VNET_RESOURCE_ID}
+        name: ${FOUNDRY_PE_SUBNET_NAME}
 ```
+
+BYO AKS requires explicit `network.agentSubnet` and `network.peSubnet`.
+The VNet must already exist; `vnet` is its full ARM resource ID and `name`
+is the subnet name, not a resource ID. Both descriptors must select the same
+VNet and different subnet names. Omit `prefix` to reference an existing subnet;
+set an explicit available CIDR in either descriptor to create that subnet through
+the standard network template. Agent subnet creation adds
+`Microsoft.App/environments` delegation. No default VNet or CIDR is selected.
+Missing Agent-subnet injection, including PE-only Microsoft-managed egress,
+is rejected before authentication, preflight persistence or Azure writes.
+
+This standard network path disables public access to the Foundry data plane
+and creates an account private endpoint. Provisioning/deployment/invocation
+must run with the necessary private routing and DNS resolution; an ordinary
+public Internet connection is not sufficient. By default the template creates
+and links the three AI private DNS zones. With `network.dns.resourceGroup`,
+it references existing zones without creating their VNet links.
+BYO-created ACR remains Premium with public access enabled and no ACR private
+endpoint. Supplied ACR configuration is not changed by account isolation.
 
 `hostingType` defaults to `ManagedCluster` and `name` to `aks`. Optional
 `storageAccountResourceId` selects an existing Storage account.
@@ -317,16 +343,16 @@ does not run the extension's mandatory read-only preflight and owned-deployment
 lifecycle.
 
 `network.agentSubnet` is the sole customer Agent-subnet input. N02 is
-`NOT_APPLICABLE` when it is omitted or selected for creation, without N02
-configuration, topology or creation-permission checks. BYO onboarding does not
-automatically select, allocate, create or delegate an Agent subnet.
-Standard `network` behavior is preserved independently of hosting:
+`NOT_APPLICABLE` when selected for creation, without N02 configuration,
+topology or creation-permission checks. BYO onboarding does not automatically
+select a VNet, subnet or CIDR. Explicit subnet creation uses the existing standard
+network module. Non-BYO network behavior remains unchanged:
 
-| Standard `network` configuration | Account network injection |
-|---|---|
-| Omitted | `null` |
-| Valid, without `network.agentSubnet` | `scenario: agent`, Microsoft-managed network, no `subnetArmId` |
-| Valid, with `network.agentSubnet` | `scenario: agent`, standard subnet ID, `useMicrosoftManagedNetwork: false` |
+| Standard `network` configuration | Account network injection | BYO AKS |
+|---|---|---|
+| Omitted | `null` for non-BYO | Rejected before writes |
+| Valid, without `network.agentSubnet` | Microsoft-managed network for non-BYO | Rejected before writes |
+| Valid, with `network.agentSubnet` | `scenario: agent`, standard subnet ID, `useMicrosoftManagedNetwork: false` | Required |
 
 The standard network template's subnet creation/reference, private endpoint, DNS
 and managed egress behavior and validation remain unchanged. P03 follows only the
@@ -336,8 +362,7 @@ existing-zone joins. It does not require AKS or VNet writes absent from the grap
 BYO provisioning checks operator permissions only in preflight;
 there is no additional client-side permission check before the single ARM
 deployment. ARM authorizes each actual deployment operation.
-Omitting `network.agentSubnet` or selecting it for creation skips only N02, not
-S03 or C01.
+Selecting `network.agentSubnet` for creation skips only N02, not S03 or C01.
 
 When an existing `network.agentSubnet` is selected, N02 compares its CIDRs **only
 against the selected AKS pool's Node subnet**. Pod/Service, sibling-subnet and

@@ -14,6 +14,11 @@ words:
   - hemarina
 overrides:
   - filename:
+      - schemas/azure.ai.project.json
+      - cspell.yaml
+    words:
+      - UAMI
+  - filename:
       - internal/onboarding/authorization_rules.go
       - internal/onboarding/operator_inheritance_contract_test.go
       - cspell.yaml

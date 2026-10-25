@@ -20,9 +20,8 @@ import (
 )
 
 func TestBYOFoundryFailurePreservesNestedStageAndCorrelation(t *testing.T) {
-	for _, diagnosticsDenied := range []bool{false, true} {
-		name := map[bool]string{false: "nested service failure", true: "diagnostics unreadable"}[diagnosticsDenied]
-		t.Run(name, func(t *testing.T) {
+	for _, scenario := range []string{"nested service failure", "diagnostics unreadable", "nested not registered"} {
+		t.Run(scenario, func(t *testing.T) {
 			p := byoContractProvider(t)
 			nested := "/subscriptions/foundry-sub/resourceGroups/foundry-rg/providers/" +
 				"Microsoft.Resources/deployments/foundry-resources"
@@ -33,12 +32,16 @@ func TestBYOFoundryFailurePreservesNestedStageAndCorrelation(t *testing.T) {
 					reads++
 					require.Equal(t, http.MethodGet, request.Method)
 					require.Equal(t, "2021-04-01", request.URL.Query().Get("api-version"))
-					if diagnosticsDenied {
+					if scenario == "diagnostics unreadable" {
 						return contractLifecycleResponse(request, 403,
 							`{"error":{"code":"AuthorizationFailed","message":"operation evidence denied"}}`), nil
 					}
 					if strings.EqualFold(request.URL.Path,
 						nested+"/operations") {
+						if scenario == "nested not registered" {
+							return contractLifecycleResponse(request, http.StatusNotFound,
+								`{"error":{"code":"DeploymentNotFound","message":"nested deployment not registered"}}`), nil
+						}
 						// #nosec G101 -- Synthetic diagnostic credentials verify non-disclosure.
 						message := "Blueprint federatedIdentityCredentials was denied; " +
 							"https://user:password@graph.invalid/applications?sig=secret#private"
@@ -76,10 +79,17 @@ func TestBYOFoundryFailurePreservesNestedStageAndCorrelation(t *testing.T) {
 			assert.Contains(t, service.Message, "F01/F02 Foundry ARM service stage")
 			assert.Contains(t, service.Message, "root-correlation")
 			assert.Contains(t, service.Suggestion, "tenant/policy administrator")
-			if diagnosticsDenied {
+			if scenario == "diagnostics unreadable" {
 				assert.Equal(t, 1, reads)
 				assert.Contains(t, service.Message, "Additional deployment-operation evidence unavailable")
 				assert.Contains(t, service.Message, "operation evidence denied")
+			} else if scenario == "nested not registered" {
+				assert.Equal(t, 2, reads)
+				assert.Contains(t, service.Message, "Additional deployment-operation evidence unavailable")
+				assert.Contains(t, service.Message, "DeploymentNotFound")
+				assert.Contains(t, service.Message, "nested module failed", "retain the real parent-stage error")
+				assert.Contains(t, service.Message, "outer ARM failure")
+				assert.NotContains(t, service.Message, "nested-service-request")
 			} else {
 				assert.Equal(t, 2, reads)
 				assert.Contains(t, service.Message, "nested-service-request")

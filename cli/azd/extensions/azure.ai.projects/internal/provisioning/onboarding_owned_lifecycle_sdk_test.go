@@ -111,6 +111,12 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 					}}
 					for attempt := range 2 {
 						deployed, err := p.Deploy(t.Context(), func(string) {})
+						if choice == "none" || choice == "managed" {
+							require.ErrorContains(t, err, "requires network.agentSubnet and network.peSubnet")
+							assert.Zero(t, writes)
+							assert.Empty(t, events, "invalid network fails before preflight, intent or ARM")
+							break
+						}
 						require.NoError(t, err)
 						assert.Equal(t, "created-project", deployed.Deployment.Outputs["AZURE_AI_PROJECT_NAME"].Value)
 						ownership := deployed.Deployment.Outputs["AZD_BYO_AKS_OWNERSHIP"]
@@ -126,10 +132,12 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 						assert.Equal(t, suppliedStorage, p.byoPlan.Storage.Supplied)
 						assert.Equal(t, suppliedRegistry, p.byoPlan.Registry.Supplied)
 					}
-					assert.Equal(t, []string{
-						"resources", "authorization", "intent", "ARM", "readback",
-						"resources", "authorization", "intent", "ARM", "readback",
-					}, events)
+					if choice != "none" && choice != "managed" {
+						assert.Equal(t, []string{
+							"resources", "authorization", "intent", "ARM", "readback",
+							"resources", "authorization", "intent", "ARM", "readback",
+						}, events)
+					}
 				})
 			}
 		}

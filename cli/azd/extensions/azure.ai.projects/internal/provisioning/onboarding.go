@@ -45,7 +45,7 @@ func (j environmentJournal) Save(ctx context.Context, state onboarding.Preparati
 	return j.provider.setEnv(ctx, envKeyBYOJournal, string(value))
 }
 
-func (p *FoundryProvisioningProvider) prepareBYO(
+func (p *FoundryProvisioningProvider) planBYO(
 	ctx context.Context, progress grpcbroker.ProgressFunc, preview bool,
 ) error {
 	if p.synthResult == nil || p.synthResult.Hosting == nil {
@@ -75,30 +75,28 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				"make the explicit parameter and environment selections agree", key)
 		}
 	}
+	foundryName, ok := byoParameterValue(source, "foundryProjectName").(string)
+	if !ok {
+		return fmt.Errorf("I03: effective foundryProjectName must be a string for resource naming")
+	}
 	registryID, err := p.optionalRegistryID(ctx)
 	if err != nil {
 		return err
 	}
-	subnetID := hosting.AgentSubnetResourceID
-	if subnetID == "" {
-		vnetID, _ := byoParameterValue(source, "vnetId").(string)
-		subnetName, _ := byoParameterValue(source, "agentSubnetName").(string)
-		createSubnet, _ := byoParameterValue(source, "createAgentSubnet").(bool)
-		managed, _ := byoParameterValue(source, "useManagedEgress").(bool)
-		if vnetID != "" && subnetName != "" && !createSubnet && !managed {
-			subnetID = vnetID + "/subnets/" + subnetName
-		}
+	subnetID := ""
+	if network := selected.Network; network != nil && network.Enabled && !network.ManagedEgress {
+		subnetID = network.VNetID + "/subnets/" + network.AgentSubnetName
 	}
 	plan, err := onboarding.BuildPlan(onboarding.Input{
 		ClusterID: hosting.ClusterResourceID, StorageID: hosting.StorageAccountResourceID,
 		RegistryID: registryID, AgentSubnetID: subnetID,
 		SubscriptionID: p.subID, ResourceGroup: p.rgName, Location: p.location,
 		Environment: p.envName, ProjectPath: p.projectPath,
+		FoundryName: foundryName,
 	})
 	if err != nil {
 		return err
 	}
-	plan.NetworkChanges = selected.NetworkChanges
 	pipeline := p.byoPipeline
 	if pipeline == nil {
 		if err := p.ensureCredential(ctx); err != nil {
@@ -107,30 +105,18 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		pipeline = &onboarding.Pipeline{
 			Resources: onboarding.NewResourceChecker(p.credential, p.armClientOptions),
 			Access:    onboarding.NewAuthorizer(p.credential, p.armClientOptions),
-			Prepare:   onboarding.NewPreparer(p.credential, p.armClientOptions, environmentJournal{p}),
 			Resolve: func(ctx context.Context, plan onboarding.Plan) (onboarding.Plan, error) {
-				resolved, err := onboarding.ResolveExistingParents(ctx, plan, p.credential, p.armClientOptions)
-				if err != nil {
-					return plan, err
-				}
-				return onboarding.ResolveDefaultNetwork(
-					ctx, resolved, p.credential, p.armClientOptions, environmentJournal{p})
+				return onboarding.ResolveExistingParents(ctx, plan, p.credential, p.armClientOptions)
 			},
 		}
 	}
 	runPipeline := *pipeline
 	lifecycle := p.ownedBYOLifecycle()
-	runPipeline.Resources = byoLifecycleChecker{
-		checker: pipeline.Resources, lifecycle: lifecycle,
-		spec: func(plan onboarding.Plan, facts onboarding.Facts) (onboarding.FoundrySpec, error) {
-			spec, err := byoFoundrySpec(plan, source, facts.RegistryABAC)
-			if err == nil {
-				p.byoSpec = spec
-			}
-			return spec, err
-		},
-	}
 	runPipeline.Resolve = func(ctx context.Context, plan onboarding.Plan) (onboarding.Plan, error) {
+		plan, err := onboarding.ResolveRegistrySelection(ctx, plan, environmentJournal{p})
+		if err != nil {
+			return plan, err
+		}
 		if pipeline.Resolve != nil {
 			resolved, err := pipeline.Resolve(ctx, plan)
 			if err != nil {
@@ -144,40 +130,90 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 		}
 		return resolved, err
 	}
-	runPipeline.Observe = func(report onboarding.Report) {
-		if pipeline.Observe != nil {
-			pipeline.Observe(report)
-		}
+	observe := func(report onboarding.Report) {
 		var formatted strings.Builder
 		_ = report.Write(&formatted)
 		progress(formatted.String())
 	}
-	_, err = runPipeline.Run(ctx, plan, preview, func(ctx context.Context, prepared onboarding.Prepared) error {
-		if err := synthesis.ApplyPreparedHosting(p.synthResult, synthesis.PreparedHosting{
-			HostingManagementIdentityResourceID: prepared.Hosting.ID,
-			WorkloadIdentityResourceID:          prepared.Workload.ID,
-			StorageAccountResourceID:            prepared.StorageID,
-			AgentSubnetResourceID:               prepared.AgentSubnetID,
-			RegistryResourceID:                  prepared.RegistryID,
-			RegistryABAC:                        prepared.RegistryABAC,
-		}); err != nil {
-			return err
+	resolved, err := runPipeline.Resolve(ctx, plan)
+	if err != nil {
+		report := onboarding.Report{{
+			ID: "I03", Scope: plan.Cluster.ID, Status: onboarding.Unverified, Mandatory: true,
+			Expected: "read-only resolved creation/reuse and existing-ancestor plan",
+			Observed: err.Error(), Missing: "supported plan and existing-ancestor evidence",
+			Remediation: "resolve the reported read/planning failure before provisioning", Cause: err,
+		}}
+		observe(report)
+		return report.Err()
+	}
+	facts, report, err := runPipeline.Preflight(ctx, resolved)
+	if err != nil {
+		observe(report)
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	bindings := p.byoBindings
+	if bindings == nil {
+		bindings = func(ctx context.Context, plan onboarding.Plan, facts onboarding.Facts) (onboarding.DeploymentData, error) {
+			return onboarding.ResolveDeploymentBindings(ctx, p.credential, p.armClientOptions, plan, facts)
 		}
-		if prepared.ResourceGroupTags != nil {
-			tags := map[string]string{"azd-env-name": p.envName}
-			for key, value := range prepared.ResourceGroupTags {
-				if value != nil {
-					tags[key] = *value
-				}
-			}
-			p.synthResult.Parameters["tags"] = tags
+	}
+	data, err := bindings(ctx, resolved, facts)
+	if err != nil {
+		report = append(report, onboarding.Check{
+			ID: "I03", Scope: resolved.Cluster.ID, Status: onboarding.Unverified, Mandatory: true,
+			Expected: "read-only role-definition and create/reuse bindings for the ARM graph",
+			Observed: err.Error(), Missing: "complete resolved deployment bindings",
+			Remediation: "resolve the reported role/resource read failure before provisioning", Cause: err,
+		})
+		observe(report)
+		return report.Err()
+	}
+	spec, err := byoFoundrySpec(resolved, source, facts.RegistryABAC)
+	if err != nil {
+		return err
+	}
+	spec.Deployment = &data
+	p.byoSpec = spec
+	ownership, err := lifecycle.Check(ctx, resolved, spec)
+	report = append(report, ownership...)
+	observe(report)
+	if err != nil {
+		return err
+	}
+	if err := report.Err(); err != nil || preview {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return p.bindBYOPlan(resolved, data)
+}
+
+func (p *FoundryProvisioningProvider) bindBYOPlan(plan onboarding.Plan, data onboarding.DeploymentData) error {
+	if err := synthesis.ApplyBYOOnboarding(p.synthResult, synthesis.BYOOnboardingParameters{
+		Owner: plan.Owner, AccountName: onboarding.PlannedFoundryAccount(plan).Name,
+		ResourceGroupSupplied: data.ResourceGroupSupplied,
+		ClusterResourceID:     data.ClusterID, StorageAccountResourceID: data.StorageID,
+		StorageName: plan.Storage.Name, StorageSupplied: data.StorageSupplied, StorageSKU: data.StorageSKU,
+		HostingIdentityName: data.Hosting.Name, WorkloadIdentityName: data.Workload.Name,
+		RegistryResourceID: data.RegistryID, RegistryName: plan.Registry.Name,
+		RegistrySupplied: data.RegistrySupplied, RegistryABAC: data.RegistryABAC,
+		KubeletObjectID: data.KubeletObjectID, FederatedIdentityRoleDefinitionID: data.FederatedIdentityRoleDefinitionID,
+		KubeletRoleAssignmentID: data.KubeletRoleAssignmentID,
+	}); err != nil {
+		return err
+	}
+	tags := map[string]string{"azd-env-name": p.envName}
+	for key, value := range plan.ResourceGroupTags {
+		if value != nil {
+			tags[key] = *value
 		}
-		p.synthResult.Parameters["byoAccountName"] = onboarding.PlannedFoundryAccount(plan).Name
-		p.synthResult.Parameters["byoOwner"] = plan.Owner
-		p.synthResult.Parameters["byoRegistryAccessReady"] = false
-		return ctx.Err()
-	})
-	return err
+	}
+	p.synthResult.Parameters["tags"] = tags
+	return nil
 }
 
 func byoParameterValue(source *templateSource, key string) any {
@@ -194,30 +230,40 @@ func byoParameterValue(source *templateSource, key string) any {
 
 func byoDeploymentSelection(source *templateSource) (onboarding.DeploymentSelection, error) {
 	selection := onboarding.DeploymentSelection{}
-	if raw := byoParameterValue(source, "deployments"); raw != nil {
-		data, err := json.Marshal(raw)
-		if err != nil {
-			return selection, fmt.Errorf("P09: read effective model deployments: %w", err)
-		}
-		var models []json.RawMessage
-		if err := json.Unmarshal(data, &models); err != nil {
-			return selection, fmt.Errorf("P09: effective deployments must be an array: %w", err)
-		}
-		selection.Models = len(models) > 0
-	}
-	for _, key := range []string{"enableNetworkIsolation", "createAgentSubnet", "useManagedEgress"} {
+	var network onboarding.LegacyNetwork
+	for key, out := range map[string]*bool{
+		"enableNetworkIsolation": &network.Enabled, "createAgentSubnet": &network.CreateAgentSubnet,
+		"createPESubnet": &network.CreatePESubnet, "useManagedEgress": &network.ManagedEgress,
+	} {
 		if raw := byoParameterValue(source, key); raw != nil {
-			enabled, ok := raw.(bool)
+			value, ok := raw.(bool)
 			if !ok {
-				return selection, fmt.Errorf("P09: effective %s must be a boolean", key)
+				return selection, fmt.Errorf("I03: effective %s must be a boolean", key)
 			}
-			selection.NetworkChanges = selection.NetworkChanges || enabled
+			*out = value
 		}
+	}
+	for key, out := range map[string]*string{
+		"vnetId": &network.VNetID, "agentSubnetName": &network.AgentSubnetName, "peSubnetName": &network.PESubnetName,
+		"peSubnetPrefix":       &network.PESubnetPrefix,
+		"managedIsolationMode": &network.IsolationMode, "dnsZonesResourceGroup": &network.DNSResourceGroup,
+		"dnsZonesSubscription": &network.DNSSubscription,
+	} {
+		if raw := byoParameterValue(source, key); raw != nil {
+			value, ok := raw.(string)
+			if !ok {
+				return selection, fmt.Errorf("I03: effective %s must be a string", key)
+			}
+			*out = value
+		}
+	}
+	if network.Enabled {
+		selection.Network = &network
 	}
 	return selection, nil
 }
 
-func (p *FoundryProvisioningProvider) bindPreparedGroupTags(parameters map[string]any) error {
+func (p *FoundryProvisioningProvider) bindPlannedGroupTags(parameters map[string]any) error {
 	tags, ok := p.synthResult.Parameters["tags"].(map[string]string)
 	if !ok {
 		return nil

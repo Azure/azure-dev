@@ -5,12 +5,14 @@ package onboarding
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -386,6 +388,51 @@ func TestResourceRuleContractStorage(t *testing.T) {
 			tc.mutate(account.Properties)
 			check := resourceRuleContractCheck(t, storageResourceChecks(account), tc.id)
 			require.Equal(t, tc.want, check.Status, check.Observed)
+		})
+	}
+}
+
+func TestSuppliedStorageZoneRedundancyRecommendation(t *testing.T) {
+	for _, tc := range []struct {
+		sku     string
+		warning bool
+	}{
+		{"Standard_ZRS", false},
+		{"Standard_GZRS", false},
+		{"Standard_RAGZRS", false},
+		{"Premium_ZRS", false},
+		{"Standard_LRS", true},
+		{"Standard_GRS", true},
+		{"Standard_RAGRS", true},
+		{"Premium_LRS", true},
+		{"", true},
+		{"Unknown", true},
+	} {
+		t.Run(tc.sku, func(t *testing.T) {
+			account := newResourceRuleContractStorage(t)
+			resourceRuleContractJSON(t, &account, fmt.Sprintf(`{"sku":{"name":%q}}`, tc.sku))
+			before, err := json.Marshal(account)
+			require.NoError(t, err)
+			report := storageResourceChecks(account)
+			require.NoError(t, report.Err(), "the recommendation never changes mandatory requirements")
+			check := resourceRuleContractCheck(t, report, "S01")
+			assert.Equal(t, Pass, check.Status)
+			assert.Equal(t, tc.warning, check.Warning != "")
+			if tc.warning {
+				assert.Contains(t, check.Warning, "Zone redundancy is recommended")
+			}
+			after, err := json.Marshal(account)
+			require.NoError(t, err)
+			assert.Equal(t, before, after, "supplied Storage is never mutated")
+			for _, patch := range []string{
+				`{"properties":{"isHnsEnabled":true}}`,
+				`{"properties":{"minimumTlsVersion":"TLS1_1"}}`,
+			} {
+				invalid := newResourceRuleContractStorage(t)
+				resourceRuleContractJSON(t, &invalid, fmt.Sprintf(`{"sku":{"name":%q}}`, tc.sku))
+				resourceRuleContractJSON(t, &invalid, patch)
+				require.Error(t, storageResourceChecks(invalid).Err(), "existing mandatory failures remain blocking")
+			}
 		})
 	}
 }

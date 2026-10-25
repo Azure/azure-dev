@@ -389,6 +389,22 @@ func storageResourceChecks(account armstorage.Account) Report {
 		p.AccessTier != nil && resourceValue(p.AccessTier) != "Hot" || resourceBool(p.IsHnsEnabled) {
 		typeCheck = resourceResult(typeCheck, Fail, "incompatible Storage kind, tier or HNS configuration")
 	}
+	sku := ""
+	if account.SKU != nil {
+		sku = resourceValue(account.SKU.Name)
+	}
+	typeCheck.Observed += "; SKU=" + sku
+	switch strings.ToUpper(strings.TrimSpace(sku)) {
+	case "STANDARD_ZRS", "STANDARD_GZRS", "STANDARD_RAGZRS", "PREMIUM_ZRS":
+	case "STANDARD_LRS", "STANDARD_GRS", "STANDARD_RAGRS", "PREMIUM_LRS":
+		typeCheck.Warning = fmt.Sprintf(
+			"Supplied Storage account uses %s without zone redundancy. "+
+				"Zone redundancy is recommended; this recommendation does not block provisioning or change the account.", sku)
+	default:
+		typeCheck.Warning = "The supplied Storage account SKU does not establish zone redundancy. " +
+			"Zone redundancy is recommended; confirm the account's redundancy setting. " +
+			"This recommendation does not block provisioning or change the account."
+	}
 	// Accounts.GetProperties uses API 2024-01-01. Its documented defaults are:
 	// HTTPS=true (since 2019-04-01), minimum TLS=1.0, Shared Key=true, anonymous Blob=false.
 	https := p.EnableHTTPSTrafficOnly == nil || *p.EnableHTTPSTrafficOnly

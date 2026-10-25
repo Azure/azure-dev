@@ -106,6 +106,7 @@ type FoundryProvisioningProvider struct {
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 	byoPipeline      *onboarding.Pipeline
+	byoBindings      func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.DeploymentData, error)
 	byoLifecycle     onboarding.Lifecycle
 	byoPlan          *onboarding.Plan
 	byoSpec          onboarding.FoundrySpec
@@ -1158,7 +1159,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 		}}, nil
 	}
 	progress("Preparing Foundry provisioning template...")
-	if err := p.prepareBYO(ctx, progress, false); err != nil {
+	if err := p.planBYO(ctx, progress, false); err != nil {
 		return nil, err
 	}
 
@@ -1334,14 +1335,14 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 			}
 			parameters, ok := p.onDiskSource.armTemplate["parameters"].(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("BYO-AKS Bicep template has no prepared parameter contract")
+				return nil, fmt.Errorf("BYO-AKS Bicep template has no deployment-plan parameter contract")
 			}
 			for _, key := range []string{
 				"agentHosting", "includeAcr", "containerRegistryResourceId", "containerRegistryABAC",
-				"byoAccountName", "byoOwner", "byoRegistryAccessReady",
+				"byoAccountName", "byoOwner", "byoOnboarding",
 			} {
 				if _, declared := parameters[key]; !declared {
-					return nil, fmt.Errorf("BYO-AKS Bicep template must declare prepared parameter %s; regenerate it", key)
+					return nil, fmt.Errorf("BYO-AKS Bicep template must declare deployment-plan parameter %s; regenerate it", key)
 				}
 				if strings.HasPrefix(key, "byo") {
 					if _, explicit := p.onDiskSource.parameters[key]; explicit {
@@ -1356,7 +1357,7 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 					merged[key] = hostParameters[key]
 				}
 			}
-			if err := p.bindPreparedGroupTags(merged); err != nil {
+			if err := p.bindPlannedGroupTags(merged); err != nil {
 				return nil, err
 			}
 		}
@@ -1480,12 +1481,12 @@ func (p *FoundryProvisioningProvider) Preview(
 	}
 	progress("Computing deployment plan...")
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if err := p.prepareBYO(ctx, progress, true); err != nil {
+		if err := p.planBYO(ctx, progress, true); err != nil {
 			return nil, err
 		}
 		return &azdext.ProvisioningPreviewResult{
 			Preview: &azdext.ProvisioningDeploymentPreview{
-				Summary: "BYO-AKS read-only preparation plan; internal identities and dependencies are not created in preview.",
+				Summary: "BYO-AKS read-only deployment plan; no resources or grants are created in preview.",
 			},
 		}, nil
 	}

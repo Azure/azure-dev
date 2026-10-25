@@ -8,6 +8,7 @@ param principalId string
 
 @description('AcrPull role definition resource ID.')
 param roleDefinitionId string
+param owner string = ''
 
 resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
   name: registryName
@@ -20,5 +21,14 @@ resource acrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: principalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: roleDefinitionId
+    ...(!empty(owner) ? { description: owner } : {})
   }
+
+}
+
+output grant object = {
+  id: acrPull.id
+  scope: registry.id
+  principalId: principalId
+  roleDefinitionId: roleDefinitionId
 }

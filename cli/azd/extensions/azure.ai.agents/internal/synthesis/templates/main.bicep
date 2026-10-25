@@ -36,7 +36,6 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
-  agentSubnetResourceId: string
   hostingManagementIdentityResourceId: string
   storageAccountResourceId: string
   workloadIdentityResourceId: string
@@ -58,14 +57,14 @@ param tags object = {}
 @description('Optional salt to vary resource names across re-provisions.')
 param resourceTokenSalt string = ''
 
-@description('Internally prepared BYO account name; empty preserves standard naming.')
+@description('Internal planned BYO account name; empty preserves standard naming.')
 param byoAccountName string = ''
 
 @description('Internal ownership marker for the BYO Foundry account, not for a supplied resource group.')
 param byoOwner string = ''
 
-@description('Internal second-stage gate after the actual project identity registry grant is prepared.')
-param byoRegistryAccessReady bool = false
+@description('Internal read-only onboarding plan; never part of public agentHosting YAML.')
+param byoOnboarding object = {}
 
 @description('Foundry project name. 3-32 alphanumeric/hyphen chars.')
 @minLength(3)
@@ -78,10 +77,10 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
-@description('Prepared or reused registry ID. Empty preserves standard registry creation.')
+@description('Registry ID to reference. Empty preserves standard registry creation.')
 param containerRegistryResourceId string = ''
 
-@description('Prepared registry uses repository ABAC authorization.')
+@description('Referenced registry uses repository ABAC authorization.')
 param containerRegistryABAC bool = false
 
 @description('Customer-owned AKS configuration for hosting Foundry agents.')
@@ -90,7 +89,6 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
-  agentSubnetResourceId: ''
   hostingManagementIdentityResourceId: ''
   storageAccountResourceId: ''
   workloadIdentityResourceId: ''
@@ -137,28 +135,47 @@ param dnsZonesSubscription string = ''
 
 // Resources
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+var hasOnboardingPlan = agentHosting.enabled && !empty(byoOnboarding)
+var suppliedResourceGroup = hasOnboardingPlan ? byoOnboarding.resourceGroupSupplied : false
+var effectiveHosting = hasOnboardingPlan ? union(agentHosting, {
+  clusterResourceId: byoOnboarding.clusterResourceId
+  hostingManagementIdentityResourceId: resourceId(subscription().subscriptionId, resourceGroupName, 'Microsoft.ManagedIdentity/userAssignedIdentities', byoOnboarding.hostingIdentityName)
+  workloadIdentityResourceId: resourceId(subscription().subscriptionId, resourceGroupName, 'Microsoft.ManagedIdentity/userAssignedIdentities', byoOnboarding.workloadIdentityName)
+  storageAccountResourceId: byoOnboarding.storageAccountResourceId
+}) : agentHosting
+
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (!suppliedResourceGroup) {
   name: resourceGroupName
   location: location
-  tags: tags
+  tags: hasOnboardingPlan ? union(tags, { 'azd-byoaks-owner': byoOnboarding.owner }) : tags
+}
+
+module prerequisites 'modules/byo-prerequisites.bicep' = if (hasOnboardingPlan) {
+  name: 'byo-prerequisites'
+  scope: az.resourceGroup(resourceGroupName)
+  params: {
+    location: location
+    tags: tags
+    plan: byoOnboarding
+  }
+  dependsOn: [resourceGroup]
 }
 
 module resources 'modules/resources.bicep' = {
   name: 'foundry-resources'
-  scope: resourceGroup
+  scope: az.resourceGroup(resourceGroupName)
   params: {
     location: location
     tags: tags
     resourceTokenSalt: resourceTokenSalt
-    byoAccountName: byoAccountName
-    byoOwner: byoOwner
-    byoRegistryAccessReady: byoRegistryAccessReady
+    byoAccountName: hasOnboardingPlan ? byoOnboarding.accountName : byoAccountName
+    byoOwner: hasOnboardingPlan ? byoOnboarding.owner : byoOwner
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
-    containerRegistryResourceId: containerRegistryResourceId
-    containerRegistryABAC: containerRegistryABAC
-    agentHosting: agentHosting
+    containerRegistryResourceId: hasOnboardingPlan ? byoOnboarding.registryResourceId : containerRegistryResourceId
+    containerRegistryABAC: hasOnboardingPlan ? byoOnboarding.registryABAC : containerRegistryABAC
+    agentHosting: effectiveHosting
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId
@@ -172,6 +189,7 @@ module resources 'modules/resources.bicep' = {
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
+  dependsOn: [resourceGroup, prerequisites]
 }
 
 // Outputs
@@ -188,3 +206,7 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CON
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE
+output AZD_BYO_AKS_OWNERSHIP object = hasOnboardingPlan ? union(prerequisites!.outputs.ownership, {
+  projectPrincipalId: resources.outputs.projectPrincipalId
+  roleAssignments: concat(prerequisites!.outputs.ownership.roleAssignments, resources.outputs.registryRoleAssignments)
+}) : {}

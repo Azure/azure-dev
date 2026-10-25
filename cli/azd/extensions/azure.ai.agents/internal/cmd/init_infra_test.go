@@ -2099,7 +2099,6 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
-      agentSubnetResourceId: ${AGENT_SUBNET_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
 
@@ -2119,7 +2118,7 @@ services:
 	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
 	assert.Equal(t, true, hosting["enabled"])
 	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
-	assert.Equal(t, "${AGENT_SUBNET_ID}", hosting["agentSubnetResourceId"])
+	assert.NotContains(t, hosting, "agentSubnetResourceId")
 	assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
 	assert.Equal(t, "${STORAGE_ID}", hosting["storageAccountResourceId"])
 	assert.Empty(t, hosting["workloadIdentityResourceId"])
@@ -2133,7 +2132,6 @@ services:
       hostingType: ManagedCluster
       name: primary
       clusterResourceId: ${AKS_ID}
-      agentSubnetResourceId: ${AGENT_SUBNET_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
 	withCapturedStdout(t, func() {

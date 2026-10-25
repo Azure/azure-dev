@@ -20,7 +20,7 @@ import (
 
 func TestDeferredTelemetryHasNoGateOrExclusiveNetworkReads(t *testing.T) {
 	input := contractPlanInput()
-	input.AgentSubnetID, input.StorageID = "", ""
+	input.AgentSubnetID, input.StorageID, input.RegistryID = "", "", ""
 	plan, err := BuildPlan(input)
 	require.NoError(t, err)
 	plan.AgentSubnet, plan.Network = Resource{}, nil
@@ -31,13 +31,68 @@ func TestDeferredTelemetryHasNoGateOrExclusiveNetworkReads(t *testing.T) {
 	})
 	checker := &sdkResourceChecker{credential: contractCredential{}, options: onboardingARMOptions(options)}
 	fixture := newResourceRuleContractFixture(t)
-	report, sources := checker.networkChecks(t.Context(), plan, &fixture.Cluster, fixture.Pools, nil)
+	report := checker.networkChecks(t.Context(), plan, &fixture.Cluster, fixture.Pools, nil)
 	require.NoError(t, report.Err())
 	assert.Zero(t, reads, "no S03 or N02 selection leaves no network reads for deferred telemetry")
-	assert.Empty(t, sources)
 	for _, check := range report {
 		assert.NotEqual(t, "N01", check.ID, "deferred telemetry emits neither a gate nor a skipped stub")
 	}
+}
+
+func TestStorageRecommendationUsesActualARMSKUNotRegionPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		sku, location string
+		warning       bool
+	}{
+		{"Standard_ZRS", "westus", false},
+		{"Standard_GZRS", "westus", false},
+		{"Standard_LRS", "eastus", true},
+		{"Standard_GRS", "eastus", true},
+	} {
+		t.Run(tc.sku, func(t *testing.T) {
+			input := contractPlanInput()
+			input.Location = tc.location
+			plan, err := BuildPlan(input)
+			require.NoError(t, err)
+			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodGet, request.Method)
+				require.True(t, strings.EqualFold(plan.Storage.ID, request.URL.Path))
+				return contractARMResponse(request, http.StatusOK, fmt.Sprintf(
+					`{"id":%q,"location":%q,"kind":"StorageV2","sku":{"name":%q},"properties":{`+
+						`"provisioningState":"Succeeded","accessTier":"Hot","isHnsEnabled":false,`+
+						`"supportsHttpsTrafficOnly":true,"minimumTlsVersion":"TLS1_2",`+
+						`"allowSharedKeyAccess":false,"allowBlobPublicAccess":false}}`,
+					plan.Storage.ID, tc.location, tc.sku)), nil
+			})
+			checker := &sdkResourceChecker{credential: contractCredential{}, options: onboardingARMOptions(options)}
+			account, report := checker.readStorage(t.Context(), plan.Storage)
+			require.NoError(t, report.Err())
+			require.NotNil(t, account)
+			report = append(report, storageResourceChecks(*account)...)
+			require.NoError(t, report.Err())
+			check := resourceRuleContractCheck(t, report, "S01")
+			assert.Contains(t, check.Observed, "SKU="+tc.sku)
+			assert.Equal(t, tc.warning, check.Warning != "")
+		})
+	}
+}
+
+func TestOmittedStorageHasNoZoneRedundancyRecommendation(t *testing.T) {
+	input := contractPlanInput()
+	input.StorageID, input.RegistryID, input.AgentSubnetID = "", "", ""
+	plan, err := BuildPlan(input)
+	require.NoError(t, err)
+	options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+		require.Equal(t, http.MethodGet, request.Method)
+		assert.NotContains(t, strings.ToLower(request.URL.Path), "/storageaccounts/")
+		return contractARMResponse(request, http.StatusForbidden,
+			`{"error":{"code":"AuthorizationFailed","message":"offline unrelated reads denied"}}`), nil
+	})
+	_, report, err := NewResourceChecker(contractCredential{}, options).Check(t.Context(), plan)
+	require.Error(t, err, "unrelated mandatory failures must still block")
+	check := resourceRuleContractCheck(t, report, "S01")
+	assert.Equal(t, NotApplicable, check.Status)
+	assert.Empty(t, check.Warning)
 }
 
 func TestResourceSDKUsesOwningTenantAcrossUniqueSubscriptions(t *testing.T) {
@@ -79,6 +134,70 @@ func TestResourceSDKUsesOwningTenantAcrossUniqueSubscriptions(t *testing.T) {
 			require.Contains(t, reads, "/subscriptions/"+plan.SubscriptionID)
 			for _, count := range reads {
 				assert.Equal(t, 1, count, "each owning subscription is read exactly once")
+			}
+		})
+	}
+}
+
+func TestI02DoesNotValidateSelectedAgentSubnetOrItsOwningSubscription(t *testing.T) {
+	for _, subnetID := range []string{
+		"/subscriptions/network-only/resourceGroups/network-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/agent",
+		"not-an-arm-id",
+	} {
+		t.Run(subnetID, func(t *testing.T) {
+			plan, err := BuildPlan(contractPlanInput())
+			require.NoError(t, err)
+			plan.AgentSubnet = Resource{ID: subnetID, Supplied: true}
+			plan.LegacyNetwork = &LegacyNetwork{Enabled: true, VNetID: "not-an-i02-reference"}
+			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodGet, request.Method)
+				assert.NotContains(t, request.URL.Path, "network-only")
+				assert.NotContains(t, strings.ToLower(request.URL.Path), "/virtualnetworks/")
+				return contractARMResponse(request, http.StatusOK, `{"tenantId":"owner"}`), nil
+			})
+			checker := &sdkResourceChecker{credential: contractCredential{}, options: onboardingARMOptions(options)}
+			tenant, report := checker.subscriptionTenants(t.Context(), plan)
+			require.NoError(t, report.Err())
+			assert.Equal(t, "owner", tenant)
+			for _, check := range report {
+				assert.NotEqual(t, subnetID, check.Scope)
+			}
+		})
+	}
+}
+
+func TestSelectedAgentSubnetHasNoI02ReadinessGate(t *testing.T) {
+	for _, state := range []string{"Succeeded", "Failed", ""} {
+		t.Run("state="+state, func(t *testing.T) {
+			f := newNetworkARMContract(t)
+			input := contractPlanInput()
+			input.StorageID, input.RegistryID = "", ""
+			input.AgentSubnetID = resourceValue(f.vnet.ID) + "/subnets/selected"
+			plan, err := BuildPlan(input)
+			require.NoError(t, err)
+			f.subnet = map[string]any{"id": plan.AgentSubnet.ID, "properties": map[string]any{
+				"addressPrefix": "10.0.1.0/27", "provisioningState": state,
+				"delegations": []any{map[string]any{
+					"properties": map[string]any{"serviceName": "Microsoft.App/environments"},
+				}},
+			}}
+			checker := &sdkResourceChecker{credential: contractCredential{}, options: onboardingARMOptions(f.options())}
+			report := checker.networkChecks(t.Context(), plan, &f.fixture.Cluster, f.fixture.Pools, nil)
+			require.NoError(t, report.Err())
+			var n02 Report
+			for _, check := range report {
+				assert.False(t, check.ID == "I02" && strings.EqualFold(check.Scope, plan.AgentSubnet.ID))
+				if check.ID == "N02" {
+					n02 = append(n02, check)
+				}
+			}
+			require.NotEmpty(t, n02, "independent basic-subnet N02 remains applicable")
+			assert.Contains(t, f.methods, "GET "+plan.AgentSubnet.ID, "N02 still reads necessary subnet metadata")
+			for _, operation := range []Operation{
+				{CheckID: "P03", Action: "Microsoft.Network/virtualNetworks/write",
+					Scope: "/subscriptions/aks-sub/resourceGroups/aks-rg"},
+			} {
+				assert.Contains(t, plan.Operations, operation, "independent network permission planning remains")
 			}
 		})
 	}
@@ -202,41 +321,6 @@ func TestResourceSDKI02OnlyChecksReferencedResourcesAndOwningTenants(t *testing.
 	}
 }
 
-type networkEvidenceContract func(context.Context, NetworkRequest) (NetworkEvidence, error)
-
-func (f networkEvidenceContract) Evidence(ctx context.Context, request NetworkRequest) (NetworkEvidence, error) {
-	return f(ctx, request)
-}
-
-func TestNetworkEvidenceOutputDoesNotDiscloseURLCredentials(t *testing.T) {
-	// #nosec G101 -- Deliberately synthetic credentials verify that diagnostic URLs are redacted.
-	const diagnosticURL = "https://username:password@account.blob.core.windows.net/container?sig=credential#private"
-	endpoint := safeResourceEndpoint(diagnosticURL)
-	assert.Equal(t, "https://account.blob.core.windows.net/container", endpoint)
-	provider := networkEvidenceContract(func(_ context.Context, request NetworkRequest) (NetworkEvidence, error) {
-		return NetworkEvidence{
-			SourceSubnetIDs: request.SourceSubnetIDs, Destination: request.Destination, Description: diagnosticURL,
-			ExistingWorkload: true, DNSVerified: true, TCP443Verified: true,
-			EffectiveRoutesVerified: true, EffectivePolicyVerified: true,
-		}, nil
-	})
-	check := networkEvidenceCheck(t.Context(), provider, NetworkRequest{
-		CheckID: "S03", Scope: "storage", SourceSubnetIDs: []string{"agent-source"}, Destination: endpoint,
-	}, resourceCheck("S03", "storage", "Blob network evidence"), false)
-	require.Equal(t, Pass, check.Status)
-	check.Observed += "; endpoint=" + diagnosticURL
-	var output bytes.Buffer
-	require.NoError(t, (Report{check}).Write(&output))
-	for _, secret := range []string{"username", "password", "sig=", "credential", "#private"} {
-		assert.NotContains(t, output.String(), secret)
-	}
-
-	check.Status = Fail
-	for _, secret := range []string{"username", "password", "sig=", "credential", "#private"} {
-		assert.NotContains(t, (Report{check}).Err().Error(), secret)
-	}
-}
-
 func TestReportRedactsURLSchemesWithoutDiscardingServiceCauses(t *testing.T) {
 	for _, scheme := range []string{"https", "HTTPS", "http", "HTTP"} {
 		t.Run(scheme, func(t *testing.T) {
@@ -246,6 +330,7 @@ func TestReportRedactsURLSchemesWithoutDiscardingServiceCauses(t *testing.T) {
 			report := Report{{
 				ID: "S03", Status: Unverified, Mandatory: true, Scope: endpoint,
 				Expected: endpoint, Observed: cause.Error(), Missing: endpoint, Remediation: endpoint, Cause: cause,
+				Warning: endpoint,
 			}}
 			var output bytes.Buffer
 			require.NoError(t, report.Write(&output))
@@ -256,7 +341,93 @@ func TestReportRedactsURLSchemesWithoutDiscardingServiceCauses(t *testing.T) {
 				assert.NotContains(t, output.String(), secret)
 				assert.NotContains(t, err.Error(), secret)
 			}
+
 			assert.Contains(t, output.String(), "account.invalid/blob")
+		})
+	}
+}
+
+func TestSuppliedRegistryPreflightUsesSelectedARMConfiguration(t *testing.T) {
+	for _, scenario := range []string{"public RBAC", "private ABAC", "not ready", "private rejected", "unreadable"} {
+		t.Run(scenario, func(t *testing.T) {
+			input := contractPlanInput()
+			input.StorageID, input.AgentSubnetID = "", ""
+			plan, err := BuildPlan(input)
+			require.NoError(t, err)
+			fixture := newResourceRuleContractFixture(t)
+			fixture.Cluster.ID = new(plan.Cluster.ID)
+			reads := map[string]int{}
+			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
+				require.Equal(t, http.MethodGet, request.Method)
+				path := request.URL.Path
+				reads[path]++
+				var body any
+				switch {
+				case strings.Count(path, "/") == 2 && strings.HasPrefix(path, "/subscriptions/"):
+					body = map[string]any{"tenantId": "tenant"}
+				case strings.EqualFold(path, plan.Cluster.ID):
+					body = fixture.Cluster
+				case strings.EqualFold(path, plan.Cluster.ID+"/agentPools"):
+					body = map[string]any{"value": fixture.Pools}
+				case strings.HasSuffix(path, "/skus"):
+					body = map[string]any{"value": fixture.SKUs}
+				case strings.EqualFold(path, plan.Registry.ID):
+					if scenario == "unreadable" {
+						return contractARMResponse(request, http.StatusForbidden,
+							`{"error":{"code":"AuthorizationFailed"}}`), nil
+					}
+					properties := map[string]any{
+						"provisioningState": "Succeeded", "loginServer": "registry.azurecr.io",
+						"publicNetworkAccess": "Enabled", "roleAssignmentMode": "LegacyRegistryPermissions",
+					}
+					if strings.HasPrefix(scenario, "private") {
+						status := "Approved"
+						if scenario == "private rejected" {
+							status = "Rejected"
+						}
+						properties["publicNetworkAccess"] = "Disabled"
+						properties["roleAssignmentMode"] = "AbacRepositoryPermissions"
+						properties["privateEndpointConnections"] = []any{map[string]any{
+							"properties": map[string]any{
+								"privateLinkServiceConnectionState": map[string]any{"status": status},
+							},
+						}}
+					}
+					if scenario == "not ready" {
+						properties["provisioningState"] = "Failed"
+					}
+					body = map[string]any{"id": plan.Registry.ID, "properties": properties}
+				default:
+					t.Fatalf("unexpected resource read: %s", path)
+				}
+				raw, err := json.Marshal(body)
+				require.NoError(t, err)
+				return contractARMResponse(request, http.StatusOK, string(raw)), nil
+			})
+			pipeline := Pipeline{
+				Resources: NewResourceChecker(contractCredential{}, options),
+				Access:    contractAccess(func(context.Context, Plan, Facts) (Report, error) { return nil, nil }),
+			}
+			facts, report, err := pipeline.Preflight(t.Context(), plan)
+			check := resourceRuleContractCheck(t, report, "C01")
+			if scenario == "public RBAC" || scenario == "private ABAC" {
+				require.NoError(t, err)
+				require.NoError(t, report.Err())
+				assert.Equal(t, Pass, check.Status)
+				assert.Equal(t, scenario == "private ABAC", facts.RegistryABAC)
+			} else {
+				require.Error(t, err)
+				assert.True(t, check.Mandatory)
+				assert.NotEqual(t, Pass, check.Status)
+			}
+			if scenario == "unreadable" {
+				response, ok := errors.AsType[*azcore.ResponseError](err)
+				require.True(t, ok)
+				assert.Equal(t, http.StatusForbidden, response.StatusCode)
+			}
+			assert.Equal(t, 1, reads[plan.Registry.ID])
+			assert.Equal(t, NotApplicable, resourceRuleContractCheck(t, report, "S03").Status)
+			assert.Equal(t, NotApplicable, resourceRuleContractCheck(t, report, "N02").Status)
 		})
 	}
 }

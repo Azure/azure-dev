@@ -9,7 +9,7 @@ import (
 	"azure.ai.projects/internal/onboarding"
 )
 
-// Gate contracts isolate preparation; actual lifecycle contracts inject NewLifecycle instead.
+// Gate contracts isolate deployment ownership; SDK lifecycle contracts inject NewLifecycle instead.
 type byoLifecycleContract struct{}
 
 func (byoLifecycleContract) Check(
@@ -23,10 +23,6 @@ func (byoLifecycleContract) Start(context.Context, onboarding.Plan, onboarding.F
 }
 
 func (byoLifecycleContract) Observe(context.Context, onboarding.Plan) error {
-	return nil
-}
-
-func (byoLifecycleContract) PrepareProjectAccess(context.Context, onboarding.Plan) error {
 	return nil
 }
 

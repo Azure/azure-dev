@@ -43,4 +43,31 @@ output "AZURE_CONTAINER_REGISTRY_RESOURCE_ID" {
 output "AZURE_AI_PROJECT_ACR_CONNECTION_NAME" {
   value = azapi_resource.acr_connection.name
 }
+
+output "AZD_BYO_AKS_OWNERSHIP" {
+  value = local.byo_enabled ? {
+    owner = var.byo_onboarding.owner
+    hostingIdentityResourceId = local.hosting_identity_id
+    workloadIdentityResourceId = local.workload_identity_id
+    storageAccountResourceId = local.hosting_storage_id
+    registryResourceId = var.byo_onboarding.registryResourceId
+    ownedStorage = !var.byo_onboarding.storageSupplied
+    ownedRegistry = !var.byo_onboarding.registrySupplied
+    hostingPrincipalId = azapi_resource.byo_identity["hosting"].output.properties.principalId
+    workloadPrincipalId = azapi_resource.byo_identity["workload"].output.properties.principalId
+    kubeletPrincipalId = var.byo_onboarding.kubeletObjectId
+    projectPrincipalId = azapi_resource.project.output.identity.principalId
+    roleAssignments = concat([for key, grant in azapi_resource.byo_grant : {
+      id = grant.id
+      scope = local.byo_grants[key].scope
+      principalId = local.byo_grants[key].principal
+      roleDefinitionId = local.byo_grants[key].role
+    }], [{
+      id = azurerm_role_assignment.foundry_acr_pull.id
+      scope = local.registry_id
+      principalId = local.project_principal_id
+      roleDefinitionId = azurerm_role_assignment.foundry_acr_pull.role_definition_id
+    }])
+  } : null
+}
 {{- end }}

@@ -176,88 +176,227 @@ services:
 ```
 
 `hostingType` defaults to `ManagedCluster` and `name` to `aks`. Optional
-`storageAccountResourceId` and `agentSubnetResourceId` select existing resources.
+`storageAccountResourceId` selects an existing Storage account.
 Select an existing container registry through `AZURE_CONTAINER_REGISTRY_RESOURCE_ID`.
-Explicitly empty, null, or malformed resource selections are errors. The public
-`hostingManagementIdentityResourceId` and `workloadIdentityResourceId` properties
-are rejected, including empty or null values: preparation owns two distinct
-user-assigned identities.
+Nonempty resource selections must be valid ARM IDs. Hosting input uses standard
+YAML struct decoding. The public schema has `additionalProperties: false` and
+does not expose subnet or identity properties. The ARM graph creates two distinct
+internally managed user-assigned identities.
 
 The workflow is `azd init`, `azd provision`, then `azd deploy`. Provision first
 collects read-only resource and scoped authorization evidence. Mandatory `FAIL`
 or `UNVERIFIED` results stop dependency creation and Foundry deployment. Preview
-does not create identities, grants, or other resources. Referenced subscriptions
-must have the same owning tenant; same-tenant cross-subscription references are
-not rejected merely for using different subscriptions.
+does not create identities, grants, or other resources. Resource checks read ARM
+directly and report service errors; they do not first infer permission to read
+from role assignments. I02 validates the AKS,
+supplied Storage/ACR and target subscription references and owning tenants;
+same-tenant cross-subscription references are not rejected merely for using
+different subscriptions. The existing Agent subnet selected through standard
+`network.agentSubnet` is not an I02 referenced resource. Its independent N02
+basic subnet checks still apply.
 
-Permission checks include the selected standard-template model deployments,
-registry connections and target-scope nested deployments, and the future
-project's registry grant. Developer access retains the agent predeploy lifecycle,
-not an additional provision-time grant. A future project
-principal remains unknown during conditional-delegation checks.
+**P06 G01-G03 grant authority** checks the operator's ordinary, unconditional
+`Microsoft.Authorization/roleAssignments/write` permission:
 
-**This onboarding path is not production-ready.** Supported source-bound S03
-and registry-path evidence is not available in the production adapters. N02
-requires only applicable ARM-visible static configuration, not a live-path provider.
-ARM readability, deployment
-validation, role assignment readback, and local connectivity are not substitutes
-for required workload-path evidence. Provision reports missing network evidence
-rather than claiming a successful onboarding. Referenced-resource checks cover
+- G01 uses the existing AKS scope. G02 uses the planned Workload identity's
+  existing parent. G03 uses the supplied Storage account, or its existing parent
+  for a new account. Creation parents are the existing target RG, or subscription
+  when the RG does not exist. Identical scopes are checked once.
+- Match the operator object ID and explicit token group claims against applicable
+  assignments, including RG/subscription inheritance. Evaluate role definitions'
+  `Actions/NotActions`; conditioned or delegated assignments do not provide this
+  ordinary unconditional allow.
+- No future resource or managed-identity principal is needed. P06 does not query
+  Graph or evaluate complex conditions, delegation or deny assignments. Missing
+  unconditional permission is `FAIL`; unreadable or incomplete required evidence
+  is `UNVERIFIED`. Both block provisioning.
+- This check runs only in preflight. A pass establishes the basic unconditional
+  allow, not a guarantee of effective permission under every policy; ARM
+  authorizes each actual grant during deployment.
+
+**P07 kubelet registry authorization** uses the AKS kubelet object ID:
+
+- Supplied ACR: existing applicable pull authorization passes without requiring
+  operator grant-write authority. Deployment reuses the exact assignment, including
+  RG/subscription inheritance, without another G04 write. Customer grants remain
+  unowned; journaled owned grants retain their cleanup responsibility.
+- Without existing pull authorization, inspect the operator's applicable role
+  assignments and definitions at that ACR for
+  `Microsoft.Authorization/roleAssignments/write` through `Actions/NotActions`.
+- New ACR: check that basic action at the existing target RG, or subscription
+  when the RG does not exist; do not query the future registry.
+- Ordinary ACR accepts `AcrPull`, `AcrPush` or equivalent pull actions. ABAC ACR
+  requires `Container Registry Repository Reader` or equivalent repository read
+  data actions, not ARM `Reader`.
+- Read failures remain blocking. P07 matches the operator object ID and explicit
+  token group claims with basic role permissions. It does not discover additional
+  group memberships or evaluate complex delegation/deny conditions.
+  A basic-action pass does not guarantee the eventual fine-grained grant; actual
+  ARM authorization errors remain failures.
+
+P09 covers only BYO-added nested deployments outside the Foundry target resource
+group and the project's new customer-registry, extra-scope or ABAC grant branches.
+It does not repeat ordinary Foundry, model, connection, top-level/target-group
+deployment or standard-network permission checks. Full resource-group IDs are
+compared, including subscription; ordinary target-group deployments are excluded
+even before that group exists. An owned registry resolved from its journaled
+environment output does not become a customer-registry branch on retry. Azure
+ARM still authorizes every actual operation during deployment.
+P02-P05 and P09 match the operator object ID and explicit token group claims against
+applicable direct or inherited assignments and check role definitions'
+`Actions/NotActions` for the selected action. They do not read deny assignments,
+discover group membership, evaluate conditions/delegation or require complete
+future resource or identity-recipient evidence. Unknown groups supply no confirmed
+allow and do not themselves cause `UNVERIFIED`. Condition, condition-version and
+delegated-identity fields do not by themselves negate a basic action allow.
+No confirmed matching action allow is `FAIL`; missing, unreadable or undecodable
+basic token, assignment or role-definition evidence is `UNVERIFIED`. Both remain
+mandatory. A pass establishes only the basic action allow; ARM authorizes actual
+conditions, deny and policy.
+P02-P05 retain their existing planned actions, scopes and creation/reuse branches.
+Developer access retains the agent predeploy lifecycle, not an additional
+provision-time grant.
+
+**S03 Storage public baseline** applies only to supplied Storage:
+
+- A valid HTTPS Blob endpoint, `publicNetworkAccess=Enabled` and firewall
+  `defaultAction=Allow` pass. This proves only the public static configuration,
+  not actual connectivity.
+- With valid basic properties, restricted public access (`Enabled/Deny`) or
+  disabled public access is `NOT_APPLICABLE` (skipped), with an explicit warning
+  that the network path was not verified. This S03 result does not block provisioning.
+- S03 does not select an AKS source subnet or read service endpoints, Private
+  Endpoints, VNets/peerings or Private DNS configuration.
+- Storage resource-read errors, absent supplied resources, invalid HTTPS Blob
+  endpoints and missing required basic properties remain mandatory and block
+  provisioning; they are not treated as skipped network paths.
+- New Storage is `NOT_APPLICABLE`, with no S03 reads or post-deployment check.
+  Independent N02 and C01 checks retain their own reads.
+
+N02 validates basic subnet conditions only for an existing Agent
+subnet selected through standard `network.agentSubnet`. Referenced-resource checks cover
 ID, type, existence, readiness and owning-tenant consistency, not private-preview
 subscription or region admission. The planned target resource group need not
-exist during preflight. Terraform eject is unavailable for this path
-because it cannot run the required extension preparation lifecycle.
+exist during preflight. Terraform eject is unavailable for this path because it
+does not run the extension's mandatory read-only preflight and owned-deployment
+lifecycle.
 
-When no agent subnet is supplied, the bounded default topology plans an unused
-private IPv4 `/27` in the qualifying agent pool's existing VNet, in the target
-region. For supplied and prepared Agent subnets, CIDR conflict checks cover AKS
-node/Pod/Service ranges, sibling subnets in the Agent subnet's VNet, and direct
-peering remote VNet address spaces. They do not discover or require address
-inventories behind VPN/gateway transit, ExpressRoute, or customer-managed
-routers, firewalls, or network virtual appliances. GatewaySubnet and
-RouteServerSubnet CIDRs still count as ordinary sibling-subnet ranges;
-gateway-transit flags alone do not block CIDR planning or recovery. Missing or
-invalid required in-scope metadata still blocks its check. N02 reads and validates
-applicable ARM delegation, peering state, route tables/routes and associations,
-NSGs/rules, Private Endpoint approval, Private DNS zones/links/records and Storage
-network settings. It does not require workload DNS/TCP probes or proof of hidden
-NVA, custom-DNS, VPN/ExpressRoute or on-premises internal policies and connectivity.
+`network.agentSubnet` is the sole customer Agent-subnet input. N02 is
+`NOT_APPLICABLE` when it is omitted or selected for creation, without N02
+configuration, topology or creation-permission checks. BYO onboarding does not
+automatically select, allocate, create or delegate an Agent subnet.
+Standard `network` behavior is preserved independently of hosting:
+
+| Standard `network` configuration | Account network injection |
+|---|---|
+| Omitted | `null` |
+| Valid, without `network.agentSubnet` | `scenario: agent`, Microsoft-managed network, no `subnetArmId` |
+| Valid, with `network.agentSubnet` | `scenario: agent`, standard subnet ID, `useMicrosoftManagedNetwork: false` |
+
+The standard network template's subnet creation/reference, private endpoint, DNS
+and managed egress behavior and validation remain unchanged. Preflight checks
+P03's AKS/VNet-write baseline, not the full subnet, Private Endpoint or Private DNS
+permission set. BYO provisioning checks operator permissions only in preflight;
+there is no additional client-side permission check before the single ARM
+deployment. ARM authorizes each actual deployment operation.
+Omitting `network.agentSubnet` or selecting it for creation skips only N02, not
+S03 or C01.
+
+When an existing `network.agentSubnet` is selected, N02 compares its CIDRs **only
+against the selected AKS pool's Node subnet**. Pod/Service, sibling-subnet and
+direct-peering address inventories are not collected or required for overlap
+checking. Downstream VPN/ExpressRoute/NVA address discovery is not required either.
+Missing or invalid required Node-subnet metadata still blocks its check.
+N02 reads only the selected Agent subnet, its parent VNet and the selected Node
+subnet. It validates canonical private IPv4 CIDRs with /27 or larger capacity,
+parent-VNet containment, selected Node-subnet non-overlap and
+`Microsoft.App/environments` delegation. Parent VNet and Node-subnet identity and
+readiness checks remain required. Missing required basic reads or metadata is
+mandatory `UNVERIFIED`; explicit noncompliance or a missing resource is mandatory
+`FAIL`. Both block provisioning.
+N02 does not inspect peering state, NSG rules, route tables, Storage network
+rules, Private Endpoints, Private DNS or custom-DNS configuration.
+`PASS` proves only these basic subnet conditions, not routing, DNS or actual
+connectivity. No workload DNS/TCP probe is performed.
 N01 platform-telemetry Storage service-tag verification is deferred and is not
 implemented by the client. A future service-owned Storage endpoint/FQDN contract
 could support targeted connectivity verification; that contract is not provided here.
-S03's customer Blob workload-path evidence remains independent.
-Preparation creates only that journaled
-subnet with the `Microsoft.App/environments` delegation; it does not rewrite
-existing subnets, routes, NSGs, peerings, AKS settings, or network policy.
-Preflight validates planned/new dependencies as a static plan and operator-authority
-decision. R06 polls and reads back created resources' ARM provisioning/readiness
-and exact selected configuration; this is per-resource creation-contract validation,
-not a second N02 execution. N02 is not rerun after preparation. Broader selected
-private-network mutations require administrator preparation.
+S03's supplied-Storage public baseline and non-blocking restricted/private skip
+remain independent.
+N02 is not rerun after resource creation. Supplied Storage and C01 checks remain
+read-only preflight requirements; there is no preparation-time network verifier.
+Existing standard subnet references are read-only.
+Older automatic-subnet journals are retained for exact owned cleanup and block
+new provisioning until that lifecycle is resolved. Retries cannot silently
+restore a removed hosting field or switch network selections on an existing account.
 
-After all preflight gates pass, preparation creates or resumes only its journaled,
-owner-tagged dependencies and exact scoped grants. Missing Storage and registry
-resources are created with safe defaults; supplied resources are not rewritten.
-Retries retain the journaled registry ID, endpoint, and authorization mode across
-preparation, the Foundry project grant, and the registry connection.
-Actual Storage and registry paths retain their independent post-creation network
-evidence requirements before deployment; no N02 live-path evidence is required.
-Registry checks cover source-bound DNS, TCP 443, and
-TLS to its login server and all enabled dedicated data endpoints; this does not
-establish kubelet image-pull authorization or data-plane role propagation.
+After all preflight gates pass, provision submits **one subscription-scope ARM
+deployment**. Nested modules create/reference the resource group, create both
+UAMIs, create/reference Storage and ACR, and declare G01-G04 with dependencies
+before the Foundry account's hosting submission. After the project exists,
+F01 uses its actual managed identity to grant ACR pull access, then the registry
+connection depends on that grant. No SDK resource/grant-creation stage runs
+before ARM, and no second deployment is needed for the connection.
+Supplied Storage/ACR are referenced rather than rewritten.
+New BYO Storage and identity names use the final effective `foundryProjectName`,
+including an explicit template parameter when supplied. Lowercase that project
+name, retain only ASCII `a-z` and `0-9`, then take at most the first six remaining
+characters as `foundryPart`. A name with no remaining characters is rejected.
+
+| Resource | Generated name | Maximum length |
+|---|---|---|
+| Hosted-agent Storage | `sa{foundryPart}{ownerToken}` | 24 |
+| Hosting identity | `hosting-{foundryPart}{ownerToken}` | 30 |
+| Workload identity | `workload-{foundryPart}{ownerToken}` | 31 |
+
+`ownerToken` is the 16 lowercase hexadecimal characters encoding the first eight
+bytes of `SHA256(UTF8(lowercase(parentResourceGroupId) + "|" + environmentName + "|" + projectPath))`.
+Only the parent resource-group ID is lowercased; the environment name and raw
+project-path string are not trimmed, lowercased, cleaned or made absolute.
+The Foundry name and location are not part of the hash. For example,
+`Sample-Project_123` produces `foundryPart=sample`. Supplied Storage keeps its
+ARM ID and name; ACR and Foundry account/project naming remain unchanged.
+Retries retain exact journaled ownership: a conflicting earlier name is not
+adopted or replaced, and cleanup uses the persisted resource IDs.
+
+New BYO Storage explicitly sets `StorageV2`, the Hot tier, HNS disabled,
+public network access enabled and firewall default action `Allow`, with
+`Standard_ZRS` by default. HTTPS-only access, minimum TLS 1.2, disabled shared keys
+and disabled anonymous Blob access remain enforced.
+Only locations in `storageZRSUnsupportedRegions` in
+[`deployment_bindings.go`](internal/onboarding/deployment_bindings.go) select
+`Standard_LRS` before creation. The list records its review date, Microsoft Learn
+sources and the Storage SKU API used to refresh it. The location still comes from
+`AZURE_LOCATION`; matching ignores case and surrounding whitespace without changing
+that selection. Service errors do not trigger an LRS fallback, and supplied or
+already created accounts retain their existing SKU on retry.
+For supplied Storage, S01 reads the account's actual ARM SKU. ZRS, GZRS and
+RA-GZRS provide zone redundancy; LRS, GRS and RA-GRS do not. Accounts without
+zone redundancy receive a non-blocking recommendation after the preflight
+report. An unavailable or unrecognized SKU produces an advisory uncertainty
+warning. Neither recommendation changes the account or relaxes the mandatory
+Storage type, Hot tier, HNS, security or network checks.
+New BYO ACR uses API `2025-03-01-preview` with
+`roleAssignmentMode: LegacyRegistryPermissions`, Premium SKU, the admin user
+disabled and public network access enabled. These creation settings apply only
+to the BYO prerequisite module; ordinary Foundry resource configuration is unchanged.
+Supplied registries, including ABAC registries, are referenced without configuration
+updates. Retries retain the bound registry selection and authorization mode.
+ARM dependencies order configuration; they do not prove data-plane RBAC
+propagation or workload connectivity. Service errors remain failures rather than
+triggering a second client-side preparation/deployment loop.
 Storage does not need to be dedicated to this workflow. Preserve the environment
-value `AZD_FOUNDRY_BYO_AKS_PREPARATION`: it records owned resource IDs and grant
-intent/results for interrupted-operation recovery, not credentials or proof of
-data-plane propagation. Final template binding preserves existing resource-group
+value `AZD_FOUNDRY_BYO_AKS_PREPARATION`: its compatibility name now refers to the
+deployment-ownership record, not an independent resource-preparation executor.
+It retains exact deployment attempts, owned targets and cleanup progress, not
+credentials or proof of data-plane propagation. Template binding preserves existing resource-group
 tags across retries while honoring explicit customer tag changes. Conflicting
 private ownership tags, including case-insensitive aliases, are rejected.
-Provision uses two internal ARM stages: create the owned account/project, prepare
-its actual managed identity's journaled registry grant, then configure its
-registry connection. This adds no user command. The private account target,
-deployment attempts and ownership markers are persisted for recovery.
+The private account target, deployment attempts and ownership markers are
+persisted for recovery.
 BYO on-disk Bicep must retain the standard deployment resource bindings;
 supported selections belong in configuration or parameter inputs. Altered
-templates are rejected before preparation. The actual ARM template hash and
+templates are rejected before deployment. The actual ARM template hash and
 target parameters must match the persisted attempt before cleanup; a planned
 account's absence alone is not sufficient evidence. Explicit resource-group and
 location parameters must agree with the environment's resolved target.
@@ -270,7 +409,7 @@ terminal deployment evidence, inventories projects and model deployments, delete
 only tracked models, and confirms deletion of the owned account. Service-owned
 federated credentials must disappear before dependency grants are removed; azd
 does not delete those credentials itself. Cleanup then deletes only proven-owned
-assignments, identities, Storage, registry and prepared subnet IDs. Supplied
+assignments, identities, Storage, registry and historical owned subnet IDs. Supplied
 resources, reused customer grants and later-added resource-group resources are
 preserved. Unknown ownership, an active deployment, unexpected account children,
 or an in-use/changed subnet stops cleanup and retains the recoverable journal.

@@ -31,14 +31,14 @@ param foundryProjectPrincipalId string
 @description('When true, the registry disables public network access to stay inside the isolation boundary.')
 param enableNetworkIsolation bool = false
 
-@description('Prepared registry to reuse without rewriting its configuration.')
+@description('Registry to reference without rewriting its configuration.')
 param registryResourceId string = ''
 
 @description('Use Container Registry Repository Reader for repository ABAC registries.')
 param registryABAC bool = false
 
-@description('The BYO lifecycle journals the real project identity grant before finalizing its connection.')
-param roleAssignmentManagedExternally bool = false
+@description('Internal ownership marker on managed role assignments.')
+param owner string = ''
 
 // Variables
 
@@ -82,22 +82,24 @@ resource existingRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' ex
 
 // Grant the Foundry project's managed identity AcrPull on this registry so the
 // hosted agent can pull images using the project identity.
-resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!reuseRegistry && !roleAssignmentManagedExternally) {
+resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!reuseRegistry) {
   name: guid(registry.id, foundryProjectPrincipalId, acrPullRoleId)
   scope: registry
   properties: {
     principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
+    ...(!empty(owner) ? { description: owner } : {})
   }
 }
 
-module preparedRegistryAccess 'acr-pull-role-assignment.bicep' = if (reuseRegistry && !roleAssignmentManagedExternally) {
+module preparedRegistryAccess 'acr-pull-role-assignment.bicep' = if (reuseRegistry) {
   name: 'prepared-registry-project-access'
   scope: resourceGroup(split(registryResourceId, '/')[2], split(registryResourceId, '/')[4])
   params: {
     registryName: effectiveName
     principalId: foundryProjectPrincipalId
+    owner: owner
     roleDefinitionId: subscriptionResourceId(
       split(registryResourceId, '/')[2],
       'Microsoft.Authorization/roleDefinitions',
@@ -146,3 +148,9 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 output loginServer string = effectiveEndpoint
 output resourceId string = effectiveRegistryId
 output connectionName string = foundryAccount::project::acrConnection.name
+output roleAssignments array = reuseRegistry ? [preparedRegistryAccess!.outputs.grant] : [{
+  id: foundryAcrPull!.id
+  scope: registry!.id
+  principalId: foundryProjectPrincipalId
+  roleDefinitionId: acrPullRoleId
+}]

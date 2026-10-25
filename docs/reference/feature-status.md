@@ -78,7 +78,7 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Alpha |
-| [Projects BYO-AKS simplified onboarding](../../cli/azd/extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) | In development; N02 uses ARM static configuration; N01 deferred pending a future service-owned Storage FQDN contract; independent S03 and registry-path evidence unavailable |
+| [Projects BYO-AKS simplified onboarding](../../cli/azd/extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) | In development; read-only preflight and one ARM deployment for dependencies, hosting and grants; P02-P05 check basic Actions/NotActions allow at their planned scopes; P06 checks ordinary unconditional G01-G03 grant authority; N02 applies only to existing Agent subnets selected through standard `network.agentSubnet` and validates basic resource metadata/readiness, private CIDR capacity, parent-VNet containment, non-overlap with the selected AKS pool's Node subnet and delegation, not routing, DNS or connectivity; N01 deferred pending a future service-owned Storage FQDN contract; S03 validates the supplied-Storage public baseline and skips restricted/private network verification without blocking |
 
 ## Extension gRPC Contracts
 

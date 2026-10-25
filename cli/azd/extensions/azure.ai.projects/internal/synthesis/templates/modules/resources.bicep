@@ -33,7 +33,6 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
-  agentSubnetResourceId: string
   hostingManagementIdentityResourceId: string
   storageAccountResourceId: string
   workloadIdentityResourceId: string
@@ -52,7 +51,6 @@ param resourceTokenSalt string = ''
 
 param byoAccountName string = ''
 param byoOwner string = ''
-param byoRegistryAccessReady bool = false
 
 @description('Foundry project name. 3-32 alphanumeric/hyphen chars.')
 @minLength(3)
@@ -74,7 +72,6 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
-  agentSubnetResourceId: ''
   hostingManagementIdentityResourceId: ''
   storageAccountResourceId: ''
   workloadIdentityResourceId: ''
@@ -181,15 +178,6 @@ var agentNetworkInjections = useByoNetwork
           }
         ]
       : null)
-var accountNetworkInjections = agentHosting.enabled
-  ? [
-      {
-        scenario: 'Agent'
-        subnetArmId: agentHosting.agentSubnetResourceId
-        useMicrosoftManagedNetwork: false
-      }
-    ]
-  : agentNetworkInjections
 
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
   name: foundryAccountName
@@ -220,7 +208,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
       virtualNetworkRules: []
       ipRules: []
     }
-    networkInjections: accountNetworkInjections
+    networkInjections: agentNetworkInjections
     agentHostingConfigurations: agentHosting.enabled
       ? [
           {
@@ -290,7 +278,7 @@ resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetw
     }
   }
 
-module acr 'acr.bicep' = if (includeAcr && (empty(byoOwner) || byoRegistryAccessReady)) {
+module acr 'acr.bicep' = if (includeAcr) {
   name: 'acr'
   params: {
     location: location
@@ -302,7 +290,7 @@ module acr 'acr.bicep' = if (includeAcr && (empty(byoOwner) || byoRegistryAccess
     enableNetworkIsolation: enableNetworkIsolation
     registryResourceId: containerRegistryResourceId
     registryABAC: containerRegistryABAC
-    roleAssignmentManagedExternally: !empty(byoOwner)
+    owner: byoOwner
   }
 }
 
@@ -329,8 +317,10 @@ output AZURE_AI_ACCOUNT_NAME string = foundryAccount.name
 output AZURE_AI_PROJECT_NAME string = foundryAccount::project.name
 output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccount.name}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.services.ai.azure.com/api/projects/${foundryAccount::project.name}'
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr && (empty(byoOwner) || byoRegistryAccessReady) ? acr!.outputs.loginServer : ''
-output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr && (empty(byoOwner) || byoRegistryAccessReady) ? acr!.outputs.resourceId : ''
-output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr && (empty(byoOwner) || byoRegistryAccessReady) ? acr!.outputs.connectionName : ''
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
+output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
+output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
+output projectPrincipalId string = foundryAccount::project.identity.principalId
+output registryRoleAssignments array = includeAcr ? acr!.outputs.roleAssignments : []
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

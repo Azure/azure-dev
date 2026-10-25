@@ -19,7 +19,7 @@ func contractPlanInput() Input {
 		AgentSubnetID: "/subscriptions/network-sub/resourceGroups/network-rg/providers/" +
 			"Microsoft.Network/virtualNetworks/network/subnets/agents",
 		SubscriptionID: "foundry-sub", ResourceGroup: "new-foundry-rg", Location: "eastus",
-		Environment: "dev", ProjectPath: "project",
+		Environment: "dev", ProjectPath: "project", FoundryName: "foundry-project",
 	}
 }
 
@@ -45,8 +45,6 @@ func TestPlanContractExactCreationAndReuseMatrix(t *testing.T) {
 				require.NoError(t, err)
 				ancestor := "/subscriptions/foundry-sub"
 				want := []Operation{
-					{"P01", "Microsoft.Resources/subscriptions/resourceGroups/write", ancestor, "", "", ""},
-					{"P08", "Microsoft.Resources/subscriptions/resourceGroups/read", ancestor, "", "", ""},
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/write", ancestor, "", "", ""},
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/read", ancestor, "", "", ""},
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/assign/action", ancestor, "", "", ""},
@@ -54,52 +52,21 @@ func TestPlanContractExactCreationAndReuseMatrix(t *testing.T) {
 						"/subscriptions/aks-sub/resourceGroups/aks-rg", "", "", ""},
 					{"P03", "Microsoft.Network/virtualNetworks/write",
 						"/subscriptions/network-sub/resourceGroups/network-rg", "", "", ""},
-					{"P08", "Microsoft.ContainerService/managedClusters/read", input.ClusterID, "", "", ""},
-					{"P08", "Microsoft.ContainerService/managedClusters/agentPools/read", input.ClusterID, "", "", ""},
-					{"P08", "Microsoft.Compute/skus/read", "/subscriptions/aks-sub", "", "", ""},
-					{"P08", "Microsoft.Network/virtualNetworks/subnets/read", input.AgentSubnetID, "", "", ""},
-					{"P08", "Microsoft.Resources/subscriptions/read", "/subscriptions/foundry-sub", "", "", ""},
-					{"P08", "Microsoft.Resources/subscriptions/read", "/subscriptions/aks-sub", "", "", ""},
-					{"P08", "Microsoft.Resources/subscriptions/read", "/subscriptions/network-sub", "", "", ""},
-					{"P09", "Microsoft.Network/virtualNetworks/subnets/join/action", input.AgentSubnetID, "", "", ""},
-					{"P09", "Microsoft.CognitiveServices/accounts/write", ancestor, "", "", ""},
-					{"P09", "Microsoft.CognitiveServices/accounts/projects/write", ancestor, "", "", ""},
-					{"P09", "Microsoft.Resources/deployments/write", ancestor, "", "", ""},
-					{"P09", "Microsoft.Resources/deployments/read", ancestor, "", "", ""},
-					{"P09", "Microsoft.Resources/deployments/operations/read", ancestor, "", "", ""},
 				}
 				if storage {
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.Storage/storageAccounts/read", Scope: input.StorageID,
-					})
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.Resources/subscriptions/read", Scope: "/subscriptions/storage-sub",
-					})
 					assert.Equal(t, input.StorageID, plan.Storage.ID)
 				} else {
 					want = append(want, Operation{
 						CheckID: "P04", Action: "Microsoft.Storage/storageAccounts/write", Scope: ancestor,
 					})
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.Storage/storageAccounts/read", Scope: ancestor,
-					})
 					assert.Equal(t, ancestor, plan.Storage.Parent)
 					assert.Contains(t, plan.Storage.ID, "/resourceGroups/new-foundry-rg/")
 				}
 				if registry {
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.ContainerRegistry/registries/read", Scope: input.RegistryID,
-					})
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.Resources/subscriptions/read", Scope: "/subscriptions/acr-sub",
-					})
 					assert.Equal(t, input.RegistryID, plan.Registry.ID)
 				} else {
 					want = append(want, Operation{
 						CheckID: "P05", Action: "Microsoft.ContainerRegistry/registries/write", Scope: ancestor,
-					})
-					want = append(want, Operation{
-						CheckID: "P08", Action: "Microsoft.ContainerRegistry/registries/read", Scope: ancestor,
 					})
 					assert.Equal(t, ancestor, plan.Registry.Parent)
 					assert.Contains(t, plan.Registry.ID, "/resourceGroups/new-foundry-rg/")
@@ -107,6 +74,7 @@ func TestPlanContractExactCreationAndReuseMatrix(t *testing.T) {
 				assert.ElementsMatch(t, want, plan.Operations)
 				assert.Equal(t, storage, plan.Storage.Supplied)
 				assert.Equal(t, registry, plan.Registry.Supplied)
+				assert.Equal(t, registry, plan.RegistryCustomerSupplied)
 				assert.Equal(t, input.ClusterID, plan.Cluster.ID)
 				assert.True(t, plan.Cluster.Supplied)
 				assert.Equal(t, input.AgentSubnetID, plan.AgentSubnet.ID)

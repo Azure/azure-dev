@@ -43,14 +43,6 @@ func (f byoAccessContract) Check(
 	return f(ctx, plan, facts)
 }
 
-type byoPrepareContract func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Prepared, error)
-
-func (f byoPrepareContract) Prepare(
-	ctx context.Context, plan onboarding.Plan, facts onboarding.Facts,
-) (onboarding.Prepared, error) {
-	return f(ctx, plan, facts)
-}
-
 type byoHTTPContract func(*http.Request) (*http.Response, error)
 
 func (f byoHTTPContract) Do(request *http.Request) (*http.Response, error) { return f(request) }
@@ -82,36 +74,34 @@ func byoContractProvider(t *testing.T) *FoundryProvisioningProvider {
 		foundryName: "contract-project", credential: byoCredentialContract{},
 		tenantID:     "tenant",
 		byoLifecycle: byoLifecycleContract{},
+		byoBindings: func(_ context.Context, plan onboarding.Plan, facts onboarding.Facts) (onboarding.DeploymentData, error) {
+			return onboarding.DeploymentData{
+				ClusterID: plan.Cluster.ID, TenantID: "tenant", Hosting: plan.Hosting, Workload: plan.Workload,
+				StorageID: plan.Storage.ID, StorageSupplied: plan.Storage.Supplied,
+				RegistryID: plan.Registry.ID, RegistrySupplied: plan.Registry.Supplied,
+				RegistryABAC: facts.RegistryABAC, KubeletObjectID: facts.KubeletObjectID,
+				StorageSKU: onboarding.StorageSKU(plan.Location),
+				FederatedIdentityRoleDefinitionID: "/subscriptions/" + plan.SubscriptionID +
+					"/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000555",
+			}, nil
+		},
 	}
 }
 
-func byoContractPrepared(plan onboarding.Plan) onboarding.Prepared {
-	return onboarding.Prepared{
-		Hosting: onboarding.Identity{
-			ID: plan.Hosting.ID, PrincipalID: "hosting-object", ClientID: "hosting-client", TenantID: "tenant",
-		},
-		Workload: onboarding.Identity{
-			ID: plan.Workload.ID, PrincipalID: "workload-object", ClientID: "workload-client", TenantID: "tenant",
-		},
-		StorageID: plan.Storage.ID, RegistryID: plan.Registry.ID,
-		AgentSubnetID: "/subscriptions/foundry-sub/resourceGroups/foundry-rg/providers/" +
-			"Microsoft.Network/virtualNetworks/network/subnets/agents",
-	}
-}
-
-func byoContractPipeline(events *[]string, status onboarding.Status, prepare byoPrepareContract) *onboarding.Pipeline {
+func byoContractPipeline(events *[]string, status onboarding.Status) *onboarding.Pipeline {
 	return &onboarding.Pipeline{
 		Resources: byoResourceContract(func(context.Context, onboarding.Plan) (onboarding.Facts, onboarding.Report, error) {
 			*events = append(*events, "resources")
-			return onboarding.Facts{}, onboarding.Report{
-				{ID: "I02", Status: status, Mandatory: true, Missing: "referenced resource evidence"},
-			}, nil
+			return onboarding.Facts{
+					KubeletObjectID: "00000000-0000-0000-0000-000000000003",
+				}, onboarding.Report{
+					{ID: "I02", Status: status, Mandatory: true, Missing: "referenced resource evidence"},
+				}, nil
 		}),
 		Access: byoAccessContract(func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Report, error) {
 			*events = append(*events, "authorization")
-			return onboarding.Report{{ID: "P01", Status: onboarding.Pass, Mandatory: true}}, nil
+			return onboarding.Report{{ID: "P02", Status: onboarding.Pass, Mandatory: true}}, nil
 		}),
-		Prepare: prepare,
 	}
 }
 
@@ -121,11 +111,7 @@ func TestBYOProviderPreflightStopsAllWriteStages(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/preview=%t", status, preview), func(t *testing.T) {
 				p := byoContractProvider(t)
 				var events []string
-				p.byoPipeline = byoContractPipeline(&events, status,
-					func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Prepared, error) {
-						t.Fatal("preparation ran despite mandatory preflight failure")
-						return onboarding.Prepared{}, nil
-					})
+				p.byoPipeline = byoContractPipeline(&events, status)
 				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
 					Transport: byoHTTPContract(func(*http.Request) (*http.Response, error) {
 						t.Fatal("ARM deployment ran despite mandatory preflight failure")
@@ -149,11 +135,7 @@ func TestBYOProviderPreflightStopsAllWriteStages(t *testing.T) {
 func TestBYOProviderPreviewDoesNotCompleteFutureParameters(t *testing.T) {
 	p := byoContractProvider(t)
 	var events []string
-	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass,
-		func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Prepared, error) {
-			t.Fatal("preview must not prepare dependencies")
-			return onboarding.Prepared{}, nil
-		})
+	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass)
 	before, err := json.Marshal(p.synthResult.Parameters)
 	require.NoError(t, err)
 	result, err := p.Preview(t.Context(), func(string) {})
@@ -163,6 +145,38 @@ func TestBYOProviderPreviewDoesNotCompleteFutureParameters(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, string(before), string(after))
 	assert.Equal(t, []string{"resources", "authorization"}, events)
+}
+
+func TestBYOProviderShowsStorageRecommendationAfterPreflight(t *testing.T) {
+	const warning = "Supplied Storage account uses Standard_LRS without zone redundancy. Zone redundancy is recommended."
+	for _, status := range []onboarding.Status{onboarding.Pass, onboarding.Fail} {
+		t.Run(string(status), func(t *testing.T) {
+			p := byoContractProvider(t)
+			var events []string
+			p.byoPipeline = byoContractPipeline(&events, onboarding.Pass)
+			p.byoPipeline.Resources = byoResourceContract(func(
+				context.Context, onboarding.Plan,
+			) (onboarding.Facts, onboarding.Report, error) {
+				events = append(events, "resources")
+				return onboarding.Facts{KubeletObjectID: "00000000-0000-0000-0000-000000000003"},
+					onboarding.Report{{ID: "S01", Status: status, Mandatory: true, Warning: warning}}, nil
+			})
+			var output strings.Builder
+			err := p.planBYO(t.Context(), func(message string) {
+				assert.Equal(t, []string{"resources", "authorization"}, events,
+					"recommendations are emitted after the complete read-only preflight")
+				output.WriteString(message)
+			}, false)
+			assert.Equal(t, status != onboarding.Pass, err != nil)
+			assert.Contains(t, output.String(), "WARNING: S01")
+			assert.Contains(t, output.String(), warning)
+			assert.Less(t, strings.Index(output.String(), "P02 PASS"), strings.Index(output.String(), "WARNING:"))
+			if status == onboarding.Pass {
+				assert.Contains(t, p.synthResult.Parameters, "byoOnboarding",
+					"a warning does not prevent preparing the single ARM submission")
+			}
+		})
+	}
 }
 
 func TestBYOProviderRealSDKResolutionFailureCannotWrite(t *testing.T) {
@@ -206,25 +220,19 @@ func TestBYOProviderRealSDKResolutionFailureCannotWrite(t *testing.T) {
 	}
 }
 
-func TestBYOProviderPreparesThenDeploysCompleteInternalParameters(t *testing.T) {
+func TestBYOProviderPreflightThenSingleDeployment(t *testing.T) {
 	p := byoContractProvider(t)
 	var events []string
 	var progressOutput strings.Builder
-	var prepared onboarding.Prepared
-	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass,
-		func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (onboarding.Prepared, error) {
-			require.Contains(t, progressOutput.String(), "I02 PASS")
-			require.Contains(t, progressOutput.String(), "P01 PASS")
-			events = append(events, "prepare")
-			prepared = byoContractPrepared(plan)
-			prepared.RegistryABAC = true
-			return prepared, nil
-		})
+	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass)
 	p.armClientOptions = &arm.ClientOptions{
 		DisableRPRegistration: true,
 		ClientOptions: policy.ClientOptions{Transport: byoHTTPContract(func(request *http.Request) (*http.Response, error) {
 			events = append(events, "ARM")
+			require.Contains(t, progressOutput.String(), "I02 PASS")
+			require.Contains(t, progressOutput.String(), "P02 PASS")
 			require.Equal(t, http.MethodPut, request.Method)
+			require.Contains(t, request.URL.Path, "/subscriptions/foundry-sub/providers/Microsoft.Resources/deployments/")
 			var deployment struct {
 				Properties struct {
 					Parameters map[string]struct {
@@ -235,14 +243,11 @@ func TestBYOProviderPreparesThenDeploysCompleteInternalParameters(t *testing.T) 
 			require.NoError(t, json.NewDecoder(request.Body).Decode(&deployment))
 			var hosting map[string]any
 			require.NoError(t, json.Unmarshal(deployment.Properties.Parameters["agentHosting"].Value, &hosting))
-			assert.Equal(t, prepared.Hosting.ID, hosting["hostingManagementIdentityResourceId"])
-			assert.Equal(t, prepared.Workload.ID, hosting["workloadIdentityResourceId"])
-			assert.Equal(t, prepared.StorageID, hosting["storageAccountResourceId"])
-			assert.Equal(t, prepared.AgentSubnetID, hosting["agentSubnetResourceId"])
-			var registryID string
-			require.NoError(t, json.Unmarshal(
-				deployment.Properties.Parameters["containerRegistryResourceId"].Value, &registryID))
-			assert.Equal(t, prepared.RegistryID, registryID)
+			assert.Equal(t, byoProviderCluster, hosting["clusterResourceId"])
+			assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
+			assert.Empty(t, hosting["workloadIdentityResourceId"])
+			assert.NotContains(t, deployment.Properties.Parameters, "byoRegistryAccessReady")
+			require.Contains(t, deployment.Properties.Parameters, "byoOnboarding")
 			body := `{"id":"` + request.URL.Path + `","properties":{"provisioningState":"Succeeded","outputs":{}}}`
 			return &http.Response{
 				StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
@@ -252,34 +257,30 @@ func TestBYOProviderPreparesThenDeploysCompleteInternalParameters(t *testing.T) 
 	}
 	_, err := p.Deploy(t.Context(), func(message string) { progressOutput.WriteString(message) })
 	require.NoError(t, err)
-	assert.Equal(t, []string{"resources", "authorization", "prepare", "ARM", "ARM"}, events)
-	assert.Equal(t, true, p.synthResult.Parameters["containerRegistryABAC"])
+	assert.Equal(t, []string{"resources", "authorization", "ARM"}, events)
 }
 
-func TestBYOProviderCancellationAfterPreparationSkipsDeployment(t *testing.T) {
+func TestBYOProviderCancellationAfterPreflightSkipsDeployment(t *testing.T) {
 	p := byoContractProvider(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var events []string
-	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass,
-		func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (onboarding.Prepared, error) {
-			events = append(events, "prepare")
-			cancel()
-			return byoContractPrepared(plan), nil
-		})
+	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass)
+	p.byoPipeline.Access = byoAccessContract(func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Report, error) {
+		events = append(events, "authorization")
+		cancel()
+		return nil, nil
+	})
 	_, err := p.Deploy(ctx, func(string) {})
 	require.ErrorIs(t, err, context.Canceled)
-	assert.Equal(t, []string{"resources", "authorization", "prepare"}, events)
+	assert.Equal(t, []string{"resources", "authorization"}, events)
 }
 
-func TestBYOProviderOnDiskParametersCannotOverridePreparedDependencies(t *testing.T) {
+func TestBYOProviderOnDiskParametersCannotOverridePlannedDependencies(t *testing.T) {
 	p := byoContractProvider(t)
 	var events []string
-	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass,
-		func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (onboarding.Prepared, error) {
-			return byoContractPrepared(plan), nil
-		})
-	require.NoError(t, p.prepareBYO(t.Context(), func(string) {}, false))
+	p.byoPipeline = byoContractPipeline(&events, onboarding.Pass)
+	require.NoError(t, p.planBYO(t.Context(), func(string) {}, false))
 	p.onDiskSource = &templateSource{
 		armTemplate: p.armTemplate,
 		parameters: map[string]any{
@@ -296,7 +297,7 @@ func TestBYOProviderOnDiskParametersCannotOverridePreparedDependencies(t *testin
 	}
 }
 
-func TestBYOProviderInitializeRejectsPublicIdentityPresence(t *testing.T) {
+func TestBYOProviderInitializeUsesStandardHostingYAMLDecoding(t *testing.T) {
 	for _, field := range []string{"hostingManagementIdentityResourceId", "workloadIdentityResourceId"} {
 		for _, value := range []string{`""`, "null"} {
 			t.Run(field+"/"+value, func(t *testing.T) {
@@ -310,7 +311,9 @@ func TestBYOProviderInitializeRejectsPublicIdentityPresence(t *testing.T) {
 				})
 				p := &FoundryProvisioningProvider{azdClient: client}
 				err := p.Initialize(t.Context(), projectPath, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
-				require.ErrorContains(t, err, field)
+				require.NoError(t, err, "unsupported fields follow standard struct decoding, not a custom runtime rejection")
+				require.NotNil(t, p.synthResult.Hosting)
+				assert.Equal(t, byoProviderCluster, p.synthResult.Hosting.ClusterResourceID)
 				assert.Nil(t, p.credential)
 			})
 		}

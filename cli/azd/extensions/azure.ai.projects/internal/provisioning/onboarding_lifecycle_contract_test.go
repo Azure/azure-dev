@@ -5,8 +5,6 @@ package provisioning
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -14,37 +12,9 @@ import (
 
 	"azure.ai.projects/internal/onboarding"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-type lifecycleJournal struct{ data []byte }
-
-func (j *lifecycleJournal) Load(context.Context) (onboarding.PreparationState, error) {
-	var state onboarding.PreparationState
-	if len(j.data) == 0 {
-		return state, nil
-	}
-	return state, json.Unmarshal(j.data, &state)
-}
-
-func (j *lifecycleJournal) Save(_ context.Context, state onboarding.PreparationState) error {
-	data, err := json.Marshal(state)
-	if err == nil {
-		j.data = data
-	}
-	return err
-}
-
-type lifecycleNetwork struct{}
-
-func (lifecycleNetwork) VerifyPreparedNetwork(
-	context.Context, onboarding.Plan, onboarding.Prepared,
-) (onboarding.Report, error) {
-	return onboarding.Report{{ID: "R06", Status: onboarding.Pass, Mandatory: true, Observed: "offline network fixture"}}, nil
-}
 
 func contractLifecycleResponse(request *http.Request, status int, body string) *http.Response {
 	return &http.Response{
@@ -74,7 +44,7 @@ func TestBYOSelectedOperationsFollowEffectiveOnDiskInputs(t *testing.T) {
 	var checked bool
 	p.byoPipeline = &onboarding.Pipeline{
 		Resources: byoResourceContract(func(context.Context, onboarding.Plan) (onboarding.Facts, onboarding.Report, error) {
-			return onboarding.Facts{}, nil, nil
+			return onboarding.Facts{KubeletObjectID: principal}, nil, nil
 		}),
 		Access: byoAccessContract(func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (onboarding.Report, error) {
 			checked = true
@@ -82,28 +52,21 @@ func TestBYOSelectedOperationsFollowEffectiveOnDiskInputs(t *testing.T) {
 			for _, op := range plan.Operations {
 				models = models || op.Action == "Microsoft.CognitiveServices/accounts/deployments/write"
 				connections = connections || op.Action == "Microsoft.CognitiveServices/accounts/projects/connections/write"
-				if op.RoleID == "a97b65f3-24c7-4388-baec-2e87135dc908" {
-					developer = true
-					assert.Equal(t, principal, op.PrincipalID)
-					assert.Equal(t, "ServicePrincipal", op.PrincipalType)
-				}
+				developer = developer || op.RoleID == "a97b65f3-24c7-4388-baec-2e87135dc908"
 			}
-			assert.True(t, models)
-			assert.True(t, connections)
-			assert.False(t, developer, "the standard template no longer performs a developer grant")
+			assert.False(t, models, "ordinary model deployment is not a BYO permission precheck")
+			assert.False(t, connections, "ordinary ACR connection is not a BYO permission precheck")
+			assert.False(t, developer, "developer grant remains in the separate predeploy lifecycle")
 			return nil, nil
 		}),
-		Prepare: byoPrepareContract(func(_ context.Context, plan onboarding.Plan, _ onboarding.Facts) (
-			onboarding.Prepared, error,
-		) {
-			require.True(t, checked)
-			return byoContractPrepared(plan), nil
-		}),
 	}
-	require.NoError(t, p.prepareBYO(t.Context(), func(string) {}, false))
+	require.NoError(t, p.planBYO(t.Context(), func(string) {}, false))
+	assert.True(t, checked)
+	assert.Equal(t, []string{"selected-model"}, p.byoSpec.ModelNames,
+		"removing model permission inference does not remove the actual deployment")
 }
 
-func TestBYOPreparedGroupTagsProtectOwnershipAndExplicitChoices(t *testing.T) {
+func TestBYOPlannedGroupTagsProtectOwnershipAndExplicitChoices(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		observed map[string]string
@@ -148,7 +111,7 @@ func TestBYOPreparedGroupTagsProtectOwnershipAndExplicitChoices(t *testing.T) {
 			p := byoContractProvider(t)
 			p.synthResult.Parameters["tags"] = test.observed
 			parameters := map[string]any{"tags": map[string]any{"value": test.explicit}}
-			err := p.bindPreparedGroupTags(parameters)
+			err := p.bindPlannedGroupTags(parameters)
 			if test.conflict {
 				require.ErrorContains(t, err, "private azd-byoaks-owner")
 				assert.Equal(t, test.explicit, parameters["tags"].(map[string]any)["value"])
@@ -157,159 +120,5 @@ func TestBYOPreparedGroupTagsProtectOwnershipAndExplicitChoices(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, test.want, parameters["tags"].(map[string]any)["value"])
 		})
-	}
-}
-
-func TestBYORealPreparationFinalARMTagsAndRepreparation(t *testing.T) {
-	for _, existingGroup := range []bool{false, true} {
-		for _, onDisk := range []bool{false, true} {
-			t.Run(fmt.Sprintf("existing-group=%t/on-disk=%t", existingGroup, onDisk), func(t *testing.T) {
-				p := byoContractProvider(t)
-				groupID := "/subscriptions/" + p.subID + "/resourceGroups/" + p.rgName
-				resources := map[string]map[string]any{}
-				if existingGroup {
-					resources[strings.ToLower(groupID)] = map[string]any{
-						"id": groupID, "tags": map[string]any{"customer-billing": "preserve"},
-					}
-				}
-				if onDisk {
-					p.onDiskSource = &templateSource{
-						mode: templateModeBicep, armTemplate: p.armTemplate, sourcePath: "offline-main.bicep",
-						parameters: map[string]any{
-							"tags": map[string]any{"value": map[string]any{
-								"on-disk-addition": "keep", "customer-billing": "explicit-change",
-							}},
-						},
-					}
-				}
-				var plan onboarding.Plan
-				var preparedWrites, deployments int
-				journal := &lifecycleJournal{}
-				transport := byoHTTPContract(func(request *http.Request) (*http.Response, error) {
-					key := strings.ToLower(request.URL.Path)
-					respond := func(status int, body any) (*http.Response, error) {
-						data, err := json.Marshal(body)
-						require.NoError(t, err)
-						return contractLifecycleResponse(request, status, string(data)), nil
-					}
-					if strings.Contains(key, "/roledefinitions") {
-						return respond(200, map[string]any{"value": []any{map[string]any{
-							"id": "/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000555",
-							"properties": map[string]any{
-								"roleName": "Managed Identity Federated Identity Credential Contributor", "type": "BuiltInRole",
-							},
-						}}})
-					}
-					if request.Method == http.MethodGet {
-						if strings.HasSuffix(key, "/roleassignments") {
-							var assignments []any
-							for id, resource := range resources {
-								if strings.Contains(id, "/roleassignments/") {
-									assignments = append(assignments, resource)
-								}
-							}
-							return respond(200, map[string]any{"value": assignments})
-						}
-						if resource, found := resources[key]; found {
-							return respond(200, resource)
-						}
-						return respond(404, map[string]any{"error": map[string]any{"code": "ResourceNotFound"}})
-					}
-					require.Equal(t, http.MethodPut, request.Method)
-					var body map[string]any
-					require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
-					if strings.Contains(key, "/providers/microsoft.resources/deployments/") {
-						deployments++
-						properties := lifecycleObject(t, body["properties"])
-						template := lifecycleObject(t, properties["template"])
-						templateResources := lifecycleObject(t, template["resources"])
-						var found bool
-						for _, raw := range templateResources {
-							resource := lifecycleObject(t, raw)
-							if resource["type"] == "Microsoft.Resources/resourceGroups" {
-								require.Equal(t, "[parameters('tags')]", resource["tags"])
-								found = true
-							}
-						}
-						require.True(t, found, "exercise the real embedded resource-group PUT contract")
-						parameters := lifecycleObject(t, properties["parameters"])
-						tags := lifecycleObject(t, lifecycleObject(t, parameters["tags"])["value"])
-						if onDisk {
-							assert.Equal(t, "explicit-change", tags["customer-billing"])
-						} else {
-							assert.Equal(t, "preserve", tags["customer-billing"])
-						}
-						if existingGroup {
-							assert.NotContains(t, tags, "azd-byoaks-owner", "never adopt the customer group")
-						} else {
-							assert.Equal(t, plan.Owner, tags["azd-byoaks-owner"])
-						}
-
-						if onDisk {
-							assert.Equal(t, "keep", tags["on-disk-addition"])
-						}
-						resources[strings.ToLower(groupID)]["tags"] = tags
-						return respond(200, map[string]any{"id": request.URL.Path,
-							"properties": map[string]any{"provisioningState": "Succeeded", "outputs": map[string]any{}}})
-					}
-					preparedWrites++
-					body["id"] = request.URL.Path
-					switch {
-					case strings.Contains(key, "/roleassignments/"):
-						properties := lifecycleObject(t, body["properties"])
-						properties["scope"] = request.URL.Path[:strings.Index(key, "/providers/microsoft.authorization/")]
-					case strings.Contains(key, "/userassignedidentities/"):
-						principal, client := "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000011"
-						if strings.EqualFold(request.URL.Path, plan.Workload.ID) {
-							principal, client = "00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000022"
-						}
-						body["properties"] = map[string]any{
-							"principalId": principal, "clientId": client, "tenantId": "tenant",
-						}
-					case strings.Contains(key, "/storageaccounts/"):
-						lifecycleObject(t, body["properties"])["provisioningState"] = "Succeeded"
-					case strings.Contains(key, "/registries/"):
-						properties := lifecycleObject(t, body["properties"])
-						properties["provisioningState"], properties["loginServer"] = "Succeeded", "owned.azurecr.io"
-					default:
-						require.Equal(t, strings.ToLower(groupID), key)
-						lifecycleObject(t, body["tags"])["customer-billing"] = "preserve"
-					}
-					resources[key] = body
-					return respond(200, body)
-				})
-				options := &arm.ClientOptions{DisableRPRegistration: true, ClientOptions: policy.ClientOptions{
-					Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
-				}}
-				p.armClientOptions = options
-				p.byoPipeline = &onboarding.Pipeline{
-					Resources: byoResourceContract(func(_ context.Context, input onboarding.Plan) (
-						onboarding.Facts, onboarding.Report, error,
-					) {
-						plan = input
-						// Keep this preparation contract focused on RG ownership; network planning has separate SDK tests.
-						plan.AgentSubnet = onboarding.Resource{ID: byoContractPrepared(input).AgentSubnetID, Supplied: true}
-						return onboarding.Facts{TenantID: "tenant",
-							KubeletObjectID: "00000000-0000-0000-0000-000000000003"}, nil, nil
-					}),
-					Access: byoAccessContract(func(context.Context, onboarding.Plan, onboarding.Facts) (onboarding.Report, error) {
-						return nil, nil
-					}),
-					Prepare: byoPrepareContract(func(ctx context.Context, _ onboarding.Plan, facts onboarding.Facts) (
-						onboarding.Prepared, error,
-					) {
-						return onboarding.NewPreparerWithVerifier(
-							p.credential, options, journal, lifecycleNetwork{}).Prepare(ctx, plan, facts)
-					}),
-				}
-				_, err := p.Deploy(t.Context(), func(string) {})
-				require.NoError(t, err)
-				writesAfterFirst := preparedWrites
-				_, err = p.Deploy(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, writesAfterFirst, preparedWrites, "second preparation must reuse the exact owned resources/grants")
-				assert.Equal(t, 4, deployments)
-			})
-		}
 	}
 }

@@ -42,6 +42,8 @@ type cleanupARM struct {
 	purged              bool
 	softDeleted         bool
 	rootReadMissing     bool
+	operationTargets    []string
+	operationReadDenied bool
 	failJournalOnDelete string
 	denyPurge           bool
 }
@@ -49,12 +51,14 @@ type cleanupARM struct {
 func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanupARM {
 	t.Helper()
 	base, facts := preparationContractFixture(t, suppliedStorage, suppliedRegistry, false)
+	data, err := ResolveDeploymentBindings(t.Context(), contractCredential{}, base.options(), base.plan, facts)
+	require.NoError(t, err)
 	account := PlannedFoundryAccount(base.plan)
 	f := &cleanupARM{
 		t: t, base: base, roots: map[string]map[string]any{}, accountStatus: http.StatusOK,
 		spec: FoundrySpec{AccountID: account.ID, ProjectID: account.ID + "/projects/project",
 			RegistryID: base.plan.Registry.ID, Location: base.plan.Location,
-			ModelNames: []string{"owned-model"}, TemplateHash: "offline-standard-template-hash"},
+			ModelNames: []string{"owned-model"}, TemplateHash: "offline-standard-template-hash", Deployment: &data},
 	}
 	baseOptions := base.options()
 	f.options = contractARMOptions(func(request *http.Request) (*http.Response, error) {
@@ -72,6 +76,21 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 			return respond(http.StatusNotFound, map[string]any{"error": map[string]any{"code": "ResourceNotFound"}})
 		}
 		if strings.Contains(path, "/providers/microsoft.resources/deployments/") {
+			if strings.HasSuffix(path, "/operations") {
+				require.Equal(t, http.MethodGet, request.Method)
+				if f.operationReadDenied {
+					return respond(403, map[string]any{"error": map[string]any{"code": "AuthorizationFailed"}})
+				}
+				var operations []any
+				for _, id := range f.operationTargets {
+					operations = append(operations, map[string]any{"properties": map[string]any{
+						"targetResource": map[string]any{
+							"id": id, "resourceType": "Microsoft.Authorization/roleAssignments",
+						},
+					}})
+				}
+				return respond(200, map[string]any{"value": operations})
+			}
 			switch request.Method {
 			case http.MethodGet:
 				if root, exists := f.roots[path]; exists && !f.rootReadMissing {
@@ -91,6 +110,13 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 				properties["provisioningState"], properties["correlationId"] = "Succeeded", "correlation-"+path
 				properties["templateHash"] = f.spec.TemplateHash
 				f.roots[path] = body
+				base.materializeGraph(f.spec)
+				for id, resource := range base.resources {
+					if strings.Contains(id, "/roleassignments/") &&
+						cleanupObject(t, resource["properties"])["description"] == base.plan.Owner {
+						f.operationTargets = append(f.operationTargets, id)
+					}
+				}
 				base.resources[strings.ToLower(f.spec.AccountID)] = map[string]any{
 					"id": f.spec.AccountID, "location": f.spec.Location, "tags": ownerTags(base.plan.Owner),
 					"properties": map[string]any{"provisioningState": "Succeeded"},
@@ -203,10 +229,6 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 	report, err := f.lifecycle.Check(t.Context(), base.plan, f.spec)
 	require.NoError(t, err)
 	require.NoError(t, report.Err())
-	calls := 0
-	_, err = NewPreparerWithVerifier(contractCredential{}, f.options, base.journal,
-		verifiedPreparationNetwork{&calls}).Prepare(t.Context(), base.plan, facts)
-	require.NoError(t, err)
 	return f
 }
 
@@ -214,8 +236,8 @@ func (f *cleanupARM) deploy(t *testing.T) {
 	t.Helper()
 	client, err := armresources.NewDeploymentsClient(f.base.plan.SubscriptionID, contractCredential{}, f.options)
 	require.NoError(t, err)
-	for index, ready := range []bool{false, true} {
-		name := fmt.Sprintf("owned-attempt-%d", index)
+	for index := range 1 {
+		name := fmt.Sprintf("owned-attempt-%d", len(f.roots)+index)
 		id := "/subscriptions/" + f.base.plan.SubscriptionID + "/providers/Microsoft.Resources/deployments/" + name
 		require.NoError(t, f.lifecycle.Start(t.Context(), f.base.plan, f.spec, id))
 		poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(t.Context(), name, armresources.Deployment{
@@ -223,12 +245,15 @@ func (f *cleanupARM) deploy(t *testing.T) {
 			Properties: &armresources.DeploymentProperties{
 				Mode: new(armresources.DeploymentModeIncremental), Template: map[string]any{},
 				Parameters: map[string]any{
-					"byoOwner":               map[string]any{"value": f.base.plan.Owner},
-					"byoAccountName":         map[string]any{"value": PlannedFoundryAccount(f.base.plan).Name},
-					"byoRegistryAccessReady": map[string]any{"value": ready},
-					"resourceGroupName":      map[string]any{"value": f.base.plan.ResourceGroup},
-					"location":               map[string]any{"value": f.spec.Location},
-					"foundryProjectName":     map[string]any{"value": "project"},
+					"byoOnboarding": map[string]any{"value": map[string]any{
+						"owner": f.base.plan.Owner, "accountName": PlannedFoundryAccount(f.base.plan).Name,
+						"clusterResourceId":        f.base.plan.Cluster.ID,
+						"storageAccountResourceId": f.base.plan.Storage.ID, "registryResourceId": f.base.plan.Registry.ID,
+						"hostingIdentityName": f.base.plan.Hosting.Name, "workloadIdentityName": f.base.plan.Workload.Name,
+					}},
+					"resourceGroupName":  map[string]any{"value": f.base.plan.ResourceGroup},
+					"location":           map[string]any{"value": f.spec.Location},
+					"foundryProjectName": map[string]any{"value": "project"},
 				},
 			},
 		}, nil)
@@ -236,9 +261,6 @@ func (f *cleanupARM) deploy(t *testing.T) {
 		_, err = poller.PollUntilDone(t.Context(), nil)
 		require.NoError(t, err)
 		require.NoError(t, f.lifecycle.Observe(t.Context(), f.base.plan))
-		if !ready {
-			require.NoError(t, f.lifecycle.PrepareProjectAccess(t.Context(), f.base.plan))
-		}
 	}
 }
 
@@ -253,7 +275,7 @@ func TestOwnedCleanupSDKLifecyclePreservesSuppliedAndLaterAddedResources(t *test
 				f.base.resources[strings.ToLower(customer)] = map[string]any{"id": customer}
 				state, err := f.base.journal.Load(t.Context())
 				require.NoError(t, err)
-				assert.Len(t, state.Assignments, 6, "five preparation grants and the actual project-MI grant")
+				assert.Len(t, state.Assignments, 6, "five prerequisite grants and the actual project-MI grant")
 				require.NoError(t, f.lifecycle.Cleanup(t.Context(), f.base.plan, false, func(string) {}))
 				assert.Contains(t, f.base.resources, strings.ToLower(customer))
 				assert.Contains(t, f.base.resources, strings.ToLower("/subscriptions/"+f.base.plan.SubscriptionID+
@@ -445,7 +467,9 @@ func TestOwnedCleanupSDKLiveRegionAndProjectOwnerAreBound(t *testing.T) {
 				_, err := f.lifecycle.Check(t.Context(), f.base.plan, f.spec)
 				require.Error(t, err)
 			}
-			require.Error(t, f.lifecycle.PrepareProjectAccess(t.Context(), f.base.plan))
+			if project {
+				require.Error(t, f.lifecycle.Observe(t.Context(), f.base.plan))
+			}
 			require.Error(t, f.lifecycle.Cleanup(t.Context(), f.base.plan, false, nil))
 			require.Empty(t, f.deletes)
 		})

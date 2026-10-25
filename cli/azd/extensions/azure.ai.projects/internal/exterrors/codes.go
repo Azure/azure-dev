@@ -53,7 +53,6 @@ const (
 	OpResourceGroupGet          = "resource_group_get"
 	OpResourceGroupDelete       = "resource_group_delete"
 	OpBYOOwnedCleanup           = "byo_owned_cleanup"
-	OpBYOProjectRegistryAccess  = "byo_project_registry_access"
 	OpCognitiveAccountList      = "cognitive_account_list"
 	OpCognitiveAccountPurge     = "cognitive_account_purge"
 	OpCognitiveDeploymentList   = "cognitive_deployment_list"

@@ -65,7 +65,6 @@ variable "agent_hosting" {
     hostingType                         = string
     name                                = string
     clusterResourceId                   = string
-    agentSubnetResourceId               = string
     hostingManagementIdentityResourceId = string
     storageAccountResourceId            = string
     workloadIdentityResourceId          = string
@@ -75,7 +74,6 @@ variable "agent_hosting" {
     hostingType                         = ""
     name                                = ""
     clusterResourceId                   = ""
-    agentSubnetResourceId               = ""
     hostingManagementIdentityResourceId = ""
     storageAccountResourceId            = ""
     workloadIdentityResourceId          = ""
@@ -83,13 +81,37 @@ variable "agent_hosting" {
 }
 
 variable "container_registry_resource_id" {
-  description = "Prepared or reused registry ID. Empty preserves standard registry creation."
+  description = "Registry ID to reference. Empty preserves standard registry creation."
   type        = string
   default     = ""
 }
 
 variable "container_registry_abac" {
-  description = "Prepared registry uses repository ABAC authorization."
+  description = "Referenced registry uses repository ABAC authorization."
   type        = bool
   default     = false
+}
+
+variable "byo_onboarding" {
+  description = "Internal read-only BYO-AKS deployment plan; names and IDs follow the onboarding plan."
+  type = object({
+    owner                             = string
+    accountName                       = string
+    resourceGroupSupplied             = bool
+    clusterResourceId                 = string
+    storageAccountResourceId          = string
+    storageName                       = string
+    storageSupplied                   = bool
+    storageSku                        = string
+    hostingIdentityName               = string
+    workloadIdentityName              = string
+    registryResourceId                = string
+    registryName                      = string
+    registrySupplied                  = bool
+    registryABAC                      = bool
+    kubeletObjectId                   = string
+    federatedIdentityRoleDefinitionId = string
+    kubeletRoleAssignmentId           = optional(string, "")
+  })
+  default = null
 }

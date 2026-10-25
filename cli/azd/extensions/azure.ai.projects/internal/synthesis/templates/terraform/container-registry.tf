@@ -3,30 +3,32 @@
 # Premium SKU is required for Foundry registry connections.
 
 locals {
-  container_registry_name = "cr${local.resource_token}"
+  container_registry_name = local.byo_enabled ? var.byo_onboarding.registryName : "cr${local.resource_token}"
 
   # https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
-  acr_pull_role_id = var.container_registry_abac ? "b93aa761-3e63-49ed-ac28-beffa264f7ac" : "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+  acr_pull_role_id = (local.byo_enabled ? var.byo_onboarding.registryABAC : var.container_registry_abac) ? "b93aa761-3e63-49ed-ac28-beffa264f7ac" : "7f951dda-4ed3-4680-a7ca-43fe172d538d"
 
-  project_principal_id = try(azapi_resource.project.output.identity.principalId, "")
-  reuse_registry       = var.container_registry_resource_id != ""
-  registry_id          = local.reuse_registry ? var.container_registry_resource_id : azurerm_container_registry.this[0].id
-  registry_endpoint    = local.reuse_registry ? data.azapi_resource.prepared_registry[0].output.properties.loginServer : azurerm_container_registry.this[0].login_server
-  registry_name        = local.reuse_registry ? element(reverse(split("/", var.container_registry_resource_id)), 0) : local.container_registry_name
+  project_principal_id  = try(azapi_resource.project.output.identity.principalId, "")
+  reference_registry_id = local.byo_enabled ? var.byo_onboarding.registryResourceId : var.container_registry_resource_id
+  reuse_registry        = local.byo_enabled || var.container_registry_resource_id != ""
+  registry_id           = local.reuse_registry ? local.reference_registry_id : azurerm_container_registry.this[0].id
+  registry_endpoint     = local.reuse_registry ? data.azapi_resource.prepared_registry[0].output.properties.loginServer : azurerm_container_registry.this[0].login_server
+  registry_name         = local.reuse_registry ? element(reverse(split("/", local.reference_registry_id)), 0) : local.container_registry_name
 }
 
 data "azapi_resource" "prepared_registry" {
   count                  = local.reuse_registry ? 1 : 0
   type                   = "Microsoft.ContainerRegistry/registries@2023-07-01"
-  resource_id            = var.container_registry_resource_id
+  resource_id            = local.reference_registry_id
   response_export_values = ["properties.loginServer"]
+  depends_on             = [azapi_resource.byo_registry]
 }
 
 resource "azurerm_container_registry" "this" {
   count               = local.reuse_registry ? 0 : 1
   name                = local.container_registry_name
-  resource_group_name = azurerm_resource_group.this.name
-  location            = azurerm_resource_group.this.location
+  resource_group_name = local.resource_group_name
+  location            = var.location
   tags                = var.tags
   sku                 = "Premium"
   admin_enabled       = false
@@ -37,14 +39,17 @@ resource "azurerm_container_registry" "this" {
 
   public_network_access_enabled = true
   zone_redundancy_enabled       = false
+  depends_on                    = [azurerm_resource_group.this]
 }
 
 # Grants the Foundry project identity AcrPull so hosted agents can pull images.
 resource "azurerm_role_assignment" "foundry_acr_pull" {
+  name               = local.byo_enabled ? uuidv5("11fb06fb-712d-4ddd-98c7-e71bbd588830", "${local.registry_id}-${local.project_principal_id}-/subscriptions/${split("/", local.registry_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/${local.acr_pull_role_id}") : null
   scope              = local.registry_id
   role_definition_id = "/subscriptions/${split("/", local.registry_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/${local.acr_pull_role_id}"
   principal_id       = local.project_principal_id
   principal_type     = "ServicePrincipal"
+  description        = local.byo_enabled ? var.byo_onboarding.owner : null
 }
 
 # Project connection so Foundry can resolve the registry by name.

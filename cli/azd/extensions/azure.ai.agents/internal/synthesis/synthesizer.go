@@ -40,8 +40,6 @@ var (
 
 // Input is the synthesizer's view of azure.yaml.
 type Input struct {
-	// PreparedHosting contains internally owned dependencies, never public YAML.
-	PreparedHosting *PreparedHosting
 	// RawAzureYAML is the full bytes of azure.yaml.
 	RawAzureYAML []byte
 
@@ -153,9 +151,7 @@ type agentHostingBlock struct {
 	HostingType              string `yaml:"hostingType"`
 	Name                     string `yaml:"name"`
 	ClusterResourceID        string `yaml:"clusterResourceId"`
-	AgentSubnetResourceID    string `yaml:"agentSubnetResourceId"`
 	StorageAccountResourceID string `yaml:"storageAccountResourceId"`
-	present                  map[string]bool
 }
 
 // agentHostingParameter is passed to Bicep and Terraform. Enabled keeps the
@@ -166,7 +162,6 @@ type agentHostingParameter struct {
 	HostingType                         string `json:"hostingType"`
 	Name                                string `json:"name"`
 	ClusterResourceID                   string `json:"clusterResourceId"`
-	AgentSubnetResourceID               string `json:"agentSubnetResourceId"`
 	HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
 	StorageAccountResourceID            string `json:"storageAccountResourceId"`
 	WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
@@ -275,11 +270,10 @@ func Synthesize(in Input) (*Result, error) {
 		hostingInput = &AgentHostingInput{
 			HostingType: agentHosting.HostingType, Name: agentHosting.Name,
 			ClusterResourceID:        agentHosting.ClusterResourceID,
-			AgentSubnetResourceID:    agentHosting.AgentSubnetResourceID,
 			StorageAccountResourceID: agentHosting.StorageAccountResourceID,
 		}
-		// A BYO registry is required even in project-only templates. Preparation
-		// supplies the one registry used by both the project and the kubelet.
+		// A BYO registry is required even in project-only templates. The deployment
+		// graph uses the planned registry for both the project and the kubelet.
 		includeAcr = true
 	}
 	if includeAcr && netMode != NetworkModeNone && hostingInput == nil {
@@ -299,11 +293,6 @@ func Synthesize(in Input) (*Result, error) {
 		Parameters:  params,
 		NetworkMode: netMode,
 		Hosting:     hostingInput,
-	}
-	if in.PreparedHosting != nil {
-		if err := ApplyPreparedHosting(result, *in.PreparedHosting); err != nil {
-			return nil, err
-		}
 	}
 	return result, nil
 }
@@ -811,17 +800,8 @@ var agentHostingResourceIDPatterns = map[string]*regexp.Regexp{
 	"clusterResourceId": regexp.MustCompile(
 		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ContainerService/managedClusters/[^/]+$`,
 	),
-	"agentSubnetResourceId": regexp.MustCompile(
-		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`,
-	),
-	"hostingManagementIdentityResourceId": regexp.MustCompile(
-		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
-	),
 	"storageAccountResourceId": regexp.MustCompile(
 		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Storage/storageAccounts/[^/]+$`,
-	),
-	"workloadIdentityResourceId": regexp.MustCompile(
-		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
 	),
 }
 
@@ -839,7 +819,7 @@ func synthesizeAgentHosting(
 		return fmt.Sprintf("services.%s.agentHosting.%s", svcName, field)
 	}
 	hostingTypeValue := hosting.HostingType
-	if !hosting.present["hostingType"] && hostingTypeValue == "" {
+	if hostingTypeValue == "" {
 		hostingTypeValue = managedClusterHostingType
 	}
 	hostingType, err := resolveAgentHostingValue(
@@ -862,7 +842,7 @@ func synthesizeAgentHosting(
 	}
 
 	nameValue := hosting.Name
-	if !hosting.present["name"] && nameValue == "" {
+	if nameValue == "" {
 		nameValue = "aks"
 	}
 	name, err := resolveAgentHostingValue(nameValue, fieldPath("name"), env, resolve, nil)
@@ -879,20 +859,8 @@ func synthesizeAgentHosting(
 	if err != nil {
 		return agentHostingParameter{}, err
 	}
-	agentSubnetID, err := resolveOptionalHostingValue(
-		hosting.AgentSubnetResourceID,
-		hosting.present["agentSubnetResourceId"],
-		fieldPath("agentSubnetResourceId"),
-		env,
-		resolve,
-		agentHostingResourceIDPatterns["agentSubnetResourceId"],
-	)
-	if err != nil {
-		return agentHostingParameter{}, err
-	}
 	storageID, err := resolveOptionalHostingValue(
 		hosting.StorageAccountResourceID,
-		hosting.present["storageAccountResourceId"],
 		fieldPath("storageAccountResourceId"),
 		env,
 		resolve,
@@ -907,7 +875,6 @@ func synthesizeAgentHosting(
 		HostingType:              managedClusterHostingType,
 		Name:                     name,
 		ClusterResourceID:        clusterID,
-		AgentSubnetResourceID:    agentSubnetID,
 		StorageAccountResourceID: storageID,
 	}, nil
 }

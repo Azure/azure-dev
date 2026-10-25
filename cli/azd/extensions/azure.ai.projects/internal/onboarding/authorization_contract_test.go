@@ -4,56 +4,21 @@
 package onboarding
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestDelegationConditions(t *testing.T) {
-	const role = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
-	const principal = "00000000-0000-0000-0000-000000000123"
-	const request = "@Request[Microsoft.Authorization/roleAssignments:"
-	op := Operation{Action: roleAssignmentWrite, RoleID: "/providers/Microsoft.Authorization/roleDefinitions/" + role,
-		PrincipalID: principal}
-	for _, tc := range []struct {
-		name, condition string
-		status          Status
-	}{
-		{"unconditional", "", Pass},
-		{"role", request + "RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {'" + role + "'}", Pass},
-		{"wrong role", request + "RoleDefinitionId] GuidEquals {'00000000-0000-0000-0000-000000000124'}", Fail},
-		{"type", request + "PrincipalType] StringEqualsIgnoreCase 'serviceprincipal'", Pass},
-		{"known kubelet", request + "PrincipalId] GuidEquals {'" + principal + "'}", Pass},
-		{"unknown attribute", "@Resource[unavailable] StringEquals 'x'", Unverified},
-		{"unsupported operator", request + "PrincipalType] StringLike 'Service*'", Unverified},
-		{"malformed", "(ActionMatches{'x'}", Unverified},
-		{"injection", request + "PrincipalType] StringEquals 'ServicePrincipal' trailing", Unverified},
-		{"standard delegation", "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (" +
-			request + "RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {'" + role + "'} AND " +
-			request + "PrincipalType] StringEqualsIgnoreCase 'ServicePrincipal'))", Pass},
-		{"and rejects", request + "PrincipalType] StringEquals 'User' AND " +
-			request + "RoleDefinitionId] GuidEquals {'" + role + "'}", Fail},
-		{"unknown or permitted", "@Resource[unknown] GuidEquals {'x'} OR " +
-			request + "PrincipalType] StringEquals 'ServicePrincipal'", Pass},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			status, _ := delegationCondition(tc.condition, op)
-			assert.Equal(t, tc.status, status)
-		})
-	}
-	op.PrincipalID = ""
-	status, reason := delegationCondition(request+"PrincipalId] GuidEquals {'"+principal+"'}", op)
-	assert.Equal(t, Unverified, status)
-	assert.Contains(t, reason, "unavailable")
-}
-
-func TestScopedPermissionAndDenyRules(t *testing.T) {
+func TestScopedPermissionAndCallerRules(t *testing.T) {
 	permissions := []*armauthorization.Permission{
 		{Actions: []*string{new("*")}, NotActions: []*string{new(roleAssignmentWrite)}},
 		{Actions: []*string{new(roleAssignmentWrite)}},
@@ -65,34 +30,6 @@ func TestScopedPermissionAndDenyRules(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, caller.includes("GROUP"))
 	require.False(t, scopeContains("/subscriptions/a/resourceGroups/rg", "/subscriptions/a/resourceGroups/rg-other"))
-	for _, tc := range []struct {
-		name       string
-		exclude    string
-		doNotApply bool
-		condition  string
-		status     Status
-	}{
-		{"deny inherited group", "", false, "", Fail},
-		{"explicit exclusion", "operator", false, "", Pass},
-		{"no child application", "", true, "", Pass},
-		{"conditional deny unknown", "", false, "unsupported", Unverified},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			properties := &armauthorization.DenyAssignmentProperties{
-				Scope: new("/subscriptions/a"), DoNotApplyToChildScopes: new(tc.doNotApply),
-				Principals: []*armauthorization.Principal{{ID: new("group"), Type: new("Group")}},
-				Permissions: []*armauthorization.DenyAssignmentPermission{{
-					Actions: []*string{new("*")}, Condition: new(tc.condition),
-				}},
-			}
-			if tc.exclude != "" {
-				properties.ExcludePrincipals = []*armauthorization.Principal{{ID: new(tc.exclude), Type: new("User")}}
-			}
-			status, _ := evaluateDeny(caller, Operation{Action: roleAssignmentWrite,
-				Scope: "/subscriptions/a/resourceGroups/rg"}, []*armauthorization.DenyAssignment{{Properties: properties}})
-			assert.Equal(t, tc.status, status)
-		})
-	}
 }
 
 func TestExistingParentDiscoveryUsesScopedPermissions(t *testing.T) {
@@ -120,7 +57,7 @@ func TestExistingParentDiscoveryUsesScopedPermissions(t *testing.T) {
 			assert.Equal(t, want, refined.Storage.Parent)
 			assert.Equal(t, want, refined.Registry.Parent)
 			for _, op := range refined.Operations {
-				if op.CheckID == "P01" || strings.Contains(op.Action, "/deployments/") {
+				if strings.Contains(op.Action, "/deployments/") {
 					assert.Equal(t, "/subscriptions/"+plan.SubscriptionID, op.Scope)
 				}
 				if op.CheckID == "P02" || op.CheckID == "P04" || op.CheckID == "P05" {
@@ -132,73 +69,262 @@ func TestExistingParentDiscoveryUsesScopedPermissions(t *testing.T) {
 	}
 }
 
-func TestScopedAuthorizerReadsOnlyAndEvaluatesKnownRecipient(t *testing.T) {
-	scope := "/subscriptions/sub/resourceGroups/rg"
-	condition := "@Request[Microsoft.Authorization/roleAssignments:PrincipalType] StringEquals 'ServicePrincipal'"
-	options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
-		require.Equal(t, http.MethodGet, request.Method)
-		var body string
-		switch {
-		case strings.Contains(request.URL.Path, "/denyAssignments"):
-			body = `{"value":[]}`
-		case strings.Contains(request.URL.Path, "/roleAssignments"):
-			body = fmt.Sprintf(`{"value":[{"properties":{"scope":%q,"principalId":"operator","principalType":"User",
-				"roleDefinitionId":"/providers/Microsoft.Authorization/roleDefinitions/custom",
-				"condition":%q,"conditionVersion":"2.0"}}]}`, scope, condition)
-		case strings.Contains(request.URL.Path, "/roleDefinitions"):
-			body = `{"properties":{"permissions":[{"actions":["Microsoft.Authorization/roleAssignments/write"]}]}}`
-		default:
-			t.Fatalf("unexpected read: %s", request.URL.Path)
-		}
-
-		return contractARMResponse(request, 200, body), nil
-	})
-	auth := &scopedAuthorizer{credential: contractCredential{}, options: options}
-	status, reason, err := auth.evaluate(t.Context(), callerIdentity{objectID: "operator"},
-		Operation{Action: roleAssignmentWrite, Scope: scope, RoleID: registryRoleID(true)})
+func basicOperatorPlan(t *testing.T) (Plan, Facts) {
+	t.Helper()
+	input := contractPlanInput()
+	input.StorageID, input.RegistryID, input.AgentSubnetID = "", "", ""
+	plan, err := BuildPlan(input)
 	require.NoError(t, err)
-	assert.Equal(t, Pass, status, reason)
+	return plan, Facts{KubeletObjectID: "kubelet"}
 }
 
-func TestScopedAuthorizerConditionalGrantOutcomes(t *testing.T) {
-	const scope = "/subscriptions/sub/resourceGroups/rg"
-	const attribute = "@Request[Microsoft.Authorization/roleAssignments:"
-	for _, tc := range []struct {
-		name, condition, principal string
-		want                       Status
-	}{
-		{"known true", attribute + "PrincipalType] StringEquals 'ServicePrincipal'", "", Pass},
-		{"known false", attribute + "PrincipalType] StringEquals 'User'", "", Fail},
-		{"unsupported evidence", "@Resource[unknown] GuidEquals {'x'}", "", Unverified},
-		{"future identity", attribute + "PrincipalId] GuidEquals {'kubelet'}", "", Unverified},
-		{"known recipient", attribute + "PrincipalId] GuidEquals {'kubelet'}", "kubelet", Pass},
-		{"different recipient", attribute + "PrincipalId] GuidEquals {'kubelet'}", "different", Fail},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			options := contractARMOptions(func(request *http.Request) (*http.Response, error) {
-				require.Equal(t, http.MethodGet, request.Method)
-				var body string
-				switch {
-				case strings.Contains(request.URL.Path, "/denyAssignments"):
-					body = `{"value":[]}`
-				case strings.Contains(request.URL.Path, "/roleAssignments"):
-					body = fmt.Sprintf(`{"value":[{"properties":{
-						"scope":%q,"principalId":"operator","principalType":"User",
-						"roleDefinitionId":"/providers/Microsoft.Authorization/roleDefinitions/custom",
-						"condition":%q,"conditionVersion":"2.0"}}]}`, scope, tc.condition)
-				case strings.Contains(request.URL.Path, "/roleDefinitions"):
-					body = `{"properties":{"permissions":[{"actions":["Microsoft.Authorization/roleAssignments/write"]}]}}`
-				default:
-					t.Fatalf("unexpected authorization request: %s", request.URL.Path)
+func TestP02P05BasicActionsIgnoreComplexEvidence(t *testing.T) {
+	basePlan, facts := basicOperatorPlan(t)
+	for _, op := range basePlan.Operations {
+		for _, evidence := range []string{
+			"ordinary", "unsupported condition", "condition version", "delegated identity", "future recipient", "unknown group",
+		} {
+			t.Run(op.CheckID+"/"+op.Action+"/"+evidence, func(t *testing.T) {
+				plan := basePlan
+				plan.Operations = []Operation{op}
+				assignment := p07Assignment(op.Scope, "operator", "writer")
+				properties := cleanupObject(t, assignment["properties"])
+				switch evidence {
+				case "unsupported condition":
+					properties["condition"], properties["conditionVersion"] = "unsupported", "2.0"
+				case "condition version":
+					properties["conditionVersion"] = "unknown"
+				case "delegated identity":
+					properties["delegatedManagedIdentityResourceId"] = plan.Workload.ID
+				case "future recipient":
+					properties["condition"] =
+						"@Request[Microsoft.Authorization/roleAssignments:PrincipalId] GuidEquals {'future-principal'}"
+					properties["conditionVersion"] = "2.0"
 				}
-				return contractARMResponse(request, 200, body), nil
+				assignments := []any{assignment}
+				if evidence == "unknown group" {
+					group := p07Assignment(op.Scope, "unconfirmed-group", "unreadable")
+					cleanupObject(t, group["properties"])["principalType"] = "Group"
+					assignments = append([]any{group}, assignments...)
+				}
+				var paths []string
+				a := p09BasicAuthorizer(t, plan, facts, assignments,
+					map[string]any{"writer": p07Permissions(map[string]any{"actions": []string{op.Action}})}, &paths)
+				base := a.options.Transport
+				a.options = contractARMOptions(func(request *http.Request) (*http.Response, error) {
+					if strings.HasSuffix(request.URL.Path, "/denyAssignments") {
+						require.Equal(t, http.MethodGet, request.Method)
+						paths = append(paths, request.URL.Path)
+						return contractARMResponse(request, http.StatusForbidden, `{"error":{"code":"AuthorizationFailed"}}`), nil
+					}
+					return base.Do(request)
+				})
+				report, err := a.Check(t.Context(), plan, facts)
+				require.NoError(t, err)
+				check := resourceRuleContractCheck(t, report, op.CheckID)
+				assert.Equal(t, Pass, check.Status, check.Observed)
+				assert.Equal(t, op.Scope, check.Scope)
+				assert.Equal(t, op.Action, check.Expected)
+				assert.True(t, check.Mandatory)
+				assert.Empty(t, check.Missing)
+				assert.Empty(t, check.Remediation)
+				assert.Contains(t, check.Observed, "ARM authorizes the actual operation")
+				for _, path := range paths {
+					assert.NotContains(t, path, "/denyAssignments")
+					assert.NotContains(t, path, "/roleDefinitions/unreadable")
+					assert.NotContains(t, path, plan.Workload.ID, "future resources are not evidence sources")
+				}
 			})
-			auth := &scopedAuthorizer{credential: contractCredential{}, options: onboardingARMOptions(options)}
-			status, reason, err := auth.evaluate(t.Context(), callerIdentity{objectID: "operator"},
-				Operation{Action: roleAssignmentWrite, Scope: scope, RoleID: registryRoleID(true),
-					PrincipalID: tc.principal})
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, status, reason)
-		})
+		}
+	}
+}
+
+func TestP02P05BasicActionsRespectPrincipalsPermissionsAndScope(t *testing.T) {
+	basePlan, facts := basicOperatorPlan(t)
+	for _, op := range basePlan.Operations {
+		for _, tc := range []struct {
+			name, principal, scope string
+			permissions            []map[string]any
+			secondRole             bool
+			incompleteGroup        bool
+			want                   Status
+		}{
+			{name: "direct operator", permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Pass},
+			{name: "explicit token group", principal: "KNOWN-GROUP",
+				permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Pass},
+			{name: "unknown group", principal: "unconfirmed-group",
+				permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Fail},
+			{name: "unknown group without metadata", principal: "unconfirmed-group", incompleteGroup: true, want: Fail},
+			{name: "wildcard", permissions: []map[string]any{{"actions": []string{"*"}}}, want: Pass},
+			{name: "NotActions", permissions: []map[string]any{
+				{"actions": []string{"*"}, "notActions": []string{op.Action}},
+			}, want: Fail},
+			{name: "permission entry union", permissions: []map[string]any{
+				{"actions": []string{"*"}, "notActions": []string{op.Action}}, {"actions": []string{op.Action}},
+			}, want: Pass},
+			{name: "role union", permissions: []map[string]any{
+				{"actions": []string{"*"}, "notActions": []string{op.Action}},
+			}, secondRole: true, want: Pass},
+			{name: "data action is not ARM authority",
+				permissions: []map[string]any{{"dataActions": []string{op.Action}}}, want: Fail},
+			{name: "inherited subscription", scope: "subscription",
+				permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Pass},
+			{name: "different subscription", scope: "/subscriptions/unrelated",
+				permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Fail},
+			{name: "sibling scope", scope: op.Scope + "-other",
+				permissions: []map[string]any{{"actions": []string{op.Action}}}, want: Fail},
+		} {
+			t.Run(op.CheckID+"/"+op.Action+"/"+tc.name, func(t *testing.T) {
+				plan := basePlan
+				plan.Operations = []Operation{op}
+				principal, scope := tc.principal, tc.scope
+				if principal == "" {
+					principal = "operator"
+				}
+				if scope == "subscription" {
+					scope = "/subscriptions/" + strings.Split(op.Scope, "/")[2]
+				} else if scope == "" {
+					scope = op.Scope
+				}
+				assignment := p07Assignment(scope, principal, "writer")
+				if principal != "operator" {
+					cleanupObject(t, assignment["properties"])["principalType"] = "Group"
+				}
+				if tc.incompleteGroup {
+					delete(cleanupObject(t, assignment["properties"]), "scope")
+					delete(cleanupObject(t, assignment["properties"]), "roleDefinitionId")
+				}
+				assignments := []any{assignment}
+				if tc.secondRole {
+					assignments = append(assignments, p07Assignment(op.Scope, "operator", "second"))
+				}
+				var paths []string
+				a := p09BasicAuthorizer(t, plan, facts, assignments, map[string]any{
+					"writer": p07Permissions(tc.permissions...),
+					"second": p07Permissions(map[string]any{"actions": []string{op.Action}}),
+				}, &paths)
+				report, err := a.Check(t.Context(), plan, facts)
+				check := resourceRuleContractCheck(t, report, op.CheckID)
+				assert.Equal(t, tc.want, check.Status, check.Observed)
+				assert.Equal(t, tc.want != Pass, err != nil)
+				assert.Equal(t, op.Scope, check.Scope)
+				assert.Equal(t, op.Action, check.Expected)
+				assert.True(t, check.Mandatory)
+				if principal == "unconfirmed-group" {
+					for _, path := range paths {
+						assert.NotContains(t, path, "/roleDefinitions/writer")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestP02P05BasicReadFailuresStillBlock(t *testing.T) {
+	basePlan, facts := basicOperatorPlan(t)
+	for _, op := range basePlan.Operations {
+		for _, stage := range []string{"assignments", "definitions"} {
+			for _, status := range []int{http.StatusForbidden, http.StatusNotFound, http.StatusOK} {
+				t.Run(fmt.Sprintf("%s/%s/%s/status=%d", op.CheckID, op.Action, stage, status), func(t *testing.T) {
+					plan := basePlan
+					plan.Operations = []Operation{op}
+					var paths []string
+					a := p09BasicAuthorizer(t, plan, facts, []any{p07Assignment(op.Scope, "operator", "writer")},
+						map[string]any{"writer": p07Permissions(map[string]any{"actions": []string{op.Action}})}, &paths)
+					base := a.options.Transport
+					a.options = contractARMOptions(func(request *http.Request) (*http.Response, error) {
+						target := request.URL.Path == op.Scope+"/providers/Microsoft.Authorization/roleAssignments"
+						if stage == "definitions" {
+							target = strings.HasSuffix(request.URL.Path, "/roleDefinitions/writer")
+						}
+						if target {
+							require.Equal(t, http.MethodGet, request.Method)
+							body := `{"error":{"code":"AuthorizationFailed"}}`
+							if status == http.StatusOK {
+								body = `{"value":`
+							}
+							return contractARMResponse(request, status, body), nil
+						}
+						return base.Do(request)
+					})
+					pipeline := Pipeline{
+						Resources: contractResources(func(context.Context, Plan) (Facts, Report, error) {
+							return facts, nil, nil
+						}),
+						Access: a,
+					}
+					_, report, err := pipeline.Preflight(t.Context(), plan)
+					require.Error(t, err)
+					check := resourceRuleContractCheck(t, report, op.CheckID)
+					assert.Equal(t, Unverified, check.Status, check.Observed)
+					assert.True(t, check.Mandatory)
+					require.Error(t, check.Cause)
+					if status != http.StatusOK {
+						service, ok := errors.AsType[*azcore.ResponseError](check.Cause)
+						require.True(t, ok)
+						assert.Equal(t, status, service.StatusCode)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestP02P05BasicMissingEvidenceDoesNotPass(t *testing.T) {
+	basePlan, facts := basicOperatorPlan(t)
+	for _, op := range basePlan.Operations {
+		for _, missing := range []string{"principalId", "scope", "roleDefinitionId", "permissions", "operator token"} {
+			t.Run(op.CheckID+"/"+op.Action+"/"+missing, func(t *testing.T) {
+				plan := basePlan
+				plan.Operations = []Operation{op}
+				assignment := p07Assignment(op.Scope, "operator", "writer")
+				delete(cleanupObject(t, assignment["properties"]), missing)
+				definition := p07Permissions(map[string]any{"actions": []string{op.Action}})
+				if missing == "permissions" {
+					delete(cleanupObject(t, definition["properties"]), "permissions")
+				}
+				var paths []string
+				a := p09BasicAuthorizer(t, plan, facts, []any{assignment}, map[string]any{"writer": definition}, &paths)
+				if missing == "operator token" {
+					a.credential = contractCredential{}
+				}
+				report, err := a.Check(t.Context(), plan, facts)
+				require.Error(t, err)
+				check := resourceRuleContractCheck(t, report, op.CheckID)
+				assert.Equal(t, Unverified, check.Status, check.Observed)
+				assert.True(t, check.Mandatory)
+				if missing == "operator token" {
+					assert.Empty(t, paths)
+				}
+			})
+		}
+	}
+}
+
+func TestP02P05BasicModePreservesP06UnconditionalAuthority(t *testing.T) {
+	plan, facts := basicOperatorPlan(t)
+	op := plan.Operations[0]
+	plan.Operations = []Operation{op}
+	assignments := []any{}
+	for _, scope := range []string{op.Scope, plan.Cluster.ID} {
+		assignment := p07Assignment(scope, "operator", "writer")
+		properties := cleanupObject(t, assignment["properties"])
+		properties["condition"], properties["conditionVersion"] = "unsupported", "2.0"
+		assignments = append(assignments, assignment)
+	}
+	var paths []string
+	a := p07Authorizer(t, assignments,
+		map[string]any{"writer": p07Permissions(map[string]any{"actions": []string{"*"}})}, &paths, http.StatusOK)
+	a.credential = p09GroupCredential{}
+	report, err := a.Check(t.Context(), plan, facts)
+	require.Error(t, err)
+	assert.Equal(t, Pass, resourceRuleContractCheck(t, report, op.CheckID).Status)
+	assert.Equal(t, Pass, resourceRuleContractCheck(t, report, "P07").Status)
+	blocked, ok := errors.AsType[*BlockedError](err)
+	require.True(t, ok)
+	require.Len(t, blocked.Checks, 2)
+	for _, check := range blocked.Checks {
+		assert.Equal(t, "P06", check.ID)
+		assert.Equal(t, Fail, check.Status)
 	}
 }

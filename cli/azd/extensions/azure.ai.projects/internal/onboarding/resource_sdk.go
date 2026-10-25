@@ -21,28 +21,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
-// ResourceEvidence provides supported read-only workload-path evidence. A nil provider never implies success.
-type ResourceEvidence struct {
-	Network NetworkEvidenceProvider
-}
-
 type sdkResourceChecker struct {
 	credential azcore.TokenCredential
 	options    *arm.ClientOptions
-	evidence   ResourceEvidence
 }
 
 // NewResourceChecker constructs typed, read-only ARM adapters using an already resolved user-access-tenant credential.
 func NewResourceChecker(credential azcore.TokenCredential, options *arm.ClientOptions) ResourceChecker {
-	return NewResourceCheckerWithEvidence(credential, options, ResourceEvidence{})
-}
-
-// NewResourceCheckerWithEvidence adds existing-workload network evidence.
-// Providers must not create probe resources, mutate AKS, or read the future hosting/workload identities.
-func NewResourceCheckerWithEvidence(
-	credential azcore.TokenCredential, options *arm.ClientOptions, evidence ResourceEvidence,
-) ResourceChecker {
-	return &sdkResourceChecker{credential: credential, options: onboardingARMOptions(options), evidence: evidence}
+	return &sdkResourceChecker{credential: credential, options: onboardingARMOptions(options)}
 }
 
 func onboardingARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
@@ -119,7 +105,6 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		{plan.Cluster, "Microsoft.ContainerService/managedClusters"},
 		{plan.Storage, "Microsoft.Storage/storageAccounts"},
 		{plan.Registry, "Microsoft.ContainerRegistry/registries"},
-		{plan.AgentSubnet, "Microsoft.Network/virtualNetworks/subnets"},
 	} {
 		if !item.resource.Supplied && item.kind != "Microsoft.ContainerService/managedClusters" {
 			continue
@@ -133,6 +118,11 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 			continue
 		}
 		subscriptions[strings.ToLower(id.SubscriptionID)] = true
+	}
+	if network := plan.LegacyNetwork; network != nil && network.Enabled {
+		if network.DNSResourceGroup != "" && network.DNSSubscription != "" {
+			subscriptions[strings.ToLower(network.DNSSubscription)] = true
+		}
 	}
 	client, err := arm.NewClient("azure.ai.projects.onboarding", "v1.0.0", c.credential, c.options)
 	if err != nil {
@@ -198,19 +188,12 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	report = append(report, input)
 	facts := Facts{TenantID: tenant}
 	planCheck := resourceCheck("I03", plan.AgentSubnet.ID, "resolved supported creation/reuse and companion topology")
-	if plan.NetworkChanges {
-		planCheck.Observed = "selected companion network mutation/recovery lifecycle is not implemented"
-		planCheck.Missing = "verified R06 network preparation and exact topology-specific permission plan"
-		planCheck.Remediation = "retain the selected network configuration; this topology cannot yet be provisioned safely"
-	} else if plan.AgentSubnet.ID == "" {
-		planCheck.Observed = "default delegated-subnet topology has not been resolved"
-		planCheck.Missing = "read-only default subnet and non-overlapping private CIDR plan"
-		planCheck.Remediation = "resolve the supported same-VNet topology or provide an existing supported agent subnet"
-	} else if !plan.AgentSubnet.Supplied && plan.Network == nil {
-		planCheck.Missing = "recorded default subnet topology"
+	if plan.Network != nil {
+		planCheck.Observed = "automatic hosting subnet plans are no longer supported"
+		planCheck.Remediation = "retain any old ownership journal for cleanup; select networking through the standard network block"
 	} else {
 		planCheck = resourceResult(planCheck, Pass,
-			"companion subnet creation/reuse selected; Storage/ACR create/reuse resolved")
+			"standard network selection retained; Storage/ACR create/reuse resolved")
 	}
 	report = append(report, planCheck)
 	cluster, pools, skus, clusterReport := c.readCluster(ctx, plan.Cluster)
@@ -250,8 +233,7 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 		report = append(report, resourceResult(resourceCheck("C01", plan.Registry.Parent, "supplied ACR"),
 			NotApplicable, "registry will be created after preflight"))
 	}
-	paths, _ := c.networkChecks(ctx, plan, cluster, pools, storage)
-	report = append(report, paths...)
+	report = append(report, c.networkChecks(ctx, plan, cluster, pools, storage)...)
 	if err := ctx.Err(); err != nil {
 		return facts, report, err
 	}

@@ -3,9 +3,38 @@ words:
   - alnum
   - exterrors
   - foundryproject
+  - GZRS
   - idempotently
   - ondisk
   - purgeable
+  - RAGRS
+  - RAGZRS
   - recordproxy
   # Contributors
   - hemarina
+overrides:
+  - filename:
+      - internal/onboarding/deployment_bindings.go
+      - cspell.yaml
+    words:
+      - australiacentral
+      - australiacentral2
+      - australiasoutheast
+      - brazilsoutheast
+      - canadaeast
+      - francesouth
+      - germanynorth
+      - koreasouth
+      - northcentralus
+      - norwaywest
+      - southafricawest
+      - southindia
+      - swedensouth
+      - switzerlandwest
+      - taiwannorth
+      - taiwannorthwest
+      - uaecentral
+      - ukwest
+      - westcentralus
+      - westindia
+      - westus

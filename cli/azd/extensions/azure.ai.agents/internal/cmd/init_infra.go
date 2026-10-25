@@ -597,7 +597,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"BYO-AKS simplified onboarding requires the microsoft.foundry provisioning provider",
-				"use embedded provisioning or Bicep eject; Terraform cannot run the mandatory preparation lifecycle",
+				"use embedded provisioning or Bicep eject to retain the read-only preflight and owned-deployment lifecycle",
 			)
 		}
 		// Private networking is Bicep-only today: the Terraform module has no

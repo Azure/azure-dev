@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"reflect"
 
 	"azure.ai.projects/internal/exterrors"
@@ -22,30 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
-
-type byoLifecycleChecker struct {
-	checker   onboarding.ResourceChecker
-	lifecycle onboarding.Lifecycle
-	spec      func(onboarding.Plan, onboarding.Facts) (onboarding.FoundrySpec, error)
-}
-
-func (c byoLifecycleChecker) Check(ctx context.Context, plan onboarding.Plan) (
-	onboarding.Facts, onboarding.Report, error,
-) {
-	if c.checker == nil {
-		return onboarding.Facts{}, nil, fmt.Errorf("BYO-AKS resource checker is required")
-	}
-	facts, report, err := c.checker.Check(ctx, plan)
-	if err != nil || report.Err() != nil {
-		return facts, report, err
-	}
-	spec, err := c.spec(plan, facts)
-	if err != nil {
-		return facts, report, err
-	}
-	lifecycleReport, err := c.lifecycle.Check(ctx, plan, spec)
-	return facts, append(report, lifecycleReport...), err
-}
 
 func (p *FoundryProvisioningProvider) ownedBYOLifecycle() onboarding.Lifecycle {
 	if p.byoLifecycle != nil {
@@ -153,50 +128,33 @@ func (p *FoundryProvisioningProvider) deployBYO(
 	if err != nil {
 		return nil, err
 	}
-	parameters := maps.Clone(source.parameters)
 	deployment.Tags["azd-byoaks-owner"] = new(plan.Owner)
-	var properties *armresources.DeploymentPropertiesExtended
-	for _, registryReady := range []bool{false, true} {
-		if err := ctx.Err(); err != nil {
-			return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
-		}
-		name := "azd-byo-" + uuid.NewString()
-		id := "/subscriptions/" + p.subID + "/providers/Microsoft.Resources/deployments/" + name
-		if err := lifecycle.Start(ctx, plan, p.byoSpec, id); err != nil {
-			return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
-		}
-		p.byoDeploymentID = id
-		parameters["byoRegistryAccessReady"] = map[string]any{"value": registryReady}
-		deployment.Properties.Parameters = parameters
-		progress(fmt.Sprintf("Starting owned Foundry ARM deployment %q...", name))
-		poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, deployment, nil)
-		if err != nil {
-			return nil, p.deploymentFailure(ctx, err)
-		}
-		response, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
-		if err != nil {
-			return nil, p.deploymentFailure(ctx, err)
-		}
-		if err := ctx.Err(); err != nil {
-			return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
-		}
-		if err := lifecycle.Observe(ctx, plan); err != nil {
-			return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
-		}
-		properties = response.Properties
-		if !registryReady {
-			progress("Preparing the actual Foundry project identity registry grant...")
-			if err := lifecycle.PrepareProjectAccess(ctx, plan); err != nil {
-				return nil, p.byoLifecycleError(err, exterrors.OpBYOProjectRegistryAccess)
-			}
-		}
+	if err := ctx.Err(); err != nil {
+		return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
 	}
-	p.synthResult.Parameters["byoRegistryAccessReady"] = true
+	name := "azd-byo-" + uuid.NewString()
+	id := "/subscriptions/" + p.subID + "/providers/Microsoft.Resources/deployments/" + name
+	if err := lifecycle.Start(ctx, plan, p.byoSpec, id); err != nil {
+		return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
+	}
+	p.byoDeploymentID = id
+	progress(fmt.Sprintf("Starting owned Foundry ARM deployment %q...", name))
+	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, deployment, nil)
+	if err != nil {
+		return nil, p.deploymentFailure(ctx, err)
+	}
+	response, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
+	if err != nil {
+		return nil, p.deploymentFailure(ctx, err)
+	}
+	if err := lifecycle.Observe(ctx, plan); err != nil {
+		return nil, p.byoLifecycleError(err, exterrors.OpArmDeploymentCreate)
+	}
 	progress("Foundry deployment complete")
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
-			Parameters: armInputsToProto(parameters),
-			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(properties)))),
+			Parameters: armInputsToProto(source.parameters),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(response.Properties)))),
 		},
 	}, nil
 }
@@ -205,19 +163,19 @@ func (p *FoundryProvisioningProvider) byoLifecycleError(cause error, operation s
 	message := onboarding.RedactDiagnostic(cause.Error())
 	var classified error
 	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
-		classified = exterrors.Cancelled("BYO-AKS lifecycle interrupted; retain the journal and resume the operation")
+		classified = exterrors.Cancelled("BYO-AKS deployment interrupted; retain its ownership record and resume the operation")
 	} else if _, ok := errors.AsType[*azcore.ResponseError](cause); ok {
 		classified = exterrors.ServiceFromAzure(cause, operation)
 		if service, ok := errors.AsType[*azdext.ServiceError](classified); ok {
 			copy := *service
 			copy.Message = message
-			copy.Suggestion = "Retain the ownership journal, resolve the reported permission/service failure, and retry."
+			copy.Suggestion = "Retain the deployment ownership record, resolve the reported permission/service failure, and retry."
 			classified = &copy
 		}
 	} else {
 		classified = exterrors.Validation(
 			exterrors.CodeInvalidServiceConfig, message,
-			"retain the ownership journal; resolve the ownership/deployment state before retrying",
+			"retain the deployment ownership record; resolve the ownership/deployment state before retrying",
 		)
 	}
 	return &byoDeploymentFailure{classified: classified, cause: cause}

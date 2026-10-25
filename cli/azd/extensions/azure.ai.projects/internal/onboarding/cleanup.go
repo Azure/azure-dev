@@ -28,10 +28,19 @@ func (l *ownedLifecycle) Cleanup(ctx context.Context, plan Plan, purge bool, pro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	wasComplete := state.CleanupComplete
 	state.CleanupStarted = true
 	state.CleanupComplete = false
 	if err := l.journal.Save(ctx, state); err != nil {
 		return fmt.Errorf("persist cleanup intent: %w", err)
+	}
+	if state.Foundry != nil && state.Foundry.Spec.Deployment != nil && !wasComplete {
+		if err := l.verifyAttempts(ctx, plan, state.Foundry); err != nil {
+			return err
+		}
+		if err := l.observeDeployment(ctx, plan, &state); err != nil {
+			return fmt.Errorf("recover ARM graph ownership before cleanup: %w", err)
+		}
 	}
 	if err := l.cleanupFoundry(ctx, plan, &state, purge, progress); err != nil {
 		return fmt.Errorf("Foundry teardown is not confirmed; dependencies retained: %w", err)

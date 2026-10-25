@@ -1,0 +1,700 @@
+{
+  "revision": "b0cad4628a61ad22b10454422a58ee62c5455de3",
+  "description": "Pre-BYO standard network contract, captured from git objects. Compiler metadata alone is excluded.",
+  "networkSchema": {
+    "type": "object",
+    "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",
+    "additionalProperties": false,
+    "required": [
+      "peSubnet"
+    ],
+    "allOf": [
+      {
+        "not": {
+          "required": [
+            "agentSubnet",
+            "isolationMode"
+          ]
+        }
+      }
+    ],
+    "properties": {
+      "agentSubnet": {
+        "description": "Egress: when set, the agent runtime is injected into this customer subnet (BYO VNet). When omitted, the agent uses the Microsoft-managed network.",
+        "$ref": "#/definitions/Subnet"
+      },
+      "isolationMode": {
+        "type": "string",
+        "description": "Outbound posture of the Microsoft-managed network. Valid only when 'agentSubnet' is omitted (managed egress).",
+        "enum": [
+          "AllowInternetOutbound",
+          "AllowOnlyApprovedOutbound"
+        ]
+      },
+      "peSubnet": {
+        "description": "Ingress: subnet for the account private endpoint. Required. Establishes the private data plane (public network access disabled).",
+        "$ref": "#/definitions/Subnet"
+      },
+      "dns": {
+        "type": "object",
+        "description": "Private DNS zones for the account private endpoint. When omitted (or resourceGroup omitted), azd creates and links the required AI private DNS zones. When resourceGroup is set, azd references existing zones in that resource group.",
+        "additionalProperties": false,
+        "properties": {
+          "resourceGroup": {
+            "type": "string",
+            "description": "Resource group that holds existing private DNS zones to reference."
+          },
+          "subscription": {
+            "type": "string",
+            "description": "Subscription that holds the existing private DNS zones. Defaults to the deployment subscription. Accepts a bare GUID or ${VAR}."
+          }
+        }
+      }
+    }
+  },
+  "subnetSchema": {
+    "type": "object",
+    "description": "Subnet descriptor. vnet and name are required. Omit prefix to reference an existing subnet; set prefix to create the subnet with that CIDR.",
+    "additionalProperties": false,
+    "required": [
+      "vnet",
+      "name"
+    ],
+    "properties": {
+      "vnet": {
+        "type": "string",
+        "description": "ARM resource id of the virtual network that holds (or will hold) the subnet. Supports ${VAR} resolved from the azd environment."
+      },
+      "name": {
+        "type": "string",
+        "description": "Subnet name."
+      },
+      "prefix": {
+        "type": "string",
+        "description": "Subnet CIDR. When set, azd creates the subnet; when omitted, azd references the existing subnet."
+      }
+    }
+  },
+  "topLevelParameters": {
+    "enableNetworkIsolation": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Master switch: when true the account is VNet-bound (private)."
+      }
+    },
+    "useManagedEgress": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true (and isolation on), the agent runtime uses the Microsoft-managed network instead of injecting into a customer subnet."
+      }
+    },
+    "vnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "ARM id of the existing customer VNet (byo mode)."
+      }
+    },
+    "agentSubnetName": {
+      "type": "string",
+      "defaultValue": "agent-subnet",
+      "metadata": {
+        "description": "Agent (delegated) subnet name."
+      }
+    },
+    "agentSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Agent subnet CIDR. Empty derives a /24 from the VNet space."
+      }
+    },
+    "createAgentSubnet": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true, create the agent subnet; when false, reference it."
+      }
+    },
+    "peSubnetName": {
+      "type": "string",
+      "defaultValue": "pe-subnet",
+      "metadata": {
+        "description": "Private-endpoint subnet name."
+      }
+    },
+    "peSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Private-endpoint subnet CIDR. Empty derives a /24 from the VNet space."
+      }
+    },
+    "createPESubnet": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "When true, create the PE subnet; when false, reference it."
+      }
+    },
+    "managedIsolationMode": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Managed-network isolation mode (managed mode)."
+      }
+    },
+    "dnsZonesResourceGroup": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource group holding existing private DNS zones. Empty creates new zones."
+      }
+    },
+    "dnsZonesSubscription": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Subscription holding existing private DNS zones. Empty defaults to this subscription."
+      }
+    }
+  },
+  "parameterHandoff": {
+    "enableNetworkIsolation": {
+      "value": "[parameters('enableNetworkIsolation')]"
+    },
+    "useManagedEgress": {
+      "value": "[parameters('useManagedEgress')]"
+    },
+    "vnetId": {
+      "value": "[parameters('vnetId')]"
+    },
+    "agentSubnetName": {
+      "value": "[parameters('agentSubnetName')]"
+    },
+    "agentSubnetPrefix": {
+      "value": "[parameters('agentSubnetPrefix')]"
+    },
+    "createAgentSubnet": {
+      "value": "[parameters('createAgentSubnet')]"
+    },
+    "peSubnetName": {
+      "value": "[parameters('peSubnetName')]"
+    },
+    "peSubnetPrefix": {
+      "value": "[parameters('peSubnetPrefix')]"
+    },
+    "createPESubnet": {
+      "value": "[parameters('createPESubnet')]"
+    },
+    "managedIsolationMode": {
+      "value": "[parameters('managedIsolationMode')]"
+    },
+    "dnsZonesResourceGroup": {
+      "value": "[parameters('dnsZonesResourceGroup')]"
+    },
+    "dnsZonesSubscription": {
+      "value": "[parameters('dnsZonesSubscription')]"
+    }
+  },
+  "variables": {
+    "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
+    "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
+    "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
+    "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
+    "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+  },
+  "accountProperties": {
+    "networkInjections": "[variables('agentNetworkInjections')]",
+    "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
+    "networkAcls": {
+      "defaultAction": "[if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow')]",
+      "bypass": "[if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null())]",
+      "virtualNetworkRules": [],
+      "ipRules": []
+    }
+  },
+  "resources": {
+    "network": {
+      "condition": "[parameters('enableNetworkIsolation')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-network",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vnetId": {
+            "value": "[parameters('vnetId')]"
+          },
+          "agentSubnetName": {
+            "value": "[parameters('agentSubnetName')]"
+          },
+          "agentSubnetPrefix": {
+            "value": "[parameters('agentSubnetPrefix')]"
+          },
+          "createAgentSubnet": {
+            "value": "[parameters('createAgentSubnet')]"
+          },
+          "peSubnetName": {
+            "value": "[parameters('peSubnetName')]"
+          },
+          "peSubnetPrefix": {
+            "value": "[parameters('peSubnetPrefix')]"
+          },
+          "createPESubnet": {
+            "value": "[parameters('createPESubnet')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "vnetId": {
+              "type": "string"
+            },
+            "agentSubnetName": {
+              "type": "string"
+            },
+            "agentSubnetPrefix": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createAgentSubnet": {
+              "type": "bool"
+            },
+            "peSubnetName": {
+              "type": "string"
+            },
+            "peSubnetPrefix": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createPESubnet": {
+              "type": "bool"
+            }
+          },
+          "variables": {
+            "vnetParts": "[split(parameters('vnetId'), '/')]",
+            "vnetSubscriptionId": "[variables('vnetParts')[2]]",
+            "vnetResourceGroupName": "[variables('vnetParts')[4]]",
+            "vnetName": "[last(variables('vnetParts'))]"
+          },
+          "resources": [
+            {
+              "condition": "[parameters('createAgentSubnet')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('agent-subnet-{0}', uniqueString(deployment().name, parameters('agentSubnetName')))]",
+              "subscriptionId": "[variables('vnetSubscriptionId')]",
+              "resourceGroup": "[variables('vnetResourceGroupName')]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "vnetName": {
+                    "value": "[variables('vnetName')]"
+                  },
+                  "subnetName": {
+                    "value": "[parameters('agentSubnetName')]"
+                  },
+                  "addressPrefix": "[if(empty(parameters('agentSubnetPrefix')), createObject('value', cidrSubnet(reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), '2024-05-01').addressSpace.addressPrefixes[0], 24, 0)), createObject('value', parameters('agentSubnetPrefix')))]",
+                  "delegations": {
+                    "value": [
+                      {
+                        "name": "Microsoft.App/environments",
+                        "properties": {
+                          "serviceName": "Microsoft.App/environments"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "parameters": {
+                    "vnetName": {
+                      "type": "string"
+                    },
+                    "subnetName": {
+                      "type": "string"
+                    },
+                    "addressPrefix": {
+                      "type": "string"
+                    },
+                    "delegations": {
+                      "type": "array",
+                      "defaultValue": []
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/virtualNetworks/subnets",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+                      "properties": {
+                        "addressPrefix": "[parameters('addressPrefix')]",
+                        "delegations": "[parameters('delegations')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "subnetId": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', split(format('{0}/{1}', parameters('vnetName'), parameters('subnetName')), '/')[0], split(format('{0}/{1}', parameters('vnetName'), parameters('subnetName')), '/')[1])]"
+                    },
+                    "subnetName": {
+                      "type": "string",
+                      "value": "[parameters('subnetName')]"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "condition": "[parameters('createPESubnet')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('pe-subnet-{0}', uniqueString(deployment().name, parameters('peSubnetName')))]",
+              "subscriptionId": "[variables('vnetSubscriptionId')]",
+              "resourceGroup": "[variables('vnetResourceGroupName')]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "vnetName": {
+                    "value": "[variables('vnetName')]"
+                  },
+                  "subnetName": {
+                    "value": "[parameters('peSubnetName')]"
+                  },
+                  "addressPrefix": "[if(empty(parameters('peSubnetPrefix')), createObject('value', cidrSubnet(reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), '2024-05-01').addressSpace.addressPrefixes[0], 24, 1)), createObject('value', parameters('peSubnetPrefix')))]",
+                  "delegations": {
+                    "value": []
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "parameters": {
+                    "vnetName": {
+                      "type": "string"
+                    },
+                    "subnetName": {
+                      "type": "string"
+                    },
+                    "addressPrefix": {
+                      "type": "string"
+                    },
+                    "delegations": {
+                      "type": "array",
+                      "defaultValue": []
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/virtualNetworks/subnets",
+                      "apiVersion": "2024-05-01",
+                      "name": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+                      "properties": {
+                        "addressPrefix": "[parameters('addressPrefix')]",
+                        "delegations": "[parameters('delegations')]"
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "subnetId": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', split(format('{0}/{1}', parameters('vnetName'), parameters('subnetName')), '/')[0], split(format('{0}/{1}', parameters('vnetName'), parameters('subnetName')), '/')[1])]"
+                    },
+                    "subnetName": {
+                      "type": "string",
+                      "value": "[parameters('subnetName')]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Resources/deployments', format('agent-subnet-{0}', uniqueString(deployment().name, parameters('agentSubnetName'))))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vnetId": {
+              "type": "string",
+              "value": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            },
+            "vnetName": {
+              "type": "string",
+              "value": "[variables('vnetName')]"
+            },
+            "vnetLocation": {
+              "type": "string",
+              "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), '2024-05-01', 'full').location]"
+            },
+            "vnetSubscriptionId": {
+              "type": "string",
+              "value": "[variables('vnetSubscriptionId')]"
+            },
+            "vnetResourceGroupName": {
+              "type": "string",
+              "value": "[variables('vnetResourceGroupName')]"
+            },
+            "agentSubnetId": {
+              "type": "string",
+              "value": "[format('{0}/subnets/{1}', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), parameters('agentSubnetName'))]"
+            },
+            "peSubnetId": {
+              "type": "string",
+              "value": "[format('{0}/subnets/{1}', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('vnetSubscriptionId'), variables('vnetResourceGroupName')), 'Microsoft.Network/virtualNetworks', variables('vnetName')), parameters('peSubnetName'))]"
+            },
+            "peSubnetName": {
+              "type": "string",
+              "value": "[parameters('peSubnetName')]"
+            }
+          }
+        }
+      }
+    },
+    "privateEndpointDns": {
+      "condition": "[parameters('enableNetworkIsolation')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-private-endpoint-dns",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "aiAccountName": {
+            "value": "[variables('foundryAccountName')]"
+          },
+          "location": {
+            "value": "[reference('network').outputs.vnetLocation.value]"
+          },
+          "vnetId": {
+            "value": "[reference('network').outputs.vnetId.value]"
+          },
+          "peSubnetId": {
+            "value": "[reference('network').outputs.peSubnetId.value]"
+          },
+          "suffix": {
+            "value": "[variables('resourceToken')]"
+          },
+          "dnsZonesResourceGroup": {
+            "value": "[parameters('dnsZonesResourceGroup')]"
+          },
+          "dnsZonesSubscription": {
+            "value": "[parameters('dnsZonesSubscription')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "aiAccountName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "vnetId": {
+              "type": "string"
+            },
+            "peSubnetId": {
+              "type": "string"
+            },
+            "suffix": {
+              "type": "string"
+            },
+            "dnsZonesResourceGroup": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "dnsZonesSubscription": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "variables": {
+            "aiServicesDnsZoneName": "privatelink.services.ai.azure.com",
+            "openAiDnsZoneName": "privatelink.openai.azure.com",
+            "cognitiveServicesDnsZoneName": "privatelink.cognitiveservices.azure.com",
+            "useExistingZones": "[not(empty(parameters('dnsZonesResourceGroup')))]",
+            "existingZonesSubscription": "[if(empty(parameters('dnsZonesSubscription')), subscription().subscriptionId, parameters('dnsZonesSubscription'))]",
+            "aiServicesZoneId": "[if(variables('useExistingZones'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('existingZonesSubscription'), parameters('dnsZonesResourceGroup')), 'Microsoft.Network/privateDnsZones', variables('aiServicesDnsZoneName')), resourceId('Microsoft.Network/privateDnsZones', variables('aiServicesDnsZoneName')))]",
+            "openAiZoneId": "[if(variables('useExistingZones'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('existingZonesSubscription'), parameters('dnsZonesResourceGroup')), 'Microsoft.Network/privateDnsZones', variables('openAiDnsZoneName')), resourceId('Microsoft.Network/privateDnsZones', variables('openAiDnsZoneName')))]",
+            "cognitiveServicesZoneId": "[if(variables('useExistingZones'), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('existingZonesSubscription'), parameters('dnsZonesResourceGroup')), 'Microsoft.Network/privateDnsZones', variables('cognitiveServicesDnsZoneName')), resourceId('Microsoft.Network/privateDnsZones', variables('cognitiveServicesDnsZoneName')))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}-private-endpoint', parameters('aiAccountName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('{0}-private-link-service-connection', parameters('aiAccountName'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('aiAccountName'))]",
+                      "groupIds": [
+                        "account"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[variables('aiServicesDnsZoneName')]",
+              "location": "global"
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[variables('openAiDnsZoneName')]",
+              "location": "global"
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[variables('cognitiveServicesDnsZoneName')]",
+              "location": "global"
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2024-06-01",
+              "name": "[format('{0}/{1}', variables('aiServicesDnsZoneName'), format('aiServices-{0}-link', parameters('suffix')))]",
+              "location": "global",
+              "properties": {
+                "virtualNetwork": {
+                  "id": "[parameters('vnetId')]"
+                },
+                "registrationEnabled": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('aiServicesDnsZoneName'))]"
+              ]
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2024-06-01",
+              "name": "[format('{0}/{1}', variables('openAiDnsZoneName'), format('aiServicesOpenAI-{0}-link', parameters('suffix')))]",
+              "location": "global",
+              "properties": {
+                "virtualNetwork": {
+                  "id": "[parameters('vnetId')]"
+                },
+                "registrationEnabled": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('openAiDnsZoneName'))]"
+              ]
+            },
+            {
+              "condition": "[not(variables('useExistingZones'))]",
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2024-06-01",
+              "name": "[format('{0}/{1}', variables('cognitiveServicesDnsZoneName'), format('aiServicesCognitiveServices-{0}-link', parameters('suffix')))]",
+              "location": "global",
+              "properties": {
+                "virtualNetwork": {
+                  "id": "[parameters('vnetId')]"
+                },
+                "registrationEnabled": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('cognitiveServicesDnsZoneName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', format('{0}-private-endpoint', parameters('aiAccountName')), format('{0}-dns-group', parameters('aiAccountName')))]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "[format('{0}-dns-aiserv-config', parameters('aiAccountName'))]",
+                    "properties": {
+                      "privateDnsZoneId": "[variables('aiServicesZoneId')]"
+                    }
+                  },
+                  {
+                    "name": "[format('{0}-dns-openai-config', parameters('aiAccountName'))]",
+                    "properties": {
+                      "privateDnsZoneId": "[variables('openAiZoneId')]"
+                    }
+                  },
+                  {
+                    "name": "[format('{0}-dns-cogserv-config', parameters('aiAccountName'))]",
+                    "properties": {
+                      "privateDnsZoneId": "[variables('cognitiveServicesZoneId')]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('{0}-private-endpoint', parameters('aiAccountName')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', variables('aiServicesDnsZoneName'), format('aiServices-{0}-link', parameters('suffix')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('aiServicesDnsZoneName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', variables('cognitiveServicesDnsZoneName'), format('aiServicesCognitiveServices-{0}-link', parameters('suffix')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('cognitiveServicesDnsZoneName'))]",
+                "[resourceId('Microsoft.Network/privateDnsZones/virtualNetworkLinks', variables('openAiDnsZoneName'), format('aiServicesOpenAI-{0}-link', parameters('suffix')))]",
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('openAiDnsZoneName'))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "foundryAccount",
+        "network"
+      ]
+    },
+    "foundryManagedNetwork": {
+      "condition": "[and(variables('useManagedNetwork'), not(empty(parameters('managedIsolationMode'))))]",
+      "type": "Microsoft.CognitiveServices/accounts/managedNetworks",
+      "apiVersion": "2025-10-01-preview",
+      "name": "[format('{0}/{1}', variables('foundryAccountName'), 'default')]",
+      "properties": {
+        "managedNetwork": {
+          "isolationMode": "[parameters('managedIsolationMode')]"
+        }
+      },
+      "dependsOn": [
+        "foundryAccount"
+      ]
+    }
+  },
+  "outputs": {
+    "AZURE_FOUNDRY_NETWORK_MODE": {
+      "type": "string",
+      "value": "[reference('resources').outputs.AZURE_FOUNDRY_NETWORK_MODE.value]"
+    },
+    "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE": {
+      "type": "string",
+      "value": "[reference('resources').outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE.value]"
+    }
+  }
+}

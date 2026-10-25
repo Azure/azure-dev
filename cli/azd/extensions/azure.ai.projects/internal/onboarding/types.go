@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 // Package onboarding implements the read-only plan, evidence gates and owned
-// preparation lifecycle for customer AKS hosting.
+// deployment lifecycle for customer AKS hosting.
 package onboarding
 
 import (
@@ -33,6 +33,7 @@ type Check struct {
 	Observed    string
 	Missing     string
 	Remediation string
+	Warning     string
 	Mandatory   bool
 	Cause       error
 }
@@ -62,6 +63,14 @@ func (r Report) Write(w io.Writer) error {
 			c.ID, c.Status, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Expected), RedactDiagnostic(c.Observed),
 			RedactDiagnostic(c.Missing), RedactDiagnostic(c.Remediation)); err != nil {
 			return err
+		}
+	}
+	for _, c := range r {
+		if c.Warning != "" {
+			if _, err := fmt.Fprintf(w, "WARNING: %s [%s]: %s\n",
+				c.ID, RedactDiagnostic(c.Scope), RedactDiagnostic(c.Warning)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -125,27 +134,29 @@ type Operation struct {
 	PrincipalType string // defaults to ServicePrincipal for managed grants
 }
 
-// Plan is the single read-only source for checks and preparation.
+// Plan is the single read-only source for checks and deployment bindings.
 type Plan struct {
-	// NetworkChanges marks a selected topology whose mutation lifecycle is not implemented.
-	NetworkChanges bool
-	Network        *SubnetPreparation
-	SubscriptionID string
-	ResourceGroup  string
-	Location       string
-	Environment    string
-	Owner          string
-	Cluster        Resource
-	Storage        Resource
-	Registry       Resource
-	AgentSubnet    Resource
-	Hosting        Resource
-	Workload       Resource
-	Operations     []Operation
+	// Network is retained only to reject obsolete automatic hosting-subnet plans.
+	Network                  *SubnetPreparation
+	LegacyNetwork            *LegacyNetwork
+	SubscriptionID           string
+	ResourceGroup            string
+	ResourceGroupSupplied    bool
+	ResourceGroupTags        map[string]*string
+	Location                 string
+	Environment              string
+	Owner                    string
+	Cluster                  Resource
+	Storage                  Resource
+	Registry                 Resource
+	RegistryCustomerSupplied bool // Public selection, excluding an owned registry resolved from prior environment outputs.
+	AgentSubnet              Resource
+	Hosting                  Resource
+	Workload                 Resource
+	Operations               []Operation
 }
 
-// SubnetPreparation is the bounded same-VNet companion topology, resolved without writes.
-// It creates only a delegated subnet; it never changes AKS, existing subnets, routes, NSGs or peerings.
+// SubnetPreparation retains older owned-subnet journal data for exact cleanup, never new preparation.
 type SubnetPreparation struct {
 	VNetID        string `json:"vnetId"`
 	SubnetID      string `json:"subnetId"`
@@ -153,7 +164,7 @@ type SubnetPreparation struct {
 	Location      string `json:"location"`
 }
 
-// Facts contains verified existing-resource information needed by preparation.
+// Facts contains verified existing-resource information needed by the deployment graph.
 type Facts struct {
 	KubeletObjectID string
 	RegistryABAC    bool
@@ -168,18 +179,6 @@ type Identity struct {
 	TenantID    string
 }
 
-// Prepared is private deployment input; it must never be accepted from YAML.
-type Prepared struct {
-	ResourceGroupTags map[string]*string
-	Hosting           Identity
-	Workload          Identity
-	StorageID         string
-	RegistryID        string
-	RegistryEndpoint  string
-	RegistryABAC      bool
-	AgentSubnetID     string
-}
-
 // ResourceChecker performs read-only existing resource and network checks.
 type ResourceChecker interface {
 	Check(context.Context, Plan) (Facts, Report, error)
@@ -188,9 +187,4 @@ type ResourceChecker interface {
 // Authorizer checks scoped operations and grant conditions without writing.
 type Authorizer interface {
 	Check(context.Context, Plan, Facts) (Report, error)
-}
-
-// Preparer prepares only resources and assignments owned by this environment.
-type Preparer interface {
-	Prepare(context.Context, Plan, Facts) (Prepared, error)
 }

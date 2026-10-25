@@ -70,7 +70,7 @@
   "definitions": {
     "AgentHosting": {
       "type": "object",
-      "description": "Customer-owned AKS configuration for a new Foundry account. azd checks evidence before preparing dependencies and two internally managed identities. Unverified mandatory evidence blocks provision.",
+      "description": "Customer-owned AKS configuration for a new Foundry account. Read-only preflight precedes one ARM deployment that creates dependencies and two internally managed identities. Unverified mandatory evidence blocks provision.",
       "additionalProperties": false,
       "required": [
         "clusterResourceId"
@@ -91,15 +91,10 @@
           "minLength": 1,
           "description": "Full ARM resource ID of the customer-owned AKS managed cluster."
         },
-        "agentSubnetResourceId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Full ARM resource ID of the subnet injected into the Foundry agent runtime."
-        },
         "storageAccountResourceId": {
           "type": "string",
           "minLength": 1,
-          "description": "Optional full ARM storage account ID. Omit to plan an owned account; explicit empty or null values are invalid."
+          "description": "Optional full ARM storage account ID. Omit to plan an owned account."
         }
       }
     },

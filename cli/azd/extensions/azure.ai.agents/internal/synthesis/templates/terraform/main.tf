@@ -18,7 +18,7 @@ locals {
     var.resource_token_salt,
   ]))), 0, 13)
 
-  foundry_account_name = "cog-${local.resource_token}"
+  foundry_account_name = local.byo_enabled ? var.byo_onboarding.accountName : "cog-${local.resource_token}"
 
   # Project name. Falls back to a sanitized environment_name (3-32 chars) when
   # not provided.
@@ -45,9 +45,19 @@ locals {
 }
 
 resource "azurerm_resource_group" "this" {
+  count    = local.byo_rg_supplied ? 0 : 1
   name     = local.resource_group_name
   location = var.location
-  tags     = var.tags
+  tags     = local.byo_enabled ? local.byo_tags : var.tags
+}
+
+data "azurerm_resource_group" "existing" {
+  count = local.byo_rg_supplied ? 1 : 0
+  name  = local.resource_group_name
+}
+
+locals {
+  resource_group_id = local.byo_rg_supplied ? data.azurerm_resource_group.existing[0].id : azurerm_resource_group.this[0].id
 }
 
 # azapi is used so allowProjectManagement can be set (not exposed by
@@ -55,14 +65,14 @@ resource "azurerm_resource_group" "this" {
 resource "azapi_resource" "foundry_account" {
   type                      = "Microsoft.CognitiveServices/accounts@2026-07-15-preview"
   name                      = local.foundry_account_name
-  location                  = azurerm_resource_group.this.location
-  parent_id                 = azurerm_resource_group.this.id
-  tags                      = var.tags
+  location                  = var.location
+  parent_id                 = local.resource_group_id
+  tags                      = local.byo_enabled ? local.byo_tags : var.tags
   schema_validation_enabled = false
 
   identity {
     type         = var.agent_hosting.enabled ? "SystemAssigned, UserAssigned" : "SystemAssigned"
-    identity_ids = var.agent_hosting.enabled ? [var.agent_hosting.hostingManagementIdentityResourceId] : []
+    identity_ids = var.agent_hosting.enabled ? [local.hosting_identity_id] : []
   }
 
   body = {
@@ -81,21 +91,17 @@ resource "azapi_resource" "foundry_account" {
         ipRules             = []
       }
       }, var.agent_hosting.enabled ? {
-      networkInjections = [{
-        scenario                   = "agent"
-        subnetArmId                = var.agent_hosting.agentSubnetResourceId
-        useMicrosoftManagedNetwork = false
-      }]
       agentHostingConfigurations = [{
         hostingType                         = var.agent_hosting.hostingType
         name                                = var.agent_hosting.name
-        clusterResourceId                   = var.agent_hosting.clusterResourceId
-        hostingManagementIdentityResourceId = var.agent_hosting.hostingManagementIdentityResourceId
-        storageAccountResourceId            = var.agent_hosting.storageAccountResourceId
-        workloadIdentityResourceId          = var.agent_hosting.workloadIdentityResourceId
+        clusterResourceId                   = local.hosting_cluster_id
+        hostingManagementIdentityResourceId = local.hosting_identity_id
+        storageAccountResourceId            = local.hosting_storage_id
+        workloadIdentityResourceId          = local.workload_identity_id
       }]
     } : {})
   }
+  depends_on = [azapi_resource.byo_grant]
 }
 
 # Created one at a time; ARM throttles concurrent deployments on one account.
@@ -121,8 +127,9 @@ resource "azurerm_cognitive_deployment" "model" {
 resource "azapi_resource" "project" {
   type      = "Microsoft.CognitiveServices/accounts/projects@2025-06-01"
   name      = local.foundry_project_name
-  location  = azurerm_resource_group.this.location
+  location  = var.location
   parent_id = azapi_resource.foundry_account.id
+  tags      = local.byo_enabled ? local.byo_tags : {}
 
   identity {
     type = "SystemAssigned"

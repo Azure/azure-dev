@@ -18,21 +18,23 @@ import (
 
 // FoundrySpec binds the standard deployment to exact owned targets, not inferred names during deletion.
 type FoundrySpec struct {
-	AccountID    string   `json:"accountId"`
-	ProjectID    string   `json:"projectId"`
-	RegistryID   string   `json:"registryId"`
-	RegistryABAC bool     `json:"registryABAC"`
-	Location     string   `json:"location"`
-	ModelNames   []string `json:"modelNames"`
-	TemplateHash string   `json:"templateHash,omitempty"`
+	AccountID    string          `json:"accountId"`
+	ProjectID    string          `json:"projectId"`
+	RegistryID   string          `json:"registryId"`
+	RegistryABAC bool            `json:"registryABAC"`
+	Location     string          `json:"location"`
+	ModelNames   []string        `json:"modelNames"`
+	TemplateHash string          `json:"templateHash,omitempty"`
+	Deployment   *DeploymentData `json:"deployment,omitempty"`
 }
 
 // FoundryAttempt is persisted before submitting one uniquely named ARM deployment.
 type FoundryAttempt struct {
-	ID            string `json:"id"`
-	CorrelationID string `json:"correlationId,omitempty"`
-	Terminal      bool   `json:"terminal"`
-	TemplateHash  string `json:"templateHash,omitempty"`
+	ID                string `json:"id"`
+	CorrelationID     string `json:"correlationId,omitempty"`
+	Terminal          bool   `json:"terminal"`
+	TemplateHash      string `json:"templateHash,omitempty"`
+	OwnershipObserved bool   `json:"ownershipObserved,omitempty"`
 }
 
 // FoundryState preserves control-plane ownership and teardown progress across interruptions.
@@ -45,12 +47,11 @@ type FoundryState struct {
 	Purged             bool             `json:"purged"`
 }
 
-// Lifecycle owns the boundary between Foundry deployment and dependency preparation/cleanup.
+// Lifecycle journals one ARM graph and observes exact ownership for cleanup.
 type Lifecycle interface {
 	Check(context.Context, Plan, FoundrySpec) (Report, error)
 	Start(context.Context, Plan, FoundrySpec, string) error
 	Observe(context.Context, Plan) error
-	PrepareProjectAccess(context.Context, Plan) error
 	Cleanup(context.Context, Plan, bool, func(string)) error
 }
 
@@ -60,7 +61,7 @@ type ownedLifecycle struct {
 	journal    Journal
 }
 
-// NewLifecycle uses typed ARM clients and the same durable ownership journal as preparation.
+// NewLifecycle uses read-only ARM observation before exact journaled cleanup.
 func NewLifecycle(credential azcore.TokenCredential, options *arm.ClientOptions, journal Journal) Lifecycle {
 	return &ownedLifecycle{credential: credential, options: onboardingARMOptions(options), journal: journal}
 }
@@ -138,9 +139,17 @@ func validateFoundrySpec(plan Plan, spec FoundrySpec) error {
 }
 
 func sameFoundrySpec(a, b FoundrySpec) bool {
-	return strings.EqualFold(a.AccountID, b.AccountID) && strings.EqualFold(a.ProjectID, b.ProjectID) &&
+	same := strings.EqualFold(a.AccountID, b.AccountID) && strings.EqualFold(a.ProjectID, b.ProjectID) &&
 		strings.EqualFold(a.Location, b.Location) && strings.EqualFold(a.RegistryID, b.RegistryID) &&
 		a.RegistryABAC == b.RegistryABAC
+	if !same || a.Deployment == nil || b.Deployment == nil {
+		return same && a.Deployment == nil && b.Deployment == nil
+	}
+	x, y := a.Deployment, b.Deployment
+	return strings.EqualFold(x.ClusterID, y.ClusterID) && strings.EqualFold(x.StorageID, y.StorageID) &&
+		strings.EqualFold(x.Hosting.ID, y.Hosting.ID) && strings.EqualFold(x.Workload.ID, y.Workload.ID) &&
+		strings.EqualFold(x.KubeletObjectID, y.KubeletObjectID) && strings.EqualFold(x.TenantID, y.TenantID) &&
+		strings.EqualFold(x.FederatedIdentityRoleDefinitionID, y.FederatedIdentityRoleDefinitionID)
 }
 
 func (l *ownedLifecycle) Check(ctx context.Context, plan Plan, spec FoundrySpec) (Report, error) {
@@ -158,21 +167,39 @@ func (l *ownedLifecycle) Check(ctx context.Context, plan Plan, spec FoundrySpec)
 	if err != nil {
 		return fail(err)
 	}
+	if spec.Deployment != nil {
+		if err := validateDeploymentData(plan, spec, state); err != nil {
+			return fail(err)
+		}
+	}
+	if err := validateHistoricalNetwork(state); err != nil {
+		return fail(err)
+	}
+	if !state.CleanupComplete && state.Owner != "" && state.Foundry == nil &&
+		(len(state.Resources) > 0 || len(state.Assignments) > 0) {
+		return fail(fmt.Errorf("legacy dependency ownership remains; retain the journal and complete azd down before deployment"))
+	}
 	if state.CleanupStarted && !state.CleanupComplete {
 		return fail(fmt.Errorf("owned cleanup is incomplete; resume azd down before provisioning"))
 	}
 	if !state.CleanupComplete && state.Registry != nil &&
 		(!strings.EqualFold(state.Registry.ID, spec.RegistryID) ||
 			state.Registry.Verified && state.Registry.ABAC != spec.RegistryABAC) {
-		return fail(fmt.Errorf("registry differs from the recorded preparation binding"))
+		return fail(fmt.Errorf("registry differs from the recorded deployment binding"))
 	}
 	if state.Foundry != nil {
+		if !state.CleanupComplete && state.Foundry.Spec.Deployment == nil && spec.Deployment != nil {
+			return fail(fmt.Errorf("legacy deployment ownership remains; complete exact owned cleanup before the new ARM graph"))
+		}
 		if !state.CleanupComplete && !sameFoundrySpec(state.Foundry.Spec, spec) {
 			return fail(fmt.Errorf("Foundry selections differ from the active ownership journal"))
 		}
 		if err := l.verifyAttempts(ctx, plan, state.Foundry); err != nil {
 			return fail(err)
 		}
+	}
+	if err := l.checkDeploymentResources(ctx, plan, state); err != nil {
+		return fail(err)
 	}
 	account, err := ParseID(spec.AccountID, "Microsoft.CognitiveServices/accounts")
 	if err != nil {
@@ -214,6 +241,9 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	if err := validateFoundrySpec(plan, spec); err != nil {
 		return err
 	}
+	if spec.Deployment != nil && spec.TemplateHash == "" {
+		return fmt.Errorf("deployment intent requires the actual ARM template hash before submission")
+	}
 	_, err := subscriptionDeploymentID(deploymentID, plan.SubscriptionID)
 	if err != nil {
 		return fmt.Errorf("Foundry attempt requires an exact subscription deployment ID")
@@ -222,14 +252,65 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	if err != nil {
 		return err
 	}
-	if state.Owner == "" || (state.CleanupStarted && !state.CleanupComplete) {
-		return fmt.Errorf("Foundry attempt requires completed preparation and no pending cleanup")
+	if state.Owner == "" && spec.Deployment == nil {
+		return fmt.Errorf("a new deployment requires internally planned graph bindings")
+	}
+	if state.CleanupStarted && !state.CleanupComplete {
+		return fmt.Errorf("Foundry attempt requires no pending cleanup")
+	}
+	if state.Owner != "" && state.Foundry == nil && !state.CleanupComplete &&
+		(len(state.Resources) > 0 || len(state.Assignments) > 0) {
+		return fmt.Errorf("legacy dependency ownership remains; complete owned cleanup before starting a new deployment")
+	}
+	if !state.CleanupComplete && state.Foundry != nil &&
+		state.Foundry.Spec.Deployment == nil && spec.Deployment != nil {
+		return fmt.Errorf("legacy deployment ownership remains; complete exact owned cleanup before the new ARM graph")
+	}
+	if err := validateHistoricalNetwork(state); err != nil {
+		return err
 	}
 	if !state.CleanupComplete && state.Registry != nil &&
 		(!strings.EqualFold(state.Registry.ID, spec.RegistryID) ||
 			state.Registry.Verified && state.Registry.ABAC != spec.RegistryABAC) {
-		return fmt.Errorf("Foundry attempt registry does not match the prepared binding")
+		return fmt.Errorf("Foundry attempt registry does not match the recorded binding")
 	}
+	if spec.Deployment != nil {
+		if err := l.checkDeploymentResources(ctx, plan, state); err != nil {
+			return err
+		}
+		if err := validateDeploymentData(plan, spec, state); err != nil {
+			return err
+		}
+	}
+	if state.CleanupComplete {
+		state.Resources = map[string]OwnedResource{}
+		state.Assignments = map[string]OwnedAssignment{}
+		state.Network = nil
+	}
+	state.Version = preparationJournalVersion
+	state.Owner, state.SubscriptionID = plan.Owner, plan.SubscriptionID
+	state.ResourceGroup, state.Location = plan.ResourceGroup, plan.Location
+	if state.Resources == nil {
+		state.Resources = map[string]OwnedResource{}
+	}
+	if state.Assignments == nil {
+		state.Assignments = map[string]OwnedAssignment{}
+	}
+	if spec.Deployment != nil {
+		for step, resource := range deploymentResources(plan) {
+			if resource.Supplied {
+				continue
+			}
+			if previous, exists := state.Resources[step]; exists {
+				if !strings.EqualFold(previous.ID, resource.ID) || previous.Deleted {
+					return fmt.Errorf("%s: planned resource differs from active ownership", step)
+				}
+			} else {
+				state.Resources[step] = OwnedResource{ID: resource.ID}
+			}
+		}
+	}
+	state.Registry = &RegistryBinding{ID: spec.RegistryID, ABAC: spec.RegistryABAC}
 	if state.Foundry == nil || state.CleanupComplete {
 		state.Foundry = &FoundryState{Spec: spec}
 	} else if state.Foundry.AccountDeleted {
@@ -237,6 +318,19 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	}
 	if !sameFoundrySpec(state.Foundry.Spec, spec) {
 		return fmt.Errorf("Foundry attempt does not match the journaled selections")
+	}
+	if spec.Deployment != nil && len(state.Foundry.Attempts) > 0 {
+		for _, attempt := range state.Foundry.Attempts {
+			if strings.EqualFold(attempt.ID, deploymentID) {
+				return fmt.Errorf("previous ARM deployment ID was reused")
+			}
+		}
+		if err := l.verifyAttempts(ctx, plan, state.Foundry); err != nil {
+			return err
+		}
+		if err := l.observeDeployment(ctx, plan, &state); err != nil {
+			return err
+		}
 	}
 	for _, name := range spec.ModelNames {
 		if !slices.ContainsFunc(state.Foundry.Spec.ModelNames, func(old string) bool { return strings.EqualFold(old, name) }) {
@@ -249,6 +343,7 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 		}
 	}
 	state.Foundry.Spec.TemplateHash = spec.TemplateHash
+	state.Foundry.Spec.Deployment = spec.Deployment
 	state.Foundry.Attempts = append(state.Foundry.Attempts, FoundryAttempt{
 		ID: deploymentID, TemplateHash: spec.TemplateHash,
 	})
@@ -303,7 +398,7 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 		if err := json.Unmarshal(raw, &values); err != nil {
 			return fmt.Errorf("deployment ownership parameters are unavailable: %w", err)
 		}
-		for _, key := range []string{"byoOwner", "byoAccountName", "resourceGroupName", "location", "foundryProjectName"} {
+		for _, key := range []string{"resourceGroupName", "location", "foundryProjectName"} {
 			var value struct {
 				Value string `json:"value"`
 			}
@@ -317,9 +412,48 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 			}
 			parameters[key] = value
 		}
+		var owner, accountName string
+		if foundry.Spec.Deployment != nil {
+			var binding struct {
+				Value struct {
+					Owner        string `json:"owner"`
+					AccountName  string `json:"accountName"`
+					ClusterID    string `json:"clusterResourceId"`
+					StorageID    string `json:"storageAccountResourceId"`
+					RegistryID   string `json:"registryResourceId"`
+					HostingName  string `json:"hostingIdentityName"`
+					WorkloadName string `json:"workloadIdentityName"`
+				} `json:"value"`
+			}
+			if err := json.Unmarshal(values["byoOnboarding"], &binding); err != nil {
+				return fmt.Errorf("deployment graph ownership binding is unavailable: %w", err)
+			}
+			data := foundry.Spec.Deployment
+			if !strings.EqualFold(binding.Value.ClusterID, data.ClusterID) ||
+				!strings.EqualFold(binding.Value.StorageID, data.StorageID) ||
+				!strings.EqualFold(binding.Value.RegistryID, data.RegistryID) ||
+				binding.Value.HostingName != data.Hosting.Name || binding.Value.WorkloadName != data.Workload.Name {
+				return fmt.Errorf("recorded deployment dependency graph changed")
+			}
+			owner, accountName = binding.Value.Owner, binding.Value.AccountName
+		} else {
+			for _, key := range []string{"byoOwner", "byoAccountName"} {
+				var value struct {
+					Value string `json:"value"`
+				}
+				if err := json.Unmarshal(values[key], &value); err != nil {
+					return fmt.Errorf("legacy deployment ownership parameter %s unavailable: %w", key, err)
+				}
+				if key == "byoOwner" {
+					owner = value.Value
+				} else {
+					accountName = value.Value
+				}
+			}
+		}
 		account, err := ParseID(foundry.Spec.AccountID, "Microsoft.CognitiveServices/accounts")
-		if err != nil || parameters["byoOwner"].Value != plan.Owner ||
-			parameters["byoAccountName"].Value != account.Name ||
+		if err != nil || owner != plan.Owner ||
+			accountName != account.Name ||
 			!strings.EqualFold(parameters["resourceGroupName"].Value, plan.ResourceGroup) ||
 			!strings.EqualFold(parameters["location"].Value, plan.Location) {
 			return fmt.Errorf("recorded deployment target/ownership parameters changed")
@@ -369,71 +503,8 @@ func (l *ownedLifecycle) Observe(ctx context.Context, plan Plan) error {
 	if err := l.verifyAttempts(ctx, plan, state.Foundry); err != nil {
 		return err
 	}
+	if err := l.observeDeployment(ctx, plan, &state); err != nil {
+		return err
+	}
 	return l.journal.Save(ctx, state)
-}
-
-func (l *ownedLifecycle) PrepareProjectAccess(ctx context.Context, plan Plan) error {
-	state, err := l.load(ctx, plan)
-	if err != nil {
-		return err
-	}
-	if state.Foundry == nil || state.Foundry.AccountDeleted || state.CleanupStarted {
-		return fmt.Errorf("project registry access requires an active, owned Foundry lifecycle")
-	}
-	if err := l.verifyAttempts(ctx, plan, state.Foundry); err != nil {
-		return err
-	}
-	spec := state.Foundry.Spec
-	account, err := ParseID(spec.AccountID, "Microsoft.CognitiveServices/accounts")
-	if err != nil {
-		return err
-	}
-	project, err := ParseID(spec.ProjectID, "Microsoft.CognitiveServices/accounts/projects")
-	if err != nil {
-		return err
-	}
-	accounts, err := armcognitiveservices.NewAccountsClient(account.SubscriptionID, l.credential, l.options)
-	if err != nil {
-		return err
-	}
-	actual, err := accounts.Get(ctx, account.ResourceGroupName, account.Name, nil)
-	if err != nil {
-		return fmt.Errorf("verify actual Foundry account before registry access: %w", err)
-	}
-	if !strings.EqualFold(authString(actual.ID), spec.AccountID) ||
-		authString(actual.Tags[preparationOwnerTag]) != plan.Owner ||
-		!strings.EqualFold(authString(actual.Location), spec.Location) {
-		return fmt.Errorf("actual Foundry account ownership/location changed")
-	}
-	client, err := armcognitiveservices.NewProjectsClient(account.SubscriptionID, l.credential, l.options)
-	if err != nil {
-		return err
-	}
-	observed, err := client.Get(ctx, account.ResourceGroupName, account.Name, project.Name, nil)
-	if err != nil {
-		return fmt.Errorf("read actual Foundry project identity: %w", err)
-	}
-	if !strings.EqualFold(authString(observed.ID), spec.ProjectID) ||
-		authString(observed.Tags[preparationOwnerTag]) != plan.Owner ||
-		observed.Identity == nil || authString(observed.Identity.PrincipalID) == "" {
-		return fmt.Errorf("actual Foundry project identity is unverified")
-	}
-	principal := authString(observed.Identity.PrincipalID)
-	if state.Foundry.ProjectPrincipalID != "" && !strings.EqualFold(state.Foundry.ProjectPrincipalID, principal) {
-		return fmt.Errorf("Foundry project identity changed")
-	}
-	state.Foundry.ProjectPrincipalID = principal
-	if err := l.journal.Save(ctx, state); err != nil {
-		return err
-	}
-	registry, err := ParseID(spec.RegistryID, "Microsoft.ContainerRegistry/registries")
-	if err != nil {
-		return err
-	}
-	preparer := ownedPreparer{credential: l.credential, options: l.options, journal: l.journal}
-	return preparer.prepareGrant(ctx, &state, grantRequest{
-		checkID: "F01", scope: spec.RegistryID, principalID: principal,
-		roleID: "/subscriptions/" + registry.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" +
-			registryRoleID(spec.RegistryABAC),
-	})
 }

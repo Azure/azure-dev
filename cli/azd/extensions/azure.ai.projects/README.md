@@ -474,10 +474,25 @@ The private account target, deployment attempts and ownership markers are
 persisted for recovery.
 BYO on-disk Bicep must retain the standard deployment resource bindings;
 supported selections belong in configuration or parameter inputs. Altered
-templates are rejected before deployment. The actual ARM template hash and
-target parameters must match the persisted attempt before cleanup; a planned
-account's absence alone is not sufficient evidence. Explicit resource-group and
+templates are rejected before deployment. Each new attempt records a SHA-256
+digest of the submitted template content. Recovery and cleanup read the exact
+deployment's exported template and verify that digest, along with ownership,
+target parameters, correlation and terminal state. Template-level metadata and
+ARM declaration-type capitalization are normalized; resource configuration,
+including resource metadata, remains bound. The Bicep generator hash is not
+compared with ARM's independently calculated service hash. Older attempts without
+a content digest require the exported content to match the trusted built-in
+standard template version identified by their recorded generator hash.
+The independently observed ARM hash is retained after verification; changed or
+unreadable evidence blocks recovery. A planned account's absence alone is not
+sufficient evidence. Explicit resource-group and
 location parameters must agree with the environment's resolved target.
+If ARM rejects a nested deployment during provider preflight validation before
+registering it, recovery requires the exact failed parent Create operation and
+recognized not-found responses for both the nested record and its operations.
+That absent branch supplies no owned-grant evidence. Authorization failures,
+unknown errors and missing operations on an existing nested deployment still block
+recovery; successful sibling operations remain independently verifiable.
 Foundry failures retain nested deployment-operation errors and correlation IDs;
 unavailable diagnostic reads are reported separately from the original failure.
 

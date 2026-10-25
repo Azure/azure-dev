@@ -18,14 +18,15 @@ import (
 
 // FoundrySpec binds the standard deployment to exact owned targets, not inferred names during deletion.
 type FoundrySpec struct {
-	AccountID    string          `json:"accountId"`
-	ProjectID    string          `json:"projectId"`
-	RegistryID   string          `json:"registryId"`
-	RegistryABAC bool            `json:"registryABAC"`
-	Location     string          `json:"location"`
-	ModelNames   []string        `json:"modelNames"`
-	TemplateHash string          `json:"templateHash,omitempty"`
-	Deployment   *DeploymentData `json:"deployment,omitempty"`
+	AccountID      string          `json:"accountId"`
+	ProjectID      string          `json:"projectId"`
+	RegistryID     string          `json:"registryId"`
+	RegistryABAC   bool            `json:"registryABAC"`
+	Location       string          `json:"location"`
+	ModelNames     []string        `json:"modelNames"`
+	TemplateHash   string          `json:"templateHash,omitempty"`
+	TemplateDigest string          `json:"templateDigest,omitempty"`
+	Deployment     *DeploymentData `json:"deployment,omitempty"`
 }
 
 // FoundryAttempt is persisted before submitting one uniquely named ARM deployment.
@@ -34,6 +35,8 @@ type FoundryAttempt struct {
 	CorrelationID     string `json:"correlationId,omitempty"`
 	Terminal          bool   `json:"terminal"`
 	TemplateHash      string `json:"templateHash,omitempty"`
+	TemplateDigest    string `json:"templateDigest,omitempty"`
+	ARMTemplateHash   string `json:"armTemplateHash,omitempty"`
 	OwnershipObserved bool   `json:"ownershipObserved,omitempty"`
 	ProvisioningState string `json:"provisioningState,omitempty"`
 }
@@ -246,7 +249,10 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 		return err
 	}
 	if spec.Deployment != nil && spec.TemplateHash == "" {
-		return fmt.Errorf("deployment intent requires the actual ARM template hash before submission")
+		return fmt.Errorf("deployment intent requires the generated template version before submission")
+	}
+	if spec.Deployment != nil && spec.TemplateDigest == "" {
+		return fmt.Errorf("deployment intent requires the actual template content digest before submission")
 	}
 	_, err := subscriptionDeploymentID(deploymentID, plan.SubscriptionID)
 	if err != nil {
@@ -353,9 +359,10 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 		}
 	}
 	state.Foundry.Spec.TemplateHash = spec.TemplateHash
+	state.Foundry.Spec.TemplateDigest = spec.TemplateDigest
 	state.Foundry.Spec.Deployment = spec.Deployment
 	state.Foundry.Attempts = append(state.Foundry.Attempts, FoundryAttempt{
-		ID: deploymentID, TemplateHash: spec.TemplateHash,
+		ID: deploymentID, TemplateHash: spec.TemplateHash, TemplateDigest: spec.TemplateDigest,
 	})
 	state.Foundry.AccountDeleted, state.Foundry.Purged = false, false
 	state.CleanupStarted, state.CleanupComplete = false, false
@@ -393,8 +400,12 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 			authString(observed.Tags[preparationOwnerTag]) != plan.Owner || properties == nil {
 			return fmt.Errorf("recorded deployment ownership changed or is unverified")
 		}
-		if attempt.TemplateHash == "" || authString(properties.TemplateHash) != attempt.TemplateHash {
+		actualHash := authString(properties.TemplateHash)
+		if actualHash == "" || attempt.ARMTemplateHash != "" && actualHash != attempt.ARMTemplateHash {
 			return fmt.Errorf("recorded deployment's actual template binding is unverified or changed")
+		}
+		if err := verifyAttemptTemplate(ctx, client, id.Name, *attempt); err != nil {
+			return err
 		}
 		var parameters map[string]struct {
 			Value string `json:"value"`
@@ -522,6 +533,7 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 		case "Succeeded", "Failed", "Canceled":
 			attempt.Terminal, attempt.CorrelationID = true, correlation
 			attempt.ProvisioningState = string(*properties.ProvisioningState)
+			attempt.ARMTemplateHash = actualHash
 		default:
 			return fmt.Errorf("recorded deployment is still active; wait for it to terminate before proceeding")
 		}

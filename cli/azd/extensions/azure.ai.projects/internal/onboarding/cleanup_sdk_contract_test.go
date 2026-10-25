@@ -56,12 +56,19 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 	base, facts := preparationContractFixture(t, suppliedStorage, suppliedRegistry, false, suppliedIdentities...)
 	data, err := ResolveDeploymentBindings(t.Context(), contractCredential{}, base.options(), base.plan, facts)
 	require.NoError(t, err)
+	template := map[string]any{
+		"$schema":   "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+		"resources": []any{},
+	}
+	digest, err := TemplateDigest(template)
+	require.NoError(t, err)
 	account := PlannedFoundryAccount(base.plan)
 	f := &cleanupARM{
 		t: t, base: base, roots: map[string]map[string]any{}, accountStatus: http.StatusOK,
 		spec: FoundrySpec{AccountID: account.ID, ProjectID: account.ID + "/projects/project",
 			RegistryID: base.plan.Registry.ID, Location: base.plan.Location,
-			ModelNames: []string{"owned-model"}, TemplateHash: "offline-standard-template-hash", Deployment: &data},
+			ModelNames: []string{"owned-model"}, TemplateHash: "offline-standard-template-hash",
+			TemplateDigest: digest, Deployment: &data},
 	}
 	baseOptions := base.options()
 	f.options = contractARMOptions(func(request *http.Request) (*http.Response, error) {
@@ -79,6 +86,14 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 			return respond(http.StatusNotFound, map[string]any{"error": map[string]any{"code": "ResourceNotFound"}})
 		}
 		if strings.Contains(path, "/providers/microsoft.resources/deployments/") {
+			if strings.HasSuffix(path, "/exporttemplate") {
+				require.Equal(t, http.MethodPost, request.Method, "template export is a read-only ARM operation")
+				root, exists := f.roots[strings.TrimSuffix(path, "/exporttemplate")]
+				if !exists {
+					return notFound()
+				}
+				return respond(200, map[string]any{"template": cleanupObject(t, root["properties"])["template"]})
+			}
 			if strings.HasSuffix(path, "/operations") {
 				require.Equal(t, http.MethodGet, request.Method)
 				if f.operationReadDenied {
@@ -119,7 +134,8 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 				if f.deploymentState != "" {
 					properties["provisioningState"] = f.deploymentState
 				}
-				properties["templateHash"] = f.spec.TemplateHash
+				properties["templateHash"] = "6828760392490666086"
+				properties["template"] = template
 				f.roots[path] = body
 				base.materializeGraph(f.spec)
 				for id, resource := range base.resources {

@@ -5,9 +5,11 @@ package onboarding
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -392,8 +394,8 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 ) (map[string]bool, error) {
 	targets := map[string]bool{}
 	visited := map[string]bool{}
-	var read func(string, bool) error
-	read = func(deploymentID string, observedBefore bool) error {
+	var read func(string, bool, bool, bool) error
+	read = func(deploymentID string, observedBefore, failedAttempt, rejectedBeforeCreate bool) error {
 		key := strings.ToLower(deploymentID)
 		if visited[key] {
 			return nil
@@ -411,7 +413,10 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 		if err != nil {
 			return err
 		}
-		var children []string
+		var children []struct {
+			id       string
+			rejected bool
+		}
 		collect := func(operations []*armresources.DeploymentOperation) error {
 			for _, operation := range operations {
 				if operation == nil || operation.Properties == nil || operation.Properties.TargetResource == nil {
@@ -430,7 +435,10 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 						succeeded[0][strings.ToLower(targetID)] = true
 					}
 				case strings.EqualFold(authString(target.ResourceType), "Microsoft.Resources/deployments"):
-					children = append(children, targetID)
+					children = append(children, struct {
+						id       string
+						rejected bool
+					}{targetID, failedAttempt && nestedValidationRejected(operation, deploymentID)})
 				}
 			}
 			return nil
@@ -440,6 +448,12 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 		}
 		for pager.More() {
 			page, err := pager.NextPage(ctx)
+			if deploymentRecordNotFound(err) && rejectedBeforeCreate {
+				if err := l.confirmRejectedDeploymentAbsent(ctx, deploymentID); err != nil {
+					return err
+				}
+				break // No nested record or operations exist; this branch supplies no owned-grant evidence.
+			}
 			if responseNotFound(err) && observedBefore {
 				break
 			}
@@ -451,16 +465,68 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 			}
 		}
 		for _, child := range children {
-			if err := read(child, observedBefore); err != nil {
+			if err := read(child.id, observedBefore, failedAttempt, child.rejected); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 	for _, attempt := range foundry.Attempts {
-		if err := read(attempt.ID, attempt.OwnershipObserved); err != nil {
+		if err := read(attempt.ID, attempt.OwnershipObserved,
+			attempt.Terminal && attempt.ProvisioningState == "Failed", false); err != nil {
 			return nil, err
 		}
+
 	}
 	return targets, nil
+}
+
+func nestedValidationRejected(operation *armresources.DeploymentOperation, deploymentID string) bool {
+	id, err := arm.ParseResourceID(authString(operation.ID))
+	if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.Resources/deployments/operations") ||
+		!strings.EqualFold(id.Parent.String(), deploymentID) {
+		return false
+	}
+	p := operation.Properties
+	if p.ProvisioningOperation == nil || *p.ProvisioningOperation != armresources.ProvisioningOperationCreate ||
+		authString(p.ProvisioningState) != "Failed" || authString(p.StatusCode) != "BadRequest" ||
+		p.StatusMessage == nil || authString(p.StatusMessage.Status) != "Failed" || p.StatusMessage.Error == nil {
+		return false
+	}
+	serviceError := p.StatusMessage.Error
+	if authString(serviceError.Code) != "InvalidTemplateDeployment" ||
+		!strings.Contains(strings.ToLower(authString(serviceError.Message)), "preflight validation") {
+		return false
+	}
+	for _, detail := range serviceError.Details {
+		if detail != nil && authString(detail.Code) == "InvalidResourceProperties" {
+			return true
+		}
+	}
+	return false
+}
+
+func (l *ownedLifecycle) confirmRejectedDeploymentAbsent(ctx context.Context, deploymentID string) error {
+	id, err := arm.ParseResourceID(deploymentID)
+	if err != nil || id.ResourceGroupName == "" {
+		return fmt.Errorf("validation-rejected nested deployment has no exact resource-group scope")
+	}
+	client, err := armresources.NewDeploymentsClient(id.SubscriptionID, l.credential, l.options)
+	if err != nil {
+		return err
+	}
+	_, err = client.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if deploymentRecordNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("verify exact validation-rejected nested deployment absence: %w", err)
+	}
+	return fmt.Errorf("validation-rejected nested deployment exists but its operations are unavailable")
+}
+
+func deploymentRecordNotFound(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	return ok && response.StatusCode == 404 &&
+		(response.ErrorCode == "DeploymentNotFound" || response.ErrorCode == "ResourceNotFound")
 }

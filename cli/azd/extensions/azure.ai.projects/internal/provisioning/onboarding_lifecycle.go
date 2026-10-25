@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
@@ -34,6 +33,10 @@ func byoFoundrySpec(plan onboarding.Plan, source *templateSource, abac bool) (on
 	if err != nil {
 		return onboarding.FoundrySpec{}, err
 	}
+	digest, err := onboarding.TemplateDigest(source.armTemplate)
+	if err != nil {
+		return onboarding.FoundrySpec{}, err
+	}
 	account := onboarding.PlannedFoundryAccount(plan)
 	project, ok := byoParameterValue(source, "foundryProjectName").(string)
 	if !ok || project == "" {
@@ -41,7 +44,8 @@ func byoFoundrySpec(plan onboarding.Plan, source *templateSource, abac bool) (on
 	}
 	spec := onboarding.FoundrySpec{
 		AccountID: account.ID, ProjectID: account.ID + "/projects/" + project,
-		RegistryID: plan.Registry.ID, RegistryABAC: abac, Location: plan.Location, TemplateHash: hash,
+		RegistryID: plan.Registry.ID, RegistryABAC: abac, Location: plan.Location,
+		TemplateHash: hash, TemplateDigest: digest,
 	}
 	if raw := byoParameterValue(source, "deployments"); raw != nil {
 		data, err := json.Marshal(raw)
@@ -70,7 +74,15 @@ func standardBYOTemplateHash(template map[string]any) (string, error) {
 	if err := json.Unmarshal(raw, &standard); err != nil {
 		return "", err
 	}
-	if !reflect.DeepEqual(templateWithoutMetadata(template), templateWithoutMetadata(standard)) {
+	actual, err := onboarding.TemplateDigest(template)
+	if err != nil {
+		return "", err
+	}
+	expected, err := onboarding.TemplateDigest(standard)
+	if err != nil {
+		return "", err
+	}
+	if actual != expected {
 		return "", fmt.Errorf("BYO-AKS requires the standard ownership-bound template; " +
 			"restore/regenerate the Bicep files and express supported selections through configuration/parameters")
 	}
@@ -87,27 +99,6 @@ func standardBYOTemplateHash(template map[string]any) (string, error) {
 		return "", fmt.Errorf("BYO-AKS template hash is unavailable")
 	}
 	return hash, nil
-}
-
-func templateWithoutMetadata(value any) any {
-	switch v := value.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(v))
-		for key, item := range v {
-			if key != "metadata" {
-				result[key] = templateWithoutMetadata(item)
-			}
-		}
-		return result
-	case []any:
-		result := make([]any, len(v))
-		for index, item := range v {
-			result[index] = templateWithoutMetadata(item)
-		}
-		return result
-	default:
-		return value
-	}
 }
 
 func (p *FoundryProvisioningProvider) byoARMOptions() *arm.ClientOptions {

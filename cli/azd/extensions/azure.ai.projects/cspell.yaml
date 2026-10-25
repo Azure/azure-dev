@@ -14,6 +14,11 @@ words:
   - hemarina
 overrides:
   - filename:
+      - internal/onboarding/template_binding.go
+      - cspell.yaml
+    words:
+      - deploymenttemplate
+  - filename:
       - schemas/azure.ai.project.json
       - cspell.yaml
     words:

@@ -3838,6 +3838,11 @@ func (p *BicepProvider) resolveKeyVaultSecrets(ctx context.Context, value any) (
 	switch v := value.(type) {
 	case string:
 		if keyvault.IsAzureKeyVaultSecret(v) {
+			// Validate first: the parser's error includes the full reference, which must not reach diagnostics.
+			if _, err := keyvault.ParseAzureKeyVaultSecret(v); err != nil {
+				return nil, errors.New("invalid Azure Key Vault secret reference in secure parameter. " +
+					"Expected format: akvs://<subscription-id>/<vault-name>/<secret-name>")
+			}
 			return p.keyvaultService.SecretFromAkvs(ctx, v)
 		}
 	case map[string]any:

@@ -3587,6 +3587,10 @@ type fakeAkvsKeyVaultService struct {
 }
 
 func (f *fakeAkvsKeyVaultService) SecretFromAkvs(_ context.Context, akvs string) (string, error) {
+	// Use the real parser so its errors surface exactly as in the production service.
+	if _, err := keyvault.ParseAzureKeyVaultSecret(akvs); err != nil {
+		return "", err
+	}
 	if secret, has := f.secrets[akvs]; has {
 		return secret, nil
 	}
@@ -3606,6 +3610,8 @@ func TestEnsureParametersResolvesNestedKeyVaultSecrets(t *testing.T) {
 		value     string
 		expected  any
 		wantErr   bool
+		// errNotContains is a substring that must not appear in the returned error.
+		errNotContains string
 	}{
 		{
 			name:      "SecureObjectNestedValues",
@@ -3644,6 +3650,13 @@ func TestEnsureParametersResolvesNestedKeyVaultSecrets(t *testing.T) {
 			paramType: "secureObject",
 			value:     `{"missing": ["akvs://sub-id/vault-c/missing"]}`,
 			wantErr:   true,
+		},
+		{
+			name:           "MalformedReferenceNotLeaked",
+			paramType:      "secureObject",
+			value:          `{"nested": {"password": "akvs://sub-id/vault-a/password/extra"}}`,
+			wantErr:        true,
+			errNotContains: "vault-a",
 		},
 	}
 
@@ -3691,6 +3704,9 @@ func TestEnsureParametersResolvesNestedKeyVaultSecrets(t *testing.T) {
 			configuredParameters, err := infraProvider.ensureParameters(*mockContext.Context, compileResult.Template)
 			if tt.wantErr {
 				require.Error(t, err)
+				if tt.errNotContains != "" {
+					require.NotContains(t, err.Error(), tt.errNotContains)
+				}
 				return
 			}
 			require.NoError(t, err)

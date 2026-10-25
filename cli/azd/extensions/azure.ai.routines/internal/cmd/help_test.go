@@ -38,11 +38,23 @@ func TestAIHelp(t *testing.T) {
 		if len(path) == 0 {
 			require.Contains(t, text, "\nEnvironments & Environment Variables\n")
 			require.Contains(t, text, ".azure/<environment>/.env")
+			require.Contains(t, text, "FOUNDRY_PROJECT_ENDPOINT")
 			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT")
 			require.Contains(t, text, "absent from .env")
 			require.Contains(t, text, "explicitly empty persisted value")
-			require.Contains(t, text, "including when no environment is")
-			require.Contains(t, text, "AZURE_AI_PROJECT_ENDPOINT can therefore win before global config")
+			require.Contains(t, normalizedText, "or no environment is available")
+			require.Contains(t, text, "successful empty canonical lookup")
+			require.Contains(
+				t,
+				normalizedText,
+				"A failed endpoint lookup stops the operation instead of choosing another project",
+			)
+			require.Contains(
+				t,
+				normalizedText,
+				"FOUNDRY_PROJECT_ENDPOINT first, then AZURE_AI_PROJECT_ENDPOINT as a legacy fallback",
+			)
+			require.Contains(t, text, "azd env set FOUNDRY_PROJECT_ENDPOINT")
 			require.Contains(
 				t,
 				normalizedText,

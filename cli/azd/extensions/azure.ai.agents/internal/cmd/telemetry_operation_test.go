@@ -11,6 +11,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,7 +21,7 @@ import (
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
+	contracts "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1"
 	foundryTelemetry "github.com/azure/azure-dev/cli/azd/pkg/foundry/telemetry"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -171,6 +173,64 @@ func TestInitOperationProjectContentPropertyPrecedence(t *testing.T) {
 	require.Equal(t, []agentTelemetry.OperationClass{{Category: "unknown", Telephony: "unknown"}}, state.classes)
 }
 
+func TestInitOperationRepositoryTemplateClassification(t *testing.T) {
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	for _, tt := range []struct {
+		name     string
+		services string
+		want     []string
+	}{
+		{
+			name:     "hosted",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: private-agent\n",
+			want:     []string{"agent.operation.v1.init.hosted.none"},
+		},
+		{
+			name:     "prompt",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: private-agent\n",
+			want:     []string{"agent.operation.v1.init.prompt.none"},
+		},
+		{
+			name: "mixed",
+			services: "  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: private-agent\n" +
+				"  prompt:\n    host: azure.ai.agent\n    kind: prompt\n    name: private-prompt\n",
+			want: []string{"agent.operation.v1.init.hosted.none", "agent.operation.v1.init.prompt.none"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			templateDir := t.TempDir()
+			content := []byte("services:\n" + tt.services)
+			require.NoError(t, os.WriteFile(filepath.Join(templateDir, "azure.yaml"), content, 0o600))
+			workflow := &testWorkflowServiceServer{runHook: func() {
+				require.NoError(t, os.Mkdir("project", 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join("project", "azure.yaml"), content, 0o600))
+			}}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			ctx := withInitOperationContext(t.Context(), "", true)
+			// Stop after manifest inspection, before Azure setup, and retain classification on failure.
+			err := runInitFromAzdTemplate(ctx, &initFlags{
+				src: "project", env: "dev", agentNameExplicit: true, agentName: "invalid_name",
+			}, client, nil, &AgentTemplate{Source: templateDir})
+			require.ErrorContains(t, err, "invalid agent name")
+			require.Equal(t, 1, workflow.runCalls)
+			state, ok := ctx.Value(initOperationContextKey{}).(*initOperationContext)
+			require.True(t, ok)
+			capture := &operationRecordingReporter{}
+			newOperationReporter().report(ctx, capture, "init", state.classes)
+			var names []string
+			for _, event := range capture.events {
+				names = append(names, event.Name)
+				require.Empty(t, event.Attributes)
+			}
+			require.Equal(t, tt.want, names)
+			manifest, err := os.ReadFile("azure.yaml")
+			require.NoError(t, err)
+			require.Equal(t, content, manifest)
+		})
+	}
+}
+
 func TestOperationMarkerDoesNotChangeOriginalContextContract(t *testing.T) {
 	t.Parallel()
 	props, err := structpb.NewStruct(map[string]any{
@@ -308,10 +368,66 @@ func TestFailedInitReportsIntentWithoutChangingFailure(t *testing.T) {
 			require.ErrorContains(t, err, "new prompt voice agents cannot use these init inputs")
 			capture.mu.Lock()
 			defer capture.mu.Unlock()
-			require.Len(t, capture.events, 1)
-			require.Equal(t, "agent.operation.v1.init.voice_managed.none", capture.events[0].EventName)
-			require.Empty(t, capture.events[0].Attributes)
+			markers := operationMarkerRequests(capture.events)
+			require.Len(t, markers, 1)
+			require.Equal(t, "agent.operation.v1.init.voice_managed.none", markers[0].EventName)
+			require.Empty(t, markers[0].Attributes)
+			require.Len(t, capture.events, 2)
+			require.Equal(t, "agent.init.step", capture.events[1].EventName)
+			require.Equal(t, "input_validation", capture.events[1].Attributes["agent.init.step.id"])
+			require.Len(t, capture.events[1].Attributes, 3)
 			require.NotContains(t, output.String(), "sensitive transport text")
+		})
+	}
+}
+
+func TestLocalExplicitInitReportsTemplateLoading(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{
+			name:    "cached local template",
+			content: "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n    name: agent\n",
+			wantErr: "incompatible with your installed version",
+		},
+		{name: "local validation failure", content: "kind: prompt\nname: agent\n", wantErr: "standalone agent definition"},
+		{name: "local read failure", wantErr: "could not read azure.yaml"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pointer := filepath.Join(t.TempDir(), "azure.yaml")
+			if test.content != "" {
+				require.NoError(t, os.WriteFile(pointer, []byte(test.content), 0o600))
+			}
+			server := grpc.NewServer()
+			capture := &operationTelemetryServer{}
+			contracts.RegisterTelemetryServiceServer(server, capture)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			t.Setenv("AZD_SERVER", listener.Addr().String())
+			// No AI service is registered: valid local input must be read and
+			// cached before the capability check, without authenticating.
+			cmd := newInitCommand(&azdext.ExtensionContext{NoPrompt: true})
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+			cmd.SetErr(&output)
+			cmd.SetArgs([]string{"-t", pointer})
+			require.ErrorContains(t, cmd.Execute(), test.wantErr)
+			capture.mu.Lock()
+			defer capture.mu.Unlock()
+			loads := 0
+			for _, event := range capture.events {
+				if event.EventName == "agent.init.step" &&
+					event.Attributes["agent.init.step.id"] == "template_loading" {
+					loads++
+					require.Len(t, event.Attributes, 3)
+					require.NotEmpty(t, event.Attributes["agent.init.step.duration_ms"])
+				}
+			}
+			require.Equal(t, 1, loads)
 		})
 	}
 }
@@ -385,9 +501,10 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			}
 			capture.mu.Lock()
 			defer capture.mu.Unlock()
-			require.Len(t, capture.events, 1)
-			require.Equal(t, "agent.operation.v1.init."+tt.category+"."+phone, capture.events[0].EventName)
-			require.Empty(t, capture.events[0].Attributes)
+			markers := operationMarkerRequests(capture.events)
+			require.Len(t, markers, 1)
+			require.Equal(t, "agent.operation.v1.init."+tt.category+"."+phone, markers[0].EventName)
+			require.Empty(t, markers[0].Attributes)
 			content, err := os.ReadFile(filepath.Join("app", "main.py"))
 			require.NoError(t, err)
 			require.Equal(t, code, string(content))
@@ -399,6 +516,13 @@ func TestInitOperationPositionalIntentOnFailure(t *testing.T) {
 			require.Len(t, entries, 2, "telemetry must not scaffold or create the missing source directory")
 		})
 	}
+
+}
+
+func operationMarkerRequests(events []*contracts.ReportUsageRequest) []*contracts.ReportUsageRequest {
+	return slices.DeleteFunc(slices.Clone(events), func(event *contracts.ReportUsageRequest) bool {
+		return !strings.HasPrefix(event.EventName, "agent.operation.v1.")
+	})
 }
 
 func TestInitOperationReportsAfterCancellationWithoutChangingResult(t *testing.T) {

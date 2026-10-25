@@ -5,6 +5,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -81,13 +83,24 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 		expected   map[string]string
 	}{
 		{
-			name: "GitHub Copilot managed harness",
+			name: "Microsoft Copilot managed harness",
+			definition: map[string]any{
+				"kind":    "prompt",
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
+			},
+			expected: map[string]string{
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
+				"x-model-endpoint": modelEndpoint,
+			},
+		},
+		{
+			name: "legacy GitHub Copilot harness uses Microsoft feature",
 			definition: map[string]any{
 				"kind":    "prompt",
 				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
 			},
 			expected: map[string]string{
-				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature,
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature,
 				"x-model-endpoint": modelEndpoint,
 			},
 		},
@@ -113,11 +126,11 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			name: "managed prompt agent with skills",
 			definition: map[string]any{
 				"kind":    "prompt",
-				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 				"skills":  []any{map[string]any{"name": "skill", "version": "1"}},
 			},
 			expected: map[string]string{
-				"Foundry-Features": agent_api.GitHubCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
+				"Foundry-Features": agent_api.MicrosoftCopilotPreviewFeature + "," + agent_api.SkillsPreviewFeature,
 				"x-model-endpoint": modelEndpoint,
 			},
 		},
@@ -135,7 +148,7 @@ func TestOptimizeDeployAgentHeaders(t *testing.T) {
 			name: "non-prompt agent with managed harness field",
 			definition: map[string]any{
 				"kind":    "hosted",
-				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+				"harness": map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 			},
 		},
 	}
@@ -154,12 +167,71 @@ func TestOptimizationPromotionHeaders(t *testing.T) {
 	}, optimizationPromotionHeaders(true))
 }
 
+func TestOptimizeDeploy_CompletesCandidateConfigFromJobBaseline(t *testing.T) {
+	t.Parallel()
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/agent_optimization_jobs/job-1":
+			_, _ = w.Write([]byte(`{"optimization_configuration":{"baseline_agent_configuration":{
+				"system_prompt":"Original instructions","current_model":"snapshot-model",
+				"tools":[{"type":"function","function":{"name":"calculate","description":"Snapshot description"}}],
+				"skills":[{"name":"calculation","description":"Snapshot skill","body":"Calculate precisely"}]
+			}}}`))
+		case "/agent_optimization_jobs/job-1/candidates/candidate-1":
+			_, _ = w.Write([]byte(`{"files":[{"type":"config","path":"config.json"}],
+				"output":{"type":"agent_optimization",
+					"mutations":[{"type":"instructions","value":"Optimized instructions"}]}}`))
+		case "/agent_optimization_jobs/job-1/files":
+			_, _ = w.Write([]byte(`{"instructions":"Artifact instructions"}`))
+		default:
+			t.Errorf("unexpected route %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer api.Close()
+	config, err := newTestOptimizeClient(api.URL).GetCandidateConfig(t.Context(), "job-1", "candidate-1")
+	require.NoError(t, err)
+
+	t.Run("hosted runtime payload", func(t *testing.T) {
+		payload, err := json.Marshal(config)
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"instructions":"Optimized instructions","model":"snapshot-model",
+			"tools":[{"type":"function","function":{"name":"calculate","description":"Snapshot description"}}],
+			"skills":[{"name":"calculation","description":"Snapshot skill","body":"Calculate precisely"}]
+		}`, string(payload))
+	})
+
+	t.Run("prompt definition uses snapshot values", func(t *testing.T) {
+		current := map[string]any{
+			"kind": "prompt", "model": "newer-model", "instructions": "Newer instructions",
+			"tools": []any{
+				map[string]any{"type": "function", "name": "calculate", "description": "Newer description"},
+				map[string]any{"type": "code_interpreter"},
+			},
+		}
+		definition, err := buildPromptDeployDefinition(current, config)
+		require.NoError(t, err)
+		require.Equal(t, "snapshot-model", definition["model"])
+		require.Equal(t, "Optimized instructions", definition["instructions"])
+		tools, ok := definition["tools"].([]any)
+		require.True(t, ok)
+		require.Len(t, tools, 2)
+		function, ok := tools[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "Snapshot description", function["description"])
+		require.Equal(t, map[string]any{"type": "code_interpreter"}, tools[1])
+		require.Equal(t, "newer-model", current["model"])
+	})
+}
+
 func TestBuildPromptDeployDefinition(t *testing.T) {
 	current := map[string]any{
 		"kind":         "prompt",
 		"model":        "old-model",
 		"instructions": "old instructions",
-		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessGitHubCopilot},
+		"harness":      map[string]any{"type": agent_api.ManagedAgentHarnessMicrosoftCopilot},
 		"skills":       []any{map[string]any{"name": "existing-skill", "version": "1"}},
 		"tools": []any{
 			map[string]any{

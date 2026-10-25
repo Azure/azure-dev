@@ -4,10 +4,129 @@
 package project
 
 import (
+	"context"
+	"net"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type developerRBACAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+}
+
+func (s *developerRBACAccountServer) GetCurrentPrincipal(
+	_ context.Context, req *azdext.GetCurrentPrincipalRequest,
+) (*azdext.GetCurrentPrincipalResponse, error) {
+	if req.GetSubscriptionId() != "selected-subscription" {
+		return nil, status.Error(codes.InvalidArgument, "subscription is required")
+	}
+	return &azdext.GetCurrentPrincipalResponse{
+		ObjectId: "resource-tenant-object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
+	}, nil
+}
+
+func TestDeveloperRBACPrincipalUsesStableRPC(t *testing.T) {
+	methods := make(chan string, 2)
+	server := grpc.NewServer(grpc.UnaryInterceptor(
+		func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			methods <- info.FullMethod
+			return handler(ctx, req)
+		},
+	))
+	azdext.RegisterAccountServiceServer(server, &developerRBACAccountServer{})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		server.Stop()
+		_ = listener.Close()
+	})
+	client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+
+	id, principalType, err := developerRBACPrincipal(t.Context(), client.Account(), "selected-subscription")
+	require.NoError(t, err)
+	assert.Equal(t, "resource-tenant-object-id", id)
+	assert.Equal(t, armauthorization.PrincipalTypeUser, principalType)
+	assert.Equal(t, "/azd.extensions.v1.AccountService/GetCurrentPrincipal", <-methods)
+
+	_, _, err = developerRBACPrincipal(t.Context(), client.Account(), "")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Equal(t, "/azd.extensions.v1.AccountService/GetCurrentPrincipal", <-methods)
+}
+
+type developerRBACAccountClient struct {
+	azdext.AccountServiceClient
+	response       *azdext.GetCurrentPrincipalResponse
+	err            error
+	subscriptionID string
+}
+
+func (c *developerRBACAccountClient) GetCurrentPrincipal(
+	_ context.Context, req *azdext.GetCurrentPrincipalRequest, _ ...grpc.CallOption,
+) (*azdext.GetCurrentPrincipalResponse, error) {
+	c.subscriptionID = req.GetSubscriptionId()
+	return c.response, c.err
+}
+
+func TestDeveloperRBACPrincipal(t *testing.T) {
+	lookupErr := status.Error(codes.PermissionDenied, "subscription unavailable")
+	tests := []struct {
+		name     string
+		response *azdext.GetCurrentPrincipalResponse
+		err      error
+		wantType armauthorization.PrincipalType
+		wantErr  string
+	}{
+		{
+			name: "resource tenant guest user",
+			response: &azdext.GetCurrentPrincipalResponse{
+				ObjectId: "resource-tenant-object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
+			},
+			wantType: armauthorization.PrincipalTypeUser,
+		},
+		{
+			name: "service principal",
+			response: &azdext.GetCurrentPrincipalResponse{
+				ObjectId: "service-principal-object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
+			},
+			wantType: armauthorization.PrincipalTypeServicePrincipal,
+		},
+		{name: "lookup failure", err: lookupErr, wantErr: "subscription unavailable"},
+		{name: "empty ID", response: &azdext.GetCurrentPrincipalResponse{}, wantErr: "empty current principal object ID"},
+		{
+			name: "unsupported type", response: &azdext.GetCurrentPrincipalResponse{ObjectId: "object-id"},
+			wantErr: "unsupported current principal type",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &developerRBACAccountClient{response: tt.response, err: tt.err}
+			id, principalType, err := developerRBACPrincipal(t.Context(), account, "selected-subscription")
+			assert.Equal(t, "selected-subscription", account.subscriptionID)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Empty(t, id)
+				assert.Empty(t, principalType)
+				if tt.err != nil {
+					assert.ErrorIs(t, err, tt.err)
+				}
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.response.ObjectId, id)
+			assert.Equal(t, tt.wantType, principalType)
+		})
+	}
+}
 
 func TestNormalizeLoginServer(t *testing.T) {
 	tests := []struct {

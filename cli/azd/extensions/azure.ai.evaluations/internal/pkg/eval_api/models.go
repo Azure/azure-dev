@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+// Connection is a project connection returned by the Foundry data plane.
+type Connection struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// ConnectionList is a page of project connections.
+type ConnectionList struct {
+	Value    []Connection `json:"value"`
+	NextLink string       `json:"nextLink,omitempty"`
+}
+
 // ---------------------------------------------------------------------------
 // Data Generation Jobs
 // ---------------------------------------------------------------------------
@@ -224,10 +236,21 @@ func (j *GenerationJob) resultWarnings() []JobWarning {
 	return found
 }
 
-// JobError captures error details from a failed generation job.
+// JobError captures error details from a failed generation job or run.
+//
+// Services report the reason in more than one place, so decoding goes through
+// UnmarshalJSON (see run_error.go) and Reason answers for all of them.
 type JobError struct {
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
+
+	// detail is the first nested explanation found when message is empty. It is
+	// not part of the wire shape, so it is never re-emitted.
+	detail string
+	// details are the entries of the error's details array, kept for display,
+	// and omittedDetails counts those beyond the number kept.
+	details        []ErrorDetail
+	omittedDetails int
 }
 
 // ResolvedNameVersion extracts the name and version from the generation job result.
@@ -601,7 +624,7 @@ type EvalRunDataContent struct {
 }
 
 // NewAgentTargetDataSource builds an EvalRunDataSource configured for agent target completions.
-// The rows must be supplied separately via SetFileContent.
+// Supply a registered version via SetFileID, or unregistered rows via SetFileContent.
 func NewAgentTargetDataSource(agentName string, agentVersion *string) *EvalRunDataSource {
 	return &EvalRunDataSource{
 		Type: EvalRunDataSourceTypeAgentTarget,
@@ -789,7 +812,7 @@ func (r *OpenAIEvalRun) Failure() string {
 	if r == nil || r.Error == nil {
 		return ""
 	}
-	return strings.TrimSpace(r.Error.Message)
+	return r.Error.Reason()
 }
 
 // EvalRunResultCounts holds pass/fail/error/skip counts for a run.

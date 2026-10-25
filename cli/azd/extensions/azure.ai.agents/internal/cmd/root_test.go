@@ -23,12 +23,12 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 	}
 
 	for _, name := range []string{
+		"add",
 		"code",
 		"connection",
 		"delete",
 		"doctor",
 		"endpoint",
-		"eval",
 		"files",
 		"init",
 		"invoke",
@@ -50,6 +50,7 @@ func TestRootCommand_PublicPreviewCommandsVisible(t *testing.T) {
 }
 
 func TestVoicePublicPreviewHelp(t *testing.T) {
+	setPreviewProcess(t, "true")
 	t.Setenv("NO_COLOR", "1")
 	for _, tt := range []struct {
 		name     string
@@ -60,7 +61,8 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		{
 			name: "root",
 			contains: []string{
-				"Ship prompt, hosted, and voice agents", "Initialize a new prompt, hosted, or voice agent project",
+				"Ship prompt, hosted, and voice agents with Microsoft Foundry",
+				"Initialize a new prompt, hosted, or voice agent project",
 				"Show the status of a prompt, hosted, or voice agent", "Delete a prompt, hosted, or voice agent",
 			},
 		},
@@ -73,7 +75,8 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 				"structured inputs", "tools", "greeting", "avatar", "handoff", "telephony", "acs", "twilio",
 				"For existing voice services, edit azure.yaml",
 				"For hosted and prompt agents, name of the AI model to deploy",
-				"--model-deployment takes precedence. For new managed prompt voice agents",
+				"--model-deployment takes precedence except during template adoption, where the flags conflict",
+				"For new managed prompt voice agents",
 				"service-hosted model (default: gpt-realtime); no model deployment is created",
 				"--kind prompt", "--instructions", "Rejected for other init flows",
 				"New prompt voice initialization does not use source directories or code/container settings",
@@ -92,11 +95,13 @@ func TestVoicePublicPreviewHelp(t *testing.T) {
 		},
 		{
 			name: "show", path: []string{"show"},
-			contains: []string{"prompt, hosted, or voice agent"},
+			contains: []string{"Show the status of a prompt, hosted, or voice agent"},
 		},
 		{
 			name: "delete", path: []string{"delete"},
-			contains: []string{"prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup"},
+			contains: []string{
+				"Delete a prompt, hosted, or voice agent", "telephony bindings", "does not guarantee binding cleanup",
+			},
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

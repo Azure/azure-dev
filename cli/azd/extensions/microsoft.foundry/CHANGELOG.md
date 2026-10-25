@@ -1,5 +1,15 @@
 # Release History
 
+## 1.0.0-beta.4 (2026-10-23)
+
+### Features Added
+
+- Update bundled extensions to `azure.ai.agents` `~1.0.0-beta.22`, `azure.ai.connections` `~1.0.0-beta.11`, `azure.ai.inspector` `~1.0.0-beta.9`, `azure.ai.projects` `~1.0.0-beta.15`, `azure.ai.routines` `~1.0.0-beta.11`, `azure.ai.skills` `~1.0.0-beta.9`, and `azure.ai.toolboxes` `~1.0.0-beta.12`.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0` to match the bundled extensions.
+
 ## 1.0.0-beta.3 (2026-09-17)
 
 ### Features Added

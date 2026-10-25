@@ -89,6 +89,12 @@ func TestBuildRemoteAgentKeyFromEndpoint(t *testing.T) {
 			endpoint: "https://host.com/api/projects/proj/agents/foo/versions/3",
 			want:     buildAgentKey("https://host.com/api/projects/proj", "foo", "3", false),
 		},
+		//nolint:gosec // G101: fake URL credentials are used only to verify redaction.
+		{
+			name:     "credentials and query are excluded",
+			endpoint: "https://user:password@HOST.com/agents/test/versions/2/?sig=secret#fragment",
+			want:     "host.com/agents/test/versions/2/remote",
+		},
 	}
 
 	for _, tt := range tests {
@@ -134,6 +140,9 @@ func TestNormalizeEndpoint_StripScheme(t *testing.T) {
 		{"", ""},
 		{"https://host-only.com", "host-only.com"},
 		{"HOST-ONLY", "host-only"},
+		{"https://user:password@HOST.COM/path/?sig=secret#fragment", "host.com/path"},
+		{"user:password@HOST.COM/path?sig=secret", "host.com/path"},
+		{"https://HOST.COM/path#fragment", "host.com/path"},
 	}
 
 	for _, tt := range tests {

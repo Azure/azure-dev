@@ -178,6 +178,9 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: "{docs/extensions/contract-versioning.md,grpc/README.md}"
+    words:
+      - generateprojectclient
   - filename: "**/internal/agent/types.go"
     words:
       - billionized
@@ -264,11 +267,20 @@ overrides:
     words:
       - ents
       - unmarshalled
+  - filename: test/ostest/links.go
+    words:
+      - mklink
   - filename: pkg/exec/util_test.go
     words:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/exec/cmdtree_processes_darwin.go
+    words:
+      - Eproc
+      - Kinfo
+      - procargs
+      - Ucred
   - filename: pkg/tools/dotnet/dotnet.go
     words:
       - PWORD
@@ -447,6 +459,9 @@ overrides:
   - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
     words:
       - ABAC
+  - filename: docs/design/provision-validation.md
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
@@ -469,6 +484,9 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
+  - filename: "extensions/azure.ai.agents/internal/{cmd/optimize*.go,pkg/agents/optconfig/*.go}"
+    words:
+      - optconfig
   - filename: docs/code-coverage-guide.md
     words:
       - covdata
@@ -548,6 +566,26 @@ overrides:
   - filename: grpc/generateadapters/main.go
     words:
       - generateadapters
+      - tctx
+  - filename: grpc/generateprojectclient/*.go
+    words:
+      - generateprojectclient
+      - descriptorpb
+      - protodesc
+      - hostproject
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/*.go
+    words:
+      - hostproject
+      - descriptorpb
+      - dynamicpb
+      - protodesc
+      - protoregistry
+  - filename: extensions/azure.ai.evaluations/internal/hostproject/descriptors_generated.go
+    words:
+      - generateprojectclient
+  - filename: extensions/azure.ai.evaluations/internal/cmd/init.go
+    words:
+      - hostproject
   - filename: grpc/generatefacade/main.go
     words:
       - generatefacade
@@ -558,7 +596,7 @@ overrides:
   - filename: internal/grpcserver/versioned_services_generated.go
     words:
       - generateadapters
-  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go}"
+  - filename: "{internal/grpcserver/legacy_services.go,internal/grpcserver/legacybridge/bridge.go,internal/grpcserver/server.go,internal/grpcserver/service_target_service.go}"
     words:
       - legacybridge
   - filename: pkg/azdext/contracts_v1_aliases.go

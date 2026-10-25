@@ -6,8 +6,8 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -26,6 +26,7 @@ import (
 	projectpkg "azureaiagent/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
 
@@ -61,40 +62,76 @@ func (s *invokeUserConfigServer) Set(
 	return &azdext.EmptyResponse{}, nil
 }
 
-func (s *invokeUserConfigServer) setJSON(t *testing.T, path string, value any) {
-	t.Helper()
-
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatalf("marshal user config value: %v", err)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.values[path] = data
-}
-
-func (s *invokeUserConfigServer) getJSON(t *testing.T, path string, value any) {
-	t.Helper()
-
-	s.mu.Lock()
-	data, found := s.values[path]
-	s.mu.Unlock()
-	if !found {
-		t.Fatalf("user config path %q was not saved", path)
-	}
-	if err := json.Unmarshal(data, value); err != nil {
-		t.Fatalf("unmarshal user config path %q: %v", path, err)
-	}
-}
-
 func newInvokeTestAzdClient(
 	t *testing.T, userConfigServer azdext.UserConfigServiceServer, environmentServers ...azdext.EnvironmentServiceServer,
+) *azdext.AzdClient {
+	t.Helper()
+	return newInvokeTestAzdClientWithProject(t, userConfigServer, nil, environmentServers...)
+}
+
+func TestResolveInvokeArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		inputFile string
+		wantName  string
+		wantMsg   string
+	}{
+		{name: "message", args: []string{"hello"}, wantMsg: "hello"},
+		{name: "name and message", args: []string{"agent", "hello"}, wantName: "agent", wantMsg: "hello"},
+		{name: "name and file", args: []string{"agent"}, inputFile: "input.json", wantName: "agent"},
+		{name: "file", inputFile: "input.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags := invokeFlags{
+				inputFile: tc.inputFile, version: " 3 ", protocol: "responses",
+				clientHeaders: []string{"x-client-test: value"},
+			}
+			before := flags
+			resolved := resolveInvokeArgs(flags, tc.args, outputRaw)
+			require.Equal(t, before, flags)
+			require.Equal(t, tc.wantName, resolved.name)
+			require.Equal(t, tc.wantMsg, resolved.message)
+			require.Equal(t, outputRaw, resolved.outputFmt)
+			require.Equal(t, flags.inputFile, resolved.inputFile)
+			require.Equal(t, flags.version, resolved.version)
+			require.Equal(t, flags.protocol, resolved.protocol)
+			require.Equal(t, flags.clientHeaders, resolved.clientHeaders)
+		})
+	}
+}
+
+func TestInvokeRunEPreservesSharedFlags(t *testing.T) {
+	command := newInvokeCommand(&azdext.ExtensionContext{OutputFormat: outputRaw})
+	command.SetContext(t.Context())
+	require.NoError(t, command.ParseFlags([]string{
+		"--agent-endpoint", "https://acct.services.ai.azure.com/api/projects/project/" +
+			"agents/agent/endpoint/protocols/a2a?api-version=v1",
+		"--version", " 3 ", "--debug-latency=true", "hello",
+	}))
+	// Stop at the action's route validation before authentication or network calls.
+	requireLatencyRouteConflict(t, command.RunE(command, command.Flags().Args()))
+	version, err := command.Flags().GetString("version")
+	require.NoError(t, err)
+	require.Equal(t, "3", version)
+	protocol, err := command.Flags().GetString("protocol")
+	require.NoError(t, err)
+	require.Equal(t, "a2a", protocol)
+}
+
+func newInvokeTestAzdClientWithProject(
+	t *testing.T,
+	userConfigServer azdext.UserConfigServiceServer,
+	projectServer azdext.ProjectServiceServer,
+	environmentServers ...azdext.EnvironmentServiceServer,
 ) *azdext.AzdClient {
 	t.Helper()
 
 	grpcServer := grpc.NewServer()
 	azdext.RegisterUserConfigServiceServer(grpcServer, userConfigServer)
+	if projectServer != nil {
+		azdext.RegisterProjectServiceServer(grpcServer, projectServer)
+	}
 	if len(environmentServers) > 0 {
 		azdext.RegisterEnvironmentServiceServer(grpcServer, environmentServers[0])
 	}
@@ -117,8 +154,10 @@ func newInvokeTestAzdClient(
 	if err != nil {
 		t.Fatalf("NewAzdClient: %v", err)
 	}
+	agentStateStoreRootOverrides.Store(azdClient, t.TempDir())
 
 	t.Cleanup(func() {
+		agentStateStoreRootOverrides.Delete(azdClient)
 		azdClient.Close()
 	})
 
@@ -1105,7 +1144,7 @@ func TestResolveRemoteContextMatchesDeployedNameToService(t *testing.T) {
 
 func newInvokeRemoteContextTestAzdServer(
 	t *testing.T,
-	projectServer *helpersProjectServer,
+	projectServer azdext.ProjectServiceServer,
 	environmentServer azdext.EnvironmentServiceServer,
 	accountServers ...azdext.AccountServiceServer,
 ) string {
@@ -2017,7 +2056,7 @@ func TestResolveRemoteSessionID_ReusesCachedVersionSession(t *testing.T) {
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{SessionID: "cached-session"})
 
 	action := &InvokeAction{flags: &invokeFlags{version: "3"}}
 	rc := &remoteContext{
@@ -2057,7 +2096,7 @@ func TestResolveRemoteSessionID_NewSessionSkipsCachedVersionSession(t *testing.T
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
 	agentKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("sessions"), map[string]string{agentKey: "cached-session"})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{SessionID: "cached-session"})
 
 	action := &InvokeAction{flags: &invokeFlags{version: "3", newSession: true}}
 	rc := &remoteContext{
@@ -2147,28 +2186,292 @@ func TestResolveRemoteSessionID_ExplicitSessionPreservedWithoutVersion(t *testin
 	}
 }
 
-func TestVersionedConversationLookupDoesNotUseLegacyAgentName(t *testing.T) {
-	t.Parallel()
-
-	userConfig := newInvokeUserConfigServer()
-	azdClient := newInvokeTestAzdClient(t, userConfig)
-	projectEndpoint := "https://acct.services.ai.azure.com/api/projects/proj"
-	versionedKey := buildAgentKey(projectEndpoint, "hello", "3", false)
-	userConfig.setJSON(t, configPath("conversations"), map[string]string{"hello": "legacy-conversation"})
-
-	rc := &remoteContext{name: "hello", version: "3"}
-	got, err := getContextValueWithFallback(
-		t.Context(),
-		azdClient,
-		"conversations",
-		versionedKey,
-		rc.legacyKeys(),
-	)
-	if err != nil {
-		t.Fatalf("getContextValueWithFallback: %v", err)
+func TestInvocationsRemoteOpenAPIProbeUsesInvocationSession(t *testing.T) {
+	tests := []struct {
+		name                       string
+		invocationCount            int
+		newSession                 bool
+		explicitSession            string
+		initialSavedSession        string
+		includeResponseSessionID   bool
+		invocationStatus           int
+		openAPIStatus              int
+		openAPIBody                string
+		wantPostSessionIDs         []string
+		wantOpenAPIProbeSessionIDs []string
+		wantCreatedSessions        int
+		wantError                  bool
+	}{
+		{
+			name:                       "new session probes use server-assigned sessions",
+			invocationCount:            2,
+			newSession:                 true,
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusNotFound,
+			wantPostSessionIDs:         []string{"", ""},
+			wantOpenAPIProbeSessionIDs: []string{"session-1", "session-2"},
+			wantCreatedSessions:        2,
+		},
+		{
+			name:                       "saved session is reused by probes",
+			invocationCount:            2,
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusNotFound,
+			wantPostSessionIDs:         []string{"", "session-1"},
+			wantOpenAPIProbeSessionIDs: []string{"session-1", "session-1"},
+			wantCreatedSessions:        1,
+		},
+		{
+			name:                       "explicit session is reused by probe",
+			invocationCount:            1,
+			explicitSession:            "existing-session",
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusNotFound,
+			wantPostSessionIDs:         []string{"existing-session"},
+			wantOpenAPIProbeSessionIDs: []string{"existing-session"},
+		},
+		{
+			name:                       "explicit session query preserves encoded characters",
+			invocationCount:            1,
+			explicitSession:            "session +&/?",
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusNotFound,
+			wantPostSessionIDs:         []string{"session +&/?"},
+			wantOpenAPIProbeSessionIDs: []string{"session +&/?"},
+		},
+		{
+			name:                "fresh invocation without ID does not use old saved session",
+			invocationCount:     1,
+			newSession:          true,
+			initialSavedSession: "old-session",
+			invocationStatus:    http.StatusOK,
+			wantPostSessionIDs:  []string{""},
+			wantCreatedSessions: 1,
+		},
+		{
+			name:                     "missing response session skips probe",
+			invocationCount:          1,
+			newSession:               true,
+			invocationStatus:         http.StatusOK,
+			includeResponseSessionID: false,
+			wantPostSessionIDs:       []string{""},
+			wantCreatedSessions:      1,
+		},
+		{
+			name:                     "failed invocation skips probe",
+			invocationCount:          1,
+			newSession:               true,
+			includeResponseSessionID: true,
+			invocationStatus:         http.StatusInternalServerError,
+			wantPostSessionIDs:       []string{""},
+			wantCreatedSessions:      1,
+			wantError:                true,
+		},
+		{
+			name:                       "successful probe is cached",
+			invocationCount:            2,
+			includeResponseSessionID:   true,
+			invocationStatus:           http.StatusOK,
+			openAPIStatus:              http.StatusOK,
+			openAPIBody:                `{"openapi":"3.0.0"}`,
+			wantPostSessionIDs:         []string{"", "session-1"},
+			wantOpenAPIProbeSessionIDs: []string{"session-1"},
+			wantCreatedSessions:        1,
+		},
 	}
-	if got != "" {
-		t.Errorf("conversation = %q, want empty because versioned lookup must not use legacy fallback", got)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			projectPath := t.TempDir()
+			configDir := filepath.Join(projectPath, ".azure", "test")
+			if err := os.MkdirAll(configDir, 0o700); err != nil {
+				t.Fatalf("MkdirAll: %v", err)
+			}
+
+			projectServer := &helpersProjectServer{
+				project: &azdext.ProjectConfig{Path: projectPath},
+			}
+			environmentServer := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "test"},
+			}
+			t.Setenv("AZD_SERVER", newInvokeRemoteContextTestAzdServer(
+				t, projectServer, environmentServer,
+			))
+			if tt.initialSavedSession != "" {
+				client, err := azdext.NewAzdClient()
+				require.NoError(t, err)
+				require.NoError(t, setAgentSpecificContextValue(
+					t.Context(), client, "sessions", "test-agent", tt.initialSavedSession,
+				))
+				client.Close()
+			}
+
+			type observedRequest struct {
+				method        string
+				path          string
+				sessionID     string
+				apiVersion    string
+				authorization string
+				userIdentity  string
+				clientID      string
+			}
+			var mu sync.Mutex
+			var requests []observedRequest
+			createdSessions := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				sessionID := r.URL.Query().Get("agent_session_id")
+				mu.Lock()
+				if sessionID == "" {
+					createdSessions++
+				}
+				requests = append(requests, observedRequest{
+					method:        r.Method,
+					path:          r.URL.Path,
+					sessionID:     sessionID,
+					apiVersion:    r.URL.Query().Get("api-version"),
+					authorization: r.Header.Get("Authorization"),
+					userIdentity:  r.Header.Get("x-ms-user-identity"),
+					clientID:      r.Header.Get("x-client-request-id"),
+				})
+
+				if r.Method == http.MethodGet {
+					mu.Unlock()
+					if tt.openAPIStatus == http.StatusOK {
+						_, _ = io.WriteString(w, tt.openAPIBody)
+					} else {
+						w.WriteHeader(tt.openAPIStatus)
+					}
+					return
+				}
+
+				if r.Method != http.MethodPost {
+					mu.Unlock()
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				if sessionID == "" {
+					sessionID = fmt.Sprintf("session-%d", createdSessions)
+				}
+				mu.Unlock()
+
+				if tt.includeResponseSessionID {
+					w.Header().Set("x-agent-session-id", sessionID)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tt.invocationStatus)
+				if tt.invocationStatus >= http.StatusBadRequest {
+					_, _ = io.WriteString(w, `{"error":{"message":"invocation rejected"}}`)
+					return
+				}
+				_, _ = io.WriteString(w, `{"result":"ok"}`)
+			}))
+			defer server.Close()
+
+			for range tt.invocationCount {
+				azdClient, err := azdext.NewAzdClient()
+				if err != nil {
+					t.Fatalf("NewAzdClient: %v", err)
+				}
+				action := &InvokeAction{
+					flags: &invokeFlags{
+						message:    `{"input":"test"}`,
+						newSession: tt.newSession,
+						session:    tt.explicitSession,
+						outputFmt:  outputRaw,
+						userIdentityFlags: userIdentityFlags{
+							userIdentity: "user-1",
+						},
+					},
+					clientHeaders: http.Header{
+						"X-Client-Request-Id": []string{"request-1"},
+					},
+					credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						projectEndpoint: server.URL,
+						name:            "agent",
+						apiVersion:      "v1",
+						agentKey:        "test-agent",
+						azdClient:       azdClient,
+					},
+				}
+
+				_, err = captureStdout(t, func() error {
+					return action.invocationsRemote(t.Context())
+				})
+				if tt.wantError {
+					if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+						t.Fatalf("invocationsRemote error = %v, want HTTP 500", err)
+					}
+				} else if err != nil {
+					t.Fatalf("invocationsRemote: %v", err)
+				}
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+			if createdSessions != tt.wantCreatedSessions {
+				t.Errorf("created sessions = %d, want %d", createdSessions, tt.wantCreatedSessions)
+			}
+
+			requestIndex := 0
+			invocationPath := "/agents/agent/endpoint/protocols/invocations"
+			for i, wantSessionID := range tt.wantPostSessionIDs {
+				if requestIndex >= len(requests) {
+					t.Fatalf("missing POST request %d", i+1)
+				}
+				post := requests[requestIndex]
+				requestIndex++
+				if post.method != http.MethodPost ||
+					post.path != invocationPath ||
+					post.sessionID != wantSessionID {
+					t.Errorf("POST request %d = %+v", i+1, post)
+				}
+				if post.apiVersion != "v1" ||
+					post.authorization != "Bearer test-token" ||
+					post.userIdentity != "user-1" ||
+					post.clientID != "request-1" {
+					t.Errorf("POST request %d headers/query = %+v", i+1, post)
+				}
+
+				if i >= len(tt.wantOpenAPIProbeSessionIDs) {
+					continue
+				}
+				if requestIndex >= len(requests) {
+					t.Fatalf("missing OpenAPI request %d", i+1)
+				}
+				probe := requests[requestIndex]
+				requestIndex++
+				if probe.method != http.MethodGet ||
+					probe.path != invocationPath+"/docs/openapi.json" ||
+					probe.sessionID != tt.wantOpenAPIProbeSessionIDs[i] {
+					t.Errorf("OpenAPI request %d = %+v", i+1, probe)
+				}
+				if probe.apiVersion != "v1" ||
+					probe.authorization != "Bearer test-token" ||
+					probe.userIdentity != "user-1" ||
+					probe.clientID != "request-1" {
+					t.Errorf("OpenAPI request %d headers/query = %+v", i+1, probe)
+				}
+			}
+			if requestIndex != len(requests) {
+				t.Errorf("unexpected requests: got %d, checked %d", len(requests), requestIndex)
+			}
+
+			if tt.openAPIStatus == http.StatusOK {
+				cachedSpec, err := os.ReadFile(filepath.Join(configDir, "openapi-agent-remote.json"))
+				if err != nil {
+					t.Fatalf("ReadFile cached OpenAPI spec: %v", err)
+				}
+				if string(cachedSpec) != tt.openAPIBody {
+					t.Errorf("cached OpenAPI spec = %q, want %q", cachedSpec, tt.openAPIBody)
+				}
+			}
+		})
 	}
 }
 
@@ -2199,29 +2502,9 @@ func TestVersionedExplicitConversationPersistsUnderVersionKey(t *testing.T) {
 		t.Fatalf("conversation = %q, want existing-conversation", got)
 	}
 
-	userConfig.mu.Lock()
-	defer userConfig.mu.Unlock()
-
-	var conversations map[string]string
-	if err := json.Unmarshal(userConfig.values[configPath("conversations")], &conversations); err != nil {
-		t.Fatalf("unmarshal persisted conversations: %v", err)
-	}
-	if got := conversations[versionedKey]; got != "existing-conversation" {
+	record := loadAgentStateForTest(t, azdClient, versionedKey)
+	if got := record.ConversationID; got != "existing-conversation" {
 		t.Fatalf("persisted conversation = %q, want existing-conversation", got)
-	}
-}
-
-func TestRemoteContextLegacyKeysSkippedForExplicitVersion(t *testing.T) {
-	t.Parallel()
-
-	rc := &remoteContext{name: "hello", version: "3"}
-	if got := rc.legacyKeys(); len(got) != 0 {
-		t.Errorf("legacyKeys = %v, want none for explicit version", got)
-	}
-
-	rc.version = ""
-	if got := rc.legacyKeys(); len(got) != 1 || got[0] != "hello" {
-		t.Errorf("legacyKeys = %v, want [hello]", got)
 	}
 }
 
@@ -2448,7 +2731,9 @@ func TestHandleInvocationResponse_Routing(t *testing.T) {
 				resp.Header.Set(k, v)
 			}
 
-			err := handleInvocationResponse(t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false, nil)
+			err := handleInvocationResponse(
+				t.Context(), resp, "", "", "test-agent", 10*time.Second, "", nil, false, nil, nil,
+			)
 
 			if tt.wantErr {
 				if err == nil {
@@ -2701,7 +2986,7 @@ func TestHandleInvocationLRO(t *testing.T) {
 				resp.Header.Set("x-agent-invocation-id", tt.initial202Header)
 			}
 
-			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false, nil)
+			err := handleInvocationLRO(t.Context(), resp, "", "", "test-agent", tt.timeout, "", nil, false, nil, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -2797,6 +3082,7 @@ func captureInvocationLROPollRequests(
 		"",
 		options,
 		false,
+		nil,
 		nil,
 	)
 	if err != nil {

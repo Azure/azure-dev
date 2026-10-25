@@ -10,61 +10,100 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 	"azureaiagent/internal/pkg/agents/optimize_api"
 
 	"go.yaml.in/yaml/v3"
 )
 
-// OptimizeConfig extends the shared Config with optimize-specific fields.
+// OptimizeConfig holds resolved optimizer inputs and an optional GA request.
 type OptimizeConfig struct {
-	opt_eval.Config `yaml:",inline"`
+	optconfig.Config `yaml:",inline"`
 
-	// Optimize-specific YAML fields.
-	ValidationDataset *opt_eval.DatasetRef `yaml:"validation_dataset,omitempty"`
-	// LegacyValidationReference reads the deprecated `validation_reference`
-	// YAML key. Use ValidationDataset instead; this is consulted only for
-	// backward compatibility and is merged into ValidationDataset by
-	// normalizeValidationDataset at load time.
-	LegacyValidationReference *opt_eval.DatasetRef `yaml:"validation_reference,omitempty"`
-	Options                   *opt_eval.Options    `yaml:"options"`
+	// Resolved dataset and optimizer options.
+	ValidationDataset *optconfig.DatasetRef `yaml:"validation_dataset,omitempty"`
+	Options           *optconfig.Options    `yaml:"options"`
 
 	// Runtime-only: resolved skill directory and tools file (not serialized to YAML).
-	SkillDir  string `yaml:"-"`
-	ToolsFile string `yaml:"-"`
+	SkillDir      string                        `yaml:"-"`
+	ToolsFile     string                        `yaml:"-"`
+	Request       *optimize_api.OptimizeRequest `yaml:"-"`
+	TrainingSet   *optimize_api.SetInput        `yaml:"-"`
+	ValidationSet *optimize_api.SetInput        `yaml:"-"`
+	MaxSamples    int                           `yaml:"-"`
 }
 
-// normalizeValidationDataset merges the deprecated `validation_reference` key
-// into ValidationDataset when it is unset, then clears the legacy field so it
-// is not re-written.
-func (c *OptimizeConfig) normalizeValidationDataset() {
-	if c.ValidationDataset == nil && c.LegacyValidationReference != nil {
-		c.ValidationDataset = c.LegacyValidationReference
-	}
-	c.LegacyValidationReference = nil
-}
-
-// LoadOptimizeConfig reads and parses a YAML optimization config file.
+// LoadOptimizeConfig reads a GA v1 optimization request from YAML or JSON.
+// Omitted optional settings retain service defaults rather than command defaults.
 func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is provided by user for local config
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %w", path, err)
 	}
 
-	var cfg OptimizeConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var values map[string]any
+	if err := yaml.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %w", path, err)
 	}
-	cfg.NormalizeDataset()
-	cfg.normalizeValidationDataset()
+	if _, legacy := values["agent"]; legacy {
+		return nil, fmt.Errorf("legacy optimization/eval configuration is not supported; " +
+			"use an optimization request file or select an eval configured with 'azd ai eval init'")
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("encoding config file %s: %w", path, err)
+	}
+	var request optimize_api.OptimizeRequest
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return nil, fmt.Errorf("invalid optimization config file %s: %w", path, err)
+	}
+	if request.OptimizationConfiguration.Type != "agent_optimization" &&
+		request.OptimizationConfiguration.Type != "prompt_optimization" {
+		return nil, fmt.Errorf("optimization_configuration.type must be agent_optimization or prompt_optimization")
+	}
+	if request.TargetConfiguration == nil || request.TargetConfiguration.Type != "foundry_agent" ||
+		request.TargetConfiguration.Name == "" {
+		return nil, fmt.Errorf("target_configuration must name a foundry_agent")
+	}
+	return optimizeConfigFromRequest(&request), nil
+}
 
-	return &cfg, nil
+func optimizeConfigFromRequest(request *optimize_api.OptimizeRequest) *OptimizeConfig {
+	cfg := defaultOptimizeConfig(request.TargetConfiguration.Name)
+	cfg.Agent.Version = request.TargetConfiguration.Version
+	cfg.Request = request
+	cfg.Options.OptimizationModel = request.OptimizationModelConfiguration.Model
+	config := &request.OptimizationConfiguration
+	if evaluation := config.EvaluationConfiguration; evaluation != nil {
+		cfg.TrainingSet = &evaluation.TrainingSet
+		cfg.ValidationSet = evaluation.ValidationSet
+		cfg.Options.EvalModel = evaluation.EvaluationModel.Model
+		cfg.Options.MaxConcurrentAgentRuns = evaluation.MaxConcurrentAgentRuns
+		for _, evaluator := range evaluation.Evaluators {
+			cfg.Evaluators = append(cfg.Evaluators, optconfig.EvaluatorRef{
+				Name: evaluator.Name, Version: evaluator.Version,
+				InitializationParameters: evaluator.InitializationParameters,
+			})
+		}
+	}
+	if search := config.CandidateSearchConfiguration; search != nil {
+		cfg.Options.MaxCandidates = search.MaxCandidates
+		cfg.Options.MaxStalls = search.MaxConsecutiveFailedCandidateScreens
+	}
+	if baseline := config.BaselineAgentConfiguration; baseline != nil {
+		cfg.Agent.Model = baseline.CurrentModel
+		cfg.Agent.Instruction.Value = baseline.SystemPrompt
+	}
+	return cfg
 }
 
 // Validate checks required fields and dataset constraints.
@@ -72,143 +111,191 @@ func (c *OptimizeConfig) Validate() error {
 	if c.Agent.Name == "" {
 		return fmt.Errorf("agent.name is required")
 	}
+	if c.Request != nil && c.Request.OptimizationConfiguration.Type == "prompt_optimization" {
+		return nil
+	}
 
 	if c.Options == nil || c.Options.EvalModel == "" {
-		return fmt.Errorf("options.eval_model is required")
+		return fmt.Errorf("eval_model is required: set --eval-model or evaluation_configuration.evaluation_model.model")
 	}
 
 	if c.Options.OptimizationModel == "" {
 		return fmt.Errorf(
-			"options.optimization_model is required: pass --optimize-model <name>, " +
-				"or add 'optimization_model' under 'options:' in your config")
+			"optimization_model is required: pass --optimize-model <name>, " +
+				"or set optimization_model_configuration.model in your --config file")
 	}
 
 	if len(c.Evaluators) == 0 {
 		return fmt.Errorf(
 			"at least one evaluator is required: pass --evaluator <name> (repeatable), " +
-				"add an 'evaluators:' section to your config, or run 'azd ai agent eval generate' to generate one")
+				"configure evaluation_configuration.evaluators, or run 'azd ai eval generate'")
 	}
 
 	hasLocal := c.LocalDatasetPath() != ""
 	hasRemote := c.RemoteDatasetReference() != nil
 
-	if !hasLocal && !hasRemote {
+	if !hasLocal && !hasRemote && c.TrainingSet == nil {
 		return fmt.Errorf(
 			"a dataset is required: provide a local or registered dataset in your config, " +
-				"or run 'azd ai agent eval generate' to generate one")
+				"or run 'azd ai eval generate' to generate one")
 	}
 
 	if c.Options.MaxStalls != nil && *c.Options.MaxStalls < 1 {
 		return fmt.Errorf(
-			"options.max_stalls must be >= 1 (got %d): set 'max_stalls' under 'options:' in your config file",
+			"max_stalls must be >= 1 (got %d): set candidate_search_configuration.max_consecutive_failed_candidate_screens",
 			*c.Options.MaxStalls)
 	}
 
 	if c.Options.MaxConcurrentAgentRuns != nil && *c.Options.MaxConcurrentAgentRuns < 1 {
 		return fmt.Errorf(
-			"options.max_concurrent_agent_runs must be >= 1 (got %d): "+
-				"set 'max_concurrent_agent_runs' under 'options:' in your config file",
+			"max_concurrent_agent_runs must be >= 1 (got %d): "+
+				"set evaluation_configuration.max_concurrent_agent_runs in your --config file",
 			*c.Options.MaxConcurrentAgentRuns)
 	}
 
 	return nil
 }
 
-// defaultOptimizeConfig returns a minimal config skeleton with sensible defaults.
+// defaultOptimizeConfig returns a minimal config skeleton without optional optimization defaults.
 // Dataset, eval model, evaluators, and other values are resolved interactively or via flags.
 func defaultOptimizeConfig(agentName string) *OptimizeConfig {
 	return &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{Name: agentName},
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{Name: agentName},
 		},
-		Options: &opt_eval.Options{
-			MaxCandidates: new(5),
-		},
+		Options: &optconfig.Options{},
 	}
 }
 
-// ToRequest converts the YAML config into an API OptimizeRequest.
-// If DatasetFile is set, each line is passed through as raw JSON.
+// ToRequest converts resolved inputs into a GA v1 OptimizeRequest.
+// Local JSONL rows are preserved as raw JSON in test_cases.
 // Returns the request, any non-fatal warnings, and an error.
 func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, error) {
-	req := &optimize_api.OptimizeRequest{
-		Agent: optimize_api.AgentIdentifier{
-			AgentName:    c.Agent.Name,
-			AgentVersion: c.Agent.Version,
-		},
-		Evaluators: evaluatorRefs(c.Evaluators),
-		Options: optimize_api.OptimizeOptions{
-			EvalModel:              c.Options.EvalModel,
-			MaxCandidates:          c.Options.MaxCandidates,
-			OptimizationModel:      c.Options.OptimizationModel,
-			EvaluationLevel:        c.Options.EvaluationLevel,
-			MaxStalls:              c.Options.MaxStalls,
-			MaxConcurrentAgentRuns: c.Options.MaxConcurrentAgentRuns,
-		},
+	req := optimize_api.OptimizeRequest{}
+	if c.Request != nil {
+		req = *c.Request
+	} else {
+		req.DisplayName = c.Name
 	}
-
-	// Map optimization_config from YAML to API format.
-	if c.Options.OptimizationConfig != nil {
-		req.Options.OptimizationConfig = c.Options.OptimizationConfig
+	req.TargetConfiguration = &optimize_api.AgentIdentifier{
+		Type: "foundry_agent", Name: c.Agent.Name, Version: c.Agent.Version,
 	}
-
-	// Put the baseline model into optimization_config as "model".
-	if c.Agent.Model != "" {
-		if req.Options.OptimizationConfig == nil {
-			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
-		}
-		raw, _ := json.Marshal(c.Agent.Model)
-		req.Options.OptimizationConfig["model"] = raw
+	options := c.Options
+	if options == nil {
+		options = &optconfig.Options{}
 	}
-
-	var warnings []string
-
-	// Train dataset: the deprecated dataset_file is normalized into a
-	// DatasetRef so both forms go through the same conversion path.
+	req.OptimizationModelConfiguration.Model = options.OptimizationModel
+	config := &req.OptimizationConfiguration
+	if config.Type == "" {
+		config.Type = "agent_optimization"
+	}
+	if config.Type == "prompt_optimization" {
+		return &req, nil, nil
+	}
+	evaluation := optimize_api.EvaluationConfiguration{}
+	if config.EvaluationConfiguration != nil {
+		evaluation = *config.EvaluationConfiguration
+	}
+	evaluation.Evaluators = evaluatorRefs(c.Evaluators)
+	evaluation.EvaluationModel.Model = options.EvalModel
+	evaluation.MaxConcurrentAgentRuns = options.MaxConcurrentAgentRuns
+	setType := "target_completion"
+	if options.EvaluationLevel == "conversation" {
+		setType = "user_conversation_simulation"
+	}
+	if c.TrainingSet != nil {
+		evaluation.TrainingSet = *c.TrainingSet
+	}
 	trainRef := c.Dataset
 	if c.DatasetFile != "" {
-		trainRef = &opt_eval.DatasetRef{LocalURI: c.DatasetFile}
+		trainRef = &optconfig.DatasetRef{LocalURI: c.DatasetFile}
 	}
 	if trainRef != nil {
 		ds, err := datasetRefToAPI(trainRef)
 		if err != nil {
 			return nil, nil, fmt.Errorf("train dataset: %w", err)
 		}
-		req.TrainDataset = ds
+		evaluation.TrainingSet = optimize_api.SetInput{Type: setType, Source: *ds}
 	}
-
-	// Validation dataset (optional): supports both inline (local_uri) and
-	// registered reference (name/version), mirroring the train dataset.
+	if c.ValidationSet != nil {
+		evaluation.ValidationSet = c.ValidationSet
+	}
 	if c.ValidationDataset != nil {
 		ds, err := datasetRefToAPI(c.ValidationDataset)
 		if err != nil {
 			return nil, nil, fmt.Errorf("validation dataset: %w", err)
 		}
-		req.ValidationDataset = ds
+		evaluation.ValidationSet = &optimize_api.SetInput{Type: setType, Source: *ds}
 	}
-
-	// Populate optimization_config with system_prompt, skills, tools.
-	ensureOptConfig := func() {
-		if req.Options.OptimizationConfig == nil {
-			req.Options.OptimizationConfig = make(map[string]json.RawMessage)
+	config.EvaluationConfiguration = &evaluation
+	if c.MaxSamples < 0 {
+		return nil, nil, fmt.Errorf("maxSamples must be >= 0")
+	}
+	if c.MaxSamples > 0 {
+		if evaluation.TrainingSet.Source.Type != optimize_api.DatasetTypeInline {
+			return nil, nil, fmt.Errorf("maxSamples requires a local dataset for optimization")
+		}
+		cases := evaluation.TrainingSet.Source.TestCases
+		evaluation.TrainingSet.Source.TestCases = cases[:min(len(cases), c.MaxSamples)]
+	}
+	if config.CandidateSearchConfiguration != nil || options.MaxCandidates != nil || options.MaxStalls != nil {
+		search := optimize_api.CandidateSearchConfiguration{}
+		if config.CandidateSearchConfiguration != nil {
+			search = *config.CandidateSearchConfiguration
+		}
+		search.MaxCandidates = options.MaxCandidates
+		search.MaxConsecutiveFailedCandidateScreens = options.MaxStalls
+		config.CandidateSearchConfiguration = &search
+	}
+	baseline := optimize_api.BaselineAgentConfiguration{}
+	if config.BaselineAgentConfiguration != nil {
+		baseline = *config.BaselineAgentConfiguration
+	}
+	space := optimize_api.OptimizationSpace{}
+	if config.AgentOptimizationSpace != nil {
+		space = *config.AgentOptimizationSpace
+	}
+	for key, value := range options.OptimizationConfig {
+		var target any
+		switch key {
+		case "model":
+			target = &baseline.CurrentModel
+		case "system_prompt":
+			target = &baseline.SystemPrompt
+		case "skills":
+			target = &baseline.Skills
+		case "tools":
+			target = &baseline.Tools
+		case "model_search_space":
+			target = &space.ModelSearchSpace
+		case "target_attributes":
+			target = &space.TargetAttributes
+		default:
+			return nil, nil, fmt.Errorf("unsupported optimization setting %q", key)
+		}
+		if err := json.Unmarshal(value, target); err != nil {
+			return nil, nil, fmt.Errorf("invalid optimization setting %q: %w", key, err)
 		}
 	}
-
-	if prompt := c.Agent.ResolvedSystemPrompt(); prompt != "" {
-		ensureOptConfig()
-		raw, _ := json.Marshal(prompt)
-		req.Options.OptimizationConfig["system_prompt"] = raw
+	if c.Agent.Model != "" {
+		baseline.CurrentModel = c.Agent.Model
 	}
-
-	// Load skills from skill_dir if specified.
+	if c.Agent.Instruction.File != "" {
+		prompt, err := os.ReadFile(c.Agent.Instruction.File)
+		if err != nil {
+			return nil, nil, fmt.Errorf("reading baseline instructions: %w", err)
+		}
+		baseline.SystemPrompt = string(prompt)
+	} else if c.Agent.Instruction.Value != "" {
+		baseline.SystemPrompt = c.Agent.Instruction.Value
+	}
+	var warnings []string
 	if c.SkillDir != "" {
 		skills, err := loadSkillsFromDir(c.SkillDir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("loading skills from %s: %w", c.SkillDir, err)
 		}
-		ensureOptConfig()
-		raw, _ := json.Marshal(skills)
-		req.Options.OptimizationConfig["skills"] = raw
+		baseline.Skills = skills
 	}
 
 	// Load tool definitions if a tools file is specified.
@@ -218,27 +305,32 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 			return nil, nil, fmt.Errorf("loading tool definitions from %s: %w", c.ToolsFile, err)
 		}
 		warnings = append(warnings, toolWarns...)
-		ensureOptConfig()
-		raw, _ := json.Marshal(tools)
-		req.Options.OptimizationConfig["tools"] = raw
+		baseline.Tools = tools
 	}
-
-	return req, warnings, nil
+	if baseline.CurrentModel != "" || baseline.SystemPrompt != "" || baseline.Skills != nil || baseline.Tools != nil {
+		config.BaselineAgentConfiguration = &baseline
+	}
+	if config.AgentOptimizationSpace != nil ||
+		space.TargetAttributes != nil || space.ModelSearchSpace != nil {
+		config.AgentOptimizationSpace = &space
+	}
+	return &req, warnings, nil
 }
 
 // datasetRefToAPI converts a DatasetRef into the API Dataset payload. A local
 // dataset (local_uri, no name) is sent inline with its JSONL items; a
 // registered dataset (name/version) is sent as a reference.
-func datasetRefToAPI(ref *opt_eval.DatasetRef) (*optimize_api.Dataset, error) {
+func datasetRefToAPI(ref *optconfig.DatasetRef) (*optimize_api.Dataset, error) {
 	if ref.IsLocal() {
 		lines, err := loadJSONLRawFile(ref.LocalURI)
 		if err != nil {
 			return nil, err
 		}
-		return &optimize_api.Dataset{
-			Type:  optimize_api.DatasetTypeInline,
-			Items: lines,
-		}, nil
+		return &optimize_api.Dataset{Type: optimize_api.DatasetTypeInline, TestCases: lines}, nil
+	}
+	if ref.Name == "" || ref.Version == "" {
+		return nil, fmt.Errorf("registered datasets require both name and version; " +
+			"select a versioned eval dataset or provide a local JSONL file")
 	}
 	return &optimize_api.Dataset{
 		Type:    optimize_api.DatasetTypeReference,
@@ -249,7 +341,7 @@ func datasetRefToAPI(ref *opt_eval.DatasetRef) (*optimize_api.Dataset, error) {
 
 // evaluatorRefs converts a YAML evaluator list into API evaluator references,
 // preserving each evaluator's name, optional version, and initialization_parameters.
-func evaluatorRefs(list opt_eval.EvaluatorList) []optimize_api.EvaluatorRef {
+func evaluatorRefs(list optconfig.EvaluatorList) []optimize_api.EvaluatorRef {
 	if len(list) == 0 {
 		return nil
 	}
@@ -267,7 +359,7 @@ func evaluatorRefs(list opt_eval.EvaluatorList) []optimize_api.EvaluatorRef {
 // exists in base (case-sensitive). Order is preserved: base first, then any
 // new entries from add. Used to layer --evaluator flags on top of config
 // evaluators without dropping the config entries.
-func mergeEvaluators(base, add opt_eval.EvaluatorList) opt_eval.EvaluatorList {
+func mergeEvaluators(base, add optconfig.EvaluatorList) optconfig.EvaluatorList {
 	seen := make(map[string]struct{}, len(base))
 	for _, e := range base {
 		seen[e.Name] = struct{}{}
@@ -390,7 +482,7 @@ func loadSkillsFromDir(dir string) ([]optimize_api.SkillDefinition, error) {
 // skillPreamble represents the YAML preamble in a skill markdown file.
 type skillPreamble struct {
 	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	Description string `yaml:"description,omitempty"`
 }
 
 // parseSkillFile parses a skill file. For .md files it attempts to extract

@@ -4,6 +4,7 @@
 package project
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,7 +85,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 		Model:        "gpt-4.1-mini",
 		Instructions: "Be concise.",
 		Harness: &agent_yaml.PromptHarness{
-			Type: "github_copilot_preview",
+			Type: "microsoft_copilot_preview",
 		},
 		Tools:       []any{map[string]any{"type": "code_interpreter"}},
 		ToolChoice:  "auto",
@@ -96,14 +97,17 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 			"context": map[string]any{"required": false},
 		},
 		Connections: []string{"search"},
+		Toolboxes:   []agent_yaml.ToolboxReference{{Name: "research-tools"}},
 	}
 
 	props, err := PromptAgentDefinitionToServiceProperties(original)
 	require.NoError(t, err)
-	for _, key := range []string{"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs"} {
+	for _, key := range []string{
+		"toolChoice", "temperature", "topP", "text", "reasoning", "structuredInputs", "toolboxes",
+	} {
 		require.Contains(t, props.AsMap(), key)
 	}
-	for _, key := range []string{"tool_choice", "top_p", "structured_inputs"} {
+	for _, key := range []string{"tool_choice", "top_p", "structured_inputs", "toolbox"} {
 		require.NotContains(t, props.AsMap(), key)
 	}
 
@@ -117,7 +121,7 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, "gpt-4.1-mini", got.Model)
 	require.Equal(t, "Be concise.", got.Instructions)
 	require.NotNil(t, got.Harness)
-	require.Equal(t, "github_copilot_preview", got.Harness.Type)
+	require.Equal(t, "microsoft_copilot_preview", got.Harness.Type)
 	require.Len(t, got.Tools, 1)
 	require.Equal(t, original.ToolChoice, got.ToolChoice)
 	require.Equal(t, original.Temperature, got.Temperature)
@@ -127,8 +131,47 @@ func TestPromptAgentInlineRoundTripPreservesDefinition(t *testing.T) {
 	require.Equal(t, original.StructuredInputs, got.StructuredInputs)
 	require.Len(t, got.Connections, 1)
 	require.Equal(t, "search", got.Connections[0])
+	require.Equal(t, []agent_yaml.ToolboxReference{{Name: "research-tools"}}, got.Toolboxes)
 
 	// Never authored: the deploy graph resolves it from the skills/ folder.
+}
+
+func TestPromptAgentLegacyHarnessPreservedThroughServiceAdoption(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	original := agent_yaml.PromptAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindPrompt, Name: "legacy-agent"},
+		Model:           "gpt-4.1-mini",
+		Instructions:    "Be helpful.",
+		Harness:         agent_yaml.NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Tools:           []any{map[string]any{"type": "github_copilot_toolset_preview"}},
+	}
+	props, err := PromptAgentDefinitionToServiceProperties(original)
+	require.NoError(t, err)
+	for _, source := range []string{"inline", "root-ref"} {
+		t.Run(source, func(t *testing.T) {
+			svc := validationTestService(t, root, source, props.AsMap())
+			provider := &AgentServiceTargetProvider{
+				projectPath: root,
+				serviceConfig: promptService(t, map[string]any{
+					"kind": "prompt", "harness": map[string]any{"type": "microsoft_copilot_preview"},
+				}),
+			}
+			require.NoError(t, provider.adoptAndResolveServiceConfig(t.Context(), svc))
+			require.Same(t, svc, provider.serviceConfig)
+			got, err := provider.loadPromptAgentDefinition()
+			require.NoError(t, err)
+			require.Equal(t, "github_copilot_preview", got.Harness.Type)
+			require.Equal(t, original.Tools, got.Tools)
+			request, err := agent_yaml.CreatePromptAgentAPIRequest(got, nil)
+			require.NoError(t, err)
+			definition, ok := request.Definition.(agent_api.ManagedAgentDefinition)
+			require.True(t, ok)
+			require.Equal(t, "github_copilot_preview", definition.Harness.Type)
+			require.Equal(t, original.Tools, definition.Tools)
+		})
+	}
 }
 
 func TestPromptAgentFromResolvedServiceInlineAndRootRefParity(t *testing.T) {
@@ -140,7 +183,7 @@ name: parity-agent
 model: gpt-4.1-mini
 instructions: Be concise.
 harness:
-  type: github_copilot_preview
+  type: microsoft_copilot_preview
 memory:
   store: conversation-store
   chatModel: gpt-4.1-mini
@@ -151,7 +194,7 @@ memory:
     chatSummaryEnabled: true
     userProfileEnabled: true
 tools:
-  - type: github_copilot_toolset_preview
+  - type: microsoft_copilot_toolset_preview
     defaultConfig:
       enabled: false
     configs:
@@ -175,7 +218,7 @@ policies:
 		"name":         "parity-agent",
 		"model":        "gpt-4.1-mini",
 		"instructions": "Be concise.",
-		"harness":      map[string]any{"type": "github_copilot_preview"},
+		"harness":      map[string]any{"type": "microsoft_copilot_preview"},
 		"memory": map[string]any{
 			"store":          "conversation-store",
 			"chatModel":      "gpt-4.1-mini",
@@ -189,7 +232,7 @@ policies:
 		},
 		"tools": []any{
 			map[string]any{
-				"type":          "github_copilot_toolset_preview",
+				"type":          "microsoft_copilot_toolset_preview",
 				"defaultConfig": map[string]any{"enabled": false},
 				"configs":       []any{map[string]any{"name": "web", "enabled": true}},
 			},
@@ -288,6 +331,83 @@ func TestPromptAgentFromResolvedServiceSkillReferences(t *testing.T) {
 	}, got.Skills)
 }
 
+func TestPromptAgentFromResolvedServiceToolboxReferences(t *testing.T) {
+	svc := &azdext.ServiceConfig{
+		Name: "toolbox-agent",
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind":         "prompt",
+			"model":        "gpt-4.1-mini",
+			"instructions": "Be helpful.",
+			"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			"toolboxes": []any{
+				"research-tools",
+				map[string]any{"name": "support-tools"},
+			},
+		}),
+	}
+	got, found, err := PromptAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, []agent_yaml.ToolboxReference{
+		{Name: "research-tools"},
+		{Name: "support-tools"},
+	}, got.Toolboxes)
+}
+
+func TestPromptAgentFromResolvedServiceRejectsSingularAndMalformedToolboxes(t *testing.T) {
+	tests := []struct {
+		name  string
+		props map[string]any
+		want  string
+	}{
+		{
+			name:  "singular toolbox",
+			props: map[string]any{"toolbox": map[string]any{"name": "research-tools"}},
+			want:  `field "toolbox" is no longer supported; use "toolboxes"`,
+		},
+		{
+			name: "mixed toolbox and toolboxes",
+			props: map[string]any{
+				"toolbox":   map[string]any{"name": "research-tools"},
+				"toolboxes": []any{"research-tools"},
+			},
+			want: `cannot specify both "toolbox" and "toolboxes"`,
+		},
+		{
+			name:  "unknown field on toolbox reference",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "foo", "version": "1"}}},
+			want:  `unknown field "version"`,
+		},
+		{
+			name:  "empty toolbox name",
+			props: map[string]any{"toolboxes": []any{""}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+		{
+			name:  "blank toolbox name",
+			props: map[string]any{"toolboxes": []any{map[string]any{"name": "   "}}},
+			want:  "toolbox reference requires a non-empty name",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{
+				"kind":         "prompt",
+				"model":        "test-model",
+				"instructions": "Be helpful.",
+				"harness":      map[string]any{"type": "microsoft_copilot_preview"},
+			}
+			maps.Copy(props, tt.props)
+			svc := &azdext.ServiceConfig{
+				Name:                 "toolbox-agent",
+				AdditionalProperties: mustStruct(t, props),
+			}
+			_, _, err := PromptAgentFromResolvedService(svc, t.TempDir())
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
 func TestPromptAgentFromResolvedServiceRejectsMalformedSkills(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -351,7 +471,7 @@ func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 			props: map[string]any{
 				"kind":    "prompt",
 				"name":    "a",
-				"harness": "github_copilot_preview",
+				"harness": "microsoft_copilot_preview",
 			},
 			wantErr: "harness must be a block",
 		},
@@ -361,7 +481,7 @@ func TestPromptAgentEffectiveStrictValidation(t *testing.T) {
 				"kind": "prompt",
 				"name": "a",
 				"harness": map[string]any{
-					"type":          "github_copilot_preview",
+					"type":          "microsoft_copilot_preview",
 					"builtin_tools": map[string]any{"excluded": []any{"shell"}},
 				},
 			},

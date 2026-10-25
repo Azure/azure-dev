@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -156,6 +157,10 @@ func (p *ProvisionAction) provisionLayersGraph(
 					return p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 						var innerErr error
 						deployResult, innerErr = p.provisionManager.Deploy(ctx)
+						if innerErr == nil &&
+							deployResult.SkippedReason == provisioning.ProvisionValidationCanceledSkipped {
+							return errValidationCanceledByUser
+						}
 						return innerErr
 					})
 				})
@@ -165,13 +170,6 @@ func (p *ProvisionAction) provisionLayersGraph(
 				// and duplicate JSON state dumps.
 				if hookErr != nil {
 					return hookErr
-				}
-
-				if deployResult.SkippedReason == provisioning.ProvisionValidationCanceledSkipped {
-					// Return the internal sentinel; wrapProvisionError at the
-					// outer boundary emits the "Provisioning was canceled."
-					// UX message and translates to internal.ErrAbortedByUser.
-					return errValidationCanceledByUser
 				}
 
 				skipped := deployResult.SkippedReason == provisioning.DeploymentStateSkipped
@@ -672,8 +670,7 @@ type provisionErrorDeps struct {
 // JSON state dump on failure has something to render.
 func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps) error {
 	// Validation-canceled → ErrAbortedByUser with success message.
-	if errors.Is(err, errValidationCanceledByUser) ||
-		errors.Is(err, provisioning.ErrProvisionValidationCanceled) {
+	if isProvisionValidationCancellation(err) {
 		deps.console.MessageUxItem(ctx, &ux.ActionResult{
 			SuccessMessage: "Provisioning was canceled.",
 		})
@@ -741,6 +738,22 @@ func wrapProvisionError(ctx context.Context, err error, deps provisionErrorDeps)
 	}
 
 	return fmt.Errorf("deployment failed: %w", err)
+}
+
+func isProvisionValidationCancellation(err error) bool {
+	//nolint:errorlint // Inspect every branch before treating a joined failure as an intentional cancellation.
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		children := wrapped.Unwrap()
+		return len(children) > 0 && !slices.ContainsFunc(children, func(child error) bool {
+			return !isProvisionValidationCancellation(child)
+		})
+	case interface{ Unwrap() error }:
+		return isProvisionValidationCancellation(wrapped.Unwrap())
+	default:
+		return errors.Is(err, errValidationCanceledByUser) ||
+			errors.Is(err, provisioning.ErrProvisionValidationCanceled)
+	}
 }
 
 // displayEnvironmentDetails emits the EnvironmentDetails UX element once at

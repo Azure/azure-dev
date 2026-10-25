@@ -48,16 +48,6 @@ import (
 // Place this marker on its own line immediately before the opening fence.
 const docExamplePartialMarker = "<!-- azd:doc-example partial -->"
 
-// coreServiceKeys are the `services.<name>` properties that azd core parses into
-// typed fields on its own ServiceConfig. Everything else in a service block is
-// captured by core's `yaml:",inline"` AdditionalProperties map and handed to the
-// extension. Mirrors ServiceConfig in cli/azd/pkg/project/service_config.go.
-var coreServiceKeys = []string{
-	"apiVersion", "condition", "config", "dist", "docker", "env", "hooks", "host",
-	"image", "infra", "k8s", "language", "module", "project", "remoteBuild",
-	"resourceGroup", "resourceName", "uses",
-}
-
 // docSchema is the extension's published JSON Schema for the `azure.ai.agent`
 // service block, used to check that every property a doc advertises is one the
 // extension actually declares — including properties nested inside documented
@@ -968,6 +958,37 @@ func TestDocSchemaPromptVoiceRejectsToolbox(t *testing.T) {
 		"model":     map[string]any{"id": "gpt-realtime"},
 		"protocols": []any{map[string]any{"protocol": "invocations_ws", "version": "1.0.0"}},
 	}))
+}
+
+func TestDocSchemaVoiceTelephonyAuthoring(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, extensionRoot(t))
+	agent := func(identifier string, target map[string]any) map[string]any {
+		binding := map[string]any{"provider": "acs", "identifier": identifier, "connection": "connection"}
+		if target != nil {
+			binding["transferTargets"] = []any{target}
+		}
+		return map[string]any{
+			"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
+			"telephony": map[string]any{"bindings": []any{binding}},
+		}
+	}
+	validTarget := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "28:orgid:00000000-0000-0000-0000-000000000001"},
+	}
+	require.NoError(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", validTarget)))
+	require.Error(t, schema.validate(agent("4:+14255550123", nil)))
+	invalidTeams := map[string]any{
+		"name": "teams", "description": "Teams",
+		"destination": map[string]any{"kind": "teams", "value": "not-a-guid"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", invalidTeams)))
+	openTarget := map[string]any{
+		"name": "teams", "description": "Teams", "future": true,
+		"destination": map[string]any{"kind": "teams", "value": "00000000-0000-0000-0000-000000000001"},
+	}
+	require.Error(t, schema.validate(agent("28:orgid:00000000-0000-0000-0000-000000000001", openTarget)))
 }
 
 func TestDocSchemaDigitalWorkerPublishFields(t *testing.T) {

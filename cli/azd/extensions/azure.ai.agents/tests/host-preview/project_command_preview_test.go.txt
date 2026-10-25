@@ -1,0 +1,73 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// cspell:ignore mockinput
+
+package cmd
+
+import (
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/stretchr/testify/require"
+)
+
+func TestFoundryProjectPreviewCommandOutput(t *testing.T) {
+	path := os.Getenv("AZD_PROJECT_PREVIEW_TEST_RESULT")
+	require.NotEmpty(t, path)
+	//nolint:gosec // Task-local forwarded result is supplied by the integration runner.
+	encoded, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var forwarded project.ServiceDeployPreviewResult
+	require.NoError(t, json.Unmarshal(encoded, &forwarded))
+	service := &project.ServiceConfig{Name: "ai-project", Host: "azure.ai.project"}
+	for _, tc := range []struct {
+		name      string
+		formatter output.Formatter
+	}{
+		{"readable", &output.NoneFormatter{}},
+		{"json", &output.JsonFormatter{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action, writer := newDeployPreviewAction(t, tc.formatter, &previewServiceTarget{})
+			manager, ok := action.serviceManager.(*previewServiceManager)
+			require.True(t, ok)
+			manager.targets[service.Name] = &mockServiceTargetWithoutPreview{}
+			_, err := action.deployPreview(t.Context(), []*project.ServiceConfig{service})
+			require.NoError(t, err)
+			console, ok := action.console.(*mockinput.MockConsole)
+			require.True(t, ok)
+			require.Contains(t, strings.Join(console.Output(), "\n"),
+				"Service 'ai-project' (host: azure.ai.project) does not support deployment preview.")
+
+			action.console = mockinput.NewMockConsole()
+			writer.Reset()
+			manager.targets[service.Name] = &previewServiceTarget{result: &forwarded}
+			_, err = action.deployPreview(t.Context(), []*project.ServiceConfig{service})
+			require.NoError(t, err)
+			console, ok = action.console.(*mockinput.MockConsole)
+			require.True(t, ok)
+			require.NotContains(t, strings.Join(console.Output(), "\n"), "ai-project",
+				"no project warning or provider prose should remain")
+			require.Equal(t, []mockinput.SpinnerOp{
+				{Op: mockinput.SpinnerOpShow, Message: "Previewing service ai-project", Format: input.Step},
+				{Op: mockinput.SpinnerOpStop, Message: "Previewing service ai-project", Format: input.StepDone},
+			}, console.SpinnerOps(), "the unchanged host still owns the progress row")
+			if tc.formatter.Kind() == output.JsonFormat {
+				var result DeploymentPreviewResult
+				require.NoError(t, json.Unmarshal(writer.Bytes(), &result))
+				require.Len(t, result.Services, 1)
+				require.Equal(t, &forwarded, result.Services[service.Name])
+				require.Empty(t, result.Services[service.Name].Message)
+			} else {
+				require.Empty(t, writer.String())
+			}
+		})
+	}
+}

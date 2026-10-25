@@ -139,7 +139,7 @@ func Test_IsLocalhostAddress(t *testing.T) {
 func Test_AzdClient_Telemetry(t *testing.T) {
 	client := &AzdClient{}
 
-	first := client.Telemetry()
+	var first TelemetryServiceClient = client.Telemetry()
 	second := client.Telemetry()
 
 	require.NotNil(t, first)
@@ -201,4 +201,15 @@ func Test_AzdClient_CommandResult_IsStableAcrossConcurrentCalls(t *testing.T) {
 		require.NotNil(t, commandResultClient)
 		require.Same(t, clients[0], commandResultClient)
 	}
+}
+
+func Test_AzdClient_ProjectBeta(t *testing.T) {
+	client := &AzdClient{}
+
+	first := client.ProjectBeta()
+	second := client.ProjectBeta()
+
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	require.NotSame(t, first, second)
 }

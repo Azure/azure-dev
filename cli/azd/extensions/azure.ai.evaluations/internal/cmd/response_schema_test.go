@@ -70,7 +70,10 @@ func TestBuildResponseScenarioLeavesOtherModesCustom(t *testing.T) {
 			if mode == "responses" {
 				assert.JSONEq(t, `{"type":"azure_ai_source","scenario":"responses"}`, string(raw))
 				for _, criterion := range req.TestingCriteria {
-					assert.Equal(t, map[string]string{"messages": "{{item.messages}}"}, criterion.DataMapping)
+					assert.Equal(t, map[string]string{
+						"messages":         "{{item.messages}}",
+						"tool_definitions": "{{sample.tool_definitions}}",
+					}, criterion.DataMapping)
 				}
 			} else {
 				assert.Equal(t, "custom", req.DataSourceConfig.Type)
@@ -563,6 +566,7 @@ func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
 			if tc.traces {
 				source = map[string]any{"type": "traces", "agentName": "agent"}
 			}
+			inlineSource := source
 			dir := t.TempDir()
 			if tc.ref {
 				raw, err := json.Marshal(source)
@@ -582,6 +586,14 @@ func TestResponseSourceSchemaAndRuntimeAgree(t *testing.T) {
 			var instance any
 			require.NoError(t, json.Unmarshal(body, &instance))
 			schemaErr := schema.Validate(instance)
+			if tc.ref {
+				require.NoError(t, schemaErr, "an unresolved reference may select a capped local source")
+				eval["source"] = inlineSource
+				resolvedBody, err := json.Marshal(map[string]any{"evals": []any{eval}})
+				require.NoError(t, err)
+				require.NoError(t, json.Unmarshal(resolvedBody, &instance))
+				schemaErr = schema.Validate(instance)
+			}
 			path := filepath.Join(dir, project.EvalConfigBase)
 			require.NoError(t, os.WriteFile(path, body, 0o600))
 			cfg, err := project.LoadEvalConfig(path)

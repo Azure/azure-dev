@@ -12,9 +12,21 @@ The extension wire contracts have two public channels:
 The beta channel is a superset of stable. New additive contract fields,
 methods, and beta-only services can incubate there and graduate additively
 into stable after they have been validated. `ComposeService`,
-`CommandResultService`, `CopilotService`, and `TelemetryService` are currently
+`CommandResultService` and `CopilotService` are currently
 beta-only. Removing or renumbering fields, changing field types, and reusing
 reserved names or numbers remain breaking changes in either channel.
+
+`TelemetryService.ReportUsage` and `AccountService.GetCurrentPrincipal`
+graduate to stable in azd 1.36.0 (October 2026). Their deprecated beta routes
+continue delegating to stable behavior; removing them requires a separately
+approved policy. See the [graduation and SDK migration policy](../docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
+
+Deployment preview graduates on the existing stable `ServiceTargetService.Stream`,
+targeting azd 1.37.0. Its `supports_preview` opt-in, preview envelope fields, and
+request/response/result messages retain their beta wire shapes. Beta preview
+members and SDK helpers are deprecated but retained; the generated beta adapter
+delegates to stable behavior without a focused override. The frozen unversioned
+bridge is unchanged. See the [second graduation policy and release tracking](../docs/extensions/contract-versioning.md#october-2026-second-graduation-target-azd-1370).
 
 The original unversioned `azdext` protobuf package remains available only as a
 temporary frozen runtime bridge for already-built extensions. It is not a
@@ -47,6 +59,10 @@ the Go contracts under `pkg/azdext/contracts/v1` and
 stable forwarding surface used by the handwritten `pkg/azdext` SDK facade and
 the beta service adapters in
 `internal/grpcserver/versioned_services_generated.go`.
+It also snapshots the canonical beta project descriptor set for the evaluations
+extension's released-SDK-compatible private dynamic client with
+`grpc/generateprojectclient`. Do not edit this generated snapshot or duplicate
+the protobuf schema in the extension.
 Before generating bindings, it compiles descriptor sets for the stable
 scaffold protos and canonical `v1` protos and verifies that every scaffold
 message, enum, service, and method remains a wire-compatible subset of the

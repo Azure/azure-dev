@@ -9,6 +9,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/fatih/color"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,6 +74,51 @@ func TestConfirm_Render_initial(t *testing.T) {
 	// The message already ends in punctuation, so no colon is appended.
 	assert.NotContains(t, output, "Continue?:")
 	assert.Contains(t, output, "[y/n]")
+}
+
+func TestConfirm_Render_warning_colors(t *testing.T) {
+	previousNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = previousNoColor })
+
+	tests := []struct {
+		name     string
+		value    *bool
+		complete bool
+		answer   string
+	}{
+		{name: "default No", answer: "No"},
+		{name: "edited Yes", value: new(true), answer: "Yes"},
+		{name: "completed Yes", value: new(true), complete: true, answer: "Yes"},
+		{name: "completed No", value: new(false), complete: true, answer: "No"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			c := NewConfirm(&ConfirmOptions{
+				Writer:       &buf,
+				Message:      "Deployment will likely fail. Proceed anyway?",
+				IsWarning:    true,
+				DefaultValue: new(false),
+			})
+			if tt.value != nil {
+				c.value = tt.value
+				c.displayValue = getBooleanString(*tt.value)
+			}
+			c.complete = tt.complete
+
+			require.NoError(t, c.Render(NewPrinter(&buf)))
+
+			want := "\x1b[94m? \x1b[0m" +
+				"\x1b[33m\x1b[1mDeployment will likely fail. Proceed anyway? \x1b[22m\x1b[0m"
+			if !tt.complete {
+				want += "\x1b[94m[y/N]\x1b[0m "
+			}
+			want += "\x1b[94m" + tt.answer + "\x1b[0m"
+			assert.Equal(t, want, strings.SplitN(buf.String(), "\n", 2)[0])
+		})
+	}
 }
 
 func TestConfirm_Render_complete(t *testing.T) {
@@ -445,6 +491,33 @@ func TestNewPrompt_non_secret_keeps_help_message(t *testing.T) {
 	})
 	assert.Equal(t, "Your full name.", p.options.HelpMessage)
 	assert.Equal(t, "[Type ? for hint]", p.options.Hint)
+}
+
+func TestNewPrompt_ignore_hint_keys_suppresses_auto_hint(t *testing.T) {
+	// With IgnoreHintKeys, '?' is captured as input, so the help shortcut is
+	// unreachable and "[Type ? for hint]" must not be advertised.
+	p := NewPrompt(&PromptOptions{
+		Message:        "Endpoint",
+		HelpMessage:    "Help that can't be opened with '?'.",
+		IgnoreHintKeys: true,
+	})
+	assert.Empty(t, p.options.Hint)
+
+	var buf bytes.Buffer
+	require.NoError(t, p.Render(NewPrinter(&buf)))
+	assert.NotContains(t, buf.String(), "[Type ? for hint]")
+}
+
+func TestNewPrompt_ignore_hint_keys_preserves_custom_hint(t *testing.T) {
+	// A caller-supplied Hint is informational and is kept even when hint keys
+	// are ignored.
+	p := NewPrompt(&PromptOptions{
+		Message:        "Endpoint",
+		HelpMessage:    "Some help.",
+		Hint:           "(https://...)",
+		IgnoreHintKeys: true,
+	})
+	assert.Equal(t, "(https://...)", p.options.Hint)
 }
 
 func TestPrompt_Render_secret_masks_value_in_progress(t *testing.T) {

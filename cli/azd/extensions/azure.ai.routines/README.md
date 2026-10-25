@@ -2,6 +2,8 @@
 
 Manage Microsoft Foundry Routines from your terminal. (Preview)
 
+Requires azd 1.37.0 or later.
+
 ## Extension telemetry API
 
 Extension code can report best-effort usage events through the shared
@@ -32,6 +34,32 @@ finite-value types in `internal/telemetry/events.go`; do not call `ReportUsage`
 directly. Never include routine names, definitions, schedules, inputs, outputs,
 IDs, endpoints, paths, URLs, or other customer content. The azd host records
 events only for extensions installed from the official registry.
+
+## Configure the Foundry project endpoint
+
+Routine commands and `azd deploy` resolve the Foundry project endpoint from
+the active azd environment. `FOUNDRY_PROJECT_ENDPOINT` is the canonical
+environment key; `AZURE_AI_PROJECT_ENDPOINT` is still accepted as a legacy
+fallback. Provisioning a Foundry project normally populates the canonical
+key.
+
+Check or set the active environment value with:
+
+```bash
+azd env get-value FOUNDRY_PROJECT_ENDPOINT
+azd env set FOUNDRY_PROJECT_ENDPOINT https://<account>.services.ai.azure.com/api/projects/<project>
+```
+
+When an active environment is selected, azd also falls back to its shell
+value for an endpoint key that is not stored in `.env`. The legacy key is tried
+only after a successful empty canonical lookup. If both keys are read
+successfully but are empty, or no active environment is available, routine
+commands try the global project context configured by
+`azd ai project set <endpoint>`, the legacy agent context, and then the
+`FOUNDRY_PROJECT_ENDPOINT` shell variable. Once an active environment is found,
+a failed lookup of either endpoint key stops the operation rather than
+selecting another project. Remote routine commands can override discovery with
+`--project-endpoint`; `azd deploy` uses the project and environment configuration.
 
 ## Add a routine to azure.yaml
 

@@ -2,6 +2,24 @@
 
 <!-- cspell:ignore Yimin -->
 
+## 1.0.0-beta.11 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.10 (2026-10-15)
+
+### Features Added
+
+- [[#10242]](https://github.com/Azure/azure-dev/pull/10242) Add creator dispatch identity through `--dispatch-identity creator` and `authorization.identity` while preserving the identity of existing routines.
+- [[#10242]](https://github.com/Azure/azure-dev/pull/10242) Add `--tenant-id` to select the authentication tenant for remote routine commands.
+
+### Bugs Fixed
+
+- [[#10426]](https://github.com/Azure/azure-dev/pull/10426) Fix routine deployment to resolve `FOUNDRY_PROJECT_ENDPOINT` from the active azd environment before falling back to `AZURE_AI_PROJECT_ENDPOINT`.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
 ## 1.0.0-beta.9 (2026-10-08)
 
 ### Breaking Changes

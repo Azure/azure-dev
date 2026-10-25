@@ -355,6 +355,11 @@ func tryAutoInstallForPartialNamespace(
 	foundCmd *cobra.Command,
 	remainingArgs []string,
 ) (autoInstallResult, error) {
+	// A runnable leaf command's remaining arguments are values, not an incomplete extension namespace.
+	if foundCmd.Runnable() && !foundCmd.HasSubCommands() {
+		return autoInstallResult{}, nil
+	}
+
 	if _, isExtensionCmd := foundCmd.Annotations["extension.id"]; isExtensionCmd {
 		// Extension commands handle their own args via DisableFlagParsing
 		return autoInstallResult{}, nil
@@ -974,34 +979,7 @@ func newChildCommandConsole(globalOpts *internal.GlobalCommandOptions, foundCmd 
 // in internal/reserved_flags.go. The SDK package (pkg/azdext) derives its
 // reserved flag indexes from that registry automatically.
 func CreateGlobalFlagSet() *pflag.FlagSet {
-	globalFlags := pflag.NewFlagSet("global", pflag.ContinueOnError)
-
-	globalFlags.StringP("cwd", "C", "", "Sets the current working directory.")
-	globalFlags.Bool("debug", false, "Enables debugging and diagnostics logging.")
-	globalFlags.Bool(
-		"no-prompt",
-		false,
-		"Runs without prompts. Uses existing values; "+
-			"fails if any required value or decision cannot be resolved automatically. "+
-			"Automatically enabled when azd detects a CI/CD or AI-agent environment; "+
-			"set AZD_NON_INTERACTIVE=false to opt out of that automatic enablement.")
-	globalFlags.Bool(
-		"non-interactive",
-		false,
-		"Alias for --no-prompt.")
-	_ = globalFlags.MarkHidden("non-interactive")
-	globalFlags.StringP(internal.EnvironmentNameFlagName, "e", "", "The name of the environment to use.")
-
-	// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
-	// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
-	// don't error due to an "unknown flag".
-	globalFlags.String("trace-log-file", "", "Write a diagnostics trace to a file.")
-	_ = globalFlags.MarkHidden("trace-log-file")
-
-	globalFlags.String("trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
-	_ = globalFlags.MarkHidden("trace-log-url")
-
-	return globalFlags
+	return internal.NewGlobalFlagSet()
 }
 
 // ParseGlobalFlags parses global flags from the provided arguments and populates the GlobalCommandOptions.

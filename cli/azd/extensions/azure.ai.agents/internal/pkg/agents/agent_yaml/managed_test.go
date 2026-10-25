@@ -130,9 +130,15 @@ func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
 		wantJSON    bool
 	}{
 		{
-			name:        "managed agent keeps the GitHub Copilot harness",
+			name:        "managed agent keeps the Microsoft Copilot harness",
+			harness:     agent_api.ManagedAgentHarnessMicrosoftCopilot,
+			wantHarness: "microsoft_copilot_preview",
+			wantJSON:    true,
+		},
+		{
+			name:        "managed agent preserves the legacy GitHub Copilot wire value",
 			harness:     agent_api.ManagedAgentHarnessGitHubCopilot,
-			wantHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			wantHarness: "github_copilot_preview",
 			wantJSON:    true,
 		},
 		{
@@ -185,39 +191,45 @@ func TestCreatePromptAgentAPIRequest_Harness(t *testing.T) {
 }
 
 func TestCreatePromptAgentAPIRequest_CopilotToolset(t *testing.T) {
-	promptDef := PromptAgent{
-		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
-		Model:           "gpt-5-mini",
-		Instructions:    "Use web research when requested.",
-		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
-		Tools: []any{map[string]any{
-			"type":          githubCopilotToolsetPreview,
-			"defaultConfig": map[string]any{"enabled": false},
-			"configs":       []any{map[string]any{"name": "web", "enabled": true}},
-		}},
-	}
+	for _, harness := range []string{"microsoft_copilot_preview", "github_copilot_preview"} {
+		for _, toolType := range []string{"microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"} {
+			t.Run(harness+"/"+toolType, func(t *testing.T) {
+				promptDef := PromptAgent{
+					AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
+					Model:           "gpt-5-mini",
+					Instructions:    "Use web research when requested.",
+					Harness:         NewPromptHarness(harness),
+					Tools: []any{map[string]any{
+						"type":          toolType,
+						"defaultConfig": map[string]any{"enabled": false},
+						"configs":       []any{map[string]any{"name": "web", "enabled": true}},
+					}},
+				}
 
-	req, err := CreatePromptAgentAPIRequest(promptDef, nil)
-	if err != nil {
-		t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
-	}
-	data, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("marshal request: %v", err)
-	}
-	body := string(data)
-	for _, want := range []string{
-		`"harness":{"type":"github_copilot_preview"}`,
-		`"type":"github_copilot_toolset_preview"`,
-		`"default_config":{"enabled":false}`,
-		`"configs":[{"enabled":true,"name":"web"}]`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("serialized request missing %s:\n%s", want, body)
+				req, err := CreatePromptAgentAPIRequest(promptDef, nil)
+				if err != nil {
+					t.Fatalf("CreatePromptAgentAPIRequest: %v", err)
+				}
+				data, err := json.Marshal(req)
+				if err != nil {
+					t.Fatalf("marshal request: %v", err)
+				}
+				body := string(data)
+				for _, want := range []string{
+					`"harness":{"type":"` + harness + `"}`,
+					`"type":"` + toolType + `"`,
+					`"default_config":{"enabled":false}`,
+					`"configs":[{"enabled":true,"name":"web"}]`,
+				} {
+					if !strings.Contains(body, want) {
+						t.Errorf("serialized request missing %s:\n%s", want, body)
+					}
+				}
+				if strings.Contains(body, `"builtin_tools"`) || strings.Contains(body, `"environment"`) {
+					t.Errorf("harness contains removed configuration fields: %s", body)
+				}
+			})
 		}
-	}
-	if strings.Contains(body, `"builtin_tools"`) || strings.Contains(body, `"environment"`) {
-		t.Errorf("harness contains removed configuration fields: %s", body)
 	}
 }
 
@@ -228,7 +240,7 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
-		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot),
 		Skills:          []HarnessSkillRef{{Name: "duplicate-check"}},
 		ResolvedSkills: []HarnessSkillRef{
 			{Name: "duplicate-check", Version: "3"},
@@ -273,7 +285,7 @@ func TestCreatePromptAgentAPIRequest_HarnessSkills(t *testing.T) {
 			`{"type":"skill_reference","name":"severity-triage","version":"1"}]`) {
 		t.Errorf("versioned top-level skills missing from request: %s", body)
 	}
-	if strings.Contains(body, `"harness":{"type":"github_copilot_preview","skills"`) {
+	if strings.Contains(body, `"harness":{"type":"microsoft_copilot_preview","skills"`) {
 		t.Errorf("skills must not be nested under harness: %s", body)
 	}
 }
@@ -283,7 +295,7 @@ func TestCreatePromptAgentAPIRequest_AuthoredVersionedSkill(t *testing.T) {
 		AgentDefinition: AgentDefinition{Kind: AgentKindPrompt, Name: "my-agent"},
 		Model:           "gpt-4.1-mini",
 		Instructions:    "Be helpful.",
-		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
+		Harness:         NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot),
 		Skills: []HarnessSkillRef{
 			{Name: "microsoft-foundry", Version: "1"},
 		},

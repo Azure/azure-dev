@@ -48,8 +48,8 @@ type EvaluatorRef struct {
 	// contract rather than forwarded as written.
 	//nolint:lll // a struct tag is one token and cannot be wrapped
 	InitializationParameters map[string]any `yaml:"initializationParameters,omitempty" json:"initialization_parameters,omitempty"`
-	// DataMapping binds evaluator inputs to dataset columns, and is written
-	// only when the inference from declared inputs and columns gets it wrong.
+	// DataMapping overrides default bindings to dataset or sample fields.
+	// Map messages or separate query/response inputs, never both.
 	DataMapping map[string]string `yaml:"dataMapping,omitempty" json:"data_mapping,omitempty"`
 }
 

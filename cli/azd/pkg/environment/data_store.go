@@ -25,14 +25,18 @@ var ValidRemoteKinds = []string{
 type SaveOptions struct {
 	// Whether or not the environment is new
 	IsNew bool
+	// DotenvKeys limits local persistence to these raw .env keys, deleting keys absent from the environment.
+	// Other in-memory values and config.json changes are neither persisted nor replaced.
+	// Nil preserves the full-save behavior.
+	DotenvKeys []string
 }
 
 type DataStore interface {
 	// Gets the path to the environment .env file
-	EnvPath(env *Environment) string
+	EnvPath(env *Environment) (string, error)
 
 	// Gets the path to the environment JSON config file
-	ConfigPath(env *Environment) string
+	ConfigPath(env *Environment) (string, error)
 
 	// Gets a list of all environments within the stat store
 	List(ctx context.Context) ([]*contracts.EnvListEnvironment, error)

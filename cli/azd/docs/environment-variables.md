@@ -123,18 +123,21 @@ resolved transparently before injection.
 | --- | --- | --- |
 | **Script file** | First argument is an existing file | `azd exec ./setup.sh` |
 | **Direct exec** | Multiple arguments, no `--shell` flag | `azd exec python script.py` |
-| **Shell inline** | Single argument, or `--shell` specified | `azd exec 'echo $AZURE_ENV_NAME'` |
+| **Shell inline** | Single argument that is not a missing script path; use `--shell` to disambiguate script-like input | `azd exec --shell bash "cat<deploy.sh"` |
 
 **Direct exec** passes the exact argument vector to the child process without shell wrapping, which
 avoids quoting and escaping issues. **Shell inline** wraps the argument with the detected (or
 specified) shell's `-c` flag. **Script file** detects the shell from the file extension (`.sh` →
 bash, `.ps1` → pwsh, `.cmd`/`.bat` → cmd).
 
+A missing path-like input remains an error instead of falling through to shell execution. Use
+`--shell` when a single inline command contains shell operators or script-like path arguments.
+
 ### Flags
 
 | Flag | Description |
 | --- | --- |
-| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. |
+| `--shell`, `-s` | Shell to use (`bash`, `sh`, `zsh`, `pwsh`, `powershell`, `cmd`). Auto-detected if not specified. Also disambiguates inline commands that contain script-like path arguments. |
 | `--interactive`, `-i` | Run in interactive mode (connects stdin to the child process). |
 | `--environment`, `-e` | The azd environment to load. |
 
@@ -219,6 +222,7 @@ Metadata requests are unauthenticated when no matching token is set.
 | `AZURE_AI_MODEL_DEPLOYMENT_NAME` | The default model deployment name used for generated agent code and templates. |
 | `AZURE_AI_PROJECT_ACR_CONNECTION_NAME` | The Azure Container Registry connection name used by the extension for hosted agents. |
 | `AI_PROJECT_DEPLOYMENTS` | JSON-encoded deployment metadata populated by the extension for agent workflows. |
+| `AI_PROJECT_DEPLOYMENT_BINDINGS` | JSON object that maps each template deployment declaration to the existing deployment adopted for it in the current environment, for example `{"template-chat":"existing-chat"}`. An empty target records Skip. Prompt agent deploy and invoke honor these bindings. Set it to `'{}'` to clear explicit bindings. |
 | `AI_PROJECT_DEPENDENT_RESOURCES` | JSON-encoded dependent resource metadata populated by the extension for agent workflows. |
 | `AZD_AGENT_SKIP_ACR` | If `true`, signals the Bicep template to skip Azure Container Registry creation during provisioning. Automatically set by `azd ai agent init` for code-deploy, pre-built image, and managed voice scenarios. |
 | `ENABLE_HOSTED_AGENTS` | If set, indicates that hosted agents are enabled for the current azd environment. |

@@ -4,9 +4,13 @@
 package vsrpc
 
 import (
+	"net/http"
+	"path/filepath"
 	"sync"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -90,4 +94,27 @@ func TestValidateSession_ValidId(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ss)
 	require.Equal(t, id, ss.id, "session id should be set on the serverSession")
+}
+
+func TestServerSessionNewContainerWithoutExternalServicesUsesNoPromptDefaults(t *testing.T) {
+	session := &serverSession{
+		id:                     "test-session",
+		rootContainer:          ioc.NewNestedContainer(nil),
+		externalServicesClient: http.DefaultClient,
+	}
+
+	container, err := session.newContainer(RequestContext{
+		HostProjectPath: filepath.Join(t.TempDir(), "AppHost.csproj"),
+	})
+	require.NoError(t, err)
+
+	var console input.Console
+	require.NoError(t, container.Resolve(&console))
+
+	confirmed, err := console.Confirm(t.Context(), input.ConsoleOptions{
+		Message:      "Continue?",
+		DefaultValue: true,
+	})
+	require.NoError(t, err)
+	require.True(t, confirmed)
 }

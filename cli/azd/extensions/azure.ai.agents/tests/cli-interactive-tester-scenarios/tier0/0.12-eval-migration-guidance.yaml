@@ -1,0 +1,14 @@
+# Tier 0 (offline) - legacy agent eval only provides migration guidance.
+name: "eval-migration-guidance"
+command: "azd ai agent eval list --project-endpoint https://example.services.ai.azure.com/api/projects/example --no-prompt"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:eval", "negative-path", "parallel-safe"]
+
+goals:
+  - "Confirm the command exits non-zero and states that the legacy agent evaluation command is deprecated and no longer runs the legacy workflow."
+  - "Confirm the output directs the user to install the standalone extension with 'azd extension install azure.ai.evaluations' and consult 'azd ai eval --help'. The old list operation must not be presented as equivalent to a new run-list command."
+  - "Confirm the old --project-endpoint argument does not cause an 'unknown flag' error, and the command does not report 'unknown command'. It must give migration guidance instead of trying to use the argument."
+  - "Confirm it does not prompt for a Foundry endpoint, authentication, or any other input."
+  - "Confirm it does not execute the old evaluation workflow, redirect to 'azd ai eval', attempt a service request, or print a stack trace."
+  - "Take a screenshot of the error output as best-effort evidence. If capture fails, record an observation and continue."
+  - "Report a finding if the command succeeds, executes evaluations, forwards arguments, omits the installation or migration guidance, reports unknown-command or unknown-flag errors, prompts, hangs, crashes, or attempts a service request."

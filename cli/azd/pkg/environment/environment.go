@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"unicode"
@@ -17,6 +16,7 @@ import (
 	"maps"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/joho/godotenv"
 )
 
@@ -145,21 +145,18 @@ type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
-var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+var EnvironmentNameRegexp = azdcontext.EnvironmentNameRegexp
 
 // The maximum length of an environment name.
 var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
-	return EnvironmentNameRegexp.MatchString(name)
+	return azdcontext.IsValidEnvironmentName(name)
 }
 
 // InvalidEnvironmentNameError returns a standardized error for an invalid environment name.
 func InvalidEnvironmentNameError(name string) error {
-	return fmt.Errorf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-		name,
-	)
+	return azdcontext.InvalidEnvironmentNameError(name)
 }
 
 // CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
@@ -188,10 +185,7 @@ func CleanName(name string) string {
 // Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
 // first.
 func (e *Environment) Getenv(key string) string {
-	e.mu.RLock()
-	v, has := e.dotenv[key]
-	e.mu.RUnlock()
-	if has {
+	if v, has := e.LookupDotenv(key); has {
 		return v
 	}
 
@@ -201,14 +195,20 @@ func (e *Environment) Getenv(key string) string {
 // LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
 // considered first.
 func (e *Environment) LookupEnv(key string) (string, bool) {
-	e.mu.RLock()
-	v, has := e.dotenv[key]
-	e.mu.RUnlock()
-	if has {
+	if v, has := e.LookupDotenv(key); has {
 		return v, true
 	}
 
 	return os.LookupEnv(key)
+}
+
+// LookupDotenv looks up a key only in this environment's .env values, without falling back to process values.
+// Unlike [Environment.Dotenv], it can inspect individual reserved loader-control keys for state management.
+func (e *Environment) LookupDotenv(key string) (string, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	value, exists := e.dotenv[key]
+	return value, exists
 }
 
 // DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key

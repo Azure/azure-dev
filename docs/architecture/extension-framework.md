@@ -8,6 +8,8 @@ Architecture of the gRPC-based extension system in azd.
 
 Extensions are external processes that communicate with azd via gRPC. They allow third parties and first-party teams to add new capabilities — languages, hosting targets, event handlers, and more — without modifying the core CLI.
 
+The extension framework itself is **generally available (GA)** and considered stable. See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions, registries, or specific capabilities may still carry their own experimental or pre-release status independent of the framework's GA status.
+
 ## Architecture
 
 ```text
@@ -47,6 +49,13 @@ The gRPC broker (`pkg/grpcbroker`) manages bidirectional communication. Extensio
 - **Receive calls** from azd (e.g., "build this service")
 - **Make calls** back to azd (e.g., "prompt the user", "read environment config")
 
+Extension command metadata can set `"launch": {"noAzdEnvironment": true}` on a command.
+For that command only (not its descendants), azd skips loading the selected
+environment, resolving its Key Vault references, and injecting its variables
+before starting the extension. Inherited parent-process environment variables
+and azd launch/protocol variables are still passed. Explicit Environment gRPC
+calls are unaffected.
+
 ### Lifecycle follow-up contributions
 
 The beta event stream supplies an invocation ID to each subscribed project
@@ -85,7 +94,8 @@ Extensions can access these azd services via gRPC:
 - **Environment** — Read/write environment values and secrets
 - **User Config** — Read user-level azd configuration
 - **Deployment** — Access deployment information
-- **Account**. List subscriptions and resolve access tenants. The `v1beta` client also retrieves the current principal's resource-tenant object ID and type for role assignments. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Account**. List subscriptions and resolve access tenants. Since azd 1.36.0, stable `Account().GetCurrentPrincipal` retrieves the current principal's resource-tenant object ID and type for role assignments. The equivalent beta API is deprecated. See [GetCurrentPrincipal](../../cli/azd/docs/extensions/extension-framework.md#getcurrentprincipal).
+- **Telemetry**. Since azd 1.36.0, stable `Telemetry().ReportUsage` records eligible extension usage events. Its deprecated beta wire route remains available to released binaries. See [contract graduation and SDK migration](../../cli/azd/docs/extensions/contract-versioning.md#october-2026-graduation-azd-1360).
 - **Prompt** — Display prompts and collect user input
 - **AI Model** — Query AI model availability and quotas
 - **Event** — Subscribe to and emit events
@@ -112,6 +122,74 @@ Error precedence: ServiceError → LocalError → azcore.ResponseError → gRPC 
 
 For directly invoked extension commands, the host preserves the extension process's exit code, including when a structured error is reported. Invocation failures without an available exit code remain code `1`. See [Invoking Extension Commands](../../cli/azd/docs/extensions/extension-framework.md#invoking-extension-commands).
 
+### Service configuration persistence
+
+The existing `ProjectService.AddService` RPC replaces one complete service;
+service-specific setters change only their selected field or section. The host
+holds the existing mutation lock during each operation and preserves dispatcher
+and cache behavior. Setters reload raw configuration, validate a typed view,
+normalize known path fields, and atomically save the raw mapping. AddService
+serializes only the replacement service into the freshly loaded raw project.
+It parses that file snapshot and validates the merged structure using the
+existing typed-save rules. Path normalization and schema selection use the same
+snapshot rather than cached project data.
+Untouched fields, including explicit `env: {}` or `infra: {}`, large integers,
+and literal templates, do not round-trip through protobuf or typed YAML.
+
+Service names are literal keys, including dots. Paths within services retain
+their existing dot-notation meaning. Multi-RPC edits are not transactions;
+there is no compare-and-swap precondition. Caller-provided protobuf numbers
+retain their existing precision limits. Prefer targeted setters over resending
+unknown configuration.
+
+### Project service save acknowledgment
+
+The discoverable preview contract is `v1beta.ProjectService.GetAddServiceCapabilities`.
+This read-only RPC advertises whether the active `AddService` implementation
+supports `AddServiceRequest.operation_id` and `AddServiceAcknowledgment` status
+details. An unrelated focused beta override does not disable the built-in
+implementation. A custom `AddService` override must explicitly advertise its
+own support; the built-in capability response otherwise reports false.
+
+When supported, the caller supplies a fresh operation ID of at most 64 bytes
+(not characters) and makes exactly one beta `AddService` call. Longer identifiers
+are rejected with `InvalidArgument` before project mutation or saving.
+A failed operation that acquired the project mutation
+lock attaches an `AddServiceAcknowledgment` detail echoing that ID. Completion,
+including synchronous save retries, cleanup, and cache restoration, happens
+under the mutation lock. The status detail is serialized after the shared
+mutation helper returns and releases that lock. Success, panics, and errors
+rejected before the lock, cancellation, and deadline expiration do not carry a
+failure acknowledgment. Existing host-error codes, messages, suggestions, and
+structured details are preserved alongside the acknowledgment. Detail-attachment
+failures are explicit internal errors, not confirmed completion.
+
+Require exactly one well-formed matching detail before compensating local
+edits. Missing, malformed, stale, wrong-type, or duplicate details are uncertain
+outcomes. Cancellation, deadlines, authentication/authorization and transport
+failures are not safe completion signals. Completion is not proof that the
+root file stayed unchanged: retain root-byte comparisons, local locks, and
+ownership checks before rollback.
+
+The authentication/authorization exclusions above are a consumer recovery
+policy, not additional host acknowledgment suppression.
+
+An explicit false capability response or `Unimplemented` from the read-only
+RPC selects the stable host path. Other capability errors stop before
+mutation; errors from the subsequent mutation never trigger a fallback replay.
+Stable calls can succeed normally, but failed saves retain the scaffold
+with manual inspection guidance.
+
+The evaluations extension uses a private dynamic descriptor registry
+generated from the canonical beta schema by `grpc/generateprojectclient`.
+This permits reproducible builds with its released SDK pin, without a local
+replace, pseudo-version, duplicate schema, or conflicting global protobuf
+registration. Its private client supplies the project fields absent from its
+released SDK pin. Regeneration is part of `make proto`.
+Completion acknowledgments exist only on the typed beta API.
+Stable callers receive ordinary errors and retain uncertain
+scaffolds for manual recovery, without trusting custom metadata or trailers.
+
 ## Deployment Preview
 
 `azd deploy --preview` calls an optional `Preview` on each selected service target
@@ -121,11 +199,18 @@ The built-in App Service, Container Apps, Functions, Static Web Apps, AKS, and A
 endpoint hosts report the resolved Azure target and the deployment operation they
 would perform.
 
-Extensions opt in with `WithBetaServiceTargetPreview` and
-`preview.ServiceTargetPreviewProvider`. The contract is **v1beta-only**: the host
+Extensions opt in with `WithServiceTargetPreview` and
+`azdext.ServiceTargetPreviewProvider`. The contract graduates to **stable v1**,
+targeting host and SDK 1.37.0: the host
 stays on the stable service target stream for normal deployments and also registers
-on a dedicated v1beta stream that carries only preview registration and preview
+on a dedicated v1 stream that carries only preview registration and preview
 messages. Each preview runs on a fresh provider without `Initialize`.
+Deprecated beta registrations, provider interfaces, and wire routes remain
+supported without a removal date. The generated beta adapter delegates to the
+same stable host implementation; the frozen unversioned bridge is not extended.
+The [second graduation audit](https://github.com/Azure/azure-dev/issues/10625)
+tracks actual release completion, and [consumer migration](https://github.com/Azure/azure-dev/issues/10626)
+waits for the published SDK before updating the Foundry extensions.
 See [Deployment Preview](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
 for registration and provider requirements.
 

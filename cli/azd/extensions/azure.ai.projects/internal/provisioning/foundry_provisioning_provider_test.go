@@ -20,12 +20,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func TestFindFoundryProjectService(t *testing.T) {
@@ -183,6 +179,210 @@ services:
 	}
 }
 
+func TestResolveTemplateEnvironmentDeploymentOverlay(t *testing.T) {
+	yamlDeployment := synthesis.Deployment{Name: "yaml-a"}
+	envDeployment := synthesis.Deployment{
+		Name:  "env-b",
+		Model: synthesis.DeploymentModel{Name: "model-b", Version: "v-b", Format: "OpenAI"},
+		Sku:   synthesis.DeploymentSku{Name: "Standard", Capacity: 5},
+	}
+	encoded, err := EncodeProjectDeployments([]synthesis.Deployment{envDeployment})
+	require.NoError(t, err)
+	raw, err := json.Marshal([]synthesis.Deployment{envDeployment})
+	require.NoError(t, err)
+	for _, test := range []struct {
+		name, value       string
+		onDisk, wantError bool
+		want              []synthesis.Deployment
+	}{
+		{name: "env B wins", value: encoded, want: []synthesis.Deployment{envDeployment}},
+		{name: "raw JSON", value: string(raw), want: []synthesis.Deployment{envDeployment}},
+		{name: "missing keeps YAML", want: []synthesis.Deployment{yamlDeployment}},
+		{name: "blank keeps YAML", value: " \t", want: []synthesis.Deployment{yamlDeployment}},
+		{name: "empty overrides YAML", value: "[]", want: []synthesis.Deployment{}},
+		{name: "malformed fails", value: "{", wantError: true},
+		{name: "non-array fails", value: "null", wantError: true},
+		{name: "on disk user wins", value: encoded, onDisk: true, want: []synthesis.Deployment{{Name: "user"}}},
+		{name: "on disk ignores overlay", value: "{", onDisk: true, want: []synthesis.Deployment{{Name: "user"}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(ProjectDeploymentsEnvKey, encoded)
+			env := &scopedProjectDeploymentsEnvServer{
+				resolveEnvStubEnvServer: resolveEnvStubEnvServer{envName: "env-a", get: map[string]string{}},
+				expectedName:            "env-b",
+			}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			p := &FoundryProvisioningProvider{
+				azdClient: client, envName: "env-b", armTemplate: map[string]any{},
+				synthResult: &synthesis.Result{Parameters: map[string]any{
+					"deployments": []synthesis.Deployment{yamlDeployment},
+				}},
+			}
+			// The value arrives after synthesis, as when switching environments.
+			env.get[ProjectDeploymentsEnvKey] = test.value
+			if test.onDisk {
+				p.onDiskSource = &templateSource{
+					armTemplate: map[string]any{"parameters": map[string]any{"deployments": map[string]any{}}},
+					parameters:  map[string]any{"deployments": map[string]any{"value": test.want}},
+				}
+			}
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			if test.wantError {
+				require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				return
+			}
+			require.NoError(t, err)
+			envelope, ok := source.parameters["deployments"].(map[string]any)
+			require.True(t, ok)
+			deployments, ok := envelope["value"].([]synthesis.Deployment)
+			require.True(t, ok)
+			assert.Equal(t, test.want, deployments)
+			assert.Equal(t, []synthesis.Deployment{yamlDeployment}, p.synthResult.Parameters["deployments"])
+		})
+	}
+}
+
+func TestInitializeExistingProjectEffectiveDeployments(t *testing.T) {
+	for _, test := range []struct {
+		name, value                           string
+		yamlDeployments, wantReuse, wantError bool
+	}{
+		{name: "missing without declarations reuses", wantReuse: true},
+		{name: "env deployments prevent reuse",
+			value: `[{"name":"env-b","model":{"format":"OpenAI","name":"gpt-4.1","version":"1"},` +
+				`"sku":{"name":"Standard","capacity":1}}]`},
+		{name: "empty env suppresses YAML mutations", value: "[]", yamlDeployments: true, wantReuse: true},
+		{name: "missing retains YAML mutations", yamlDeployments: true},
+		{name: "malformed fails before reuse", value: "{", wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+			raw := "services:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n"
+			if test.yamlDeployments {
+				raw += "    deployments:\n      - name: yaml-a\n" +
+					"        model: {name: gpt-4.1, format: OpenAI, version: '2025-04-14'}\n" +
+					"        sku: {name: GlobalStandard, capacity: 1}\n"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0600))
+			env := &resolveEnvStubEnvServer{envName: "env-b", get: map[string]string{
+				ProjectDeploymentsEnvKey: test.value,
+				envKeySubscriptionID:     "00000000-0000-0000-0000-000000000001",
+				envKeyLocation:           "westus",
+				envKeyFoundryRG:          "rg",
+				"AZURE_AI_PROJECT_ID": "/subscriptions/00000000-0000-0000-0000-000000000001/" +
+					"resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+			}}
+			client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+			provider := &FoundryProvisioningProvider{azdClient: client}
+			err := provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
+			if test.wantError {
+				require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, test.wantReuse, provider.existingProjectReuseOnly)
+			if !test.wantReuse {
+				source, err := provider.resolveTemplate(t.Context(), func(string) {})
+				require.NoError(t, err)
+				envelope, ok := source.parameters["deployments"].(map[string]any)
+				require.True(t, ok)
+				deployments, ok := envelope["value"].([]synthesis.Deployment)
+				require.True(t, ok)
+				require.Len(t, deployments, 1)
+				if test.value != "" {
+					assert.Equal(t, "env-b", deployments[0].Name)
+				} else {
+					assert.Equal(t, "yaml-a", deployments[0].Name)
+				}
+			}
+		})
+	}
+}
+
+func TestReuseOnlyDeploymentChangesAfterInitialize(t *testing.T) {
+	const deployment = `[{"name":"env-chat","model":{"name":"gpt-4.1","format":"OpenAI","version":"1"},` +
+		`"sku":{"name":"Standard","capacity":1}}]`
+	for _, value := range []string{deployment, "", "[]", "{"} {
+		for _, operation := range []string{"refresh", "deploy", "state", "preview", "outputs"} {
+			t.Run(operation+"/"+value, func(t *testing.T) {
+				root := t.TempDir()
+				const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+				raw := "services:\n  project:\n    host: azure.ai.project\n    endpoint: " + endpoint + "\n" +
+					"    deployments:\n      - name: yaml-chat\n" +
+					"        model: {name: gpt-4.1, format: OpenAI, version: '1'}\n" +
+					"        sku: {name: Standard, capacity: 1}\n"
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0600))
+				env := &resolveEnvStubEnvServer{envName: "env", get: map[string]string{
+					ProjectDeploymentsEnvKey: "[]", envKeySubscriptionID: "sub",
+					envKeyLocation: "westus", envKeyFoundryRG: "rg",
+					"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				}}
+				client := newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+				p := &FoundryProvisioningProvider{azdClient: client}
+				require.NoError(t, p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
+					Provider: FoundryProviderName,
+				}))
+				require.True(t, p.existingProjectReuseOnly)
+				env.get[ProjectDeploymentsEnvKey] = value
+				if operation == "refresh" {
+					err := p.refreshReuseOnlyDeployments(t.Context())
+					if value == "{" {
+						require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, value == "[]", p.existingProjectReuseOnly)
+					if value != "[]" {
+						source, err := p.resolveTemplate(t.Context(), func(string) {})
+						require.NoError(t, err)
+						envelope, ok := source.parameters["deployments"].(map[string]any)
+						require.True(t, ok)
+						list, ok := envelope["value"].([]synthesis.Deployment)
+						require.True(t, ok)
+						require.Len(t, list, 1)
+						want := "env-chat"
+						if value == "" {
+							want = "yaml-chat"
+						}
+						assert.Equal(t, want, list[0].Name)
+					}
+					return
+				}
+				if value == "[]" {
+					env.get[envKeySubscriptionID] = ""
+				} else {
+					// Require mutation validation before any Azure I/O.
+					env.get["AZURE_AI_PROJECT_ID"] = ""
+				}
+				var err error
+				switch operation {
+				case "deploy":
+					_, err = p.Deploy(t.Context(), func(string) {})
+				case "state":
+					_, err = p.State(t.Context(), &azdext.ProvisioningStateOptions{})
+				case "preview":
+					_, err = p.Preview(t.Context(), func(string) {})
+				case "outputs":
+					_, err = p.PlannedOutputs(t.Context())
+				}
+				switch value {
+				case "{":
+					require.ErrorContains(t, err, ProjectDeploymentsEnvKey)
+				case "[]":
+					require.NoError(t, err)
+				default:
+					require.ErrorContains(t, err, "AZURE_AI_PROJECT_ID")
+				}
+				assert.True(t, p.existingProjectReuseOnly)
+			})
+		}
+	}
+}
+
 func TestSanitizeFoundryName(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -209,328 +409,6 @@ func TestFoundryProvider_ImplementsContract(t *testing.T) {
 	// guards against future signature drift in azdext.
 	p := NewFoundryProvisioningProvider(nil)
 	assert.NotNil(t, p)
-}
-
-func TestParametersResolvePrincipalFromHost(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		name          string
-		objectID      string
-		principalType v1beta.PrincipalType
-		wantType      string
-	}{
-		{
-			name: "guest user", objectID: "resource-tenant-guest-object-id",
-			principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, wantType: "User",
-		},
-		{
-			name: "service principal", objectID: "service-principal-object-id",
-			principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL, wantType: "ServicePrincipal",
-		},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			account := &principalStubAccountServer{response: &v1beta.GetCurrentPrincipalResponse{
-				ObjectId: tt.objectID, PrincipalType: tt.principalType,
-			}}
-			client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, account)
-			provider := &FoundryProvisioningProvider{
-				azdClient: client, subID: "selected-subscription", location: "eastus", foundryName: "project",
-			}
-
-			parameters, err := provider.Parameters(t.Context())
-
-			require.NoError(t, err)
-			require.Len(t, parameters, 4)
-			assert.Equal(t, "principalId", parameters[2].Name)
-			assert.Equal(t, tt.objectID, parameters[2].Value)
-			assert.Equal(t, "principalType", parameters[3].Name)
-			assert.Equal(t, tt.wantType, parameters[3].Value)
-			assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
-			assert.EqualValues(t, 1, account.calls.Load())
-			assert.Nil(t, provider.credential)
-		})
-	}
-}
-
-func TestPrincipalLookupFailures(t *testing.T) {
-	t.Parallel()
-
-	hostStatus, err := status.New(codes.Unauthenticated, "login required").WithDetails(
-		&azdext.ActionableErrorDetail{Suggestion: "run 'azd auth login'"},
-	)
-	require.NoError(t, err)
-
-	tests := []struct {
-		name         string
-		response     *v1beta.GetCurrentPrincipalResponse
-		err          error
-		omitService  bool
-		wantCategory azdext.LocalErrorCategory
-		wantMessage  string
-	}{
-		{
-			name: "authentication failure", err: hostStatus.Err(),
-		},
-		{
-			name: "access denied", err: status.Error(codes.PermissionDenied, "subscription unavailable"),
-		},
-		{
-			name: "transport failure", err: status.Error(codes.Unavailable, "host unavailable"),
-		},
-		{
-			name: "cancellation", err: status.Error(codes.Canceled, "lookup cancelled"),
-		},
-		{
-			name: "unsupported method", err: status.Error(codes.Unimplemented, "method unavailable"),
-			wantCategory: azdext.LocalErrorCategoryCompatibility, wantMessage: "does not support",
-		},
-		{
-			name: "unsupported service", omitService: true,
-			wantCategory: azdext.LocalErrorCategoryCompatibility, wantMessage: "does not support",
-		},
-		{
-			name:         "empty object ID",
-			response:     &v1beta.GetCurrentPrincipalResponse{PrincipalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER},
-			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "empty current principal object ID",
-		},
-		{
-			name: "unspecified type", response: &v1beta.GetCurrentPrincipalResponse{ObjectId: "object-id"},
-			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "unsupported current principal type",
-		},
-		{
-			name:         "unknown type",
-			response:     &v1beta.GetCurrentPrincipalResponse{ObjectId: "object-id", PrincipalType: v1beta.PrincipalType(99)},
-			wantCategory: azdext.LocalErrorCategoryInternal, wantMessage: "unsupported current principal type",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			account := &principalStubAccountServer{response: test.response, err: test.err}
-			var accounts []v1beta.AccountServiceServer
-			if !test.omitService {
-				accounts = append(accounts, account)
-			}
-			client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, accounts...)
-			provider := &FoundryProvisioningProvider{
-				azdClient: client, subID: "selected-subscription",
-				armTemplate: map[string]any{"resources": []any{}},
-			}
-
-			source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-
-			require.Error(t, err)
-			assert.Nil(t, source)
-			assert.Empty(t, provider.principalID)
-			assert.Empty(t, provider.principalType)
-			assert.Nil(t, provider.credential)
-			if test.wantCategory != "" {
-				local, ok := errors.AsType[*azdext.LocalError](err)
-				require.True(t, ok)
-				assert.Equal(t, exterrors.CodePrincipalLookupFailed, local.Code)
-				assert.Equal(t, test.wantCategory, local.Category)
-				assert.Contains(t, local.Message, test.wantMessage)
-				if test.wantCategory == azdext.LocalErrorCategoryCompatibility {
-					assert.Contains(t, local.Suggestion, "upgrade azd to version 1.34.2 or later")
-				}
-			} else {
-				assert.Equal(t, status.Code(test.err), status.Code(err))
-				assert.ErrorContains(t, err, status.Convert(test.err).Message())
-				assert.Equal(t, status.Convert(test.err).Details(), status.Convert(err).Details())
-				if status.Code(test.err) == codes.Unauthenticated {
-					assert.Equal(t, "run 'azd auth login'", azdext.WrapError(err).GetSuggestion())
-				}
-			}
-
-			parameters, err := provider.Parameters(t.Context())
-			require.Error(t, err)
-			assert.Nil(t, parameters)
-			if !test.omitService {
-				assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
-				assert.EqualValues(t, 2, account.calls.Load())
-			}
-		})
-	}
-}
-
-func TestResolveProvisioningTemplatePrincipalParameters(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name              string
-		principalType     v1beta.PrincipalType
-		disableAssignment bool
-		literalOverride   bool
-		omitType          bool
-		templateDefault   bool
-		wantPrincipal     string
-		wantType          string
-	}{
-		{
-			name: "guest user", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER,
-			wantPrincipal: "guest-object-id", wantType: "User",
-		},
-		{
-			name: "service principal", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "literal override", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, literalOverride: true,
-			wantPrincipal: "configured-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "literal empty principal", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_USER, literalOverride: true,
-			wantType: "User",
-		},
-		{
-			name: "explicit empty environment", disableAssignment: true,
-		},
-		{
-			name:            "ID-only user override by service principal",
-			principalType:   v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
-			literalOverride: true, omitType: true, templateDefault: true,
-			wantPrincipal: "configured-user-id", wantType: "User",
-		},
-		{
-			name: "ID-only override matching deployer", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
-			literalOverride: true, omitType: true,
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-		{
-			name: "environment ID without type", principalType: v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
-			omitType:      true,
-			wantPrincipal: "guest-object-id", wantType: "ServicePrincipal",
-		},
-	}
-	for _, mode := range []templateMode{templateModeEmbedded, templateModeBicep, templateModeBicepParam} {
-		for _, tt := range tests {
-			if mode == templateModeEmbedded && (tt.literalOverride || tt.omitType) {
-				continue
-			}
-			t.Run(mode.String()+"/"+tt.name, func(t *testing.T) {
-				root := t.TempDir()
-				infraDir := filepath.Join(root, "infra", "foundry")
-				require.NoError(t, os.MkdirAll(infraDir, 0o750))
-				const template = `{"parameters":{
-					"principalId":{"type":"string"},
-					"principalType":{"type":"string","defaultValue":"User"},
-					"identityLabel":{"type":"object"}
-				},"resources":[]}`
-				inputParameters := map[string]any{
-					"principalId":   "${AZURE_PRINCIPAL_ID}",
-					"principalType": "${AZURE_PRINCIPAL_TYPE}",
-					"identityLabel": map[string]any{"value": "${AZURE_PRINCIPAL_ID}/${AZURE_PRINCIPAL_TYPE}"},
-				}
-				if tt.literalOverride {
-					inputParameters["principalId"] = tt.wantPrincipal
-					inputParameters["principalType"] = tt.wantType
-				}
-				if tt.omitType {
-					delete(inputParameters, "principalType")
-				}
-				if mode != templateModeEmbedded {
-					require.NoError(t, os.WriteFile(
-						filepath.Join(infraDir, "project.bicep"), []byte("// compiled by stub"), 0o600,
-					))
-				}
-				compiler := &stubCompiler{buildResult: bicep.BuildResult{Compiled: template}}
-				if mode == templateModeBicep {
-					require.NoError(t, os.WriteFile(
-						filepath.Join(infraDir, "project.parameters.json"),
-						[]byte(minimalARMParametersFile(t, inputParameters)), 0o600,
-					))
-				} else if mode == templateModeBicepParam {
-					require.NoError(t, os.WriteFile(
-						filepath.Join(infraDir, "project.bicepparam"),
-						[]byte("using './project.bicep'\n"+
-							"param principalId = readEnvironmentVariable('AZURE_PRINCIPAL_ID')\n"+
-							"param principalType = readEnvironmentVariable('AZURE_PRINCIPAL_TYPE')\n"), 0o600,
-					))
-					compiler.buildParam = func(_ context.Context, _ string, env []string) (bicep.BuildResult, error) {
-						values := map[string]string{}
-						for _, entry := range env {
-							key, value, found := strings.Cut(entry, "=")
-							require.True(t, found)
-							values[key] = value
-						}
-						params := map[string]any{
-							"principalId":   values[envKeyPrincipalID],
-							"principalType": values[envKeyPrincipalType],
-							"identityLabel": map[string]any{
-								"value": values[envKeyPrincipalID] + "/" + values[envKeyPrincipalType],
-							},
-						}
-						if tt.literalOverride {
-							params["principalId"] = tt.wantPrincipal
-							params["principalType"] = tt.wantType
-						}
-						if tt.omitType {
-							delete(params, "principalType")
-						}
-						envelope, err := json.Marshal(map[string]string{
-							"templateJson": template, "parametersJson": minimalARMParametersFile(t, params),
-						})
-						require.NoError(t, err)
-						return bicep.BuildResult{Compiled: string(envelope)}, nil
-					}
-				}
-				account := &principalStubAccountServer{response: &v1beta.GetCurrentPrincipalResponse{
-					ObjectId: "guest-object-id", PrincipalType: tt.principalType,
-				}}
-				client := newResolveEnvTestClient(t, &resolveEnvStubEnvServer{}, &resolveEnvStubPromptServer{}, account)
-				provider := &FoundryProvisioningProvider{
-					projectPath: root, infraPath: infraDir, infraModule: "project", isLayer: true,
-					azdClient: client, subID: "selected-subscription",
-					bicepCliInstance: compiler, principalIDConfigured: tt.disableAssignment,
-				}
-				if mode == templateModeEmbedded {
-					templateBytes, err := synthesis.ARMTemplate()
-					require.NoError(t, err)
-					require.NoError(t, json.Unmarshal(templateBytes, &provider.armTemplate))
-				}
-
-				source, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"value": tt.wantPrincipal}, source.parameters["principalId"])
-				if tt.templateDefault {
-					assert.NotContains(t, source.parameters, "principalType")
-					definitions, ok := source.armTemplate["parameters"].(map[string]any)
-					require.True(t, ok)
-					typeDefinition, ok := definitions["principalType"].(map[string]any)
-					require.True(t, ok)
-					assert.Equal(t, tt.wantType, typeDefinition["defaultValue"])
-				} else {
-					assert.Equal(t, map[string]any{"value": tt.wantType}, source.parameters["principalType"])
-				}
-				if mode != templateModeEmbedded {
-					assert.Equal(t, map[string]any{"value": map[string]any{
-						"value": provider.principalID + "/" + provider.principalType,
-					}}, source.parameters["identityLabel"])
-				}
-				assert.Equal(t, mode, source.mode)
-
-				repeated, err := provider.resolveProvisioningTemplate(t.Context(), func(string) {})
-				require.NoError(t, err)
-				assert.Equal(t, source.parameters, repeated.parameters)
-				if tt.disableAssignment {
-					assert.Zero(t, account.calls.Load())
-				} else {
-					assert.EqualValues(t, 1, account.calls.Load())
-					assert.Equal(t, "selected-subscription", account.subscriptionID.Load())
-				}
-				assert.Nil(t, provider.credential)
-				wantLoads := 2
-				if tt.disableAssignment {
-					wantLoads = 1
-				}
-				if mode == templateModeEmbedded {
-					wantLoads = 0
-				}
-				assert.Equal(t, wantLoads, len(compiler.buildCalls)+len(compiler.buildParamCalls))
-			})
-		}
-	}
 }
 
 func TestArmOutputsToProto(t *testing.T) {
@@ -1039,30 +917,68 @@ func TestArmInputsToProto_JSONEncodesNonStrings(t *testing.T) {
 }
 
 func TestParameters_NilSynthResult_ReturnsHostDerivedOnly(t *testing.T) {
-	// On the on-disk Bicep path, Initialize deliberately skips the
-	// synthesizer so synthResult is nil. Parameters must still return
-	// the host-derived parameter list (location, foundryProjectName,
-	// principalId) so azd-core's env-wiring planner has something to
-	// work with. The synthesizer-derived `includeAcr` is omitted in
-	// that mode -- on-disk Bicep owns its own parameter contract.
+	// An on-disk template does not trigger principal lookup or wiring.
 	p := &FoundryProvisioningProvider{
+		projectPath: t.TempDir(),
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		// synthResult intentionally nil (on-disk path)
 	}
+	infraDir := filepath.Join(p.projectPath, onDiskInfraDir)
+	require.NoError(t, os.MkdirAll(infraDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskModule+".bicep"), nil, 0o600))
 	got, err := p.Parameters(t.Context())
 	require.NoError(t, err, "Parameters must succeed on the on-disk path")
 
 	names := make([]string, 0, len(got))
+	var location *azdext.ProvisioningParameter
 	for _, p := range got {
 		names = append(names, p.Name)
+		if p.Name == "location" {
+			location = p
+		}
 	}
 	assert.Contains(t, names, "location")
 	assert.Contains(t, names, "foundryProjectName")
-	assert.Contains(t, names, "principalId")
+	assert.NotContains(t, names, "principalId")
+	assert.NotContains(t, names, "principalType")
+	require.NotNil(t, location)
+	assert.Equal(t, []string{envKeyLocation}, location.EnvVarMapping)
+	assert.True(t, location.UsingEnvVarMapping,
+		"pipeline config must persist AZURE_LOCATION because deploy requires it after provision")
 	assert.NotContains(t, names, "includeAcr",
 		"includeAcr is a synthesizer-derived value; on-disk path must skip it")
+}
+
+func TestParameters_BrownfieldValuesUseEnvMappings(t *testing.T) {
+	p := &FoundryProvisioningProvider{
+		location: "eastus2",
+		existingProjectID: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/a/projects/p",
+		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/p",
+		existingAcrMode:    "reuse-connect",
+	}
+
+	got, err := p.Parameters(t.Context())
+	require.NoError(t, err)
+
+	expected := map[string]struct {
+		value  string
+		envVar string
+	}{
+		"location":          {value: p.location, envVar: envKeyLocation},
+		"projectResourceId": {value: p.existingProjectID, envVar: "AZURE_AI_PROJECT_ID"},
+		"projectEndpoint":   {value: p.brownfieldEndpoint, envVar: "FOUNDRY_PROJECT_ENDPOINT"},
+		"acrMode":           {value: p.existingAcrMode, envVar: "AZD_FOUNDRY_ACR_MODE"},
+	}
+	require.Len(t, got, len(expected))
+	for _, parameter := range got {
+		want, exists := expected[parameter.Name]
+		require.True(t, exists, "unexpected parameter %q", parameter.Name)
+		assert.Equal(t, want.value, parameter.Value)
+		assert.Equal(t, []string{want.envVar}, parameter.EnvVarMapping)
+		assert.True(t, parameter.UsingEnvVarMapping)
+	}
 }
 
 func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) {
@@ -1071,7 +987,6 @@ func TestParameters_EmbeddedPath_IncludesSynthResultDerivedValues(t *testing.T) 
 	p := &FoundryProvisioningProvider{
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": true},
 		},
@@ -1100,12 +1015,13 @@ func TestArmParameters_NilSafeOnMissingSynthResult(t *testing.T) {
 		envName:     "dev",
 		rgName:      "rg-dev",
 		foundryName: "fp",
-		principalID: "pid",
 		// synthResult intentionally nil
 	}
 	out := p.armParameters() // must not panic
 	require.Contains(t, out, "location")
 	require.Contains(t, out, "foundryProjectName")
+	require.NotContains(t, out, "principalId")
+	require.NotContains(t, out, "principalType")
 	// resourceGroupName drives the resource group the subscription-scoped
 	// template creates; it must always be present.
 	require.Contains(t, out, "resourceGroupName")
@@ -1241,7 +1157,6 @@ func TestResolveTemplate_FallsBackToEmbeddedWhenNoOnDisk(t *testing.T) {
 		envName:     "dev",
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded", "contentVersion": "1.0.0.0"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{
@@ -1282,6 +1197,7 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "value": "user-supplied-location" },
+    "principalId": { "value": "user-supplied-id" },
     "userOnly": { "value": "from-user" }
   }
 }`
@@ -1296,6 +1212,8 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		"parameters": map[string]any{
 			"location":           map[string]any{"type": "string"},
 			"foundryProjectName": map[string]any{"type": "string"},
+			"principalId":        map[string]any{"type": "string"},
+			"principalType":      map[string]any{"type": "string", "defaultValue": "User"},
 		},
 	}
 	p := &FoundryProvisioningProvider{
@@ -1303,7 +1221,6 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 		envName:     "dev",
 		location:    "host-location",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": false},
@@ -1312,8 +1229,9 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 			mode:        templateModeBicep,
 			armTemplate: armFromDisk,
 			parameters: map[string]any{
-				"location": map[string]any{"value": "user-supplied-location"},
-				"userOnly": map[string]any{"value": "from-user"},
+				"location":    map[string]any{"value": "user-supplied-location"},
+				"principalId": map[string]any{"value": "user-supplied-id"},
+				"userOnly":    map[string]any{"value": "from-user"},
 			},
 			sourcePath: filepath.Join(infraDir, onDiskModule+".bicep"),
 		},
@@ -1332,6 +1250,8 @@ func TestResolveTemplate_PrefersOnDiskWhenPresent(t *testing.T) {
 	loc := got.parameters["location"].(map[string]any)
 	assert.Equal(t, "user-supplied-location", loc["value"],
 		"user-supplied parameter wins over host-derived")
+	assert.Equal(t, map[string]any{"value": "user-supplied-id"}, got.parameters["principalId"])
+	assert.NotContains(t, got.parameters, "principalType")
 	// User-only key is present.
 	require.Contains(t, got.parameters, "userOnly")
 	// Host-derived key (declared by the template, not in user params) still flows through.
@@ -1360,7 +1280,6 @@ func TestResolveTemplate_OnDiskFallsBackWhenSourceLoaderReturnsNil(t *testing.T)
 		envName:     "dev",
 		location:    "eastus",
 		foundryName: "fp",
-		principalID: "pid",
 		armTemplate: map[string]any{"$schema": "embedded"},
 		synthResult: &synthesis.Result{
 			Parameters: map[string]any{"includeAcr": false},
@@ -1789,10 +1708,10 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		location:    "westus2",
 		rgName:      "my-rg",
 		foundryName: "fp",
-		principalID: "pid",
 		virtualEnv: map[string]string{
-			"PLATFORM_OUTPUT": "planned-value",
-			envKeyLocation:    "stale-planned-location",
+			"PLATFORM_OUTPUT":    "planned-value",
+			"AZURE_PRINCIPAL_ID": "user-supplied-id",
+			envKeyLocation:       "stale-planned-location",
 		},
 		// azdClient intentionally nil
 	}
@@ -1802,7 +1721,8 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])
 	assert.Equal(t, "my-rg", got[envKeyFoundryRG])
 	assert.Equal(t, "fp", got[envKeyProjectName])
-	assert.Equal(t, "pid", got[envKeyPrincipalID])
+	assert.Equal(t, "user-supplied-id", got["AZURE_PRINCIPAL_ID"])
+	assert.NotContains(t, got, "AZURE_PRINCIPAL_TYPE")
 	assert.Equal(t, "planned-value", got["PLATFORM_OUTPUT"])
 	assert.Equal(t, "westus2", got[envKeyLocation], "canonical values take precedence over virtual env")
 }

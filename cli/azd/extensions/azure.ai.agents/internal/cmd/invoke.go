@@ -23,6 +23,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/telemetry"
 
@@ -82,6 +83,7 @@ type InvokeAction struct {
 	debugLatencyExplicit  bool
 	endpoint              *parsedAgentEndpoint
 	clientHeaders         http.Header
+	invocationsTransport  http.RoundTripper
 	protocolServiceName   string
 	resolvedRemoteContext *remoteContext
 	resolvedBody          []byte
@@ -112,14 +114,7 @@ redeploying or bypassed with --protocol. Otherwise the agent definition is
 used. If neither identifies exactly one invocable protocol, pass --protocol
 explicitly.
 
-Voice Agents:
-For prompt voice agents and hosted voice wrappers, open your agent in the
-Microsoft Foundry portal at https://ai.azure.com to try it.
-For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
-'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
-hosted agent protocols such as responses, invocations, and a2a.
-
-Request Body:
+` + invokeVoiceHelp + `Request Body:
 Use --input-file/-f to send the contents of a file as the request body
 instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
@@ -166,13 +161,7 @@ and the summary. This is independent of the global --debug logging flag.
 Local, prompt-agent, and a2a invokes do not collect platform latency.
 Explicit --debug-latency=true is rejected for these routes; omit the flag
 or use --debug-latency=false.
-Raw output includes the returned headers without a formatted latency summary.
-
-Long-running Invocations:
-Use --long-running with the Responses protocol to start work that continues running in
-the service if this command disconnects. The command remains attached until the work
-finishes. Add --no-wait to return after azd receives the Response ID.
-This option does not provide crash recovery or automatic reconnection.`,
+Raw output includes the returned headers without a formatted latency summary.` + invokeLongRunningHelp,
 		Example: `  # Invoke the remote agent on Foundry (auto-detects agent from azure.yaml)
   azd ai agent invoke "Hello!"
 
@@ -199,13 +188,7 @@ This option does not provide crash recovery or automatic reconnection.`,
 
   # Invoke a specific agent locally (useful in multi-agent projects)
   azd ai agent invoke my-agent --local "Hello!"
-
-  # Start background work and remain attached until it finishes
-  azd ai agent invoke --long-running "Run the long task"
-
-  # Start background work and return after its Response ID is received
-  azd ai agent invoke --long-running --no-wait "Run the long task"
-
+` + invokeLongRunningExamples[0] + invokeLongRunningExamples[1] + `
   # Start a new session (discard conversation history)
   azd ai agent invoke --new-session "Hello!"
 
@@ -228,40 +211,17 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
-
-			// The inherited global --output flag is parsed and validated by the
-			// extension SDK (see azdext.RegisterFlagOptions below). Snapshot the
-			// resolved value into our flags struct so the rest of this action
-			// reads a single field.
-			flags.outputFmt = extCtx.OutputFormat
-
-			switch len(args) {
-			case 2:
-				flags.name = args[0]
-				flags.message = args[1]
-			case 1:
-				// Single arg could be a name (when -f is used) or a message
-				if flags.inputFile != "" {
-					flags.name = args[0]
-				} else {
-					flags.message = args[0]
-				}
-			case 0:
-				// Only valid when -f is provided
+			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+			if err := validateInvokeArgs(cmd, flags); err != nil {
+				return err
 			}
-
+			flags.version = strings.TrimSpace(flags.version)
 			action := &InvokeAction{
 				flags:                flags,
 				noPrompt:             extCtx.NoPrompt,
 				debugLatencyExplicit: cmd.Flags().Changed("debug-latency"),
 			}
-
-			// Agent-endpoint structural conflicts are surfaced first so the user sees
-			// the precise reason their invocation cannot proceed.
 			if flags.agentEndpoint != "" {
-				if err := validateAgentEndpointFlags(cmd, flags); err != nil {
-					return err
-				}
 				parsed, err := parseAgentEndpoint(flags.agentEndpoint)
 				if err != nil {
 					return err
@@ -270,109 +230,11 @@ This option does not provide crash recovery or automatic reconnection.`,
 				flags.name = parsed.AgentName
 				action.endpoint = parsed
 			}
-
-			if flags.inputFile != "" && flags.message != "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"cannot use --input-file and a message argument together",
-					"provide either a message argument or --input-file, not both",
-				)
-			}
-			if flags.inputFile == "" && flags.message == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"a message argument or --input-file is required",
-					"provide a message as a positional argument, or use --input-file/-f to send a file",
-				)
-			}
-
-			if err := validateInvokeVersionFlags(cmd, flags); err != nil {
-				return err
-			}
-
-			if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--conversation-id cannot be empty",
-					"provide a valid conversation ID or omit --conversation-id",
-				)
-			}
-
-			if flags.forceNewConversation() && flags.conversation != "" {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"cannot use conversation reset flags with --conversation-id",
-					"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
-				)
-			}
-
-			if flags.protocol != "" {
-				p := agent_api.AgentProtocol(flags.protocol)
-				if !p.IsInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
-						"supported protocols are: responses, invocations, a2a",
-					)
-				}
-				if flags.local && !p.IsLocalInvocable() {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
-						"omit --local to invoke the deployed agent, "+
-							"or use --protocol responses/invocations for local invocation",
-					)
-				}
-			}
-
 			clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 			if err != nil {
 				return err
 			}
-			// A2A routes through a translating proxy with its own fixed header
-			// set and does not propagate x-client-* to the agent, so accepting
-			// the flag there would silently drop the headers.
-			if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
-				return exterrors.Validation(
-					exterrors.CodeInvalidParameter,
-					"--client-header is not supported with the a2a protocol",
-					"the a2a protocol does not forward x-client-* headers to the agent; "+
-						"use --protocol responses or invocations to send client headers",
-				)
-			}
 			action.clientHeaders = clientHeaders
-
-			if flags.noWait && !flags.longRunning {
-				return exterrors.Validation(
-					exterrors.CodeConflictingArguments,
-					"--no-wait requires --long-running",
-					"add --long-running or remove --no-wait",
-				)
-			}
-			if flags.longRunning {
-				if cmd.Flags().Changed("timeout") {
-					return exterrors.Validation(
-						exterrors.CodeConflictingArguments,
-						"--timeout cannot be used with --long-running",
-						"remove --timeout; background Responses remain attached until completion or interruption",
-					)
-				}
-				if flags.local {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--long-running is supported only for remote Responses agents",
-						"remove --local and invoke a deployed Responses agent",
-					)
-				}
-				if flags.outputFmt == outputRaw {
-					return exterrors.Validation(
-						exterrors.CodeInvalidParameter,
-						"--output raw is not supported with --long-running",
-						"remove --output raw so azd can save the Response identity",
-					)
-				}
-			}
-
 			return action.Run(ctx)
 		},
 	}
@@ -451,7 +313,171 @@ This option does not provide crash recovery or automatic reconnection.`,
 		Default:       outputDefault,
 	})
 
+	gateAgentServices(cmd)
+	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
+		resolved := resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
+		return validateInvokeArgs(cmd, &resolved)
+	})
+	previewFlag(cmd, "long-running", featureflags.LongRunning)
+	previewFlag(cmd, "no-wait", featureflags.LongRunning)
+	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
+	previewHelp(cmd, featureflags.Voice, []string{invokeVoiceHelp}, nil)
+
 	return cmd
+}
+
+const invokeVoiceHelp = `Voice Agents:
+For prompt voice agents and hosted voice wrappers, open your agent in the
+Microsoft Foundry portal at https://ai.azure.com to try it.
+For programmatic voice access, use the voice WebSocket endpoint shown by 'azd show' or
+'azd ai agent show' with a Voice Live client. Text invoke is for HTTP-based
+hosted agent protocols such as responses, invocations, and a2a.
+
+`
+
+const invokeLongRunningHelp = `
+
+Long-running Invocations:
+Use --long-running with the Responses protocol to start work that continues running in
+the service if this command disconnects. The command remains attached until the work
+finishes. Add --no-wait to return after azd receives the Response ID.
+This option does not provide crash recovery or automatic reconnection.`
+
+var invokeLongRunningExamples = []string{`
+  # Start background work and remain attached until it finishes
+  azd ai agent invoke --long-running "Run the long task"
+`, `
+  # Start background work and return after its Response ID is received
+  azd ai agent invoke --long-running --no-wait "Run the long task"
+`}
+
+func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) invokeFlags {
+	flags.outputFmt = outputFormat
+	switch len(args) {
+	case 2:
+		flags.name, flags.message = args[0], args[1]
+	case 1:
+		if flags.inputFile != "" {
+			flags.name = args[0]
+		} else {
+			flags.message = args[0]
+		}
+	}
+	return flags
+}
+
+func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
+	flags := *input
+	if flags.agentEndpoint != "" {
+		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
+			return err
+		}
+		parsed, err := parseAgentEndpoint(flags.agentEndpoint)
+		if err != nil {
+			return err
+		}
+		flags.protocol = string(parsed.Protocol)
+		flags.name = parsed.AgentName
+	}
+	if flags.inputFile != "" && flags.message != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"cannot use --input-file and a message argument together",
+			"provide either a message argument or --input-file, not both",
+		)
+	}
+	if flags.inputFile == "" && flags.message == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"a message argument or --input-file is required",
+			"provide a message as a positional argument, or use --input-file/-f to send a file",
+		)
+	}
+	if err := validateInvokeVersionFlags(cmd, &flags); err != nil {
+		return err
+	}
+	if cmd.Flags().Changed("conversation-id") && strings.TrimSpace(flags.conversation) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--conversation-id cannot be empty",
+			"provide a valid conversation ID or omit --conversation-id",
+		)
+	}
+	if flags.forceNewConversation() && flags.conversation != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"cannot use conversation reset flags with --conversation-id",
+			"remove --conversation-id to start a new conversation, or remove the reset flag to reuse it",
+		)
+	}
+	if flags.protocol != "" {
+		p := agent_api.AgentProtocol(flags.protocol)
+		if !p.IsInvocable() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("unsupported protocol %q for invocation", flags.protocol),
+				"supported protocols are: responses, invocations, a2a",
+			)
+		}
+		if flags.local && !p.IsLocalInvocable() {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("the %s protocol cannot be invoked against a local agent", flags.protocol),
+				"omit --local to invoke the deployed agent, "+
+					"or use --protocol responses/invocations for local invocation",
+			)
+		}
+	}
+	clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
+	if err != nil {
+		return err
+	}
+	if len(clientHeaders) > 0 && agent_api.AgentProtocol(flags.protocol) == agent_api.AgentProtocolA2A {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--client-header is not supported with the a2a protocol",
+			"the a2a protocol does not forward x-client-* headers to the agent; "+
+				"use --protocol responses or invocations to send client headers",
+		)
+	}
+	if flags.noWait && !flags.longRunning {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--no-wait requires --long-running",
+			"add --long-running or remove --no-wait",
+		)
+	}
+	if flags.longRunning {
+		if cmd.Flags().Changed("timeout") {
+			return exterrors.Validation(
+				exterrors.CodeConflictingArguments,
+				"--timeout cannot be used with --long-running",
+				"remove --timeout; background Responses remain attached until completion or interruption",
+			)
+		}
+		if flags.local {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--long-running is supported only for remote Responses agents",
+				"remove --local and invoke a deployed Responses agent",
+			)
+		}
+		if flags.outputFmt == outputRaw {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"--output raw is not supported with --long-running",
+				"remove --output raw so azd can save the Response identity",
+			)
+		}
+		if flags.protocol != "" && flags.protocol != "responses" {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--long-running is not supported with the %s protocol", flags.protocol),
+				"use a deployed Responses agent or remove --long-running",
+			)
+		}
+	}
+	return nil
 }
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
@@ -568,6 +594,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 		defer azdClient.Close()
 		pctx, isPrompt, pErr := resolvePromptAgentService(
 			ctx, azdClient, a.flags.name, a.noPrompt, withVoiceInvocationGuidance(),
+			withPromptModelResolution(),
 		)
 		if pErr != nil {
 			if errors.Is(pErr, errVoiceInvocationUnsupported) {
@@ -581,6 +608,13 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
+			if a.flags.longRunning || a.flags.noWait {
+				return exterrors.Validation(
+					exterrors.CodeConflictingArguments,
+					"--long-running and --no-wait are not supported for prompt agents",
+					"remove these flags or invoke a hosted Responses agent",
+				)
+			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
 			}
@@ -624,6 +658,9 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	}
 
 	if a.flags.local {
+		if err := a.selectLocalService(ctx); err != nil {
+			return err
+		}
 		switch protocol {
 		case agent_api.AgentProtocolInvocations:
 			return a.invocationsLocal(ctx)
@@ -1023,6 +1060,14 @@ func printInvokeTiming(w io.Writer, total time.Duration) {
 	_, _ = color.New(color.FgGreen).Fprintf(w, "\nClient elapsed: %s\n", formatDuration(total))
 }
 
+func printOpenAPIProbeProgress(w io.Writer, raw, interactive bool) error {
+	if raw || !interactive {
+		return nil
+	}
+	_, err := fmt.Fprintln(w, "\nChecking optional OpenAPI metadata...")
+	return err
+}
+
 // formatDuration formats a duration for display in timing output.
 // Always uses seconds with 3 decimal places for consistency.
 func formatDuration(d time.Duration) string {
@@ -1244,7 +1289,7 @@ func (a *InvokeAction) responsesLocal(ctx context.Context) error {
 // In ephemeral mode (--agent-endpoint) the project endpoint / agent name /
 // api-version come from the parsed URL.
 //
-// agentKey is the persistence key used by the global UserConfig store. It is
+// agentKey is the persistence key used by the extension-owned state store. It is
 // non-empty whenever session/conversation IDs should be saved or resumed:
 //   - project mode: derived from AGENT_{SVC}_ENDPOINT
 //   - ephemeral mode: derived from the parsed --agent-endpoint URL
@@ -1343,8 +1388,8 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 			rc.apiVersion = a.endpoint.APIVersion
 		}
 		rc.agentKey = buildAgentKey(a.endpoint.ProjectEndpoint, a.endpoint.AgentName, rc.version, false)
-		// Best-effort attach to the parent azd daemon so session/conversation IDs
-		// persist across invokes via global UserConfig. When running the extension
+		// Best-effort attach to the parent azd daemon so environment-backed context
+		// remains available. When running the extension
 		// binary directly (standalone), this fails and we proceed without persistence.
 		if azdClient, err := azdext.NewAzdClient(); err == nil {
 			rc.azdClient = azdClient
@@ -1437,13 +1482,6 @@ func (a *InvokeAction) resolveRemoteContext(ctx context.Context) (*remoteContext
 	return rc, nil
 }
 
-func (rc *remoteContext) legacyKeys() []string {
-	if rc.version != "" {
-		return nil
-	}
-	return legacyKeysForRemote(rc.name)
-}
-
 func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteContext) (string, error) {
 	if rc.version == "" {
 		if rc.agentKey != "" && rc.azdClient != nil {
@@ -1455,7 +1493,6 @@ func (a *InvokeAction) resolveRemoteSessionID(ctx context.Context, rc *remoteCon
 				a.flags.newSession,
 				"sessions",
 				false,
-				rc.legacyKeys()...,
 			)
 		}
 		return a.flags.session, nil
@@ -1593,7 +1630,7 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 
 	var responseStore responseStateStore
 	if rc.azdClient != nil && agentKey != "" {
-		responseStore = newUserConfigResponseStateStore(rc.azdClient)
+		responseStore = newResponseStateStore(rc.azdClient)
 	}
 
 	// Acquire the bearer token after body validation so a local input error
@@ -1627,7 +1664,6 @@ func (a *InvokeAction) responsesRemote(ctx context.Context) error {
 			rc.name,
 			rc.apiVersion,
 			a.flags.sessionRequestOptions(),
-			rc.legacyKeys()...,
 		)
 		if err != nil {
 			return err
@@ -1832,7 +1868,13 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 
 	// Fetch and cache the agent's OpenAPI spec (always refresh for local).
 	if azdClient != nil {
-		if path, fresh := fetchOpenAPISpec(ctx, azdClient, localBaseURL, agentName, "local", "", "", true); fresh {
+		path, fresh, probeErr := fetchOpenAPISpec(
+			ctx, azdClient, a.invocationsTransport, localBaseURL, agentName, "local", "", "", "", nil, true,
+		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
+		if fresh {
 			if !raw {
 				fmt.Printf("OpenAPI spec saved to %s\n", path)
 			}
@@ -1861,7 +1903,7 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		return req, nil
 	}
 
-	client := &http.Client{Timeout: a.httpTimeout()}
+	client := &http.Client{Transport: a.invocationsTransport, Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
 	resp, err := doLocalRequestWithRetry(ctx, client, newReq)
 	if err != nil {
@@ -1879,7 +1921,9 @@ func (a *InvokeAction) invocationsLocal(ctx context.Context) error {
 		}
 	}
 
-	if err := handleInvocationResponse(ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw, nil); err != nil {
+	if err := handleInvocationResponse(
+		ctx, resp, "", "", agentName, a.httpTimeout(), "", nil, raw, nil, a.invocationsTransport,
+	); err != nil {
 		// See invocationsRemote for the status-code rationale.
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeLocal, agentName, "")
@@ -1949,13 +1993,6 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 
 	remoteBaseURL := fmt.Sprintf("%s/agents/%s/endpoint/protocols", rc.projectEndpoint, rc.name)
 
-	// Fetch and cache the agent's OpenAPI spec only in project mode. In ephemeral
-	// mode (--agent-endpoint) we deliberately avoid the on-disk side effect since
-	// the user is one-off targeting a remote endpoint.
-	if rc.azdClient != nil && a.endpoint == nil {
-		fetchOpenAPISpec(ctx, rc.azdClient, remoteBaseURL, rc.name, "remote", rc.bearerToken, rc.apiVersion, false)
-	}
-
 	invURL := buildInvocationsURL(rc.projectEndpoint, rc.name, rc.apiVersion, sid)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, invURL, bytes.NewReader(body))
@@ -1973,15 +2010,23 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		req.Header.Set("Accept-Encoding", "identity")
 	}
 
-	client := &http.Client{Timeout: a.httpTimeout()}
+	client := &http.Client{Transport: a.invocationsTransport, Timeout: a.httpTimeout()}
 	invokeStart := time.Now()
 	//nolint:gosec // G704: URL is built from a validated Foundry endpoint (env or --agent-endpoint)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s failed: %w", invURL, err)
 	}
-	defer resp.Body.Close()
+	// Handlers may replace resp.Body with an in-memory replay reader.
+	responseBody := &invocationResponseBody{ReadCloser: resp.Body}
+	resp.Body = responseBody
+	defer func() {
+		if !responseBody.closed {
+			_ = responseBody.Close()
+		}
+	}()
 
+	effectiveSessionID := captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, "")
 	invocationID, err := invocationIDFromResponse(resp)
 	if err != nil {
 		return err
@@ -1999,14 +2044,10 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		fmt.Printf("Invocation:   %s\n", invocationID)
 	}
 
-	// Always capture session state from response headers (needed even in raw mode
-	// so subsequent invokes can reuse the session). Reads headers, not the body.
 	latency.captureResponse(resp)
-	sessionLabel := "Session:  "
-	if raw {
-		sessionLabel = ""
+	if !raw && sid == "" && effectiveSessionID != "" && rc.azdClient != nil {
+		fmt.Printf("Session:  %s (assigned by server)\n", effectiveSessionID)
 	}
-	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
 	if err := handleInvocationResponse(
@@ -2020,6 +2061,7 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		a.flags.sessionRequestOptions(),
 		raw,
 		latency,
+		a.invocationsTransport,
 	); err != nil {
 		// Only emit failure Next: for platform HTTP failures.
 		// 200 OK with an agent-error envelope (handleInvocationSync /
@@ -2034,6 +2076,36 @@ func (a *InvokeAction) invocationsRemote(ctx context.Context) error {
 		return err
 	}
 	totalDuration := time.Since(invokeStart)
+	if err := responseBody.Close(); err != nil {
+		log.Print("Invocation response cleanup failed")
+	}
+
+	// Fetch remote metadata only after the invocation establishes its session.
+	// The metadata endpoint may otherwise allocate an unrelated session.
+	if rc.azdClient != nil && a.endpoint == nil && effectiveSessionID != "" && ctx.Err() == nil {
+		if err := printOpenAPIProbeProgress(os.Stdout, raw, writerIsTerminal(os.Stdout)); err != nil {
+			log.Print("OpenAPI metadata progress output failed")
+		}
+		specRequest := &http.Request{Header: make(http.Header)}
+		applyCustomHeaders(specRequest, a.clientHeaders)
+		applyRemoteUserIdentityHeader(specRequest, &a.flags.userIdentityFlags)
+		_, _, probeErr := fetchOpenAPISpec(
+			ctx,
+			rc.azdClient,
+			a.invocationsTransport,
+			remoteBaseURL,
+			rc.name,
+			"remote",
+			rc.bearerToken,
+			rc.apiVersion,
+			effectiveSessionID,
+			specRequest.Header,
+			false,
+		)
+		if probeErr != nil {
+			log.Print(probeErr)
+		}
+	}
 	if !raw {
 		printInvokeTiming(os.Stdout, totalDuration)
 		if err := latency.writeTo(os.Stdout); err != nil {
@@ -2068,10 +2140,13 @@ func handleInvocationResponse(
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 	latency *invokeLatency,
+	transport http.RoundTripper,
 ) error {
 	if raw {
 		if resp.StatusCode == http.StatusAccepted {
-			return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
+			return handleInvocationLRO(
+				ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency, transport,
+			)
 		}
 		if err := writeRawResponse(os.Stdout, resp); err != nil {
 			return err
@@ -2106,7 +2181,9 @@ func handleInvocationResponse(
 	}
 
 	if resp.StatusCode == http.StatusAccepted {
-		return handleInvocationLRO(ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency)
+		return handleInvocationLRO(
+			ctx, resp, endpoint, bearerToken, agentName, timeout, apiVersion, options, raw, latency, transport,
+		)
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -2229,6 +2306,7 @@ func handleInvocationLRO(
 	options *agent_api.SessionRequestOptions,
 	raw bool,
 	latency *invokeLatency,
+	transport http.RoundTripper,
 ) error {
 	latency.captureResponse(resp)
 	// Read the 202 body once -- used for both invocation ID extraction and status display.
@@ -2334,7 +2412,7 @@ func handleInvocationLRO(
 			req.Header.Set("Accept-Encoding", "identity")
 		}
 
-		client := &http.Client{Timeout: 30 * time.Second}
+		client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 		pollResp, err := client.Do(req) //nolint:gosec // G704: endpoint from azd environment
 		if err != nil {
 			return fmt.Errorf("GET %s failed: %w", pollURL, err)

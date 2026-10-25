@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/stretchr/testify/assert"
@@ -311,7 +312,9 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 	resp.Body = io.NopCloser(strings.NewReader(`{"status":"accepted"}`))
 	var invokeErr error
 	withCapturedStdout(t, func() {
-		invokeErr = handleInvocationResponse(t.Context(), resp, "", "", "test-agent", time.Second, "v1", nil, false, latency)
+		invokeErr = handleInvocationResponse(
+			t.Context(), resp, "", "", "test-agent", time.Second, "v1", nil, false, latency, nil,
+		)
 	})
 	require.NoError(t, invokeErr)
 	require.EqualValues(t, 2, polls.Load())
@@ -323,6 +326,7 @@ func TestInvokeLatencyLROPolling(t *testing.T) {
 }
 
 func TestResponsesRemoteLatency(t *testing.T) {
+	t.Setenv(featureflags.LongRunning.EnvVar, "true")
 	const stream = "event: response.created\ndata: " +
 		`{"response":{"id":"resp_latency","status":"in_progress"}}` + "\n\n" +
 		"event: response.output_text.delta\ndata: " + `{"delta":"agent-result"}` + "\n\n" +

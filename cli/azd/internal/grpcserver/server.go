@@ -49,7 +49,7 @@ type Server struct {
 	copilotService       v1beta.CopilotServiceServer
 	provisioningService  azdext.ProvisioningServiceServer
 	validationService    azdext.ValidationServiceServer
-	telemetryService     v1beta.TelemetryServiceServer
+	telemetryService     azdext.TelemetryServiceServer
 	betaServiceOverrides map[BetaService]any
 }
 
@@ -71,7 +71,7 @@ func NewServer(
 	copilotService v1beta.CopilotServiceServer,
 	provisioningService azdext.ProvisioningServiceServer,
 	validationService azdext.ValidationServiceServer,
-	telemetryService v1beta.TelemetryServiceServer,
+	telemetryService azdext.TelemetryServiceServer,
 	commandResultService v1beta.CommandResultServiceServer,
 ) *Server {
 	server := &Server{
@@ -95,9 +95,6 @@ func NewServer(
 		validationService:    validationService,
 		telemetryService:     telemetryService,
 		betaServiceOverrides: map[BetaService]any{},
-	}
-	if principalService, ok := accountService.(BetaAccountServiceGetCurrentPrincipalOverride); ok {
-		server.WithOptions(WithBetaServiceOverride(BetaAccountService, principalService))
 	}
 	if events, ok := eventServiceImpl.(*eventService); ok {
 		server.WithOptions(WithBetaServiceOverride(
@@ -193,7 +190,7 @@ func (s *Server) errorWrappingInterceptor() grpc.UnaryServerInterceptor {
 	) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
-			err = mapHostError(err)
+			err = mapHostErrorForMethod(info.FullMethod, err)
 			if strings.HasPrefix(info.FullMethod, "/azd.extensions.v1beta.") {
 				err = translateBetaStatusDetails(err)
 			} else if legacybridge.IsLegacyMethod(info.FullMethod) {

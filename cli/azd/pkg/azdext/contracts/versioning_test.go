@@ -35,22 +35,34 @@ func TestStableContractIsSubsetOfBeta(t *testing.T) {
 	)
 }
 
-func TestServiceTargetPreviewIsBetaOnly(t *testing.T) {
+func TestServiceTargetPreviewGraduatedToStable(t *testing.T) {
 	t.Parallel()
 	stable := v1.File_azd_extensions_v1_service_target_proto
 	beta := v1beta.File_azd_extensions_v1beta_service_target_proto
 	for _, name := range []protoreflect.Name{
 		"ServiceTargetPreviewRequest", "ServiceTargetPreviewResponse", "ServiceDeployPreviewResult",
 	} {
-		require.Nil(t, stable.Messages().ByName(name), "%s must not graduate to v1 yet", name)
-		require.NotNil(t, beta.Messages().ByName(name))
+		require.NotNil(t, stable.Messages().ByName(name))
+		betaMessage := beta.Messages().ByName(name)
+		require.NotNil(t, betaMessage)
+		require.True(t, betaMessage.Options().(*descriptorpb.MessageOptions).GetDeprecated())
 	}
 	for _, name := range []protoreflect.Name{"preview_request", "preview_response"} {
-		require.Nil(t, stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
-		require.NotNil(t, beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name))
+		stableField := stable.Messages().ByName("ServiceTargetMessage").Fields().ByName(name)
+		betaField := beta.Messages().ByName("ServiceTargetMessage").Fields().ByName(name)
+		require.NotNil(t, stableField)
+		require.NotNil(t, betaField)
+		require.Equal(t, betaField.Number(), stableField.Number())
+		require.Equal(t, protoreflect.Name("message_type"), stableField.ContainingOneof().Name())
+		require.True(t, betaField.Options().(*descriptorpb.FieldOptions).GetDeprecated())
 	}
-	require.Nil(t, stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
-	require.NotNil(t, beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview"))
+	stableField := stable.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview")
+	betaField := beta.Messages().ByName("RegisterServiceTargetRequest").Fields().ByName("supports_preview")
+	require.NotNil(t, stableField)
+	require.NotNil(t, betaField)
+	require.Equal(t, protoreflect.FieldNumber(2), stableField.Number())
+	require.Equal(t, betaField.Number(), stableField.Number())
+	require.True(t, betaField.Options().(*descriptorpb.FieldOptions).GetDeprecated())
 }
 
 func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
@@ -63,7 +75,6 @@ func TestPreviewOnlyServicesAreExcludedFromStable(t *testing.T) {
 		"compose.proto",
 		"command_result.proto",
 		"copilot.proto",
-		"telemetry.proto",
 	} {
 		require.NotContains(t, stable, fileName)
 		require.Contains(t, beta, fileName)
@@ -95,19 +106,41 @@ func TestCommandResultContractIsBetaOnly(t *testing.T) {
 	require.Equal(t, protoreflect.FieldNumber(3), betaInvocation.Number())
 }
 
-func TestCurrentPrincipalIsBetaOnly(t *testing.T) {
+func TestCurrentPrincipalGraduatedToStable(t *testing.T) {
 	t.Parallel()
 
 	stable := v1.File_azd_extensions_v1_account_proto
 	beta := v1beta.File_azd_extensions_v1beta_account_proto
-	require.Nil(t, stable.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
-	require.NotNil(t, beta.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal"))
+	stableMethod := stable.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal")
+	betaMethod := beta.Services().ByName("AccountService").Methods().ByName("GetCurrentPrincipal")
+	require.NotNil(t, stableMethod)
+	require.NotNil(t, betaMethod)
+	require.False(t, stableMethod.Options().(*descriptorpb.MethodOptions).GetDeprecated())
+	require.True(t, betaMethod.Options().(*descriptorpb.MethodOptions).GetDeprecated())
 	for _, name := range []protoreflect.Name{"GetCurrentPrincipalRequest", "GetCurrentPrincipalResponse"} {
-		require.Nil(t, stable.Messages().ByName(name))
-		require.NotNil(t, beta.Messages().ByName(name))
+		require.NotNil(t, stable.Messages().ByName(name))
+		require.True(t, beta.Messages().ByName(name).Options().(*descriptorpb.MessageOptions).GetDeprecated())
 	}
-	require.Nil(t, stable.Enums().ByName("PrincipalType"))
-	require.NotNil(t, beta.Enums().ByName("PrincipalType"))
+	require.NotNil(t, stable.Enums().ByName("PrincipalType"))
+	require.True(t, beta.Enums().ByName("PrincipalType").Options().(*descriptorpb.EnumOptions).GetDeprecated())
+}
+
+func TestTelemetryGraduatedToStable(t *testing.T) {
+	t.Parallel()
+	stable := v1.File_azd_extensions_v1_telemetry_proto
+	beta := v1beta.File_azd_extensions_v1beta_telemetry_proto
+	stableService := stable.Services().ByName("TelemetryService")
+	betaService := beta.Services().ByName("TelemetryService")
+	require.NotNil(t, stableService)
+	require.NotNil(t, betaService)
+	require.False(t, stableService.Options().(*descriptorpb.ServiceOptions).GetDeprecated())
+	require.True(t, betaService.Options().(*descriptorpb.ServiceOptions).GetDeprecated())
+	require.NotNil(t, stableService.Methods().ByName("ReportUsage"))
+	require.True(t, betaService.Methods().ByName("ReportUsage").Options().(*descriptorpb.MethodOptions).GetDeprecated())
+	for _, name := range []protoreflect.Name{"ReportUsageRequest", "ReportUsageResponse"} {
+		require.NotNil(t, stable.Messages().ByName(name))
+		require.True(t, beta.Messages().ByName(name).Options().(*descriptorpb.MessageOptions).GetDeprecated())
+	}
 }
 
 func TestStableSubsetAllowsAdditiveBetaFieldsAndMethods(t *testing.T) {

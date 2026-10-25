@@ -1,5 +1,34 @@
 # Release History
 
+## 1.0.0-beta.15 (2026-10-23)
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix template adoption to offer existing deployments and catalog models for every declared deployment while preserving per-environment selections without rewriting `azure.yaml`.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix Foundry provisioning to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings, prompt for model deployments in a new environment, and preserve YAML defaults in no-prompt mode.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix `azd ai project deployment add` to persist the complete deployment list in the active environment and preserve other deployments when replacing an entry.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.14 (2026-10-15)
+
+### Breaking Changes
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Require azd `>=1.36.0` for Foundry pipeline configuration support.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Remove generated developer-role assignments and `principalId`/`principalType` parameters from Foundry provisioning; custom templates requiring those parameters must supply their own values.
+
+### Features Added
+
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Add Foundry provisioning inputs for `azd pipeline config` so generated pipelines retain project, subscription, resource group, and location context.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add an explicit deployment no-op result for Project services in `azd deploy --preview` without an unsupported-provider warning. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix Foundry provisioning failing for contributors without permission to assign developer roles while preserving project-identity container registry access.
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
 ## 1.0.0-beta.13 (2026-09-30)
 
 ### Breaking Changes

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 
@@ -25,6 +26,8 @@ func runInitVoice(
 	projectTargetDir string,
 	createdFolderDisplay string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
+
 	projectConfig, err := ensureProject(ctx, flags, azdClient, projectTargetDir)
 	if err != nil {
 		return err
@@ -59,6 +62,7 @@ func runInitVoice(
 		true,
 		false,
 		false,
+		nil,
 	)
 	if err != nil {
 		return err

@@ -407,7 +407,7 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 			!strings.EqualFold(id.ResourceType.String(), "Microsoft.Resources/deployments") {
 			return fmt.Errorf("deployment operation contains an invalid nested deployment ID")
 		}
-		client, err := armresources.NewDeploymentOperationsClient(id.SubscriptionID, l.credential, l.options)
+		pager, err := NewDeploymentOperationsPager(deploymentID, l.credential, l.options)
 		if err != nil {
 			return err
 		}
@@ -435,36 +435,19 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 			}
 			return nil
 		}
-		if id.ResourceGroupName == "" {
-			if !strings.EqualFold(id.SubscriptionID, plan.SubscriptionID) {
-				return fmt.Errorf("unexpected nested subscription deployment outside the recorded target")
+		if id.ResourceGroupName == "" && !strings.EqualFold(id.SubscriptionID, plan.SubscriptionID) {
+			return fmt.Errorf("unexpected nested subscription deployment outside the recorded target")
+		}
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if responseNotFound(err) && observedBefore {
+				break
 			}
-			pager := client.NewListAtSubscriptionScopePager(id.Name, nil)
-			for pager.More() {
-				page, err := pager.NextPage(ctx)
-				if responseNotFound(err) && observedBefore {
-					break
-				}
-				if err != nil {
-					return fmt.Errorf("read exact ARM attempt operations for ownership recovery: %w", err)
-				}
-				if err := collect(page.Value); err != nil {
-					return err
-				}
+			if err != nil {
+				return fmt.Errorf("read exact ARM graph operations for ownership recovery: %w", err)
 			}
-		} else {
-			pager := client.NewListPager(id.ResourceGroupName, id.Name, nil)
-			for pager.More() {
-				page, err := pager.NextPage(ctx)
-				if responseNotFound(err) && observedBefore {
-					break
-				}
-				if err != nil {
-					return fmt.Errorf("read nested ARM graph operations for ownership recovery: %w", err)
-				}
-				if err := collect(page.Value); err != nil {
-					return err
-				}
+			if err := collect(page.Value); err != nil {
+				return err
 			}
 		}
 		for _, child := range children {

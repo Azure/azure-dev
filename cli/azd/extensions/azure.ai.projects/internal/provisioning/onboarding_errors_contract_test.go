@@ -38,7 +38,7 @@ func TestBYOFoundryFailurePreservesNestedStageAndCorrelation(t *testing.T) {
 							`{"error":{"code":"AuthorizationFailed","message":"operation evidence denied"}}`), nil
 					}
 					if strings.EqualFold(request.URL.Path,
-						"/subscriptions/foundry-sub/resourcegroups/foundry-rg/deployments/foundry-resources/operations") {
+						nested+"/operations") {
 						// #nosec G101 -- Synthetic diagnostic credentials verify non-disclosure.
 						message := "Blueprint federatedIdentityCredentials was denied; " +
 							"https://user:password@graph.invalid/applications?sig=secret#private"

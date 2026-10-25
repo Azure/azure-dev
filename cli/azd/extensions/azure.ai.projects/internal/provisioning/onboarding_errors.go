@@ -104,34 +104,19 @@ func (p *FoundryProvisioningProvider) failedDeploymentDetails(
 	if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.Resources/deployments") {
 		return fmt.Errorf("nested deployment has an invalid ARM deployment ID")
 	}
-	client, err := armresources.NewDeploymentOperationsClient(id.SubscriptionID, p.credential, p.byoARMOptions())
+	pager, err := onboarding.NewDeploymentOperationsPager(deploymentID, p.credential, p.byoARMOptions())
 	if err != nil {
 		return err
 	}
 	var operations []*armresources.DeploymentOperation
-	if id.ResourceGroupName == "" {
-		pager := client.NewListAtSubscriptionScopePager(id.Name, nil)
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return err
-			}
-			operations = append(operations, page.Value...)
-			if len(operations) > 128 {
-				return fmt.Errorf("deployment operation diagnostic limit reached")
-			}
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return err
 		}
-	} else {
-		pager := client.NewListPager(id.ResourceGroupName, id.Name, nil)
-		for pager.More() {
-			page, err := pager.NextPage(ctx)
-			if err != nil {
-				return err
-			}
-			operations = append(operations, page.Value...)
-			if len(operations) > 128 {
-				return fmt.Errorf("deployment operation diagnostic limit reached")
-			}
+		operations = append(operations, page.Value...)
+		if len(operations) > 128 {
+			return fmt.Errorf("deployment operation diagnostic limit reached")
 		}
 	}
 	for _, operation := range operations {

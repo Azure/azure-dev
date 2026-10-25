@@ -12,7 +12,8 @@ import (
 )
 
 // BYOOnboardingParameters is the private, read-only plan consumed by the deployment graph.
-// Names and resource IDs come from onboarding.BuildPlan; principal IDs are resolved by ARM.
+// Names and resource IDs come from onboarding.BuildPlan. Supplied principals are verified reads;
+// created identity principals are resolved by ARM.
 type BYOOnboardingParameters struct {
 	Owner                             string `json:"owner"`
 	AccountName                       string `json:"accountName"`
@@ -31,6 +32,15 @@ type BYOOnboardingParameters struct {
 	KubeletObjectID                   string `json:"kubeletObjectId"`
 	FederatedIdentityRoleDefinitionID string `json:"federatedIdentityRoleDefinitionId"`
 	KubeletRoleAssignmentID           string `json:"kubeletRoleAssignmentId"`
+	HostingIdentityResourceID         string `json:"hostingIdentityResourceId"`
+	WorkloadIdentityResourceID        string `json:"workloadIdentityResourceId"`
+	HostingIdentitySupplied           bool   `json:"hostingIdentitySupplied"`
+	WorkloadIdentitySupplied          bool   `json:"workloadIdentitySupplied"`
+	HostingPrincipalID                string `json:"hostingPrincipalId"`
+	WorkloadPrincipalID               string `json:"workloadPrincipalId"`
+	CreateClusterGrants               bool   `json:"createClusterGrants"`
+	CreateFederationGrant             bool   `json:"createFederationGrant"`
+	CreateStorageGrant                bool   `json:"createStorageGrant"`
 }
 
 // ApplyBYOOnboarding atomically binds an internally resolved plan without reading or creating resources.
@@ -47,8 +57,39 @@ func ApplyBYOOnboarding(result *Result, plan BYOOnboardingParameters) error {
 			return fmt.Errorf("BYO onboarding %s is required", name)
 		}
 	}
-	if strings.EqualFold(plan.HostingIdentityName, plan.WorkloadIdentityName) {
+	if plan.HostingIdentityResourceID != "" &&
+		strings.EqualFold(plan.HostingIdentityResourceID, plan.WorkloadIdentityResourceID) ||
+		plan.HostingIdentityResourceID == "" && strings.EqualFold(plan.HostingIdentityName, plan.WorkloadIdentityName) {
 		return fmt.Errorf("BYO onboarding hosting and workload identities must be distinct")
+	}
+	for _, identity := range []struct {
+		id, name  string
+		supplied  bool
+		principal string
+		input     string
+	}{
+		{plan.HostingIdentityResourceID, plan.HostingIdentityName, plan.HostingIdentitySupplied, plan.HostingPrincipalID,
+			result.Hosting.HostingManagementIdentityResourceID},
+		{plan.WorkloadIdentityResourceID, plan.WorkloadIdentityName, plan.WorkloadIdentitySupplied, plan.WorkloadPrincipalID,
+			result.Hosting.WorkloadIdentityResourceID},
+	} {
+		id, err := arm.ParseResourceID(identity.id)
+		if err != nil || !agentHostingResourceIDPatterns["identity"].MatchString(identity.id) ||
+			strings.ContainsAny(identity.id, "?#%\\@:\x00 \t\r\n") || id.Name == "" ||
+			!strings.EqualFold(id.Name, identity.name) {
+			return fmt.Errorf("BYO onboarding requires complete user-assigned identity resource IDs")
+		}
+		if plan.CreateClusterGrants != !plan.HostingIdentitySupplied ||
+			plan.CreateFederationGrant != (!plan.HostingIdentitySupplied || !plan.WorkloadIdentitySupplied) ||
+			plan.CreateStorageGrant != (!plan.WorkloadIdentitySupplied || result.Hosting.StorageAccountResourceID == "") {
+			return fmt.Errorf("BYO onboarding grant operations differ from the selected identity/dependency sources")
+		}
+		if identity.supplied && strings.TrimSpace(identity.principal) == "" {
+			return fmt.Errorf("BYO onboarding supplied identity requires a verified principal")
+		}
+		if identity.input != "" && (!identity.supplied || !strings.EqualFold(identity.input, identity.id)) {
+			return fmt.Errorf("BYO onboarding must preserve the explicitly supplied identity")
+		}
 	}
 	for _, resource := range []struct {
 		value, kind, name string

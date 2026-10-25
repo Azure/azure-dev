@@ -214,7 +214,7 @@ Metadata requests are unauthenticated when no matching token is set.
 
 | Variable | Description |
 | --- | --- |
-| `AZD_FOUNDRY_BYO_AKS_PREPARATION` | Compatibility-named internal JSON deployment-ownership record in the active azd environment. Read and written through the azd environment service, not directly from the host shell. Retains exact BYO-AKS ARM deployment attempts, owned targets and cleanup progress for interrupted-operation recovery; it does not run an independent resource-preparation stage. Preserve existing records for recovery. See the [Projects extension reference](../extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) for evidence and cleanup limitations. |
+| `AZD_FOUNDRY_BYO_AKS_PREPARATION` | Compatibility-named internal JSON deployment-ownership record in the active azd environment. Read and written through the azd environment service, not directly from the host shell. Retains exact BYO-AKS ARM deployment attempts, owned targets, cleanup progress and separate `resourceProgress` entries for `storageAccount`, `containerRegistry`, `hostingIdentity` and `workloadIdentity`. Each progress entry records resource ID, original supplied provenance, current-round preflight result and confirmed preparation completion; it does not confer cleanup ownership or bypass fresh preflight. Preserve existing records for interrupted-operation recovery. See the [Projects extension reference](../extensions/azure.ai.projects/README.md#host-agents-on-a-customer-owned-aks-cluster) for evidence and cleanup limitations. |
 
 ### azure.ai.agents
 

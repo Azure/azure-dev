@@ -154,6 +154,7 @@ type Plan struct {
 	Hosting                  Resource
 	Workload                 Resource
 	Operations               []Operation
+	Recovery                 RecoveryContext
 }
 
 // SubnetPreparation retains older owned-subnet journal data for exact cleanup, never new preparation.
@@ -166,9 +167,19 @@ type SubnetPreparation struct {
 
 // Facts contains verified existing-resource information needed by the deployment graph.
 type Facts struct {
-	KubeletObjectID string
-	RegistryABAC    bool
-	TenantID        string
+	KubeletObjectID  string
+	RegistryABAC     bool
+	TenantID         string
+	HostingIdentity  Identity
+	WorkloadIdentity Identity
+}
+
+// RecoveryContext authorizes only exact unfinished grant intents of a verified terminal attempt.
+type RecoveryContext struct {
+	ExistingWorkload    bool
+	ExistingStorage     bool
+	FederationPending   bool
+	StorageGrantPending bool
 }
 
 // Identity records distinct ARM, object, client and tenant identifiers.

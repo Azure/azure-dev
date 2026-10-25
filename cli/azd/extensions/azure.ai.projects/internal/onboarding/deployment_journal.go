@@ -24,18 +24,27 @@ type Journal interface {
 
 // PreparationState retains the existing ledger format so older exact owned records remain recoverable.
 type PreparationState struct {
-	Version         int                        `json:"version"`
-	SubscriptionID  string                     `json:"subscriptionId"`
-	ResourceGroup   string                     `json:"resourceGroup"`
-	Location        string                     `json:"location"`
-	Owner           string                     `json:"owner"`
-	Network         *SubnetPreparation         `json:"network,omitempty"`
-	Resources       map[string]OwnedResource   `json:"resources"`
-	Assignments     map[string]OwnedAssignment `json:"assignments"`
-	Foundry         *FoundryState              `json:"foundry,omitempty"`
-	Registry        *RegistryBinding           `json:"registry,omitempty"`
-	CleanupStarted  bool                       `json:"cleanupStarted,omitempty"`
-	CleanupComplete bool                       `json:"cleanupComplete,omitempty"`
+	Version          int                         `json:"version"`
+	SubscriptionID   string                      `json:"subscriptionId"`
+	ResourceGroup    string                      `json:"resourceGroup"`
+	Location         string                      `json:"location"`
+	Owner            string                      `json:"owner"`
+	Network          *SubnetPreparation          `json:"network,omitempty"`
+	Resources        map[string]OwnedResource    `json:"resources"`
+	Assignments      map[string]OwnedAssignment  `json:"assignments"`
+	Foundry          *FoundryState               `json:"foundry,omitempty"`
+	Registry         *RegistryBinding            `json:"registry,omitempty"`
+	ResourceProgress map[string]ResourceProgress `json:"resourceProgress,omitempty"`
+	CleanupStarted   bool                        `json:"cleanupStarted,omitempty"`
+	CleanupComplete  bool                        `json:"cleanupComplete,omitempty"`
+}
+
+// ResourceProgress records preparation evidence, independently of the owned cleanup ledger.
+type ResourceProgress struct {
+	ResourceID          string `json:"resourceId"`
+	Supplied            bool   `json:"supplied"`
+	PreflightPassed     bool   `json:"preflightPassed"`
+	PreparationComplete bool   `json:"preparationComplete"`
 }
 
 func validateHistoricalNetwork(state PreparationState) error {

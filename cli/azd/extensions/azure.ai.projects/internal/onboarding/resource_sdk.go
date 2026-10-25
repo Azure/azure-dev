@@ -105,6 +105,8 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		{plan.Cluster, "Microsoft.ContainerService/managedClusters"},
 		{plan.Storage, "Microsoft.Storage/storageAccounts"},
 		{plan.Registry, "Microsoft.ContainerRegistry/registries"},
+		{plan.Hosting, "Microsoft.ManagedIdentity/userAssignedIdentities"},
+		{plan.Workload, "Microsoft.ManagedIdentity/userAssignedIdentities"},
 	} {
 		if !item.resource.Supplied && item.kind != "Microsoft.ContainerService/managedClusters" {
 			continue
@@ -187,6 +189,19 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	}
 	report = append(report, input)
 	facts := Facts{TenantID: tenant}
+	for _, item := range []struct {
+		resource Resource
+		identity *Identity
+	}{
+		{plan.Hosting, &facts.HostingIdentity}, {plan.Workload, &facts.WorkloadIdentity},
+	} {
+		if !item.resource.Supplied {
+			continue
+		}
+		identity, check := c.readSuppliedIdentity(ctx, item.resource, tenant)
+		*item.identity = identity
+		report = append(report, check)
+	}
 	planCheck := resourceCheck("I03", plan.AgentSubnet.ID, "resolved supported creation/reuse and companion topology")
 	if plan.Network != nil {
 		planCheck.Observed = "automatic hosting subnet plans are no longer supported"

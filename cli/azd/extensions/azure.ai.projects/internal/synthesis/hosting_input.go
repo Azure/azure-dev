@@ -7,10 +7,12 @@ import "regexp"
 
 // AgentHostingInput contains only supported customer configuration.
 type AgentHostingInput struct {
-	HostingType              string
-	Name                     string
-	ClusterResourceID        string
-	StorageAccountResourceID string
+	HostingType                         string
+	Name                                string
+	ClusterResourceID                   string
+	StorageAccountResourceID            string
+	HostingManagementIdentityResourceID string
+	WorkloadIdentityResourceID          string
 }
 
 func resolveOptionalHostingValue(

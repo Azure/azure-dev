@@ -39,7 +39,8 @@ func validateDeploymentData(plan Plan, spec FoundrySpec, state PreparationState)
 		}
 	}
 	expected, err := PlannedDeployment(plan, Facts{
-		TenantID: "validated", KubeletObjectID: data.KubeletObjectID, RegistryABAC: spec.RegistryABAC,
+		TenantID: data.TenantID, KubeletObjectID: data.KubeletObjectID, RegistryABAC: spec.RegistryABAC,
+		HostingIdentity: data.HostingIdentity, WorkloadIdentity: data.WorkloadIdentity,
 	})
 	if err != nil {
 		return err
@@ -56,6 +57,7 @@ func validateDeploymentData(plan Plan, spec FoundrySpec, state PreparationState)
 		!strings.EqualFold(data.StorageID, expected.StorageID) || !strings.EqualFold(data.RegistryID, expected.RegistryID) ||
 		data.StorageSupplied != expected.StorageSupplied || data.RegistrySupplied != expected.RegistrySupplied ||
 		data.ResourceGroupSupplied != expected.ResourceGroupSupplied || data.StorageSKU != expected.StorageSKU ||
+		data.Hosting.Supplied != expected.Hosting.Supplied || data.Workload.Supplied != expected.Workload.Supplied ||
 		data.RegistryABAC != spec.RegistryABAC || data.FederatedIdentityRoleDefinitionID == "" {
 		return fmt.Errorf("deployment bindings differ from the internally planned resource graph")
 	}
@@ -84,32 +86,37 @@ func (l *ownedLifecycle) checkDeploymentResources(ctx context.Context, plan Plan
 		}
 	}
 	// List only existing identities at the target RG. No GET of a future identity is a preflight prerequisite.
-	identities, err := armmsi.NewUserAssignedIdentitiesClient(plan.SubscriptionID, l.credential, l.options)
-	if err != nil {
-		return err
-	}
-	pager := identities.NewListByResourceGroupPager(plan.ResourceGroup, nil)
 	seenIdentities := map[string]bool{}
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if responseNotFound(err) {
-			break
-		}
+	if !plan.Hosting.Supplied || !plan.Workload.Supplied {
+		identities, err := armmsi.NewUserAssignedIdentitiesClient(plan.SubscriptionID, l.credential, l.options)
 		if err != nil {
-			return fmt.Errorf("read existing target identities for collision protection: %w", err)
+			return err
 		}
-		for _, identity := range page.Value {
-			if identity == nil {
-				return fmt.Errorf("target identity listing is incomplete")
+		pager := identities.NewListByResourceGroupPager(plan.ResourceGroup, nil)
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if responseNotFound(err) {
+				break
 			}
-			for step, resource := range map[string]Resource{"R04": plan.Hosting, "R05": plan.Workload} {
-				if strings.EqualFold(authString(identity.ID), resource.ID) {
-					seenIdentities[step] = true
-					if err := check(step, authString(identity.ID), identity.Tags); err != nil {
-						return err
+			if err != nil {
+				return fmt.Errorf("read existing target identities for collision protection: %w", err)
+			}
+			for _, identity := range page.Value {
+				if identity == nil {
+					return fmt.Errorf("target identity listing is incomplete")
+				}
+				for step, resource := range map[string]Resource{"R04": plan.Hosting, "R05": plan.Workload} {
+					if resource.Supplied {
+						continue
 					}
-					if err := verifyOwnedIdentity(state, step, *identity); err != nil {
-						return err
+					if strings.EqualFold(authString(identity.ID), resource.ID) {
+						seenIdentities[step] = true
+						if err := check(step, authString(identity.ID), identity.Tags); err != nil {
+							return err
+						}
+						if err := verifyOwnedIdentity(state, step, *identity); err != nil {
+							return err
+						}
 					}
 				}
 			}
@@ -162,6 +169,7 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 		return nil
 	}
 	data := state.Foundry.Spec.Deployment
+	observedIdentities := map[string]bool{}
 	for _, step := range []string{"R04", "R05"} {
 		record, exists := state.Resources[step]
 		if !exists || record.Deleted {
@@ -208,6 +216,7 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 		}
 		record.Identity = actual
 		record.Complete = actual.PrincipalID != "" && actual.ClientID != "" && actual.TenantID != ""
+		observedIdentities[step] = record.Complete
 		state.Resources[step] = record
 		if err := l.journal.Save(ctx, *state); err != nil {
 			return err
@@ -248,12 +257,24 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 	recovered.Cluster.ID = data.ClusterID
 	recovered.Hosting, recovered.Workload = data.Hosting, data.Workload
 	recovered.Storage.ID, recovered.Registry.ID = data.StorageID, data.RegistryID
+	hosting, workload := state.Resources["R04"].Identity, state.Resources["R05"].Identity
+	if data.Hosting.Supplied {
+		hosting = data.HostingIdentity
+	}
+	if data.Workload.Supplied {
+		workload = data.WorkloadIdentity
+	}
 	grants := grantRequests(recovered, Facts{RegistryABAC: data.RegistryABAC, KubeletObjectID: data.KubeletObjectID},
-		state.Resources["R04"].Identity, state.Resources["R05"].Identity)
+		hosting, workload)
 	grants = append(grants, grantRequest{
 		checkID: "F01", scope: data.RegistryID, principalID: state.Foundry.ProjectPrincipalID,
 		roleID: registryRoleID(data.RegistryABAC),
 	})
+	for index := range grants {
+		if grants[index].checkID == "G02" {
+			grants[index].roleID = data.FederatedIdentityRoleDefinitionID
+		}
+	}
 	targets, err := l.deploymentGrantTargets(ctx, plan, state.Foundry)
 	if err != nil {
 		return err
@@ -261,25 +282,35 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 	for _, record := range state.Assignments {
 		targets[strings.ToLower(record.ID)] = true
 	}
+	observedGrants := map[string]bool{}
 	for _, grant := range grants {
+		if !createsGrant(recovered, grant.checkID) {
+			continue
+		}
 		if grant.checkID == "G04" && data.KubeletRoleAssignmentID != "" {
 			continue
 		}
 		if grant.checkID == "G02" {
 			grant.roleID = data.FederatedIdentityRoleDefinitionID
 		}
-		if err := l.observeGrant(ctx, state, grant, targets); err != nil {
+		if err := l.observeGrant(ctx, state, grant, targets, observedGrants); err != nil {
 			return err
 		}
 	}
 	for index := range state.Foundry.Attempts {
 		state.Foundry.Attempts[index].OwnershipObserved = true
 	}
+	if !state.CleanupStarted {
+		if err := l.observeProgress(ctx, recovered, state, grants, observedGrants, observedIdentities); err != nil {
+			return err
+		}
+	}
 	return l.journal.Save(ctx, *state)
 }
 
 func (l *ownedLifecycle) observeGrant(
 	ctx context.Context, state *PreparationState, grant grantRequest, targets map[string]bool,
+	observed ...map[string]bool,
 ) error {
 	id, err := ParseID(grant.scope, func() string {
 		switch grant.checkID {
@@ -345,6 +376,9 @@ func (l *ownedLifecycle) observeGrant(
 				}
 			}
 			state.Assignments[key] = record
+			if len(observed) > 0 {
+				observed[0][key] = true
+			}
 			if err := l.journal.Save(ctx, *state); err != nil {
 				return err
 			}
@@ -354,7 +388,7 @@ func (l *ownedLifecycle) observeGrant(
 }
 
 func (l *ownedLifecycle) deploymentGrantTargets(
-	ctx context.Context, plan Plan, foundry *FoundryState,
+	ctx context.Context, plan Plan, foundry *FoundryState, succeeded ...map[string]bool,
 ) (map[string]bool, error) {
 	targets := map[string]bool{}
 	visited := map[string]bool{}
@@ -391,6 +425,10 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 						return fmt.Errorf("deployment operation role-assignment ID is invalid: %w", err)
 					}
 					targets[strings.ToLower(targetID)] = true
+					if len(succeeded) > 0 &&
+						strings.EqualFold(authString(operation.Properties.ProvisioningState), "Succeeded") {
+						succeeded[0][strings.ToLower(targetID)] = true
+					}
 				case strings.EqualFold(authString(target.ResourceType), "Microsoft.Resources/deployments"):
 					children = append(children, targetID)
 				}

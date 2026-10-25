@@ -193,11 +193,9 @@ func TestSelectedAgentSubnetHasNoI02ReadinessGate(t *testing.T) {
 			}
 			require.NotEmpty(t, n02, "independent basic-subnet N02 remains applicable")
 			assert.Contains(t, f.methods, "GET "+plan.AgentSubnet.ID, "N02 still reads necessary subnet metadata")
-			for _, operation := range []Operation{
-				{CheckID: "P03", Action: "Microsoft.Network/virtualNetworks/write",
-					Scope: "/subscriptions/aks-sub/resourceGroups/aks-rg"},
-			} {
-				assert.Contains(t, plan.Operations, operation, "independent network permission planning remains")
+			for _, operation := range plan.Operations {
+				assert.NotEqual(t, "Microsoft.Network/virtualNetworks/write", operation.Action,
+					"referencing an existing Agent subnet does not PUT its VNet")
 			}
 		})
 	}

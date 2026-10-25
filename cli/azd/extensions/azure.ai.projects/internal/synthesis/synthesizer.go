@@ -148,10 +148,12 @@ type projectService struct {
 // Foundry agents. The service currently supports exactly one immutable
 // managed-cluster configuration per newly created Foundry account.
 type agentHostingBlock struct {
-	HostingType              string `yaml:"hostingType"`
-	Name                     string `yaml:"name"`
-	ClusterResourceID        string `yaml:"clusterResourceId"`
-	StorageAccountResourceID string `yaml:"storageAccountResourceId"`
+	HostingType                         string `yaml:"hostingType"`
+	Name                                string `yaml:"name"`
+	ClusterResourceID                   string `yaml:"clusterResourceId"`
+	StorageAccountResourceID            string `yaml:"storageAccountResourceId"`
+	HostingManagementIdentityResourceID string `yaml:"hostingManagementIdentityResourceId"`
+	WorkloadIdentityResourceID          string `yaml:"workloadIdentityResourceId"`
 }
 
 // agentHostingParameter is passed to Bicep and Terraform. Enabled keeps the
@@ -269,8 +271,10 @@ func Synthesize(in Input) (*Result, error) {
 	if agentHosting.Enabled {
 		hostingInput = &AgentHostingInput{
 			HostingType: agentHosting.HostingType, Name: agentHosting.Name,
-			ClusterResourceID:        agentHosting.ClusterResourceID,
-			StorageAccountResourceID: agentHosting.StorageAccountResourceID,
+			ClusterResourceID:                   agentHosting.ClusterResourceID,
+			StorageAccountResourceID:            agentHosting.StorageAccountResourceID,
+			HostingManagementIdentityResourceID: agentHosting.HostingManagementIdentityResourceID,
+			WorkloadIdentityResourceID:          agentHosting.WorkloadIdentityResourceID,
 		}
 		// A BYO registry is required even in project-only templates. The deployment
 		// graph uses the planned registry for both the project and the kubelet.
@@ -444,6 +448,9 @@ func loadProjectService(
 	}
 
 	var svc projectService
+	if err := validateIdentityInputs(node, serviceName); err != nil {
+		return svc, err
+	}
 	if err := node.Decode(&svc); err != nil {
 		return projectService{}, fmt.Errorf("decode service %q: %w", serviceName, err)
 	}
@@ -797,6 +804,9 @@ var rgNamePattern = regexp.MustCompile(`^[-\w._()]{1,90}$`)
 const managedClusterHostingType = "ManagedCluster"
 
 var agentHostingResourceIDPatterns = map[string]*regexp.Regexp{
+	"identity": regexp.MustCompile(
+		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`,
+	),
 	"clusterResourceId": regexp.MustCompile(
 		`(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ContainerService/managedClusters/[^/]+$`,
 	),
@@ -870,12 +880,27 @@ func synthesizeAgentHosting(
 		return agentHostingParameter{}, err
 	}
 
+	hostingID, err := resolveOptionalHostingValue(hosting.HostingManagementIdentityResourceID,
+		fieldPath("hostingManagementIdentityResourceId"), env, resolve, agentHostingResourceIDPatterns["identity"])
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	workloadID, err := resolveOptionalHostingValue(hosting.WorkloadIdentityResourceID,
+		fieldPath("workloadIdentityResourceId"), env, resolve, agentHostingResourceIDPatterns["identity"])
+	if err != nil {
+		return agentHostingParameter{}, err
+	}
+	if hostingID != "" && strings.EqualFold(hostingID, workloadID) {
+		return agentHostingParameter{}, fmt.Errorf("%s: hosting and workload identities must be distinct", fieldPath(""))
+	}
 	return agentHostingParameter{
-		Enabled:                  true,
-		HostingType:              managedClusterHostingType,
-		Name:                     name,
-		ClusterResourceID:        clusterID,
-		StorageAccountResourceID: storageID,
+		Enabled:                             true,
+		HostingType:                         managedClusterHostingType,
+		Name:                                name,
+		ClusterResourceID:                   clusterID,
+		StorageAccountResourceID:            storageID,
+		HostingManagementIdentityResourceID: hostingID,
+		WorkloadIdentityResourceID:          workloadID,
 	}, nil
 }
 

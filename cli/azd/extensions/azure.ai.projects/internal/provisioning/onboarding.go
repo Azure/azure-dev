@@ -6,6 +6,7 @@ package provisioning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"strings"
@@ -89,7 +90,9 @@ func (p *FoundryProvisioningProvider) planBYO(
 	}
 	plan, err := onboarding.BuildPlan(onboarding.Input{
 		ClusterID: hosting.ClusterResourceID, StorageID: hosting.StorageAccountResourceID,
-		RegistryID: registryID, AgentSubnetID: subnetID,
+		HostingIdentityID:  hosting.HostingManagementIdentityResourceID,
+		WorkloadIdentityID: hosting.WorkloadIdentityResourceID,
+		RegistryID:         registryID, AgentSubnetID: subnetID,
 		SubscriptionID: p.subID, ResourceGroup: p.rgName, Location: p.location,
 		Environment: p.envName, ProjectPath: p.projectPath,
 		FoundryName: foundryName,
@@ -126,6 +129,10 @@ func (p *FoundryProvisioningProvider) planBYO(
 		}
 		resolved, err := onboarding.WithDeploymentOperations(plan, selected)
 		if err == nil {
+			resolved, err = onboarding.ResolveRecoveryContext(ctx, resolved, p.credential, p.armClientOptions,
+				environmentJournal{p})
+		}
+		if err == nil {
 			p.byoPlan = &resolved
 		}
 		return resolved, err
@@ -147,9 +154,19 @@ func (p *FoundryProvisioningProvider) planBYO(
 		return report.Err()
 	}
 	facts, report, err := runPipeline.Preflight(ctx, resolved)
-	if err != nil {
+	if ctx.Err() != nil {
 		observe(report)
-		return err
+		return errors.Join(err, ctx.Err())
+	}
+	finishPreflight := func(cause error) error {
+		if !preview && ctx.Err() == nil {
+			cause = errors.Join(cause, onboarding.RecordPreflight(ctx, resolved, report, environmentJournal{p}))
+		}
+		observe(report)
+		return cause
+	}
+	if err != nil {
+		return finishPreflight(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -168,19 +185,17 @@ func (p *FoundryProvisioningProvider) planBYO(
 			Observed: err.Error(), Missing: "complete resolved deployment bindings",
 			Remediation: "resolve the reported role/resource read failure before provisioning", Cause: err,
 		})
-		observe(report)
-		return report.Err()
+		return finishPreflight(report.Err())
 	}
 	spec, err := byoFoundrySpec(resolved, source, facts.RegistryABAC)
 	if err != nil {
-		return err
+		return finishPreflight(err)
 	}
 	spec.Deployment = &data
 	p.byoSpec = spec
 	ownership, err := lifecycle.Check(ctx, resolved, spec)
 	report = append(report, ownership...)
-	observe(report)
-	if err != nil {
+	if err := finishPreflight(err); err != nil {
 		return err
 	}
 	if err := report.Err(); err != nil || preview {
@@ -199,7 +214,13 @@ func (p *FoundryProvisioningProvider) bindBYOPlan(plan onboarding.Plan, data onb
 		ClusterResourceID:     data.ClusterID, StorageAccountResourceID: data.StorageID,
 		StorageName: plan.Storage.Name, StorageSupplied: data.StorageSupplied, StorageSKU: data.StorageSKU,
 		HostingIdentityName: data.Hosting.Name, WorkloadIdentityName: data.Workload.Name,
-		RegistryResourceID: data.RegistryID, RegistryName: plan.Registry.Name,
+		HostingIdentityResourceID: data.Hosting.ID, WorkloadIdentityResourceID: data.Workload.ID,
+		HostingIdentitySupplied: data.Hosting.Supplied, WorkloadIdentitySupplied: data.Workload.Supplied,
+		HostingPrincipalID: data.HostingIdentity.PrincipalID, WorkloadPrincipalID: data.WorkloadIdentity.PrincipalID,
+		CreateClusterGrants:   !plan.Hosting.Supplied,
+		CreateFederationGrant: !plan.Hosting.Supplied || !plan.Workload.Supplied,
+		CreateStorageGrant:    !plan.Workload.Supplied || !plan.Storage.Supplied,
+		RegistryResourceID:    data.RegistryID, RegistryName: plan.Registry.Name,
 		RegistrySupplied: data.RegistrySupplied, RegistryABAC: data.RegistryABAC,
 		KubeletObjectID: data.KubeletObjectID, FederatedIdentityRoleDefinitionID: data.FederatedIdentityRoleDefinitionID,
 		KubeletRoleAssignmentID: data.KubeletRoleAssignmentID,

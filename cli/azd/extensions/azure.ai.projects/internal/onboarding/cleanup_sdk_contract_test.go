@@ -46,11 +46,14 @@ type cleanupARM struct {
 	operationReadDenied bool
 	failJournalOnDelete string
 	denyPurge           bool
+	deploymentState     string
+	afterMaterialize    func()
+	operationStates     map[string]string
 }
 
-func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanupARM {
+func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, suppliedIdentities ...bool) *cleanupARM {
 	t.Helper()
-	base, facts := preparationContractFixture(t, suppliedStorage, suppliedRegistry, false)
+	base, facts := preparationContractFixture(t, suppliedStorage, suppliedRegistry, false, suppliedIdentities...)
 	data, err := ResolveDeploymentBindings(t.Context(), contractCredential{}, base.options(), base.plan, facts)
 	require.NoError(t, err)
 	account := PlannedFoundryAccount(base.plan)
@@ -83,7 +86,12 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 				}
 				var operations []any
 				for _, id := range f.operationTargets {
+					operationState := f.operationStates[strings.ToLower(id)]
+					if operationState == "" {
+						operationState = "Succeeded"
+					}
 					operations = append(operations, map[string]any{"properties": map[string]any{
+						"provisioningState": operationState,
 						"targetResource": map[string]any{
 							"id": id, "resourceType": "Microsoft.Authorization/roleAssignments",
 						},
@@ -108,6 +116,9 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 				body["id"] = request.URL.Path
 				properties := cleanupObject(t, body["properties"])
 				properties["provisioningState"], properties["correlationId"] = "Succeeded", "correlation-"+path
+				if f.deploymentState != "" {
+					properties["provisioningState"] = f.deploymentState
+				}
 				properties["templateHash"] = f.spec.TemplateHash
 				f.roots[path] = body
 				base.materializeGraph(f.spec)
@@ -129,6 +140,9 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 				for _, name := range f.spec.ModelNames {
 					id := f.spec.AccountID + "/deployments/" + name
 					base.resources[strings.ToLower(id)] = map[string]any{"id": id, "name": name}
+				}
+				if f.afterMaterialize != nil {
+					f.afterMaterialize()
 				}
 				return respond(200, body)
 			default:
@@ -203,6 +217,11 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 				if !f.keepAccount {
 					delete(base.resources, path)
 					delete(base.resources, strings.ToLower(f.spec.ProjectID))
+					for child := range base.resources {
+						if strings.HasPrefix(child, path+"/") {
+							delete(base.resources, child)
+						}
+					}
 					f.softDeleted = true
 				}
 				if f.asyncAccount {
@@ -234,6 +253,12 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool) *cleanu
 
 func (f *cleanupARM) deploy(t *testing.T) {
 	t.Helper()
+	require.NoError(t, f.submit(t))
+	require.NoError(t, f.lifecycle.Observe(t.Context(), f.base.plan))
+}
+
+func (f *cleanupARM) submit(t *testing.T) error {
+	t.Helper()
 	client, err := armresources.NewDeploymentsClient(f.base.plan.SubscriptionID, contractCredential{}, f.options)
 	require.NoError(t, err)
 	for index := range 1 {
@@ -250,6 +275,15 @@ func (f *cleanupARM) deploy(t *testing.T) {
 						"clusterResourceId":        f.base.plan.Cluster.ID,
 						"storageAccountResourceId": f.base.plan.Storage.ID, "registryResourceId": f.base.plan.Registry.ID,
 						"hostingIdentityName": f.base.plan.Hosting.Name, "workloadIdentityName": f.base.plan.Workload.Name,
+						"hostingIdentityResourceId":  f.base.plan.Hosting.ID,
+						"workloadIdentityResourceId": f.base.plan.Workload.ID,
+						"hostingIdentitySupplied":    f.base.plan.Hosting.Supplied,
+						"workloadIdentitySupplied":   f.base.plan.Workload.Supplied,
+						"hostingPrincipalId":         f.spec.Deployment.HostingIdentity.PrincipalID,
+						"workloadPrincipalId":        f.spec.Deployment.WorkloadIdentity.PrincipalID,
+						"createClusterGrants":        createsGrant(f.base.plan, "G01"),
+						"createFederationGrant":      createsGrant(f.base.plan, "G02"),
+						"createStorageGrant":         createsGrant(f.base.plan, "G03"),
 					}},
 					"resourceGroupName":  map[string]any{"value": f.base.plan.ResourceGroup},
 					"location":           map[string]any{"value": f.spec.Location},
@@ -257,11 +291,15 @@ func (f *cleanupARM) deploy(t *testing.T) {
 				},
 			},
 		}, nil)
-		require.NoError(t, err)
+		if err != nil {
+			return err
+		}
 		_, err = poller.PollUntilDone(t.Context(), nil)
-		require.NoError(t, err)
-		require.NoError(t, f.lifecycle.Observe(t.Context(), f.base.plan))
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func TestOwnedCleanupSDKLifecyclePreservesSuppliedAndLaterAddedResources(t *testing.T) {

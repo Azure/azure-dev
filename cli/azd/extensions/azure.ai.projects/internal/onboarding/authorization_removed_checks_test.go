@@ -38,9 +38,10 @@ func TestAuthorizerOmitsRemovedChecksAndTheirExclusiveRequests(t *testing.T) {
 			assert.NotEqual(t, "Microsoft.Resources/subscriptions/resourceGroups/write", op.Action)
 			planned[op.CheckID] = true
 		}
-		for _, id := range []string{"P02", "P03"} {
+		for _, id := range []string{"P02"} {
 			assert.True(t, planned[id])
 		}
+		assert.False(t, planned["P03"], "no cluster/VNet PUT is selected by the default graph")
 		assert.False(t, planned["P09"], "only selected cross-RG deployments are bound later")
 		for _, id := range []string{"P04", "P05"} {
 			assert.Equal(t, !supplied, planned[id])

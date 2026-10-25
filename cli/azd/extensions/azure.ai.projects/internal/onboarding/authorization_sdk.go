@@ -28,6 +28,7 @@ func NewAuthorizer(credential azcore.TokenCredential, options *arm.ClientOptions
 func (a *scopedAuthorizer) Check(ctx context.Context, p Plan, f Facts) (Report, error) {
 	operations := append([]Operation{}, p.Operations...)
 	var report Report
+	report = append(report, a.suppliedIdentityChecks(ctx, p, f)...)
 	target := "/subscriptions/" + p.SubscriptionID + "/resourceGroups/" + p.ResourceGroup
 	registry, err := ParseID(p.Registry.ID, "Microsoft.ContainerRegistry/registries")
 	if err != nil {
@@ -95,6 +96,14 @@ func resolveGrantRole(
 	ctx context.Context, credential azcore.TokenCredential, options *arm.ClientOptions,
 	subscription string, grant grantRequest,
 ) (string, error) {
+	if strings.HasPrefix(grant.roleID, "/") {
+		id, err := arm.ParseResourceID(grant.roleID)
+		if err != nil || !validResourceIDSyntax(grant.roleID) ||
+			!strings.EqualFold(id.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
+			return "", fmt.Errorf("invalid full role-definition ID")
+		}
+		return grant.roleID, nil
+	}
 	if scope, err := arm.ParseResourceID(grant.scope); err == nil && scope.SubscriptionID != "" {
 		subscription = scope.SubscriptionID
 	}

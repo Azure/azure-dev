@@ -73,6 +73,7 @@ func (l *ownedLifecycle) Cleanup(ctx context.Context, plan Plan, purge bool, pro
 		}
 	}
 	state.CleanupComplete = true
+	state.ResourceProgress = nil
 	if err := l.journal.Save(ctx, state); err != nil {
 		return fmt.Errorf("persist cleanup completion: %w", err)
 	}

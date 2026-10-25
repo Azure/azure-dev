@@ -35,6 +35,7 @@ type FoundryAttempt struct {
 	Terminal          bool   `json:"terminal"`
 	TemplateHash      string `json:"templateHash,omitempty"`
 	OwnershipObserved bool   `json:"ownershipObserved,omitempty"`
+	ProvisioningState string `json:"provisioningState,omitempty"`
 }
 
 // FoundryState preserves control-plane ownership and teardown progress across interruptions.
@@ -111,7 +112,8 @@ func (l *ownedLifecycle) load(ctx context.Context, plan Plan) (PreparationState,
 		!strings.EqualFold(state.Location, plan.Location) || state.Location == "") {
 		return state, fmt.Errorf("journaled target scope/location is missing or differs from the environment")
 	}
-	if state.Owner == "" && (state.Foundry != nil || len(state.Resources) > 0 || len(state.Assignments) > 0) {
+	if state.Owner == "" && (state.Foundry != nil || len(state.Resources) > 0 || len(state.Assignments) > 0 ||
+		len(state.ResourceProgress) > 0) {
 		return state, fmt.Errorf("owned lifecycle journal has entries without an owner")
 	}
 	return state, nil
@@ -149,7 +151,9 @@ func sameFoundrySpec(a, b FoundrySpec) bool {
 	return strings.EqualFold(x.ClusterID, y.ClusterID) && strings.EqualFold(x.StorageID, y.StorageID) &&
 		strings.EqualFold(x.Hosting.ID, y.Hosting.ID) && strings.EqualFold(x.Workload.ID, y.Workload.ID) &&
 		strings.EqualFold(x.KubeletObjectID, y.KubeletObjectID) && strings.EqualFold(x.TenantID, y.TenantID) &&
-		strings.EqualFold(x.FederatedIdentityRoleDefinitionID, y.FederatedIdentityRoleDefinitionID)
+		strings.EqualFold(x.FederatedIdentityRoleDefinitionID, y.FederatedIdentityRoleDefinitionID) &&
+		x.Hosting.Supplied == y.Hosting.Supplied && x.Workload.Supplied == y.Workload.Supplied &&
+		x.HostingIdentity == y.HostingIdentity && x.WorkloadIdentity == y.WorkloadIdentity
 }
 
 func (l *ownedLifecycle) Check(ctx context.Context, plan Plan, spec FoundrySpec) (Report, error) {
@@ -290,6 +294,12 @@ func (l *ownedLifecycle) Start(ctx context.Context, plan Plan, spec FoundrySpec,
 	state.Version = preparationJournalVersion
 	state.Owner, state.SubscriptionID = plan.Owner, plan.SubscriptionID
 	state.ResourceGroup, state.Location = plan.ResourceGroup, plan.Location
+	if err := validateProgressSelection(plan, state); err != nil {
+		return err
+	}
+	if state.ResourceProgress == nil {
+		state.ResourceProgress = selectedProgress(plan)
+	}
 	if state.Resources == nil {
 		state.Resources = map[string]OwnedResource{}
 	}
@@ -416,19 +426,58 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 		if foundry.Spec.Deployment != nil {
 			var binding struct {
 				Value struct {
-					Owner        string `json:"owner"`
-					AccountName  string `json:"accountName"`
-					ClusterID    string `json:"clusterResourceId"`
-					StorageID    string `json:"storageAccountResourceId"`
-					RegistryID   string `json:"registryResourceId"`
-					HostingName  string `json:"hostingIdentityName"`
-					WorkloadName string `json:"workloadIdentityName"`
+					Owner                 string `json:"owner"`
+					AccountName           string `json:"accountName"`
+					ClusterID             string `json:"clusterResourceId"`
+					StorageID             string `json:"storageAccountResourceId"`
+					RegistryID            string `json:"registryResourceId"`
+					HostingName           string `json:"hostingIdentityName"`
+					WorkloadName          string `json:"workloadIdentityName"`
+					HostingID             string `json:"hostingIdentityResourceId"`
+					WorkloadID            string `json:"workloadIdentityResourceId"`
+					HostingSupplied       *bool  `json:"hostingIdentitySupplied"`
+					WorkloadSupplied      *bool  `json:"workloadIdentitySupplied"`
+					HostingPrincipal      string `json:"hostingPrincipalId"`
+					WorkloadPrincipal     string `json:"workloadPrincipalId"`
+					CreateClusterGrants   *bool  `json:"createClusterGrants"`
+					CreateFederationGrant *bool  `json:"createFederationGrant"`
+					CreateStorageGrant    *bool  `json:"createStorageGrant"`
 				} `json:"value"`
 			}
 			if err := json.Unmarshal(values["byoOnboarding"], &binding); err != nil {
 				return fmt.Errorf("deployment graph ownership binding is unavailable: %w", err)
 			}
 			data := foundry.Spec.Deployment
+			for _, identity := range []struct {
+				id, expected, principal, actualPrincipal string
+				supplied                                 *bool
+				expectedSupplied                         bool
+			}{
+				{binding.Value.HostingID, data.Hosting.ID, binding.Value.HostingPrincipal,
+					data.HostingIdentity.PrincipalID, binding.Value.HostingSupplied, data.Hosting.Supplied},
+				{binding.Value.WorkloadID, data.Workload.ID, binding.Value.WorkloadPrincipal,
+					data.WorkloadIdentity.PrincipalID, binding.Value.WorkloadSupplied, data.Workload.Supplied},
+			} {
+				if identity.expectedSupplied && (identity.id == "" || identity.supplied == nil ||
+					!strings.EqualFold(identity.principal, identity.actualPrincipal)) ||
+					identity.id != "" && !strings.EqualFold(identity.id, identity.expected) ||
+					identity.supplied != nil && *identity.supplied != identity.expectedSupplied {
+					return fmt.Errorf("recorded deployment supplied-identity binding changed or is unavailable")
+				}
+			}
+			for _, operation := range []struct {
+				selected *bool
+				expected bool
+			}{
+				{binding.Value.CreateClusterGrants, !data.Hosting.Supplied},
+				{binding.Value.CreateFederationGrant, !data.Hosting.Supplied || !data.Workload.Supplied},
+				{binding.Value.CreateStorageGrant, !data.Workload.Supplied || !data.StorageCustomerSupplied},
+			} {
+				if operation.selected != nil && *operation.selected != operation.expected ||
+					operation.selected == nil && (data.Hosting.Supplied || data.Workload.Supplied) {
+					return fmt.Errorf("recorded deployment grant operation binding changed or is unavailable")
+				}
+			}
 			if !strings.EqualFold(binding.Value.ClusterID, data.ClusterID) ||
 				!strings.EqualFold(binding.Value.StorageID, data.StorageID) ||
 				!strings.EqualFold(binding.Value.RegistryID, data.RegistryID) ||
@@ -472,6 +521,7 @@ func (l *ownedLifecycle) verifyAttempts(ctx context.Context, plan Plan, foundry 
 		switch string(*properties.ProvisioningState) {
 		case "Succeeded", "Failed", "Canceled":
 			attempt.Terminal, attempt.CorrelationID = true, correlation
+			attempt.ProvisioningState = string(*properties.ProvisioningState)
 		default:
 			return fmt.Errorf("recorded deployment is still active; wait for it to terminate before proceeding")
 		}
@@ -506,5 +556,17 @@ func (l *ownedLifecycle) Observe(ctx context.Context, plan Plan) error {
 	if err := l.observeDeployment(ctx, plan, &state); err != nil {
 		return err
 	}
-	return l.journal.Save(ctx, state)
+	if err := l.journal.Save(ctx, state); err != nil {
+		return err
+	}
+	if len(state.Foundry.Attempts) > 0 &&
+		state.Foundry.Attempts[len(state.Foundry.Attempts)-1].ProvisioningState == "Succeeded" {
+		for _, key := range []string{"storageAccount", "containerRegistry", "hostingIdentity", "workloadIdentity"} {
+			if !state.ResourceProgress[key].PreparationComplete {
+				return fmt.Errorf(
+					"ARM deployment succeeded but %s preparation evidence is incomplete; retain the journal and retry", key)
+			}
+		}
+	}
+	return nil
 }

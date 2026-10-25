@@ -54,7 +54,6 @@ func TestOnboardingContractCompactPublicInput(t *testing.T) {
 func TestOnboardingContractUsesStandardYAMLDecoding(t *testing.T) {
 	for _, extra := range []string{
 		"      unknown: ignored\n",
-		"      hostingManagementIdentityResourceId: customer\n      workloadIdentityResourceId: null\n",
 		"      storageAccountResourceId: null\n      hostingType: null\n      name: \"\"\n",
 		"      storageAccountResourceId: \"\"\n",
 	} {

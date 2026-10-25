@@ -2,35 +2,43 @@ locals {
   byo_enabled          = var.byo_onboarding != null
   byo_rg_supplied      = local.byo_enabled ? var.byo_onboarding.resourceGroupSupplied : false
   byo_tags             = merge(var.tags, { "azd-byoaks-owner" = local.byo_enabled ? var.byo_onboarding.owner : "" })
-  hosting_identity_id  = local.byo_enabled ? azapi_resource.byo_identity["hosting"].id : var.agent_hosting.hostingManagementIdentityResourceId
-  workload_identity_id = local.byo_enabled ? azapi_resource.byo_identity["workload"].id : var.agent_hosting.workloadIdentityResourceId
+  hosting_identity_id  = local.byo_enabled ? var.byo_onboarding.hostingIdentityResourceId : var.agent_hosting.hostingManagementIdentityResourceId
+  workload_identity_id = local.byo_enabled ? var.byo_onboarding.workloadIdentityResourceId : var.agent_hosting.workloadIdentityResourceId
+  byo_hosting_principal = local.byo_enabled ? (
+    var.byo_onboarding.hostingIdentitySupplied ? var.byo_onboarding.hostingPrincipalId : azapi_resource.byo_identity["hosting"].output.properties.principalId
+  ) : ""
+  byo_workload_principal = local.byo_enabled ? (
+    var.byo_onboarding.workloadIdentitySupplied ? var.byo_onboarding.workloadPrincipalId : azapi_resource.byo_identity["workload"].output.properties.principalId
+  ) : ""
   hosting_storage_id   = local.byo_enabled ? var.byo_onboarding.storageAccountResourceId : var.agent_hosting.storageAccountResourceId
   hosting_cluster_id   = local.byo_enabled ? var.byo_onboarding.clusterResourceId : var.agent_hosting.clusterResourceId
   byo_registry_role = local.byo_enabled ? (
     var.byo_onboarding.registryABAC ? "b93aa761-3e63-49ed-ac28-beffa264f7ac" : "7f951dda-4ed3-4680-a7ca-43fe172d538d"
   ) : ""
-  byo_grants = local.byo_enabled ? merge({
+  byo_grants = local.byo_enabled ? merge(var.byo_onboarding.createClusterGrants ? {
     cluster_reader = {
       scope     = var.byo_onboarding.clusterResourceId
-      principal = azapi_resource.byo_identity["hosting"].output.properties.principalId
+      principal = local.byo_hosting_principal
       role      = "/subscriptions/${split("/", var.byo_onboarding.clusterResourceId)[2]}/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7"
     }
     cluster_extension = {
       scope     = var.byo_onboarding.clusterResourceId
-      principal = azapi_resource.byo_identity["hosting"].output.properties.principalId
+      principal = local.byo_hosting_principal
       role      = "/subscriptions/${split("/", var.byo_onboarding.clusterResourceId)[2]}/providers/Microsoft.Authorization/roleDefinitions/85cb6faf-e071-4c9b-8136-154b5a04f717"
     }
+    } : {}, var.byo_onboarding.createFederationGrant ? {
     federation = {
-      scope     = azapi_resource.byo_identity["workload"].id
-      principal = azapi_resource.byo_identity["hosting"].output.properties.principalId
+      scope     = var.byo_onboarding.workloadIdentityResourceId
+      principal = local.byo_hosting_principal
       role      = var.byo_onboarding.federatedIdentityRoleDefinitionId
     }
+    } : {}, var.byo_onboarding.createStorageGrant ? {
     storage = {
       scope     = var.byo_onboarding.storageAccountResourceId
-      principal = azapi_resource.byo_identity["workload"].output.properties.principalId
+      principal = local.byo_workload_principal
       role      = "/subscriptions/${split("/", var.byo_onboarding.storageAccountResourceId)[2]}/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe"
     }
-    }, var.byo_onboarding.kubeletRoleAssignmentId == "" ? {
+    } : {}, var.byo_onboarding.kubeletRoleAssignmentId == "" ? {
     kubelet = {
       scope     = var.byo_onboarding.registryResourceId
       principal = var.byo_onboarding.kubeletObjectId
@@ -40,10 +48,10 @@ locals {
 }
 
 resource "azapi_resource" "byo_identity" {
-  for_each = local.byo_enabled ? {
+  for_each = local.byo_enabled ? { for key, value in {
     hosting  = var.byo_onboarding.hostingIdentityName
     workload = var.byo_onboarding.workloadIdentityName
-  } : {}
+  } : key => value if (key == "hosting" ? !var.byo_onboarding.hostingIdentitySupplied : !var.byo_onboarding.workloadIdentitySupplied) } : {}
   type                   = "Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31"
   name                   = each.value
   parent_id              = local.resource_group_id
@@ -64,6 +72,10 @@ resource "azapi_resource" "byo_storage" {
     kind = "StorageV2"
     sku  = { name = var.byo_onboarding.storageSku }
     properties = {
+      accessTier               = "Hot"
+      isHnsEnabled             = false
+      publicNetworkAccess      = "Enabled"
+      networkAcls              = { defaultAction = "Allow" }
       minimumTlsVersion        = "TLS1_2"
       supportsHttpsTrafficOnly = true
       allowBlobPublicAccess    = false
@@ -74,7 +86,7 @@ resource "azapi_resource" "byo_storage" {
 
 resource "azapi_resource" "byo_registry" {
   count     = local.byo_enabled ? (var.byo_onboarding.registrySupplied ? 0 : 1) : 0
-  type      = "Microsoft.ContainerRegistry/registries@2023-07-01"
+  type      = "Microsoft.ContainerRegistry/registries@2025-03-01-preview"
   name      = var.byo_onboarding.registryName
   parent_id = local.resource_group_id
   location  = var.location
@@ -82,6 +94,7 @@ resource "azapi_resource" "byo_registry" {
   body = {
     sku = { name = "Premium" }
     properties = {
+      roleAssignmentMode  = "LegacyRegistryPermissions"
       adminUserEnabled    = false
       publicNetworkAccess = "Enabled"
     }

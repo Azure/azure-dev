@@ -69,6 +69,9 @@ func byoContractProvider(t *testing.T) *FoundryProvisioningProvider {
 	var armTemplate map[string]any
 	require.NoError(t, json.Unmarshal(template, &armTemplate))
 	return &FoundryProvisioningProvider{
+		azdClient: newResolveEnvTestClient(t, &resolveEnvStubEnvServer{
+			envName: "contract", get: map[string]string{},
+		}, &resolveEnvStubPromptServer{}),
 		synthResult: result, armTemplate: armTemplate, projectPath: t.TempDir(),
 		envName: "contract", subID: "foundry-sub", rgName: "foundry-rg", location: "eastus",
 		foundryName: "contract-project", credential: byoCredentialContract{},
@@ -78,7 +81,8 @@ func byoContractProvider(t *testing.T) *FoundryProvisioningProvider {
 			return onboarding.DeploymentData{
 				ClusterID: plan.Cluster.ID, TenantID: "tenant", Hosting: plan.Hosting, Workload: plan.Workload,
 				StorageID: plan.Storage.ID, StorageSupplied: plan.Storage.Supplied,
-				RegistryID: plan.Registry.ID, RegistrySupplied: plan.Registry.Supplied,
+				StorageCustomerSupplied: plan.Storage.Supplied,
+				RegistryID:              plan.Registry.ID, RegistrySupplied: plan.Registry.Supplied,
 				RegistryABAC: facts.RegistryABAC, KubeletObjectID: facts.KubeletObjectID,
 				StorageSKU: onboarding.StorageSKU(plan.Location),
 				FederatedIdentityRoleDefinitionID: "/subscriptions/" + plan.SubscriptionID +
@@ -297,7 +301,7 @@ func TestBYOProviderOnDiskParametersCannotOverridePlannedDependencies(t *testing
 	}
 }
 
-func TestBYOProviderInitializeUsesStandardHostingYAMLDecoding(t *testing.T) {
+func TestBYOProviderInitializeRejectsExplicitEmptyIdentities(t *testing.T) {
 	for _, field := range []string{"hostingManagementIdentityResourceId", "workloadIdentityResourceId"} {
 		for _, value := range []string{`""`, "null"} {
 			t.Run(field+"/"+value, func(t *testing.T) {
@@ -311,9 +315,7 @@ func TestBYOProviderInitializeUsesStandardHostingYAMLDecoding(t *testing.T) {
 				})
 				p := &FoundryProvisioningProvider{azdClient: client}
 				err := p.Initialize(t.Context(), projectPath, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
-				require.NoError(t, err, "unsupported fields follow standard struct decoding, not a custom runtime rejection")
-				require.NotNil(t, p.synthResult.Hosting)
-				assert.Equal(t, byoProviderCluster, p.synthResult.Hosting.ClusterResourceID)
+				require.ErrorContains(t, err, field)
 				assert.Nil(t, p.credential)
 			})
 		}

@@ -247,6 +247,10 @@ func TestP07CustomerInheritedGrantSurvivesDeploymentAndCleanup(t *testing.T) {
 			f := newCleanupARM(t, false, true)
 			facts := Facts{KubeletObjectID: f.spec.Deployment.KubeletObjectID, TenantID: "tenant", RegistryABAC: tc.abac}
 			f.spec.RegistryABAC = tc.abac
+			if tc.abac {
+				cleanupObject(t, f.base.resources[strings.ToLower(f.base.plan.Registry.ID)]["properties"])["roleAssignmentMode"] =
+					"AbacRepositoryPermissions"
+			}
 			scope := f.base.plan.Registry.Parent
 			if tc.scope == "subscription" {
 				registry, err := ParseID(f.base.plan.Registry.ID, "Microsoft.ContainerRegistry/registries")

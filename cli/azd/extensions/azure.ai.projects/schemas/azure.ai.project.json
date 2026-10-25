@@ -70,7 +70,7 @@
   "definitions": {
     "AgentHosting": {
       "type": "object",
-      "description": "Customer-owned AKS configuration for a new Foundry account. Read-only preflight precedes one ARM deployment that creates dependencies and two internally managed identities. Unverified mandatory evidence blocks provision.",
+      "description": "Customer-owned AKS configuration. Hosting and workload identities may each be supplied or created independently. Read-only preflight precedes one ARM deployment.",
       "additionalProperties": false,
       "required": [
         "clusterResourceId"
@@ -95,6 +95,16 @@
           "type": "string",
           "minLength": 1,
           "description": "Optional full ARM storage account ID. Omit to plan an owned account."
+        },
+        "hostingManagementIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional existing hosting UAMI resource ID. Omit to create an owned identity."
+        },
+        "workloadIdentityResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional existing workload UAMI resource ID, distinct from the hosting identity."
         }
       }
     },

@@ -105,6 +105,15 @@ variable "byo_onboarding" {
     storageSku                        = string
     hostingIdentityName               = string
     workloadIdentityName              = string
+    hostingIdentityResourceId         = string
+    workloadIdentityResourceId        = string
+    hostingIdentitySupplied           = bool
+    workloadIdentitySupplied          = bool
+    hostingPrincipalId                = string
+    workloadPrincipalId               = string
+    createClusterGrants               = bool
+    createFederationGrant             = bool
+    createStorageGrant                = bool
     registryResourceId                = string
     registryName                      = string
     registrySupplied                  = bool

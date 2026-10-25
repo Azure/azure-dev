@@ -23,6 +23,9 @@ func onboardingContractPlan() BYOOnboardingParameters {
 		StorageAccountResourceID: parent + "Microsoft.Storage/storageAccounts/azd0123456789abcdef",
 		StorageName:              "azd0123456789abcdef", StorageSKU: "Standard_ZRS",
 		HostingIdentityName: "hosting-0123456789abcdef", WorkloadIdentityName: "workload-0123456789abcdef",
+		HostingIdentityResourceID:  parent + "Microsoft.ManagedIdentity/userAssignedIdentities/hosting-0123456789abcdef",
+		WorkloadIdentityResourceID: parent + "Microsoft.ManagedIdentity/userAssignedIdentities/workload-0123456789abcdef",
+		CreateClusterGrants:        true, CreateFederationGrant: true, CreateStorageGrant: true,
 		RegistryResourceID: parent + "Microsoft.ContainerRegistry/registries/azd0123456789abcdef",
 		RegistryName:       "azd0123456789abcdef", KubeletObjectID: "kubelet-principal",
 		FederatedIdentityRoleDefinitionID: "/subscriptions/foundry-sub/providers/" +
@@ -320,7 +323,9 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 	locals, _, found := strings.Cut(string(template), "\nresource ")
 	require.True(t, found)
 	locals = strings.ReplaceAll(locals, "azapi_resource.byo_identity", "local.mock_identity")
-	for _, choice := range []string{"disabled", "create", "reference ABAC"} {
+	for _, choice := range []string{
+		"disabled", "create", "reference ABAC", "supplied hosting", "supplied workload", "supplied both",
+	} {
 		t.Run(choice, func(t *testing.T) {
 			plan := onboardingContractPlan()
 			var parameter any = plan
@@ -336,6 +341,24 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 				plan.KubeletRoleAssignmentID = plan.RegistryResourceID +
 					"/providers/Microsoft.Authorization/roleAssignments/reused"
 				parameter, expectedGrants = plan, 4
+			}
+			if strings.HasPrefix(choice, "supplied") {
+				plan.HostingIdentitySupplied = choice != "supplied workload"
+				plan.WorkloadIdentitySupplied = choice != "supplied hosting"
+				plan.HostingPrincipalID, plan.WorkloadPrincipalID = "customer-hosting", "customer-workload"
+				plan.HostingIdentityResourceID = strings.ReplaceAll(
+					plan.HostingIdentityResourceID, "foundry-rg", "hosting-rg")
+				plan.WorkloadIdentityResourceID = strings.ReplaceAll(
+					plan.WorkloadIdentityResourceID, "foundry-sub", "identity-sub")
+				plan.CreateClusterGrants = !plan.HostingIdentitySupplied
+				plan.CreateFederationGrant = !plan.HostingIdentitySupplied || !plan.WorkloadIdentitySupplied
+				if !plan.CreateClusterGrants {
+					expectedGrants -= 2
+				}
+				if !plan.CreateFederationGrant {
+					expectedGrants--
+				}
+				parameter = plan
 			}
 			dir := t.TempDir()
 			values, err := json.Marshal(map[string]any{
@@ -377,12 +400,30 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 			if expectedGrants == 0 {
 				return
 			}
-			assert.Equal(t, plan.ClusterResourceID, grants["cluster_reader"]["scope"])
-			assert.Equal(t, "hosting-principal", grants["cluster_extension"]["principal"])
-			assert.Equal(t, plan.FederatedIdentityRoleDefinitionID, grants["federation"]["role"])
+			hostingPrincipal, workloadPrincipal := "hosting-principal", "workload-principal"
+			if plan.HostingIdentitySupplied {
+				hostingPrincipal = plan.HostingPrincipalID
+			}
+			if plan.WorkloadIdentitySupplied {
+				workloadPrincipal = plan.WorkloadPrincipalID
+			}
+			if plan.CreateClusterGrants {
+				assert.Equal(t, plan.ClusterResourceID, grants["cluster_reader"]["scope"])
+				assert.Equal(t, hostingPrincipal, grants["cluster_extension"]["principal"])
+			} else {
+				assert.NotContains(t, grants, "cluster_reader")
+				assert.NotContains(t, grants, "cluster_extension")
+			}
+			if plan.CreateFederationGrant {
+				assert.Equal(t, plan.FederatedIdentityRoleDefinitionID, grants["federation"]["role"])
+				assert.Equal(t, plan.WorkloadIdentityResourceID, grants["federation"]["scope"])
+				assert.Equal(t, hostingPrincipal, grants["federation"]["principal"])
+			} else {
+				assert.NotContains(t, grants, "federation")
+			}
 			assert.Equal(t, plan.StorageAccountResourceID, grants["storage"]["scope"])
-			assert.Equal(t, "workload-principal", grants["storage"]["principal"])
-			if choice == "create" {
+			assert.Equal(t, workloadPrincipal, grants["storage"]["principal"])
+			if plan.KubeletRoleAssignmentID == "" {
 				assert.Equal(t, plan.RegistryResourceID, grants["kubelet"]["scope"])
 				assert.Equal(t, plan.KubeletObjectID, grants["kubelet"]["principal"])
 				assert.True(t, strings.HasSuffix(grants["kubelet"]["role"], "7f951dda-4ed3-4680-a7ca-43fe172d538d"))
@@ -409,6 +450,13 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			plan.StorageSupplied = supplied
 			if supplied {
 				plan.StorageAccountResourceID = strings.ReplaceAll(plan.StorageAccountResourceID, "foundry-sub", "other-sub")
+				plan.HostingIdentityResourceID = strings.ReplaceAll(
+					plan.HostingIdentityResourceID, "foundry-sub", "hosting-sub")
+				plan.WorkloadIdentityResourceID = strings.ReplaceAll(
+					plan.WorkloadIdentityResourceID, "foundry-rg", "workload-rg")
+				plan.HostingIdentitySupplied, plan.WorkloadIdentitySupplied = true, true
+				plan.HostingPrincipalID, plan.WorkloadPrincipalID = "hosting-principal", "workload-principal"
+				plan.CreateClusterGrants, plan.CreateFederationGrant, plan.CreateStorageGrant = false, false, false
 			}
 			projection := map[string]any{
 				"$schema":        "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -455,10 +503,8 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			hosting, ok := evaluated.Outputs["hosting"].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, plan.StorageAccountResourceID, hosting["storageAccountResourceId"])
-			const prefix = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/foundry-rg/providers/" +
-				"Microsoft.ManagedIdentity/userAssignedIdentities/"
-			assert.Equal(t, prefix+plan.HostingIdentityName, hosting["hostingManagementIdentityResourceId"])
-			assert.Equal(t, prefix+plan.WorkloadIdentityName, hosting["workloadIdentityResourceId"])
+			assert.Equal(t, plan.HostingIdentityResourceID, hosting["hostingManagementIdentityResourceId"])
+			assert.Equal(t, plan.WorkloadIdentityResourceID, hosting["workloadIdentityResourceId"])
 			assert.Equal(t, supplied, evaluated.Outputs["suppliedRG"])
 		})
 	}

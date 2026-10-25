@@ -6,23 +6,26 @@ package onboarding
 import (
 	"crypto/sha256"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
-// Input is resolved public input, with no customer identity fields.
+// Input is resolved public input; omitted identities are planned independently.
 type Input struct {
-	ClusterID      string
-	StorageID      string
-	RegistryID     string
-	AgentSubnetID  string // Resolved standard network.agentSubnet, never an agentHosting property.
-	SubscriptionID string
-	ResourceGroup  string
-	Location       string
-	Environment    string
-	ProjectPath    string
-	FoundryName    string
+	ClusterID          string
+	StorageID          string
+	RegistryID         string
+	AgentSubnetID      string // Resolved standard network.agentSubnet, never an agentHosting property.
+	SubscriptionID     string
+	ResourceGroup      string
+	Location           string
+	Environment        string
+	ProjectPath        string
+	FoundryName        string
+	HostingIdentityID  string
+	WorkloadIdentityID string
 }
 
 // ParseID validates the exact ARM type and complete subscription/RG hierarchy.
@@ -95,6 +98,8 @@ func BuildPlan(in Input) (Plan, error) {
 	}{
 		{in.StorageID, "Microsoft.Storage/storageAccounts", &p.Storage},
 		{in.RegistryID, "Microsoft.ContainerRegistry/registries", &p.Registry},
+		{in.HostingIdentityID, "Microsoft.ManagedIdentity/userAssignedIdentities", &p.Hosting},
+		{in.WorkloadIdentityID, "Microsoft.ManagedIdentity/userAssignedIdentities", &p.Workload},
 	} {
 		if item.value == "" {
 			continue
@@ -104,6 +109,9 @@ func BuildPlan(in Input) (Plan, error) {
 			return Plan{}, fmt.Errorf("I02: %w", err)
 		}
 		*item.out = Resource{ID: item.value, Parent: id.Parent.String(), Name: id.Name, Supplied: true}
+	}
+	if strings.EqualFold(p.Hosting.ID, p.Workload.ID) {
+		return Plan{}, fmt.Errorf("I03: hosting and workload identities must be distinct")
 	}
 	if in.AgentSubnetID != "" {
 		id, err := ParseID(in.AgentSubnetID, "Microsoft.Network/virtualNetworks/subnets")
@@ -123,16 +131,21 @@ func BuildPlan(in Input) (Plan, error) {
 	add := func(checkID, action, scope string) {
 		p.Operations = append(p.Operations, Operation{CheckID: checkID, Action: action, Scope: scope})
 	}
-	for _, action := range []string{"write", "read", "assign/action"} {
-		add("P02", "Microsoft.ManagedIdentity/userAssignedIdentities/"+action, ancestor)
+	for _, identity := range []Resource{p.Hosting, p.Workload} {
+		scope := identity.Parent
+		actions := []string{"write", "read", "assign/action"}
+		if identity.Supplied {
+			scope, actions = identity.ID, []string{"read", "assign/action"}
+		}
+		for _, action := range actions {
+			op := Operation{
+				CheckID: "P02", Action: "Microsoft.ManagedIdentity/userAssignedIdentities/" + action, Scope: scope,
+			}
+			if !slices.Contains(p.Operations, op) {
+				p.Operations = append(p.Operations, op)
+			}
+		}
 	}
-	add("P03", "Microsoft.ContainerService/managedClusters/write", cluster.Parent.String())
-	networkScope := ancestor
-	if p.AgentSubnet.Supplied {
-		subnet, _ := arm.ParseResourceID(p.AgentSubnet.ID)
-		networkScope = fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subnet.SubscriptionID, subnet.ResourceGroupName)
-	}
-	add("P03", "Microsoft.Network/virtualNetworks/write", networkScope)
 	if !p.Storage.Supplied {
 		add("P04", "Microsoft.Storage/storageAccounts/write", p.Storage.Parent)
 	}

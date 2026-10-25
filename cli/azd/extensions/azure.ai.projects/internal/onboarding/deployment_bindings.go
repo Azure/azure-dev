@@ -15,7 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 )
 
-// DeploymentData binds the read-only plan to one ARM graph. Identity principals are ARM outputs, never inputs.
+// DeploymentData binds the read-only plan to one ARM graph, including verified supplied identity metadata.
 type DeploymentData struct {
 	ClusterID                         string
 	TenantID                          string
@@ -24,6 +24,7 @@ type DeploymentData struct {
 	Workload                          Resource
 	StorageID                         string
 	StorageSupplied                   bool // ARM reference selection; existing journal ownership remains authoritative.
+	StorageCustomerSupplied           bool
 	RegistryID                        string
 	RegistrySupplied                  bool
 	RegistryABAC                      bool
@@ -31,6 +32,8 @@ type DeploymentData struct {
 	StorageSKU                        string // Creation-only; reference branches never update the existing SKU.
 	FederatedIdentityRoleDefinitionID string
 	KubeletRoleAssignmentID           string // ARM reference only; existing journal ownership remains authoritative.
+	HostingIdentity                   Identity
+	WorkloadIdentity                  Identity
 }
 
 // StorageSKU selects Standard_ZRS except in the public regions without StorageV2 ZRS support.
@@ -58,8 +61,21 @@ func PlannedDeployment(plan Plan, facts Facts) (DeploymentData, error) {
 		return DeploymentData{}, fmt.Errorf(
 			"deployment requires the planned owner/location and verified tenant/kubelet identity")
 	}
-	if plan.Hosting.Supplied || plan.Workload.Supplied || strings.EqualFold(plan.Hosting.ID, plan.Workload.ID) {
-		return DeploymentData{}, fmt.Errorf("R04/R05: two distinct internally planned identities are required")
+	if strings.EqualFold(plan.Hosting.ID, plan.Workload.ID) {
+		return DeploymentData{}, fmt.Errorf("R04/R05: hosting and workload identities must be distinct")
+	}
+	for _, item := range []struct {
+		resource Resource
+		identity Identity
+	}{
+		{plan.Hosting, facts.HostingIdentity}, {plan.Workload, facts.WorkloadIdentity},
+	} {
+		if item.resource.Supplied && (!strings.EqualFold(item.resource.ID, item.identity.ID) ||
+			item.identity.PrincipalID == "" || item.identity.ClientID == "" ||
+			!strings.EqualFold(item.identity.TenantID, facts.TenantID)) {
+			return DeploymentData{}, fmt.Errorf(
+				"supplied identity requires verified ID, principal, client and owning tenant")
+		}
 	}
 	for _, item := range []struct {
 		resource Resource
@@ -85,8 +101,11 @@ func PlannedDeployment(plan Plan, facts Facts) (DeploymentData, error) {
 		TenantID:              facts.TenantID,
 		ResourceGroupSupplied: plan.ResourceGroupSupplied, Hosting: plan.Hosting, Workload: plan.Workload,
 		StorageID: plan.Storage.ID, StorageSupplied: plan.Storage.Supplied,
-		RegistryID: plan.Registry.ID, RegistrySupplied: plan.Registry.Supplied, RegistryABAC: facts.RegistryABAC,
+		StorageCustomerSupplied: plan.Storage.Supplied,
+		RegistryID:              plan.Registry.ID, RegistrySupplied: plan.Registry.Supplied,
+		RegistryABAC:    facts.RegistryABAC,
 		KubeletObjectID: facts.KubeletObjectID, StorageSKU: StorageSKU(plan.Location),
+		HostingIdentity: facts.HostingIdentity, WorkloadIdentity: facts.WorkloadIdentity,
 	}, nil
 }
 

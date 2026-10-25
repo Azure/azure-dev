@@ -23,6 +23,9 @@ func onboardingContractPlan() BYOOnboardingParameters {
 		StorageAccountResourceID: parent + "Microsoft.Storage/storageAccounts/azd0123456789abcdef",
 		StorageName:              "azd0123456789abcdef", StorageSKU: "Standard_ZRS",
 		HostingIdentityName: "hosting-0123456789abcdef", WorkloadIdentityName: "workload-0123456789abcdef",
+		HostingIdentityResourceID:  parent + "Microsoft.ManagedIdentity/userAssignedIdentities/hosting-0123456789abcdef",
+		WorkloadIdentityResourceID: parent + "Microsoft.ManagedIdentity/userAssignedIdentities/workload-0123456789abcdef",
+		CreateClusterGrants:        true, CreateFederationGrant: true, CreateStorageGrant: true,
 		RegistryResourceID: parent + "Microsoft.ContainerRegistry/registries/azd0123456789abcdef",
 		RegistryName:       "azd0123456789abcdef", KubeletObjectID: "kubelet-principal",
 		FederatedIdentityRoleDefinitionID: "/subscriptions/foundry-sub/providers/" +
@@ -84,6 +87,36 @@ func TestApplyBYOOnboardingRejectsIncompletePlanAtomically(t *testing.T) {
 			assert.JSONEq(t, string(before), string(after))
 		})
 	}
+
+}
+
+func TestApplyBYOOnboardingInheritedKubeletGrantScope(t *testing.T) {
+	plan := onboardingContractPlan()
+	const subscription = "/subscriptions/foundry-sub"
+	for _, tc := range []struct {
+		scope string
+		valid bool
+	}{
+		{plan.RegistryResourceID, true},
+		{subscription + "/resourceGroups/foundry-rg", true},
+		{subscription, true},
+		{subscription + "/resourceGroups/other-rg", false},
+		{"/subscriptions/other-sub", false},
+		{subscription + "/resourceGroups/foundry-rg/providers/Microsoft.Storage/storageAccounts/other", false},
+	} {
+		t.Run(tc.scope, func(t *testing.T) {
+			result, err := Synthesize(hostingContractInput(""))
+			require.NoError(t, err)
+			plan.KubeletRoleAssignmentID = tc.scope + "/providers/Microsoft.Authorization/roleAssignments/reused"
+			err = ApplyBYOOnboarding(result, plan)
+			if tc.valid {
+				require.NoError(t, err)
+				assert.Equal(t, plan, result.Parameters["byoOnboarding"])
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
 }
 
 func TestApplyBYOOnboardingPreservesExplicitStorage(t *testing.T) {
@@ -124,6 +157,19 @@ func TestBYOOnboardingSingleARMGraph(t *testing.T) {
 	assert.NotContains(t, string(raw), "roleAssignmentManagedExternally")
 	properties, ok := preflight["properties"].(map[string]any)
 	require.True(t, ok)
+	assert.Equal(t, "[variables('hasOnboardingPlan')]", preflight["condition"])
+	variables, ok := graph["variables"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "[and(parameters('agentHosting').enabled, not(empty(parameters('byoOnboarding'))))]",
+		variables["hasOnboardingPlan"])
+	foundryProperties, ok := foundry["properties"].(map[string]any)
+	require.True(t, ok)
+	foundryParameters, ok := foundryProperties["parameters"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "[if(variables('hasOnboardingPlan'), "+
+		"createObject('value', parameters('byoOnboarding').registryResourceId), "+
+		"createObject('value', parameters('containerRegistryResourceId')))]",
+		foundryParameters["containerRegistryResourceId"])
 	template, ok := properties["template"].(map[string]any)
 	require.True(t, ok)
 	items, ok := template["resources"].([]any)
@@ -138,8 +184,23 @@ func TestBYOOnboardingSingleARMGraph(t *testing.T) {
 		switch kind {
 		case "Microsoft.Storage/storageAccounts":
 			assert.Equal(t, "[not(parameters('plan').storageSupplied)]", resource["condition"])
+			assert.Equal(t, "2023-05-01", resource["apiVersion"])
+			assert.Equal(t, "StorageV2", resource["kind"])
+			assert.Equal(t, map[string]any{"name": "[parameters('plan').storageSku]"}, resource["sku"])
+			assert.Equal(t, map[string]any{
+				"accessTier": "Hot", "isHnsEnabled": false, "publicNetworkAccess": "Enabled",
+				"networkAcls":       map[string]any{"defaultAction": "Allow"},
+				"minimumTlsVersion": "TLS1_2", "supportsHttpsTrafficOnly": true,
+				"allowBlobPublicAccess": false, "allowSharedKeyAccess": false,
+			}, resource["properties"])
 		case "Microsoft.ContainerRegistry/registries":
 			assert.Equal(t, "[not(parameters('plan').registrySupplied)]", resource["condition"])
+			assert.Equal(t, "2025-03-01-preview", resource["apiVersion"])
+			assert.Equal(t, map[string]any{"name": "Premium"}, resource["sku"])
+			assert.Equal(t, map[string]any{
+				"roleAssignmentMode": "LegacyRegistryPermissions",
+				"adminUserEnabled":   false, "publicNetworkAccess": "Enabled",
+			}, resource["properties"])
 		}
 	}
 	assert.Equal(t, 2, types["Microsoft.ManagedIdentity/userAssignedIdentities"])
@@ -159,6 +220,95 @@ func TestBYOOnboardingSingleARMGraph(t *testing.T) {
 	assert.Contains(t, string(acr), "if (reuseRegistry)")
 	assert.Contains(t, string(acr), "scope: resourceGroup(split(registryResourceId, '/')[2]")
 	assert.Contains(t, string(acr), "dependsOn: [\n        foundryAcrPull\n        preparedRegistryAccess")
+	assert.Contains(t, string(acr), "resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01'")
+	assert.Contains(t, string(acr), "publicNetworkAccess: enableNetworkIsolation ? 'Disabled' : 'Enabled'")
+	assert.NotContains(t, string(acr), "roleAssignmentMode:")
+}
+
+func TestBYOOnboardingEvaluatesCreateOnlyResourceConditions(t *testing.T) {
+	bicep := lookupBicep()
+	if bicep == "" {
+		t.Skip("Bicep CLI is required for offline ARM evaluation")
+	}
+	raw, err := ARMTemplate()
+	require.NoError(t, err)
+	var graph struct {
+		Resources map[string]struct {
+			Properties struct {
+				Template map[string]any
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal(raw, &graph))
+	module := graph.Resources["prerequisites"].Properties.Template
+	items, ok := module["resources"].([]any)
+	require.True(t, ok)
+	var selected []any
+	for _, item := range items {
+		resource, ok := item.(map[string]any)
+		require.True(t, ok)
+		if resource["type"] == "Microsoft.Storage/storageAccounts" ||
+			resource["type"] == "Microsoft.ContainerRegistry/registries" {
+			selected = append(selected, resource)
+		}
+	}
+	require.Len(t, selected, 2)
+	projection := map[string]any{
+		"$schema": module["$schema"], "contentVersion": module["contentVersion"],
+		"parameters": module["parameters"], "resources": selected,
+		"variables": module["variables"],
+	}
+	for _, storageSupplied := range []bool{false, true} {
+		for _, registrySupplied := range []bool{false, true} {
+			name := map[bool]string{false: "new-storage", true: "supplied-storage"}[storageSupplied] + "/" +
+				map[bool]string{false: "new-registry", true: "supplied-abac-registry"}[registrySupplied]
+			t.Run(name, func(t *testing.T) {
+				plan := onboardingContractPlan()
+				plan.StorageSupplied, plan.RegistrySupplied = storageSupplied, registrySupplied
+				plan.RegistryABAC = registrySupplied
+				dir := t.TempDir()
+				template, err := json.Marshal(projection)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "projection.json"), template, 0o600))
+				data, err := json.Marshal(plan)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "plan.json"), data, 0o600))
+				params := filepath.Join(dir, "graph.bicepparam")
+				require.NoError(t, os.WriteFile(params, []byte(
+					"using './projection.json'\nparam location = 'eastus'\n"+
+						"param tags = { team: 'test', 'azd-byoaks-owner': 'not-the-owner' }\n"+
+						"param plan = loadJsonContent('./plan.json')\n"), 0o600))
+				//nolint:gosec // Bicep snapshot evaluates local ARM; it does not submit a deployment.
+				cmd := exec.CommandContext(t.Context(), bicep, "snapshot", params, "--mode", "Overwrite",
+					"--subscription-id", "00000000-0000-0000-0000-000000000001",
+					"--resource-group", "foundry-rg", "--location", "eastus")
+				out, err := cmd.CombinedOutput()
+				require.NoError(t, err, "%s", out)
+				//nolint:gosec // The snapshot filename is fixed beneath this test's t.TempDir.
+				data, err = os.ReadFile(filepath.Join(dir, "graph.snapshot.json"))
+				require.NoError(t, err)
+				var snapshot struct {
+					PredictedResources []map[string]any
+					Diagnostics        []any
+				}
+				require.NoError(t, json.Unmarshal(data, &snapshot))
+				require.Empty(t, snapshot.Diagnostics)
+				expected := 2
+				if storageSupplied {
+					expected--
+				}
+				if registrySupplied {
+					expected--
+				}
+				require.Len(t, snapshot.PredictedResources, expected,
+					"supplied resources must have no create/update declaration")
+				if expected > 0 {
+					assert.Contains(t, string(data), plan.Owner)
+					assert.NotContains(t, string(data), "not-the-owner")
+				}
+			})
+		}
+	}
 }
 
 func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
@@ -173,7 +323,9 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 	locals, _, found := strings.Cut(string(template), "\nresource ")
 	require.True(t, found)
 	locals = strings.ReplaceAll(locals, "azapi_resource.byo_identity", "local.mock_identity")
-	for _, choice := range []string{"disabled", "create", "reference ABAC"} {
+	for _, choice := range []string{
+		"disabled", "create", "reference ABAC", "supplied hosting", "supplied workload", "supplied both",
+	} {
 		t.Run(choice, func(t *testing.T) {
 			plan := onboardingContractPlan()
 			var parameter any = plan
@@ -189,6 +341,24 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 				plan.KubeletRoleAssignmentID = plan.RegistryResourceID +
 					"/providers/Microsoft.Authorization/roleAssignments/reused"
 				parameter, expectedGrants = plan, 4
+			}
+			if strings.HasPrefix(choice, "supplied") {
+				plan.HostingIdentitySupplied = choice != "supplied workload"
+				plan.WorkloadIdentitySupplied = choice != "supplied hosting"
+				plan.HostingPrincipalID, plan.WorkloadPrincipalID = "customer-hosting", "customer-workload"
+				plan.HostingIdentityResourceID = strings.ReplaceAll(
+					plan.HostingIdentityResourceID, "foundry-rg", "hosting-rg")
+				plan.WorkloadIdentityResourceID = strings.ReplaceAll(
+					plan.WorkloadIdentityResourceID, "foundry-sub", "identity-sub")
+				plan.CreateClusterGrants = !plan.HostingIdentitySupplied
+				plan.CreateFederationGrant = !plan.HostingIdentitySupplied || !plan.WorkloadIdentitySupplied
+				if !plan.CreateClusterGrants {
+					expectedGrants -= 2
+				}
+				if !plan.CreateFederationGrant {
+					expectedGrants--
+				}
+				parameter = plan
 			}
 			dir := t.TempDir()
 			values, err := json.Marshal(map[string]any{
@@ -230,12 +400,30 @@ func TestBYOOnboardingEvaluatesTerraformGrants(t *testing.T) {
 			if expectedGrants == 0 {
 				return
 			}
-			assert.Equal(t, plan.ClusterResourceID, grants["cluster_reader"]["scope"])
-			assert.Equal(t, "hosting-principal", grants["cluster_extension"]["principal"])
-			assert.Equal(t, plan.FederatedIdentityRoleDefinitionID, grants["federation"]["role"])
+			hostingPrincipal, workloadPrincipal := "hosting-principal", "workload-principal"
+			if plan.HostingIdentitySupplied {
+				hostingPrincipal = plan.HostingPrincipalID
+			}
+			if plan.WorkloadIdentitySupplied {
+				workloadPrincipal = plan.WorkloadPrincipalID
+			}
+			if plan.CreateClusterGrants {
+				assert.Equal(t, plan.ClusterResourceID, grants["cluster_reader"]["scope"])
+				assert.Equal(t, hostingPrincipal, grants["cluster_extension"]["principal"])
+			} else {
+				assert.NotContains(t, grants, "cluster_reader")
+				assert.NotContains(t, grants, "cluster_extension")
+			}
+			if plan.CreateFederationGrant {
+				assert.Equal(t, plan.FederatedIdentityRoleDefinitionID, grants["federation"]["role"])
+				assert.Equal(t, plan.WorkloadIdentityResourceID, grants["federation"]["scope"])
+				assert.Equal(t, hostingPrincipal, grants["federation"]["principal"])
+			} else {
+				assert.NotContains(t, grants, "federation")
+			}
 			assert.Equal(t, plan.StorageAccountResourceID, grants["storage"]["scope"])
-			assert.Equal(t, "workload-principal", grants["storage"]["principal"])
-			if choice == "create" {
+			assert.Equal(t, workloadPrincipal, grants["storage"]["principal"])
+			if plan.KubeletRoleAssignmentID == "" {
 				assert.Equal(t, plan.RegistryResourceID, grants["kubelet"]["scope"])
 				assert.Equal(t, plan.KubeletObjectID, grants["kubelet"]["principal"])
 				assert.True(t, strings.HasSuffix(grants["kubelet"]["role"], "7f951dda-4ed3-4680-a7ca-43fe172d538d"))
@@ -262,6 +450,13 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			plan.StorageSupplied = supplied
 			if supplied {
 				plan.StorageAccountResourceID = strings.ReplaceAll(plan.StorageAccountResourceID, "foundry-sub", "other-sub")
+				plan.HostingIdentityResourceID = strings.ReplaceAll(
+					plan.HostingIdentityResourceID, "foundry-sub", "hosting-sub")
+				plan.WorkloadIdentityResourceID = strings.ReplaceAll(
+					plan.WorkloadIdentityResourceID, "foundry-rg", "workload-rg")
+				plan.HostingIdentitySupplied, plan.WorkloadIdentitySupplied = true, true
+				plan.HostingPrincipalID, plan.WorkloadPrincipalID = "hosting-principal", "workload-principal"
+				plan.CreateClusterGrants, plan.CreateFederationGrant, plan.CreateStorageGrant = false, false, false
 			}
 			projection := map[string]any{
 				"$schema":        "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -308,10 +503,8 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			hosting, ok := evaluated.Outputs["hosting"].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, plan.StorageAccountResourceID, hosting["storageAccountResourceId"])
-			const prefix = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/foundry-rg/providers/" +
-				"Microsoft.ManagedIdentity/userAssignedIdentities/"
-			assert.Equal(t, prefix+plan.HostingIdentityName, hosting["hostingManagementIdentityResourceId"])
-			assert.Equal(t, prefix+plan.WorkloadIdentityName, hosting["workloadIdentityResourceId"])
+			assert.Equal(t, plan.HostingIdentityResourceID, hosting["hostingManagementIdentityResourceId"])
+			assert.Equal(t, plan.WorkloadIdentityResourceID, hosting["workloadIdentityResourceId"])
 			assert.Equal(t, supplied, evaluated.Outputs["suppliedRG"])
 		})
 	}

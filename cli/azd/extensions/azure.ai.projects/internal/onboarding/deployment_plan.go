@@ -63,15 +63,69 @@ func WithDeploymentOperations(plan Plan, selected DeploymentSelection) (Plan, er
 			ID: id, Name: subnet.Name, Parent: n.VNetID, Supplied: !n.CreateAgentSubnet,
 		}
 	}
+	if n := selected.Network; n != nil && n.Enabled {
+		target := "/subscriptions/" + plan.SubscriptionID
+		if plan.ResourceGroupSupplied {
+			target += "/resourceGroups/" + plan.ResourceGroup
+		}
+		appendOperation := func(action, scope string) {
+			plan.Operations = append(plan.Operations, Operation{CheckID: "P03", Action: action, Scope: scope})
+		}
+		appendOperation("Microsoft.Network/virtualNetworks/read", n.VNetID)
+		if n.CreateAgentSubnet || n.CreatePESubnet {
+			appendOperation("Microsoft.Network/virtualNetworks/subnets/write", n.VNetID)
+		}
+		peScope := n.VNetID + "/subnets/" + n.PESubnetName
+		if n.CreatePESubnet {
+			peScope = n.VNetID
+		}
+		appendOperation("Microsoft.Network/virtualNetworks/subnets/join/action", peScope)
+		if !n.ManagedEgress {
+			agentScope := n.VNetID + "/subnets/" + n.AgentSubnetName
+			if n.CreateAgentSubnet {
+				agentScope = n.VNetID
+			}
+			if !strings.EqualFold(agentScope, peScope) {
+				appendOperation("Microsoft.Network/virtualNetworks/subnets/join/action", agentScope)
+			}
+		}
+		appendOperation("Microsoft.Network/privateEndpoints/write", target)
+		appendOperation("Microsoft.Network/privateEndpoints/privateDnsZoneGroups/write", target)
+		if n.DNSResourceGroup == "" {
+			appendOperation("Microsoft.Network/virtualNetworks/join/action", n.VNetID)
+			appendOperation("Microsoft.Network/privateDnsZones/write", target)
+			appendOperation("Microsoft.Network/privateDnsZones/virtualNetworkLinks/write", target)
+			appendOperation("Microsoft.Network/privateDnsZones/join/action", target)
+		} else {
+			subscription := n.DNSSubscription
+			if subscription == "" {
+				subscription = plan.SubscriptionID
+			}
+			for _, zone := range []string{
+				"privatelink.services.ai.azure.com",
+				"privatelink.openai.azure.com",
+				"privatelink.cognitiveservices.azure.com",
+			} {
+				scope := "/subscriptions/" + subscription + "/resourceGroups/" + n.DNSResourceGroup +
+					"/providers/Microsoft.Network/privateDnsZones/" + zone
+				appendOperation("Microsoft.Network/privateDnsZones/join/action", scope)
+			}
+		}
+	}
 	target := "/subscriptions/" + plan.SubscriptionID + "/resourceGroups/" + plan.ResourceGroup
 	for _, item := range []struct {
 		resource Resource
 		kind     string
+		selected bool
 	}{
-		{plan.Cluster, "Microsoft.ContainerService/managedClusters"},
-		{plan.Storage, "Microsoft.Storage/storageAccounts"},
-		{plan.Registry, "Microsoft.ContainerRegistry/registries"},
+		{plan.Cluster, "Microsoft.ContainerService/managedClusters", createsGrant(plan, "G01")},
+		{plan.Workload, "Microsoft.ManagedIdentity/userAssignedIdentities", createsGrant(plan, "G02")},
+		{plan.Storage, "Microsoft.Storage/storageAccounts", createsGrant(plan, "G03")},
+		{plan.Registry, "Microsoft.ContainerRegistry/registries", true},
 	} {
+		if !item.selected {
+			continue
+		}
 		id, err := ParseID(item.resource.ID, item.kind)
 		if err != nil {
 			return plan, fmt.Errorf("P09: BYO nested deployment scope: %w", err)

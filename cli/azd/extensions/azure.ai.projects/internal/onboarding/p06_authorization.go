@@ -12,12 +12,26 @@ func (a *scopedAuthorizer) checkP06(
 	ctx context.Context, plan Plan, caller callerIdentity, identityErr error,
 ) Report {
 	storageScope := plan.Storage.Parent
-	if plan.Storage.Supplied {
+	if plan.Storage.Supplied || plan.Recovery.ExistingStorage {
 		storageScope = plan.Storage.ID
 	}
 	var report Report
+	scopes := []string{}
+	if !plan.Hosting.Supplied {
+		scopes = append(scopes, plan.Cluster.ID)
+	}
+	if !plan.Hosting.Supplied || !plan.Workload.Supplied {
+		scope := plan.Workload.Parent
+		if plan.Workload.Supplied || plan.Recovery.ExistingWorkload {
+			scope = plan.Workload.ID
+		}
+		scopes = append(scopes, scope)
+	}
+	if !plan.Workload.Supplied || !plan.Storage.Supplied {
+		scopes = append(scopes, storageScope)
+	}
 	seen := map[string]bool{}
-	for _, scope := range []string{plan.Cluster.ID, plan.Workload.Parent, storageScope} {
+	for _, scope := range scopes {
 		key := strings.ToLower(scope)
 		if seen[key] {
 			continue

@@ -48,10 +48,6 @@ func TestPlanContractExactCreationAndReuseMatrix(t *testing.T) {
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/write", ancestor, "", "", ""},
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/read", ancestor, "", "", ""},
 					{"P02", "Microsoft.ManagedIdentity/userAssignedIdentities/assign/action", ancestor, "", "", ""},
-					{"P03", "Microsoft.ContainerService/managedClusters/write",
-						"/subscriptions/aks-sub/resourceGroups/aks-rg", "", "", ""},
-					{"P03", "Microsoft.Network/virtualNetworks/write",
-						"/subscriptions/network-sub/resourceGroups/network-rg", "", "", ""},
 				}
 				if storage {
 					assert.Equal(t, input.StorageID, plan.Storage.ID)

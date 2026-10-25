@@ -370,9 +370,9 @@ func TestOmittedHostingSubnetPlanNeverOwnsNetworkResources(t *testing.T) {
 			f.plan, err = WithDeploymentOperations(plan, selection)
 			require.NoError(t, err)
 			baseline := slices.ContainsFunc(f.plan.Operations, func(op Operation) bool {
-				return op.CheckID == "P03" && op.Action == "Microsoft.Network/virtualNetworks/write"
+				return op.CheckID == "P03" && op.Action == "Microsoft.Network/privateEndpoints/write"
 			})
-			require.True(t, baseline, "the independent guide baseline is not an N02 exemption")
+			require.Equal(t, legacy != "none", baseline, "network permission checks require selected ARM operations")
 			if legacy == "none" {
 				for _, op := range f.plan.Operations {
 					assert.False(t, strings.Contains(op.Action, "virtualNetworks/subnets"),

@@ -139,8 +139,8 @@ var hasOnboardingPlan = agentHosting.enabled && !empty(byoOnboarding)
 var suppliedResourceGroup = hasOnboardingPlan ? byoOnboarding.resourceGroupSupplied : false
 var effectiveHosting = hasOnboardingPlan ? union(agentHosting, {
   clusterResourceId: byoOnboarding.clusterResourceId
-  hostingManagementIdentityResourceId: resourceId(subscription().subscriptionId, resourceGroupName, 'Microsoft.ManagedIdentity/userAssignedIdentities', byoOnboarding.hostingIdentityName)
-  workloadIdentityResourceId: resourceId(subscription().subscriptionId, resourceGroupName, 'Microsoft.ManagedIdentity/userAssignedIdentities', byoOnboarding.workloadIdentityName)
+  hostingManagementIdentityResourceId: byoOnboarding.hostingIdentityResourceId
+  workloadIdentityResourceId: byoOnboarding.workloadIdentityResourceId
   storageAccountResourceId: byoOnboarding.storageAccountResourceId
 }) : agentHosting
 

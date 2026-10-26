@@ -93,3 +93,34 @@ func TestA2AOnlyNextStepsDoNotSuggestLocalInvoke(t *testing.T) {
 	}
 	require.True(t, foundLocal)
 }
+
+func TestMixedA2ANextStepsPreferInvocableProtocols(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ other, want string }{
+		{ProtocolActivity, ProtocolA2A},
+		{ProtocolInvocationsWS, ProtocolA2A},
+		{ProtocolResponses, ProtocolResponses},
+		{ProtocolInvocations, ProtocolInvocations},
+	} {
+		for _, order := range [][]string{{ProtocolA2A, tc.other}, {tc.other, ProtocolA2A}} {
+			t.Run(strings.Join(order, "+"), func(t *testing.T) {
+				t.Parallel()
+				data := "protocols:\n"
+				for _, protocol := range order {
+					data += "  - protocol: " + protocol + "\n    version: 1.0.0\n"
+				}
+				protocol, multi := loadServiceProtocolFromBytes([]byte(data))
+				require.Equal(t, tc.want, protocol)
+				require.True(t, multi)
+				state := &State{HasProjectEndpoint: true, Services: []ServiceState{{
+					Name: "agent", Protocol: protocol, MultiProtocol: multi,
+				}}}
+				remote := ResolveAfterDeploy(state, nil, nil)
+				require.Contains(t, remote, Suggestion{
+					Command:     "azd ai agent invoke agent --protocol " + tc.want + " '<payload>'",
+					Description: "test the deployment", Priority: 11,
+				})
+			})
+		}
+	}
+}

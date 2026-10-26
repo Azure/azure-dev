@@ -676,14 +676,14 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	if sawInvocations {
 		return ProtocolInvocations, multiProtocol
 	}
+	if sawA2A {
+		return ProtocolA2A, multiProtocol
+	}
 	if sawActivity {
 		return ProtocolActivity, multiProtocol
 	}
 	if sawInvocationsWS {
 		return ProtocolInvocationsWS, multiProtocol
-	}
-	if sawA2A {
-		return ProtocolA2A, multiProtocol
 	}
 	return "", multiProtocol
 }

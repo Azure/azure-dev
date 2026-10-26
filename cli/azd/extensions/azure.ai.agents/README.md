@@ -603,7 +603,7 @@ its A2A endpoint. Foundry uses declaration `1.0.0`; public A2A requests use `1.0
 
 Your agent must serve:
 
-- `POST /invocations/a2a`
+- `POST /a2a` and `POST /invocations/a2a` (hosted routing varies by runtime)
 - `GET /invocations/a2a/.well-known/agent-card.json`
 - `GET /readiness`
 

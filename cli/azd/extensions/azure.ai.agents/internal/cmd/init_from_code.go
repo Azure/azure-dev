@@ -1082,7 +1082,7 @@ func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
 func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
 	if hasNativeA2A(definition) {
 		fmt.Fprintln(writer, "\nA2A hosted agent (1.0) configured; init does not generate an A2A server.")
-		fmt.Fprintln(writer, "Your agent implementation must serve POST /invocations/a2a, "+
+		fmt.Fprintln(writer, "Your agent implementation must serve POST /a2a, POST /invocations/a2a, "+
 			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
 	}
 }

@@ -27,6 +27,6 @@ goals:
   - "If a 'Select a tenant' prompt appears, select the tenant provided for this run; if none was provided, fail without answering. If asked for a subscription, select '{subscription}'. If asked for a location, select '{region}'."
   - "At 'How would you like to configure model(s) for your agent?', select 'Skip model configuration'."
   - "Verify azure.yaml declares only a2a/1.0.0 in protocols and only a2a in agentEndpoint.protocols. Responses must not be added. Verify codeConfiguration and .agentignore are present."
-  - "Verify the output says 'A2A hosted agent (1.0) configured; init does not generate an A2A server.' and lists POST /invocations/a2a, GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness. Init must not claim service onboarding, region availability, execution, or the full session/task lifecycle was verified."
+  - "Verify the output says 'A2A hosted agent (1.0) configured; init does not generate an A2A server.' and lists POST /a2a, POST /invocations/a2a, GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness. Init must not claim service onboarding, region availability, execution, or the full session/task lifecycle was verified."
   - "Interpret protocols as the agent implementation and agentEndpoint.protocols as endpoint enablement; this need not be printed."
   - "Verify the original fixture source files remain unchanged; they are not an A2A server. Capture the completed output, then STOP. Do not provision, deploy, invoke, or delete retained resources."

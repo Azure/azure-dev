@@ -840,7 +840,7 @@ func TestComposeLocalAgentEndpoint(t *testing.T) {
 			require.Contains(t, writer.String(),
 				"A2A hosted agent (1.0) configured; init does not generate an A2A server.")
 			for _, route := range []string{
-				"POST /invocations/a2a", "GET /invocations/a2a/.well-known/agent-card.json", "GET /readiness",
+				"POST /a2a", "POST /invocations/a2a", "GET /invocations/a2a/.well-known/agent-card.json", "GET /readiness",
 			} {
 				require.Contains(t, writer.String(), route)
 			}

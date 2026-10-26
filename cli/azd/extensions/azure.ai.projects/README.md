@@ -232,6 +232,13 @@ different subscriptions. The existing Agent subnet selected through standard
 `network.agentSubnet` is not an I02 referenced resource. Its independent N02
 basic subnet checks still apply.
 
+Recovery of an existing managed-identity registry connection whose GET response
+masks credentials also reads its current identity using the exact connection's
+`Microsoft.CognitiveServices/accounts/projects/connections/listSecrets/action`.
+This read-only POST does not update the resource. Its real response supplies
+permission evidence without a separate P08 role-assignment permission check;
+denied or incomplete responses stop retry before another deployment.
+
 **P06 G01-G03 grant authority** checks the operator's ordinary, unconditional
 `Microsoft.Authorization/roleAssignments/write` permission:
 
@@ -501,6 +508,17 @@ operations in that verified deployment graph, plus the exact owner-tagged parent
 account. The project's ID, location, succeeded state, system-assigned identity
 and tenant must match; an explicitly conflicting tag or changed recorded
 principal still blocks recovery and cascading deletion.
+When Connection GET masks managed-identity credentials, registry preparation
+requires the exact succeeded connection Create in the content-bound deployment
+graph, the verified project's actual system-assigned principal and owner-tagged
+parent account, and its exact owned registry pull grant read back from ARM.
+The connection must still name the expected registry endpoint and resource ID
+and explicitly exclude workspace-managed identity. A read-only `listSecrets`
+request must confirm the current ManagedIdentity client and registry IDs; the
+historical Create and pull grant do not substitute for that current identity.
+Explicit credential conflicts, user-assigned identity, conditional or changed
+grants, and unreadable evidence block completion and retry. Response bodies are
+not logged; only the required non-key managed-identity fields are decoded.
 If ARM rejects a nested deployment during provider preflight validation before
 registering it, recovery requires the exact failed parent Create operation and
 recognized not-found responses for both the nested record and its operations.

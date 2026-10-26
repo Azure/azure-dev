@@ -48,6 +48,11 @@ func (l *ownedLifecycle) verifyDeployedProject(
 	if !created[strings.ToLower(spec.ProjectID)] {
 		return fmt.Errorf("untagged Foundry project has no exact succeeded Create in the verified ARM deployment graph")
 	}
+	return l.verifyProjectParentAccount(ctx, state)
+}
+
+func (l *ownedLifecycle) verifyProjectParentAccount(ctx context.Context, state *PreparationState) error {
+	spec := state.Foundry.Spec
 	account, err := ParseID(spec.AccountID, "Microsoft.CognitiveServices/accounts")
 	if err != nil {
 		return err

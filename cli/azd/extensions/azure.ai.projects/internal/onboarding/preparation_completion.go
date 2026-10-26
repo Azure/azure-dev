@@ -204,18 +204,7 @@ func (l *ownedLifecycle) registryConnectionReady(
 	if err != nil {
 		return false, fmt.Errorf("confirm prepared project registry connection: %w", err)
 	}
-	var properties struct {
-		Category    string `json:"category"`
-		Target      string `json:"target"`
-		AuthType    string `json:"authType"`
-		Credentials struct {
-			ClientID   string `json:"clientId"`
-			ResourceID string `json:"resourceId"`
-		} `json:"credentials"`
-		Metadata struct {
-			ResourceID string `json:"ResourceId"`
-		} `json:"metadata"`
-	}
+	var properties registryConnectionProperties
 	raw, err := json.Marshal(found.Properties)
 	if err != nil {
 		return false, fmt.Errorf("encode project registry connection evidence: %w", err)
@@ -226,10 +215,20 @@ func (l *ownedLifecycle) registryConnectionReady(
 	if !strings.EqualFold(authString(found.ID), connectionID) ||
 		properties.Category != "ContainerRegistry" || properties.AuthType != "ManagedIdentity" ||
 		!strings.EqualFold(properties.Target, endpoint) ||
-		!strings.EqualFold(properties.Credentials.ClientID, state.Foundry.ProjectPrincipalID) ||
-		!strings.EqualFold(properties.Credentials.ResourceID, spec.RegistryID) ||
-		!strings.EqualFold(properties.Metadata.ResourceID, spec.RegistryID) {
+		!strings.EqualFold(properties.Metadata.ResourceID, spec.RegistryID) || found.Identity != nil ||
+		properties.UseWorkspaceManagedIdentity != nil && *properties.UseWorkspaceManagedIdentity {
 		return false, fmt.Errorf("project registry connection identity, target or registry binding is unverified")
+	}
+	if properties.Credentials == nil {
+		if properties.UseWorkspaceManagedIdentity == nil {
+			return false, fmt.Errorf("project registry connection workspace identity selection is unverified")
+		}
+		if err := l.verifyMaskedRegistryConnection(ctx, state, connectionID, endpoint); err != nil {
+			return false, err
+		}
+	} else if !strings.EqualFold(authString(properties.Credentials.ClientID), state.Foundry.ProjectPrincipalID) ||
+		!strings.EqualFold(authString(properties.Credentials.ResourceID), spec.RegistryID) {
+		return false, fmt.Errorf("project registry connection explicit credential identity or registry binding conflicts")
 	}
 	return true, nil
 }

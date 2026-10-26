@@ -390,7 +390,7 @@ func (l *ownedLifecycle) observeGrant(
 func (l *ownedLifecycle) deploymentGrantTargets(
 	ctx context.Context, plan Plan, foundry *FoundryState, succeeded ...map[string]bool,
 ) (map[string]bool, error) {
-	// Optional collectors record succeeded grants and path-bound Project Creates, respectively.
+	// Optional collectors record succeeded grants and path-bound Project/Connection Creates, respectively.
 	targets := map[string]bool{}
 	visited := map[string]bool{}
 	var read func(string, bool, bool, bool, bool) error
@@ -446,7 +446,8 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 						bound    bool
 					}{targetID, failedAttempt && nestedValidationRejected(operation, deploymentID),
 						boundPath && succeededCreateOperation(operation, deploymentID)})
-				case strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects"):
+				case strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects"),
+					strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects/connections"):
 					if len(succeeded) > 1 && succeeded[1] != nil &&
 						boundPath && succeededCreateOperation(operation, deploymentID) {
 						succeeded[1][strings.ToLower(targetID)] = true

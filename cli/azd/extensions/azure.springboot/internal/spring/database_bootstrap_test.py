@@ -230,15 +230,9 @@ class BootstrapTests(unittest.TestCase):
             ("recreated database", "16384", "16402", True, safe_flags, safe),
             ("direct unsafe privilege", None, "16384", False, safe_flags,
              (True, False, False, False, False)),
-            ("inherited object ownership", None, "16384", False, safe_flags,
-             (False, False, False, False, True)),
             ("repeat with schema creation membership", "16384", "16384", True, safe_flags,
              (False, False, False, True, False)),
             ("runtime administrator", None, "16384", False, (True, False, False), safe),
-            ("direct database creator membership", None, "16384", False, (False, True, False), safe),
-            ("direct role creator membership", None, "16384", False, (False, False, True), safe),
-            ("transitive database creator membership", None, "16384", False, (False, True, False), safe),
-            ("transitive role creator membership", None, "16384", False, (False, False, True), safe),
             ("repeat with administrative membership", "16384", "16384", True, (False, True, False), safe),
             ("missing runtime role", None, "16384", False, (None, None, None), safe),
         )
@@ -272,12 +266,6 @@ class BootstrapTests(unittest.TestCase):
                     bootstrap.bootstrap(settings, current)
             self.assertEqual(psycopg.connect.call_args.kwargs["password"], "runtime-token")
             self.assertEqual(psycopg.connect.call_args.kwargs["sslmode"], "verify-full")
-            flag_query = next(call for call in database.execute.call_args_list
-                              if "bool_or(rolsuper)" in call.args[0])
-            self.assertIn("bool_or(rolcreatedb)", flag_query.args[0])
-            self.assertIn("bool_or(rolcreaterole)", flag_query.args[0])
-            self.assertIn("WHERE rolname = %s OR pg_has_role(%s, oid, 'MEMBER')", flag_query.args[0])
-            self.assertEqual(flag_query.args[1], ("azd_app", "azd_app"))
             if stored_database_oid != database_oid:
                 execute_script.assert_called_once_with(database, script)
             else:

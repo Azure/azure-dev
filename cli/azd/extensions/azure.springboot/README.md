@@ -248,6 +248,17 @@ go build
 python internal/spring/database_bootstrap_test.py
 ```
 
+Generation integration tests require Maven, Java 17+, Docker with Linux containers,
+and Azure CLI with Bicep installed (`az bicep install`):
+
+```sh
+go test -tags integration ./internal/spring -run 'TestGeneratedContainer|TestCompiledInfrastructure' -count=1 -timeout 15m
+```
+
+CI runs these without Azure credentials. They build and start a generated image,
+query its H2 database over HTTP, and inspect compiled ARM resource properties.
+The container case also covers a CRLF Maven wrapper and a build directory with spaces.
+
 CI also runs `internal/spring/database_privileges_test.py` against disposable
 PostgreSQL 15. To run locally, install the bootstrap requirements and set
 `SPRING_TEST_POSTGRES_DSN` to a disposable PostgreSQL 15 superuser connection string.

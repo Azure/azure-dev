@@ -12,6 +12,52 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+func TestMultiServiceLocalInvokeNextSteps(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name      string
+		protocols []string
+		wantLocal bool
+	}{
+		{"two A2A services", []string{ProtocolA2A, ProtocolA2A}, false},
+		{"A2A and Responses", []string{ProtocolA2A, ProtocolResponses}, true},
+		{"A2A and unknown", []string{ProtocolA2A, ""}, true},
+		{"A2A and WebSocket", []string{ProtocolA2A, ProtocolInvocationsWS}, false},
+		{"no services known", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			state := &State{HasProjectEndpoint: true}
+			for i, protocol := range tc.protocols {
+				state.Services = append(state.Services, ServiceState{
+					Name: []string{"first", "second"}[i], Protocol: protocol,
+				})
+			}
+			// Both init branches share the local secondary; neither should
+			// suggest an invocation that every configured service rejects.
+			for _, missing := range [][]string{nil, {"API_KEY"}} {
+				state.MissingManualVars = missing
+				foundLocal := false
+				for _, suggestion := range ResolveAfterInit(state, nil) {
+					foundLocal = foundLocal || strings.Contains(suggestion.Command, "invoke --local")
+				}
+				require.Equal(t, tc.wantLocal, foundLocal)
+			}
+			// Local capability filtering must not remove remote A2A guidance.
+			remote := ResolveAfterDeploy(state, nil, nil)
+			for i, service := range state.Services {
+				if service.Protocol == ProtocolA2A || service.Protocol == ProtocolResponses || service.Protocol == "" {
+					require.Contains(t, remote, Suggestion{
+						Command:     "azd ai agent invoke " + service.Name + " '<payload>'",
+						Description: "test " + service.Name,
+						Priority:    12 + i,
+					})
+				}
+			}
+		})
+	}
+}
+
 func TestA2AOnlyNextStepsDoNotSuggestLocalInvoke(t *testing.T) {
 	t.Parallel()
 	properties, err := structpb.NewStruct(map[string]any{

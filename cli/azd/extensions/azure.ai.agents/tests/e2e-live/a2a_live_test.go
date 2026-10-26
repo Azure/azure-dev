@@ -16,10 +16,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	azdexec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -241,10 +243,25 @@ func (r *a2aLiveRunner) command(ctx context.Context, dir, label string, budget t
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = dir
 	cmd.Env = a2aEnv(r.env, a2aPreview, fmt.Sprint(preview))
+	// Bound pipe draining even if a descendant escapes the process group.
+	cmd.WaitDelay = 2 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	start := time.Now()
-	err := cmd.Run()
+	// CmdTree.Start installs process-group cancellation in the pinned azd SDK.
+	// Do not use the embedded Cmd.Run: it bypasses that setup and kills only
+	// the host, leaving extensions alive with inherited stdout/stderr pipes.
+	tree := azdexec.CmdTree{Cmd: cmd}
+	err := tree.Start()
+	if err == nil {
+		err = tree.Wait()
+		if err != nil {
+			// If the host exits first, os/exec can finish its context watcher
+			// before pipe draining hits WaitDelay. Kill the remaining group
+			// explicitly, rather than merely closing the child's pipes.
+			tree.Kill()
+		}
+	}
 	out, diagnostic := a2aRedact(stdout.Bytes()), a2aRedact(stderr.Bytes())
 	r.sequence++
 	prefix := filepath.Join(r.root, fmt.Sprintf("%02d-%s", r.sequence, label))
@@ -474,6 +491,57 @@ func a2aRedact(data []byte) []byte {
 	text = regexp.MustCompile(`(?i)Bearer\s+[A-Za-z0-9._~+/-]+=*`).ReplaceAllString(text, "Bearer [REDACTED]")
 	text = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`).ReplaceAllString(text, "[REDACTED]")
 	return []byte(text)
+}
+
+func TestA2ALiveCommandTimeoutOffline(t *testing.T) {
+	for _, hostExit := range []bool{false, true} {
+		name := "host-waits"
+		if hostExit {
+			name = "host-exits-with-child-holding-pipes"
+		}
+		t.Run(name, func(t *testing.T) {
+			// Retain diagnostics, just as the live runner does. Never touch Azure
+			// or user config; the only process we launch is our own shell tree.
+			root, err := os.MkdirTemp("", "a2a-command-timeout-")
+			require.NoError(t, err)
+			t.Logf("Offline timeout diagnostics retained at %s", root)
+			r := &a2aLiveRunner{t: t, root: root, env: os.Environ()}
+			script := "sleep 10 &\nprintf '%s' \"$!\" > child.pid\nprintf 'child started\\n' >&2\n"
+			if !hostExit {
+				script += "wait\n"
+			}
+			start := time.Now()
+			_, diagnostic, commandErr := r.command(t.Context(), root, "timeout", time.Second, false,
+				"/bin/sh", "-c", script)
+			require.Error(t, commandErr)
+			require.Less(t, time.Since(start), 5*time.Second, "command must not wait for the child's pipe lifetime")
+			require.Contains(t, string(diagnostic), "child started")
+			pidBytes, err := os.ReadFile(filepath.Join(root, "child.pid"))
+			require.NoError(t, err)
+			pid, err := strconv.Atoi(string(pidBytes))
+			require.NoError(t, err)
+			require.Positive(t, pid)
+			// A killed orphan can remain a zombie until the container's init
+			// reaps it. Both absent and zombie mean it can no longer hold pipes.
+			require.Eventually(t, func() bool {
+				stat, statErr := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+				if os.IsNotExist(statErr) {
+					return true
+				}
+				_, afterName, ok := strings.Cut(string(stat), ") ")
+				return statErr == nil && ok && strings.HasPrefix(afterName, "Z ")
+			}, 2*time.Second, 20*time.Millisecond, "owned child must be killed, not merely have its pipes closed")
+			for _, suffix := range []string{".stdout.txt", ".stderr.txt", ".command.json"} {
+				data, err := os.ReadFile(filepath.Join(root, "01-timeout"+suffix))
+				require.NoError(t, err)
+				if suffix == ".command.json" {
+					var metadata map[string]any
+					require.NoError(t, json.Unmarshal(data, &metadata))
+					require.Equal(t, false, metadata["succeeded"])
+				}
+			}
+		})
+	}
 }
 
 func TestA2ALiveResultChecksOffline(t *testing.T) {

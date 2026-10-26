@@ -1082,7 +1082,8 @@ func resolveInvokeArg(
 // when applicable. With zero or multiple services we pass nil — the
 // resolver cannot pick deterministically which service the user will
 // target with an unqualified `azd ai agent invoke --local`, so it emits
-// the bare placeholderPayload without a README hint.
+// the bare placeholderPayload without a README hint. When services are known,
+// at least one must support local invocation for this suggestion to be useful.
 //
 // Returns the updated slice and the next priority counter value so
 // callers can continue numbering subsequent suggestions.
@@ -1096,7 +1097,9 @@ func appendInvokeLocalSecondary(
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
 	}
-	if !serviceSupportsAzdInvoke(svc) || svc != nil && svc.Protocol == ProtocolA2A {
+	if len(state.Services) > 0 && !slices.ContainsFunc(state.Services, func(service ServiceState) bool {
+		return serviceSupportsAzdInvoke(&service) && service.Protocol != ProtocolA2A
+	}) {
 		return out, priority
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)

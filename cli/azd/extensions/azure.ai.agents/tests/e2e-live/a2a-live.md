@@ -121,7 +121,7 @@ AZD_E2E_A2A_LIVE=false go test -mod=readonly ./tests/e2e-live \
 6. Invoke prompt A2A **0.3 and 1.0**, each with plain-message and raw JSON-RPC-file
    requests. Parse JSON-RPC `result`/`error`, not HTTP success alone:
    - **Generated 0.3 plain messages:** the builder omits the entire
-     `configuration`, retaining the protocol's nonblocking defaults. Accept a
+     `configuration`, retaining the protocol's non-blocking defaults. Accept a
      Task with a nonempty string identity and state `submitted` or `working`
      without requiring an answer artifact. This proves **request acceptance
      only**, not completion or the deterministic execution marker.

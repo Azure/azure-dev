@@ -105,11 +105,12 @@ func TestMixedA2ANextStepsPreferInvocableProtocols(t *testing.T) {
 		for _, order := range [][]string{{ProtocolA2A, tc.other}, {tc.other, ProtocolA2A}} {
 			t.Run(strings.Join(order, "+"), func(t *testing.T) {
 				t.Parallel()
-				data := "protocols:\n"
+				var data strings.Builder
+				data.WriteString("protocols:\n")
 				for _, protocol := range order {
-					data += "  - protocol: " + protocol + "\n    version: 1.0.0\n"
+					data.WriteString("  - protocol: " + protocol + "\n    version: 1.0.0\n")
 				}
-				protocol, multi := loadServiceProtocolFromBytes([]byte(data))
+				protocol, multi := loadServiceProtocolFromBytes([]byte(data.String()))
 				require.Equal(t, tc.want, protocol)
 				require.True(t, multi)
 				state := &State{HasProjectEndpoint: true, Services: []ServiceState{{

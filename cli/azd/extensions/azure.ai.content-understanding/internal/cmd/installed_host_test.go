@@ -55,7 +55,7 @@ func TestInstalledHostOffline(t *testing.T) {
 	}
 	environment = append(environment,
 		"HOME="+work, "USERPROFILE="+work, "AZD_CONFIG_DIR="+filepath.Join(work, "config"),
-		"AZURE_CONFIG_DIR="+filepath.Join(work, "azure"), "AZD_COLLECT_TELEMETRY=no",
+		"AZURE_CONFIG_DIR="+filepath.Join(work, "azure"), "AZURE_DEV_COLLECT_TELEMETRY=no",
 		"GOCOVERDIR="+coverage,
 		"HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1",
 		"ALL_PROXY=http://127.0.0.1:1", "NO_PROXY=localhost,127.0.0.1,::1")

@@ -119,12 +119,29 @@ AZD_E2E_A2A_LIVE=false go test -mod=readonly ./tests/e2e-live \
    implements native A2A. GET and verify the persisted public endpoint and prompt
    definition. An unsupported PATCH is a **failure**, not a skip/fallback.
 6. Invoke prompt A2A **0.3 and 1.0**, each with plain-message and raw JSON-RPC-file
-   requests. Parse JSON-RPC `result`/`error`, not HTTP success alone. Accept a
-   completed Task artifact or an agent-role Message with exact text
-   `AZD_A2A_PROMPT_TRANSLATION_OK`, never an echoed user message/history.
+   requests. Parse JSON-RPC `result`/`error`, not HTTP success alone:
+   - **Generated 0.3 plain messages:** the builder omits the entire
+     `configuration`, retaining the protocol's nonblocking defaults. Accept a
+     Task with a nonempty string identity and state `submitted` or `working`
+     without requiring an answer artifact. This proves **request acceptance
+     only**, not completion or the deterministic execution marker.
+   - **All completed Tasks and agent-role Messages**, including generated 0.3
+     results, must carry exact answer text `AZD_A2A_PROMPT_TRANSLATION_OK` in
+     artifacts or Message parts, never an echoed user message/history.
+   - **0.3 files** retain caller-owned `blocking: true` and
+     `acceptedOutputModes: ["text/plain"]`; they require a completed Task answer
+     or agent-role Message with the marker, never a pending snapshot. **1.0**
+     retains `returnImmediately: false` and the same strict marker checks;
+     native 1.0 still requires a completed Task with its native marker.
 7. Disable the preview in the invocation process only: legacy message and file
-   requests must still succeed over 0.3 without a version flag. Explicit
+   requests must still succeed over 0.3 without a version flag. The generated
+   message has the same acceptance-only pending allowance as preview-on 0.3;
+   the file retains its blocking configuration and strict answer checks. Explicit
    `--a2a-version 1.0` must be rejected with a disabled-feature diagnostic.
+
+No JSON-RPC error or Task in `failed`, `canceled`, `rejected`, or any state other
+than the explicitly allowed states passes, even if it contains the marker. There
+is no polling or resubmission to turn an accepted pending snapshot into completion.
 
 The fixture uses the actual **Python A2A SDK 1.2.2** (not the incompatible 0.3
 API). Its route/executor pattern follows the retained proven reference
@@ -165,6 +182,9 @@ unsupported feature, timeout, or wrong answer is immediately visible as a failur
 the driver never reclassifies generic 500/503 responses as readiness. Inspect the
 retained evidence before deciding whether to launch a new, separately named run.
 A successful deploy followed by a failed invoke is not a successful live E2E.
+A passing generated 0.3 invocation with a pending Task establishes acceptance
+only; completed-marker evidence comes from completed Task/Message results and
+the strict blocking-file and 1.0 cases, not from that pending snapshot.
 
 This test was added and verified offline; no cloud execution is implied by its
 presence. Live validation must be explicitly authorized and run by the operator.

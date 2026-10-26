@@ -422,13 +422,16 @@ func (r *a2aLiveRunner) invoke(ctx context.Context, dir, label string, preview b
 	if wireVersion == "" {
 		wireVersion = "0.3"
 	}
-	require.NoError(r.t, a2aCheckResult(envelope, wireVersion, marker, taskRequired),
+	require.NoError(r.t, a2aCheckResult(envelope, wireVersion, marker, taskRequired, file == ""),
 		"%s: HTTP success alone is not JSON-RPC/application success; see %s", label, r.root)
 }
 
 // a2aCheckResult inspects only answer artifacts or an agent Message, never user
-// history or the echoed request. Hosted 1.0 must return a completed Task.
-func a2aCheckResult(envelope map[string]any, version, marker string, taskRequired bool) error {
+// history or the echoed request. Only generated 0.3 messages may return a pending
+// Task snapshot: the builder omits configuration, retaining nonblocking defaults.
+// Such a snapshot proves acceptance, not completion or the execution marker.
+// File requests remain caller-owned/blocking; hosted 1.0 requires a completed Task.
+func a2aCheckResult(envelope map[string]any, version, marker string, taskRequired, generatedMessage bool) error {
 	if envelope["jsonrpc"] != "2.0" || envelope["error"] != nil {
 		return fmt.Errorf("invalid JSON-RPC envelope or error: %v", envelope["error"])
 	}
@@ -452,8 +455,16 @@ func a2aCheckResult(envelope map[string]any, version, marker string, taskRequire
 		if version == "0.3" {
 			state = "completed"
 		}
-		if status["state"] != state || task["id"] == nil || task["id"] == "" {
-			return fmt.Errorf("task missing identity or not completed: %v", status["state"])
+		id, _ := task["id"].(string)
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("task missing identity")
+		}
+		if version == "0.3" && generatedMessage && !taskRequired &&
+			(status["state"] == "submitted" || status["state"] == "working") {
+			return nil // Accepted pending snapshot only; no completed-answer claim.
+		}
+		if status["state"] != state {
+			return fmt.Errorf("task not completed: %v", status["state"])
 		}
 		artifacts, _ := task["artifacts"].([]any)
 		for _, artifact := range artifacts {
@@ -544,6 +555,90 @@ func TestA2ALiveCommandTimeoutOffline(t *testing.T) {
 	}
 }
 
+func TestA2ALivePendingResultChecksOffline(t *testing.T) {
+	for _, mode := range []struct {
+		name, version                  string
+		taskRequired, generatedMessage bool
+	}{
+		{"generated 03", "0.3", false, true},
+		{"blocking file 03", "0.3", false, false},
+		{"completed task only 03", "0.3", true, true},
+		{"generated 10", "1.0", false, true},
+		{"blocking file 10", "1.0", false, false},
+		{"native 10", "1.0", true, true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			for _, tc := range []struct {
+				name, state, answer string
+				id                  any
+				pending, completed  bool
+			}{
+				{"submitted without answer", "submitted", "", "t", true, false},
+				{"working without answer", "working", "", "t", true, false},
+				{"submitted missing id", "submitted", "", nil, false, false},
+				{"working empty id", "working", "", "", false, false},
+				{"working blank id", "working", "", " ", false, false},
+				{"working nonstring id", "working", "", 123, false, false},
+				{"completed marker", "completed", "marker", "t", false, true},
+				{"completed missing marker", "completed", "", "t", false, false},
+				{"completed wrong marker", "completed", "wrong", "t", false, false},
+				{"failed even with marker", "failed", "marker", "t", false, false},
+				{"canceled even with marker", "canceled", "marker", "t", false, false},
+				{"rejected even with marker", "rejected", "marker", "t", false, false},
+				{"input required", "input-required", "marker", "t", false, false},
+				{"unknown state", "unknown", "marker", "t", false, false},
+				{"missing state", "", "marker", "t", false, false},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					state := tc.state
+					if mode.version == "1.0" && state != "" {
+						state = "TASK_STATE_" + strings.ToUpper(strings.ReplaceAll(state, "-", "_"))
+					}
+					task := map[string]any{"kind": "task", "id": tc.id, "status": map[string]any{"state": state}}
+					if tc.answer != "" {
+						task["artifacts"] = []any{map[string]any{"parts": []any{map[string]any{"text": tc.answer}}}}
+					}
+					result := task
+					if mode.version == "1.0" {
+						result = map[string]any{"task": task}
+					}
+					envelope := map[string]any{"jsonrpc": "2.0", "result": result}
+					check := func() error {
+						return a2aCheckResult(envelope, mode.version, "marker", mode.taskRequired, mode.generatedMessage)
+					}
+					valid := tc.completed || (tc.pending && mode.version == "0.3" && mode.generatedMessage && !mode.taskRequired)
+					if valid {
+						require.NoError(t, check())
+					} else {
+						require.Error(t, check())
+					}
+					// An otherwise acceptable result never overrides a JSON-RPC error.
+					envelope["error"] = map[string]any{"code": -32603, "message": "marker"}
+					require.Error(t, check())
+					delete(envelope, "error")
+					envelope["jsonrpc"] = "invalid"
+					require.Error(t, check())
+				})
+			}
+		})
+	}
+
+	// Relaxing Task snapshots must not relax deterministic agent Message checks.
+	for _, answer := range []string{"marker", "", "wrong"} {
+		t.Run("generated 03 message answer "+answer, func(t *testing.T) {
+			envelope := map[string]any{"jsonrpc": "2.0", "result": map[string]any{
+				"kind": "message", "role": "agent", "parts": []any{map[string]any{"text": answer}},
+			}}
+			err := a2aCheckResult(envelope, "0.3", "marker", false, true)
+			if answer == "marker" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 func TestA2ALiveResultChecksOffline(t *testing.T) {
 	for _, tc := range []struct {
 		name, body, version string
@@ -572,7 +667,7 @@ func TestA2ALiveResultChecksOffline(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var envelope map[string]any
 			require.NoError(t, json.Unmarshal([]byte(tc.body), &envelope))
-			err := a2aCheckResult(envelope, tc.version, "marker", tc.taskRequired)
+			err := a2aCheckResult(envelope, tc.version, "marker", tc.taskRequired, false)
 			if tc.valid {
 				require.NoError(t, err)
 			} else {

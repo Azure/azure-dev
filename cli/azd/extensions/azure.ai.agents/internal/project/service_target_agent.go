@@ -1727,7 +1727,9 @@ func (p *AgentServiceTargetProvider) Deploy(
 			progress,
 		)
 		if pollErr != nil {
-			return nil, pollErr
+			return nil, agentDeploymentErrorWithVersion(
+				pollErr, azdEnv["AZURE_AI_PROJECT_ID"], result.agentName, result.agentVersion.Version,
+			)
 		}
 		result.agentVersion = polledVersion
 	} else {
@@ -3957,32 +3959,50 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
-	// Timeout
-	if lastPollErr != nil {
-		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
-	}
-	return nil, agentDeploymentTimeoutError(lastVersion, serviceName)
+	return nil, agentDeploymentTimeoutError(lastVersion, serviceName, lastPollErr)
 }
 
-func agentDeploymentTimeoutError(lastVersion *agent_api.AgentVersionObject, serviceName string) error {
+func agentDeploymentErrorWithVersion(err error, projectResourceID, agentName, version string) error {
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	if !ok {
+		return err
+	}
+	serviceErr.Suggestion = fmt.Sprintf("inspect agent %q version %q in the Foundry portal", agentName, version)
+	if inspectionURL, linkErr := AgentPlaygroundURL(projectResourceID, agentName, version); linkErr == nil {
+		serviceErr.Suggestion += ": " + inspectionURL
+	}
+	if serviceErr.ErrorCode == exterrors.OpCreateAgent+".SnapshotCreationError" {
+		serviceErr.Suggestion += "; check that version's logs for snapshot hook diagnostics " +
+			"and verify your hosting library supports memory snapshots"
+	}
+	return serviceErr
+}
+
+func agentDeploymentTimeoutError(
+	lastVersion *agent_api.AgentVersionObject, serviceName string, lastPollErr error,
+) error {
 	lastStatus := "unknown"
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
+	message := fmt.Sprintf("stopped waiting for agent activation (last status: %s); "+
+		"the final deployment outcome is unknown and provisioning may still be running", lastStatus)
+	if lastPollErr != nil {
+		message += fmt.Sprintf("; last status check failed: %s", lastPollErr)
+	}
 	return exterrors.Service(
 		exterrors.OpCreateAgent,
 		"timeout",
-		fmt.Sprintf("stopped waiting for agent activation (last status: %s); "+
-			"the final deployment outcome is unknown and provisioning may still be running", lastStatus),
+		message,
 		serviceName,
-		"run `azd ai agent show` to inspect the latest deployment status",
+		"inspect the attempted agent version in the Foundry portal",
 	)
 }
 
 func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, serviceName string) error {
 	code := "failed"
 	errMsg := "agent deployment failed"
-	suggestion := "run `azd ai agent show` to inspect the latest deployment status"
+	suggestion := "inspect the attempted agent version in the Foundry portal"
 	if versionResp.Error != nil {
 		code = versionResp.Error.Code
 		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
@@ -3990,7 +4010,7 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 			errMsg += fmt.Sprintf(" (stage: %s)", versionResp.Error.Target)
 		}
 		if code == "SnapshotCreationError" {
-			suggestion = "run `azd ai agent show` to inspect the failed version; " +
+			suggestion = "inspect the attempted agent version in the Foundry portal; " +
 				"check agent logs for snapshot hook diagnostics and verify your hosting library supports memory snapshots"
 		}
 		if remediation, ok := nextstep.RemediationForUserErrorCode(nextstep.UserErrorCode(code)); ok {

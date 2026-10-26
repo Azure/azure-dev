@@ -734,7 +734,14 @@ func resolveServiceProps(
 			err,
 		)
 	}
-	return normalizedServiceProps(resolved, serviceName)
+	resolvedProps, err := normalizedServiceProps(resolved, serviceName)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMemorySnapshotSetting(resolvedProps); err != nil {
+		return nil, err
+	}
+	return resolvedProps, nil
 }
 
 func normalizeServiceProps(
@@ -888,6 +895,26 @@ func SetAgentContainerSettings(
 	return nil
 }
 
+func validateMemorySnapshotSetting(props *structpb.Struct) error {
+	if setting, exists := props.GetFields()["enableMemorySnapshot"]; exists {
+		if structKind(props) != string(agent_yaml.AgentKindHosted) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot is only supported on hosted agents",
+				"remove enableMemorySnapshot or configure it on a hosted agent service",
+			)
+		}
+		if _, isBoolean := setting.GetKind().(*structpb.Value_BoolValue); !isBoolean {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot must be a boolean",
+				"set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled",
+			)
+		}
+	}
+	return nil
+}
+
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config
 // struct that carries the agent definition as service-level properties. coreImage
 // is the value of the service's `image` field, which is carried on the core
@@ -897,21 +924,8 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
-	if setting, exists := s.GetFields()["enableMemorySnapshot"]; exists {
-		if structKind(s) != string(agent_yaml.AgentKindHosted) {
-			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"enableMemorySnapshot is only supported on hosted agents",
-				"remove enableMemorySnapshot or configure it on a hosted agent service",
-			)
-		}
-		if _, isBoolean := setting.GetKind().(*structpb.Value_BoolValue); !isBoolean {
-			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
-				exterrors.CodeInvalidAgentManifest,
-				"enableMemorySnapshot must be a boolean",
-				"set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled",
-			)
-		}
+	if err := validateMemorySnapshotSetting(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
 	}
 	// The kind gate has to come before the decode, not after it. Every agent
 	// kind lands in the same property bag but they do not agree on types: a

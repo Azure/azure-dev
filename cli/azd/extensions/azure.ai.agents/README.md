@@ -1197,6 +1197,7 @@ Details:
 
 ## Memory snapshots
 
+Use an `azure.ai.agents` extension build or release that includes this setting.
 Opt in on a hosted agent service in `azure.yaml`:
 
 ```yaml
@@ -1218,6 +1219,9 @@ must support snapshot hooks. Python code deployment and invocation were verified
 with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
 Update dependencies and lock files yourself; rebuild container images when applicable.
 azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
+After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
+On activation failure or timeout, use the attempted-version link in the error;
+the environment may still refer to the previous successful deployment.
 
 Snapshots reuse version initialization; they are not conversation or session-state
 backups. Snapshot capture, restore, and persistence guarantees belong to the hosting

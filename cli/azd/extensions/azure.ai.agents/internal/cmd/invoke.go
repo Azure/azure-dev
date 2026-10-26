@@ -153,7 +153,7 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
-For A2A Task responses in both 0.3 and 1.0, default output prefers answer
+For A2A Task responses, default output prefers answer
 artifacts over generic status messages such as "Done". Status messages and
 history provide fallback text when no text artifact is present.
 
@@ -174,10 +174,7 @@ Raw output includes the returned headers without a formatted latency summary.` +
 
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
-` + invokeA2AVersionExamples[0] + invokeA2AVersionExamples[1] + `
-  # Use the A2A 1.0 convenience default for a plain message
-  azd ai agent invoke -p a2a "Hello!"
-` + invokeA2AVersionExamples[2] + `
+` + invokeA2APreviewExamples + `
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -330,16 +327,8 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		return validateInvokeArgs(cmd, &resolved, a2aPreview)
 	})
 	previewFlag(cmd, "a2a-version", featureflags.A2A)
-	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, invokeA2AVersionExamples[:2])
-	previewHelpText(cmd, featureflags.A2A, "For A2A Task responses in both 0.3 and 1.0", "For A2A Task responses")
-	// Keep legacy message and file discovery when version selection is hidden.
-	previewHelpText(cmd, featureflags.A2A,
-		"Use the A2A 1.0 convenience default for a plain message", "Invoke a deployed agent over the a2a protocol")
-	previewHelpText(cmd, featureflags.A2A, `invoke -p a2a "Hello!"`, `invoke --protocol a2a "Hello!"`)
-	previewHelpText(cmd, featureflags.A2A, invokeA2AVersionExamples[2], `
-  # Invoke the a2a protocol with a complete JSON-RPC request from a file
-  azd ai agent invoke --protocol a2a -f a2a-request.json
-`)
+	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, nil)
+	previewHelpText(cmd, featureflags.A2A, invokeA2APreviewExamples, invokeA2ALegacyExamples)
 	previewFlag(cmd, "long-running", featureflags.LongRunning)
 	previewFlag(cmd, "no-wait", featureflags.LongRunning)
 	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
@@ -362,16 +351,27 @@ requests, use --output raw to stream unparsed SSE events.
 
 `
 
-var invokeA2AVersionExamples = []string{`
+const invokeA2APreviewExamples = `
   # Invoke a deployed agent with an explicit public A2A version
   azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
-`, `
+
   # Invoke using public A2A 0.3
   azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
-`, `
+
+  # Use the A2A 1.0 convenience default for a plain message
+  azd ai agent invoke -p a2a "Hello!"
+
   # Send a complete public JSON-RPC file unchanged (version is required)
   azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
-`}
+`
+
+const invokeA2ALegacyExamples = `
+  # Invoke a deployed agent over the a2a protocol
+  azd ai agent invoke --protocol a2a "Hello!"
+
+  # Invoke the a2a protocol with a complete JSON-RPC request from a file
+  azd ai agent invoke --protocol a2a -f a2a-request.json
+`
 
 const invokeVoiceHelp = `Voice Agents:
 For prompt voice agents and hosted voice wrappers, open your agent in the

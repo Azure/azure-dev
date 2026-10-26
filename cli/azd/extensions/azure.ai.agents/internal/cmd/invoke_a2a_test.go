@@ -532,9 +532,8 @@ func TestA2AHelpVisibility(t *testing.T) {
 				command, _, err := root.Find([]string{"invoke"})
 				require.NoError(t, err)
 				require.Contains(t, command.Long, invokeA2AVersionHelp)
-				for _, example := range invokeA2AVersionExamples {
-					require.Contains(t, command.Example, example, "static metadata must be complete")
-				}
+				require.Contains(t, command.Example, invokeA2APreviewExamples, "static metadata must be complete")
+				require.NotContains(t, command.Example, invokeA2ALegacyExamples)
 				require.Contains(t, command.Example, "Use the A2A 1.0 convenience default for a plain message")
 				require.NotContains(t, command.Example, "a2a-request.json")
 				require.False(t, command.Flags().Lookup("a2a-version").Hidden)

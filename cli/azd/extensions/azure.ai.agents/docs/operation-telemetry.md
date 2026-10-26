@@ -11,7 +11,7 @@ Existing `agent.context.resolved` fields and deduplication are unchanged.
 | Segment | Fixed values |
 |---|---|
 | operation | `init`, `provision`, `deploy` |
-| category | `hosted`, `hosted_invocations_ws`, `prompt`, `workflow`, `voice_managed`, `voice_byom`, `voice_hosted_wrapper`, `unknown` |
+| category | `hosted`, `hosted_invocations_ws`, `prompt`, `workflow`, `voice_managed`, `voice_byom`, `voice_hosted_wrapper`, `voice_live`, `unknown` |
 | telephony | `none`, `enabled`, `unknown` |
 
 Voice aliases normalize to the same category. BYOM is the configured model mode,
@@ -65,7 +65,7 @@ Do not add parent `up` and child operations together into one total.
 
 Telemetry opt-out, nonofficial ZIP/dev installs, old hosts, the shared 100-event
 invocation budget, crashes and ingestion delays can lose markers/completions.
-The additional vocabulary is bounded to 72 possible tuples across three operations.
+The additional vocabulary is bounded to 81 possible tuples across three operations.
 These are counts of **observed completions**, not an absolute census of users.
 Report unknown/ambiguous coverage alongside classified rates, and use a fixed
 host/extension release cohort. Installation alone does not prove agent involvement.
@@ -104,7 +104,7 @@ let Markers = requests
 | parse marker with "agent.operation.v1." operation "." category "." telephony
 | where operation in ("init", "provision", "deploy")
 | where category in ("hosted", "hosted_invocations_ws", "prompt", "workflow",
-                     "voice_managed", "voice_byom", "voice_hosted_wrapper", "unknown")
+                     "voice_managed", "voice_byom", "voice_hosted_wrapper", "voice_live", "unknown")
 | where telephony in ("none", "enabled", "unknown")
 | summarize categories=make_set(category), phones=make_set(telephony)
     by operation_Id, operation;

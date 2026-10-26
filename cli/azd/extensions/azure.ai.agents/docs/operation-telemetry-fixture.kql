@@ -33,6 +33,7 @@ let Completed = datatable(operation_Id:string, id:string, operation:string, succ
 let RawMarkers = datatable(operation_Id:string, eventName:string)
 [
     "one", "agent.operation.v1.init.voice_managed.none",
+    "one", "agent.operation.v1.init.voice_live.none",
     "three", "agent.operation.v1.deploy.hosted_invocations_ws.none",
     "three", "agent.operation.v1.deploy.voice_hosted_wrapper.none",
     "three", "agent.operation.v1.deploy.voice_hosted_wrapper.none",
@@ -40,6 +41,10 @@ let RawMarkers = datatable(operation_Id:string, eventName:string)
 ];
 let Markers = RawMarkers
 | parse eventName with "agent.operation.v1." operation "." category "." telephony
+| where operation in ("init", "provision", "deploy")
+| where category in ("hosted", "hosted_invocations_ws", "prompt", "workflow",
+                     "voice_managed", "voice_byom", "voice_hosted_wrapper", "voice_live", "unknown")
+| where telephony in ("none", "enabled", "unknown")
 | summarize categories=make_set(category) by operation_Id, operation;
 Completed
 | join kind=leftouter Markers on operation_Id, operation
@@ -49,3 +54,4 @@ Completed
                 or resultCode in ("ext.user.cancelled", "internal.operation_cancelled", "internal.operation_aborted"))
 | extend passed = observed == 4 and successes == 2 and failures == 2
     and missingClassification == 1 and cancellations == 1 and cohortMismatches == 0
+    and set_has_element(toscalar(Markers | where operation_Id == "one" | project categories), "voice_live")

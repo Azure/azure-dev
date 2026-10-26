@@ -115,6 +115,11 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 		"delegation:\n  type: foundry_managed_agent\n  agent_name: ../other",
 		"delegation:\n  type: foundry_managed_agent\n  agent_name: teacher\n  agent_version: '0'",
 		"greeting:\n  type: llm_generated\n  text: hello",
+		"greeting:\n  type: template",
+		"greeting:\n  type: template\n  text: null",
+		"greeting:\n  type: template\n  text: 123",
+		"greeting:\n  type: template\n  text: '   '",
+		"greeting:\n  type: 123\n  text: hello",
 	} {
 		yaml := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel:\n  id: gpt-live-1\n" + suffix + "\n"
 		require.Error(t, ValidateAgentDefinition([]byte(yaml)))

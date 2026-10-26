@@ -199,6 +199,16 @@ func TestBuildVoiceAgentWSProtocolURL_SelectsSubProtocol(t *testing.T) {
 	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolLive), "/protocols/voice/live/sessions?api-version=v1")
 }
 
+func TestResolveVoiceAgentDeploymentEndpoint_GPTLiveRoundTrip(t *testing.T) {
+	t.Parallel()
+	endpoint := buildVoiceAgentWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj", "live", agent_yaml.VoiceSubProtocolLive)
+	resolved, err := ResolveVoiceAgentDeploymentEndpoint(
+		map[string]string{"AGENT_LIVE_ENDPOINT": endpoint}, "live")
+	require.NoError(t, err)
+	require.Equal(t, endpoint, resolved)
+}
+
 func TestAgentDefinitionFromService_GPTLiveInline(t *testing.T) {
 	store := false
 	service := inlineAgentService(t, map[string]any{
@@ -269,6 +279,56 @@ delegation:
 	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
 	require.Equal(t, "teacher", got.Delegation.AgentName)
 	require.Equal(t, "3", got.Delegation.AgentVersion)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+delegation:
+  type: responses
+  responses: {model: terra}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	require.NotContains(t, service.GetAdditionalProperties().GetFields(), "$ref")
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "terra", got.Delegation.Responses.Model)
+	require.Len(t, got.Policies, 1)
+	require.Contains(t, got.Policies[0].RaiPolicyName, "/raiPolicies/policy")
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefKeepsUnsupportedPolicyModeration(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+    invocations_moderation: {enabled: true}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	_, _, err = VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "invocationsModeration is not supported")
 }
 
 func TestVoiceAgentDefinitionMarshalJSON_OmitsNilAudio(t *testing.T) {
@@ -5519,6 +5579,31 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{endpoint}, got)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
+}
+
+func TestEndpoints_GPTLiveUsesPersistedLiveEndpoint(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	const endpoint = "wss://proj.services.ai.azure.com/api/projects/project/agents/live/" +
+		"endpoint/protocols/voice/live/sessions?api-version=v1"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/project",
+		"AGENT_LIVE_NAME":          "live",
+		"AGENT_LIVE_VERSION":       "1",
+		"AGENT_LIVE_ENDPOINT":      endpoint,
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+	service := &azdext.ServiceConfig{
+		Name: "live", Host: foundryAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "voice", "name": "live", "subProtocol": "live",
+			"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		}),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
 }
 
 func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing.T) {

@@ -826,10 +826,17 @@ func ResolveVoiceAgentDeploymentEndpoint(envValues map[string]string, serviceNam
 	}
 
 	parsed, err := url.Parse(endpoint)
-	if err != nil ||
-		!strings.EqualFold(parsed.Scheme, "wss") ||
-		parsed.Hostname() == "" ||
-		!strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/endpoint/protocols/voice") {
+	if err != nil || parsed == nil ||
+		!strings.EqualFold(parsed.Scheme, "wss") || parsed.Hostname() == "" {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"voice",
+			"run `azd deploy` to deploy the voice agent and refresh its callable endpoint",
+		)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(path, "/endpoint/protocols/voice") &&
+		!strings.HasSuffix(path, "/endpoint/protocols/voice/live/sessions") {
 		return "", invalidAgentEndpointState(
 			serviceName,
 			"voice",

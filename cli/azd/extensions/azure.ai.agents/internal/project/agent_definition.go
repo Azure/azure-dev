@@ -1021,7 +1021,7 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 			"configure environment variables on the hosted target",
 		)
 	}
-	if len(inline.Protocols) > 0 {
+	if s.GetFields()["protocols"] != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"protocols are not supported on voice agents",
@@ -1042,7 +1042,7 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 			"remove toolboxes from the voice agent definition",
 		)
 	}
-	if len(inline.Policies) > 0 {
+	if s.GetFields()["policies"] != nil {
 		for _, policy := range inline.Policies {
 			if policy.InvocationsModeration != nil {
 				return exterrors.Validation(

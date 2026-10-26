@@ -352,7 +352,6 @@
             { "required": ["instructions"] },
             { "required": ["tools"] },
             { "required": ["toolChoice"] },
-            { "required": ["handoff"] },
             { "required": ["toolbox"] },
             { "required": ["toolboxes"] }
           ]

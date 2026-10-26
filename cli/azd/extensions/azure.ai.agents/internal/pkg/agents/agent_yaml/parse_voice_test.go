@@ -766,6 +766,11 @@ protocols:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsEmptyProtocols(t *testing.T) {
+	yamlContent := []byte("kind: voice\nname: voice\nmodel: {id: gpt-realtime}\nprotocols: []\n")
+	require.ErrorContains(t, ValidateAgentDefinition(yamlContent), "protocols is not supported")
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsPolicies(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
@@ -782,6 +787,11 @@ policies:
 	}
 }
 
+func TestValidateAgentDefinition_PromptVoiceRejectsEmptyPolicies(t *testing.T) {
+	yamlContent := []byte("kind: voice\nname: voice\nmodel: {id: gpt-realtime}\npolicies: []\n")
+	require.ErrorContains(t, ValidateAgentDefinition(yamlContent), "policies is not supported")
+}
+
 func TestValidateAgentDefinition_PromptVoiceRejectsMalformedPolicies(t *testing.T) {
 	yamlContent := []byte(`
 kind: prompt-voice
@@ -791,7 +801,7 @@ model:
 policies: invalid
 `)
 	err := ValidateAgentDefinition(yamlContent)
-	if err == nil || !strings.Contains(err.Error(), "policies is not valid") {
+	if err == nil || !strings.Contains(err.Error(), "policies is not supported") {
 		t.Fatalf("expected malformed policy validation error, got: %v", err)
 	}
 }

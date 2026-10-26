@@ -206,18 +206,7 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"protocols is not supported for a prompt-voice agent; "+
 									"configure protocols on the hosted target")
 						}
-					}
-					var policyEnvelope struct {
-						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
-					}
-					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
-						errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
-					} else if len(policyEnvelope.Policies) > 0 {
-						hasModeration := false
-						for _, policy := range policyEnvelope.Policies {
-							hasModeration = hasModeration || policy.InvocationsModeration != nil
-						}
-						if !hasModeration {
+						if _, hasPolicies := fields["policies"]; hasPolicies {
 							errors = append(errors,
 								"policies is not supported for prompt-voice agents; "+
 									"move target-owned policies to the hosted target")

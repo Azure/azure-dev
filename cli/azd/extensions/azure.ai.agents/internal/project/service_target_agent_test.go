@@ -208,6 +208,18 @@ func TestVoiceAgentInlineServicePropertiesRejectsProtocols(t *testing.T) {
 	require.ErrorContains(t, err, "protocols are not supported on voice agents")
 }
 
+func TestVoiceAgentInlineServicePropertiesRejectsEmptyProtocolsAndPolicies(t *testing.T) {
+	for _, field := range []string{"protocols", "policies"} {
+		t.Run(field, func(t *testing.T) {
+			_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
+				"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+				field: []any{},
+			}))
+			require.ErrorContains(t, err, "not supported on voice agents")
+		})
+	}
+}
+
 func TestVoiceAgentInlineServicePropertiesRejectsCodeAndSessionConfig(t *testing.T) {
 	_, _, _, _, err := AgentDefinitionFromService(inlineAgentService(t, map[string]any{
 		"kind":              "voice",

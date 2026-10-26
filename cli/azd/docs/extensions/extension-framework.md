@@ -37,7 +37,7 @@ Table of Contents
 
 ## Getting Started
 
-The `azd` extension framework is generally available. Individual extensions or capabilities might have their own preview status.
+The `azd` extension framework is generally available (GA). See the [Azure Developer CLI extension framework is GA](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/) announcement for release context. Individual extensions or capabilities might have their own preview status.
 
 - Official extensions must be developed in a fork of the [azure/azure-dev](https://github.com/azure/azure-dev) github repo.
 - Extension binaries are shipped as Github releases to the same repo through our official pipelines.
@@ -1607,25 +1607,25 @@ Core built-in service targets resolve their Azure resource before generating the
 preview. Extension service targets receive the effective service configuration
 through the contract below and can perform their own read-only lookups as needed.
 
-Extension service targets opt in through the experimental, **v1beta-only**
-contract. Register the host with `ExtensionHost.WithBetaServiceTargetPreview`
-instead of `WithServiceTarget`, and implement `preview.ServiceTargetPreviewProvider`
-from `pkg/azdext/preview` alongside `azdext.ServiceTargetProvider`:
+Extension service targets opt in through the **stable v1** contract, targeting
+azd 1.37.0. Register the host with `ExtensionHost.WithServiceTargetPreview`
+instead of `WithServiceTarget`, and implement `azdext.ServiceTargetPreviewProvider`
+alongside `azdext.ServiceTargetProvider`:
 
 ```go
-host.WithBetaServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
+host.WithServiceTargetPreview("my.host", func() azdext.ServiceTargetProvider {
     return &MyProvider{}
 })
 
 func (p *MyProvider) Preview(
     ctx context.Context,
-    serviceConfig *v1beta.ServiceConfig,
-) (*v1beta.ServiceDeployPreviewResult, error)
+    serviceConfig *azdext.ServiceConfig,
+) (*azdext.ServiceDeployPreviewResult, error)
 ```
 
-`WithBetaServiceTargetPreview` registers the host on the stable service target
+`WithServiceTargetPreview` registers the host on the stable service target
 stream exactly like `WithServiceTarget`, so normal deployments are unchanged.
-It also registers the host on a dedicated v1beta stream that carries only
+It also registers the host on a dedicated v1 stream that carries only
 `RegisterServiceTargetRequest` (with `supports_preview`) and the preview
 request and response messages. Registration does not invoke the factory.
 The preview registration is sent after the stable registration succeeds and is
@@ -1640,8 +1640,15 @@ output, and a `Data` struct, returned under `services.<name>.data` with
 `--output json`. Redact secrets from both. Provider errors, missing `Preview`
 implementations, and nil results fail the command.
 
-These APIs may change during incubation. The stable `v1` contracts and the
-root `azdext` facade do not include preview types.
+New stable consumers must use the published SDK v1.37.0 or later and declare
+`requiredAzdVersion: ">=1.37.0"`. Do not pin the target SDK until it is published.
+The deprecated `WithBetaServiceTargetPreview`, `preview.ServiceTargetPreviewProvider`,
+`BetaServiceTarget()`, and beta preview envelope/types remain source-compatible.
+Already-built extensions still use the retained beta route, which delegates to
+the same stable host implementation. No beta removal date is set.
+See the [second graduation record](contract-versioning.md#october-2026-second-graduation-target-azd-1370)
+for release and consumer migration tracking. Structured predeploy/postdeploy
+messages are a separate capability and remain beta-only.
 
 ## Developer Artifacts
 

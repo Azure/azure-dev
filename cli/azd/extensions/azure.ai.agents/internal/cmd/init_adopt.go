@@ -24,6 +24,8 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
@@ -206,7 +208,7 @@ func inspectAzureYaml(content []byte, projectRoot string) (azureYamlManifestInfo
 			if strings.EqualFold(strings.TrimSpace(kind), string(agent_yaml.AgentKindPrompt)) {
 				info.hasPromptAgent = true
 				harness, _ := svcMap["harness"].(map[string]any)
-				if harnessType, _ := harness["type"].(string); len(promptHarnessRegionsForInit(harnessType)) > 0 {
+				if harnessType, _ := harness["type"].(string); agent_api.IsCopilotHarness(harnessType) {
 					info.promptHarness = harnessType
 				}
 			} else {
@@ -259,6 +261,8 @@ func loadExplicitAzureYaml(
 	flags *initFlags,
 	httpClient *http.Client,
 ) ([]byte, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(flags.templatePointer); err != nil {
 		return nil, err
 	}
@@ -328,7 +332,7 @@ func validateExplicitAzureYamlContent(templatePointer string, content []byte) ([
 	)
 }
 
-func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error) {
+func validateLocalExplicitAzureYaml(ctx context.Context, templatePointer string) ([]byte, bool, error) {
 	kind, err := classifyInitSource(templatePointer)
 	if err != nil {
 		return nil, false, err
@@ -336,6 +340,8 @@ func validateLocalExplicitAzureYaml(templatePointer string) ([]byte, bool, error
 	if kind == initSourceHTTP {
 		return nil, false, nil
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateLoading)()
+
 	if err := checkNotDirectory(templatePointer); err != nil {
 		return nil, false, err
 	}
@@ -807,13 +813,18 @@ func adoptedAgentNameConfig(
 // already declares (project, connections, toolboxes, agents) are not
 // re-derived. `content` is the already-fetched azure.yaml used to derive the
 // project folder name.
+// A supplied stagingDir avoids downloading the sample again.
 func runInitFromAzureYaml(
 	ctx context.Context,
 	flags *initFlags,
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	content []byte,
+	stagingDir string,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	projectName := foundryProjectName(content)
 	recordInitProjectContent(ctx, content)
 	agentNameOverride, err := adoptedAgentNameOverride(flags)
@@ -841,15 +852,22 @@ func runInitFromAzureYaml(
 	}
 	// Stage the sample as a local template directory (azure.yaml at its root
 	// alongside referenced files) that azd-core can adopt with `azd init -t`.
-	stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
-	if err != nil {
-		return err
+	if stagingDir == "" {
+		var cleanup func()
+		stagingDir, cleanup, err = stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 	}
-	defer cleanup()
 
 	if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
 		return err
 	}
+	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+		return err
+	}
+	//nolint:gosec // trusted staging directory
 	stagedContent, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
@@ -868,10 +886,17 @@ func runInitFromAzureYaml(
 		}
 	}
 
+	replacedDeployment, err := preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
+	if err != nil {
+		return err
+	}
 	fmt.Println(output.WithGrayFormat("Adopting the sample's azure.yaml as your project manifest..."))
 
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName); err != nil {
+	endScaffolding := inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)
+	err = scaffoldProject(ctx, azdClient, targetDir, stagingDir, envName)
+	endScaffolding()
+	if err != nil {
 		return err
 	}
 
@@ -884,6 +909,7 @@ func runInitFromAzureYaml(
 		promptOnly,
 		agentNameOverride,
 		TemplateTypeAzureYaml,
+		replacedDeployment,
 	)
 }
 
@@ -894,6 +920,9 @@ func runInitFromAzdTemplate(
 	httpClient *http.Client,
 	selectedTemplate *AgentTemplate,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	targetDir := strings.TrimSpace(flags.src)
 	if targetDir == "" {
 		targetDir = folderNameStrippingParenSuffix(selectedTemplate.Title)
@@ -909,19 +938,18 @@ func runInitFromAzdTemplate(
 		)
 	}
 
-	folderDisplay := ""
-	if _, statErr := os.Stat(targetDir); errors.Is(statErr, fs.ErrNotExist) {
-		folderDisplay = filepath.ToSlash(targetDir)
-	}
+	folderDisplay := folderDisplayForSubdir(targetDir)
 	envName := deriveEnvName(flags, targetDir)
-	if err := scaffoldAzdTemplateProject(
+	replacedDeployment, err := scaffoldAzdTemplateProject(
 		ctx,
 		azdClient,
 		httpClient,
 		targetDir,
 		selectedTemplate.Source,
 		envName,
-	); err != nil {
+		flags,
+	)
+	if err != nil {
 		return err
 	}
 	if err := validateStagedAzureYaml(".", selectedTemplate.Source); err != nil {
@@ -956,6 +984,7 @@ func runInitFromAzdTemplate(
 		info.promptOnly(),
 		agentNameOverride,
 		TemplateTypeAzd,
+		replacedDeployment,
 	)
 }
 
@@ -966,11 +995,17 @@ func scaffoldAzdTemplateProject(
 	targetDir string,
 	templateSource string,
 	envName string,
-) error {
-	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
-		return err
+	flags *initFlags,
+) (string, error) {
+	replaced, err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags)
+	if err != nil {
+		return "", err
 	}
-	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+	if err := scaffoldProject(ctx, azdClient, targetDir, templateSource, envName); err != nil {
+		return "", err
+	}
+	return replaced, nil
 }
 
 type azdTemplateRepositoryParser func(context.Context, string) (*GitHubUrlInfo, error)
@@ -981,7 +1016,8 @@ func preflightAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	templateSource string,
-) error {
+	flags *initFlags,
+) (string, error) {
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
 		templateSource,
@@ -993,11 +1029,17 @@ func preflightAzdTemplate(
 		},
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return "", err
+	}
+	if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+		return "", err
+	}
+	return preflightAdoptedDeploymentReplacement(ctx, azdClient, stagingDir, flags)
 }
 
 func stageAzdTemplateRepository(
@@ -1006,6 +1048,8 @@ func stageAzdTemplateRepository(
 	parseSource azdTemplateRepositoryParser,
 	downloadSource azdTemplateRepositoryDownloader,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	if !strings.Contains(templateSource, "://") {
 		info, statErr := os.Stat(templateSource)
@@ -1231,7 +1275,11 @@ func finalizeAdoptedProject(
 	promptOnly bool,
 	agentNameOverride string,
 	templateType string,
+	replacedDeployment string,
 ) error {
+	if err := validateInitModelSelectors(flags, true); err != nil {
+		return err
+	}
 	// Defensive: the sample should already declare `infra.provider:
 	// microsoft.foundry`, but stamp it if missing so provisioning stays
 	// bicep-less by default.
@@ -1298,7 +1346,11 @@ func finalizeAdoptedProject(
 	if err != nil {
 		return err
 	}
-	allowedLocations := promptHarnessRegionsForInit(manifestInfo.promptHarness)
+	ctx = withHarnessRegionPolicy(ctx, manifestInfo.promptHarness)
+	allowedLocations, err := promptHarnessRegionsForInit(ctx, manifestInfo.promptHarness)
+	if err != nil {
+		return err
+	}
 	environmentValues, err := getAgentEnvironmentValues(ctx, azdClient, env.Name)
 	if err != nil {
 		return fmt.Errorf("reading environment values: %w", err)
@@ -1371,7 +1423,7 @@ func finalizeAdoptedProject(
 			result.FoundryProject,
 			projectRoot,
 			projectAuthoringExisting,
-			flags.noPrompt,
+			adoptedProjectAddNoPrompt(flags),
 		); err != nil {
 			return err
 		}
@@ -1451,6 +1503,7 @@ func finalizeAdoptedProject(
 			result.Credential,
 			result.FoundryProject,
 			flags,
+			replacedDeployment,
 		); err != nil {
 			if exterrors.IsCancellation(err) {
 				return exterrors.Cancelled("initialization was cancelled")
@@ -1512,6 +1565,35 @@ func wireAdoptedProjectDependency(
 	return nil
 }
 
+// adoptedProjectAddNoPrompt keeps project authoring headless when
+// --model-deployment already names the model, so Projects does not prompt
+// for template deployments before the override is applied.
+func adoptedProjectAddNoPrompt(flags *initFlags) bool {
+	return flags.noPrompt || strings.TrimSpace(flags.modelDeployment) != ""
+}
+
+func validateInitModelSelectors(flags *initFlags, adopting bool) error {
+	suggestion := "pass an existing deployment name with --model-deployment, or use --model to deploy a new model"
+	if flags.modelDeploymentExplicit && strings.TrimSpace(flags.modelDeployment) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model-deployment was set to an empty value", suggestion,
+		)
+	}
+	if flags.modelExplicit && strings.TrimSpace(flags.model) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter, "--model was set to an empty value", suggestion,
+		)
+	}
+	if adopting && strings.TrimSpace(flags.modelDeployment) != "" && strings.TrimSpace(flags.model) != "" {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments,
+			"--model-deployment and --model cannot be used together",
+			"use --model-deployment to reuse an existing deployment, or --model to deploy a new model",
+		)
+	}
+	return nil
+}
+
 func validateAdoptedModelDeploymentTarget(
 	flags *initFlags,
 	projectInfo *FoundryProjectInfo,
@@ -1565,6 +1647,7 @@ func configureAdoptedExistingDeployment(
 	credential azcore.TokenCredential,
 	projectInfo *FoundryProjectInfo,
 	flags *initFlags,
+	replacedDeployment string,
 ) error {
 	requested := strings.TrimSpace(flags.modelDeployment)
 	if requested == "" {
@@ -1601,17 +1684,10 @@ func configureAdoptedExistingDeployment(
 			"verify the deployment name or omit --model-deployment",
 		)
 	}
-	if err := setEnvValue(
-		ctx,
-		azdClient,
-		envName,
-		"AZURE_AI_MODEL_DEPLOYMENT_NAME",
-		selected.Name,
+	if err := replaceAdoptedTemplateDeployment(
+		ctx, azdClient, envName, selected.Name, replacedDeployment,
 	); err != nil {
-		return fmt.Errorf(
-			"storing AZURE_AI_MODEL_DEPLOYMENT_NAME: %w",
-			err,
-		)
+		return err
 	}
 	if err := updatePendingModelDeploymentSignal(
 		ctx,
@@ -1694,13 +1770,13 @@ func adoptedAgentNameOverride(flags *initFlags) (string, error) {
 }
 
 // adoptTargetDir resolves the directory the adopted project is created in and
-// the display path for the "created folder" next-step hint. An explicit --src
-// (or positional directory) wins; otherwise a new folder named after the
+// the display path for the project folder next-step hint. An explicit --src
+// (or positional directory) wins; otherwise a folder named after the
 // sample's project name is used, falling back to the current directory when the
 // sample has no name.
 func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, folderDisplay string) {
 	if flags.src != "" {
-		return flags.src, folderDisplayIfNew(flags.src)
+		return flags.src, folderDisplayForSubdir(flags.src)
 	}
 	if projectName == "" {
 		return ".", ""
@@ -1709,19 +1785,24 @@ func adoptTargetDir(flags *initFlags, projectName string) (targetDir string, fol
 	if folder == "" {
 		return ".", ""
 	}
-	return folder, folderDisplayIfNew(folder)
+	return folder, folderDisplayForSubdir(folder)
 }
 
-// folderDisplayIfNew returns a slash-formatted display path when dir does not
-// yet exist (so the cd hint is only shown for newly-created folders), else "".
-func folderDisplayIfNew(dir string) string {
-	if dir == "." {
+// folderDisplayForSubdir returns a slash-formatted display path whenever init
+// scaffolds outside the user's current directory, excluding equivalent paths to it.
+func folderDisplayForSubdir(dir string) string {
+	if dir == "" {
 		return ""
 	}
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return filepath.ToSlash(dir)
+	if filepath.Clean(dir) == "." {
+		return ""
 	}
-	return ""
+	if dirInfo, err := os.Stat(dir); err == nil {
+		if cwdInfo, err := os.Stat("."); err == nil && os.SameFile(dirInfo, cwdInfo) {
+			return ""
+		}
+	}
+	return filepath.ToSlash(dir)
 }
 
 func projectManifestExists(dir string) bool {
@@ -1744,6 +1825,8 @@ func stageAzureYamlTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 ) (string, func(), error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateStaging)()
+
 	noop := func() {}
 	pointer := flags.templatePointer
 

@@ -1,5 +1,76 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Preview feature opt-ins
+
+Three capabilities are off by default. Each one is turned on separately.
+
+| Feature ID | Scope | Environment variable |
+| --- | --- | --- |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+
+Set the desired variable in your shell or CI before running azd:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
+export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+```
+
+In PowerShell, for example:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+```
+
+Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
+missing, and invalid values leave it off. The evaluator reads the current
+process environment without querying azd config or loading environment files.
+Values already injected by the azd host count; the selected azd environment
+can override the same key from the shell or CI.
+
+User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
+`AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
+hosted and plain prompt agents need no opt-in.
+
+Root help always lists the canonical switches and their scopes. While a
+feature is off, its command-specific flags and help sections are hidden.
+Enabling a feature preserves the existing help without adding new text or
+revealing flags that were already hidden, including `--harness`.
+This covers `invoke --long-running`, `invoke --no-wait`, the
+`invocations` group, `init --voice`, and the `prompt-voice` choice of
+`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+`feature_not_enabled` error that names the preview feature ID and suggests
+setting its canonical variable to `true` in the shell or CI.
+
+Checks cover preview flags on init and invoke, `agent add` definitions,
+existing and staged project definitions, the selected service for invoke, run,
+optimize submissions, optimize deploy, optimize apply, and endpoint update,
+provisioning, and package, publish, and deploy. The init
+picker omits voice while it is off. Hosted init also omits `invocations_ws`
+from protocol help and selection while voice is off. Explicit `--protocol`
+values, including repeated flags and comma-separated lists, require the voice
+opt-in for `invocations_ws`. Protocol selection completes before project or
+environment creation; ordinary protocols and the no-prompt Responses default
+need no additional feature check. Template catalogs do not identify
+capabilities, so templates are checked after staging and before adoption.
+Explicit remote `--template` inputs are staged and checked before Azure
+authentication, including `$ref` definitions. Adoption reuses that directory.
+
+### Enforcement limits
+
+- An explicit HTTP `--agent-endpoint` stays unclassified. The extension does
+  not query its remote definition, so the managed harness check does not cover
+  that route. The long-running check still applies. Text invoke does not
+  accept voice WebSocket endpoints.
+- Read and cleanup commands stay available with features off. This includes
+  show, endpoint show, invocations show, follow, and cancel, delete, and down.
+- These checks do not govern requests from the evaluations or routines
+  extensions.
+
+See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
 ## Hosted agent deployment preview
 
 Hosted-agent `container.resources` settings are checked locally against the schema before
@@ -7,7 +78,7 @@ defaults are applied. Unknown fields, wrong types, empty/null values, and malfor
 strings are rejected; omitted fields retain their independent defaults. Valid resource strings
 are passed to Foundry for SKU, pairing, and regional availability validation.
 
-With azd 1.35.1 or later and an existing environment bound to a Microsoft Foundry
+With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 
 ```bash
@@ -197,6 +268,9 @@ cost and is not run automatically.
 
 ## Extension telemetry API
 
+Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
+checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
 `internal/telemetry`:
@@ -218,7 +292,8 @@ never include prompts, responses, resource or service names, IDs, paths, URLs,
 connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
-The events currently emitted by this extension are documented under
+Init also records [business-step elapsed times](docs/init-telemetry.md), including
+loading and interaction together. The other events are documented under
 [Agent context telemetry](#agent-context-telemetry),
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
@@ -233,13 +308,12 @@ contains only bounded classifications (including a container mode for hosted age
 | Attribute | Values | Description |
 |---|---|---|
 | `ext.agent.kind` | `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, `unknown` | Resolved agent kind. |
-| `ext.agent.harness` | `none`, `github_copilot_preview`, `microsoft_copilot_preview`, `other` | Resolved prompt-agent harness classification; preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other`. |
 | `ext.agent.operation` | Extension command path | Operation sharing the event's trace. |
 | `ext.agent.container.mode` | `build`, `code`, `passthrough`, `passthrough_auth`, `unknown` | Optional for hosted agents. Classifies the configured deployment path; `passthrough_auth` means a registry connection is configured for auth. |
 
 The event is correlated with other telemetry from the same azd invocation by
 the OpenTelemetry operation ID. A project with multiple agent classifications
-reports one row for each distinct kind, harness, and container mode; it does
+reports one row for each distinct classification; it does
 not count individual agents or prove a deployment succeeded. `build` includes
 both azd-created and existing ACR destinations. Ambiguous legacy or invalid
 hosted configurations, and those with an `AGENT_DEFINITION_PATH` override,
@@ -379,11 +453,20 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
-Unlike the service-key references in `toolboxes`, singular `toolbox.name`
-retains the Foundry resource name. Local dependency wiring and deployment
-resolve its service key using the existing authoring convention: trim
-surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
-The original resource name remains unchanged in the definition.
+The legacy singular `toolbox` field is not supported; use `toolboxes` to
+reference local `azure.ai.toolbox` service keys.
+
+For harnessed prompt agents, each Toolbox service key becomes its generated MCP
+`server_label`. To customize approval or tool options, add an MCP entry under
+`tools` with that service key as its `server_label` and omit `server_url`; azd
+fills the deployed endpoint and authenticated connection. An existing MCP entry
+with the exact deployed URL keeps its authored label and options, while azd sets
+its authentication connection. A different explicit URL is not automatically
+repinned: remove it to follow the Toolbox service, or use a distinct label to
+keep it as an independent tool. Conflicting labels fail before connection setup.
+References to the same endpoint share one attachment. Configure at most one MCP
+entry for that endpoint or its service keys; competing overrides are rejected
+before connection setup rather than silently merging their options.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An
@@ -408,10 +491,46 @@ when `azure.yaml` does not
 declare an `azure.ai.eval` service. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation
-documentation link, not the evaluation setup guidance. `azd ai agent eval generate` is a
-separate, supported command for this extension's own quick-eval workflow;
-only its hidden `azd ai agent eval init` alias is formally deprecated, in
-favor of `generate`.
+documentation link, not the evaluation setup guidance.
+
+**Deprecated:** `azd ai agent eval` commands only display migration guidance
+and exit non-zero; `--help` remains available. Use `azd ai eval` from
+`azure.ai.evaluations` instead. Old arguments are not forwarded, and legacy
+evaluation configuration is not automatically converted.
+
+`azd ai eval init` scaffolds evaluation configuration; follow the
+[evaluations guide](../azure.ai.evaluations/README.md) for deployment and run steps.
+The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
+use the local service key from `azure.yaml`, which can differ from the deployed
+agent name shown in the endpoint.
+
+For adopted prompt agents, deploy and invoke resolve the template model against
+the active environment's deployment choices. `AI_PROJECT_DEPLOYMENT_BINDINGS` is
+an environment-local JSON object mapping each template deployment name to its
+selected deployment name. An empty target records an explicit skip. These
+names are matched case-insensitively, and updates preserve existing declaration-key
+spelling. Targets that differ only by case are equivalent; genuinely conflicting
+targets for keys that differ only by case are rejected. Bindings
+preserve independent choices for multiple declarations and take
+precedence over the project-wide runtime default. A skipped model, an ambiguous
+legacy replacement, or malformed deployment configuration returns an error
+rather than silently using another model. Model-resolution failures do not block
+`azd ai agent show` or `azd ai agent delete`.
+
+When adopting a template with `azd ai agent init --model-deployment`, init selects
+the template declaration to replace before copying project files or creating an
+environment. An ambiguous `--no-prompt` request or a cancelled replacement picker
+leaves the target unchanged. Template variable references in the selected
+declaration name are expanded against the final environment when applying the
+binding, with persisted values taking precedence over process values.
+
+For on-disk Bicep or Terraform infrastructure, deployment parameters are
+authoritative, not `AI_PROJECT_DEPLOYMENTS`. Ejection seeds deployment parameters
+from the adoption choices, and explicit per-declaration bindings remain effective
+after ejection. Without such a binding, deploy and invoke expand the agent's
+authored model without inferring replacements from the managed deployment list.
+Set the agent's model explicitly or use
+`${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
 
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
@@ -595,6 +714,23 @@ The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
 
+## Initializing a Project
+
+When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
+with `cd <folder>` before the provisioning command, even if that folder already
+existed. Run the `cd` command first: init does not change your shell's working
+directory. Initializing in the current directory does not need a `cd` hint.
+
+For paths requiring shell-specific quoting, the block labels alternatives for
+POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
+shell, then continue with the remaining steps. If cmd.exe cannot safely express
+the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+Drive-qualified paths also show these alternatives so cmd.exe switches drives.
+PowerShell alternatives preserve both straight and smart apostrophes literally.
+Paths containing smart double quotes also use the shell-specific alternatives.
+The same applies to paths starting with a Unicode dash that PowerShell treats
+as a parameter prefix.
+
 ## Migrating Legacy Agent Configuration
 
 New Foundry agent projects keep the agent definition directly on the
@@ -685,78 +821,6 @@ underscore and contain only letters, digits, or underscores. For example,
 `API_KEY` is valid, while `api-key` is not. `azd deploy` validates these names
 before contacting Foundry Agent Service.
 
-## Microsoft Copilot harness built-in tools
-
-The `microsoft_copilot_preview` harness currently requires a Foundry project in one of
-these regions: `eastus2`, `japaneast`, `swedencentral`, `uksouth`, `australiaeast`, `westeurope`,
-`germanywestcentral`, `canadacentral`, or `westus2`.
-
-The harness block selects the managed runtime and contains only its type.
-Configure built-in tools through the prompt agent's top-level `tools` list:
-
-```yaml
-services:
-  my-agent:
-    host: azure.ai.agent
-    project: .
-    kind: prompt
-    name: my-agent
-    model: gpt-5-mini
-    instructions: Use web research when requested.
-    harness:
-      type: microsoft_copilot_preview
-    skills:
-      - local-review
-      - name: published-review
-        version: "2"
-    tools:
-      - type: microsoft_copilot_toolset_preview
-        defaultConfig:
-          enabled: false
-        configs:
-          - name: web
-            enabled: true
-```
-
-Built-in tool names are `filesystem_read`, `filesystem_write`, `shell`, `web`,
-and `subagents`. `defaultConfig.enabled` applies to every built-in; entries in
-`configs` override individual tools. Skills are declared in the top-level
-`skills` list. Harness compute and idle settings are service-managed.
-
-New definitions use `microsoft_copilot_preview` and `microsoft_copilot_toolset_preview`,
-with the backend feature gate `MicrosoftCopilot=V1Preview`. Existing definitions
-using `github_copilot_preview` or `github_copilot_toolset_preview` remain supported
-and retain their legacy values.
-
-The string form (`local-review`) requires a matching locally deployed skill;
-deploy the local skill dependency with `azd deploy --all` to supply its version.
-The object form (`published-review`) pins an existing Foundry skill to the
-specified published version. Authored pins take precedence over locally resolved
-versions. azd does not automatically resolve remote default versions, and rejects
-conflicting authored versions for the same skill. You do not need to specify a
-`type` field: azd adds the API discriminator automatically.
-
-Prompt-agent controls use camelCase in `azure.yaml` and are translated to the
-Foundry API's snake_case fields during deployment:
-
-```yaml
-toolChoice: auto
-temperature: 0
-topP: 0.9
-text:
-  format:
-    type: json_object
-reasoning:
-  effort: low
-structuredInputs:
-  user_context:
-    description: Additional invocation context
-    required: false
-```
-
-Nested tool definitions remain API-owned and use the field names documented by
-the corresponding Foundry tool contract.
-
 ## Prompt agent memory
 
 Prompt agents can declare one memory store for azd to provision and attach
@@ -834,7 +898,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization is available without a private-preview environment switch.
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 
@@ -958,29 +1022,45 @@ Supported providers and identifiers:
 
 - `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
 - `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
-  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
-  provider value `azure-communication-service`.
+  (the YAML provider name remains `acs` for compatibility). azd maps this to the
+  canonical `teams_phone_extensibility` provider and sends the GUID as
+  `resource_account_object_id`. Legacy `4:+<E.164>` ACS-purchased-number IDs are
+  rejected during authoring validation because the canonical GA contract cannot deploy them.
 
-Bindings are create-only in this preview. If a remote binding exists and matches
-the YAML, deploy continues. If the remote binding has different configuration,
-azd fails with a remediation message instead of silently keeping stale routing.
+Deploy lists every page of canonical bindings and matches provider identities
+without deriving binding IDs. If exactly one active remote binding matches the
+YAML, deploy continues. Missing bindings are created with repeatability headers.
+Drift or duplicate matches fail safely instead of changing or deleting remote
+routing. Existing per-binding `transferTargets` YAML remains migration-compatible:
+omitting it leaves the singleton unmanaged, while an explicit empty list manages
+an empty singleton. Multiple declarations must describe the same named targets
+(order does not matter). azd validates supported `pstn`, `teams`, and `sip`
+destinations locally. After binding reconciliation it validates the singleton;
+it replaces a drifted singleton only when this deployment created a binding, and
+uses the current ETag. Otherwise drift, unknown remote destination kinds, and
+unconfirmed writes fail safely with manual-reconciliation guidance.
 
 Cleanup: delete telephony bindings before deleting test agents. The service may
 leave bindings behind when an agent is deleted, so do not rely on agent deletion
 as binding cleanup.
 
-Delete a binding with the agent-scoped telephony API before deleting the agent:
+List bindings to obtain the service-generated opaque ID and ETag, then delete the
+binding before deleting the agent:
 
 ```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings?api-version=v1"
+
 curl -X DELETE \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Foundry-Features: VoiceAgents=V1Preview" \
-  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+  -H "If-Match: $BINDING_ETAG" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings/$BINDING_ID?api-version=v1"
 ```
 
-The binding ID is the service provider plus identifier, for example
-`twilio:%2B14255550123` for `+14255550123`, or
-`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+Treat `BINDING_ID` as opaque: URL-escape the value returned by the list API and
+do not construct it from the provider or phone number. Use the item `etag` from
+the list response (or the `ETag` header from binding GET) as `BINDING_ETAG`.
 
 ### Moderating invocations-protocol traffic
 

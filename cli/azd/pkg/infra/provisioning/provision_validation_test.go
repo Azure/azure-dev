@@ -145,6 +145,42 @@ func TestManagerDeployRunsProvisionValidation_WarningDeclined(t *testing.T) {
 	require.ErrorIs(t, err, provisioning.ErrProvisionValidationCanceled)
 }
 
+func TestManagerProvisionValidation_PromptCopyAndDefault(t *testing.T) {
+	for _, preview := range []bool{false, true} {
+		name := "deployment"
+		wantPrompt := "Proceed with deployment anyway?"
+		if preview {
+			name = "preview"
+			wantPrompt = "Proceed with the preview anyway?"
+		}
+		t.Run(name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			confirmed := false
+			mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+				return true
+			}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+				confirmed = true
+				require.Equal(t, wantPrompt, options.Message)
+				require.Equal(t, true, options.DefaultValue)
+				return true, nil
+			})
+			dispatcher := &fakeValidationDispatcher{
+				results: []*azdext.ValidationCheckResult{
+					{
+						Severity:     azdext.ValidationCheckSeverity_VALIDATION_CHECK_SEVERITY_WARNING,
+						DiagnosticId: "role_assignment_missing",
+						Message:      "extension warning",
+					},
+				},
+			}
+			manager := newProvisionValidationManager(
+				t, mockContext, newProvisionValidationEnv(), dispatcher)
+			require.NoError(t, manager.RunProvisionValidation(t.Context(), preview))
+			require.True(t, confirmed)
+		})
+	}
+}
+
 func TestManagerDeployRunsProvisionValidation_Error(t *testing.T) {
 	env := newProvisionValidationEnv()
 	mockContext := mocks.NewMockContext(t.Context())

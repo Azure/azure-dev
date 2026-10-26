@@ -14,9 +14,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -135,7 +138,16 @@ func TestValidateLocalExplicitAzureYaml(t *testing.T) {
 				require.NoError(t, os.WriteFile(pointer, []byte(tt.content), 0o600))
 			}
 
-			content, cached, err := validateLocalExplicitAzureYaml(pointer)
+			ctx, timing := inittelemetry.NewContext(t.Context())
+			content, cached, err := validateLocalExplicitAzureYaml(ctx, pointer)
+			recorder := &initTimingRecorder{}
+			timing.Flush(ctx, recorder)
+			durations := recordedStepDurations(t, recorder, inittelemetry.TemplateLoading)
+			if tt.pointer == "" {
+				require.Len(t, durations, 1, "local reading and validation must be timed, including failures")
+			} else {
+				require.Empty(t, durations, "deferring a remote input does not load a template")
+			}
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				require.False(t, cached)
@@ -167,14 +179,23 @@ func TestLoadExplicitAzureYamlRemote(t *testing.T) {
 		}, nil
 	})}
 
+	pointer := "https://github.com/example/repo/blob/main/azure.yaml"
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	cachedContent, cached, err := validateLocalExplicitAzureYaml(ctx, pointer)
+	require.NoError(t, err)
+	require.False(t, cached)
+	require.Nil(t, cachedContent)
 	got, err := loadExplicitAzureYaml(
-		t.Context(),
+		ctx,
 		nil,
-		&initFlags{templatePointer: "https://github.com/example/repo/blob/main/azure.yaml"},
+		&initFlags{templatePointer: pointer},
 		client,
 	)
 	require.NoError(t, err)
 	require.Equal(t, content, string(got))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.TemplateLoading), 1)
 }
 
 func TestExplicitManifestErrorsRedactCredentials(t *testing.T) {
@@ -497,12 +518,56 @@ func TestPrintPromptInitNextSteps(t *testing.T) {
 		printPromptInitNextSteps("prompt-agent")
 	})
 
-	require.Contains(t, stdout, `cd "prompt-agent"`)
+	require.Contains(t, stdout, "  cd prompt-agent\n")
 	require.Contains(t, stdout, "azd up")
 	require.Contains(t, stdout, "azd deploy")
 	require.Contains(t, stdout, `azd ai agent invoke "hello"`)
 	require.NotContains(t, stdout, "azd ai agent run")
 	require.NotContains(t, stdout, "--local")
+}
+
+// Prompt-only adoption preserves paths in each shell's navigation hint.
+func TestPrintPromptInitNextSteps_PreexistingTargetIsShellSafe(t *testing.T) {
+	t.Chdir(t.TempDir())
+	for _, tt := range []struct {
+		dir  string
+		want string
+	}{
+		{"my-$USER", "cd 'my-$USER'"},
+		{"my-$(whoami)", "cd 'my-$(whoami)'"},
+		{"it's", `cd 'it'\''s'`},
+		{"tab\there", "cd 'tab\there'"},
+		{"My Agent", "cd 'My Agent'"},
+		{"Bob's Agent", `cd 'Bob'\''s Agent'`},
+		{"my~agent", "cd 'my~agent'"},
+		{"agent[1]", "cd 'agent[1]'"},
+		{"my-%PATH%", "cd 'my-%PATH%'"},
+		{"my-!PATH!", "cd 'my-!PATH!'"},
+	} {
+		t.Run(tt.dir, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.ContainsAny(tt.dir, "\t") {
+				t.Skip("tab is not valid in Windows file names")
+			}
+			require.NoError(t, os.Mkdir(tt.dir, 0o700))
+			display := folderDisplayForSubdir(tt.dir)
+			require.Equal(t, tt.dir, display)
+
+			stdout := withCapturedStdout(t, func() {
+				printPromptInitNextSteps(display)
+			})
+			require.Contains(t, stdout, "  "+tt.want+"\n")
+			require.Contains(t, stdout, "  Set-Location -LiteralPath '"+
+				strings.ReplaceAll(tt.dir, "'", "''")+"'\n")
+			if strings.ContainsAny(tt.dir, "%!") {
+				require.Contains(t, stdout, "cmd.exe: use a shell-specific alternative above")
+			} else {
+				require.Contains(t, stdout, "  cd /d \""+tt.dir+"\"\n")
+			}
+			require.Contains(t, stdout, "# POSIX shells:")
+			require.Contains(t, stdout, "# PowerShell:")
+			require.Contains(t, stdout, "azd up")
+		})
+	}
 }
 
 func TestDeclaresAgentService_LocalServiceRef(t *testing.T) {
@@ -929,12 +994,13 @@ func TestPreflightAzdTemplateIsReadOnly(t *testing.T) {
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
 			before, cwdErr := os.Getwd()
 			require.NoError(t, cwdErr)
-			err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir)
+			replaced, err := preflightAzdTemplate(t.Context(), client, http.DefaultClient, templateDir, &initFlags{})
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantErr)
 			}
+			require.Empty(t, replaced)
 			require.Zero(t, workflow.runCalls)
 			after, cwdErr := os.Getwd()
 			require.NoError(t, cwdErr)
@@ -955,6 +1021,7 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 		content  string
 		wantErr  string
 		wantRuns int
+		runErr   error
 	}{
 		{
 			name: "valid repository",
@@ -971,6 +1038,13 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 			content: "services:\n  web:\n    host: containerapp\n",
 			wantErr: "does not declare an agent service",
 		},
+		{
+			name:     "workflow failure",
+			content:  "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n    name: agent\n",
+			runErr:   errors.New("core init failed"),
+			wantErr:  "core init failed",
+			wantRuns: 1,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -979,17 +1053,24 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 			require.NoError(t, os.WriteFile(
 				filepath.Join(templateDir, "azure.yaml"), []byte(tt.content), 0o600,
 			))
-			workflow := &testWorkflowServiceServer{runHook: func() {
-				require.NoError(t, os.Mkdir("project", 0o700))
-				require.NoError(t, os.WriteFile(
-					filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
-				))
-			}}
+			workflow := &testWorkflowServiceServer{
+				runErr: tt.runErr,
+				runHook: func() {
+					if tt.runErr != nil {
+						return
+					}
+					require.NoError(t, os.Mkdir("project", 0o700))
+					require.NoError(t, os.WriteFile(
+						filepath.Join("project", "azure.yaml"), []byte(tt.content), 0o600,
+					))
+				},
+			}
 			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			ctx, timing := inittelemetry.NewContext(t.Context())
 
-			err := scaffoldAzdTemplateProject(
-				t.Context(), client, http.DefaultClient,
-				"project", templateDir, "dev",
+			replaced, err := scaffoldAzdTemplateProject(
+				ctx, client, http.DefaultClient,
+				"project", templateDir, "dev", &initFlags{},
 			)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
@@ -998,7 +1079,11 @@ func TestScaffoldAzdTemplateProjectRunsCoreInitOnce(t *testing.T) {
 				require.NoError(t, err)
 				require.DirExists(t, filepath.Join(root, "project"))
 			}
+			require.Empty(t, replaced)
 			require.Equal(t, tt.wantRuns, workflow.runCalls)
+			recorder := &initTimingRecorder{}
+			timing.Flush(ctx, recorder)
+			require.Len(t, recordedStepDurations(t, recorder, inittelemetry.ProjectScaffolding), tt.wantRuns)
 		})
 	}
 }
@@ -1135,21 +1220,48 @@ func TestAdoptTargetDir(t *testing.T) {
 		require.Equal(t, ".", dir)
 		require.Empty(t, display)
 	})
+
+	t.Run("existing target still requires navigation", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+		require.NoError(t, os.Mkdir("foundry-simple", 0o700))
+		for _, flags := range []*initFlags{{}, {src: "foundry-simple"}} {
+			dir, display := adoptTargetDir(flags, "Foundry Simple")
+			require.Equal(t, "foundry-simple", dir)
+			require.Equal(t, "foundry-simple", display)
+		}
+	})
 }
 
-func TestFolderDisplayIfNew(t *testing.T) {
-	t.Run("current dir is never a created folder", func(t *testing.T) {
-		require.Empty(t, folderDisplayIfNew("."))
-	})
+func TestFolderDisplayForSubdir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.Mkdir("existing-dir", 0o700))
+	require.NoError(t, os.Mkdir("my agent", 0o700))
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	absoluteSubdir := filepath.Join(cwd, "existing-dir")
 
-	t.Run("non-existent dir is displayed", func(t *testing.T) {
-		require.Equal(t, "brand-new-dir-does-not-exist-xyz", folderDisplayIfNew("brand-new-dir-does-not-exist-xyz"))
-	})
-
-	t.Run("existing dir is not displayed", func(t *testing.T) {
-		existing := t.TempDir()
-		require.Empty(t, folderDisplayIfNew(existing))
-	})
+	tests := []struct {
+		name string
+		dir  string
+		want string
+	}{
+		{name: "current dir is not displayed", dir: "."},
+		{name: "empty dir is not displayed"},
+		{name: "current dir with trailing slash is not displayed", dir: "./"},
+		{name: "current dir with native separator is not displayed", dir: "." + string(filepath.Separator)},
+		{name: "subdirectory parent is not displayed", dir: "existing-dir/.."},
+		{name: "absolute current dir is not displayed", dir: cwd},
+		{name: "absolute subdirectory is displayed", dir: absoluteSubdir, want: filepath.ToSlash(absoluteSubdir)},
+		{name: "non-existent dir is displayed", dir: "new-dir", want: "new-dir"},
+		{name: "existing subdirectory is displayed", dir: "existing-dir", want: "existing-dir"},
+		{name: "existing subdirectory with spaces is displayed unquoted", dir: "my agent", want: "my agent"},
+		{name: "nested path uses slashes", dir: filepath.Join("parent", "child"), want: "parent/child"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, folderDisplayForSubdir(tt.dir))
+		})
+	}
 }
 
 func TestStagedAzureYamlExists(t *testing.T) {

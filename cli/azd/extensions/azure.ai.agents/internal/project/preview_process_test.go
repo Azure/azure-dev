@@ -15,7 +15,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +29,7 @@ func TestPreviewExtensionProcess(t *testing.T) {
 	client, err := azdext.NewAzdClient()
 	require.NoError(t, err)
 	defer client.Close()
-	host := azdext.NewExtensionHost(client).WithBetaServiceTargetPreview(
+	host := azdext.NewExtensionHost(client).WithServiceTargetPreview(
 		foundryAgentHost, func() azdext.ServiceTargetProvider {
 			provider := NewAgentServiceTargetProvider(client).(*AgentServiceTargetProvider)
 			provider.previewReader = func(string, string) (agentPreviewReader, error) {
@@ -53,8 +52,8 @@ func (p *previewProcessProvider) Initialize(context.Context, *azdext.ServiceConf
 }
 
 func (p *previewProcessProvider) Preview(
-	ctx context.Context, service *v1beta.ServiceConfig,
-) (*v1beta.ServiceDeployPreviewResult, error) {
+	ctx context.Context, service *azdext.ServiceConfig,
+) (*azdext.ServiceDeployPreviewResult, error) {
 	require.Nil(p.t, p.serviceConfig)
 	require.False(p.t, p.deployContextReady)
 	p.t.Setenv("AZD_NO_PROMPT", "true")

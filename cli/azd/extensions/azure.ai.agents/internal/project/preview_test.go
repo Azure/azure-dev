@@ -131,6 +131,7 @@ func TestPreviewDefinitionSources(t *testing.T) {
 		}, code: exterrors.CodeInvalidServiceConfig},
 		{name: "credential-bearing invalid resource", change: func(service *azdext.ServiceConfig, _ string) {
 			service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+				// #nosec G101 -- Synthetic URL verifies that credentials are never disclosed.
 				"resources": map[string]any{"cpu": "https://private-user:private-password@host/?sig=private-signature"},
 			})
 		}, code: exterrors.CodeInvalidServiceConfig},

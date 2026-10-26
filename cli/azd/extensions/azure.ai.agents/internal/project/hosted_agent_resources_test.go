@@ -191,6 +191,7 @@ func TestHostedAgentResourcesDoNotDiscloseInvalidValues(t *testing.T) {
 	for _, field := range []string{"cpu", "memory", "$ref"} {
 		t.Run(field, func(t *testing.T) {
 			t.Parallel()
+			// #nosec G101 -- Synthetic URL verifies that credentials are never disclosed.
 			secretURL := "https://private-user:private-password@host.invalid/path?sig=private-signature#private-fragment"
 			resources := map[string]any{field: secretURL}
 			service := resourceValidationService(t, t.TempDir(), "inline", "container",

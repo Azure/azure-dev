@@ -129,11 +129,22 @@ validator.AddCheck(ProvisionValidationCheck{
 
 | Check | What It Does | Severity |
 |---|---|---|
-| Role assignment permissions | Detects `Microsoft.Authorization/roleAssignments` in the snapshot and verifies the current principal has `roleAssignments/write` permission on the subscription. | Warning |
+| Missing role assignment permissions | Checks `roleAssignments/write` permission when a snapshot assignment explicitly targets the deployment subscription. Diagnostic: `role_assignment_missing`. | Critical warning |
+| Unverified role assignment scope | Reports assignments whose target scopes are not covered by the deployment-subscription permission lookup. Diagnostic: `role_assignment_scope_unverified`. | Warning |
+| Conditional role assignment permissions | Warns when all roles granting the required permission have ABAC conditions. Diagnostic: `role_assignment_conditional`. | Warning |
+| Reserved resource names | Checks predicted resource names against Azure's reserved-word restrictions. Diagnostic: `reserved_resource_name`. | Warning |
+| AI model availability | Checks whether the requested model, SKU, and version exist in the deployment location's catalog. Diagnostic: `ai_model_not_found`. | Warning |
+| AI model quota | Checks aggregate requested capacity against available quota in each deployment location. Diagnostic: `ai_model_quota_exceeded`. | Warning |
 
 ## UX Presentation
 
-Results are displayed using the `ProvisionValidationReport` UX component (`pkg/output/ux/provision_validation_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors. Each entry is prefixed with the standard azd status icons.
+Results are displayed using the `ProvisionValidationReport` UX component (`pkg/output/ux/provision_validation_report.go`), which implements the standard `UxItem` interface. The report groups and orders findings: all warnings appear first, followed by all errors.
+
+Regular warnings use `(!) Warning:`. The built-in missing-role-permission finding uses a bold yellow `(!) Critical warning:` heading only when a snapshot role assignment explicitly targets the subscription scope checked by the permission lookup. Matching subscription scopes is case-insensitive and ignores trailing slashes. A successful subscription check also covers resource-group and resource scopes beneath that subscription through RBAC inheritance. When the subscription check does not find permission, those child scopes produce a regular unverified-scope warning because a narrower assignment may still grant access. Cross-subscription, tenant, management-group, unresolved, and absent scopes always produce that regular warning because their permissions were not checked. The unverified-scope finding does not assert missing permissions or likely deployment failure. The lookup remains subscription-only, and Azure remains authoritative for other assignment scopes. A report containing both checked and unchecked assignment scopes can contain both a critical missing-permission finding and a regular unverified-scope finding. Critical warnings retain warning severity and labeled principal, subscription, and required-permission details: they are advisory, not blocking errors. Conditional-permission and extension findings remain regular warnings.
+
+Warning details, suggestions, and reference links are indented four spaces relative to the heading. Warning blocks are separated by a blank line, and suggestions begin after a blank line. Warning-only reports end with a yellow total immediately above confirmation: `2 critical warnings found.` when all warnings are critical, `2 warnings found (1 critical).` for mixed warnings, or `2 warnings found.` for regular-only warnings. A single finding uses `1 critical warning found.` or `1 warning found.`.
+
+Totals count findings in the current report, including critical warnings. They do not combine the provider-agnostic and Bicep validation phases or separate layers. Reports containing blocking errors cancel without a confirmation or a warning-only total. The existing JSON report envelope and warning/error counts are unchanged.
 
 ## Scenarios
 
@@ -149,20 +160,46 @@ Creating/Updating resources ...
 
 ### Scenario 2: Warnings Only
 
-One or more checks return warnings but no errors. The warnings are displayed and the user is prompted to continue. The default selection is **Yes** — pressing Enter continues the deployment.
+One or more checks return warnings but no errors. The warnings are displayed and the user is prompted with `Proceed with deployment anyway?`. When all warnings are regular, the default is **Yes** — pressing Enter continues deployment.
 
 ```
 Validating deployment
 
-(!) Warning: the current principal (abc-123) does not have permission
-to create role assignments (Microsoft.Authorization/roleAssignments/write)
-on subscription sub-456. The deployment includes role assignments and
-will fail without this permission.
+(!) Warning: Insufficient quota for model "gpt-4o" (SKU: GlobalStandard) in eastus2
+    Requested: 1000 · Available: 100
 
-? Proceed with provisioning despite the warnings above? [Y/n] Yes
+    Suggestion: Reduce the requested capacity to 100 or change your deployment location via azd env set AZURE_LOCATION <location>. You can also request a quota increase in the Azure portal.
+    • https://learn.microsoft.com/azure/quotas/quickstart-increase-quota-portal
+
+1 warning found.
+? Proceed with deployment anyway? [Y/n]
 ```
 
-If the user confirms (or accepts the default), deployment proceeds normally. If the user declines, the operation is canceled with a zero exit code (an intentional cancel, not a failure).
+When the report contains a critical missing-role-permission warning at a checked assignment scope, the prompt changes to `Deployment will likely fail. Proceed anyway?` with a bold yellow message. The `?` marker, `[y/N]` choices, and answer retain azd's standard blue prompt styling. The default is **No**, even when other regular warnings are also present:
+
+```
+Validating deployment
+
+(!) Critical warning: Missing role assignment permissions
+    Deployment will likely fail.
+    Principal ID: principal-123
+    Subscription: subscription-456
+    Required permission: Microsoft.Authorization/roleAssignments/write
+
+    Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
+
+(!) Warning: Another validation finding
+    Supporting details from that finding.
+
+2 warnings found (1 critical).
+? Deployment will likely fail. Proceed anyway? [y/N]
+```
+
+An explicit **Yes** continues deployment despite any warning, including a critical warning. **No** cancels with exit code 0 (an intentional cancel, not a failure).
+
+With `--no-prompt` (including automatically enabled non-interactive mode), critical warnings cancel provisioning with an error and exit code 1, not a success message. Resolve the critical warnings, or rerun interactively without `--no-prompt` to explicitly confirm deployment. Telemetry records `validation.provision.outcome=canceled_by_no_prompt`, distinct from an interactive No (`canceled_by_user`, exit code 0). Regular-only warnings still proceed. Provider-agnostic preview validation uses `Proceed with the preview anyway?`; Bicep preview does not add local validation checks.
+
+Outside no-prompt mode, exhausted or invalid final piped input cannot silently accept the critical confirmation's default No: it produces a prompt error and exit code 1 (`error` telemetry outcome). A valid final `y`/`n` token, with or without a newline, is accepted; an entered empty line explicitly accepts the default. Regular confirmations retain their existing EOF default behavior.
 
 ### Scenario 3: Errors Only
 
@@ -185,8 +222,13 @@ When the report contains both warnings and errors, warnings are listed first and
 ```
 Validating deployment
 
-(!) Warning: the current principal does not have permission to create
-role assignments on this subscription.
+(!) Critical warning: Missing role assignment permissions
+    Deployment will likely fail.
+    Principal ID: principal-123
+    Subscription: subscription-456
+    Required permission: Microsoft.Authorization/roleAssignments/write
+
+    Suggestion: Ensure you have the 'Role Based Access Control Administrator', 'User Access Administrator', 'Owner', or a custom role with 'Microsoft.Authorization/roleAssignments/write' assigned to your account.
 
 (x) Failed: required parameter 'storageAccountName' is missing from
 the deployment.
@@ -204,17 +246,23 @@ ERROR: local provision validation failed: validation check failed: <underlying e
 
 ## Exit Code Behavior
 
-The exit code distinguishes between **successful operation** (the CLI did what it was supposed to do) and **internal failure** (the CLI could not complete its task).
+The exit code distinguishes intentional interactive cancellation from failures that automation must not treat as successful provisioning.
 
-Provision validation detecting errors and canceling provisioning is a **successful outcome** — the CLI performed the validation and correctly prevented a bad deployment. Only failures in the validation machinery itself produce a non-zero exit code.
+An interactive No retains exit code 0. Critical warnings in no-prompt mode instead produce an error and exit code 1 because deployment cannot proceed without interactive confirmation. Failures in the validation machinery also produce a non-zero exit code. The existing exit-code-0 behavior for error-severity findings is unchanged by this critical-warning change.
 
 | Outcome | Exit Code | Rationale |
 |---|---|---|
 | No issues | 0 | Deployment proceeds and succeeds. |
 | Warnings only, user continues | 0 | User acknowledged warnings; deployment proceeds. |
 | Warnings only, user declines | 0 | User chose to cancel; intentional, not a failure. |
+| Critical warning, `--no-prompt` | 1 | Interactive confirmation is required; automatic cancellation must fail CI rather than report success. |
+| Critical warning, exhausted stdin without a valid response | 1 | Missing confirmation input is a prompt failure, not an intentional user cancellation. |
+| Regular warnings only, `--no-prompt` | 0 | Default Yes allows deployment to proceed. |
 | Errors detected | 0 | Validation successfully detected problems and canceled provisioning. |
 | Check function error | 1 | Internal failure running a check (the `validate` function returned a non-nil error). |
+
+For parallel provisioning layers, intentional cancellation is successful only when every joined layer error is a validation-cancellation result. A real failure in any layer remains an error even when another layer cancels.
+Cancellation is propagated before lifecycle wrappers run post-provision handlers or layer post-hooks, so those post actions do not execute when deployment was canceled during validation.
 
 ## File Layout
 
@@ -371,6 +419,11 @@ equivalent 60s dispatch timeout (`provisionValidationTimeout` in
 `extensionValidationTimeout`), and the `validation.provision` config gate (`off`
 disables both dispatch sites). Registration still requires the
 `validation-provider` capability.
+
+Both dispatch sites use the same warning layout, per-report totals, and confirmation
+wording. Extension findings remain regular warnings and default to Yes. Only the
+built-in Bicep missing-role-permission finding at a checked assignment scope sets critical warning metadata,
+which changes that report's confirmation default to No, including with `--no-prompt`.
 
 ### Extension Code Example
 

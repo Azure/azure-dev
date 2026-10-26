@@ -789,6 +789,10 @@ func resolveAgentService(
 		}
 	}
 
+	// Commands annotated with gateAgentServices classify every selection here.
+	if err := requireSelectedServiceFeatures(ctx, svc, projectResponse.Project.GetPath()); err != nil {
+		return nil, nil, err
+	}
 	return svc, projectResponse.Project, nil
 }
 
@@ -1037,6 +1041,7 @@ type agentServiceResolutionOptions struct {
 	includeProtocolEndpoints       bool
 	matchDeployedAgentName         bool
 	rejectVoiceInvocation          bool
+	resolvePromptModel             bool
 	requireHostedKind              bool
 	allowMissingDefaultEnvironment bool
 	includeHostedKind              bool
@@ -1149,13 +1154,16 @@ func resolveAgentServiceFromProject(
 	var envValues map[string]string
 	svc, projectConfig, err := resolveAgentService(ctx, azdClient, name, noPrompt)
 	if err != nil {
-		if !resolutionOptions.matchDeployedAgentName || name == "" {
+		if isServiceGateError(err) || !resolutionOptions.matchDeployedAgentName || name == "" {
 			return nil, err
 		}
 		svc, projectConfig, envValues, err = resolveAgentServiceByDeployedName(
 			ctx, azdClient, name, resolutionOptions.allowMissingDefaultEnvironment,
 		)
 		if err != nil {
+			return nil, err
+		}
+		if err := requireSelectedServiceFeatures(ctx, svc, projectConfig.Path); err != nil {
 			return nil, err
 		}
 	}
@@ -1503,6 +1511,9 @@ func resolveAgentProtocol(
 	noPrompt bool,
 ) (agent_api.AgentProtocol, string, error) {
 	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if isServiceGateError(err) {
+		return "", "", err
+	}
 	if err != nil {
 		return "", "", exterrors.Validation(
 			exterrors.CodeInvalidParameter,
@@ -1551,6 +1562,9 @@ func resolveAgentInvocableProtocols(
 	noPrompt bool,
 ) ([]agent_api.AgentProtocol, error) {
 	svc, proj, err := resolveAgentService(ctx, azdClient, name, noPrompt)
+	if isServiceGateError(err) {
+		return nil, err
+	}
 	if err != nil {
 		return nil, exterrors.Validation(
 			exterrors.CodeInvalidParameter,

@@ -129,7 +129,6 @@ func orphanedConfigEnvNames(svc *azdext.ServiceConfig) []string {
 type AgentDefinitionInline struct {
 	agent_yaml.AgentDefinition `json:",inline"`
 	Language                   string                             `json:"language,omitempty"`
-	Toolbox                    *agent_yaml.ToolboxReference       `json:"toolbox,omitempty"`
 	Protocols                  []agent_yaml.ProtocolVersionRecord `json:"protocols,omitempty"`
 	RegistryConnectionID       string                             `json:"registryConnectionId,omitempty"`
 	// EnvironmentVariables reads the deprecated inline shape.
@@ -225,7 +224,6 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 	inline := AgentDefinitionInline{
 		AgentDefinition:      ca.AgentDefinition,
 		Language:             ca.Language,
-		Toolbox:              ca.Toolbox,
 		Protocols:            ca.Protocols,
 		AgentEndpoint:        ca.AgentEndpoint,
 		AgentCard:            ca.AgentCard,
@@ -268,7 +266,6 @@ func (d AgentDefinitionInline) toContainerAgent(
 	ca := agent_yaml.ContainerAgent{
 		AgentDefinition:      d.AgentDefinition,
 		Language:             d.Language,
-		Toolbox:              d.Toolbox,
 		Image:                image,
 		RegistryConnectionID: d.RegistryConnectionID,
 		Protocols:            d.Protocols,
@@ -595,6 +592,20 @@ func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgen
 		// these references when it builds the prompt-specific dependency graph.
 		s = &structpb.Struct{Fields: maps.Clone(s.GetFields())}
 		delete(s.Fields, "connections")
+	}
+	if s.GetFields()["toolbox"] != nil {
+		if s.GetFields()["toolboxes"] != nil {
+			return nil, fmt.Errorf(
+				"agent service %q cannot specify both \"toolbox\" and \"toolboxes\"; "+
+					"remove \"toolbox\" and list each azure.ai.toolbox service under \"toolboxes\"",
+				svc.GetName(),
+			)
+		}
+		return nil, fmt.Errorf(
+			"singular \"toolbox\" on agent service %q is no longer supported; "+
+				"use \"toolboxes\" with a list of azure.ai.toolbox service names",
+			svc.GetName(),
+		)
 	}
 	for _, toolbox := range s.GetFields()["toolboxes"].GetListValue().GetValues() {
 		if name, ok := toolbox.Kind.(*structpb.Value_StringValue); ok && strings.TrimSpace(name.StringValue) != "" {
@@ -949,7 +960,7 @@ func agentDefinitionFromStruct(
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
 		if agent_yaml.IsVoiceAgentKind(inline.Kind) {
-			if err := validateVoiceInlineAgent(inline); err != nil {
+			if err := validateVoiceInlineAgent(inline, s); err != nil {
 				return agent_yaml.ContainerAgent{}, false, err
 			}
 			definition = inline.toVoiceAgent()
@@ -958,6 +969,21 @@ func agentDefinitionFromStruct(
 			return agent_yaml.ContainerAgent{}, false, err
 		}
 		return agent_yaml.ContainerAgent{}, false, nil
+	}
+
+	if s.GetFields()["toolbox"] != nil {
+		if s.GetFields()["toolboxes"] != nil {
+			return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"cannot specify both \"toolbox\" and \"toolboxes\"",
+				"remove 'toolbox' and list each azure.ai.toolbox service under 'toolboxes'",
+			)
+		}
+		return agent_yaml.ContainerAgent{}, false, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"field \"toolbox\" is no longer supported; use \"toolboxes\"",
+			"replace 'toolbox' with 'toolboxes' listing your azure.ai.toolbox service names",
+		)
 	}
 
 	if inline.ModelType == agent_yaml.VoiceModelTypeHostedAgent || inline.TargetAgent != nil ||
@@ -1002,7 +1028,7 @@ func agentDefinitionFromStruct(
 	return ca, true, nil
 }
 
-func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
+func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) error {
 	if inline.CodeConfiguration != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
@@ -1031,11 +1057,18 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline) error {
 			"configure protocols on the hosted target",
 		)
 	}
-	if inline.Toolbox != nil {
+	if s.GetFields()["toolbox"] != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"toolbox is not supported on voice agents",
 			"remove toolbox from the voice agent definition",
+		)
+	}
+	if s.GetFields()["toolboxes"] != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"toolboxes is not supported on voice agents",
+			"remove toolboxes from the voice agent definition",
 		)
 	}
 	if len(inline.Policies) > 0 {
@@ -1213,6 +1246,9 @@ func VoiceAgentDefinitionToServiceProperties(
 	va agent_yaml.VoiceAgent,
 	extra *ServiceTargetAgentConfig,
 ) (*structpb.Struct, error) {
+	if err := agent_yaml.ValidateVoiceTelephony(va.Telephony); err != nil {
+		return nil, fmt.Errorf("invalid voice telephony definition: %w", err)
+	}
 	inline := voiceAgentDefinitionToInline(va)
 
 	defStruct, err := MarshalStruct(&inline)
@@ -1267,7 +1303,7 @@ func VoiceAgentFromResolvedService(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
-	if err := validateVoiceInlineAgent(inline); err != nil {
+	if err := validateVoiceInlineAgent(inline, resolved); err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}
 	return inline.toVoiceAgent(), true, nil

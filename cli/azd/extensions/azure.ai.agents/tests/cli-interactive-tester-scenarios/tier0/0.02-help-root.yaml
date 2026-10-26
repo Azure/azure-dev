@@ -4,13 +4,22 @@ command: "azd ai agent --help"
 cwd: "/tmp"
 tags: ["tier:0", "cmd:help", "parallel-safe"]
 
+# Voice and long-running help are hidden by default. Enable both so the full
+# help surface is checked here. 0.31 covers the default hidden state.
+env:
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "true"
+  AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "true"
+
 goals:
   - "Wait for the help output to render (it includes an ASCII-art banner and a 'Usage' section)."
-  - "Confirm the 'Available Commands' list includes: code, delete, doctor, endpoint, eval, files, init, invocations, invoke, monitor, optimize, pack, publish, run, sample, sessions, show, version."
+  - "Confirm the 'Available Commands' list includes: code, delete, doctor, endpoint, files, init, invocations, invoke, monitor, optimize, pack, publish, run, sample, sessions, show, version."
   - "Confirm the global flags are listed: --cwd/-C, --debug, --environment/-e, --no-prompt, --output/-o."
   - "Confirm the Environments & Environment Variables section explains .azure/<environment>/.env, azd env new/select/set/get-values, FOUNDRY_PROJECT_ENDPOINT, AGENT_<SERVICE> deployment values, and the service-level env mapping for runtime settings."
+  - "Confirm the root Preview Feature Switches section lists AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true for prompt agents using a Copilot harness, AZD_ALPHA_ENABLE_AGENTS_VOICE=true for voice/prompt-voice/hosted voice agents, and AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true for long-running Responses invocations."
+  - "Confirm switch guidance says all default to off; only 1, t, T, true, TRUE, or True enable; and false, empty, and invalid values do not enable. It must recommend setting switches in the shell or CI and explain that the extension reads its process environment, including values the azd host already injected from the selected environment, and that it does not query azd config or load environment files from disk itself."
+  - "Confirm switch guidance does not advertise AZD_FOUNDRY_EXT_ENABLE_* aliases and keeps regular hosted and plain prompt agents outside the preview scopes."
   - "Compare root, init, and files list help: headings should be consistently bold and underlined, command examples and flags highlighted, and usage paths start with azd ai agent. With NO_COLOR=1, the same content must remain readable without escape sequences."
-  - "Confirm the root description mentions hosted and voice agents, and the init, show, and delete command summaries mention voice agents."
+  - "With voice enabled, confirm the root description and the init, show, and delete command summaries retain their existing prompt, hosted, and voice wording. Confirm delete help retains its telephony binding cleanup guidance."
   - "Run 'NO_COLOR=1 azd ai agent init --help'; confirm the generated flags table visibly lists --template/-t, --kind, and --voice, while the deprecated compatibility alias --manifest/-m is hidden from that flags table, and confirm the output contains no escape sequences."
   - "In that uncolored init help output, confirm the visible compatibility note states that --manifest/-m is deprecated, remains accepted for compatibility, and users should use --template/-t instead."
   - "Confirm --kind prompt-voice is demonstrated, and voice settings are described in azure.yaml with azd provision and azd deploy as the deployment workflow."

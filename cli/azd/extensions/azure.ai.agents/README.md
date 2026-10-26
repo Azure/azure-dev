@@ -527,6 +527,10 @@ authored model without inferring replacements from the managed deployment list.
 Set the agent's model explicitly or use
 `${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
 
+Deploy and invoke validate every configured layer's path and module before
+accepting on-disk infrastructure. An invalid later layer returns an error
+naming its index and field, even when an earlier layer matches.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration

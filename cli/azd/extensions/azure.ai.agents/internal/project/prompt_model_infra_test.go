@@ -16,8 +16,18 @@ import (
 )
 
 func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
-	for _, layered := range []bool{false, true} {
-		t.Run(fmt.Sprintf("layered=%t", layered), func(t *testing.T) {
+	for _, setup := range []struct {
+		layered bool
+		prefix  string
+	}{
+		{prefix: "none"},
+		{layered: true, prefix: "none"},
+		{layered: true, prefix: "marker"},
+		{layered: true, prefix: "source"},
+		{layered: true, prefix: "bicep"},
+		{layered: true, prefix: "bicepparam"},
+	} {
+		t.Run(fmt.Sprintf("layered=%t/prefix=%s", setup.layered, setup.prefix), func(t *testing.T) {
 			for _, tt := range []struct {
 				name     string
 				path     string
@@ -90,9 +100,27 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					target := map[string]any{"provider": provider, "path": tt.path, "module": tt.module}
 					infra := target
 					field := "infra"
-					if layered {
-						infra = map[string]any{"layers": []any{target}}
-						field = "infra.layers[0]"
+					if setup.layered {
+						var layers []any
+						if setup.prefix != "none" {
+							provider := "microsoft.foundry"
+							file, content := "main."+setup.prefix, ""
+							switch setup.prefix {
+							case "marker":
+								provider, file, content = "terraform", ".azd-foundry", "terraform-v1\n"
+							case "source":
+								provider, file = "terraform", "main.tf"
+								content = "resource \"azapi_resource\" \"foundry_account\" {}\n" +
+									"resource \"azapi_resource\" \"project\" {}\n"
+							}
+							dir := filepath.Join(root, "foundry")
+							require.NoError(t, os.Mkdir(dir, 0700))
+							require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(content), 0600))
+							layers = append(layers, map[string]any{"provider": provider, "path": "foundry"})
+						}
+						layers = append(layers, target)
+						infra = map[string]any{"layers": layers}
+						field = fmt.Sprintf("infra.layers[%d]", len(layers)-1)
 					}
 					config, err := yaml.Marshal(map[string]any{"infra": infra})
 					require.NoError(t, err)

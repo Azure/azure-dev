@@ -16,8 +16,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// promptModelInfrastructureOnDisk detects user-owned deployment inputs.
-// Their environment deployment list may be stale after parameter edits.
+// promptModelInfrastructureOnDisk detects user-owned infrastructure.
+// It validates every configured layer before reporting detection.
+// Environment deployment lists may be stale after parameter edits.
 func promptModelInfrastructureOnDisk(root string) (bool, error) {
 	if root == "" {
 		return false, nil
@@ -53,6 +54,7 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 	if !layered {
 		targets = []infraTarget{document.Infra.infraTarget}
 	}
+	detected := false
 	for i, target := range targets {
 		field := "infra"
 		if layered {
@@ -99,7 +101,8 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 				return false, fmt.Errorf("read Foundry infrastructure marker: %w", err)
 			}
 			if string(marker) == "terraform-v1\n" {
-				return true, nil
+				detected = true
+				continue
 			}
 			if errors.Is(err, fs.ErrNotExist) {
 				sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
@@ -112,7 +115,7 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 				}
 				if strings.Contains(string(source), `resource "azapi_resource" "foundry_account"`) &&
 					strings.Contains(string(source), `resource "azapi_resource" "project"`) {
-					return true, nil
+					detected = true
 				}
 			}
 			continue
@@ -130,9 +133,10 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 				return false, fmt.Errorf("inspect infrastructure %q: %w", file, err)
 			}
 			if err == nil && !info.IsDir() {
-				return true, nil
+				detected = true
+				break
 			}
 		}
 	}
-	return false, nil
+	return detected, nil
 }

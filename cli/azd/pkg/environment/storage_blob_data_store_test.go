@@ -6,6 +6,7 @@ package environment
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -28,24 +30,47 @@ func TestStorageBlobReloadFailurePreservesState(t *testing.T) {
 		config string
 		want   string
 	}{
-		{name: "malformed dotenv", dotenv: "invalid='", want: "loading .env"},
-		{name: "invalid config", dotenv: "VALUE=on-disk", config: "{invalid", want: "loading config"},
+		{name: "malformed dotenv", dotenv: "invalid='", config: "{}", want: "loading .env"},
+		{name: "invalid config", dotenv: "VALUE=on-disk\n", config: "{invalid", want: "loading config"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &MockBlobClient{}
+			client := newMemoryBlobClient()
+			_, err := client.Upload(t.Context(), "test/config.json", strings.NewReader("{}"), "")
+			require.NoError(t, err)
+			_, err = client.Upload(t.Context(), "test/.env", strings.NewReader("VALUE=baseline\n"), "")
+			require.NoError(t, err)
+
 			store := NewStorageBlobDataStore(config.NewManager(), client)
 			env := New("test")
+			require.NoError(t, store.Reload(t.Context(), env))
+			envETag, envKnown := env.remoteBlobMatch("test/.env")
+			cfgETag, cfgKnown := env.remoteBlobMatch("test/config.json")
+			require.True(t, envKnown)
+			require.True(t, cfgKnown)
+			require.NotEmpty(t, envETag)
+			require.NotEmpty(t, cfgETag)
+
 			env.DotenvSet("VALUE", "in-memory")
 			env.DotenvDelete("PENDING")
-			client.On("Download", t.Context(), "test/.env").
-				Return(blobDownload(tt.dotenv, "etag-env"), nil).Once()
-			client.On("Download", t.Context(), "test/config.json").
-				Return(blobDownload(tt.config, "etag-cfg"), nil).Maybe()
+			overwriteBlob(t, client, "test/.env", tt.dotenv)
+			overwriteBlob(t, client, "test/config.json", tt.config)
 
 			require.ErrorContains(t, store.Reload(t.Context(), env), tt.want)
 			require.Equal(t, "in-memory", env.Getenv("VALUE"))
 			require.Contains(t, env.deletedKeys, "PENDING")
-			client.AssertExpectations(t)
+			gotEnv, gotEnvKnown := env.remoteBlobMatch("test/.env")
+			gotCfg, gotCfgKnown := env.remoteBlobMatch("test/config.json")
+			require.True(t, gotEnvKnown)
+			require.True(t, gotCfgKnown)
+			require.Equal(t, envETag, gotEnv)
+			require.Equal(t, cfgETag, gotCfg)
+
+			env.DotenvSet("VALUE", "stale-save")
+			err = store.Save(t.Context(), env, nil)
+			require.Error(t, err)
+			require.ErrorIs(t, err, ErrRemoteStateConflict)
+			require.NotContains(t, readBlobData(t, client, "test/.env"), "stale-save")
+			require.NotContains(t, readBlobData(t, client, "test/config.json"), "stale-save")
 		})
 	}
 }
@@ -231,6 +256,63 @@ func TestStorageBlobDataStore_SaveUsesLoadedETag(t *testing.T) {
 	require.False(t, client.lastNoneMatchStar["env1/config.json"])
 }
 
+func TestStorageBlobSaveWithoutLoadedETagDoesNotOverwrite(t *testing.T) {
+	client := newMemoryBlobClient()
+	_, err := client.Upload(t.Context(), "env1/config.json", strings.NewReader(`{"remote":true}`), "")
+	require.NoError(t, err)
+	_, err = client.Upload(t.Context(), "env1/.env", strings.NewReader("KEY=remote-current\n"), "")
+	require.NoError(t, err)
+	uploads := client.uploadCount()
+
+	store := NewStorageBlobDataStore(config.NewManager(), client)
+	env := New("env1")
+	env.DotenvSet("KEY", "stale-local")
+
+	err = store.Save(t.Context(), env, nil)
+	require.ErrorIs(t, err, ErrRemoteStateConflict)
+	require.ErrorIs(t, err, storage.ErrConcurrencyConflict)
+	require.Equal(t, uploads, client.uploadCount())
+	require.Contains(t, readBlobData(t, client, "env1/.env"), "remote-current")
+	require.NotContains(t, readBlobData(t, client, "env1/.env"), "stale-local")
+
+	suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	require.Contains(t, suggestion.Message, "could not be completed")
+	require.Contains(t, suggestion.Message, "was not applied")
+	require.NotContains(t, suggestion.Message, "may have been written")
+	require.NotEmpty(t, suggestion.Suggestion)
+}
+
+func TestStorageBlobSaveConflictReportsPartialWrite(t *testing.T) {
+	client := newMemoryBlobClient()
+	_, err := client.Upload(t.Context(), "env1/config.json", strings.NewReader("{}"), "")
+	require.NoError(t, err)
+	_, err = client.Upload(t.Context(), "env1/.env", strings.NewReader("KEY=original\n"), "")
+	require.NoError(t, err)
+
+	store := NewStorageBlobDataStore(config.NewManager(), client)
+	env := New("env1")
+	require.NoError(t, store.Reload(t.Context(), env))
+	overwriteBlob(t, client, "env1/.env", "KEY=other-writer\n")
+
+	require.NoError(t, env.Config.Set("written", true))
+	env.DotenvSet("KEY", "stale-save")
+	err = store.Save(t.Context(), env, nil)
+	require.ErrorIs(t, err, ErrRemoteStateConflict)
+	require.ErrorContains(t, err, "uploading .env")
+
+	suggestion, ok := errors.AsType[*internal.ErrorWithSuggestion](err)
+	require.True(t, ok)
+	require.Contains(t, suggestion.Message, "could not be completed")
+	require.Contains(t, suggestion.Message, "may have been written")
+	require.NotContains(t, suggestion.Message, "was not applied")
+
+	require.Contains(t, readBlobData(t, client, "env1/config.json"), "written")
+	dotenv := readBlobData(t, client, "env1/.env")
+	require.Contains(t, dotenv, "other-writer")
+	require.NotContains(t, dotenv, "stale-save")
+}
+
 func TestStorageBlobDataStore_NewBlobUsesIfNoneMatchStar(t *testing.T) {
 	client := newMemoryBlobClient()
 	store := NewStorageBlobDataStore(config.NewManager(), client)
@@ -245,11 +327,23 @@ func TestStorageBlobDataStore_NewBlobUsesIfNoneMatchStar(t *testing.T) {
 	require.True(t, client.lastNoneMatchStar["env1/config.json"])
 }
 
-func blobDownload(body string, etag azcore.ETag) *storage.BlobDownload {
-	return &storage.BlobDownload{
-		Body: io.NopCloser(strings.NewReader(body)),
-		ETag: etag,
-	}
+func overwriteBlob(t *testing.T, client *memoryBlobClient, path, body string) {
+	t.Helper()
+	download, err := client.Download(t.Context(), path)
+	require.NoError(t, err)
+	require.NoError(t, download.Body.Close())
+	_, err = client.Upload(t.Context(), path, strings.NewReader(body), download.ETag)
+	require.NoError(t, err)
+}
+
+func readBlobData(t *testing.T, client *memoryBlobClient, path string) string {
+	t.Helper()
+	download, err := client.Download(t.Context(), path)
+	require.NoError(t, err)
+	data, err := io.ReadAll(download.Body)
+	require.NoError(t, err)
+	require.NoError(t, download.Body.Close())
+	return string(data)
 }
 
 type storedBlob struct {
@@ -262,6 +356,8 @@ type memoryBlobClient struct {
 	mu                sync.Mutex
 	blobs             map[string]storedBlob
 	gen               int
+	downloads         int
+	uploads           int
 	lastMatch         map[string]azcore.ETag
 	lastNoneMatchStar map[string]bool
 }
@@ -274,9 +370,28 @@ func newMemoryBlobClient() *memoryBlobClient {
 	}
 }
 
+func (m *memoryBlobClient) downloadCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.downloads
+}
+
+func (m *memoryBlobClient) uploadCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.uploads
+}
+
+func (m *memoryBlobClient) matchFor(path string) azcore.ETag {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastMatch[path]
+}
+
 func (m *memoryBlobClient) Download(ctx context.Context, blobPath string) (*storage.BlobDownload, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.downloads++
 	blob, ok := m.blobs[blobPath]
 	if !ok {
 		return nil, &azcore.ResponseError{StatusCode: 404, ErrorCode: "BlobNotFound"}
@@ -297,6 +412,7 @@ func (m *memoryBlobClient) Upload(
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.uploads++
 	m.lastMatch[blobPath] = match
 	m.lastNoneMatchStar[blobPath] = match == ""
 

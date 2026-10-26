@@ -601,6 +601,11 @@ azd ai agent invoke -p a2a "Hello!"
 With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
 `azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
 
+Generated 0.3 requests leave execution and output modes unspecified, preserving the
+non-blocking default. A Task may still be in progress; azd prints the initial response
+without polling. A2A 1.0 uses its [synchronous default](https://a2a-protocol.org/v1.0.0/specification/#322-sendmessageconfiguration),
+waiting for a terminal state or an input/authentication request.
+
 **File input requires an explicit version.** When using `--input-file` (`-f`)
 with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
 native A2A agent YAML declares a version. No heuristic infers the version
@@ -653,10 +658,6 @@ For A2A 0.3, save this request as `a2a-request-0.3.json` instead:
       "messageId": "hello-message-1",
       "role": "user",
       "parts": [{"kind": "text", "text": "Hello!"}]
-    },
-    "configuration": {
-      "acceptedOutputModes": ["text/plain"],
-      "blocking": true
     }
   }
 }
@@ -672,10 +673,11 @@ Invocations. It is separate from `--version`, which continues to select a
 support A2A invocation with `--local`; this is a CLI limitation, not a
 restriction of the A2A protocol.
 
-For Task responses in **both A2A 0.3 and 1.0**, default output prefers answer
-artifacts over generic status messages such as “Done.” Status messages and
-history provide fallback text when no text artifact is present. Use `--output raw`
-to inspect the complete HTTP response and JSON-RPC envelope.
+For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
+artifacts over generic status messages such as “Done.” Other Tasks prefer status
+messages so prompts, progress, and failure details remain visible, falling back to
+artifacts when no status text is present. History is the final text fallback.
+Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
 
 ## Invoke latency diagnostics
 

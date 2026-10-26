@@ -107,7 +107,7 @@ func resolveA2AVersion(explicit string, preview bool) string {
 // file is assumed to already contain a complete JSON-RPC request (the A2A
 // analogue of the invocations protocol's opaque body pass-through). Otherwise
 // the plain message is wrapped in a JSON-RPC 2.0 request for the selected
-// dialect, with a single user text part and synchronous output configuration.
+// dialect, with a single user text part and that dialect's execution defaults.
 // This method owns input handling and serialization; each public dialect's
 // complete body is constructed independently by its selected builder.
 func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, error) {
@@ -135,8 +135,7 @@ func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, erro
 // a2a03MessageSendParams is the public A2A 0.3 message/send parameter shape.
 // See https://a2a-protocol.org/v0.3.0/specification/#711-messagesendparams-object.
 type a2a03MessageSendParams struct {
-	Message       a2a03Message                  `json:"message"`
-	Configuration a2a03MessageSendConfiguration `json:"configuration"`
+	Message a2a03Message `json:"message"`
 }
 
 type a2a03Message struct {
@@ -151,14 +150,9 @@ type a2a03TextPart struct {
 	Text string `json:"text"`
 }
 
-type a2a03MessageSendConfiguration struct {
-	AcceptedOutputModes []string `json:"acceptedOutputModes"`
-	Blocking            bool     `json:"blocking"`
-}
-
-// buildA2A03TextRequest constructs the complete 0.3 body without inheriting or
-// patching another dialect's defaults. Required message/part discriminators and
-// blocking output are explicit. File input never passes through this builder.
+// buildA2A03TextRequest constructs the complete 0.3 body with required message/part
+// discriminators, preserving unspecified execution and output modes. File input
+// never passes through this builder.
 func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest {
 	return a2aJSONRPCRequest{
 		JSONRPC: a2aJSONRPCVersion,
@@ -170,10 +164,6 @@ func buildA2A03TextRequest(text, requestID, messageID string) a2aJSONRPCRequest 
 				MessageID: messageID,
 				Role:      "user",
 				Parts:     []a2a03TextPart{{Kind: "text", Text: text}},
-			},
-			Configuration: a2a03MessageSendConfiguration{
-				AcceptedOutputModes: []string{"text/plain"},
-				Blocking:            true,
 			},
 		},
 	}
@@ -198,7 +188,7 @@ type a2a10TextPart struct {
 
 type a2a10MessageSendConfiguration struct {
 	AcceptedOutputModes []string `json:"acceptedOutputModes"`
-	// False requests synchronous completion and must not be omitted from JSON.
+	// False explicitly selects 1.0's default synchronous mode.
 	ReturnImmediately bool `json:"returnImmediately"`
 }
 
@@ -443,8 +433,8 @@ func printA2AResult(respBody []byte, agentName string, version string) {
 // extractA2AText pulls the user-visible reply text out of a JSON-RPC A2A
 // response. In 0.3, `result` is a Message or Task. In 1.0, SendMessage wraps
 // `message` or `task`, while GetTask and CancelTask return a Task directly.
-// Task artifacts are preferred over status messages such as "Done";
-// status.message and history supply fallback text when there are no text artifacts.
+// Completed Tasks prefer answer artifacts over generic status messages such as "Done".
+// Other Tasks prefer status.message so prompts, progress, and failures remain visible.
 // Returns "" when no text can be found, signaling the caller to fall back to
 // printing the JSON body.
 func extractA2AText(respBody []byte, version string) string {
@@ -477,8 +467,19 @@ func extractA2AText(respBody []byte, version string) string {
 		return text
 	}
 
-	// Task artifacts contain the answer; status messages may only say "Done".
-	// Prefer artifacts[].parts over task lifecycle messages.
+	status, _ := result["status"].(map[string]any)
+	var statusText string
+	if message, ok := status["message"].(map[string]any); ok {
+		statusText = a2aTextFromParts(message["parts"])
+	}
+	state, _ := status["state"].(string)
+	completed := state == "completed" || state == "TASK_STATE_COMPLETED"
+	if !completed && statusText != "" {
+		return statusText
+	}
+
+	// Completed Tasks carry answers in artifacts; their status may only say "Done".
+	// Other Tasks also fall back to artifacts when there is no status text.
 	if artifacts, ok := result["artifacts"].([]any); ok {
 		var parts []string
 		for _, art := range artifacts {
@@ -495,13 +496,8 @@ func extractA2AText(respBody []byte, version string) string {
 		}
 	}
 
-	// Task result fallback: status.message.parts.
-	if status, ok := result["status"].(map[string]any); ok {
-		if msg, ok := status["message"].(map[string]any); ok {
-			if text := a2aTextFromParts(msg["parts"]); text != "" {
-				return text
-			}
-		}
+	if statusText != "" {
+		return statusText
 	}
 
 	// Task result: last agent message in history[].

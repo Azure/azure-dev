@@ -153,9 +153,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
-For A2A Task responses, default output prefers answer
-artifacts over generic status messages such as "Done". Status messages and
-history provide fallback text when no text artifact is present.
+For completed A2A Tasks, default output prefers answer artifacts over generic
+status messages such as "Done". Other Tasks prefer status messages, falling
+back to artifacts when no status text is present. History is the final fallback.
 
 Platform Latency:
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics
@@ -346,6 +346,8 @@ required, even if native A2A agent YAML declares a version. File bytes are
 sent unchanged as a complete public JSON-RPC request. The caller must match
 the body to the selected header version; azd does not infer the version.
 With the preview disabled, messages and files use 0.3 without --a2a-version.
+A2A 0.3 uses non-blocking defaults; 1.0 waits for completion or user action.
+The CLI prints a single response without polling.
 Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
 requests, use --output raw to stream unparsed SSE events.
 

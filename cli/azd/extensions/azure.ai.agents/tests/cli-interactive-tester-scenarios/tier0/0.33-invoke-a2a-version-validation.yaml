@@ -13,7 +13,7 @@ pre:
       work="$HOME/working/azd-agents-a2a-version-{instance}"
       rm -rf "$work"
       mkdir -p "$work"
-      printf '%s\n' '{"jsonrpc":"2.0","id":"hello-1","method":"message/send","params":{"message":{"kind":"message","messageId":"hello-message-1","role":"user","parts":[{"kind":"text","text":"Hello!"}]},"configuration":{"acceptedOutputModes":["text/plain"],"blocking":true}}}' > "$work/a2a-request.json"
+      printf '%s\n' '{"jsonrpc":"2.0","id":"hello-1","method":"message/send","params":{"message":{"kind":"message","messageId":"hello-message-1","role":"user","parts":[{"kind":"text","text":"Hello!"}]}}}' > "$work/a2a-request.json"
     cwd: "~/working"
     name: "seed a complete public A2A 0.3 JSON-RPC request in an isolated directory"
 

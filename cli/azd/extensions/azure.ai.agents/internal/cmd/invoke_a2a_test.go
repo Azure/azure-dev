@@ -223,7 +223,7 @@ func TestA2ARequestBuilderRejectsUnknownVersion(t *testing.T) {
 }
 
 // TestBuildA2ARequestBody_WrapsMessage verifies dialect-specific wire shapes,
-// including the configuration that requests synchronous text output.
+// preserving 0.3's unspecified defaults and 1.0's synchronous text configuration.
 func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 	t.Parallel()
 
@@ -239,8 +239,7 @@ func TestBuildA2ARequestBody_WrapsMessage(t *testing.T) {
 			map[string]any{"text": "Hello!"},
 			map[string]any{"returnImmediately": false, "acceptedOutputModes": []any{"text/plain"}}},
 		{"0.3", "0.3", "message/send", "user",
-			map[string]any{"kind": "text", "text": "Hello!"},
-			map[string]any{"blocking": true, "acceptedOutputModes": []any{"text/plain"}}},
+			map[string]any{"kind": "text", "text": "Hello!"}, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -451,7 +450,7 @@ func TestA2ARemoteSelectedDialect(t *testing.T) {
 						Message struct {
 							Role string `json:"role"`
 						} `json:"message"`
-						Configuration struct {
+						Configuration *struct {
 							AcceptedOutputModes []string `json:"acceptedOutputModes"`
 						} `json:"configuration"`
 					} `json:"params"`
@@ -460,12 +459,18 @@ func TestA2ARemoteSelectedDialect(t *testing.T) {
 				assert.Equal(t, method, request.Method)
 				assert.Equal(t, role, request.Params.Message.Role)
 				w.Header().Set("Content-Type", "application/json")
-				// A normal text-only agent offers text/plain, not the part kind
-				// "text". Enforce negotiation instead of accepting any client value.
-				if !slices.Contains(request.Params.Configuration.AcceptedOutputModes, "text/plain") {
-					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","error":{"code":-32602,`+
-						`"message":"No acceptable output media type; this agent offers text/plain"}}`)
-					return
+				if wireVersion == "0.3" {
+					assert.Nil(t, request.Params.Configuration, "preserve unspecified 0.3 execution/output modes")
+				} else {
+					// Explicit 1.0 negotiation uses media types, not the part kind "text".
+					if !assert.NotNil(t, request.Params.Configuration) {
+						return
+					}
+					if !slices.Contains(request.Params.Configuration.AcceptedOutputModes, "text/plain") {
+						_, _ = io.WriteString(w, `{"jsonrpc":"2.0","error":{"code":-32602,`+
+							`"message":"No acceptable output media type; this agent offers text/plain"}}`)
+						return
+					}
 				}
 				if wireVersion == "1.0" {
 					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":{"message":{"parts":[{"text":"dialect-ok"}]}}}`)
@@ -486,6 +491,61 @@ func TestA2ARemoteSelectedDialect(t *testing.T) {
 			assert.Equal(t, 1, sends)
 			assert.Contains(t, output, "[agent] dialect-ok")
 		})
+	}
+}
+
+func TestA2A03LegacyOneShotRequests(t *testing.T) {
+	for _, preview := range []string{"false", "true"} {
+		for _, tc := range []struct{ name, response, want string }{
+			{"pending task", `{"jsonrpc":"2.0","result":{"kind":"task","id":"pending-task",` +
+				`"status":{"state":"working","message":{"parts":[{"kind":"text","text":"Still working"}]}}}}`,
+				"Still working"},
+			{"non-text output", `{"jsonrpc":"2.0","result":{"kind":"task","id":"data-task",` +
+				`"status":{"state":"completed"},"artifacts":[{"parts":[{"kind":"data","data":{"answer":42}}]}]}}`,
+				`"answer": 42`},
+		} {
+			t.Run(preview+"/"+tc.name, func(t *testing.T) {
+				t.Setenv(featureflags.A2A.EnvVar, preview)
+				var sends int
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					sends++
+					assert.Equal(t, http.MethodPost, r.Method)
+					assert.Equal(t, "0.3", r.Header.Get(a2aVersionHeader))
+					var request struct {
+						Method string         `json:"method"`
+						Params map[string]any `json:"params"`
+					}
+					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&request)) {
+						return
+					}
+					assert.Equal(t, "message/send", request.Method)
+					// Neither a long-running server nor a non-text server should
+					// receive newly imposed execution/output preferences.
+					if _, present := request.Params["configuration"]; present {
+						http.Error(w, "unexpected blocking or output-mode configuration", http.StatusBadRequest)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, tc.response)
+				}))
+				defer server.Close()
+				explicit := ""
+				if preview == "true" {
+					explicit = "0.3"
+				}
+				action := &InvokeAction{
+					flags:      &invokeFlags{message: "hello", protocol: "a2a", a2aVersion: explicit},
+					credential: responseTestCredential{},
+					resolvedRemoteContext: &remoteContext{
+						name: "agent", projectEndpoint: server.URL, apiVersion: "v1",
+					},
+				}
+				output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
+				require.NoError(t, err)
+				require.Equal(t, 1, sends, "one-shot invocation must not poll or resubmit")
+				require.Contains(t, output, tc.want)
+			})
+		}
 	}
 }
 
@@ -690,10 +750,14 @@ func TestExtractA2ATextPrefersTaskArtifacts(t *testing.T) {
 	for _, version := range []string{"0.3", "1.0"} {
 		t.Run(version, func(t *testing.T) {
 			t.Parallel()
-			// A native SDK task can finish with a generic lifecycle message while
-			// its actual answer is carried in artifacts. Both dialects support this.
+			// A completed task can have generic status text alongside its answer.
+			state := "completed"
+			if version == "1.0" {
+				state = "TASK_STATE_COMPLETED"
+			}
 			task := map[string]any{
 				"status": map[string]any{
+					"state":   state,
 					"message": map[string]any{"parts": []any{map[string]any{"text": "Done"}}},
 				},
 				"artifacts": []any{
@@ -708,6 +772,45 @@ func TestExtractA2ATextPrefersTaskArtifacts(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "native answer", extractA2AText(body, version))
 		})
+	}
+}
+
+func TestExtractA2ATextPreservesNonCompletedStatus(t *testing.T) {
+	t.Parallel()
+	for _, version := range []string{"0.3", "1.0"} {
+		for _, state := range []string{
+			"input-required", "auth-required", "failed", "canceled", "rejected", "submitted", "working", "",
+		} {
+			t.Run(version+"/"+state, func(t *testing.T) {
+				t.Parallel()
+				wireState := state
+				if version == "1.0" && state != "" {
+					wireState = "TASK_STATE_" + strings.ToUpper(strings.ReplaceAll(state, "-", "_"))
+				}
+				for _, statusText := range []string{"Follow-up or failure details", ""} {
+					task := map[string]any{
+						"status": map[string]any{
+							"state":   wireState,
+							"message": map[string]any{"parts": []any{map[string]any{"text": statusText}}},
+						},
+						"artifacts": []any{map[string]any{
+							"parts": []any{map[string]any{"text": "Partial artifact"}},
+						}},
+					}
+					result := task
+					if version == "1.0" {
+						result = map[string]any{"task": task}
+					}
+					body, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "result": result})
+					require.NoError(t, err)
+					want := statusText
+					if want == "" {
+						want = "Partial artifact"
+					}
+					require.Equal(t, want, extractA2AText(body, version))
+				}
+			})
+		}
 	}
 }
 

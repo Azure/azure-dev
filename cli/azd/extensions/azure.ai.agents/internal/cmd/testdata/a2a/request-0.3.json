@@ -8,10 +8,6 @@
       "messageId": "hello-message-1",
       "role": "user",
       "parts": [{"kind": "text", "text": "Hello!"}]
-    },
-    "configuration": {
-      "acceptedOutputModes": ["text/plain"],
-      "blocking": true
     }
   }
 }

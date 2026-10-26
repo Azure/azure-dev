@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	inf "github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -170,6 +171,14 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// When any layer was skipped (e.g. --no-prompt in CI without --force), don't report a full teardown.
 	if skippedDeletion {
 		return &actions.ActionResult{}, nil
+	}
+
+	// Project-wide cleanup must not run for a single layer or a partial teardown.
+	if downLayer == "" {
+		if err := a.projectConfig.RaiseEvent(ctx, ext.Event("post"+project.ProjectEventDown),
+			project.ProjectLifecycleEventArgs{Project: a.projectConfig}); err != nil {
+			return nil, fmt.Errorf("running postdown extension handlers: %w", err)
+		}
 	}
 
 	return &actions.ActionResult{

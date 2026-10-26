@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -148,11 +150,21 @@ type mockDownProvider struct {
 	*mockRefreshProvider
 	destroyResult *provisioning.DestroyResult
 	destroyErr    error
+	destroyCalls  int
+	failOnCall    int
+	skipOnCall    int
 }
 
 func (p *mockDownProvider) Destroy(
 	_ context.Context, _ provisioning.DestroyOptions,
 ) (*provisioning.DestroyResult, error) {
+	p.destroyCalls++
+	if p.skipOnCall > 0 {
+		return &provisioning.DestroyResult{SkippedDeletion: p.destroyCalls == p.skipOnCall}, p.destroyErr
+	}
+	if p.failOnCall > p.destroyCalls {
+		return p.destroyResult, nil
+	}
 	return p.destroyResult, p.destroyErr
 }
 
@@ -189,8 +201,9 @@ func newTestDownAction(
 	)
 
 	projectConfig := &project.ProjectConfig{
-		Name: "test-project",
-		Path: t.TempDir(),
+		Name:            "test-project",
+		Path:            t.TempDir(),
+		EventDispatcher: ext.NewEventDispatcher[project.ProjectLifecycleEventArgs](),
 		Infra: provisioning.Options{
 			Provider: provisioning.Test,
 			Path:     "infra",
@@ -248,4 +261,67 @@ func Test_DownAction_Run_Deleted(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotNil(t, result.Message)
 	require.Contains(t, result.Message.Header, "Your application was removed")
+}
+
+func TestDownActionPostdownDispatchBoundary(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name                                              string
+		selectedLayer, skipped, destroyFailed, hookFailed bool
+		layers                                            int
+		skipOnCall                                        int
+		wantCalls                                         int
+	}{
+		{name: "completed", layers: 1, wantCalls: 1},
+		{name: "all layers completed", layers: 2, wantCalls: 1},
+		{name: "destroy failed", layers: 1, destroyFailed: true},
+		{name: "later layer failed", layers: 2, destroyFailed: true},
+		{name: "preview skipped", layers: 1, skipped: true},
+		{name: "later layer skipped", layers: 2, skipOnCall: 2},
+		{name: "selected layer only", layers: 2, selectedLayer: true},
+		{name: "handler failed", layers: 1, hookFailed: true, wantCalls: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			provider := &mockDownProvider{mockRefreshProvider: &mockRefreshProvider{},
+				skipOnCall:    test.skipOnCall,
+				destroyResult: &provisioning.DestroyResult{SkippedDeletion: test.skipped}}
+			action, _, _ := newTestDownAction(t, provider)
+			if test.layers == 2 {
+				action.projectConfig.Infra.Layers = append(action.projectConfig.Infra.Layers,
+					provisioning.Options{Name: "other", Provider: provisioning.Test, Path: "infra", Module: "main"})
+			}
+			if test.selectedLayer {
+				action.args = []string{"infra"}
+			}
+			calls := 0
+			failure := errors.New("postdown state cleanup failed")
+			require.NoError(t, action.projectConfig.AddHandler(t.Context(), "postdown",
+				func(ctx context.Context, args project.ProjectLifecycleEventArgs) error {
+					calls++
+					require.Same(t, action.projectConfig, args.Project)
+					require.Equal(t, test.layers, provider.destroyCalls,
+						"postdown must run only after every selected provider finished")
+					if test.hookFailed {
+						return failure
+					}
+					return nil
+				}))
+			if test.destroyFailed {
+				provider.destroyErr = errors.New("destroy failed")
+				provider.failOnCall = test.layers
+			}
+			result, err := action.Run(t.Context())
+			assert.Equal(t, test.wantCalls, calls)
+			if test.destroyFailed || test.hookFailed {
+				require.Error(t, err)
+				assert.Nil(t, result, "failed cleanup must not return a success message")
+				if test.hookFailed {
+					assert.ErrorIs(t, err, failure)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

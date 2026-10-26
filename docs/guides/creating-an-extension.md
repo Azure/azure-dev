@@ -54,6 +54,12 @@ If your Go extension creates role assignments, use the stable [`Account().GetCur
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
+Register project-wide teardown cleanup with
+`ExtensionHost.WithProjectEventHandler("postdown", handler)`. It runs after
+successful whole-project `azd down`, including retries when resources are
+already absent, but not for failed, skipped, or explicitly selected-layer
+teardown. Return cleanup errors so the command can be retried.
+
 Go extensions can opt into beta structured messages for service
 `predeploy`/`postdeploy` handlers with
 `ExtensionHost.WithBetaServiceEventHandler`. See

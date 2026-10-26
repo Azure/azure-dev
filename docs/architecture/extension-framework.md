@@ -56,6 +56,12 @@ calls are unaffected.
 
 ### Lifecycle follow-up contributions
 
+Successful whole-project `azd down` dispatches the project `postdown` event
+after all infrastructure layers finish. Provider errors, skipped deletion,
+and an explicitly selected layer do not dispatch this project-wide event.
+Handlers also run when the resources are already absent, allowing local cleanup
+to be retried. Handler failures fail the command before its success message.
+
 The beta event stream supplies an invocation ID to each subscribed project
 handler. The extension calls the beta `CommandResultService` with that ID over
 gRPC; both services use a host-owned invocation store. Only successful

@@ -106,7 +106,10 @@ func confirm(
 		return err
 	}
 	if !accepted {
-		return errors.New("initialization cancelled; no deployment files were written")
+		return &azdext.LocalError{
+			Code: codeCancelled, Category: azdext.LocalErrorCategoryUser,
+			Message: "initialization cancelled; no deployment files were written",
+		}
 	}
 	return nil
 }
@@ -147,8 +150,10 @@ func resolveDeployment(
 				var targets []string
 				for _, repair := range diagnostic.Repairs {
 					if repairedCredentials[repairTarget{repair.File, repair.Property}] {
-						return nil, fmt.Errorf("datasource credential property %s in %s requires repair again; "+
-							"review the application configuration", repair.Property, repair.File)
+						return nil, validationError(codeInvalidConfiguration,
+							fmt.Sprintf("datasource credential property %s in %s requires repair again; "+
+								"review the application configuration", repair.Property, repair.File),
+							"Replace datasource password defaults with runtime-only placeholders and rerun azd spring init.")
 					}
 					targets = append(targets, repair.Property+" in "+repair.File)
 				}
@@ -167,7 +172,14 @@ func resolveDeployment(
 			}
 			var diagnostics []error
 			for _, diagnostic := range analysis.Diagnostics {
-				diagnostics = append(diagnostics, fmt.Errorf("%s configuration: %s", diagnostic.Kind, diagnostic.Message))
+				code := codeInvalidConfiguration
+				if diagnostic.Kind == "unsupported" {
+					code = codeUnsupportedConfiguration
+				}
+				diagnostics = append(diagnostics, validationError(code,
+					fmt.Sprintf("%s configuration: %s", diagnostic.Kind, diagnostic.Message),
+					"Update the application's Spring configuration to address the reported issue "+
+						"and rerun azd spring init."))
 			}
 			return nil, errors.Join(diagnostics...)
 		}
@@ -184,7 +196,8 @@ func resolveDeployment(
 			hint = "supply --profiles <names>"
 		}
 		if noPrompt || answered[decision.ID] {
-			return nil, fmt.Errorf("deployment decision %s is unresolved; %s", decision.ID, hint)
+			return nil, validationError(codeUnresolvedDecision,
+				fmt.Sprintf("deployment decision %s is unresolved; %s", decision.ID, hint), hint)
 		}
 		prompts, err := getPrompts()
 		if err != nil {
@@ -195,7 +208,8 @@ func resolveDeployment(
 			return nil, err
 		}
 		if strings.TrimSpace(answer) == "" {
-			return nil, errors.New("deployment decision requires a nonempty answer")
+			return nil, validationError(codeUnresolvedDecision,
+				"deployment decision requires a nonempty answer", hint)
 		}
 		if decision.Profiles {
 			inputs.Profiles = strings.Split(answer, ",")

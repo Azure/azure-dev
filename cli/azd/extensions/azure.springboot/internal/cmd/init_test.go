@@ -54,6 +54,57 @@ func TestInitPreflight(t *testing.T) {
 	}
 }
 
+func TestInitStructuredErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		fixture  string
+		args     []string
+		code     string
+		decline  bool
+		category azdext.LocalErrorCategory
+	}{
+		{"consent", "three-engines", []string{"--no-prompt"},
+			codeConsentRequired, false, azdext.LocalErrorCategoryValidation},
+		{"environment", "three-engines", []string{"--yes", "--environment="},
+			codeConflictingArguments, false, azdext.LocalErrorCategoryValidation},
+		{"output", "three-engines", []string{"--yes", "--output=json"},
+			codeConflictingArguments, false, azdext.LocalErrorCategoryValidation},
+		{"profiles", "three-engines", []string{"--yes", "--profiles="},
+			codeInvalidProfiles, false, azdext.LocalErrorCategoryValidation},
+		{"invalid", "driver-conflict", []string{"--yes"},
+			codeInvalidConfiguration, false, azdext.LocalErrorCategoryValidation},
+		{"unsupported", "file-storage", []string{"--yes"},
+			codeUnsupportedConfiguration, false, azdext.LocalErrorCategoryValidation},
+		{"unresolved", "missing-url", []string{"--yes", "--no-prompt"},
+			codeUnresolvedDecision, false, azdext.LocalErrorCategoryValidation},
+		{"empty answer", "missing-url", []string{"--yes"},
+			codeUnresolvedDecision, false, azdext.LocalErrorCategoryValidation},
+		{"declined trust", "three-engines", nil,
+			codeCancelled, true, azdext.LocalErrorCategoryUser},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			command, _, _ := fixtureCommand(t, tt.fixture, func() (initPrompter, error) {
+				return &fakePrompter{decline: tt.decline}, nil
+			})
+			command.SetArgs(append([]string{"init"}, tt.args...))
+			err := command.ExecuteContext(t.Context())
+			var local *azdext.LocalError
+			require.ErrorAs(t, err, &local)
+			require.Equal(t, tt.code, local.Code)
+			require.Equal(t, tt.category, local.Category)
+			if tt.category == azdext.LocalErrorCategoryValidation {
+				require.NotEmpty(t, local.Suggestion)
+			}
+			report := azdext.WrapError(err)
+			require.NotNil(t, report.GetLocalError())
+			require.Equal(t, tt.code, report.GetLocalError().GetCode())
+			require.Equal(t, string(tt.category), report.GetLocalError().GetCategory())
+			_, statErr := os.Stat("azure.yaml")
+			require.ErrorIs(t, statErr, fs.ErrNotExist)
+		})
+	}
+}
+
 type fixtureResolver struct{ calls int }
 
 func (r *fixtureResolver) Resolve(_ context.Context, directory string) (*spring.ModelData, error) {

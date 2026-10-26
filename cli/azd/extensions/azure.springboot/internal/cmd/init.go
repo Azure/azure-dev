@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -53,17 +52,22 @@ Existing deployment files are not overwritten.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			for _, flag := range []string{"environment", "output"} {
 				if cmd.Flags().Changed(flag) {
-					return fmt.Errorf("--%s cannot be used with spring init; "+
-						"no environment or output format is selected", flag)
+					return validationError(codeConflictingArguments,
+						fmt.Sprintf("--%s cannot be used with spring init; "+
+							"no environment or output format is selected", flag),
+						fmt.Sprintf("Remove --%s and rerun azd spring init.", flag))
 				}
 			}
 			if extCtx.NoPrompt && !yes {
-				return errors.New("--no-prompt requires --yes to trust Maven inspection and accept the generated plan")
+				return validationError(codeConsentRequired,
+					"--no-prompt requires --yes to trust Maven inspection and accept the generated plan",
+					"Add --yes only if you trust the project, or omit --no-prompt to review it interactively.")
 			}
 			inputs := spring.DeploymentInputs{}
 			if cmd.Flags().Changed("profiles") {
 				if len(profiles) == 0 {
-					return errors.New("--profiles requires at least one profile name")
+					return validationError(codeInvalidProfiles, "--profiles requires at least one profile name",
+						"Supply --profiles <names>, or omit --profiles to use application defaults.")
 				}
 				inputs.Profiles = profiles
 			}

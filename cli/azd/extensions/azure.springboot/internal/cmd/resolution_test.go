@@ -5,14 +5,35 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"azure.springboot/internal/spring"
 )
+
+func TestConfirmPreservesPromptFailures(t *testing.T) {
+	for _, failure := range []error{
+		context.Canceled,
+		context.DeadlineExceeded,
+		status.Error(codes.Canceled, "prompt cancelled"),
+		errors.New("prompt transport failed"),
+	} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			err := confirm(t.Context(), func() (initPrompter, error) {
+				return &fakePrompter{err: failure}, nil
+			}, "Continue?")
+			require.ErrorIs(t, err, failure)
+			_, classified := errors.AsType[*azdext.LocalError](err)
+			require.False(t, classified)
+		})
+	}
+}
 
 type fakeHostPrompt struct {
 	azdext.PromptServiceClient

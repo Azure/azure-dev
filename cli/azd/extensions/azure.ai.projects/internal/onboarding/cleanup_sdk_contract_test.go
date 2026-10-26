@@ -149,8 +149,10 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 					"properties": map[string]any{"provisioningState": "Succeeded"},
 				}
 				base.resources[strings.ToLower(f.spec.ProjectID)] = map[string]any{
-					"id": f.spec.ProjectID, "tags": ownerTags(base.plan.Owner),
+					"id": f.spec.ProjectID, "tags": ownerTags(base.plan.Owner), "location": f.spec.Location,
+					"properties": map[string]any{"provisioningState": "Succeeded"},
 					"identity": map[string]any{"type": "SystemAssigned",
+						"tenantId":    data.TenantID,
 						"principalId": "00000000-0000-0000-0000-000000000004"},
 				}
 				for _, name := range f.spec.ModelNames {

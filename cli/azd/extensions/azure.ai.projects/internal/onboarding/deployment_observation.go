@@ -239,10 +239,8 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 	}
 	found, err := projects.Get(ctx, account.ResourceGroupName, account.Name, project.Name, nil)
 	if err == nil {
-		if !strings.EqualFold(authString(found.ID), spec.ProjectID) ||
-			authString(found.Tags[preparationOwnerTag]) != state.Owner || found.Identity == nil ||
-			authString(found.Identity.PrincipalID) == "" {
-			return fmt.Errorf("deployed Foundry project ownership/identity is unverified")
+		if err := l.verifyDeployedProject(ctx, plan, state, found.Project); err != nil {
+			return err
 		}
 		principal := authString(found.Identity.PrincipalID)
 		if state.Foundry.ProjectPrincipalID != "" && !strings.EqualFold(state.Foundry.ProjectPrincipalID, principal) {
@@ -392,11 +390,15 @@ func (l *ownedLifecycle) observeGrant(
 func (l *ownedLifecycle) deploymentGrantTargets(
 	ctx context.Context, plan Plan, foundry *FoundryState, succeeded ...map[string]bool,
 ) (map[string]bool, error) {
+	// Optional collectors record succeeded grants and path-bound Project Creates, respectively.
 	targets := map[string]bool{}
 	visited := map[string]bool{}
-	var read func(string, bool, bool, bool) error
-	read = func(deploymentID string, observedBefore, failedAttempt, rejectedBeforeCreate bool) error {
+	var read func(string, bool, bool, bool, bool) error
+	read = func(deploymentID string, observedBefore, failedAttempt, rejectedBeforeCreate, boundPath bool) error {
 		key := strings.ToLower(deploymentID)
+		if len(succeeded) > 1 {
+			key += fmt.Sprint("|bound=", boundPath)
+		}
 		if visited[key] {
 			return nil
 		}
@@ -409,6 +411,8 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 			!strings.EqualFold(id.ResourceType.String(), "Microsoft.Resources/deployments") {
 			return fmt.Errorf("deployment operation contains an invalid nested deployment ID")
 		}
+		boundPath = boundPath && strings.EqualFold(id.SubscriptionID, plan.SubscriptionID) &&
+			(id.ResourceGroupName == "" || strings.EqualFold(id.ResourceGroupName, plan.ResourceGroup))
 		pager, err := NewDeploymentOperationsPager(deploymentID, l.credential, l.options)
 		if err != nil {
 			return err
@@ -416,6 +420,7 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 		var children []struct {
 			id       string
 			rejected bool
+			bound    bool
 		}
 		collect := func(operations []*armresources.DeploymentOperation) error {
 			for _, operation := range operations {
@@ -430,7 +435,7 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 						return fmt.Errorf("deployment operation role-assignment ID is invalid: %w", err)
 					}
 					targets[strings.ToLower(targetID)] = true
-					if len(succeeded) > 0 &&
+					if len(succeeded) > 0 && succeeded[0] != nil &&
 						strings.EqualFold(authString(operation.Properties.ProvisioningState), "Succeeded") {
 						succeeded[0][strings.ToLower(targetID)] = true
 					}
@@ -438,7 +443,14 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 					children = append(children, struct {
 						id       string
 						rejected bool
-					}{targetID, failedAttempt && nestedValidationRejected(operation, deploymentID)})
+						bound    bool
+					}{targetID, failedAttempt && nestedValidationRejected(operation, deploymentID),
+						boundPath && succeededCreateOperation(operation, deploymentID)})
+				case strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects"):
+					if len(succeeded) > 1 && succeeded[1] != nil &&
+						boundPath && succeededCreateOperation(operation, deploymentID) {
+						succeeded[1][strings.ToLower(targetID)] = true
+					}
 				}
 			}
 			return nil
@@ -465,7 +477,7 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 			}
 		}
 		for _, child := range children {
-			if err := read(child.id, observedBefore, failedAttempt, child.rejected); err != nil {
+			if err := read(child.id, observedBefore, failedAttempt, child.rejected, child.bound); err != nil {
 				return err
 			}
 		}
@@ -473,12 +485,22 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 	}
 	for _, attempt := range foundry.Attempts {
 		if err := read(attempt.ID, attempt.OwnershipObserved,
-			attempt.Terminal && attempt.ProvisioningState == "Failed", false); err != nil {
+			attempt.Terminal && attempt.ProvisioningState == "Failed", false, attempt.Terminal); err != nil {
 			return nil, err
 		}
-
 	}
 	return targets, nil
+}
+
+func succeededCreateOperation(operation *armresources.DeploymentOperation, deploymentID string) bool {
+	id, err := arm.ParseResourceID(authString(operation.ID))
+	return err == nil && validResourceIDSyntax(authString(operation.ID)) &&
+		strings.EqualFold(id.ResourceType.String(), "Microsoft.Resources/deployments/operations") &&
+		strings.EqualFold(id.Parent.String(), deploymentID) &&
+		operation.Properties != nil &&
+		operation.Properties.ProvisioningOperation != nil &&
+		*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+		strings.EqualFold(authString(operation.Properties.ProvisioningState), "Succeeded")
 }
 
 func nestedValidationRejected(operation *armresources.DeploymentOperation, deploymentID string) bool {

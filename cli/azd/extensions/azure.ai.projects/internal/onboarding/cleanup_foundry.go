@@ -45,7 +45,7 @@ func (l *ownedLifecycle) cleanupFoundry(
 			!strings.EqualFold(authString(observed.Location), state.Foundry.Spec.Location) {
 			return fmt.Errorf("Foundry account ownership/location is unknown or changed")
 		}
-		if err := l.cleanupModels(ctx, state, id.ResourceGroupName, id.Name); err != nil {
+		if err := l.cleanupModels(ctx, plan, state, id.ResourceGroupName, id.Name); err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
@@ -127,7 +127,7 @@ func (l *ownedLifecycle) cleanupFoundry(
 	return l.journal.Save(ctx, *state)
 }
 
-func (l *ownedLifecycle) cleanupModels(ctx context.Context, state *PreparationState, group, account string) error {
+func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *PreparationState, group, account string) error {
 	spec := state.Foundry.Spec
 	accountID, err := ParseID(spec.AccountID, "Microsoft.CognitiveServices/accounts")
 	if err != nil {
@@ -145,10 +145,13 @@ func (l *ownedLifecycle) cleanupModels(ctx context.Context, state *PreparationSt
 		}
 		for _, project := range page.Value {
 			if project == nil || !strings.EqualFold(authString(project.ID), spec.ProjectID) ||
-				authString(project.Tags[preparationOwnerTag]) != state.Owner || project.Identity == nil ||
+				project.Identity == nil ||
 				(state.Foundry.ProjectPrincipalID != "" &&
 					!strings.EqualFold(authString(project.Identity.PrincipalID), state.Foundry.ProjectPrincipalID)) {
 				return fmt.Errorf("account contains an untracked/changed project; refusing cascading deletion")
+			}
+			if err := l.verifyDeployedProject(ctx, plan, state, *project); err != nil {
+				return fmt.Errorf("account project ownership is unverified; refusing cascading deletion: %w", err)
 			}
 		}
 	}

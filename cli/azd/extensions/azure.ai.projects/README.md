@@ -495,6 +495,12 @@ The independently observed ARM hash is retained after verification; changed or
 unreadable evidence blocks recovery. A planned account's absence alone is not
 sufficient evidence. Explicit resource-group and
 location parameters must agree with the environment's resolved target.
+When the Project API omits ownership tags, observation, retry and teardown
+require an exact succeeded Project Create reached through succeeded Create
+operations in that verified deployment graph, plus the exact owner-tagged parent
+account. The project's ID, location, succeeded state, system-assigned identity
+and tenant must match; an explicitly conflicting tag or changed recorded
+principal still blocks recovery and cascading deletion.
 If ARM rejects a nested deployment during provider preflight validation before
 registering it, recovery requires the exact failed parent Create operation and
 recognized not-found responses for both the nested record and its operations.

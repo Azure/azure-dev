@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:fix inline
-func ptr[T any](value T) *T { return new(value) }
-
 func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 	t.Parallel()
 	agent := VoiceAgent{

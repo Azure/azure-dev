@@ -77,6 +77,13 @@ produce an error rather than being overwritten. `azd ai project deployment add`
 also seeds or updates this environment list. Ejected infrastructure retains
 user-owned deployment parameters.
 
+When `azd ai project add` changes the configured project identity, it clears the
+previous `AI_PROJECT_DEPLOYMENTS` override, including `[]` and malformed values,
+before deployment reconciliation. Reconciliation then starts from the current
+`azure.yaml` declarations instead of the previous project's list. Selecting the
+same project preserves the override and its validation rules. If replacement
+fails, the previous environment values are restored.
+
 Embedded provisioning also initializes a missing or blank
 `AZURE_AI_MODEL_DEPLOYMENT_NAME` from the first effective deployment, including
 in a newly created environment. Existing runtime defaults are preserved,

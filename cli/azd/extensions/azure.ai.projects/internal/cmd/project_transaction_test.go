@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -102,7 +103,7 @@ func TestReconcileProjectEnvironmentRollbackRestoresReplacedDeployments(t *testi
 			projectDeploymentsEnvKey:         oldDeployments,
 			"AI_PROJECT_DEPLOYMENT_BINDINGS": oldBindings,
 		},
-		failAt: 7,
+		failKey: "AZURE_AI_ACCOUNT_NAME",
 	}
 	client := newProjectEnvironmentClient(t, envServer)
 
@@ -118,7 +119,15 @@ func TestReconcileProjectEnvironmentRollbackRestoresReplacedDeployments(t *testi
 		true,
 	)
 
-	require.Error(t, err)
+	require.ErrorContains(t, err, "clear project environment value AZURE_AI_ACCOUNT_NAME")
+	failureIndex := slices.Index(envServer.setLog, "AZURE_AI_ACCOUNT_NAME=")
+	require.NotEqual(t, -1, failureIndex)
+	beforeFailure := envServer.setLog[:failureIndex]
+	afterFailure := envServer.setLog[failureIndex+1:]
+	assert.Contains(t, beforeFailure, projectDeploymentsEnvKey+"=")
+	assert.Contains(t, beforeFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS=")
+	assert.Contains(t, afterFailure, projectDeploymentsEnvKey+"="+oldDeployments)
+	assert.Contains(t, afterFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS="+oldBindings)
 	assert.Equal(t, oldDeployments, envServer.values[projectDeploymentsEnvKey])
 	assert.Equal(t, oldBindings, envServer.values["AI_PROJECT_DEPLOYMENT_BINDINGS"])
 }
@@ -993,9 +1002,11 @@ const provisioningFoundryProvider = "microsoft.foundry"
 
 type transactionEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	values map[string]string
-	failAt int
-	calls  int
+	values  map[string]string
+	failAt  int
+	failKey string
+	calls   int
+	setLog  []string
 }
 
 func (s *transactionEnvironmentServer) Select(
@@ -1023,6 +1034,11 @@ func (s *transactionEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.calls++
+	s.setLog = append(s.setLog, request.GetKey()+"="+request.GetValue())
+	if s.failKey != "" && s.failKey == request.GetKey() {
+		s.failKey = ""
+		return nil, errors.New("environment write failed")
+	}
 	if s.failAt == s.calls {
 		return nil, errors.New("environment write failed")
 	}

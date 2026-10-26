@@ -164,7 +164,7 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_GPTLive(t *testing.T) {
 		Store:           &store,
 		Audio: &agent_yaml.VoiceAudio{
 			Format: &agent_yaml.VoiceAudioFormat{Type: "audio/pcm", Rate: &rate},
-			Output: &agent_yaml.VoiceAudioOutput{Voice: "marin"},
+			Output: &agent_yaml.VoiceAudioOutput{Voice: &agent_yaml.VoiceConfig{LiveName: "marin"}},
 		},
 		Delegation: &agent_yaml.LiveVoiceDelegation{
 			Type: "foundry_managed_agent", AgentName: "teacher", AgentVersion: "3",
@@ -177,7 +177,7 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_GPTLive(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
 	require.Equal(t, 24000, *got.Audio.Format.Rate)
-	require.Equal(t, "marin", got.Audio.Output.Voice)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
 	require.Equal(t, "teacher", got.Delegation.AgentName)
 	require.NotNil(t, got.Store)
 	require.False(t, *got.Store)

@@ -190,6 +190,13 @@ references; unresolved or empty names fail before Azure writes. Omit `prefix` to
 set an explicit available CIDR in either descriptor to create that subnet through
 the standard network template. Agent subnet creation adds
 `Microsoft.App/environments` delegation. No default VNet or CIDR is selected.
+For managed-VNet AKS pools without `vnetSubnetID`, read-only N02 validation
+resolves the node subnet from the cluster's `nodeResourceGroup`, verifies that
+the resource group's `managedBy` points to that cluster, and reads the VMSS
+network profiles tagged with the selected pool's `aks-managed-poolName`.
+This requires resource-group and VMSS read access in the node resource group,
+plus subnet read access. Missing or inconsistent evidence remains `UNVERIFIED`;
+the client does not infer generated network names or change the AKS configuration.
 Missing Agent-subnet injection, including PE-only Microsoft-managed egress,
 is rejected before authentication, preflight persistence or Azure writes.
 

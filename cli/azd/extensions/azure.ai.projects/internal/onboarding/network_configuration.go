@@ -117,8 +117,10 @@ func (c *sdkResourceChecker) networkChecks(
 	}
 	nodeMetadataKnown := false
 	if checkSubnet && selected != nil && selected.Properties != nil {
-		subnetID := resourceValue(selected.Properties.VnetSubnetID)
-		if subnetID != "" {
+		subnetIDs, checks := c.nodeSubnetIDs(ctx, plan, cluster, selected)
+		report = append(report, checks...)
+		nodeMetadataKnown = len(subnetIDs) > 0
+		for _, subnetID := range subnetIDs {
 			subnet, checks := c.readNetworkSubnet(ctx, subnetID, "N02")
 			report = append(report, checks...)
 			if subnet != nil {
@@ -126,12 +128,22 @@ func (c *sdkResourceChecker) networkChecks(
 				if subnet.Properties != nil {
 					state = resourceValue(subnet.Properties.ProvisioningState)
 				}
-				report = append(report, resourceReadiness(subnetID, resourceValue(subnet.ID), state, "subnets/read"))
+				readiness := resourceReadiness(subnetID, resourceValue(subnet.ID), state, "subnets/read")
+				report = append(report, readiness)
 				prefixes, err := subnetPrefixes(subnet)
-				if err == nil {
-					related = append(related, prefixes...)
-					nodeMetadataKnown = true
+				if err != nil {
+					metadata := resourceCheck("N02", subnetID, "parseable selected AKS pool Node subnet CIDRs")
+					metadata.Missing = "ARM subnet addressPrefix/addressPrefixes"
+					metadata.Cause = err
+					report = append(report, metadata)
 				}
+				if err == nil && readiness.Status == Pass {
+					related = append(related, prefixes...)
+				} else {
+					nodeMetadataKnown = false
+				}
+			} else {
+				nodeMetadataKnown = false
 			}
 		}
 	}

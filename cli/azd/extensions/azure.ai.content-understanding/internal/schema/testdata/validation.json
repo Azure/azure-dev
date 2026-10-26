@@ -1,0 +1,792 @@
+{
+  "source": "microsoft-foundry/content-understanding-cli@25d39b30116a840491b7b6f393d6db792b38d4a4",
+  "cases": [
+    {
+      "name": "empty",
+      "body": {},
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "baseAnalyzerId",
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "layout",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "invalid JSON",
+      "body": "{",
+      "invalidJson": true,
+      "errors": [
+        "$"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "array root",
+      "body": [],
+      "invalidJson": false,
+      "errors": [
+        "$"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "analyzerId",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "analyzerId": "bad-id"
+      },
+      "invalidJson": false,
+      "errors": [
+        "analyzerId"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "baseAnalyzerId",
+      "body": {
+        "baseAnalyzerId": "bad/id",
+        "models": {
+          "completion": "gpt-5.2"
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "baseAnalyzerId"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "apiVersion",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "apiVersion": "2026-06-01-preview"
+      },
+      "invalidJson": false,
+      "errors": [
+        "apiVersion"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "models",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": []
+      },
+      "invalidJson": false,
+      "errors": [
+        "models"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": []
+      },
+      "invalidJson": false,
+      "errors": [
+        "config"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config enableSegment true",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "enableSegment": "true"
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.enableSegment"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config segmentPerPage 1",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "segmentPerPage": 1
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.segmentPerPage"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config estimateFieldSourceAndConfidence []",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "estimateFieldSourceAndConfidence": []
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.estimateFieldSourceAndConfidence"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config contentCategories {}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {}
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.contentCategories"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "config contentCategories []",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": []
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.contentCategories"
+      ],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "category None",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {
+            "Invoice": null
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.contentCategories.Invoice"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "category {}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {
+            "Invoice": {}
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "config.contentCategories.Invoice.description"
+      ]
+    },
+    {
+      "name": "category {'description': 2}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {
+            "Invoice": {
+              "description": 2
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.contentCategories.Invoice.description"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "category {'analyzerId': 'bad/id'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {
+            "Invoice": {
+              "analyzerId": "bad/id"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "config.contentCategories.Invoice.analyzerId"
+      ],
+      "warnings": [
+        "config.contentCategories.Invoice.description"
+      ]
+    },
+    {
+      "name": "category {'description': 'Category intent for this sample.'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "config": {
+          "contentCategories": {
+            "Invoice": {
+              "description": "Category intent for this sample."
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "name": "fieldSchema []",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": []
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "fieldSchema {}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {}
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema"
+      ]
+    },
+    {
+      "name": "fieldSchema {'fields': []}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": []
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "fieldSchema {'fields': {}}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {}
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "name": "fieldSchema {'definitions': []}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "definitions": []
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.definitions"
+      ],
+      "warnings": [
+        "fieldSchema.fields"
+      ]
+    },
+    {
+      "name": "fieldSchema {'fields': {'Total': None}}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": null
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "field {}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {}
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.type"
+      ],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'$ref': 'private/value'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "$ref": "private/value"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.$ref"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "field {'type': 'invalid', 'description': 5, 'method': 'invalid'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "invalid",
+              "description": 5,
+              "method": "invalid"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.description",
+        "fieldSchema.fields.Total.method",
+        "fieldSchema.fields.Total.type"
+      ],
+      "warnings": []
+    },
+    {
+      "name": "field {'type': 'string'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'string', 'description': 'short'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "string",
+              "description": "short"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'number', 'description': 'A sufficiently detailed prompt.'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "number",
+              "description": "A sufficiently detailed prompt."
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": []
+    },
+    {
+      "name": "field {'type': 'array'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "array"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.items"
+      ],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'array', 'items': {'type': 'string'}}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description",
+        "fieldSchema.fields.Total.items.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'object'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.properties"
+      ],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'object', 'properties': {'Name': {'type': 'string'}}}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "object",
+              "properties": {
+                "Name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description",
+        "fieldSchema.fields.Total.properties.Name.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'string', 'method': 'classify', 'enum': ['same', 'same']}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "string",
+              "method": "classify",
+              "enum": [
+                "same",
+                "same"
+              ]
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.enum"
+      ],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'string', 'method': 'classify', 'enum': ['a', 'b']}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "string",
+              "method": "classify",
+              "enum": [
+                "a",
+                "b"
+              ]
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "field {'type': 'string', 'estimateSourceAndConfidence': 'true'}",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "string",
+              "estimateSourceAndConfidence": "true"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [
+        "fieldSchema.fields.Total.estimateSourceAndConfidence"
+      ],
+      "warnings": [
+        "fieldSchema.fields.Total.description"
+      ]
+    },
+    {
+      "name": "no completion",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "fieldSchema": {
+          "fields": {
+            "Total": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Total.description",
+        "models.completion"
+      ]
+    },
+    {
+      "name": "nested",
+      "body": {
+        "baseAnalyzerId": "prebuilt-document",
+        "models": {
+          "completion": "gpt-5.2"
+        },
+        "fieldSchema": {
+          "fields": {
+            "Items": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "invalidJson": false,
+      "errors": [],
+      "warnings": [
+        "fieldSchema.fields.Items.description",
+        "fieldSchema.fields.Items.items.description",
+        "fieldSchema.fields.Items.items.items.description",
+        "fieldSchema.fields.Items.items.items.items.description",
+        "fieldSchema.fields.Items.items.items.items.items",
+        "fieldSchema.fields.Items.items.items.items.items.description",
+        "fieldSchema.fields.Items.items.items.items.items.items",
+        "fieldSchema.fields.Items.items.items.items.items.items.description"
+      ]
+    }
+  ]
+}

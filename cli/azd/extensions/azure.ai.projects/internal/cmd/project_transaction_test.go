@@ -86,6 +86,43 @@ func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	assert.Equal(t, 5, envServer.calls)
 }
 
+func TestReconcileProjectEnvironmentRollbackRestoresReplacedDeployments(t *testing.T) {
+	const (
+		oldDeployments = `[{"name":"old-model"}]`
+		oldBindings    = `{"template-model":"old-model"}`
+		oldProjectID   = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+	)
+	envServer := &transactionEnvironmentServer{
+		values: map[string]string{
+			"AZURE_AI_PROJECT_NAME":          "old-project",
+			"FOUNDRY_PROJECT_ENDPOINT":       "https://old.services.ai.azure.com/api/projects/old-project",
+			"AZURE_AI_ACCOUNT_NAME":          "old-account",
+			"AZURE_AI_PROJECT_ID":            oldProjectID,
+			projectDeploymentsEnvKey:         oldDeployments,
+			"AI_PROJECT_DEPLOYMENT_BINDINGS": oldBindings,
+		},
+		failAt: 7,
+	}
+	client := newProjectEnvironmentClient(t, envServer)
+
+	_, _, err := reconcileProjectEnvironmentWithRollback(
+		t.Context(),
+		client,
+		"test",
+		projectModeExistingEndpoint,
+		&resolvedProject{
+			ProjectName: "new-project",
+			Endpoint:    "https://new.services.ai.azure.com/api/projects/new-project",
+		},
+		true,
+	)
+
+	require.Error(t, err)
+	assert.Equal(t, oldDeployments, envServer.values[projectDeploymentsEnvKey])
+	assert.Equal(t, oldBindings, envServer.values["AI_PROJECT_DEPLOYMENT_BINDINGS"])
+}
+
 func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
 	section, err := structpb.NewStruct(map[string]any{
 		"project": map[string]any{

@@ -77,6 +77,14 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		{"kind": "voice", "subProtocol": "live", "modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"}, "avatar": map[string]any{}},
 		{"kind": "voice", "model": map[string]any{"id": "gpt-realtime"}, "delegation": map[string]any{"type": "client"}},
 		{"kind": "voice", "subProtocol": "realtime", "model": map[string]any{"id": "gpt-realtime"}, "audio": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}},
+		{
+			"kind":               "voice",
+			"conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+			"audio": map[string]any{
+				"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+				"output": map[string]any{"voice": "marin"},
+			},
+		},
 	} {
 		require.Error(t, schema.validate(invalid), "invalid cross-protocol definition: %v", invalid)
 	}

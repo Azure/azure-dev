@@ -45,7 +45,16 @@ func (l *ownedLifecycle) cleanupFoundry(
 			!strings.EqualFold(authString(observed.Location), state.Foundry.Spec.Location) {
 			return fmt.Errorf("Foundry account ownership/location is unknown or changed")
 		}
-		if err := l.cleanupModels(ctx, plan, state, id.ResourceGroupName, id.Name); err != nil {
+		if err := l.cleanupFoundryChildren(ctx, plan, state, id.ResourceGroupName, id.Name, progress); err != nil {
+			return err
+		}
+		if err := l.cleanupFoundryNetwork(ctx, plan, state, progress); err != nil {
+			return err
+		}
+		if err := l.inventoryAccountConnections(ctx, state, ""); err != nil {
+			return err
+		}
+		if err := l.inventoryAccountPrivateEndpoints(ctx, state); err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
@@ -127,7 +136,9 @@ func (l *ownedLifecycle) cleanupFoundry(
 	return l.journal.Save(ctx, *state)
 }
 
-func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *PreparationState, group, account string) error {
+func (l *ownedLifecycle) cleanupFoundryChildren(
+	ctx context.Context, plan Plan, state *PreparationState, group, account string, progress func(string),
+) error {
 	spec := state.Foundry.Spec
 	accountID, err := ParseID(spec.AccountID, "Microsoft.CognitiveServices/accounts")
 	if err != nil {
@@ -138,6 +149,7 @@ func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *Pr
 		return err
 	}
 	pager := projects.NewListPager(group, account, nil)
+	projectExists := false
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -153,7 +165,18 @@ func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *Pr
 			if err := l.verifyDeployedProject(ctx, plan, state, *project); err != nil {
 				return fmt.Errorf("account project ownership is unverified; refusing cascading deletion: %w", err)
 			}
+			if err := recordProjectEndpoint(state, *project); err != nil {
+				return err
+			}
+			projectExists = true
 		}
+	}
+	connections, err := l.inventoryProjectConnections(ctx, state, projectExists)
+	if err != nil {
+		return err
+	}
+	if err := l.inventoryAccountPrivateEndpoints(ctx, state); err != nil {
+		return err
 	}
 	deployments, err := armcognitiveservices.NewDeploymentsClient(accountID.SubscriptionID, l.credential, l.options)
 	if err != nil {
@@ -180,6 +203,9 @@ func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *Pr
 			}
 			owned = append(owned, id.Name)
 		}
+	}
+	if err := l.journal.Save(ctx, *state); err != nil {
+		return fmt.Errorf("persist verified Foundry child inventory: %w", err)
 	}
 	for _, name := range owned {
 		if err := ctx.Err(); err != nil {
@@ -208,7 +234,7 @@ func (l *ownedLifecycle) cleanupModels(ctx context.Context, plan Plan, state *Pr
 			return err
 		}
 	}
-	return nil
+	return l.cleanupProject(ctx, state, projectExists, connections, progress)
 }
 
 func (l *ownedLifecycle) verifyServiceFICsGone(ctx context.Context, state PreparationState) error {

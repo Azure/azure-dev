@@ -586,22 +586,25 @@ func warnLegacySimpleTeamsArtifacts(proj *azdext.ProjectConfig, svc *azdext.Serv
 }
 
 // postdownHandler cleans up available saved agent context for services that were torn down.
-// This is best-effort — failures are logged but do not block azd down.
+// Completed owned Project teardown clears all remote versions; state cleanup errors are surfaced.
 func postdownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	envResp, err := azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		log.Printf("postdown: failed to get current environment: %v", err)
-		return nil
+		return fmt.Errorf("get current environment for postdown state cleanup: %w", err)
 	}
 
 	envName := envResp.Environment.Name
 
+	ownedProjectDeleted, err := cleanupDeletedProjectAgentState(ctx, azdClient, envName, args.Project.Services)
+	if err != nil {
+		return err
+	}
 	for _, svc := range args.Project.Services {
 		if svc.Host != AiAgentHost {
 			continue
 		}
 
-		if cleanupAgentState(ctx, azdClient, envName, svc.Name) {
+		if !ownedProjectDeleted && cleanupAgentState(ctx, azdClient, envName, svc.Name) {
 			fmt.Printf("Cleaned up saved agent context for agent %q\n", svc.Name)
 		}
 	}

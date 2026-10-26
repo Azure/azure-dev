@@ -314,7 +314,14 @@ func TestRegistryConnectionMaskedCredentialContract(t *testing.T) {
 						Value []any `json:"value"`
 					}
 					require.NoError(t, json.Unmarshal(raw, &page))
-					operations = page.Value
+					for _, value := range page.Value {
+						op := cleanupObject(t, value)
+						p := cleanupObject(t, op["properties"])
+						target := cleanupObject(t, p["targetResource"])
+						if target["resourceType"] != "Microsoft.CognitiveServices/accounts/projects/connections" {
+							operations = append(operations, value)
+						}
+					}
 					rootID := strings.TrimSuffix(request.URL.Path, "/operations")
 					link := operation(rootID, nestedID, "Microsoft.Resources/deployments")
 					p := cleanupObject(t, link["properties"])

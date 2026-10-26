@@ -42,8 +42,16 @@ func (l *ownedLifecycle) Cleanup(ctx context.Context, plan Plan, purge bool, pro
 			return fmt.Errorf("recover ARM graph ownership before cleanup: %w", err)
 		}
 	}
+	if !wasComplete && state.Foundry != nil {
+		if err := l.inventoryFoundryNetwork(ctx, plan, &state); err != nil {
+			return fmt.Errorf("owned network inventory is unverified; dependencies retained: %w", err)
+		}
+	}
 	if err := l.cleanupFoundry(ctx, plan, &state, purge, progress); err != nil {
 		return fmt.Errorf("Foundry teardown is not confirmed; dependencies retained: %w", err)
+	}
+	if err := l.cleanupFoundryNetwork(ctx, plan, &state, progress); err != nil {
+		return fmt.Errorf("owned network teardown is not confirmed; dependencies retained: %w", err)
 	}
 	if err := l.verifyServiceFICsGone(ctx, state); err != nil {
 		return fmt.Errorf("service identity teardown is incomplete; dependency grants retained: %w", err)

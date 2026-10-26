@@ -111,12 +111,23 @@ func (l *ownedLifecycle) verifyMaskedRegistryConnection(
 	return fmt.Errorf("masked registry connection lacks the actual Project principal's exact owned registry pull grant")
 }
 
-// The pinned SDK has no Project connection listSecrets method. Keep this adapter
-// scoped to the already-verified ManagedIdentity connection and never log its body.
+// The pinned SDK has no Project connection listSecrets method. The exact account
+// view uses the same current-identity contract without becoming an owned target.
+// Keep this adapter scoped to the already-verified ManagedIdentity connection; never log its body.
 func (l *ownedLifecycle) verifyCurrentRegistryConnection(
 	ctx context.Context, state *PreparationState, connectionID, endpoint string,
 ) error {
-	if _, err := ParseID(connectionID, "Microsoft.CognitiveServices/accounts/projects/connections"); err != nil {
+	kind := "Microsoft.CognitiveServices/accounts/projects/connections"
+	if id, err := arm.ParseResourceID(connectionID); err == nil &&
+		strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/connections") {
+		registry, err := ParseID(state.Foundry.Spec.RegistryID, "Microsoft.ContainerRegistry/registries")
+		if err != nil || !strings.EqualFold(connectionID,
+			state.Foundry.Spec.AccountID+"/connections/"+registry.Name+"-conn") {
+			return fmt.Errorf("account registry connection is outside the verified project binding")
+		}
+		kind = "Microsoft.CognitiveServices/accounts/connections"
+	}
+	if _, err := ParseID(connectionID, kind); err != nil {
 		return err
 	}
 	options := onboardingARMOptions(l.options)
@@ -152,9 +163,8 @@ func (l *ownedLifecycle) verifyCurrentRegistryConnection(
 		serviceError := &azcore.ResponseError{
 			ErrorCode: failure.Error.Code, StatusCode: response.StatusCode, RawResponse: &safe,
 		}
-		return fmt.Errorf("read current registry connection requires "+
-			"Microsoft.CognitiveServices/accounts/projects/connections/listSecrets/action at %s: %w",
-			connectionID, errors.Join(serviceError, decodeErr))
+		return fmt.Errorf("read current registry connection requires %s/listSecrets/action at %s: %w",
+			kind, connectionID, errors.Join(serviceError, decodeErr))
 	}
 	raw, err := io.ReadAll(response.Body)
 	if err != nil {

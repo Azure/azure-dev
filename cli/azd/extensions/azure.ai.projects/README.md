@@ -238,6 +238,10 @@ masks credentials also reads its current identity using the exact connection's
 This read-only POST does not update the resource. Its real response supplies
 permission evidence without a separate P08 role-assignment permission check;
 denied or incomplete responses stop retry before another deployment.
+During teardown, a matching account-level registry view requires the same current
+identity read at its exact account connection scope using
+`Microsoft.CognitiveServices/accounts/connections/listSecrets/action`.
+That read does not establish independent ownership of the account connection.
 
 **P06 G01-G03 grant authority** checks the operator's ordinary, unconditional
 `Microsoft.Authorization/roleAssignments/write` permission:
@@ -530,8 +534,38 @@ unavailable diagnostic reads are reported separately from the original failure.
 
 `azd down` uses the persisted ownership journal even if the current hosting
 configuration changes. It never deletes the resource group. It first verifies
-terminal deployment evidence, inventories projects and model deployments, deletes
-only tracked models, and confirms deletion of the owned account. Service-owned
+terminal deployment evidence and inventories projects, connections, model
+deployments and account private endpoint connections. It explicitly deletes
+tracked models, the proven-owned Project registry connection and the owned
+Project before deleting the account. Empty successful connection DELETE responses
+are supported; every deletion requires a subsequent not-found read.
+A matching registry connection visible at account scope is never independently
+deleted: it must disappear after Project deletion. A remaining or unknown account
+connection blocks account deletion and preserves dependencies.
+
+Owned private networking is removed before the account: DNS zone group, private
+endpoint, owned VNet links, then owned DNS zones. The private endpoint's
+RP-managed NIC must disappear with its endpoint; azd never directly deletes that
+NIC. Recovery of untagged network resources requires exact succeeded Creates in
+the content-bound deployment graph, root output-resource binding, and independent
+ARM `createdTime` within that deployment's execution interval (terminal timestamp
+minus duration through terminal timestamp). `changedTime` is not creation
+evidence. A DNS zone group is bound to its independently proven endpoint; its
+recorded `birthResourceId` explicitly identifies that endpoint, not an invented
+independent zone-group birth.
+Current endpoint/account/subnet/NIC and zone/link/record bindings must agree,
+including each zone's actual endpoint addresses. Complete child inventories and
+birth evidence are refreshed during teardown; foreign records or links,
+unreadable evidence and recreated resources stop deletion. Supplied DNS zones,
+links, VNets and subnets are retained. No resource-group deletion is used.
+
+Teardown requires read access to exact account/Project children, deployment
+records/operations/exported templates, and the target RG's ARM resource inventory
+with `createdTime`, plus reads of relevant endpoint/NIC/DNS group/link/record
+resources. Delete rights are needed only for proven-owned targets; supplied
+resources and RP-managed NICs receive no DELETE. ARM authorizes each operation;
+permission failures retain progress rather than triggering broader deletion.
+Service-owned
 federated credentials must disappear before dependency grants are removed; azd
 does not delete those credentials itself. Cleanup then deletes only proven-owned
 assignments, identities, Storage, registry and historical owned subnet IDs. Supplied
@@ -542,6 +576,11 @@ or an in-use/changed subnet stops cleanup and retains the recoverable journal.
 Progress survives permission failures and interruption; retry `azd down` after
 resolving the reported condition. Successful cleanup invalidates resource progress;
 failed cleanup preserves the recovery journal.
+After confirmed owned Project/account and complete dependency cleanup, the Agents
+extension's successful `postdown` lifecycle removes saved remote context for all
+versions of each configured agent in that exact deleted Project, using its
+verified API endpoint. Failed teardown and other Projects, agents and local
+contexts retain their saved bindings.
 
 Normal account deletion is soft deletion and can reserve the name for 48 hours.
 Only explicit `azd down --purge` requests irreversible purge; model deployments

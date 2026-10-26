@@ -242,6 +242,11 @@ func (l *ownedLifecycle) observeDeployment(ctx context.Context, plan Plan, state
 		if err := l.verifyDeployedProject(ctx, plan, state, found.Project); err != nil {
 			return err
 		}
+		if state.CleanupStarted {
+			if err := recordProjectEndpoint(state, found.Project); err != nil {
+				return err
+			}
+		}
 		principal := authString(found.Identity.PrincipalID)
 		if state.Foundry.ProjectPrincipalID != "" && !strings.EqualFold(state.Foundry.ProjectPrincipalID, principal) {
 			return fmt.Errorf("deployed Foundry project identity changed")
@@ -390,7 +395,7 @@ func (l *ownedLifecycle) observeGrant(
 func (l *ownedLifecycle) deploymentGrantTargets(
 	ctx context.Context, plan Plan, foundry *FoundryState, succeeded ...map[string]bool,
 ) (map[string]bool, error) {
-	// Optional collectors record succeeded grants and path-bound Project/Connection Creates, respectively.
+	// Optional collectors record succeeded grants and path-bound child/network Creates, respectively.
 	targets := map[string]bool{}
 	visited := map[string]bool{}
 	var read func(string, bool, bool, bool, bool) error
@@ -447,7 +452,8 @@ func (l *ownedLifecycle) deploymentGrantTargets(
 					}{targetID, failedAttempt && nestedValidationRejected(operation, deploymentID),
 						boundPath && succeededCreateOperation(operation, deploymentID)})
 				case strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects"),
-					strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects/connections"):
+					strings.EqualFold(authString(target.ResourceType), "Microsoft.CognitiveServices/accounts/projects/connections"),
+					networkCleanupType(authString(target.ResourceType)):
 					if len(succeeded) > 1 && succeeded[1] != nil &&
 						boundPath && succeededCreateOperation(operation, deploymentID) {
 						succeeded[1][strings.ToLower(targetID)] = true

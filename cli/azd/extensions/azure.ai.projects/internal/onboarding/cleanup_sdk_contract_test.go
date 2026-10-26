@@ -49,6 +49,13 @@ type cleanupARM struct {
 	deploymentState     string
 	afterMaterialize    func()
 	operationStates     map[string]string
+	connectionStatus    int
+	asyncProject        bool
+	keepProject         bool
+	keepConnection      bool
+	accountProjection   bool
+	keepProjection      bool
+	projectCreate       bool
 }
 
 func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, suppliedIdentities ...bool) *cleanupARM {
@@ -100,6 +107,21 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 					return respond(403, map[string]any{"error": map[string]any{"code": "AuthorizationFailed"}})
 				}
 				var operations []any
+				connectionID := f.spec.ProjectID + "/connections/" + f.base.plan.Registry.Name + "-conn"
+				operations = append(operations, map[string]any{
+					"id": strings.TrimSuffix(request.URL.Path, "/operations") + "/operations/connection-create",
+					"properties": map[string]any{"provisioningOperation": "Create", "provisioningState": "Succeeded",
+						"targetResource": map[string]any{"id": connectionID,
+							"resourceType": "Microsoft.CognitiveServices/accounts/projects/connections"}},
+				})
+				if f.projectCreate {
+					operations = append(operations, map[string]any{
+						"id": strings.TrimSuffix(request.URL.Path, "/operations") + "/operations/project-create",
+						"properties": map[string]any{"provisioningOperation": "Create", "provisioningState": "Succeeded",
+							"targetResource": map[string]any{"id": f.spec.ProjectID,
+								"resourceType": "Microsoft.CognitiveServices/accounts/projects"}},
+					})
+				}
 				for _, id := range f.operationTargets {
 					operationState := f.operationStates[strings.ToLower(id)]
 					if operationState == "" {
@@ -185,11 +207,57 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 			}
 			return notFound()
 		}
-		if strings.Contains(path, "/operations/delete-owned-account") {
+		if strings.Contains(path, "/operations/delete-owned-account") || strings.Contains(path, "/operations/delete-project") {
 			require.Equal(t, http.MethodGet, request.Method)
 			return respond(200, map[string]any{"status": "Succeeded"})
 		}
+		if request.Method == http.MethodPost &&
+			path == strings.ToLower(f.spec.AccountID)+"/connections/"+base.plan.Registry.Name+"-conn/listsecrets" &&
+			f.accountProjection {
+			return respond(200, map[string]any{
+				"id": strings.TrimSuffix(request.URL.Path, "/listSecrets"),
+				"properties": map[string]any{
+					"authType": "ManagedIdentity", "category": "ContainerRegistry",
+					"target":                      cleanupObject(t, base.resources[strings.ToLower(f.spec.RegistryID)]["properties"])["loginServer"],
+					"useWorkspaceManagedIdentity": false, "metadata": map[string]any{"ResourceId": f.spec.RegistryID},
+					"credentials": map[string]any{
+						"clientId": "00000000-0000-0000-0000-000000000004", "resourceId": f.spec.RegistryID,
+					},
+				},
+			})
+		}
 		if request.Method == http.MethodGet {
+			if path == strings.ToLower(f.spec.AccountID)+"/privateendpointconnections" {
+				return respond(200, map[string]any{"value": []any{}})
+			}
+			if path == strings.ToLower(f.spec.AccountID)+"/connections/"+base.plan.Registry.Name+"-conn" &&
+				f.accountProjection {
+				return respond(200, map[string]any{
+					"id": request.URL.Path,
+					"properties": map[string]any{
+						"authType": "ManagedIdentity", "category": "ContainerRegistry",
+						"target":                      cleanupObject(t, base.resources[strings.ToLower(f.spec.RegistryID)]["properties"])["loginServer"],
+						"useWorkspaceManagedIdentity": false,
+						"credentials":                 nil, "metadata": map[string]any{"ResourceId": f.spec.RegistryID},
+					},
+				})
+			}
+			if path == strings.ToLower(f.spec.AccountID)+"/connections" {
+				projectConnection := strings.ToLower(f.spec.ProjectID) + "/connections/" + base.plan.Registry.Name + "-conn"
+				connection := base.resources[projectConnection]
+				if f.accountProjection && (connection != nil || f.keepProjection) {
+					return respond(200, map[string]any{"value": []any{map[string]any{
+						"id": f.spec.AccountID + "/connections/" + base.plan.Registry.Name + "-conn",
+						"properties": map[string]any{
+							"authType": "ManagedIdentity", "category": "ContainerRegistry",
+							"target":                      cleanupObject(t, base.resources[strings.ToLower(f.spec.RegistryID)]["properties"])["loginServer"],
+							"useWorkspaceManagedIdentity": false,
+							"credentials":                 nil, "metadata": map[string]any{"ResourceId": f.spec.RegistryID},
+						},
+					}}})
+				}
+				return respond(200, map[string]any{"value": []any{}})
+			}
 			if strings.HasSuffix(path, "/federatedidentitycredentials") {
 				values := []any{}
 				if f.ficRemains {
@@ -198,7 +266,8 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 				return respond(200, map[string]any{"value": values})
 			}
 			if path == strings.ToLower(f.spec.AccountID)+"/projects" ||
-				path == strings.ToLower(f.spec.AccountID)+"/deployments" {
+				path == strings.ToLower(f.spec.AccountID)+"/deployments" ||
+				path == strings.ToLower(f.spec.ProjectID)+"/connections" {
 				values := []any{}
 				for key, resource := range base.resources {
 					if strings.HasPrefix(key, path+"/") && !strings.Contains(strings.TrimPrefix(key, path+"/"), "/") {
@@ -231,15 +300,10 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 				require.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
 				for id := range base.resources {
 					require.False(t, strings.HasPrefix(id, path+"/deployments/"), "models must be deleted before account")
+					require.False(t, strings.HasPrefix(id, path+"/projects/"), "Projects must be deleted before account")
 				}
 				if !f.keepAccount {
 					delete(base.resources, path)
-					delete(base.resources, strings.ToLower(f.spec.ProjectID))
-					for child := range base.resources {
-						if strings.HasPrefix(child, path+"/") {
-							delete(base.resources, child)
-						}
-					}
 					f.softDeleted = true
 				}
 				if f.asyncAccount {
@@ -254,7 +318,33 @@ func newCleanupARM(t *testing.T, suppliedStorage, suppliedRegistry bool, supplie
 				}
 				return respond(f.accountStatus, nil)
 			}
-			delete(base.resources, path)
+			if path == strings.ToLower(f.spec.ProjectID) {
+				require.Equal(t, "2025-06-01", request.URL.Query().Get("api-version"))
+				for child := range base.resources {
+					require.False(t, strings.HasPrefix(child, path+"/"), "connections must be deleted before Project")
+				}
+				if !f.keepProject {
+					delete(base.resources, path)
+				}
+				if f.asyncProject {
+					response, err := respond(202, nil)
+					response.Header.Set("Azure-AsyncOperation",
+						"https://management.azure.com/subscriptions/sub/providers/Microsoft.CognitiveServices/operations/delete-project")
+					response.Header.Set("Retry-After", "0")
+					return response, err
+				}
+			} else if strings.HasPrefix(path, strings.ToLower(f.spec.ProjectID)+"/connections/") {
+				if !f.keepConnection {
+					delete(base.resources, path)
+				}
+				if f.connectionStatus != 0 {
+					return respond(f.connectionStatus, nil)
+				}
+			}
+			if (path != strings.ToLower(f.spec.ProjectID) || !f.keepProject) &&
+				(!strings.Contains(path, "/connections/") || !f.keepConnection) {
+				delete(base.resources, path)
+			}
 			if f.cancel != nil && len(f.deletes) == f.cancelOnDelete {
 				f.cancel()
 			}
@@ -456,7 +546,8 @@ func TestOwnedCleanupSDKRequiresAccountAbsenceAndServiceFICTeardown(t *testing.T
 				assert.ErrorContains(t, err, "not yet confirmed")
 			}
 			for _, path := range f.deletes {
-				assert.True(t, path == f.spec.AccountID || strings.HasPrefix(path, f.spec.AccountID+"/deployments/"),
+				assert.True(t, path == f.spec.AccountID || strings.HasPrefix(path, f.spec.AccountID+"/deployments/") ||
+					strings.EqualFold(path, f.spec.ProjectID) || strings.HasPrefix(path, f.spec.ProjectID+"/connections/"),
 					"no dependency/grant mutation until account and service identity teardown are confirmed")
 			}
 		})

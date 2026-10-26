@@ -1240,6 +1240,18 @@ Details:
   falls back to the default behavior and the next invoke starts a fresh session
   on the new version.
 
+### Saved context after owned Project teardown
+
+After successful BYO-AKS `azd down`, the Agents `postdown` lifecycle uses the
+completed ownership journal and the deleted Project's verified API endpoint to
+remove saved remote sessions, conversations, responses, invocations and State
+Store selection for each configured agent, across all cached remote versions.
+This includes older versions no longer selected by `AGENT_<SERVICE>_ENDPOINT`.
+Failed or incomplete teardown preserves context. Other Projects, other agents,
+local sessions and other extensions' state are not removed. Scoped cleanup
+errors are reported rather than presented as success. Individual agent/version
+delete commands retain their existing narrower cleanup behavior.
+
 ## Customize infrastructure
 
 Use `azd ai agent init --infra` to generate editable Foundry Bicep or Terraform. Existing project infrastructure is preserved as a separate layer. See [Customize Foundry infrastructure with `--infra`](docs/infrastructure-eject.md) for migration behavior, file-conflict rules, resource-group ownership, layer dependencies, and limitations.

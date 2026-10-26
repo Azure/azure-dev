@@ -43,12 +43,17 @@ type FoundryAttempt struct {
 
 // FoundryState preserves control-plane ownership and teardown progress across interruptions.
 type FoundryState struct {
-	Spec               FoundrySpec      `json:"spec"`
-	Attempts           []FoundryAttempt `json:"attempts"`
-	ProjectPrincipalID string           `json:"projectPrincipalId,omitempty"`
-	ModelsDeleted      map[string]bool  `json:"modelsDeleted,omitempty"`
-	AccountDeleted     bool             `json:"accountDeleted"`
-	Purged             bool             `json:"purged"`
+	Spec                 FoundrySpec          `json:"spec"`
+	Attempts             []FoundryAttempt     `json:"attempts"`
+	ProjectPrincipalID   string               `json:"projectPrincipalId,omitempty"`
+	ProjectEndpoint      string               `json:"projectEndpoint,omitempty"`
+	ModelsDeleted        map[string]bool      `json:"modelsDeleted,omitempty"`
+	ConnectionDeleted    bool                 `json:"connectionDeleted,omitempty"`
+	ProjectDeleteStarted bool                 `json:"projectDeleteStarted,omitempty"`
+	ProjectDeleted       bool                 `json:"projectDeleted,omitempty"`
+	Network              *FoundryNetworkState `json:"network,omitempty"`
+	AccountDeleted       bool                 `json:"accountDeleted"`
+	Purged               bool                 `json:"purged"`
 }
 
 // Lifecycle journals one ARM graph and observes exact ownership for cleanup.

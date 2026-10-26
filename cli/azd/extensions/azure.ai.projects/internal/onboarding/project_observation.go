@@ -6,15 +6,45 @@ package onboarding
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
 )
 
+func recordProjectEndpoint(state *PreparationState, project armcognitiveservices.Project) error {
+	if project.Properties == nil {
+		return nil
+	}
+	endpoint := authString(project.Properties.Endpoints["AI Foundry API"])
+	if endpoint == "" {
+		return nil
+	}
+	id, err := ParseID(state.Foundry.Spec.ProjectID, "Microsoft.CognitiveServices/accounts/projects")
+	if err != nil {
+		return err
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" ||
+		parsed.User != nil || parsed.Port() != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		!strings.EqualFold(parsed.Path, "/api/projects/"+id.Name) {
+		return fmt.Errorf("owned Foundry project's actual API endpoint is unverified")
+	}
+	endpoint = strings.TrimRight(endpoint, "/")
+	if state.Foundry.ProjectEndpoint != "" && !strings.EqualFold(state.Foundry.ProjectEndpoint, endpoint) {
+		return fmt.Errorf("owned Foundry project's recorded API endpoint changed")
+	}
+	state.Foundry.ProjectEndpoint = endpoint
+	return nil
+}
+
 func (l *ownedLifecycle) verifyDeployedProject(
 	ctx context.Context, plan Plan, state *PreparationState, project armcognitiveservices.Project,
 ) error {
 	spec := state.Foundry.Spec
+	if state.Foundry.ProjectDeleted {
+		return fmt.Errorf("a previously deleted Foundry project was recreated; refusing adoption or deletion")
+	}
 	if err := validateFoundrySpec(plan, spec); err != nil {
 		return err
 	}
@@ -30,7 +60,9 @@ func (l *ownedLifecycle) verifyDeployedProject(
 		project.Identity == nil || resourceValue(project.Identity.Type) != "SystemAssigned" ||
 		authString(project.Identity.PrincipalID) == "" ||
 		!strings.EqualFold(authString(project.Identity.TenantID), spec.Deployment.TenantID) ||
-		project.Properties == nil || resourceValue(project.Properties.ProvisioningState) != "Succeeded" {
+		project.Properties == nil || (resourceValue(project.Properties.ProvisioningState) != "Succeeded" &&
+		!(state.CleanupStarted && state.Foundry.ProjectDeleteStarted &&
+			resourceValue(project.Properties.ProvisioningState) == "Deleting")) {
 		return fmt.Errorf("deployed Foundry project exact ID/location/state/system identity/tenant is unverified")
 	}
 	if owner, present := project.Tags[preparationOwnerTag]; present {

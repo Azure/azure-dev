@@ -82,6 +82,7 @@ func TestA2ALiveRetained(t *testing.T) {
 		require.NoError(t, err)
 		dest := filepath.Join(root, config.target)
 		require.NoError(t, os.Mkdir(dest, 0o700))
+		//nolint:gosec // G703: the opt-in caller selects an absolute config source; it is only read.
 		if _, statErr := os.Stat(source); statErr == nil {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			// Dereference config symlinks so subsequent auth/cache writes cannot
@@ -94,7 +95,8 @@ func TestA2ALiveRetained(t *testing.T) {
 			require.NoError(t, relativeErr)
 			require.True(t, relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)),
 				"artifact workroot must be outside config source %s", source)
-			err = exec.CommandContext(ctx, "cp", "-aL", source+"/.", dest).Run()
+			//nolint:gosec // G702: fixed executable, no shell; canonical absolute paths follow the option terminator.
+			err = exec.CommandContext(ctx, "cp", "-aL", "--", sourceReal+"/.", dest).Run()
 			cancel()
 			require.NoError(t, err, "copy private config from %s", source)
 		} else {

@@ -1,5 +1,7 @@
 # Opt-in A2A live E2E — retain everything
 
+<!-- cspell:ignore WORKROOT -->
+
 `TestA2ALiveRetained` tests real azd **init → deploy → invoke** against an
 **existing** Foundry project. It is separate from `TestTier2Live`: that older
 runner tears resources down, and is deliberately not used here.

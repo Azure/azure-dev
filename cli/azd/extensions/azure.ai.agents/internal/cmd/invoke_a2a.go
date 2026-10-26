@@ -61,7 +61,7 @@ func a2aRequestBuilderForVersion(version string) (a2aTextRequestBuilder, error) 
 
 // validateInvokeA2AVersionFlags validates explicit dialect selection. An empty
 // protocol is unresolved, so route-specific checks must wait for resolution.
-func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentProtocol) error {
+func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentProtocol, preview bool) error {
 	if flags.a2aVersion != "" {
 		if err := validateA2AVersion(flags.a2aVersion); err != nil {
 			return err
@@ -74,7 +74,7 @@ func validateInvokeA2AVersionFlags(flags *invokeFlags, protocol agent_api.AgentP
 			)
 		}
 	}
-	if protocol == agent_api.AgentProtocolA2A && flags.inputFile != "" && flags.a2aVersion == "" {
+	if preview && protocol == agent_api.AgentProtocolA2A && flags.inputFile != "" && flags.a2aVersion == "" {
 		return exterrors.Validation(
 			exterrors.CodeInvalidParameter,
 			"--input-file with the a2a protocol requires an explicit --a2a-version",
@@ -89,13 +89,15 @@ func validateA2AVersion(version string) error {
 	return err
 }
 
-// a2aProtocolVersion selects the explicit dialect or the plain-message default.
-// File input requires an explicit flag before this selection is used.
-func (a *InvokeAction) a2aProtocolVersion() string {
-	if a.flags.a2aVersion != "" {
-		return a.flags.a2aVersion
+// resolveA2AVersion fixes the wire version once at invocation entry.
+func resolveA2AVersion(explicit string, preview bool) string {
+	if explicit != "" {
+		return explicit
 	}
-	return "1.0"
+	if preview {
+		return "1.0"
+	}
+	return "0.3"
 }
 
 // buildA2ARequestBody returns the JSON request body for an A2A invoke and a
@@ -108,11 +110,8 @@ func (a *InvokeAction) a2aProtocolVersion() string {
 // dialect, with a single user text part and synchronous output configuration.
 // This method owns input handling and serialization; each public dialect's
 // complete body is constructed independently by its selected builder.
-func (a *InvokeAction) buildA2ARequestBody() ([]byte, string, error) {
-	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolA2A); err != nil {
-		return nil, "", err
-	}
-	buildRequest, err := a2aRequestBuilderForVersion(a.a2aProtocolVersion())
+func (a *InvokeAction) buildA2ARequestBody(version string) ([]byte, string, error) {
+	buildRequest, err := a2aRequestBuilderForVersion(version)
 	if err != nil {
 		return nil, "", err
 	}
@@ -249,8 +248,8 @@ func applyA2ARequestHeaders(req *http.Request, bearerToken string, identity *use
 // protocol (POST /agents/{name}/endpoint/protocols/a2a) with a JSON-RPC 2.0
 // request in the selected dialect. Memory is bound to the agent session, like the
 // invocations protocol.
-func (a *InvokeAction) a2aRemote(ctx context.Context) error {
-	body, bodyLabel, err := a.buildA2ARequestBody()
+func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
+	body, bodyLabel, err := a.buildA2ARequestBody(version)
 	if err != nil {
 		return err
 	}
@@ -307,7 +306,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags, a.a2aProtocolVersion())
+	applyA2ARequestHeaders(req, rc.bearerToken, &a.flags.userIdentityFlags, version)
 	if raw {
 		// Disable Go's transparent gzip handling so the dumped headers and
 		// body match what the server actually sent on the wire.
@@ -332,7 +331,7 @@ func (a *InvokeAction) a2aRemote(ctx context.Context) error {
 	captureResponseSession(ctx, rc.azdClient, agentKey, sid, resp, sessionLabel)
 
 	sessionCode := resp.Header.Get("x-adc-response-details")
-	if err := handleA2AResponse(resp, rc.name, raw, a.a2aProtocolVersion()); err != nil {
+	if err := handleA2AResponse(resp, rc.name, raw, version); err != nil {
 		if !raw && resp.StatusCode >= 400 {
 			a.emitInvokeFailureNextStep(nextstep.InvokeRemote, rc.nextStepName(), sessionCode)
 		}

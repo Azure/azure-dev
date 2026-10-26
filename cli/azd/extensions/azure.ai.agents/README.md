@@ -2,13 +2,14 @@
 
 ## Preview feature opt-ins
 
-Three capabilities are off by default. Each one is turned on separately.
+Four capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+| `agents.a2a` | Explicit A2A wire versions and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -16,6 +17,7 @@ Set the desired variable in your shell or CI before running azd:
 export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+export AZD_ALPHA_ENABLE_AGENTS_A2A=true
 ```
 
 In PowerShell, for example:
@@ -563,6 +565,18 @@ capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Invoking agents over A2A
 
+Without the `agents.a2a` preview, messages and files use A2A 0.3. File bytes
+are sent unchanged; omit `--a2a-version`, which requires the preview:
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
+azd ai agent invoke -p a2a -f a2a-request-0.3.json
+```
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI for the
+version-selection behavior below. This changes the message default to 1.0
+and requires an explicit supported version for every A2A file invocation.
+
 Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
 agent using public A2A version `1.0` or `0.3`:
 
@@ -584,7 +598,7 @@ default when `--a2a-version` is omitted:
 azd ai agent invoke -p a2a "Hello!"
 ```
 
-Previously, plain messages used A2A 0.3. To preserve that behavior, use
+With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
 `azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
 
 **File input requires an explicit version.** When using `--input-file` (`-f`)

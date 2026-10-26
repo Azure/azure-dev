@@ -33,7 +33,7 @@ so 1.0 is a convenience default. With --input-file, --a2a-version is always
 required, even if native A2A agent YAML declares a version. File bytes are
 sent unchanged as a complete public JSON-RPC request. The caller must match
 the body to the selected header version; azd does not infer the version.
-Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.
+With the preview disabled, messages and files use 0.3 without --a2a-version.
 Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
 requests, use --output raw to stream unparsed SSE events.
 

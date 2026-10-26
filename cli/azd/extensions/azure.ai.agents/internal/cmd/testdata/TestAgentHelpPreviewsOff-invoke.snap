@@ -20,8 +20,8 @@ JSON-RPC request with the a2a protocol.
 
 Local Development
 Use --local to target a locally running agent (started via 'azd ai agent run')
-instead of Foundry. The a2a protocol is remote-only and cannot be used with
---local.
+instead of Foundry. This CLI does not support a2a with --local; this is a
+CLI limitation, not a restriction of the A2A protocol.
 
 Sessions & Identity
 Sessions are persisted per-agent — consecutive invokes reuse the same
@@ -50,6 +50,9 @@ line, headers, and body verbatim) to stdout. Useful for debugging server
 behavior and inspecting response headers (for example, the agent version
 header). Friendly summary lines like "Session:" and "Invocation:" are
 suppressed in raw mode.
+For A2A Task responses, default output prefers answer
+artifacts over generic status messages such as "Done". Status messages and
+history provide fallback text when no text artifact is present.
 
 Platform Latency
 Remote Hosted Agent Responses and Invocations requests include platform latency diagnostics

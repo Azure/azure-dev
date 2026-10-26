@@ -121,19 +121,7 @@ instead of a positional message argument. This is useful for structured
 or large payloads with the invocations protocol, or for sending a complete
 JSON-RPC request with the a2a protocol.
 
-A2A Version:
-Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
-not a Foundry API version or the deployed agent version selected by --version.
-For plain messages, azd composes the body and A2A-Version header together,
-so 1.0 is a convenience default. With --input-file, --a2a-version is always
-required, even if native A2A agent YAML declares a version. File bytes are
-sent unchanged as a complete public JSON-RPC request. The caller must match
-the body to the selected header version; azd does not infer the version.
-Earlier versions defaulted to 0.3; add --a2a-version 0.3 to preserve that behavior.
-Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
-requests, use --output raw to stream unparsed SSE events.
-
-Local Development:
+` + invokeA2AVersionHelp + `Local Development:
 Use --local to target a locally running agent (started via 'azd ai agent run')
 instead of Foundry. This CLI does not support a2a with --local; this is a
 CLI limitation, not a restriction of the A2A protocol.
@@ -186,19 +174,10 @@ Raw output includes the returned headers without a formatted latency summary.` +
 
   # Invoke using a specific protocol
   azd ai agent invoke --protocol invocations "Hello!"
-
-  # Invoke a deployed agent with an explicit public A2A version
-  azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
-
-  # Invoke using public A2A 0.3
-  azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
-
+` + invokeA2AVersionExamples[0] + invokeA2AVersionExamples[1] + `
   # Use the A2A 1.0 convenience default for a plain message
   azd ai agent invoke -p a2a "Hello!"
-
-  # Send a complete public JSON-RPC file unchanged (version is required)
-  azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
-
+` + invokeA2AVersionExamples[2] + `
   # Invoke with a file as the request body
   azd ai agent invoke -f request.json
 
@@ -342,6 +321,19 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		resolved := resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
 		return validateInvokeArgs(cmd, &resolved)
 	})
+	previewFlag(cmd, "a2a-version", featureflags.A2A)
+	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, invokeA2AVersionExamples)
+	previewHelpText(cmd, featureflags.A2A, "For A2A Task responses in both 0.3 and 1.0", "For A2A Task responses")
+	// Keep legacy message and file discovery when version selection is hidden.
+	if enabled, _ := featureflags.IsEnabled(featureflags.A2A); !enabled {
+		cmd.Example = strings.ReplaceAll(cmd.Example,
+			"Use the A2A 1.0 convenience default for a plain message", "Invoke a deployed agent over the a2a protocol")
+		cmd.Example = strings.ReplaceAll(cmd.Example, `invoke -p a2a "Hello!"`, `invoke --protocol a2a "Hello!"`)
+		cmd.Example = strings.ReplaceAll(cmd.Example, invokeA2AVersionExamples[2], `
+  # Invoke the a2a protocol with a complete JSON-RPC request from a file
+  azd ai agent invoke --protocol a2a -f a2a-request.json
+`)
+	}
 	previewFlag(cmd, "long-running", featureflags.LongRunning)
 	previewFlag(cmd, "no-wait", featureflags.LongRunning)
 	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
@@ -349,6 +341,31 @@ Raw output includes the returned headers without a formatted latency summary.` +
 
 	return cmd
 }
+
+const invokeA2AVersionHelp = `A2A Version:
+Use -p a2a with --a2a-version to select public A2A version 0.3 or 1.0,
+not a Foundry API version or the deployed agent version selected by --version.
+For plain messages, azd composes the body and A2A-Version header together,
+so 1.0 is a convenience default. With --input-file, --a2a-version is always
+required, even if native A2A agent YAML declares a version. File bytes are
+sent unchanged as a complete public JSON-RPC request. The caller must match
+the body to the selected header version; azd does not infer the version.
+With the preview disabled, messages and files use 0.3 without --a2a-version.
+Formatted A2A output expects non-streaming JSON-RPC responses. For streaming
+requests, use --output raw to stream unparsed SSE events.
+
+`
+
+var invokeA2AVersionExamples = []string{`
+  # Invoke a deployed agent with an explicit public A2A version
+  azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
+`, `
+  # Invoke using public A2A 0.3
+  azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+`, `
+  # Send a complete public JSON-RPC file unchanged (version is required)
+  azd ai agent invoke -p a2a --a2a-version 1.0 -f a2a-request-1.0.json
+`}
 
 const invokeVoiceHelp = `Voice Agents:
 For prompt voice agents and hosted voice wrappers, open your agent in the
@@ -455,9 +472,6 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
 	if cmd.Flags().Changed("a2a-version") && flags.a2aVersion == "" {
 		return validateA2AVersion(flags.a2aVersion)
 	}
-	if err := validateInvokeA2AVersionFlags(&flags, agent_api.AgentProtocol(flags.protocol)); err != nil {
-		return err
-	}
 	clientHeaders, err := parseCustomHeaders(flags.clientHeaders)
 	if err != nil {
 		return err
@@ -507,7 +521,11 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
 			)
 		}
 	}
-	return nil
+	a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+	if err != nil {
+		return err
+	}
+	return validateInvokeA2AVersionFlags(&flags, agent_api.AgentProtocol(flags.protocol), a2aPreview)
 }
 
 func validateInvokeVersionFlags(cmd *cobra.Command, flags *invokeFlags) error {
@@ -604,7 +622,12 @@ func validateAgentEndpointFlags(cmd *cobra.Command, flags *invokeFlags) error {
 }
 
 func (a *InvokeAction) Run(ctx context.Context) error {
-	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol)); err != nil {
+	a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+	if err != nil {
+		return err
+	}
+	a2aVersion := resolveA2AVersion(a.flags.a2aVersion, a2aPreview)
+	if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocol(a.flags.protocol), a2aPreview); err != nil {
 		return err
 	}
 	if a.flags.inputFile != "" {
@@ -641,17 +664,15 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 			}
 		}
 		if isPrompt {
-<<<<<<< ours
 			if a.flags.longRunning || a.flags.noWait {
 				return exterrors.Validation(
 					exterrors.CodeConflictingArguments,
 					"--long-running and --no-wait are not supported for prompt agents",
 					"remove these flags or invoke a hosted Responses agent",
 				)
-=======
-			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses); err != nil {
+			}
+			if err := validateInvokeA2AVersionFlags(a.flags, agent_api.AgentProtocolResponses, a2aPreview); err != nil {
 				return err
->>>>>>> theirs
 			}
 			if err := a.validateDebugLatencyRoute(agent_api.AgentProtocolResponses, true); err != nil {
 				return err
@@ -664,7 +685,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := validateInvokeA2AVersionFlags(a.flags, protocol); err != nil {
+	if err := validateInvokeA2AVersionFlags(a.flags, protocol, a2aPreview); err != nil {
 		a.closeResolvedRemoteContextClient()
 		return err
 	}
@@ -718,7 +739,7 @@ func (a *InvokeAction) Run(ctx context.Context) error {
 	case agent_api.AgentProtocolInvocations:
 		return a.invocationsRemote(ctx)
 	case agent_api.AgentProtocolA2A:
-		return a.a2aRemote(ctx)
+		return a.a2aRemote(ctx, a2aVersion)
 	default:
 		return a.responsesRemote(ctx)
 	}

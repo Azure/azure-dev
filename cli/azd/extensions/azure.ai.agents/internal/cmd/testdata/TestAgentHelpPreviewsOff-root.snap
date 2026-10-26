@@ -89,6 +89,8 @@ Preview Feature Switches
     Voice, prompt-voice, and hosted voice agents.
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
     Long-running Responses invocations.
+  AZD_ALPHA_ENABLE_AGENTS_A2A=true
+    A2A wire version selection and the 1.0 message default.
 
   All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
   False, empty, and invalid values do not enable a switch.

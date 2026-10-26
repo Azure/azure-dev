@@ -48,7 +48,7 @@ func TestInstalledHostOffline(t *testing.T) {
 		if strings.HasPrefix(key, "AZURE_") || strings.HasPrefix(key, "AZD_") ||
 			strings.HasPrefix(key, "CU_") || strings.HasPrefix(key, "ARM_") ||
 			key == "HOME" || key == "USERPROFILE" || key == "HTTP_PROXY" ||
-			key == "HTTPS_PROXY" || key == "ALL_PROXY" || key == "NO_PROXY" {
+			key == "HTTPS_PROXY" || key == "ALL_PROXY" || key == "NO_PROXY" || key == "NO_COLOR" {
 			continue
 		}
 		environment = append(environment, value)
@@ -56,6 +56,7 @@ func TestInstalledHostOffline(t *testing.T) {
 	environment = append(environment,
 		"HOME="+work, "USERPROFILE="+work, "AZD_CONFIG_DIR="+filepath.Join(work, "config"),
 		"AZURE_CONFIG_DIR="+filepath.Join(work, "azure"), "AZURE_DEV_COLLECT_TELEMETRY=no",
+		"AZD_SKIP_UPDATE_CHECK=true", "NO_COLOR=1",
 		"GOCOVERDIR="+coverage,
 		"HTTP_PROXY=http://127.0.0.1:1", "HTTPS_PROXY=http://127.0.0.1:1",
 		"ALL_PROXY=http://127.0.0.1:1", "NO_PROXY=localhost,127.0.0.1,::1")

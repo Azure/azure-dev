@@ -739,10 +739,27 @@ func resolveServiceProps(
 			err,
 		)
 	}
-	resolved, err := foundry.ResolveFileRefs(
-		props.AsMap(),
-		projectRoot,
-	)
+	values := props.AsMap()
+	var resolved map[string]any
+	var err error
+	if ref, ok := values[AgentDefinitionRefKey].(string); ok && strings.TrimSpace(ref) != "" {
+		// Normalize a direct voice definition while its root-ref provenance is
+		// still known. Inline siblings are camelCase authoring and shallowly
+		// override the normalized file, matching ResolveFileRefs semantics.
+		resolved, err = foundry.ResolveFileRefs(map[string]any{AgentDefinitionRefKey: ref}, projectRoot)
+		if err == nil && agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(fmt.Sprint(resolved["kind"]))) {
+			resolved, err = normalizeRootVoiceDefinitionMap(resolved)
+		}
+		if err == nil {
+			for key, value := range values {
+				if key != AgentDefinitionRefKey {
+					resolved[key] = value
+				}
+			}
+		}
+	} else {
+		resolved, err = foundry.ResolveFileRefs(values, projectRoot)
+	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"resolving service %q config: %w",
@@ -1285,7 +1302,6 @@ func VoiceAgentFromResolvedService(
 	if props == nil || len(props.GetFields()) == 0 {
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
-	_, rootRef := props.GetFields()[AgentDefinitionRefKey]
 	resolved, err := resolveServiceProps(props, svc.GetName(), projectRoot)
 	if err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
@@ -1296,12 +1312,6 @@ func VoiceAgentFromResolvedService(
 	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
 	if !agent_yaml.IsVoiceAgentKind(kind) {
 		return agent_yaml.VoiceAgent{}, false, nil
-	}
-	if rootRef {
-		resolved, err = normalizeRootVoiceDefinition(resolved)
-		if err != nil {
-			return agent_yaml.VoiceAgent{}, false, err
-		}
 	}
 
 	var inline AgentDefinitionInline
@@ -1318,8 +1328,7 @@ func VoiceAgentFromResolvedService(
 	return inline.toVoiceAgent(), true, nil
 }
 
-func normalizeRootVoiceDefinition(resolved *structpb.Struct) (*structpb.Struct, error) {
-	values := resolved.AsMap()
+func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, error) {
 	aliases := map[string]string{
 		"model_type": "modelType", "sub_protocol": "subProtocol",
 		"target_agent": "targetAgent", "conversation_engine": "conversationEngine",
@@ -1359,5 +1368,28 @@ func normalizeRootVoiceDefinition(resolved *structpb.Struct) (*structpb.Struct, 
 			}
 		}
 	}
-	return structpb.NewStruct(values)
+	if policies, ok := values["policies"].([]any); ok {
+		for _, entry := range policies {
+			policy, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			for source, target := range map[string]string{
+				"rai_policy_name": "raiPolicyName", "invocations_moderation": "invocationsModeration",
+			} {
+				if value, found := policy[source]; found {
+					if _, conflict := policy[target]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							fmt.Sprintf("voice policy contains both %q and %q", source, target),
+							"use snake_case in a root $ref definition",
+						)
+					}
+					policy[target] = value
+					delete(policy, source)
+				}
+			}
+		}
+	}
+	return values, nil
 }

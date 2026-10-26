@@ -337,8 +337,9 @@ func validateLiveVoiceAgent(agent VoiceAgent) []string {
 		}
 	}
 	if len(agent.Greeting) > 0 {
-		if strings.TrimSpace(fmt.Sprint(agent.Greeting["type"])) != "template" ||
-			strings.TrimSpace(fmt.Sprint(agent.Greeting["text"])) == "" {
+		typ, typeOK := agent.Greeting["type"].(string)
+		text, textOK := agent.Greeting["text"].(string)
+		if !typeOK || strings.TrimSpace(typ) != "template" || !textOK || strings.TrimSpace(text) == "" {
 			errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
 		}
 		for key := range agent.Greeting {

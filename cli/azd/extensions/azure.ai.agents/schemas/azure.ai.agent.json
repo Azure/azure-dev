@@ -381,7 +381,8 @@
       },
       "then": {
         "properties": {
-          "kind": { "enum": ["prompt-voice", "voice"] }
+          "kind": { "enum": ["prompt-voice", "voice"] },
+          "audio": { "$ref": "#/definitions/VoiceAudio" }
         },
         "required": ["kind"],
         "not": {

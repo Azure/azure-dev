@@ -11,7 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func ptr[T any](value T) *T { return &value }
+//go:fix inline
+func ptr[T any](value T) *T { return new(value) }
 
 func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 	t.Parallel()
@@ -20,10 +21,10 @@ func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 		SubProtocol:     VoiceSubProtocolLive,
 		ModelType:       VoiceModelTypeSelfDeployed,
 		Model:           &Model{Id: "gpt-live-1"},
-		Instructions:    ptr("Teach English."),
-		Store:           ptr(false),
+		Instructions:    new("Teach English."),
+		Store:           new(false),
 		Audio: &VoiceAudio{
-			Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: ptr(24000)},
+			Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)},
 			Output: &VoiceAudioOutput{Voice: "marin"},
 		},
 		Greeting:         map[string]any{"type": "template", "text": "Hello {{name}}"},
@@ -31,9 +32,9 @@ func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 		Delegation: &LiveVoiceDelegation{
 			Type: "responses",
 			Responses: &LiveResponsesDelegation{
-				Model: "gpt-5.6-terra", MaxOutputTokens: ptr(512),
-				Reasoning: &LiveResponsesReasoning{Effort: ptr("low"), Summary: ptr("auto")},
-				Text:      &LiveResponsesText{Verbosity: ptr("low")},
+				Model: "gpt-5.6-terra", MaxOutputTokens: new(512),
+				Reasoning: &LiveResponsesReasoning{Effort: new("low"), Summary: new("auto")},
+				Text:      &LiveResponsesText{Verbosity: new("low")},
 			},
 		},
 	}
@@ -73,7 +74,6 @@ func TestValidateGPTLiveAgent_RejectsRealtimeAndHostedFields(t *testing.T) {
 		"output_modalities: [audio]",
 	}
 	for _, field := range invalid {
-		field := field
 		t.Run(field, func(t *testing.T) {
 			t.Parallel()
 			yaml := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel:\n  id: gpt-live-1\n" + field + "\n"
@@ -142,7 +142,7 @@ func TestCreateVoiceAgentAPIRequest_RejectsLiveFieldsWithoutDiscriminator(t *tes
 	_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
 		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "bad"},
 		Model:           &Model{Id: "gpt-realtime"},
-		Audio:           &VoiceAudio{Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: ptr(24000)}},
+		Audio:           &VoiceAudio{Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}},
 	})
 	require.ErrorContains(t, err, "require subProtocol 'live'")
 }

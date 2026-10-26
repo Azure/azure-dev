@@ -19,11 +19,11 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_VOICE",
 		Description: "Voice, prompt-voice, and hosted voice agents",
 	}
-	// A2A controls explicit A2A wire versions and the 1.0 default.
+	// A2A controls init selection, explicit A2A wire versions, and the 1.0 default.
 	A2A = Feature{
 		ID:          "agents.a2a",
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_A2A",
-		Description: "A2A wire version selection and the 1.0 message default",
+		Description: "A2A init selection, wire version selection, and the 1.0 message default",
 	}
 	// LongRunning controls starting background Responses invocations.
 	LongRunning = Feature{

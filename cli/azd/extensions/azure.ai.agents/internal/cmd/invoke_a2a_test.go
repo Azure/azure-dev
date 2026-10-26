@@ -963,6 +963,7 @@ func TestNormalizeA2AWireVersion(t *testing.T) {
 }
 
 func TestHostedA2ARemoteTarget(t *testing.T) {
+	t.Setenv(featureflags.A2A.EnvVar, "true")
 	for _, tt := range []struct {
 		name, explicit, wantError       string
 		version, deployed               string
@@ -973,8 +974,11 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 		missingRef                      bool
 		responsesOnly                   bool
 		responses, prompt, noDefinition bool
+		previewOff                      bool
 	}{
 		{name: "inline A2A hosted agent", native: "1.0.0"},
+		{name: "preview off ignores local 1.0 declaration for wire default", native: "1.0.0", previewOff: true,
+			wantDiagnostic: "requested A2A version 0.3 does not match"},
 		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
 			wantError: "requires an explicit --a2a-version"},
 		{name: "unreadable request file remains blocking", native: "0.3", explicit: "1.0", inputFile: "missing.json",
@@ -1002,6 +1006,9 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			version: "7", deployed: "7", wantDiagnostic: "local A2A compatibility finding (advisory"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.previewOff {
+				t.Setenv(featureflags.A2A.EnvVar, "false")
+			}
 			dir := t.TempDir()
 			properties := map[string]any{
 				"kind": "hosted", "name": "deployed-agent",
@@ -1031,7 +1038,7 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			if tt.responsesOnly {
 				properties["protocols"] = []any{map[string]any{"protocol": "responses", "version": "2.0.0"}}
 			}
-			wireVersion := "1.0"
+			wireVersion := resolveA2AVersion("", !tt.previewOff)
 			if tt.explicit != "" {
 				wireVersion = tt.explicit
 			}
@@ -1102,7 +1109,7 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 					apiVersion: "v1", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
 				},
 			}
-			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+			output, err := captureStdout(t, func() error { return action.Run(t.Context()) })
 			if tt.wantDiagnostic != "" {
 				assert.Contains(t, diagnostics.String(), tt.wantDiagnostic)
 			}
@@ -1117,7 +1124,6 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				assert.Equal(t, 1, sends)
-				assert.Equal(t, wireVersion, action.a2aProtocolVersion())
 				assert.Contains(t, output, "native-mock-result")
 			}
 		})
@@ -1136,7 +1142,7 @@ func TestA2ATargetServiceLookupFailure(t *testing.T) {
 				cancel()
 			}
 
-			err := action.validateA2ATarget(ctx, rc)
+			err := action.validateA2ATarget(ctx, rc, "1.0")
 			if cancelled {
 				require.ErrorIs(t, err, context.Canceled)
 			} else {
@@ -1167,7 +1173,7 @@ func TestA2ARemoteServiceLookupFailureStillInvokes(t *testing.T) {
 		},
 	}
 
-	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+	output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context(), "1.0") })
 	require.NoError(t, err)
 	assert.Equal(t, 1, sends)
 	assert.Contains(t, output, "lookup-failure-result")
@@ -1220,9 +1226,8 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 			if tt.noService {
 				rc.serviceName = ""
 			}
-			err = action.validateA2ATarget(t.Context(), rc)
+			err = action.validateA2ATarget(t.Context(), rc, "1.0")
 			require.NoError(t, err)
-			assert.Equal(t, "1.0", action.a2aProtocolVersion())
 		})
 	}
 }

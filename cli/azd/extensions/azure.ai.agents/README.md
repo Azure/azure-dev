@@ -9,7 +9,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
-| `agents.a2a` | Explicit A2A wire versions and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -564,6 +564,13 @@ than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
 ## Initializing an A2A hosted agent
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing
+an A2A hosted agent. With the preview off, init hides the `a2a` choice and rejects
+explicit `--protocol a2a` selections (including repeated or comma-separated flags)
+before authentication or writes. Responses remains the no-prompt default.
+`invocations_ws` independently requires the Voice preview. Existing declarations
+are not gated during deployment or lifecycle operations by this init selection check.
 
 Foundry forwards requests directly to A2A hosted agents instead of converting them
 to Responses requests. Select `a2a` during init and deselect `responses` if your

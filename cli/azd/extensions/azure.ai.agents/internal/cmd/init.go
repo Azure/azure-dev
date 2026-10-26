@@ -703,11 +703,7 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
-Hosted protocols:
-Use --protocol a2a if your agent code serves A2A 1.0 directly. Init declares
-version 1.0.0 and enables its A2A endpoint; it does not generate an A2A server.
-
-` + initVoiceHelp + `Agent Names:
+` + initA2AHelp + initVoiceHelp + `Agent Names:
 The agent name written to azure.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -826,6 +822,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if _, err := validateExplicitProtocols(flags.protocols); err != nil {
 						return err
 					}
+				}
+			}
+
+			if len(flags.protocols) > 0 {
+				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+					return err
 				}
 			}
 
@@ -1358,7 +1360,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
 	previewFlag(cmd, "protocol", featureflags.Voice, "invocations_ws")
 	previewFlagUsage(cmd, "protocol", featureflags.Voice,
-		"Protocols supported by the agent ("+strings.Join(protocolNames(false), ", ")+"). Can be specified multiple times.")
+		"Protocols supported by the agent ("+strings.Join(protocolNames(false, true), ", ")+"). Can be specified multiple times.")
 	previewFlagUsage(cmd, "kind", featureflags.Voice,
 		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
 			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
@@ -1370,6 +1372,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
 	previewHelpText(cmd, featureflags.Voice, "a new prompt, hosted, or voice agent", "a new agent")
 	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
+	previewHelp(cmd, featureflags.A2A, []string{initA2AHelp}, nil)
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+
@@ -2893,6 +2896,13 @@ func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle str
 
 	return msg
 }
+
+// initA2AHelp is removed from help while the A2A preview is off.
+const initA2AHelp = `Hosted protocols:
+Use --protocol a2a if your agent code serves A2A 1.0 directly. Init declares
+version 1.0.0 and enables its A2A endpoint; it does not generate an A2A server.
+
+`
 
 // initVoiceHelp and initVoiceExamples are removed from help while voice is off.
 const initVoiceHelp = `Voice Agents:

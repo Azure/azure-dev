@@ -17,7 +17,7 @@ import (
 
 // validateA2ATarget inspects local capabilities for advisory diagnostics only.
 // Working-tree definitions do not establish deployed capabilities, even for the current version.
-func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext) error {
+func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext, version string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 	if !found || !isHosted {
 		return nil
 	}
-	if err := validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion()); err != nil {
+	if err := validateHostedA2ACompatibility(hosted.Protocols, version); err != nil {
 		log.Printf("local A2A compatibility finding (advisory; Foundry validates the deployed target): %v", err)
 	}
 	return nil

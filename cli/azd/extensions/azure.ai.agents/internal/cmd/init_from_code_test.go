@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -559,7 +560,10 @@ func TestCreateDefinitionFromLocalAgent_NativeA2A(t *testing.T) {
 					entryPoint: "app.py", depResolution: "remote",
 				},
 			}
-			definition, err := action.createDefinitionFromLocalAgent(t.Context())
+			t.Setenv(featureflags.A2A.EnvVar, "true")
+			protocols, err := selectHostedProtocols(t.Context(), action.azdClient, true, tt.protocols)
+			require.NoError(t, err)
+			definition, err := action.createDefinitionFromLocalAgent(t.Context(), protocols)
 			require.NoError(t, err)
 			require.Equal(t, tt.protocols, definition.AgentEndpoint.Protocols)
 			require.Contains(t, definition.Protocols, agent_yaml.ProtocolVersionRecord{Protocol: "a2a", Version: "1.0.0"})
@@ -737,7 +741,7 @@ func TestNativeA2AInitProtocols(t *testing.T) {
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := promptProtocols(t.Context(), nil, tt.noPrompt, tt.flags)
+			got, err := promptProtocols(t.Context(), nil, tt.noPrompt, tt.flags, true, true)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
@@ -770,7 +774,7 @@ func TestNativeA2AInitInteractive(t *testing.T) {
 				}
 				return &azdext.MultiSelectResponse{Values: choices}, nil
 			}}
-			got, err := promptProtocols(t.Context(), client, false, nil)
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 			require.NoError(t, err)
 			want := []agent_yaml.ProtocolVersionRecord{{Protocol: "a2a", Version: "1.0.0"}}
 			if !nativeOnly {
@@ -921,7 +925,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols, true)
+			got, err := promptProtocols(t.Context(), nil, false, tt.flagProtocols, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -952,7 +956,7 @@ func TestPromptProtocols_FlagValues(t *testing.T) {
 func TestPromptProtocols_NoPromptDefault(t *testing.T) {
 	t.Parallel()
 
-	got, err := promptProtocols(t.Context(), nil, true, nil, false)
+	got, err := promptProtocols(t.Context(), nil, true, nil, false, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1106,7 +1110,7 @@ func TestPromptProtocols_Interactive(t *testing.T) {
 			t.Parallel()
 
 			client := &fakePromptClient{multiSelectFn: tt.multiSelectFn}
-			got, err := promptProtocols(t.Context(), client, false, nil, true)
+			got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -1159,7 +1163,7 @@ func TestPromptProtocols_ChoicesIncludeInvocationsWsWithoutChangingDefault(t *te
 		return &azdext.MultiSelectResponse{Values: choices}, nil
 	}}
 
-	got, err := promptProtocols(t.Context(), client, false, nil, true)
+	got, err := promptProtocols(t.Context(), client, false, nil, true, true)
 	require.NoError(t, err)
 	require.Equal(t, []agent_yaml.ProtocolVersionRecord{
 		{Protocol: "responses", Version: "2.0.0"},

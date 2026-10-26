@@ -20,6 +20,8 @@ const (
 	// ProtocolResponses identifies plain
 	// text /responses agents.
 	ProtocolResponses = "responses"
+	// ProtocolA2A identifies A2A agents (remote invocation only).
+	ProtocolA2A = "a2a"
 	// ProtocolInvocationsWS identifies
 	// bidirectional WebSocket /invocations_ws agents.
 	ProtocolInvocationsWS = "invocations_ws"
@@ -635,7 +637,7 @@ func ResolveAfterRun(state *State, serviceName string, readmeExists func(relativ
 	}
 
 	svc := findService(state, serviceName)
-	if !serviceSupportsAzdInvoke(svc) {
+	if !serviceSupportsAzdInvoke(svc) || svc != nil && svc.Protocol == ProtocolA2A {
 		return nil
 	}
 
@@ -1094,7 +1096,7 @@ func appendInvokeLocalSecondary(
 	if len(state.Services) == 1 {
 		svc = &state.Services[0]
 	}
-	if !serviceSupportsAzdInvoke(svc) {
+	if !serviceSupportsAzdInvoke(svc) || svc != nil && svc.Protocol == ProtocolA2A {
 		return out, priority
 	}
 	invokeArg, readmeHint := resolveInvokeArg(svc, "", readmeExists, priority)

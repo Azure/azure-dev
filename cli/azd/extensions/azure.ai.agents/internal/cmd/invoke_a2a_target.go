@@ -5,21 +5,22 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
 )
 
-// validateA2ATarget checks implementation capabilities from the selected local service.
+// validateA2ATarget inspects local capabilities for advisory diagnostics only.
+// Working-tree definitions do not establish deployed capabilities, even for the current version.
 func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// An explicit session's bound deployment is not known from the current local definition.
 	if a.endpoint != nil || a.flags.session != "" || rc.azdClient == nil || rc.serviceName == "" {
 		return nil
@@ -37,23 +38,21 @@ func (a *InvokeAction) validateA2ATarget(ctx context.Context, rc *remoteContext)
 		return nil
 	}
 	hosted, isHosted, found, _, err := projectpkg.AgentDefinitionFromResolvedService(svc, proj.Path)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil {
-		if localErr, ok := errors.AsType[*azdext.LocalError](err); ok &&
-			localErr.Category == azdext.LocalErrorCategoryValidation {
-			// Loaded but invalid definitions are different from unavailable source references.
-			switch localErr.Code {
-			case exterrors.CodeInvalidAgentManifest, exterrors.CodeInvalidServiceConfig:
-				return err
-			}
-		}
-		// Let Foundry enforce capabilities when the local definition is unavailable.
+		// Let Foundry enforce capabilities even when a readable local definition is invalid.
 		log.Printf("could not inspect local A2A capabilities: %v", err)
 		return nil
 	}
 	if !found || !isHosted {
 		return nil
 	}
-	return validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion())
+	if err := validateHostedA2ACompatibility(hosted.Protocols, a.a2aProtocolVersion()); err != nil {
+		log.Printf("local A2A compatibility finding (advisory; Foundry validates the deployed target): %v", err)
+	}
+	return nil
 }
 
 // validateHostedA2ACompatibility validates a declared A2A dialect against hosted support and the request.

@@ -4,11 +4,13 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -962,40 +964,42 @@ func TestNormalizeA2AWireVersion(t *testing.T) {
 
 func TestHostedA2ARemoteTarget(t *testing.T) {
 	for _, tt := range []struct {
-		name, explicit, wantError, wantCode string
-		native                              any
-		inputFile                           string
-		fileBacked                          bool
-		missingRef                          bool
-		responsesOnly                       bool
-		responses, prompt, noDefinition     bool
+		name, explicit, wantError       string
+		version, deployed               string
+		wantDiagnostic                  string
+		native                          any
+		inputFile                       string
+		fileBacked                      bool
+		missingRef                      bool
+		responsesOnly                   bool
+		responses, prompt, noDefinition bool
 	}{
 		{name: "inline A2A hosted agent", native: "1.0.0"},
 		{name: "file still requires explicit version", native: "1.0.0", inputFile: "missing.json",
 			wantError: "requires an explicit --a2a-version"},
+		{name: "unreadable request file remains blocking", native: "0.3", explicit: "1.0", inputFile: "missing.json",
+			wantError: "failed to read input file"},
 		{name: "A2A with Responses", native: "1.0.0", responses: true},
-		{name: "Responses cannot translate", native: "1.0.0", responses: true, explicit: "0.3",
-			wantError: "does not match the hosted-agent declaration"},
-		{name: "Responses cannot rescue unsupported", native: "0.3", responses: true,
-			wantError: "version 0.3 is not supported"},
-		{name: "Responses cannot rescue malformed", native: "latest", responses: true,
-			wantError: "malformed A2A version"},
+		{name: "Responses local mismatch is advisory", native: "1.0.0", responses: true, explicit: "0.3"},
+		{name: "Responses local unsupported version is advisory", native: "0.3", responses: true},
+		{name: "Responses local malformed version is advisory", native: "latest", responses: true},
 		{name: "prompt definition bypass", prompt: true, explicit: "0.3"},
 		{name: "missing definition bypass", noDefinition: true, explicit: "0.3"},
 		{name: "missing local reference still invokes", missingRef: true},
 		{name: "Responses-only defers to Foundry", responsesOnly: true},
 		{name: "public A2A is not an implementation", responsesOnly: true, explicit: "0.3"},
 		{name: "file-backed native", native: "1.0.0", fileBacked: true},
-		{name: "numeric inline version rejected before send", native: 0.3,
-			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
-		{name: "boolean inline version rejected before send", native: true,
-			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
-		{name: "numeric reference version rejected before send", native: 0.3, fileBacked: true,
-			wantError: "agent service config is not valid", wantCode: exterrors.CodeInvalidAgentManifest},
-		{name: "A2A 0.3 rejected before send", native: "0.3.0", wantError: "version 0.3 is not supported"},
-		{name: "malformed rejected before send", native: "latest", wantError: "malformed A2A version"},
-		{name: "explicit conflict before send", native: "1.0.0", explicit: "0.3",
-			wantError: "does not match the hosted-agent declaration"},
+		{name: "numeric inline version is advisory", native: 0.3,
+			wantDiagnostic: "could not inspect local A2A capabilities"},
+		{name: "boolean inline version is advisory", native: true},
+		{name: "numeric reference version is advisory", native: 0.3, fileBacked: true},
+		{name: "local A2A 0.3 is advisory", native: "0.3.0"},
+		{name: "local malformed version is advisory", native: "latest"},
+		{name: "local explicit conflict is advisory", native: "1.0.0", explicit: "0.3"},
+		{name: "edited local 0.3 current deployment omitted version", native: "0.3", explicit: "1.0", deployed: "7",
+			wantDiagnostic: "local A2A compatibility finding (advisory"},
+		{name: "edited local 0.3 explicit current deployment", native: "0.3", explicit: "1.0",
+			version: "7", deployed: "7", wantDiagnostic: "local A2A compatibility finding (advisory"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -1042,11 +1046,38 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 			client, err := azdext.NewAzdClient()
 			require.NoError(t, err)
 			defer client.Close()
+			var diagnostics bytes.Buffer
+			previousWriter := log.Writer()
+			log.SetOutput(&diagnostics)
+			t.Cleanup(func() { log.SetOutput(previousWriter) })
+			var sessionCreates int
+			previous := createInvokeVersionSession
+			t.Cleanup(func() { createInvokeVersionSession = previous })
+			createInvokeVersionSession = func(
+				_ context.Context, endpoint, name, version, apiVersion string,
+			) (*agent_api.AgentSessionResource, error) {
+				sessionCreates++
+				assert.NotEmpty(t, endpoint)
+				assert.Equal(t, "deployed-agent", name)
+				assert.Equal(t, "7", version)
+				assert.Equal(t, "v1", apiVersion)
+				return &agent_api.AgentSessionResource{AgentSessionID: "version-session"}, nil
+			}
 			var sends int
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				sends++
 				assert.Equal(t, wireVersion, r.Header.Get("A2A-Version"))
 				assert.Equal(t, "/agents/deployed-agent/endpoint/protocols/a2a", r.URL.Path)
+				if tt.version != "" {
+					assert.Equal(t, "version-session", r.URL.Query().Get("agent_session_id"))
+				}
+				var request a2aJSONRPCRequest
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+				if wireVersion == "1.0" {
+					assert.Equal(t, "SendMessage", request.Method)
+				} else {
+					assert.Equal(t, "message/send", request.Method)
+				}
 				w.Header().Set("Content-Type", "application/json")
 				if wireVersion == "0.3" {
 					_, _ = io.WriteString(w, `{"jsonrpc":"2.0","result":`+
@@ -1068,18 +1099,20 @@ func TestHostedA2ARemoteTarget(t *testing.T) {
 				credential: responseTestCredential{}, noPrompt: true,
 				resolvedRemoteContext: &remoteContext{
 					name: "deployed-agent", serviceName: "target", projectEndpoint: server.URL,
-					apiVersion: "v1", azdClient: client,
+					apiVersion: "v1", azdClient: client, version: tt.version, deployedVersion: tt.deployed,
 				},
 			}
 			output, err := captureStdout(t, func() error { return action.a2aRemote(t.Context()) })
+			if tt.wantDiagnostic != "" {
+				assert.Contains(t, diagnostics.String(), tt.wantDiagnostic)
+			}
+			if tt.version != "" {
+				assert.Equal(t, 1, sessionCreates)
+			} else {
+				assert.Zero(t, sessionCreates)
+			}
 			if tt.wantError != "" {
 				require.ErrorContains(t, err, tt.wantError)
-				if tt.wantCode != "" {
-					localErr, ok := errors.AsType[*azdext.LocalError](err)
-					require.True(t, ok, "expected a structured local error")
-					assert.Equal(t, azdext.LocalErrorCategoryValidation, localErr.Category)
-					assert.Equal(t, tt.wantCode, localErr.Code)
-				}
 				assert.Zero(t, sends)
 			} else {
 				require.NoError(t, err)
@@ -1149,7 +1182,6 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 		version   string
 		deployed  string
 		session   string
-		wantError bool
 	}{
 		{name: "explicit endpoint ignores project definition", endpoint: true},
 		{name: "explicit session ignores project definition", session: "existing-session", version: "2", deployed: "2"},
@@ -1157,10 +1189,10 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 		{name: "no selected service", noService: true},
 		{name: "historical agent version", version: "1", deployed: "2"},
 		{name: "unknown deployed agent version", version: "1"},
-		{name: "current version matches deployed", version: "2", deployed: "2", wantError: true},
+		{name: "current version matches deployed is still advisory", version: "2", deployed: "2"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			// A readable unsupported definition makes accidental inspection fail.
+			// A readable unsupported working-tree definition must never block remote invocation.
 			project := &helpersProjectServer{project: &azdext.ProjectConfig{
 				Path: t.TempDir(),
 				Services: map[string]*azdext.ServiceConfig{"a2a-agent": {
@@ -1189,11 +1221,7 @@ func TestA2ATargetDoesNotApplyUnrelatedLocalDefinition(t *testing.T) {
 				rc.serviceName = ""
 			}
 			err = action.validateA2ATarget(t.Context(), rc)
-			if tt.wantError {
-				require.ErrorContains(t, err, "A2A hosted-agent version 0.3 is not supported by Foundry")
-			} else {
-				require.NoError(t, err)
-			}
+			require.NoError(t, err)
 			assert.Equal(t, "1.0", action.a2aProtocolVersion())
 		})
 	}

@@ -1,0 +1,32 @@
+# Init-abort fixture. Do not provision this template.
+name: adopt-model-replacement
+infra:
+  provider: microsoft.foundry
+services:
+  ai-project:
+    host: azure.ai.project
+    deployments:
+      - name: template-chat
+        model:
+          name: gpt-4o
+          format: OpenAI
+          version: "2024-08-06"
+        sku:
+          name: GlobalStandard
+          capacity: 1
+      - name: template-embed
+        model:
+          name: text-embedding-3-small
+          format: OpenAI
+          version: "1"
+        sku:
+          name: Standard
+          capacity: 1
+  agent:
+    host: azure.ai.agent
+    kind: prompt
+    name: adoption-probe
+    model: template-chat
+    instructions: Help the user.
+    uses:
+      - ai-project

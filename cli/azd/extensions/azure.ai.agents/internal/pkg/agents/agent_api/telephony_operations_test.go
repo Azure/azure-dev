@@ -266,7 +266,7 @@ func TestCanonicalTelephonyClient_DoesNotFollowRedirects(t *testing.T) {
 }
 
 func serverURL(req *http.Request) string {
-	return "http://" + req.Host
+	return "https://" + req.Host
 }
 
 func TestListTelephonyBindings_RejectsMissingStatus(t *testing.T) {

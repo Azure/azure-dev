@@ -441,7 +441,30 @@ func (*betaSDKEventMessageEnvelope) SetError(
 	message *v1beta.EventMessage,
 	err error,
 ) {
-	message.Error = wrapBetaServiceEventError(err)
+	betaError := wrapBetaServiceEventError(err)
+	switch status := message.MessageType.(type) {
+	case *v1beta.EventMessage_ProjectHandlerStatus:
+		if status.ProjectHandlerStatus != nil {
+			message.Error = nil
+			status.ProjectHandlerStatus.Error = betaError
+			if err != nil {
+				status.ProjectHandlerStatus.Status = "failed"
+				status.ProjectHandlerStatus.Message = err.Error()
+			}
+			return
+		}
+	case *v1beta.EventMessage_ServiceHandlerStatus:
+		if status.ServiceHandlerStatus != nil {
+			message.Error = nil
+			status.ServiceHandlerStatus.Error = betaError
+			if err != nil {
+				status.ServiceHandlerStatus.Status = "failed"
+				status.ServiceHandlerStatus.Message = err.Error()
+			}
+			return
+		}
+	}
+	message.Error = betaError
 }
 
 func (*betaSDKEventMessageEnvelope) GetInnerMessage(message *v1beta.EventMessage) any {

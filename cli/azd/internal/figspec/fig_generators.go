@@ -15,6 +15,9 @@ const (
 	// FigGenListEnvironmentVariables generates suggestions from environment variables
 	FigGenListEnvironmentVariables = "azdGenerators.listEnvironmentVariables"
 
+	// FigGenListEnvironmentVariablesForUnset excludes the environment-name key from suggestions.
+	FigGenListEnvironmentVariablesForUnset = "azdGenerators.listEnvironmentVariablesForUnset"
+
 	// FigGenListTemplates generates suggestions from available azd templates
 	FigGenListTemplates = "azdGenerators.listTemplates"
 

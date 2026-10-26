@@ -75,6 +75,14 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					errField: "module", errText: "escapes project root",
 				},
 				{
+					name: "outside non-Foundry module file", provider: "bicep", symlink: "infra/main.bicep",
+					errField: "module", errText: "escapes project root",
+				},
+				{
+					name: "outside non-Foundry parameter file", provider: "bicep", symlink: "infra/main.bicepparam",
+					errField: "module", errText: "escapes project root",
+				},
+				{
 					name: "outside Terraform marker", provider: "terraform", symlink: "infra/.azd-foundry",
 					errField: "path", errText: "escapes project root",
 				},

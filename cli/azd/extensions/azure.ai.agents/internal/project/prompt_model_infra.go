@@ -120,13 +120,13 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 			}
 			continue
 		}
-		if layered && provider != "microsoft.foundry" {
-			continue
-		}
 		for _, suffix := range []string{".bicep", ".bicepparam"} {
 			file, err := paths.JoinAllowRoot(root, path, filepath.FromSlash(module+suffix))
 			if err != nil {
 				return false, fmt.Errorf("resolve azure.yaml %s.module: %w", field, err)
+			}
+			if layered && provider != "microsoft.foundry" {
+				continue
 			}
 			info, err := os.Stat(file)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {

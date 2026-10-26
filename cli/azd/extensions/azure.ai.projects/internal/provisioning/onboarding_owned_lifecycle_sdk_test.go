@@ -50,7 +50,9 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 	const registry = "/subscriptions/registry-sub/resourceGroups/registry-rg/providers/Microsoft.ContainerRegistry/registries/customer"
 	for _, suppliedStorage := range []bool{false, true} {
 		for _, suppliedRegistry := range []bool{false, true} {
-			for _, choice := range []string{"none", "managed", "customer subnet", "created customer subnet"} {
+			for _, choice := range []string{
+				"none", "managed", "customer subnet", "created customer subnet", "environment subnet",
+			} {
 				t.Run(fmt.Sprintf("storage=%t/registry=%t/network=%s", suppliedStorage, suppliedRegistry, choice), func(t *testing.T) {
 					p := byoContractProvider(t)
 					raw := "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
@@ -65,7 +67,7 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 						raw += "    network:\n      peSubnet: {vnet: " + vnet + ", name: pe}\n"
 					}
 					subnetID := ""
-					if choice == "customer subnet" || choice == "created customer subnet" {
+					if choice == "customer subnet" || choice == "created customer subnet" || choice == "environment subnet" {
 						subnetID = vnet + "/subnets/legacy-agents"
 						prefix := ""
 						if choice == "created customer subnet" {
@@ -73,8 +75,15 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 						}
 						raw += "      agentSubnet: {vnet: " + vnet + ", name: legacy-agents" + prefix + "}\n"
 					}
+					if choice == "environment subnet" {
+						raw = strings.ReplaceAll(raw, "name: legacy-agents", "name: '${FOUNDRY_AGENT_SUBNET_NAME}'")
+						raw = strings.ReplaceAll(raw, "name: pe}", "name: '${FOUNDRY_PE_SUBNET_NAME}'}")
+					}
 					result, err := synthesis.Synthesize(synthesis.Input{
 						RawAzureYAML: []byte(raw), ServiceName: "project", AcceptedHosts: []string{"azure.ai.project"},
+						Env: map[string]string{
+							"FOUNDRY_AGENT_SUBNET_NAME": "legacy-agents", "FOUNDRY_PE_SUBNET_NAME": "pe",
+						},
 					})
 					require.NoError(t, err)
 					p.synthResult = result
@@ -93,6 +102,10 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 							require.NoError(t, json.NewDecoder(request.Body).Decode(&body))
 							properties := lifecycleObject(t, body["properties"])
 							parameters := lifecycleObject(t, properties["parameters"])
+							if choice == "environment subnet" {
+								assert.Equal(t, "legacy-agents", lifecycleObject(t, parameters["agentSubnetName"])["value"])
+								assert.Equal(t, "pe", lifecycleObject(t, parameters["peSubnetName"])["value"])
+							}
 							assert.NotContains(t, parameters, "byoRegistryAccessReady")
 							require.Contains(t, parameters, "byoOnboarding")
 							assert.Equal(t, choice != "none", lifecycleObject(t, parameters["enableNetworkIsolation"])["value"])
@@ -128,7 +141,15 @@ func TestBYOProviderActualSDKSingleDeploymentCreateReuseAndNetworkSelections(t *
 						assert.Equal(t, attempt+1, writes, "one top-level ARM submission per provision")
 						require.NotNil(t, p.byoPlan)
 						assert.Equal(t, subnetID, p.byoPlan.AgentSubnet.ID)
-						assert.Equal(t, choice == "customer subnet", p.byoPlan.AgentSubnet.Supplied)
+						assert.Equal(t, choice == "customer subnet" || choice == "environment subnet", p.byoPlan.AgentSubnet.Supplied)
+						if choice == "environment subnet" {
+							for _, name := range []string{"legacy-agents", "pe"} {
+								assert.Contains(t, p.byoPlan.Operations, onboarding.Operation{
+									CheckID: "P03", Action: "Microsoft.Network/virtualNetworks/subnets/join/action",
+									Scope: vnet + "/subnets/" + name,
+								})
+							}
+						}
 						assert.Equal(t, suppliedStorage, p.byoPlan.Storage.Supplied)
 						assert.Equal(t, suppliedRegistry, p.byoPlan.Registry.Supplied)
 					}

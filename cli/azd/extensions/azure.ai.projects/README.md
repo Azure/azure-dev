@@ -185,7 +185,8 @@ services:
 BYO AKS requires explicit `network.agentSubnet` and `network.peSubnet`.
 The VNet must already exist; `vnet` is its full ARM resource ID and `name`
 is the subnet name, not a resource ID. Both descriptors must select the same
-VNet and different subnet names. Omit `prefix` to reference an existing subnet;
+VNet and different subnet names. Both `vnet` and `name` support azd environment
+references; unresolved or empty names fail before Azure writes. Omit `prefix` to reference an existing subnet;
 set an explicit available CIDR in either descriptor to create that subnet through
 the standard network template. Agent subnet creation adds
 `Microsoft.App/environments` delegation. No default VNet or CIDR is selected.

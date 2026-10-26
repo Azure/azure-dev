@@ -91,8 +91,8 @@ func FindEnvReferences(value string) []EnvReference {
 // Where this runs, it makes [FindEnvReferences] complete: every occurrence the
 // expander acts on is one the scanner saw. That is a property of the *call*,
 // not of the scanner — only callers that invoke this get it. Today that is the
-// three project network fields (network.agentSubnet.vnet, network.peSubnet.vnet,
-// network.dns.subscription). Discovery-only consumers, such as init prompting
+// project subnet vnet/name fields and network.dns.subscription.
+// Discovery-only consumers, such as init prompting
 // and the generated service env block, still scan values that were never
 // validated; extending the check to them is tracked by
 // https://github.com/Azure/azure-dev/issues/9428.

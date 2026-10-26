@@ -172,7 +172,7 @@ func validateLegacyNetwork(plan Plan) error {
 		return fmt.Errorf("I03: selected legacy network VNet: %w", err)
 	}
 	for _, name := range []string{n.PESubnetName, n.AgentSubnetName} {
-		if name == "" || strings.ContainsAny(name, "/\\?#%") {
+		if name == "" || strings.ContainsAny(name, "/\\?#%${} \t\r\n") {
 			return fmt.Errorf("I03: selected legacy network subnet name is invalid")
 		}
 	}

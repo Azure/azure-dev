@@ -30,6 +30,8 @@ func TestBYONetworkInputFailsBeforeAuthenticationOrWrites(t *testing.T) {
 		{"invalid VNet", "vnetId", "not-a-resource-id", "selected legacy network VNet"},
 		{"missing Agent name", "agentSubnetName", "", "subnet name is invalid"},
 		{"missing PE name", "peSubnetName", "", "subnet name is invalid"},
+		{"unexpanded Agent name", "agentSubnetName", "${FOUNDRY_AGENT_SUBNET_NAME}", "subnet name is invalid"},
+		{"unexpanded PE name", "peSubnetName", "${FOUNDRY_PE_SUBNET_NAME}", "subnet name is invalid"},
 		{"same subnet", "peSubnetName", "agents", "must differ"},
 	} {
 		for _, preview := range []bool{false, true} {

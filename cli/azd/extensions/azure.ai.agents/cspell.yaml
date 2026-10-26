@@ -34,6 +34,9 @@ words:
   - PSTN
   - pstn
   - webrtc
+  - nonblank
+  - ultrafast
+  - xhigh
   # Azure region names
   - australiaeast
   - brazilsouth

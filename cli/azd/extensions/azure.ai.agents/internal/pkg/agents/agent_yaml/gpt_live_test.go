@@ -5,10 +5,12 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
@@ -22,7 +24,7 @@ func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 		Store:           new(false),
 		Audio: &VoiceAudio{
 			Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)},
-			Output: &VoiceAudioOutput{Voice: "marin"},
+			Output: &VoiceAudioOutput{Voice: &VoiceConfig{LiveName: "marin"}},
 		},
 		Greeting:         map[string]any{"type": "template", "text": "Hello {{name}}"},
 		StructuredInputs: map[string]any{"name": map[string]any{"required": true}},
@@ -105,9 +107,29 @@ func TestValidateGPTLiveAgent_CustomVoiceAndFormats(t *testing.T) {
 	}
 }
 
+func TestVoiceConfigGPTLiveScalarAndCustomObjectRoundTrip(t *testing.T) {
+	t.Parallel()
+	for name, yamlValue := range map[string]string{
+		"built-in": "marin",
+		"custom":   "{id: custom-voice}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var audio VoiceAudio
+			require.NoError(t, yaml.Unmarshal([]byte("output:\n  voice: "+yamlValue+"\n"), &audio))
+			require.NotNil(t, audio.Output.Voice)
+			encoded, err := yaml.Marshal(audio)
+			require.NoError(t, err)
+			var roundTrip VoiceAudio
+			require.NoError(t, yaml.Unmarshal(encoded, &roundTrip))
+			require.Equal(t, audio.Output.Voice.LiveName, roundTrip.Output.Voice.LiveName)
+			require.Equal(t, audio.Output.Voice.ID, roundTrip.Output.Voice.ID)
+		})
+	}
+}
+
 func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 	t.Parallel()
-	for _, suffix := range []string{
+	for i, suffix := range []string{
 		"audio:\n  format: {type: audio/pcm, rate: 8000}",
 		"audio:\n  format: {type: audio/pcmu, rate: 24000}",
 		"audio:\n  output:\n    voice: {id: voice, extra: no}",
@@ -121,8 +143,10 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 		"greeting:\n  type: template\n  text: '   '",
 		"greeting:\n  type: 123\n  text: hello",
 	} {
-		yaml := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel:\n  id: gpt-live-1\n" + suffix + "\n"
-		require.Error(t, ValidateAgentDefinition([]byte(yaml)))
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
+			yaml := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel:\n  id: gpt-live-1\n" + suffix + "\n"
+			require.Error(t, ValidateAgentDefinition([]byte(yaml)), suffix)
+		})
 	}
 }
 

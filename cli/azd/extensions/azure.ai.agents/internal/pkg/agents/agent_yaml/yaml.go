@@ -317,7 +317,7 @@ type VoiceAudioInput struct {
 // VoiceAudioOutput customizes agent-to-caller audio.
 type VoiceAudioOutput struct {
 	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
-	Voice  any               `json:"voice,omitempty" yaml:"voice,omitempty"`
+	Voice  *VoiceConfig      `json:"voice,omitempty" yaml:"voice,omitempty"`
 	Speed  *float64          `json:"speed,omitempty" yaml:"speed,omitempty"`
 }
 
@@ -363,6 +363,85 @@ type VoiceConfig struct {
 	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
+	// ID is the GPT Live custom voice identifier. LiveName stores the native
+	// built-in voice when the authoring value is a scalar string.
+	ID       string `json:"id,omitempty" yaml:"id,omitempty"`
+	LiveName string `json:"-" yaml:"-"`
+}
+
+func (v *VoiceConfig) UnmarshalJSON(data []byte) error {
+	var liveName string
+	if err := json.Unmarshal(data, &liveName); err == nil {
+		v.LiveName = liveName
+		return nil
+	}
+	type alias VoiceConfig
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key := range fields {
+		if !slices.Contains([]string{"type", "name", "style", "pitch", "rate", "locale", "volume", "id"}, key) {
+			return fmt.Errorf("unsupported voice property %q", key)
+		}
+	}
+	var object alias
+	if err := json.Unmarshal(data, &object); err != nil {
+		return err
+	}
+	*v = VoiceConfig(object)
+	return nil
+}
+
+func (v VoiceConfig) MarshalJSON() ([]byte, error) {
+	if v.LiveName != "" {
+		return json.Marshal(v.LiveName)
+	}
+	type alias VoiceConfig
+	return json.Marshal(alias(v))
+}
+
+func (v *VoiceConfig) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&v.LiveName)
+	}
+	type alias VoiceConfig
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !slices.Contains([]string{"type", "name", "style", "pitch", "rate", "locale", "volume", "id"}, key) {
+			return fmt.Errorf("unsupported voice property %q", key)
+		}
+		if node.Content[i+1].Tag != "!!str" && node.Content[i+1].Tag != "!!null" {
+			return fmt.Errorf("voice property %q must be a string", key)
+		}
+	}
+	var object alias
+	if err := node.Decode(&object); err != nil {
+		return err
+	}
+	*v = VoiceConfig(object)
+	return nil
+}
+
+func (v VoiceConfig) MarshalYAML() (any, error) {
+	if v.LiveName != "" {
+		return v.LiveName, nil
+	}
+	type alias VoiceConfig
+	return alias(v), nil
+}
+
+func (v *VoiceConfig) LiveValue() any {
+	if v == nil {
+		return nil
+	}
+	if v.LiveName != "" {
+		return v.LiveName
+	}
+	if v.ID != "" {
+		return map[string]any{"id": v.ID}
+	}
+	return v
 }
 
 // ContainerResources represents the resource allocation for a containerized agent.

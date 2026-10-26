@@ -1109,7 +1109,7 @@ func mapLiveVoiceAudio(audio *VoiceAudio) *agent_api.LiveVoiceAudio {
 		result.Format = &agent_api.LiveAudioFormat{Type: strings.TrimSpace(audio.Format.Type), Rate: audio.Format.Rate}
 	}
 	if audio.Output != nil && audio.Output.Voice != nil {
-		result.Output = &agent_api.LiveAudioOutput{Voice: audio.Output.Voice}
+		result.Output = &agent_api.LiveAudioOutput{Voice: audio.Output.Voice.LiveValue()}
 	}
 	return result
 }

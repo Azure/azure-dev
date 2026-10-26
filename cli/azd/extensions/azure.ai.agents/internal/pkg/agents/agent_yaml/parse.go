@@ -4,7 +4,6 @@
 package agent_yaml
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/url"
@@ -395,28 +394,24 @@ func validateLiveAudioFormat(format *VoiceAudioFormat) []string {
 }
 
 func validateLiveVoice(value any) []string {
-	if text, ok := value.(string); ok {
-		if strings.TrimSpace(text) == "" {
+	voice, ok := value.(*VoiceConfig)
+	if !ok || voice == nil {
+		return []string{"audio.output.voice must be a voice name or custom voice object"}
+	}
+	if voice.LiveName != "" {
+		if strings.TrimSpace(voice.LiveName) == "" {
 			return []string{"audio.output.voice must not be blank"}
 		}
 		return nil
 	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return []string{"audio.output.voice must be a voice name or custom voice object"}
-	}
-	var object map[string]any
-	if err := json.Unmarshal(data, &object); err != nil {
-		return []string{"audio.output.voice custom object requires a nonblank string id"}
-	}
-	id, ok := object["id"].(string)
-	if !ok || strings.TrimSpace(id) == "" {
+	if strings.TrimSpace(voice.ID) == "" {
 		return []string{"audio.output.voice custom object requires a nonblank id"}
 	}
-	if len(object) != 1 {
+	if voice.Type != "" || voice.Name != "" || voice.Style != nil || voice.Pitch != nil ||
+		voice.Rate != nil || voice.Locale != nil || voice.Volume != nil {
 		return []string{"audio.output.voice custom object supports only id"}
 	}
-	if len(id) > 128 {
+	if len(voice.ID) > 128 {
 		return []string{"audio.output.voice.id must be at most 128 characters"}
 	}
 	return nil

@@ -73,6 +73,29 @@ func TestA2APreviewFilePolicy(t *testing.T) {
 	}
 }
 
+func TestValidateInvokeArgsUsesPreviewDecision(t *testing.T) {
+	for _, value := range []string{"false", "true", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(featureflags.A2A.EnvVar, value)
+			command := newInvokeCommand(nil)
+			require.NoError(t, command.ParseFlags([]string{"--protocol", "a2a", "--input-file", "missing.json"}))
+			flags := invokeFlags{protocol: "a2a", inputFile: "missing.json"}
+			before := flags
+			for range 2 {
+				require.NoError(t, validateInvokeArgs(command, &flags, false))
+				require.ErrorContains(t, validateInvokeArgs(command, &flags, true), "requires an explicit --a2a-version")
+				require.Equal(t, before, flags)
+				require.Empty(t, flags.a2aVersion, "validation must not resolve a version")
+				value, err := command.Flags().GetString("input-file")
+				require.NoError(t, err)
+				require.Equal(t, "missing.json", value)
+				require.True(t, command.Flags().Changed("input-file"))
+				require.False(t, command.Flags().Changed("a2a-version"))
+			}
+		})
+	}
+}
+
 func TestValidateInvokeA2AVersionFlags(t *testing.T) {
 	t.Parallel()
 
@@ -500,24 +523,48 @@ func TestA2AFileWirePolicy(t *testing.T) {
 }
 
 func TestA2AHelpVisibility(t *testing.T) {
-	for _, value := range []string{"false", "true"} {
-		t.Run(value, func(t *testing.T) {
-			clearPreviewProcess(t)
-			t.Setenv(featureflags.A2A.EnvVar, value)
-			text, err := executeRoot(t, "invoke", "--help")
-			require.NoError(t, err)
-			require.Contains(t, text, "JSON-RPC request with the a2a protocol")
-			if value == "true" {
-				require.Contains(t, text, `invoke -p a2a "Hello!"`)
-				require.Contains(t, text, "--a2a-version")
-				require.Contains(t, text, "1.0 is a convenience default")
-			} else {
-				require.NotContains(t, text, "--a2a-version")
-				require.NotContains(t, text, "1.0")
-				require.Contains(t, text, `invoke --protocol a2a "Hello!"`)
-				require.Contains(t, text, "invoke --protocol a2a -f a2a-request.json")
-			}
-		})
+	for _, initial := range []string{"false", "true"} {
+		for _, value := range []string{"false", "true"} {
+			t.Run(initial+"/"+value, func(t *testing.T) {
+				clearPreviewProcess(t)
+				t.Setenv(featureflags.A2A.EnvVar, initial)
+				root := NewRootCommand()
+				command, _, err := root.Find([]string{"invoke"})
+				require.NoError(t, err)
+				require.Contains(t, command.Long, invokeA2AVersionHelp)
+				for _, example := range invokeA2AVersionExamples {
+					require.Contains(t, command.Example, example, "static metadata must be complete")
+				}
+				require.Contains(t, command.Example, "Use the A2A 1.0 convenience default for a plain message")
+				require.NotContains(t, command.Example, "a2a-request.json")
+				require.False(t, command.Flags().Lookup("a2a-version").Hidden)
+
+				// Help must use fresh process states, not construction-time states.
+				t.Setenv(featureflags.A2A.EnvVar, value)
+				var output strings.Builder
+				root.SetOut(&output)
+				root.SetErr(&output)
+				root.SetArgs([]string{"invoke", "--help"})
+				require.NoError(t, root.ExecuteContext(t.Context()))
+				text := output.String()
+				require.Contains(t, text, "JSON-RPC request with the a2a protocol")
+				if value == "true" {
+					require.Contains(t, text, `invoke -p a2a "Hello!"`)
+					require.Contains(t, text, "--a2a-version")
+					require.Contains(t, text, "1.0 is a convenience default")
+					require.Contains(t, text, "Use the A2A 1.0 convenience default for a plain message")
+					require.Contains(t, text, "a2a-request-1.0.json")
+					require.NotContains(t, text, "Invoke a deployed agent over the a2a protocol")
+					require.NotContains(t, text, "a2a-request.json")
+				} else {
+					require.NotContains(t, text, "--a2a-version")
+					require.NotContains(t, text, "1.0")
+					require.Contains(t, text, "Invoke a deployed agent over the a2a protocol")
+					require.Contains(t, text, `invoke --protocol a2a "Hello!"`)
+					require.Contains(t, text, "invoke --protocol a2a -f a2a-request.json")
+				}
+			})
+		}
 	}
 }
 

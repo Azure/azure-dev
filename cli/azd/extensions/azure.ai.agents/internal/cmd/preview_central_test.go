@@ -217,7 +217,7 @@ func TestPreviewLocalValidatorsPreserveFlags(t *testing.T) {
 	flags := invokeFlags{message: "hi", version: " 3 ", clientHeaders: []string{"x-client-test: value"}}
 	before := flags
 	for range 2 {
-		require.NoError(t, validateInvokeArgs(invoke, &flags))
+		require.NoError(t, validateInvokeArgs(invoke, &flags, false))
 		require.Equal(t, before, flags)
 		value, err := invoke.Flags().GetString("version")
 		require.NoError(t, err)
@@ -409,6 +409,27 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreviewHelpTextReplacement(t *testing.T) {
+	command := &cobra.Command{
+		Use: "check", Short: "preview caption", Long: "preview details", Example: "preview example",
+	}
+	previewHelpText(command, featureflags.A2A, "preview caption", "legacy caption")
+	previewHelpText(command, featureflags.A2A, "preview details", "legacy details")
+	previewHelpText(command, featureflags.A2A, "preview example", "legacy example")
+	require.Panics(t, func() {
+		previewHelpText(command, featureflags.A2A, "missing example", "replacement")
+	})
+
+	applyPreviewVisibility(command, map[string]bool{featureflags.A2A.ID: true})
+	require.Equal(t, "preview caption", command.Short)
+	require.Equal(t, "preview details", command.Long)
+	require.Equal(t, "preview example", command.Example)
+	applyPreviewVisibility(command, map[string]bool{})
+	require.Equal(t, "legacy caption", command.Short)
+	require.Equal(t, "legacy details", command.Long)
+	require.Equal(t, "legacy example", command.Example)
 }
 
 func TestPreviewHelpEnabledPreservesStaticContent(t *testing.T) {

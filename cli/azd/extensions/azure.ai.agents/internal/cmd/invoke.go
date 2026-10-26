@@ -213,7 +213,11 @@ Raw output includes the returned headers without a formatted latency summary.` +
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := azdext.WithAccessToken(cmd.Context())
 			*flags = resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
-			if err := validateInvokeArgs(cmd, flags); err != nil {
+			a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+			if err != nil {
+				return err
+			}
+			if err := validateInvokeArgs(cmd, flags, a2aPreview); err != nil {
 				return err
 			}
 			flags.version = strings.TrimSpace(flags.version)
@@ -319,21 +323,23 @@ Raw output includes the returned headers without a formatted latency summary.` +
 	gateAgentServices(cmd)
 	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
 		resolved := resolveInvokeArgs(*flags, args, extCtx.OutputFormat)
-		return validateInvokeArgs(cmd, &resolved)
+		a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
+		if err != nil {
+			return err
+		}
+		return validateInvokeArgs(cmd, &resolved, a2aPreview)
 	})
 	previewFlag(cmd, "a2a-version", featureflags.A2A)
-	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, invokeA2AVersionExamples)
+	previewHelp(cmd, featureflags.A2A, []string{invokeA2AVersionHelp}, invokeA2AVersionExamples[:2])
 	previewHelpText(cmd, featureflags.A2A, "For A2A Task responses in both 0.3 and 1.0", "For A2A Task responses")
 	// Keep legacy message and file discovery when version selection is hidden.
-	if enabled, _ := featureflags.IsEnabled(featureflags.A2A); !enabled {
-		cmd.Example = strings.ReplaceAll(cmd.Example,
-			"Use the A2A 1.0 convenience default for a plain message", "Invoke a deployed agent over the a2a protocol")
-		cmd.Example = strings.ReplaceAll(cmd.Example, `invoke -p a2a "Hello!"`, `invoke --protocol a2a "Hello!"`)
-		cmd.Example = strings.ReplaceAll(cmd.Example, invokeA2AVersionExamples[2], `
+	previewHelpText(cmd, featureflags.A2A,
+		"Use the A2A 1.0 convenience default for a plain message", "Invoke a deployed agent over the a2a protocol")
+	previewHelpText(cmd, featureflags.A2A, `invoke -p a2a "Hello!"`, `invoke --protocol a2a "Hello!"`)
+	previewHelpText(cmd, featureflags.A2A, invokeA2AVersionExamples[2], `
   # Invoke the a2a protocol with a complete JSON-RPC request from a file
   azd ai agent invoke --protocol a2a -f a2a-request.json
 `)
-	}
 	previewFlag(cmd, "long-running", featureflags.LongRunning)
 	previewFlag(cmd, "no-wait", featureflags.LongRunning)
 	previewHelp(cmd, featureflags.LongRunning, []string{invokeLongRunningHelp}, invokeLongRunningExamples)
@@ -407,7 +413,7 @@ func resolveInvokeArgs(flags invokeFlags, args []string, outputFormat string) in
 	return flags
 }
 
-func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
+func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags, a2aPreview bool) error {
 	flags := *input
 	if flags.agentEndpoint != "" {
 		if err := validateAgentEndpointFlags(cmd, &flags); err != nil {
@@ -520,10 +526,6 @@ func validateInvokeArgs(cmd *cobra.Command, input *invokeFlags) error {
 				"use a deployed Responses agent or remove --long-running",
 			)
 		}
-	}
-	a2aPreview, err := featureflags.IsEnabled(featureflags.A2A)
-	if err != nil {
-		return err
 	}
 	return validateInvokeA2AVersionFlags(&flags, agent_api.AgentProtocol(flags.protocol), a2aPreview)
 }

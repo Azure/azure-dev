@@ -1601,6 +1601,17 @@ func (p *AgentServiceTargetProvider) Deploy(
 				"use a supported kind: 'hosted'",
 			)
 		}
+		if err := requireMemorySnapshotFeature(agentDef.EnableMemorySnapshot, func() (string, error) {
+			setting, err := p.azdClient.UserConfig().GetString(ctx, &azdext.GetUserConfigStringRequest{
+				Path: memorySnapshotFeatureConfigPath,
+			})
+			if err != nil || !setting.GetFound() {
+				return "", err
+			}
+			return setting.GetValue(), nil
+		}); err != nil {
+			return nil, err
+		}
 
 		if err := validateEnvironmentVariableNames(
 			serviceConfig.GetEnvironment(),
@@ -3876,6 +3887,30 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 		agentName, agentVersion,
 	)
 	return url, nil
+}
+
+const memorySnapshotFeatureConfigPath = "extensions.azure.ai.agents.features.memorySnapshot"
+
+func requireMemorySnapshotFeature(snapshot *bool, readSetting func() (string, error)) error {
+	if snapshot == nil || !*snapshot {
+		return nil
+	}
+	setting, err := readSetting()
+	if err != nil {
+		return exterrors.Configuration(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("could not read the memory snapshot feature flag: %s", err),
+			"check azd user configuration and retry the deployment",
+		)
+	}
+	if strings.EqualFold(setting, "on") {
+		return nil
+	}
+	return exterrors.Configuration(
+		exterrors.CodeInvalidServiceConfig,
+		"memory snapshots are experimental and the feature flag is disabled",
+		"run `azd config set "+memorySnapshotFeatureConfigPath+" on` to enable the feature",
+	)
 }
 
 func agentDeploymentPollTimeout(enableMemorySnapshot *bool) time.Duration {

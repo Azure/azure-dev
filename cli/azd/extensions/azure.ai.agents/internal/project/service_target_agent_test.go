@@ -575,6 +575,51 @@ func TestAgentDeploymentSnapshotPollingErrorsTimeout(t *testing.T) {
 	}
 }
 
+func TestRequireMemorySnapshotFeature(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		snapshot   *bool
+		flag       string
+		lookupErr  error
+		wantLookup bool
+		wantError  string
+	}{
+		{name: "omitted"},
+		{name: "explicit false", snapshot: new(false)},
+		{name: "default off", snapshot: new(true), wantLookup: true, wantError: "disabled"},
+		{name: "off", snapshot: new(true), flag: "off", wantLookup: true, wantError: "disabled"},
+		{name: "on", snapshot: new(true), flag: "on", wantLookup: true},
+		{name: "case insensitive", snapshot: new(true), flag: "ON", wantLookup: true},
+		{name: "invalid value", snapshot: new(true), flag: "typo", wantLookup: true, wantError: "disabled"},
+		{
+			name: "lookup failure", snapshot: new(true), lookupErr: errors.New("config unavailable"),
+			wantLookup: true, wantError: "config unavailable",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			lookedUp := false
+			err := requireMemorySnapshotFeature(test.snapshot, func() (string, error) {
+				lookedUp = true
+				return test.flag, test.lookupErr
+			})
+			require.Equal(t, test.wantLookup, lookedUp)
+			if test.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+				if test.wantError == "disabled" {
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					require.Contains(t, localErr.Suggestion,
+						"azd config set extensions.azure.ai.agents.features.memorySnapshot on")
+				}
+			}
+		})
+	}
+}
+
 func TestAgentDeploymentMemorySnapshotPollTimeout(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

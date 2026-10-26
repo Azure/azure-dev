@@ -1198,6 +1198,12 @@ Details:
 ## Memory snapshots
 
 Use an `azure.ai.agents` extension build or release that includes this setting.
+The feature flag is off by default. Enable it explicitly before deploying:
+
+```bash
+azd config set extensions.azure.ai.agents.features.memorySnapshot on
+```
+
 Opt in on a hosted agent service in `azure.yaml`:
 
 ```yaml
@@ -1213,6 +1219,9 @@ services:
 Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
 this boolean setting, including referenced definitions. Omission preserves
 existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
+The feature flag is required only for `true`. Missing or disabled flags reject the
+deployment rather than silently ignoring the setting.
+Disable it with `azd config set extensions.azure.ai.agents.features.memorySnapshot off`.
 
 The subscription and region must be enabled for the preview, and the hosting SDK
 must support snapshot hooks. Python code deployment and invocation were verified

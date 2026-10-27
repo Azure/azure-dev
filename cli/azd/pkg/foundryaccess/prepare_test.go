@@ -157,7 +157,7 @@ func TestCollectionReadProbe(t *testing.T) {
 				"message": "Identity(object id: " + tt.principal + ") does not have permissions for " + tt.action + " actions.",
 			}})
 			require.NoError(t, err)
-			probe := collectionReadProbeWithOptions("toolboxes", &policy.ClientOptions{
+			probe := collectionReadProbeWithOptions("toolboxes", "", &policy.ClientOptions{
 				Retry: policy.RetryOptions{MaxRetries: -1},
 				Transport: testTransport(func(request *http.Request) (*http.Response, error) {
 					require.Equal(t, http.MethodGet, request.Method)

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -29,6 +30,8 @@ type PrepareOptions struct {
 	EnvironmentName string
 	// Collection is a single Foundry collection segment, such as "toolboxes" or "skills".
 	Collection string
+	// APIVersion selects the collection's contract. Empty defaults to v1.
+	APIVersion string
 	// AutoGrant preserves the agent extension's automatic-grant experience for
 	// deploy/mutation commands. Callers must document this behavior. Reads, previews,
 	// local authoring, and diagnostics must leave it false or omit Prepare entirely.
@@ -146,7 +149,8 @@ func prepare(
 	}
 	result, err := ensurer.Ensure(ctx, Request{
 		Target:    Target{ProjectID: projectID, Endpoint: options.Endpoint},
-		Operation: options.Collection + ".read", Policy: policy, Probe: collectionReadProbe(options.Collection),
+		Operation: options.Collection + ".read", Policy: policy,
+		Probe: collectionReadProbeWithOptions(options.Collection, options.APIVersion, nil),
 	})
 	if err != nil || result.State != Allowed {
 		return warn(err)
@@ -161,11 +165,11 @@ var deniedReadPattern = regexp.MustCompile(
 		`(Microsoft\.CognitiveServices/accounts/AIServices/[a-z0-9_/]+/read) actions\.`,
 )
 
-func collectionReadProbe(collection string) Probe {
-	return collectionReadProbeWithOptions(collection, nil)
-}
-
-func collectionReadProbeWithOptions(collection string, options *policy.ClientOptions) Probe {
+func collectionReadProbeWithOptions(collection, apiVersion string, options *policy.ClientOptions) Probe {
+	if apiVersion == "" {
+		apiVersion = "v1"
+	}
+	query := url.Values{"api-version": []string{apiVersion}}.Encode()
 	return func(ctx context.Context, project Project) (State, error) {
 		client, err := azcore.NewClient("azd-foundry-access", "v1.0.0", runtime.PipelineOptions{
 			PerRetry: []policy.Policy{runtime.NewBearerTokenPolicy(
@@ -176,7 +180,7 @@ func collectionReadProbeWithOptions(collection string, options *policy.ClientOpt
 			return Unknown, err
 		}
 		request, err := runtime.NewRequest(ctx, http.MethodGet,
-			strings.TrimRight(project.Endpoint, "/")+"/"+collection+"?api-version=v1")
+			strings.TrimRight(project.Endpoint, "/")+"/"+collection+"?"+query)
 		if err != nil {
 			return Unknown, err
 		}

@@ -1,0 +1,37 @@
+# Tier 0 (offline) — Tasks preview gate, help, and pure validation only; no service reads.
+name: "tasks-help-validation"
+command: "azd ai agent tasks list --help"
+cwd: "~/working/azd-agents-tasks-validation-{instance}"
+tags: ["tier:0", "cmd:tasks", "cmd:help", "negative-path", "parallel-safe"]
+env:
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_CHECK_VERSION: "false"
+  AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "true"
+  AZURE_ENV_NAME: ""
+pre:
+  - run: |
+      set -eu
+      work="$HOME/working/azd-agents-tasks-validation-{instance}"
+      rm -rf "$work"
+      mkdir -p "$work"
+    cwd: "~/working"
+    name: "prepare an isolated empty directory without an azd project or environment"
+
+goals:
+  - "Confirm list help exits with code 0, defaults to JSON, and advertises --project-endpoint/-p, --agent-name/-n, --limit (default 20, range 1-100), --order (asc or desc), --after, --session-id, --status, --source-type, --lease-owner, --has-error, --lease-expired, repeatable --tag, --omit-attachment-values, --output, --environment, and --no-prompt. Confirm status lists pending, in_progress, suspended, and completed."
+  - "Confirm list help explains one-page-only results, reading opaque last_id from JSON when has_more is true, passing it unchanged to --after, and retaining the same filters, order, and limit. Confirm it says not to derive or encode the cursor and that table output always omits attachment values, even with --omit-attachment-values=false."
+  - "Run azd ai agent --help and azd ai agent tasks --help. Confirm root discovery includes tasks with the preview enabled and Tasks help lists only list and show, with examples and no create, update, delete, watch, follow, or cancel commands."
+  - "Run azd ai agent tasks show --help. Confirm it requires an exact task-id positional argument, defaults to JSON, offers json/table output and --project-endpoint/-p, but does not advertise --agent-name/-n, list-only pagination/filter flags, or --omit-attachment-values."
+  - 'Run azd ai agent tasks list --limit 0 and azd ai agent tasks list --limit 101. Confirm both exit non-zero with a validation error saying --limit must be between 1 and 100.'
+  - 'Run azd ai agent tasks list --order newest and azd ai agent tasks list --status failed. Confirm non-zero validation errors list asc/desc and pending/in_progress/suspended/completed respectively.'
+  - 'Run azd ai agent tasks list --tag missing-colon, azd ai agent tasks list --tag :value, and azd ai agent tasks list --tag key:. Confirm each exits non-zero with a key:value validation error requiring non-empty keys and values.'
+  - 'Run azd ai agent tasks list --after=, azd ai agent tasks list --session-id=, azd ai agent tasks list --agent-name=, and azd ai agent tasks list --project-endpoint=. Confirm each exits non-zero with a non-empty-value validation error naming the supplied flag.'
+  - 'Run azd ai agent tasks list --project-endpoint http://example.invalid/api/projects/probe and azd ai agent tasks show task-probe --project-endpoint https://example.invalid/api/projects/probe?secret=fixture. Confirm both reject the endpoint locally and explain that it must be an HTTPS Foundry project URL ending in /api/projects/<project> without credentials, query, or fragment. Do not fetch these inert fixture URLs.'
+  - 'Run azd ai agent tasks list --output raw and azd ai agent tasks show task-probe --output raw. Confirm both exit non-zero and require json or table.'
+  - 'Run azd ai agent tasks list unexpected, azd ai agent tasks show, and azd ai agent tasks show one two. Confirm each exits non-zero for invalid positional arguments. Run azd ai agent tasks list --has-error=maybe and confirm boolean parsing rejects it.'
+  - 'With AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=false, run azd ai agent --help. Confirm tasks is absent from command discovery, but the always-visible preview switch list describes hosted-agent Tasks inspection under AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING. Confirm direct tasks --help, tasks list --help, and tasks show --help all still exit 0 and explain their usage.'
+  - 'Keeping the switch false, run azd ai agent tasks list and azd ai agent tasks show task-probe. Confirm each exits non-zero with feature_not_enabled naming agents.long_running and suggesting AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true. No environment lookup error, authentication, agent picker, or service request may replace the gate error.'
+  - 'Keeping the switch false, run azd ai agent tasks list --limit 0 and azd ai agent tasks show task-probe --project-endpoint http://example.invalid/api/projects/probe. Confirm the local validation errors still appear before feature_not_enabled.'
+  - "No product prompts are allowed anywhere in this scenario. Do not run any valid preview-enabled list/show request, invoke, init, provision, deploy, or cloud cleanup. This scenario establishes only help, validation, and gating, not successful live Tasks reads, pagination, output privacy, or service preview availability."
+  - "Take screenshots of help, a validation error, and the disabled gate error on a best-effort basis."
+  - "Report a finding if help contradicts these goals, an invalid command is accepted, validation/gate precedence differs, or any command prompts or contacts the Tasks service."

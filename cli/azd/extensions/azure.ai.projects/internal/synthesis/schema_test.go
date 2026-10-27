@@ -107,6 +107,9 @@ func TestSchema_AgentHostingStructuralInvariants(t *testing.T) {
 	}, hosting.Required)
 	assert.Contains(t, hosting.Properties, "hostingManagementIdentityResourceId")
 	assert.Contains(t, hosting.Properties, "workloadIdentityResourceId")
+	assert.Contains(t, hosting.Properties, "storageAccountResourceId")
+	assert.NotContains(t, hosting.Properties, "hostingType")
+	assert.NotContains(t, hosting.Properties, "name")
 	assert.NotContains(t, hosting.Properties, "agentSubnetResourceId")
 	for _, field := range hosting.Required {
 		assert.Contains(t, hosting.Properties, field)

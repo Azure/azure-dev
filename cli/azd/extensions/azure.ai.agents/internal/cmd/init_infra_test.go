@@ -2096,8 +2096,6 @@ services:
   my-foundry:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: ${AKS_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
@@ -2117,6 +2115,8 @@ services:
 	hosting, ok := bicepDoc.Parameters["agentHosting"].Value.(map[string]any)
 	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
 	assert.Equal(t, true, hosting["enabled"])
+	assert.Equal(t, "ManagedCluster", hosting["hostingType"])
+	assert.Equal(t, "aks", hosting["name"])
 	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
 	assert.NotContains(t, hosting, "agentSubnetResourceId")
 	assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
@@ -2129,8 +2129,6 @@ services:
   my-foundry:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: ${AKS_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
@@ -2140,6 +2138,32 @@ services:
 	})
 	_, err = os.Stat(filepath.Join(terraformDir, "infra"))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestEjectInfra_RejectsUnsupportedAgentHostingProperties(t *testing.T) {
+	for _, field := range []string{"hostingType", "name"} {
+		for _, value := range []string{"ManagedCluster", "aks", `""`, "null"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				dir := t.TempDir()
+				original := "name: my-project\nservices:\n  my-foundry:\n    host: azure.ai.project\n" +
+					"    agentHosting:\n      clusterResourceId: ${AKS_ID}\n      " + field + ": " + value + "\n"
+				path := filepath.Join(dir, "azure.yaml")
+				mustWriteFile(t, path, original)
+				withCapturedStdout(t, func() {
+					err := ejectInfra(dir, "bicep")
+					require.ErrorContains(t, err, "services.my-foundry.agentHosting."+field+": unsupported property")
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok)
+					assert.Equal(t, exterrors.CodeInvalidAzureYaml, localErr.Code)
+				})
+				after, err := os.ReadFile(path)
+				require.NoError(t, err)
+				assert.Equal(t, original, string(after))
+				_, err = os.Stat(filepath.Join(dir, "infra"))
+				require.ErrorIs(t, err, os.ErrNotExist)
+			})
+		}
+	}
 }
 
 // TestEjectInfra_Bicep_NetworkParamsComplete_Byo ejects a BYO-egress service

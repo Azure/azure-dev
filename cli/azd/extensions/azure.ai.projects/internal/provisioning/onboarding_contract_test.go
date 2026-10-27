@@ -254,6 +254,8 @@ func TestBYOProviderPreflightThenSingleDeployment(t *testing.T) {
 			require.NoError(t, json.NewDecoder(request.Body).Decode(&deployment))
 			var hosting map[string]any
 			require.NoError(t, json.Unmarshal(deployment.Properties.Parameters["agentHosting"].Value, &hosting))
+			assert.Equal(t, "ManagedCluster", hosting["hostingType"])
+			assert.Equal(t, "aks", hosting["name"])
 			assert.Equal(t, byoProviderCluster, hosting["clusterResourceId"])
 			assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
 			assert.Empty(t, hosting["workloadIdentityResourceId"])

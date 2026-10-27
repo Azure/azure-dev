@@ -502,6 +502,8 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			require.Empty(t, evaluated.Diagnostics)
 			hosting, ok := evaluated.Outputs["hosting"].(map[string]any)
 			require.True(t, ok)
+			assert.Equal(t, "ManagedCluster", hosting["hostingType"])
+			assert.Equal(t, "aks", hosting["name"])
 			assert.Equal(t, plan.StorageAccountResourceID, hosting["storageAccountResourceId"])
 			assert.Equal(t, plan.HostingIdentityResourceID, hosting["hostingManagementIdentityResourceId"])
 			assert.Equal(t, plan.WorkloadIdentityResourceID, hosting["workloadIdentityResourceId"])

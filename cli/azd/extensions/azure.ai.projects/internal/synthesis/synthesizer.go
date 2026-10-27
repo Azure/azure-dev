@@ -146,10 +146,9 @@ type projectService struct {
 
 // agentHostingBlock configures the customer-owned AKS cluster used to host
 // Foundry agents. The service currently supports exactly one immutable
-// managed-cluster configuration per newly created Foundry account.
+// managed-cluster configuration per newly created Foundry account, with a
+// fixed hosting type and configuration name.
 type agentHostingBlock struct {
-	HostingType                         string `yaml:"hostingType"`
-	Name                                string `yaml:"name"`
 	ClusterResourceID                   string `yaml:"clusterResourceId"`
 	StorageAccountResourceID            string `yaml:"storageAccountResourceId"`
 	HostingManagementIdentityResourceID string `yaml:"hostingManagementIdentityResourceId"`
@@ -270,7 +269,6 @@ func Synthesize(in Input) (*Result, error) {
 	var hostingInput *AgentHostingInput
 	if agentHosting.Enabled {
 		hostingInput = &AgentHostingInput{
-			HostingType: agentHosting.HostingType, Name: agentHosting.Name,
 			ClusterResourceID:                   agentHosting.ClusterResourceID,
 			StorageAccountResourceID:            agentHosting.StorageAccountResourceID,
 			HostingManagementIdentityResourceID: agentHosting.HostingManagementIdentityResourceID,
@@ -448,7 +446,7 @@ func loadProjectService(
 	}
 
 	var svc projectService
-	if err := validateIdentityInputs(node, serviceName); err != nil {
+	if err := validateAgentHostingInputs(node, serviceName); err != nil {
 		return svc, err
 	}
 	if err := node.Decode(&svc); err != nil {
@@ -828,37 +826,6 @@ func synthesizeAgentHosting(
 	fieldPath := func(field string) string {
 		return fmt.Sprintf("services.%s.agentHosting.%s", svcName, field)
 	}
-	hostingTypeValue := hosting.HostingType
-	if hostingTypeValue == "" {
-		hostingTypeValue = managedClusterHostingType
-	}
-	hostingType, err := resolveAgentHostingValue(
-		hostingTypeValue,
-		fieldPath("hostingType"),
-		env,
-		resolve,
-		nil,
-	)
-	if err != nil {
-		return agentHostingParameter{}, err
-	}
-	if hostingType != managedClusterHostingType {
-		return agentHostingParameter{}, fmt.Errorf(
-			"%s: %q is not supported; expected %q",
-			fieldPath("hostingType"),
-			hostingType,
-			managedClusterHostingType,
-		)
-	}
-
-	nameValue := hosting.Name
-	if nameValue == "" {
-		nameValue = "aks"
-	}
-	name, err := resolveAgentHostingValue(nameValue, fieldPath("name"), env, resolve, nil)
-	if err != nil {
-		return agentHostingParameter{}, err
-	}
 	clusterID, err := resolveAgentHostingValue(
 		hosting.ClusterResourceID,
 		fieldPath("clusterResourceId"),
@@ -896,7 +863,7 @@ func synthesizeAgentHosting(
 	return agentHostingParameter{
 		Enabled:                             true,
 		HostingType:                         managedClusterHostingType,
-		Name:                                name,
+		Name:                                "aks",
 		ClusterResourceID:                   clusterID,
 		StorageAccountResourceID:            storageID,
 		HostingManagementIdentityResourceID: hostingID,

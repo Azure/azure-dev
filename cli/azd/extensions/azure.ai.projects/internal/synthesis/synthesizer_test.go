@@ -506,8 +506,6 @@ services:
   project:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: ${AKS_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
@@ -527,7 +525,7 @@ services:
 	assert.Equal(t, agentHostingParameter{
 		Enabled:                  true,
 		HostingType:              managedClusterHostingType,
-		Name:                     "primary",
+		Name:                     "aks",
 		ClusterResourceID:        clusterID,
 		StorageAccountResourceID: storageID,
 	}, hosting)
@@ -541,8 +539,6 @@ services:
   project:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: ${AKS_ID}
       storageAccountResourceId: ${STORAGE_ID}
 `)
@@ -554,6 +550,8 @@ services:
 	require.NoError(t, err)
 
 	hosting := result.Parameters["agentHosting"].(agentHostingParameter)
+	assert.Equal(t, "ManagedCluster", hosting.HostingType)
+	assert.Equal(t, "aks", hosting.Name)
 	assert.Equal(t, "${AKS_ID}", hosting.ClusterResourceID)
 	assert.Empty(t, hosting.HostingManagementIdentityResourceID)
 	assert.Equal(t, "${STORAGE_ID}", hosting.StorageAccountResourceID)
@@ -568,8 +566,6 @@ services:
   project:
     host: azure.ai.project
     agentHosting:
-      hostingType: ManagedCluster
-      name: primary
       clusterResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/aks
       storageAccountResourceId: /subscriptions/sub/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/agents
 `
@@ -580,10 +576,18 @@ services:
 		want       string
 	}{
 		{
-			name:       "unsupported hosting type",
-			yaml:       strings.Replace(valid, "ManagedCluster", "Other", 1),
+			name: "explicit hosting type",
+			yaml: strings.Replace(valid, "    agentHosting:\n",
+				"    agentHosting:\n      hostingType: ManagedCluster\n", 1),
 			synthesize: Synthesize,
-			want:       `hostingType: "Other" is not supported`,
+			want:       "services.project.agentHosting.hostingType: unsupported property",
+		},
+		{
+			name: "explicit hosting name",
+			yaml: strings.Replace(valid, "    agentHosting:\n",
+				"    agentHosting:\n      name: aks\n", 1),
+			synthesize: Synthesize,
+			want:       "services.project.agentHosting.name: unsupported property",
 		},
 		{
 			name:       "wrong cluster resource type",

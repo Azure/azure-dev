@@ -5,10 +5,8 @@ package synthesis
 
 import "regexp"
 
-// AgentHostingInput contains only supported customer configuration.
+// AgentHostingInput contains the supported customer resource selections.
 type AgentHostingInput struct {
-	HostingType                         string
-	Name                                string
 	ClusterResourceID                   string
 	StorageAccountResourceID            string
 	HostingManagementIdentityResourceID string

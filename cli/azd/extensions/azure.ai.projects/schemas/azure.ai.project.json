@@ -81,22 +81,12 @@
   "definitions": {
     "AgentHosting": {
       "type": "object",
-      "description": "Customer-owned AKS configuration. Requires network.agentSubnet and network.peSubnet in an existing VNet. Hosting and workload identities may each be supplied or created independently. Read-only preflight precedes one ARM deployment.",
+      "description": "Customer-owned AKS configuration with the fixed hosting type ManagedCluster and configuration name aks. Requires network.agentSubnet and network.peSubnet in an existing VNet. Hosting and workload identities may each be supplied or created independently. Read-only preflight precedes one ARM deployment.",
       "additionalProperties": false,
       "required": [
         "clusterResourceId"
       ],
       "properties": {
-        "hostingType": {
-          "type": "string",
-          "enum": ["ManagedCluster"],
-          "description": "Hosting infrastructure type. Defaults to ManagedCluster."
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Unique hosting configuration name within the Foundry account. Defaults to aks."
-        },
         "clusterResourceId": {
           "type": "string",
           "minLength": 1,

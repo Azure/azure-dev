@@ -5,10 +5,13 @@ package synthesis
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 const contractClusterID = "/subscriptions/aks-sub/resourceGroups/aks-rg/providers/" +
@@ -36,7 +39,7 @@ func TestOnboardingContractCompactPublicInput(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Hosting)
 	assert.Equal(t, AgentHostingInput{
-		HostingType: "ManagedCluster", Name: "aks", ClusterResourceID: contractClusterID,
+		ClusterResourceID: contractClusterID,
 	}, *result.Hosting)
 	hosting := hostingContractParameters(t, result)
 	assert.Equal(t, true, hosting["enabled"])
@@ -53,48 +56,101 @@ func TestOnboardingContractCompactPublicInput(t *testing.T) {
 
 func TestOnboardingContractUsesStandardYAMLDecoding(t *testing.T) {
 	for _, extra := range []string{
-		"      unknown: ignored\n",
-		"      storageAccountResourceId: null\n      hostingType: null\n      name: \"\"\n",
+		"      storageAccountResourceId: null\n",
 		"      storageAccountResourceId: \"\"\n",
 	} {
 		t.Run(extra, func(t *testing.T) {
 			input := hostingContractInput(extra)
 			result, err := Synthesize(input)
 			require.NoError(t, err)
-			assert.Equal(t, "aks", result.Hosting.Name)
-			assert.Equal(t, managedClusterHostingType, result.Hosting.HostingType)
 			assert.Empty(t, hostingContractParameters(t, result)["hostingManagementIdentityResourceId"])
 		})
 	}
-	_, err := Synthesize(hostingContractInput("      name: first\n      name: second\n"))
+	_, err := Synthesize(hostingContractInput(
+		"      storageAccountResourceId: first\n      storageAccountResourceId: second\n"))
 	require.ErrorContains(t, err, "already defined", "duplicate keys retain the YAML library's behavior")
-	result, err := Synthesize(hostingContractInput("      name: 123\n"))
-	require.NoError(t, err, "standard YAML scalar-to-string decoding is retained")
-	assert.Equal(t, "123", result.Hosting.Name)
 }
 
-func TestOnboardingContractSuppliedChoicesAndExplicitDefaults(t *testing.T) {
+func TestOnboardingContractSuppliedChoicesAndFixedHostingValues(t *testing.T) {
 	plan := onboardingContractPlan()
-	input := hostingContractInput(
-		"      hostingType: ManagedCluster\n      name: customer-hosting\n" +
-			"      storageAccountResourceId: " + plan.StorageAccountResourceID + "\n",
-	)
+	input := hostingContractInput("      storageAccountResourceId: " + plan.StorageAccountResourceID + "\n")
 	result, err := Synthesize(input)
 	require.NoError(t, err)
 	require.NotNil(t, result.Hosting)
-	assert.Equal(t, "customer-hosting", result.Hosting.Name)
 	assert.Equal(t, plan.StorageAccountResourceID, result.Hosting.StorageAccountResourceID)
-	assert.Equal(t, "customer-hosting", hostingContractParameters(t, result)["name"])
+	hosting := hostingContractParameters(t, result)
+	assert.Equal(t, "ManagedCluster", hosting["hostingType"])
+	assert.Equal(t, "aks", hosting["name"])
 
-	for _, field := range []string{"storageAccountResourceId", "hostingType", "name"} {
-		for _, value := range []string{`"   "`} {
-			t.Run(field+"/"+value, func(t *testing.T) {
-				input := hostingContractInput("      " + field + ": " + value + "\n")
-				result, err := Synthesize(input)
-				require.Error(t, err)
-				assert.Nil(t, result)
-				assert.Contains(t, err.Error(), field)
-			})
+	result, err = Synthesize(hostingContractInput("      storageAccountResourceId: \"   \"\n"))
+	require.ErrorContains(t, err, "storageAccountResourceId")
+	assert.Nil(t, result)
+}
+
+func TestOnboardingContractRejectsUnsupportedHostingProperties(t *testing.T) {
+	for _, field := range []string{"hostingType", "name", "unknown"} {
+		for _, value := range []string{
+			"ManagedCluster", "aks", "customer-hosting", `""`, "null", `"   "`,
+			`"${REMOVED_HOSTING_INPUT}"`, "false", "123", "{}",
+		} {
+			for _, preserve := range []bool{false, true} {
+				mode := map[bool]string{false: "provision", true: "eject"}[preserve]
+				t.Run(field+"/"+value+"/"+mode, func(t *testing.T) {
+					input := hostingContractInput("      " + field + ": " + value + "\n")
+					input.PreserveVarRefs = preserve
+					result, err := Synthesize(input)
+					require.ErrorContains(t, err, "services.project.agentHosting."+field+": unsupported property")
+					assert.Nil(t, result)
+				})
+			}
+		}
+	}
+}
+
+func TestOnboardingContractHostingFileReferences(t *testing.T) {
+	for _, scope := range []string{"project", "agentHosting"} {
+		for _, format := range []string{"yaml", "json"} {
+			for _, field := range []string{"", "hostingType", "name", "unknown"} {
+				t.Run(scope+"/"+format+"/"+field, func(t *testing.T) {
+					hosting := map[string]any{"clusterResourceId": contractClusterID}
+					if field != "" {
+						hosting[field] = map[string]any{
+							"hostingType": "ManagedCluster", "name": "aks", "unknown": true,
+						}[field]
+					}
+					var definition any = hosting
+					raw := "services:\n  project:\n    host: azure.ai.project\n    agentHosting:\n" +
+						"      $ref: ./input." + format + "\n"
+					if scope == "project" {
+						definition = map[string]any{"host": "azure.ai.project", "agentHosting": hosting}
+						raw = "services:\n  project:\n    $ref: ./input." + format + "\n"
+					}
+					var data []byte
+					var err error
+					if format == "yaml" {
+						data, err = yaml.Marshal(definition)
+					} else {
+						data, err = json.Marshal(definition)
+					}
+					require.NoError(t, err)
+					dir := t.TempDir()
+					require.NoError(t, os.WriteFile(filepath.Join(dir, "input."+format), data, 0o600))
+					input := Input{
+						RawAzureYAML: []byte(raw), ServiceName: "project", ProjectRoot: dir, PreserveVarRefs: true,
+					}
+					result, err := Synthesize(input)
+					if field != "" {
+						require.ErrorContains(t, err, "services.project.agentHosting."+field+": unsupported property")
+						assert.Nil(t, result)
+						return
+					}
+					require.NoError(t, err)
+					resolved := hostingContractParameters(t, result)
+					assert.Equal(t, "ManagedCluster", resolved["hostingType"])
+					assert.Equal(t, "aks", resolved["name"])
+					assert.Equal(t, contractClusterID, resolved["clusterResourceId"])
+				})
+			}
 		}
 	}
 }

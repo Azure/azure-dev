@@ -9,7 +9,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
-| `agents.a2a` | Explicit A2A wire versions and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -563,6 +563,53 @@ Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
 
+## Initializing an A2A hosted agent
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing
+an A2A hosted agent. With the preview off, init hides the `a2a` choice and rejects
+explicit `--protocol a2a` selections (including repeated or comma-separated flags)
+before authentication or writes. Responses remains the no-prompt default.
+`invocations_ws` independently requires the Voice preview. Existing declarations
+are not gated during deployment or lifecycle operations by this init selection check.
+
+Foundry forwards requests directly to A2A hosted agents instead of converting them
+to Responses requests. Select `a2a` during init and deselect `responses` if your
+agent does not support it. For non-interactive initialization:
+
+```bash
+azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \
+  --deploy-mode code --runtime python_3_13 --entry-point app.py \
+  --dep-resolution remote_build --no-prompt
+```
+
+Selecting only `a2a` generates:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-a2a-agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: my-a2a-agent
+    protocols:
+      - protocol: a2a
+        version: 1.0.0
+    agentEndpoint:
+      protocols: [a2a]
+```
+
+`protocols` declares the agent's implementation; `agentEndpoint.protocols` enables
+its A2A endpoint. Foundry uses declaration `1.0.0`; public A2A requests use `1.0`.
+
+Your agent must serve:
+
+- `POST /a2a` and `POST /invocations/a2a` (hosted routing varies by runtime)
+- `GET /invocations/a2a/.well-known/agent-card.json`
+- `GET /readiness`
+
+Init writes configuration, not an A2A server. Service onboarding and region support
+are required separately.
+
 ## Invoking agents over A2A
 
 Without the `agents.a2a` preview, messages and files use A2A 0.3. File bytes
@@ -578,7 +625,7 @@ version-selection behavior below. This changes the message default to 1.0
 and requires an explicit supported version for every A2A file invocation.
 
 Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
-agent using public A2A version `1.0` or `0.3`:
+agent using public A2A version `1.0` or `0.3` through its Foundry A2A endpoint:
 
 ```bash
 # Explicitly select the public A2A request version
@@ -592,7 +639,14 @@ and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
 
 For plain messages, azd composes both the version-specific JSON-RPC body and
 the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
-default when `--a2a-version` is omitted:
+default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
+support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
+regardless of other protocols. Local working-tree definitions are not authoritative
+for the deployed target, even when `--version` selects the current deployment.
+Local inspection failures and compatibility findings are advisory diagnostics
+shown with `--debug`; Foundry enforces deployed target support. Request and
+file-argument validation remain blocking. Translation availability and restrictions
+can vary by service rollout.
 
 ```bash
 azd ai agent invoke -p a2a "Hello!"
@@ -608,7 +662,7 @@ waiting for a terminal state or an input/authentication request.
 
 **File input requires an explicit version.** When using `--input-file` (`-f`)
 with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
-native A2A agent YAML declares a version. No heuristic infers the version
+A2A hosted agent YAML declares a version. No heuristic infers the version
 from agent configuration or the request body.
 
 The file must contain a complete public JSON-RPC request for the selected A2A
@@ -678,6 +732,9 @@ artifacts over generic status messages such as “Done.” Other Tasks prefer st
 messages so prompts, progress, and failure details remain visible, falling back to
 artifacts when no status text is present. History is the final text fallback.
 Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
+
+A2A hosted-agent session affinity is service-controlled, even with a session or
+context ID. In-memory task stores may return `TaskNotFound` on later requests.
 
 ## Invoke latency diagnostics
 
@@ -1409,6 +1466,8 @@ conditional writes with ETags, and pagination. Editing state does not resume or
 stop agent work.
 
 ## Session carry-over across deploys
+
+For A2A hosted agents, [session-affinity limitations](#invoking-agents-over-a2a) still apply.
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
 sessions are bound to the version they were created on. By default, the first

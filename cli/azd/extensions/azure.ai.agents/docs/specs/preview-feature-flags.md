@@ -71,11 +71,21 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `ManagedHarness` | `agents.managed_harness` | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
-| `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | Explicit A2A wire versions and the 1.0 message default |
+| `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
 
 ### A2A compatibility policy
+
+Init offers `a2a` only with this preview on. Explicit parsed selections, including
+repeated and comma-separated `--protocol` flags, are validated through a shared
+selection check before authentication or writes. Interactive selection occurs
+before project scaffolding. The independent Voice requirement for `invocations_ws`
+is unchanged. Protocol help is rendered from both feature states without replacing
+Voice flag annotations or pruning the static command metadata. The Hosted protocols
+help block is hidden off. No-prompt init still defaults to Responses regardless of
+both switches. This is an init-selection gate, not a deployment/lifecycle or
+transport gate for existing A2A declarations.
 
 Existing A2A invocation remains available with `agents.a2a` off: omitted
 `--a2a-version` uses 0.3 for both messages and files, with file bytes unchanged.

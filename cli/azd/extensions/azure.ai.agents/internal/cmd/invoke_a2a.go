@@ -251,6 +251,9 @@ func (a *InvokeAction) a2aRemote(ctx context.Context, version string) error {
 	if rc.azdClient != nil {
 		defer rc.azdClient.Close()
 	}
+	if err := a.validateA2ATarget(ctx, rc, version); err != nil {
+		return err
+	}
 	a.reportInvokeUsageForRemote(ctx, agent_api.AgentProtocolA2A, rc)
 
 	agentKey := rc.agentKey

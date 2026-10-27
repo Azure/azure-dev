@@ -1,0 +1,11 @@
+.azure/
+.foundry/
+.agentserver/
+**/__pycache__/
+*.pyc
+.env
+.venv/
+README.md
+AGENTS.md
+azure.yaml
+seed.py

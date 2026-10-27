@@ -1,0 +1,20 @@
+name: act-tasks-live
+services:
+  tasks-fixture:
+    host: azure.ai.agent
+    project: .
+    language: python
+    kind: hosted
+    name: tasks-fixture
+    description: Synthetic model-free multi-turn task inspection fixture
+    protocols:
+      - protocol: invocations
+        version: 2.0.0
+    codeConfiguration:
+      runtime: python_3_13
+      entryPoint: main.py
+      dependencyResolution: remote_build
+    container:
+      resources:
+        cpu: '1'
+        memory: 2Gi

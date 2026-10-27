@@ -123,8 +123,13 @@ func TestAtomicWriteRejectsSymlinksAndChangedDirectories(t *testing.T) {
 	body, err := os.ReadFile(file)
 	require.NoError(t, err)
 	assert.Equal(t, "original", string(body))
-	info, err := os.Stat(target)
+	// Stat the open handle so Windows captures the identity before the path is replaced.
+	original, err := os.Open(target) // #nosec G304 -- Opens only this test's private directory.
 	require.NoError(t, err)
+	defer original.Close()
+	info, err := original.Stat()
+	require.NoError(t, err)
+	require.NoError(t, original.Close())
 	require.NoError(t, os.Rename(target, target+"-moved"))
 	require.NoError(t, os.Mkdir(target, 0o700))
 	require.Error(t, verifyDirectory(target, info))

@@ -110,7 +110,9 @@ func startHost(t *testing.T, server *deploymentServer, prompts ...azdext.PromptS
 	go func() { serveErr <- host.Serve(listener) }()
 	t.Cleanup(func() {
 		host.Stop()
-		assert.NoError(t, <-serveErr)
+		if err := <-serveErr; err != nil {
+			assert.ErrorIs(t, err, grpc.ErrServerStopped)
+		}
 	})
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Setenv("AZD_ACCESS_TOKEN", "private-host-token")

@@ -106,7 +106,9 @@ func startUserConfigHost(t *testing.T, user *userConfigServer) {
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
-		assert.NoError(t, <-done)
+		if err := <-done; err != nil {
+			assert.ErrorIs(t, err, grpc.ErrServerStopped)
+		}
 	})
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Chdir(t.TempDir())

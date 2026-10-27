@@ -161,7 +161,9 @@ func hostClient(t *testing.T, service *configHost) *azdext.AzdClient {
 	go func() { done <- server.Serve(listener) }()
 	t.Cleanup(func() {
 		server.Stop()
-		assert.NoError(t, <-done)
+		if err := <-done; err != nil {
+			assert.ErrorIs(t, err, grpc.ErrServerStopped)
+		}
 	})
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	t.Setenv("AZD_ACCESS_TOKEN", "private-host-token")

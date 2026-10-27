@@ -39,6 +39,8 @@ func TestInstalledHostOffline(t *testing.T) {
 
 	work := filepath.Join(testutil.TempDir(t), "host smoke 空白")
 	require.NoError(t, os.Mkdir(work, 0o700))
+	// azd 1.37.0 cannot quote both an installed executable path and a schema argument containing spaces on Windows.
+	configDirectory := filepath.Join(testutil.TempDir(t), "config")
 	coverage := filepath.Join(work, "coverage")
 	require.NoError(t, os.Mkdir(coverage, 0o700))
 	environment := []string{}
@@ -54,7 +56,7 @@ func TestInstalledHostOffline(t *testing.T) {
 		environment = append(environment, value)
 	}
 	environment = append(environment,
-		"HOME="+work, "USERPROFILE="+work, "AZD_CONFIG_DIR="+filepath.Join(work, "config"),
+		"HOME="+work, "USERPROFILE="+work, "AZD_CONFIG_DIR="+configDirectory,
 		"AZURE_CONFIG_DIR="+filepath.Join(work, "azure"), "AZURE_DEV_COLLECT_TELEMETRY=no",
 		"AZD_SKIP_UPDATE_CHECK=true", "NO_COLOR=1",
 		"GOCOVERDIR="+coverage,

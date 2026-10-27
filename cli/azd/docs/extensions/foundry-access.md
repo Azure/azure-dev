@@ -81,8 +81,9 @@ access probe.
   has no suitable non-mutating check, return `Unknown` rather than guessing.
 
 The default policy is `CheckOnly`. For deployments, remote mutations, or explicit
-access setup, callers may use `GrantFoundryUser` **after** collecting consent or
-an explicitly configured authorization. `--no-prompt` is not consent. Read-only
+access setup, callers may use `GrantFoundryUser` through consent, an explicitly
+configured authorization, or documented automatic-grant command behavior.
+`--no-prompt` alone is not authorization. Read-only
 commands and diagnostics should use `CheckOnly`.
 
 `GrantFoundryUser` authorizes only the current principal's Foundry User role at
@@ -124,6 +125,22 @@ unrelated active environment's project ID.
   The package prints nothing and performs no telemetry or local persistent writes.
 
 ## Adoption and validation
+
+`Prepare` is the optional SDK adapter for environment-bound extension operations.
+Pass the resolved endpoint, selected environment name, and a collection name.
+With `AutoGrant: true`, it preserves the agents extension's documented automatic
+Foundry User grant on deploy/mutation commands. It honors
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` in either the azd environment or process.
+Read-only callers leave `AutoGrant` false. Warnings use the supplied callback;
+grant/check failures remain warning-only, while cancellation is propagated.
+
+The adapter verifies the environment endpoint matches the selected target before
+using `AZURE_AI_PROJECT_ID`. It skips automatic grants for endpoint-only commands
+without an environment binding. Its GET collection probe confirms only the read
+prerequisite, not permission to perform a subsequent write. A grant is permitted
+only for the specific Foundry `UserError`/`ForbiddenError` RBAC message naming
+the verified current principal and an AIServices read action. Network/policy
+403s, other identities, and ambiguous errors never trigger a grant.
 
 Land and release the core azd module first. Extensions should then consume that
 published version and replace only their shared developer-project-access logic.

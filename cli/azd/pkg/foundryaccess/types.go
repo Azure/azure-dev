@@ -33,8 +33,9 @@ const (
 	// CheckOnly never changes role assignments. The empty policy also means CheckOnly.
 	CheckOnly GrantPolicy = "checkOnly"
 	// GrantFoundryUser permits granting Foundry User to the current principal at
-	// the verified project scope. Callers must obtain consent or explicit configured
-	// authorization first; --no-prompt alone is not consent.
+	// the verified project scope. Callers must explicitly authorize this policy,
+	// through consent, configuration, or documented automatic-grant command behavior.
+	// --no-prompt alone is not authorization.
 	GrantFoundryUser GrantPolicy = "grantFoundryUser"
 )
 

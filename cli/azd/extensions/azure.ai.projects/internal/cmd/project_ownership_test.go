@@ -1737,11 +1737,12 @@ func TestEjectProjectInfraUsesAzdEnvironmentForCondition(t *testing.T) {
 			if recordedMode {
 				envServer.values["AZD_FOUNDRY_ACR_MODE"] = "reuse-connect"
 			}
+			before := maps.Clone(envServer.values)
 			provider := provisioning.NewFoundryProvisioningProvider(client)
 			require.NoError(t, provider.Initialize(t.Context(), root, &azdext.ProvisioningOptions{
 				Provider: provisioning.FoundryProviderName,
 			}))
-			assert.Equal(t, "reuse-connect", envServer.values["AZD_FOUNDRY_ACR_MODE"])
+			assert.Equal(t, before, envServer.values)
 		})
 	}
 }
@@ -2114,6 +2115,12 @@ type projectAddEnvironmentServer struct {
 	setCalls int
 	setErr   error
 	values   map[string]string
+}
+
+func (s *projectAddEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
 }
 
 func (s *projectAddEnvironmentServer) Select(

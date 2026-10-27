@@ -190,15 +190,26 @@ func TestARMExistingRegistryShape(t *testing.T) {
 			assert.Equal(t, "[and(parameters('includeAcr'), empty(parameters('existingAcrResourceId')))]", resource.Condition)
 			found["acr"] = true
 		case "existingAcr", "existingAcrConnection":
-			assert.Equal(t, "[and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))]", resource.Condition)
+			expectedCondition := "[and(parameters('includeAcr'), not(empty(parameters('existingAcrResourceId'))))]"
+			if name == "existingAcr" {
+				expectedCondition = "[and(and(parameters('includeAcr'), " +
+					"not(empty(parameters('existingAcrResourceId')))), not(parameters('acrPullAssigned')))]"
+			}
+			assert.Equal(t, expectedCondition, resource.Condition)
 			prefix := "existing-acr"
 			if name == "existingAcrConnection" {
 				prefix += "-connection"
 			}
-			assert.Equal(t, "[format('"+prefix+"-{0}', uniqueString("+
-				"resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), "+
-				"resourceId('Microsoft.CognitiveServices/accounts/projects', "+
-				"variables('foundryAccountName'), parameters('foundryProjectName'))))]", resource.Name)
+			expectedName := "[format('" + prefix + "-{0}', uniqueString(" +
+				"resourceId('Microsoft.CognitiveServices/accounts', variables('foundryAccountName')), " +
+				"resourceId('Microsoft.CognitiveServices/accounts/projects', " +
+				"variables('foundryAccountName'), parameters('foundryProjectName'))))]"
+			if name == "existingAcr" {
+				expectedName = "[if(empty(parameters('acrAccessOperationId')), " +
+					strings.TrimSuffix(strings.TrimPrefix(expectedName, "["), "]") +
+					", format('azd-acr-{0}', parameters('acrAccessOperationId')))]"
+			}
+			assert.Equal(t, expectedName, resource.Name)
 			found[name] = true
 		}
 	}

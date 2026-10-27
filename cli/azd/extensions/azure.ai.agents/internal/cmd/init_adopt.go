@@ -854,6 +854,9 @@ func runInitFromAzureYaml(
 	if err != nil {
 		return fmt.Errorf("reading staged azure.yaml: %w", err)
 	}
+	if err := validateInitACRManifest(stagedContent, stagingDir, flags); err != nil {
+		return err
+	}
 	stagedInfo, err := inspectAzureYaml(stagedContent, stagingDir)
 	if err != nil {
 		return err
@@ -921,6 +924,7 @@ func runInitFromAzdTemplate(
 		targetDir,
 		selectedTemplate.Source,
 		envName,
+		flags,
 	); err != nil {
 		return err
 	}
@@ -966,8 +970,9 @@ func scaffoldAzdTemplateProject(
 	targetDir string,
 	templateSource string,
 	envName string,
+	flags *initFlags,
 ) error {
-	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource); err != nil {
+	if err := preflightAzdTemplate(ctx, azdClient, httpClient, templateSource, flags); err != nil {
 		return err
 	}
 	return scaffoldProject(ctx, azdClient, targetDir, templateSource, envName)
@@ -981,6 +986,7 @@ func preflightAzdTemplate(
 	azdClient *azdext.AzdClient,
 	httpClient *http.Client,
 	templateSource string,
+	flags *initFlags,
 ) error {
 	stagingDir, cleanup, err := stageAzdTemplateRepository(
 		ctx,
@@ -997,7 +1003,14 @@ func preflightAzdTemplate(
 	}
 	defer cleanup()
 
-	return validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource))
+	if err := validateStagedAzureYaml(stagingDir, safeInitSourceDisplay(templateSource)); err != nil {
+		return err
+	}
+	content, err := os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+	if err != nil {
+		return fmt.Errorf("read template registry configuration: %w", err)
+	}
+	return validateInitACRManifest(content, stagingDir, flags)
 }
 
 func stageAzdTemplateRepository(
@@ -1323,6 +1336,7 @@ func finalizeAdoptedProject(
 		filterHostedRegions && !promptOnly,
 		preserveDeferredProjectState,
 		allowedLocations,
+		flags.acrResourceID,
 	)
 	if err != nil {
 		if exterrors.IsCancellation(err) {
@@ -1372,6 +1386,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			projectAuthoringExisting,
 			flags.noPrompt,
+			flags.acrResourceID,
 		); err != nil {
 			return err
 		}
@@ -1422,6 +1437,7 @@ func finalizeAdoptedProject(
 			projectRoot,
 			result.AuthoringMode,
 			flags.noPrompt,
+			flags.acrResourceID,
 		); err != nil {
 			return err
 		}
@@ -2368,8 +2384,12 @@ func applyDeployModeToService(
 	}
 	showCodeDeploy := supportsCodeDeploy(serviceDir)
 	// The final argument is true because -t supplied unified project input.
+	requestedMode := flags.deployMode
+	if flags.acrResourceIDSet {
+		requestedMode = "container"
+	}
 	deployMode, err := promptDeployMode(
-		ctx, azdClient, flags.noPrompt, showCodeDeploy, flags.deployMode, true,
+		ctx, azdClient, flags.noPrompt, showCodeDeploy, requestedMode, true,
 	)
 	if err != nil {
 		return false, fmt.Errorf("resolving deploy mode for adopted project: %w", err)

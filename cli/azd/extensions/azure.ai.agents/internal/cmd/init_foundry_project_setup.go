@@ -70,6 +70,7 @@ func configureFoundryProject(
 	filterHostedRegions bool,
 	preserveDeferredProjectState bool,
 	allowedLocations []string,
+	acrResourceID string,
 ) (*foundryProjectSetupResult, error) {
 	ensureProjectLocation := func() error {
 		if len(allowedLocations) == 0 {
@@ -170,7 +171,7 @@ func configureFoundryProject(
 	} else if preserveDeferredProjectState {
 		// Preserve an adopted endpoint with complete Azure context.
 		result.AuthoringMode = projectAuthoringCurrent
-	} else if noPrompt {
+	} else if noPrompt || acrResourceID != "" {
 		newCred, err := ensureSubscription(
 			ctx, azdClient, azureContext, envName,
 			"Select an Azure subscription to provision your agent and Foundry project resources.",

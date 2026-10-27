@@ -1,0 +1,150 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cmd
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/synthesis"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
+)
+
+func initACRConflict(input string) error {
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"--acr-resource-id cannot be combined with "+input,
+		"use --acr-resource-id for hosted-container source builds in a new Foundry project",
+	)
+}
+
+func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
+	if !flags.acrResourceIDSet {
+		return nil
+	}
+	if err := synthesis.ValidateACRSelector(flags.acrResourceID, "", ""); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-resource-id must be a non-empty ACR ARM resource ID",
+			"use /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.ContainerRegistry/registries/<name>",
+		)
+	}
+	for _, name := range []string{
+		"project-id", "acr-connection", "image", "registry-connection",
+		"runtime", "entry-point", "dep-resolution",
+	} {
+		if cmd.Flags().Changed(name) {
+			return initACRConflict("--" + name)
+		}
+	}
+	if strings.EqualFold(flags.deployMode, "code") {
+		return initACRConflict("--deploy-mode code")
+	}
+	if flags.kind != "" && !strings.EqualFold(flags.kind, "hosted") {
+		return initACRConflict("--kind " + flags.kind)
+	}
+	if strings.EqualFold(flags.infra, "terraform") {
+		return initACRConflict("--infra terraform")
+	}
+	return nil
+}
+
+func validateInitACRManifest(content []byte, root string, flags *initFlags) error {
+	return validateInitACRManifestInEnvironment(content, root, flags, nil)
+}
+
+func validateInitACRManifestInEnvironment(
+	content []byte, root string, flags *initFlags, values map[string]string,
+) error {
+	if !flags.acrResourceIDSet {
+		return nil
+	}
+	needsACR, err := synthesis.RequiresACR(synthesis.Input{
+		RawAzureYAML: content,
+		ProjectRoot:  root,
+		Env:          values,
+	})
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("cannot apply --acr-resource-id: %s", err),
+			"fix the source-build agent configuration and retry",
+		)
+	}
+	if !needsACR {
+		return initACRConflict("an agent configuration without hosted-container source builds")
+	}
+	return nil
+}
+
+func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
+	if !flags.acrResourceIDSet || flags.templatePointer != "" {
+		return nil
+	}
+	root, err := azdext.GetProjectDir()
+	if errors.Is(err, azdext.ErrProjectNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("resolve project before selecting a registry: %w", err)
+	}
+	content, err := readProjectAzureYAML(root)
+	if err != nil {
+		return fmt.Errorf("read project registry configuration: %w", err)
+	}
+	environments, err := client.Environment().List(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return fmt.Errorf("read environments before selecting a registry: %w", err)
+	}
+	envName := ""
+	for _, env := range environments.GetEnvironments() {
+		if flags.env != "" && env.GetName() == flags.env ||
+			flags.env == "" && env.GetDefault() {
+			envName = env.GetName()
+			break
+		}
+	}
+	values := map[string]string{}
+	if envName != "" {
+		values, err = getAgentEnvironmentValues(ctx, client, envName)
+		if err != nil {
+			return fmt.Errorf("read registry selection: %w", err)
+		}
+		binding, err := client.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
+			EnvName: envName, Path: synthesis.ACRBindingConfigKey,
+		})
+		if err != nil {
+			return fmt.Errorf("read deployed registry binding: %w", err)
+		}
+		if binding.GetFound() {
+			values[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
+		}
+	}
+	values["AZURE_ENV_NAME"] = envName
+	if err := synthesis.ValidateGreenfieldACRSelectionForInput(synthesis.Input{
+		RawAzureYAML: content, ProjectRoot: root, Env: values,
+	}, flags.acrResourceID); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments, err.Error(),
+			"use a registry outside the Foundry resource group; deployed registry migration is not supported",
+		)
+	}
+	if canReuseExistingAgentConfiguration(flags, false, flags.src != "") {
+		info, err := inspectAzureYaml(content, root)
+		if err != nil {
+			return err
+		}
+		if info.hasAgentService {
+			if err := validateInitACRManifestInEnvironment(content, root, flags, values); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

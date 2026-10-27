@@ -979,6 +979,12 @@ type transactionEnvironmentServer struct {
 	calls  int
 }
 
+func (s *transactionEnvironmentServer) GetConfig(
+	context.Context, *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	return &azdext.GetConfigResponse{}, nil
+}
+
 func (s *transactionEnvironmentServer) Select(
 	context.Context,
 	*azdext.SelectEnvironmentRequest,

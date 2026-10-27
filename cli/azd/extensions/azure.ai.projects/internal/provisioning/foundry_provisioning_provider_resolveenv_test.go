@@ -27,11 +27,46 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName string
-	get     map[string]string
-	getErr  map[string]error
-	set     map[string]string
-	process map[string]string
+	envName   string
+	get       map[string]string
+	getErr    map[string]error
+	set       map[string]string
+	process   map[string]string
+	config    map[string][]byte
+	configErr error
+}
+
+func (s *resolveEnvStubEnvServer) GetConfig(
+	_ context.Context, req *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	if s.configErr != nil {
+		return nil, s.configErr
+	}
+	value, found := s.config[req.Path]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
+}
+
+func (s *resolveEnvStubEnvServer) SetConfig(
+	_ context.Context, req *azdext.SetConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	if s.configErr != nil {
+		return nil, s.configErr
+	}
+	if s.config == nil {
+		s.config = map[string][]byte{}
+	}
+	s.config[req.Path] = req.Value
+	return &azdext.EmptyResponse{}, nil
+}
+
+func (s *resolveEnvStubEnvServer) UnsetConfig(
+	_ context.Context, req *azdext.UnsetConfigRequest,
+) (*azdext.EmptyResponse, error) {
+	if s.configErr != nil {
+		return nil, s.configErr
+	}
+	delete(s.config, req.Path)
+	return &azdext.EmptyResponse{}, nil
 }
 
 func (s *resolveEnvStubEnvServer) GetCurrent(
@@ -626,7 +661,7 @@ func TestInitializeExistingRegistry(t *testing.T) {
 				if wantMode == "" {
 					wantMode = "reuse-connect"
 				}
-				assert.Equal(t, wantMode, env.set["AZD_FOUNDRY_ACR_MODE"])
+				assert.NotContains(t, env.set, "AZD_FOUNDRY_ACR_MODE")
 				assert.Equal(t, wantMode, provider.greenfieldAcrMode)
 				if tt.onDisk {
 					assert.Nil(t, provider.armTemplate, "on-disk initialization must not load the embedded template")

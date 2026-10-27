@@ -150,11 +150,19 @@ type selfInitializingEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	current string
 	values  map[string]string
+	config  map[string][]byte
 	failKey string
 	// failValue, when non-nil, fails only a write of that exact value for failKey.
 	// A nil failValue keeps the first write of failKey as the failure.
 	failValue *string
 	setLog    []string
+}
+
+func (s *selfInitializingEnvironmentServer) GetConfig(
+	_ context.Context, request *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	value, found := s.config[request.GetPath()]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
 }
 
 func (s *selfInitializingEnvironmentServer) GetCurrent(

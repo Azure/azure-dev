@@ -72,6 +72,9 @@ type Input struct {
 	// against it before synthesis, so refs become the actual content rather
 	// than zero-valued params. Empty disables resolution.
 	ProjectRoot string
+
+	// ACRBinding contains deployment facts, never setup intent.
+	ACRBinding *ACRBinding
 }
 
 // Result bundles the bicep sources and the parameter values derived
@@ -227,6 +230,21 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	mode := in.Env["AZD_FOUNDRY_ACR_MODE"]
+	binding := in.ACRBinding
+	if binding == nil {
+		binding, err = ParseACRBinding(in.Env[ACRBindingEnvKey])
+		if err != nil {
+			return nil, err
+		}
+	}
+	if binding != nil {
+		if err := ValidateACRBinding(binding, mode, in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]); err != nil {
+			return nil, err
+		}
+		if mode == "" {
+			mode = binding.Mode
+		}
+	}
 	if !includeAcr {
 		mode = "none"
 	} else if mode == "" {
@@ -241,12 +259,10 @@ func Synthesize(in Input) (*Result, error) {
 			return nil, err
 		}
 	default:
-		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q; "+
-			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`", mode)
+		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
 	}
 	if includeAcr && mode == "none" {
-		return nil, errors.New("synthesis: AZD_FOUNDRY_ACR_MODE cannot be none when a registry is required; " +
-			"set it to create or reuse-connect, or clear it with `azd env set AZD_FOUNDRY_ACR_MODE \"\"`")
+		return nil, errors.New("synthesis: AZD_FOUNDRY_ACR_MODE cannot be none when a registry is required")
 	}
 
 	deployments := svc.Deployments
@@ -283,18 +299,18 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
-// GreenfieldACRMode selects a mode from an environment snapshot before synthesis.
-// A recorded mode wins over registry outputs from previous provisioning. With no
-// recorded mode, a non-empty AZURE_CONTAINER_REGISTRY_RESOURCE_ID selects
-// reuse-connect, except when it points into resourceGroup: that is the output
-// of a registry azd created before the mode was recorded (environments from
-// earlier versions), so create mode is kept instead of failing validation.
+// GreenfieldACRMode preserves in-group registry outputs.
+// Actual deployed choices are enforced by ValidateACRBinding.
 func GreenfieldACRMode(env map[string]string, resourceGroup string) string {
-	if mode := env["AZD_FOUNDRY_ACR_MODE"]; mode != "" {
+	if mode := env["AZD_FOUNDRY_ACR_MODE"]; mode != "" && mode != "none" && mode != "create" {
 		return mode
 	}
 	id := env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	if id == "" {
+		return "create"
+	}
+	if env["AZD_FOUNDRY_ACR_MODE"] == "create" &&
+		(resourceGroup == "" || !containerRegistryIDPattern.MatchString(id)) {
 		return "create"
 	}
 	if containerRegistryIDPattern.MatchString(id) && resourceGroup != "" {
@@ -308,7 +324,8 @@ func GreenfieldACRMode(env map[string]string, resourceGroup string) string {
 }
 
 var containerRegistryIDPattern = regexp.MustCompile(
-	`(?i)^/subscriptions/[^/\s]+/resourceGroups/[^/\s]+/providers/Microsoft\.ContainerRegistry/registries/[^/\s]+$`,
+	`(?i)^/subscriptions/[^/\s?#\\%]+/resourceGroups/[^/\s?#\\%]+/providers/` +
+		`Microsoft\.ContainerRegistry/registries/[a-z0-9]+$`,
 )
 
 func existingContainerRegistry(in Input) (string, error) {
@@ -317,15 +334,8 @@ func existingContainerRegistry(in Input) (string, error) {
 		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
 	}
-	if !containerRegistryIDPattern.MatchString(id) {
-		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be a full ARM ID " +
-			"of a Microsoft.ContainerRegistry/registries resource")
-	}
-	parts := strings.Split(id, "/")
-	if strings.EqualFold(parts[2], in.Env["AZURE_SUBSCRIPTION_ID"]) &&
-		strings.EqualFold(parts[4], in.ResourceGroupName) {
-		return "", errors.New("synthesis: AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +
-			"resource group because azd down deletes that group")
+	if err := ValidateACRSelector(id, in.Env["AZURE_SUBSCRIPTION_ID"], in.ResourceGroupName); err != nil {
+		return "", fmt.Errorf("synthesis: %w", err)
 	}
 	return id, nil
 }
@@ -676,6 +686,90 @@ func deriveIncludeAcr(
 	projectRoot string,
 	env map[string]string,
 ) (bool, error) {
+	_, needed, err := deriveACRRequirements(services, svc, projectRoot, env)
+	return needed, err
+}
+
+// RequiresACR reports source-build demand using synthesis rules.
+func RequiresACR(in Input) (bool, error) {
+	_, needed, err := ACRRequirements(in)
+	return needed, err
+}
+
+// ACRRequirements resolves enabled agents, including inline and $ref.
+// A project-only manifest has no agents and permits setup intent.
+func ACRRequirements(in Input) (bool, bool, error) {
+	root, projects, err := acrProjectServices(in)
+	if err != nil {
+		return false, false, err
+	}
+	var combined projectService
+	for _, svc := range projects {
+		combined.Agents = append(combined.Agents, svc.Agents...)
+	}
+	return deriveACRRequirements(root.Services, combined, in.ProjectRoot, in.Env)
+}
+
+func acrProjectServices(in Input) (projectFile, []projectService, error) {
+	var root projectFile
+	if err := yaml.Unmarshal(in.RawAzureYAML, &root); err != nil {
+		return root, nil, fmt.Errorf("parse azure.yaml: %w", err)
+	}
+	hosts := []string{"azure.ai.project", "azure.ai.agents"}
+	for _, host := range in.AcceptedHosts {
+		if host != "azure.ai.agent" && !slices.Contains(hosts, host) {
+			hosts = append(hosts, host)
+		}
+	}
+	var projects []projectService
+	for _, name := range slices.Sorted(maps.Keys(root.Services)) {
+		node := root.Services[name]
+		var selector struct {
+			Host string `yaml:"host"`
+			Ref  string `yaml:"$ref"`
+		}
+		if err := node.Decode(&selector); err != nil {
+			continue
+		}
+		if !slices.Contains(hosts, selector.Host) && (selector.Host != "" || selector.Ref == "") {
+			continue
+		}
+		enabled, err := serviceNodeEnabled(node, projectConditionLookup(in.Env))
+		if err != nil {
+			return root, nil, fmt.Errorf("services.%s.condition: %w", name, err)
+		}
+		if !enabled {
+			continue
+		}
+		matches := false
+		for _, host := range hosts {
+			_, matches, err = serviceForHost(node, in.ProjectRoot, name, host)
+			if err != nil {
+				return root, nil, err
+			}
+			if matches {
+				break
+			}
+		}
+		if !matches {
+			continue
+		}
+		svc, err := loadProjectService(root.Services, name, in.ProjectRoot)
+		if err != nil {
+			return root, nil, err
+		}
+		projects = append(projects, svc)
+	}
+	return root, projects, nil
+}
+
+func deriveACRRequirements(
+	services map[string]yaml.Node,
+	svc projectService,
+	projectRoot string,
+	env map[string]string,
+) (bool, bool, error) {
+	hasAgents := len(svc.Agents) > 0
 	includeAcr := slices.ContainsFunc(svc.Agents, agentNeedsAcr)
 	lookup := projectConditionLookup(env)
 	for _, serviceName := range slices.Sorted(maps.Keys(services)) {
@@ -693,27 +787,32 @@ func deriveIncludeAcr(
 		}
 		enabled, err := serviceNodeEnabled(node, lookup)
 		if err != nil {
-			return false, fmt.Errorf("services.%s.condition: %w", serviceName, err)
+			return false, false, fmt.Errorf("services.%s.condition: %w", serviceName, err)
 		}
 		if !enabled {
 			continue
 		}
 		if err := rejectBundledDeclarations(node, serviceName, projectRoot != ""); err != nil {
-			return false, err
+			return false, false, err
 		}
 		node, matches, err := serviceForHost(node, projectRoot, serviceName, "azure.ai.agent")
 		if err != nil {
-			return false, err
+			return false, false, err
 		}
 		if !matches {
 			continue
 		}
+		hasAgents = true
 		if err := rejectBundledDeclarations(node, serviceName, false); err != nil {
-			return false, err
+			return false, false, err
 		}
 		var service serviceBlock
 		if err := node.Decode(&service); err != nil {
-			return false, fmt.Errorf("decode service %q: %w", serviceName, err)
+			return false, false, fmt.Errorf("decode service %q: %w", serviceName, err)
+		}
+		if len(service.Agents) > 0 {
+			includeAcr = includeAcr || slices.ContainsFunc(service.Agents, agentNeedsAcr)
+			continue
 		}
 		agent := agentBlock{
 			Kind:              service.Kind,
@@ -733,7 +832,7 @@ func deriveIncludeAcr(
 		}
 		includeAcr = includeAcr || agentNeedsAcr(agent)
 	}
-	return includeAcr, nil
+	return hasAgents, includeAcr, nil
 }
 
 // agentNeedsAcr reports whether a single agent entry builds a container image

@@ -248,6 +248,15 @@ func runReuseProjectAgentServices(
 		flags.env = env.Name
 	}
 
+	if flags.acrResourceIDSet {
+		if err := authorSelectedFoundryProject(
+			ctx, azdClient, env.Name, nil, resolveProjectPath(ctx, azdClient),
+			projectAuthoringCurrent, flags.noPrompt, flags.acrResourceID,
+		); err != nil {
+			return err
+		}
+	}
+
 	fmt.Println(color.HiBlackString("Reusing the agent configuration already in this project."))
 
 	state, _ := nextstep.AssembleState(ctx, azdClient, nextstep.WithEnvironment(env.Name))

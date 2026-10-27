@@ -164,15 +164,46 @@ Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.
 
-Use `--new-project` when a new project must be created even if the workspace
-already has a project endpoint or project ID configured:
+Use `--new-project` for greenfield setup instead of adopting a workspace
+project endpoint or project ID:
 
 ```sh
 azd ai project add --new-project
 ```
 
 `--new-project` cannot be combined with `--project-id` or
-`--project-endpoint`.
+`--project-endpoint`. If the environment already has a deployed registry
+binding, repeating setup preserves that project identity. Use a new azd
+environment to create another project.
+
+### Reuse an external container registry
+
+For source-built hosted agents in a new Foundry project, select an existing
+Azure Container Registry by its full ARM resource ID:
+
+```sh
+azd ai project add --new-project --acr-resource-id "/subscriptions/<subscription-id>/resourceGroups/<external-resource-group>/providers/Microsoft.ContainerRegistry/registries/<registry-name>"
+```
+
+This is supported with Bicep only. The registry must be outside the Foundry
+resource group because `azd down` deletes that group. You are responsible for
+registry network connectivity and appropriate image push permissions.
+The registry and its images remain externally owned and are retained by
+`azd down`. Default and JSON output identify the selected registry and its
+external ownership.
+
+Before provisioning, the flag overrides environment defaults and saves
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `AZD_FOUNDRY_ACR_MODE=reuse-connect`.
+You can select a registry before adding agents; the selection remains pending
+until a source-built agent requires it. An explicit empty value, an existing
+project selector, or a manifest containing only code, prebuilt-image, or
+non-container agents is rejected. Without a selector, source builds continue
+to create a registry automatically.
+
+Once a project has a deployed registry binding, registry migration is not
+supported. Repeating setup with the same selection preserves the deployed
+project identity and ownership. Use a new azd environment to choose a different
+registry; do not clear internal mode or ownership state to bypass this check.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment

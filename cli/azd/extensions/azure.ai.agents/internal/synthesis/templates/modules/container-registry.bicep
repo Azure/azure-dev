@@ -9,6 +9,8 @@ param location string
 param tags object = {}
 param registryName string
 param projectPrincipalId string
+param pullAssigned bool = false
+param accessOperationId string = ''
 
 var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -54,11 +56,13 @@ resource newRegistryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 
 // Nested so roleDefinitionId can be chosen from the registry's roleAssignmentMode
 // (Bicep forbids runtime existing-resource properties in resource conditions/names).
-module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 'reuse-connect') {
-  name: 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}'
+module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 'reuse-connect' && !pullAssigned) {
+  name: empty(accessOperationId) ? 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}' : 'azd-acr-access-${accessOperationId}'
   params: {
     registryName: registryName
     principalId: projectPrincipalId
+    assignmentName: accessOperationId
+    ownershipDescription: empty(accessOperationId) ? '' : 'azd-foundry:${accessOperationId}'
     roleDefinitionId: existingRegistry!.properties.roleAssignmentMode == 'AbacRepositoryPermissions'
       ? repositoryReaderRoleId
       : acrPullRoleId

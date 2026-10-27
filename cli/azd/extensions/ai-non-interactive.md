@@ -23,6 +23,7 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Protocols | Repeatable `--protocol` | Uses the documented default protocol set. |
 | `ai agent init` | Existing model deployment or new model | `--model-deployment`, `--model`, and `--project-id` | Uses the supplied deployment/model; required unresolved model choices return guidance. |
 | `ai agent init` | Azure Container Registry connection | `--acr-connection` with `--project-id` or a persisted `AZURE_AI_PROJECT_ID`; persisted `AZURE_AI_PROJECT_ACR_CONNECTION_NAME`; or persisted `AZURE_CONTAINER_REGISTRY_ENDPOINT` / `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Reuses persisted state. With multiple remaining connections, selects the first connection alphabetically. With none, creates a registry during provisioning. |
+| `ai agent init` | Source-build registry for a new Foundry project | `--acr-resource-id` or persisted `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Creates a registry when source builds need one. An explicit selector is saved by project setup without a registry picker. |
 | `ai agent init` | Application Insights | Foundry project service configuration | The current init flow delegates creation or reconciliation to the provisioning provider without prompting. |
 | `ai agent init` | Values referenced by `${NAME}` in `azure.yaml` | `azd env set NAME value` before running init, or existing azd environment values | Leaves unresolved optional references for explicit configuration and reports required missing values. |
 | `ai agent add` | Current project, Agent service key, and definition | Positional `<name>` and required `--file`; optional `--project` and `--source` | Accepts YAML or JSON definitions and writes a service-level root `$ref` to `--file`, relative to the directory containing `azure.yaml`. Runs without prompts or Azure authentication and rejects missing or multiple `azure.ai.project` services before writing. |
@@ -41,8 +42,12 @@ no non-interactive equivalent is a bug.
 
 ## `azure.ai.projects`
 
-For a new Foundry project that needs a container registry, set
-`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+For a new Foundry project that builds hosted-agent images from source, pass
+`--acr-resource-id "<registry-arm-id>"` to `azd ai agent init`, or use
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"`.
+The projects extension saves the choice in the active environment. An explicit
+flag takes precedence over the environment's selection before provisioning. Scripts can
+also set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
 ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
 Provisioning reuses it, grants the project identity pull access, and creates the
 project connection without changing the registry's networking. Classic registries
@@ -53,25 +58,19 @@ outside the Foundry resource group (which `azd down` deletes). This is supported
 by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
 external registry.
 
-Greenfield provisioning records its registry decision in `AZD_FOUNDRY_ACR_MODE`:
-`reuse-connect` when the registry ID is non-empty, otherwise `create` (the default,
-which creates a registry in the Foundry resource group). A project that does not
-need a registry records `none`. Once recorded, the mode wins over the ID value,
-so writing a created registry's ID back to `AZURE_CONTAINER_REGISTRY_RESOURCE_ID`
-does not accidentally enable reuse on the next provision. `reuse-connect`
-requires a non-empty, valid registry ID outside the Foundry resource group.
-For environments provisioned before the mode was recorded, an ID that points into
-the Foundry resource group is treated as a registry azd created, so `create` is
-recorded instead of `reuse-connect`.
+Without a selection, provisioning creates a registry only when source builds
+need one. Code deployments and prebuilt images do not need a source-build
+registry. Explicit empty or malformed IDs, code/prebuilt-only configurations,
+conflicting connection selectors, and Terraform reuse fail rather than silently
+ignoring the selection. No registry picker is added.
 
-To switch modes, clear the recorded decision with
-`azd env set AZD_FOUNDRY_ACR_MODE ""` (or unset the key), then set
-`AZURE_CONTAINER_REGISTRY_RESOURCE_ID` to reuse a registry, or clear/unset it to
-create one. Alternatively, run `azd down`, which clears the mode; it preserves
-the registry ID in reuse mode and clears it in create mode. Then set or unset
-the registry ID before the next `azd up`. Switching from create to reuse in a
-live environment leaves the previously created registry in the Foundry resource
-group until `azd down`.
+A deployed project keeps its registry choice across repeated provisioning.
+Registry migration is not supported: changing the selector or resetting
+`AZD_FOUNDRY_ACR_MODE` cannot switch a deployed project to another registry.
+Use a separate environment for a different deployment. After a successful
+`azd down`, a new deployment can select another registry. Down preserves the
+external registry and its images, and removes only access grants and related
+resources that azd can establish it owns. Administrator-managed grants remain.
 
 The deployer needs permission to create role assignments on the external
 registry (for example, Owner, User Access Administrator, or Role Based Access
@@ -82,10 +81,11 @@ on ABAC registries) to push images.
 
 Ejected Bicep parameters include
 `existingAcrResourceId = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"` only in reuse
-mode, rather than embedding a literal registry ID. Eject uses the recorded mode
-when present, otherwise the same registry-ID decision rule. Create mode ignores
-the registry ID and supports either Bicep or Terraform eject; reuse mode requires
-Bicep eject.
+mode, rather than embedding a literal registry ID. Eject uses the established
+registry choice when present, otherwise the same registry-ID decision rule.
+Create mode supports either Bicep or Terraform eject; reuse mode requires
+Bicep eject. Existing deployment bindings also apply to ejected infrastructure;
+editing the registry parameter does not enable migration.
 
 | Command or area | Interactive decision | Non-interactive input | Behavior when omitted in no-prompt mode |
 | --- | --- | --- | --- |

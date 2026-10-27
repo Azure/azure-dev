@@ -116,7 +116,7 @@ func TestAuthorFoundryProjectUsesPublicCommand(t *testing.T) {
 	}
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -148,7 +148,7 @@ func TestAuthorFoundryProjectUsesEndpointFlag(t *testing.T) {
 
 	projectRoot := t.TempDir()
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, true,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -178,7 +178,7 @@ func TestAuthorFoundryProjectPreservesPromptMode(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, target, projectRoot, projectAuthoringExisting, false,
+		t.Context(), client, target, projectRoot, projectAuthoringExisting, false, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -201,7 +201,7 @@ func TestAuthorFoundryProjectUsesNewProjectFlag(t *testing.T) {
 	projectRoot := t.TempDir()
 
 	require.NoError(t, authorFoundryProject(
-		t.Context(), client, nil, projectRoot, projectAuthoringNew, true,
+		t.Context(), client, nil, projectRoot, projectAuthoringNew, true, "",
 	))
 
 	assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot,
@@ -577,7 +577,7 @@ func TestProjectWorkflowPropagatesFailures(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project failed")
@@ -597,7 +597,7 @@ func TestProjectWorkflowPreservesCancellation(t *testing.T) {
 	)
 
 	err := authorFoundryProject(
-		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "authoring the Foundry project was cancelled")
@@ -628,7 +628,7 @@ func TestAuthorCurrentFoundryProjectPreservesDeferredValues(t *testing.T) {
 	client := newTestAzdClient(t, envServer, workflowServer)
 
 	require.NoError(t, authorSelectedFoundryProject(
-		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent, true,
+		t.Context(), client, "test", nil, t.TempDir(), projectAuthoringCurrent, true, "",
 	))
 
 	assert.Equal(t, "deferred-project",

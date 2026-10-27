@@ -1070,6 +1070,35 @@ proxy — fails validation rather than silently deploying a policy that never ru
 Set `inputContentType`/`outputContentType` to `text` when the body is plain text;
 the whole body is then moderated and no paths are needed for that direction.
 
+### Reuse a source-build registry
+
+For hosted-container source builds in a new Foundry project, select an existing
+registry during setup:
+
+```powershell
+azd ai agent init --src . --acr-resource-id "<registry-arm-id>"
+```
+
+The projects extension saves the selection in the active azd environment.
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"` provides
+the same project-level setup. Before provisioning, a setup flag overrides the environment's
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID`; without either input, provisioning creates
+a registry only when source builds need one. Setup displays the selected registry
+as externally owned without introducing a registry picker.
+
+The selector cannot be combined with `--image`, `--registry-connection`,
+`--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
+connection-selection flows keep their meanings. Repeated provisioning retains
+the deployed registry; switching an already provisioned project's registry is
+not supported.
+
+Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
+be outside the Foundry resource group that `azd down` deletes. azd preserves the
+external registry, images, and administrator-managed grants, and cleans up only
+access grants and related resources it can establish it owns. Customers manage
+network reachability and image-publisher push permissions. See
+[non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
 ### Hosted voice wrapper (preview)
 
 A hosted voice wrapper keeps Voice Live responsible for VAD, speech-to-text,

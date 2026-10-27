@@ -60,6 +60,12 @@ param includeAcr bool = false
 @description('Full ARM ID of an existing container registry to reuse instead of creating one.')
 param existingAcrResourceId string = ''
 
+@description('Project already has effective registry pull access.')
+param acrPullAssigned bool = false
+
+@description('Unique access operation ID persisted by azd before deployment.')
+param acrAccessOperationId string = ''
+
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
 
@@ -118,6 +124,8 @@ module resources 'modules/resources.bicep' = {
     deployments: deployments
     includeAcr: includeAcr
     existingAcrResourceId: existingAcrResourceId
+    acrPullAssigned: acrPullAssigned
+    acrAccessOperationId: acrAccessOperationId
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId

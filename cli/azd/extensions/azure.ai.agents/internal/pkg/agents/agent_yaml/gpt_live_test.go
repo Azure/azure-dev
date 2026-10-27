@@ -150,6 +150,61 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 	}
 }
 
+func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
+	t.Parallel()
+	for name, suffix := range map[string]string{
+		"root reasoning":        "reasoning: {effort: low}",
+		"root client":           "client: {}",
+		"root input":            "input: {}",
+		"root reasoning effort": "reasoning_effort: low",
+		"root soundscape":       "soundscape: {}",
+		"audio output volume":   "audio:\n  output:\n    volume: loud",
+		"reasoning temperature": "delegation:\n  type: responses\n  responses:\n    model: terra\n    reasoning:\n      temperature: 0.5",
+		"model provider":        "model: {id: gpt-live-1, provider: custom}",
+		"policy extra":          "policies:\n  - type: rai_policy\n    rai_policy_name: policy\n    extra: no",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n"
+			if name != "model provider" {
+				definition += "model: {id: gpt-live-1}\n"
+			}
+			definition += suffix + "\n"
+			require.Error(t, ValidateAgentDefinition([]byte(definition)))
+		})
+	}
+}
+
+func TestVoiceConfigGPTLiveCustomObjectMarshalUsesOnlyID(t *testing.T) {
+	t.Parallel()
+	encoded, err := yaml.Marshal(VoiceConfig{ID: "custom-voice"})
+	require.NoError(t, err)
+	require.YAMLEq(t, "id: custom-voice\n", string(encoded))
+	encoded, err = json.Marshal(VoiceConfig{ID: "custom-voice"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"custom-voice"}`, string(encoded))
+}
+
+func TestValidateVoiceAgent_SubProtocolPresence(t *testing.T) {
+	t.Parallel()
+	base := "kind: voice\nname: voice\nmodel: {id: gpt-realtime}\n"
+	for name, value := range map[string]string{
+		"null":    "null",
+		"blank":   "''",
+		"unknown": "Live",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Error(t, ValidateAgentDefinition([]byte(base+"sub_protocol: "+value+"\n")))
+		})
+	}
+	require.NoError(t, ValidateAgentDefinition([]byte(base)))
+	require.NoError(t, ValidateAgentDefinition([]byte(base+"sub_protocol: realtime\n")))
+	require.Error(t, ValidateAgentDefinition([]byte(base+"subProtocol: live\n")))
+	require.NoError(t, ValidateAgentDefinition([]byte(
+		"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n")))
+}
+
 func TestCreateVoiceAgentAPIRequest_ExplicitRealtime(t *testing.T) {
 	t.Parallel()
 	req, err := CreateVoiceAgentAPIRequest(VoiceAgent{

@@ -810,7 +810,12 @@ func resolveRawServiceProps(
 			delete(siblings, AgentDefinitionRefKey)
 			var overlays map[string]any
 			overlays, err = foundry.ResolveFileRefs(siblings, projectRoot)
-			maps.Copy(resolved, overlays)
+			if err == nil && agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(fmt.Sprint(resolved["kind"]))) {
+				overlays, err = rejectRootStyleVoiceOverlayAliases(overlays)
+			}
+			if err == nil {
+				maps.Copy(resolved, overlays)
+			}
 		}
 	} else {
 		resolved, err = foundry.ResolveFileRefs(values, projectRoot)
@@ -1021,6 +1026,9 @@ func agentDefinitionFromStruct(
 	}
 	if agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
 		if err := validateUnsupportedVoiceFields(s); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
+		if err := validateVoiceRawProperties(s); err != nil {
 			return agent_yaml.ContainerAgent{}, false, err
 		}
 	}
@@ -1460,6 +1468,9 @@ func VoiceAgentFromResolvedService(
 	if err := validateUnsupportedVoiceFields(resolved); err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}
+	if err := validateVoiceRawProperties(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
 
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(resolved, &inline); err != nil {
@@ -1476,13 +1487,85 @@ func VoiceAgentFromResolvedService(
 	return inline.toVoiceAgent(), true, nil
 }
 
+func validateVoiceRawProperties(values *structpb.Struct) error {
+	if alias := inlineVoiceSnakeCaseAlias(values.AsMap()); alias != "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent service config is not valid: %s is not valid inline", alias),
+			"use camelCase in inline azure.yaml authoring",
+		)
+	}
+	if validationErrors := agent_yaml.ValidateVoiceRawProperties(values.AsMap()); len(validationErrors) > 0 {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"voice agent service config is not valid: "+strings.Join(validationErrors, "; "),
+			"fix the voice agent definition in azure.yaml or its root $ref target",
+		)
+	}
+	return nil
+}
+
+func inlineVoiceSnakeCaseAlias(values map[string]any) string {
+	for _, key := range []string{
+		"model_type", "sub_protocol", "target_agent", "conversation_engine", "structured_inputs",
+		"output_modalities", "input_schema", "output_schema", "tool_choice", "parallel_tool_calls",
+		"max_output_tokens", "code_configuration", "session_configuration", "environment_variables",
+	} {
+		if _, found := values[key]; found {
+			return key
+		}
+	}
+	protocol, _ := values["subProtocol"].(string)
+	if protocol != string(agent_yaml.VoiceSubProtocolLive) {
+		return ""
+	}
+	if inputs, ok := values["structuredInputs"].(map[string]any); ok {
+		for name, input := range inputs {
+			if fields, ok := input.(map[string]any); ok {
+				if _, found := fields["default_value"]; found {
+					return "structuredInputs." + name + ".default_value"
+				}
+			}
+		}
+	}
+	delegation, _ := values["delegation"].(map[string]any)
+	for _, key := range []string{"agent_name", "agent_version"} {
+		if _, found := delegation[key]; found {
+			return "delegation." + key
+		}
+	}
+	responses, _ := delegation["responses"].(map[string]any)
+	for _, key := range []string{"max_output_tokens", "parallel_tool_calls", "service_tier", "tool_choice"} {
+		if _, found := responses[key]; found {
+			return "delegation.responses." + key
+		}
+	}
+	choice, _ := responses["toolChoice"].(map[string]any)
+	if _, found := choice["server_label"]; found {
+		return "delegation.responses.toolChoice.server_label"
+	}
+	return ""
+}
+
+func rejectRootStyleVoiceOverlayAliases(values map[string]any) (map[string]any, error) {
+	if alias := inlineVoiceSnakeCaseAlias(values); alias != "" {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("voice agent $ref sibling overlay contains root-style property %q", alias),
+			"use camelCase for $ref sibling overlays",
+		)
+	}
+	return values, nil
+}
+
 func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, error) {
 	aliases := map[string]string{
 		"model_type": "modelType", "sub_protocol": "subProtocol",
 		"target_agent": "targetAgent", "conversation_engine": "conversationEngine",
 		"structured_inputs": "structuredInputs", "output_modalities": "outputModalities",
 		"tool_choice": "toolChoice", "parallel_tool_calls": "parallelToolCalls",
-		"max_output_tokens": "maxOutputTokens",
+		"max_output_tokens": "maxOutputTokens", "code_configuration": "codeConfiguration",
+		"session_configuration": "sessionConfiguration", "environment_variables": "environmentVariables",
 	}
 	for source, target := range aliases {
 		if value, found := values[source]; found {
@@ -1500,6 +1583,13 @@ func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, err
 	if delegation, ok := values["delegation"].(map[string]any); ok {
 		for source, target := range map[string]string{"agent_name": "agentName", "agent_version": "agentVersion"} {
 			if value, found := delegation[source]; found {
+				if _, conflict := delegation[target]; conflict {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("voice delegation contains both %q and %q", source, target),
+						"use snake_case in a root $ref definition",
+					)
+				}
 				delegation[target] = value
 				delete(delegation, source)
 			}
@@ -1510,9 +1600,35 @@ func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, err
 				"service_tier": "serviceTier", "tool_choice": "toolChoice",
 			} {
 				if value, found := responses[source]; found {
+					if _, conflict := responses[target]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							fmt.Sprintf("voice responses delegation contains both %q and %q", source, target),
+							"use snake_case in a root $ref definition",
+						)
+					}
 					responses[target] = value
 					delete(responses, source)
 				}
+			}
+		}
+	}
+	if inputs, ok := values["structuredInputs"].(map[string]any); ok {
+		for name, entry := range inputs {
+			input, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if value, found := input["default_value"]; found {
+				if _, conflict := input["defaultValue"]; conflict {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("voice structured input %q contains both default_value and defaultValue", name),
+						"use snake_case in a root $ref definition",
+					)
+				}
+				input["defaultValue"] = value
+				delete(input, "default_value")
 			}
 		}
 	}

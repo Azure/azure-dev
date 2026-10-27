@@ -183,6 +183,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									field+" is not supported by this azd version; remove it or upgrade azd")
 							}
 						}
+						if _, hasInlineAlias := fields["subProtocol"]; hasInlineAlias {
+							errors = append(errors,
+								"subProtocol is not valid in a direct/root-$ref definition; use sub_protocol")
+						}
+						var raw map[string]any
+						if rawErr := yaml.Unmarshal(templateBytes, &raw); rawErr == nil {
+							errors = append(errors, ValidateVoiceRawProperties(raw)...)
+						}
 						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
 							errors = append(errors,
 								"codeConfiguration is not supported for a prompt-voice agent; "+
@@ -303,6 +311,122 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 	}
 
 	return nil
+}
+
+// ValidateVoiceRawProperties validates protocol discriminators and sealed GPT
+// Live objects before typed decoding can discard properties it does not model.
+// It intentionally leaves non-Live payloads open for forward compatibility.
+func ValidateVoiceRawProperties(values map[string]any) []string {
+	value, present := rawProperty(values, "subProtocol", "sub_protocol")
+	if present {
+		protocol, ok := value.(string)
+		if !ok || (protocol != string(VoiceSubProtocolRealtime) && protocol != string(VoiceSubProtocolLive)) {
+			return []string{"subProtocol must be exactly 'realtime' or 'live' when specified"}
+		}
+		if protocol != string(VoiceSubProtocolLive) {
+			return nil
+		}
+	} else {
+		return nil
+	}
+
+	var errors []string
+	for _, key := range []string{
+		"input", "client", "reasoning", "reasoningEffort", "reasoning_effort",
+		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
+	} {
+		if _, found := values[key]; found {
+			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))
+		}
+	}
+	validateRawObject := func(path string, value any, allowed []string) {
+		object, ok := value.(map[string]any)
+		if !ok {
+			return
+		}
+		for key := range object {
+			if !slices.Contains(allowed, key) {
+				errors = append(errors, fmt.Sprintf("%s.%s is not supported for GPT Live", path, key))
+			}
+		}
+	}
+	if model, found := values["model"]; found {
+		validateRawObject("model", model, []string{"id"})
+	}
+
+	if audio, ok := values["audio"].(map[string]any); ok {
+		validateRawObject("audio", audio, []string{"format", "output"})
+		if format, found := audio["format"]; found {
+			validateRawObject("audio.format", format, []string{"type", "rate"})
+		}
+		if output, ok := audio["output"].(map[string]any); ok {
+			validateRawObject("audio.output", output, []string{"voice"})
+			if voice, found := output["voice"]; found {
+				validateRawObject("audio.output.voice", voice, []string{"id"})
+			}
+		}
+	}
+	if greeting, found := values["greeting"]; found {
+		validateRawObject("greeting", greeting, []string{"type", "text"})
+	}
+	if inputs, ok := rawMap(values["structuredInputs"], values["structured_inputs"]); ok {
+		for name, input := range inputs {
+			validateRawObject("structuredInputs."+name, input,
+				[]string{"description", "defaultValue", "default_value", "schema", "required"})
+		}
+	}
+	if delegation, ok := values["delegation"].(map[string]any); ok {
+		validateRawObject("delegation", delegation,
+			[]string{"type", "responses", "agentName", "agent_name", "agentVersion", "agent_version"})
+		if responses, ok := delegation["responses"].(map[string]any); ok {
+			validateRawObject("delegation.responses", responses, []string{
+				"model", "instructions", "maxOutputTokens", "max_output_tokens",
+				"parallelToolCalls", "parallel_tool_calls", "serviceTier", "service_tier",
+				"reasoning", "text", "toolChoice", "tool_choice", "tools",
+			})
+			if reasoning, found := responses["reasoning"]; found {
+				validateRawObject("delegation.responses.reasoning", reasoning, []string{"effort", "summary"})
+			}
+			if text, found := responses["text"]; found {
+				validateRawObject("delegation.responses.text", text, []string{"verbosity"})
+			}
+			choice, found := rawProperty(responses, "toolChoice", "tool_choice")
+			if found {
+				validateRawObject("delegation.responses.toolChoice", choice, []string{"type", "name", "serverLabel", "server_label"})
+			}
+			if tools, ok := responses["tools"].([]any); ok {
+				for i, tool := range tools {
+					validateRawObject(fmt.Sprintf("delegation.responses.tools[%d]", i), tool,
+						[]string{"type", "name", "description", "parameters", "strict"})
+				}
+			}
+		}
+	}
+	if policies, ok := values["policies"].([]any); ok {
+		for i, policy := range policies {
+			validateRawObject(fmt.Sprintf("policies[%d]", i), policy,
+				[]string{"type", "raiPolicyName", "rai_policy_name", "invocationsModeration", "invocations_moderation"})
+		}
+	}
+	return errors
+}
+
+func rawProperty(values map[string]any, names ...string) (any, bool) {
+	for _, name := range names {
+		if value, found := values[name]; found {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func rawMap(values ...any) (map[string]any, bool) {
+	for _, value := range values {
+		if object, ok := value.(map[string]any); ok {
+			return object, true
+		}
+	}
+	return nil, false
 }
 
 func validateLiveVoiceAgent(agent VoiceAgent) []string {

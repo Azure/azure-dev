@@ -4,6 +4,7 @@
 package project
 
 import (
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -71,6 +72,36 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
 		"audio": map[string]any{"output": map[string]any{}},
 	}))
+	for _, subProtocol := range []any{nil, "", "unknown"} {
+		require.Error(t, schema.validate(map[string]any{
+			"kind": "voice", "subProtocol": subProtocol, "model": map[string]any{"id": "gpt-realtime"},
+		}))
+	}
+	for _, hosted := range []map[string]any{
+		{"kind": "voice", "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"}},
+		{"kind": "voice", "subProtocol": "realtime", "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"}},
+	} {
+		require.NoError(t, schema.validate(hosted))
+	}
+	require.Error(t, schema.validate(map[string]any{
+		"kind": "voice", "subProtocol": "live",
+		"conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+	}))
+	for _, forbidden := range []map[string]any{
+		{"reasoning": map[string]any{}}, {"client": map[string]any{}}, {"input": map[string]any{}},
+		{"toolboxes": []any{}},
+		{"audio": map[string]any{"output": map[string]any{"volume": "loud"}}},
+		{"delegation": map[string]any{"type": "responses", "responses": map[string]any{
+			"model": "terra", "reasoning": map[string]any{"temperature": 0.5},
+		}}},
+	} {
+		live := map[string]any{
+			"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+			"model": map[string]any{"id": "gpt-live-1"},
+		}
+		maps.Copy(live, forbidden)
+		require.Error(t, schema.validate(live), "forbidden GPT Live shape: %v", forbidden)
+	}
 	for _, invalid := range []map[string]any{
 		{"kind": "prompt-voice", "subProtocol": "live", "modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"}},
 		{"kind": "voice", "subProtocol": "live", "modelType": "managed", "model": map[string]any{"id": "gpt-live-1"}},

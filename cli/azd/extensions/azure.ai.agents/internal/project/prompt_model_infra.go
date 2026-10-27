@@ -96,6 +96,10 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("resolve azure.yaml %s.path Foundry marker: %w", field, err)
 			}
+			sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
+			if err != nil {
+				return false, fmt.Errorf("resolve azure.yaml %s.path Terraform source: %w", field, err)
+			}
 			marker, err := os.ReadFile(markerPath)
 			if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return false, fmt.Errorf("read Foundry infrastructure marker: %w", err)
@@ -105,10 +109,6 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 				continue
 			}
 			if errors.Is(err, fs.ErrNotExist) {
-				sourcePath, err := paths.JoinAllowRoot(root, path, "main.tf")
-				if err != nil {
-					return false, fmt.Errorf("resolve azure.yaml %s.path Terraform source: %w", field, err)
-				}
 				source, err := os.ReadFile(sourcePath)
 				if err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return false, fmt.Errorf("read Terraform infrastructure: %w", err)
@@ -134,7 +134,6 @@ func promptModelInfrastructureOnDisk(root string) (bool, error) {
 			}
 			if err == nil && !info.IsDir() {
 				detected = true
-				break
 			}
 		}
 	}

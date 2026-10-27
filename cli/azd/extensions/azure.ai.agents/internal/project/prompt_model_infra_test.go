@@ -34,6 +34,7 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 				module   string
 				provider string
 				file     string
+				content  string
 				symlink  string
 				errField string
 				errText  string
@@ -75,6 +76,10 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					errField: "module", errText: "escapes project root",
 				},
 				{
+					name: "outside parameter file with matching module", file: "infra/main.bicep",
+					symlink: "infra/main.bicepparam", errField: "module", errText: "escapes project root",
+				},
+				{
 					name: "outside non-Foundry module file", provider: "bicep", symlink: "infra/main.bicep",
 					errField: "module", errText: "escapes project root",
 				},
@@ -88,6 +93,11 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 				},
 				{
 					name: "outside Terraform source", provider: "terraform", symlink: "infra/main.tf",
+					errField: "path", errText: "escapes project root",
+				},
+				{
+					name: "outside Terraform source with matching marker", provider: "terraform",
+					file: "infra/.azd-foundry", content: "terraform-v1\n", symlink: "infra/main.tf",
 					errField: "path", errText: "escapes project root",
 				},
 				{name: "defaults", file: "infra/main.bicep"},
@@ -136,7 +146,7 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					if tt.file != "" {
 						file := filepath.Join(root, filepath.FromSlash(tt.file))
 						require.NoError(t, os.MkdirAll(filepath.Dir(file), 0700))
-						require.NoError(t, os.WriteFile(file, nil, 0600))
+						require.NoError(t, os.WriteFile(file, []byte(tt.content), 0600))
 					}
 					if tt.symlink != "" {
 						target := outside
@@ -156,6 +166,9 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					if tt.errField != "" {
 						require.ErrorContains(t, err, "azure.yaml "+field+"."+tt.errField)
 						require.ErrorContains(t, err, tt.errText)
+						if setup.layered && tt.provider == "terraform" && tt.symlink == "infra/main.tf" {
+							require.ErrorContains(t, err, "Terraform source")
+						}
 						require.NotNil(t, errors.Unwrap(err))
 						require.False(t, got)
 						return

@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
+	foundryaccess "azure.ai.toolboxes/internal/accesshost"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
@@ -28,6 +30,7 @@ type toolboxFlags struct {
 	projectEndpoint string
 	output          string
 	noPrompt        bool
+	environment     string
 }
 
 // toolboxNamePattern is the validation regex for toolbox and tool names.
@@ -47,7 +50,11 @@ func readToolboxFlags(cmd *cobra.Command, extCtx *azdext.ExtensionContext) toolb
 		out = strings.ToLower(extCtx.OutputFormat)
 		np = extCtx.NoPrompt
 	}
-	return toolboxFlags{projectEndpoint: pe, output: out, noPrompt: np}
+	environment := ""
+	if extCtx != nil {
+		environment = extCtx.Environment
+	}
+	return toolboxFlags{projectEndpoint: pe, output: out, noPrompt: np, environment: environment}
 }
 
 // validateOutputFormat returns a structured error when --output is not table/json.
@@ -120,10 +127,26 @@ func newToolboxClientForTenant(endpoint, tenantID string) (*azure.FoundryToolbox
 	return azure.NewFoundryToolboxClient(endpoint, cred), nil
 }
 
+var prepareFoundryAccess = foundryaccess.Prepare
+
+func newToolboxMutationClient(ctx context.Context, endpoint, environment string) (*azure.FoundryToolboxClient, error) {
+	credential, err := prepareFoundryAccess(ctx, foundryaccess.PrepareOptions{
+		Endpoint: endpoint, EnvironmentName: environment, Collection: "toolboxes", AutoGrant: true,
+		Warn: func(message string) { fmt.Fprintln(os.Stderr, "Warning: "+message) },
+	})
+	if err != nil {
+		return nil, err
+	}
+	if credential != nil {
+		return azure.NewFoundryToolboxClient(endpoint, credential), nil
+	}
+	return newToolboxClient(endpoint)
+}
+
 // resolveToolboxAndClient walks the endpoint cascade, validates flags, and
 // returns a toolbox client bound to the resolved endpoint.
 func resolveToolboxAndClient(
-	ctx context.Context, flags toolboxFlags,
+	ctx context.Context, flags toolboxFlags, autoGrant ...bool,
 ) (toolboxClient, *projectctx.Resolved, error) {
 	if err := validateOutputFormat(flags.output); err != nil {
 		return nil, nil, err
@@ -132,7 +155,12 @@ func resolveToolboxAndClient(
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := newToolboxClient(resolved.Endpoint)
+	var client *azure.FoundryToolboxClient
+	if len(autoGrant) > 0 && autoGrant[0] {
+		client, err = newToolboxMutationClient(ctx, resolved.Endpoint, flags.environment)
+	} else {
+		client, err = newToolboxClient(resolved.Endpoint)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

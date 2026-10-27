@@ -4,6 +4,17 @@ Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
 Requires azd 1.37.0 or later.
 
+## Developer project access
+
+Deployment and remote mutations automatically attempt a project-scoped Foundry
+User grant when verified read access is denied, before toolbox operations run.
+Grant failures remain warning-only. Read-only and local commands do not grant
+roles. Set `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to bypass the shared checks.
+This consumes the independently versioned
+[`cli/shared/foundry/access`](../../../shared/foundry/README.md) library through
+an extension-local host adapter. It does not require a new azd core release.
+The draft `v0.1.0` pin must be published and validated without a workspace before merge.
+
 ## Deploy a toolbox through `azure.yaml`
 
 This extension owns `host: azure.ai.toolbox` services. Core `azd deploy` and

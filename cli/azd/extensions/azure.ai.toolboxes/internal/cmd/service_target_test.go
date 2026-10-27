@@ -8,9 +8,11 @@ import (
 	"errors"
 	"testing"
 
+	foundryaccess "azure.ai.toolboxes/internal/accesshost"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -391,11 +393,20 @@ func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
 			environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
 			client := newMockToolboxClient(endpoint)
 			var credentialTenantID string
+			prepared := false
 			target := &toolboxServiceTarget{
 				environmentClient: environment,
 				accountClient:     account,
 				resolver:          newStubConnectionResolver(),
+				prepareAccess: func(_ context.Context, options foundryaccess.PrepareOptions) (azcore.TokenCredential, error) {
+					prepared = true
+					require.Equal(t, endpoint, options.Endpoint)
+					require.Equal(t, "toolboxes", options.Collection)
+					require.True(t, options.AutoGrant)
+					return nil, nil
+				},
 				newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
+					require.True(t, prepared, "access must be prepared before the first toolbox API call")
 					assert.Equal(t, endpoint, gotEndpoint)
 					credentialTenantID = tenantID
 					if tt.clientErr != nil {

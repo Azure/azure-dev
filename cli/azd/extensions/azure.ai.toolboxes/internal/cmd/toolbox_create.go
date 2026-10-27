@@ -87,7 +87,7 @@ func runToolboxCreate(
 	}
 	logResolvedEndpoint("toolbox create", resolved)
 
-	client, err := newToolboxClient(resolved.Endpoint)
+	client, err := newToolboxMutationClient(ctx, resolved.Endpoint, parent.environment)
 	if err != nil {
 		return err
 	}

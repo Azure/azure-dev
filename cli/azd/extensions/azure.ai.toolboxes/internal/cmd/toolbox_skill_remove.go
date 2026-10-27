@@ -88,7 +88,7 @@ func runSkillRemove(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxAndClient(ctx, parent, true)
 	if err != nil {
 		return err
 	}

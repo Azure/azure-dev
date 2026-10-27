@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"strings"
 
+	foundryaccess "azure.ai.toolboxes/internal/accesshost"
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"google.golang.org/grpc"
@@ -56,6 +59,7 @@ type toolboxServiceTarget struct {
 	projectClient     serviceConfigReader
 	resolver          connectionResolver
 	newClient         func(endpoint, tenantID string) (toolboxClient, error)
+	prepareAccess     func(context.Context, foundryaccess.PrepareOptions) (azcore.TokenCredential, error)
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -67,6 +71,7 @@ func newToolboxServiceTarget(
 		accountClient:     azdClient.Account(),
 		projectClient:     azdClient.Project(),
 		resolver:          defaultConnectionResolver{},
+		prepareAccess:     prepareFoundryAccess,
 		newClient: func(endpoint, tenantID string) (toolboxClient, error) {
 			return newToolboxClientForTenant(endpoint, tenantID)
 		},
@@ -167,6 +172,20 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	var credential azcore.TokenCredential
+	if p.prepareAccess != nil {
+		credential, err = p.prepareAccess(ctx, foundryaccess.PrepareOptions{
+			Endpoint: endpoint, Collection: "toolboxes", AutoGrant: true,
+			Warn: func(message string) {
+				if progress != nil {
+					progress("Warning: " + message)
+				}
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 	rawTools, err := p.buildToolEntries(
 		ctx,
 		endpoint,
@@ -197,7 +216,12 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	client, err := p.newClient(endpoint, tenantID)
+	var client toolboxClient
+	if credential != nil {
+		client = azure.NewFoundryToolboxClient(endpoint, credential)
+	} else {
+		client, err = p.newClient(endpoint, tenantID)
+	}
 	if err != nil {
 		return nil, exterrors.Auth(
 			exterrors.CodeCredentialCreationFailed,

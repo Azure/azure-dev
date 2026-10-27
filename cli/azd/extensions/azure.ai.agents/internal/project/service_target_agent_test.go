@@ -311,6 +311,36 @@ delegation:
 	require.Contains(t, got.Policies[0].RaiPolicyName, "/raiPolicies/policy")
 }
 
+func TestVoiceAgentFromResolvedService_RootRefResolvesNestedSiblingRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+audio:
+  format: {type: audio/pcm, rate: 16000}
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "audio.yaml"), []byte(`format:
+  type: audio/pcm
+  rate: 24000
+output:
+  voice: marin
+`), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"$ref": "audio.yaml"},
+	})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefKeepsUnsupportedPolicyModeration(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

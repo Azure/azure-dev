@@ -182,7 +182,8 @@ func Execute(ctx context.Context, client cuclient.Client, plan Plan, options Run
 		return result, &cuclient.Error{
 			Kind: cuclient.ErrorService, Code: "analysis_failed",
 			Message: fmt.Sprintf(
-				"%d analysis input(s) failed; successful result files were retained.%s", summary.Counts.Failed, details.String()),
+				"%d analysis input(s) failed; successful result files were retained.%s",
+				summary.Counts.Failed, details.String()),
 			Suggestion: "Correct the reported input or analyzer problem before retrying. " +
 				"Use --report-file on future runs to save all per-input outcomes.",
 		}

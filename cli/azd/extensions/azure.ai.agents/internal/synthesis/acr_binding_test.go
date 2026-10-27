@@ -4,6 +4,7 @@
 package synthesis
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,9 +107,7 @@ func TestGreenfieldACRResourceGroup(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			env := map[string]string{"AZURE_ENV_NAME": "test"}
-			for key, value := range tt.env {
-				env[key] = value
-			}
+			maps.Copy(env, tt.env)
 			group, err := GreenfieldACRResourceGroup(Input{
 				RawAzureYAML: []byte(tt.raw), ResourceGroupName: tt.override, Env: env,
 			})

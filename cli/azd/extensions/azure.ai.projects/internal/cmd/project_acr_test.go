@@ -244,7 +244,7 @@ func TestProjectAddACRDeployedIdentity(t *testing.T) {
 				Name: "project", Host: aiProjectHost,
 			}
 			projectServer.services["project"] = map[string]any{"host": aiProjectHost}
-			for key, value := range map[string]string{
+			maps.Copy(environment.values, map[string]string{
 				"AZURE_AI_PROJECT_ID": projectID, "AZURE_RESOURCE_GROUP": "project",
 				"AZURE_AI_ACCOUNT_NAME": "account", "AZURE_AI_PROJECT_NAME": "project",
 				"FOUNDRY_PROJECT_ENDPOINT": "https://account.services.ai.azure.com/api/projects/project",
@@ -253,9 +253,7 @@ func TestProjectAddACRDeployedIdentity(t *testing.T) {
 				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "shared.azurecr.io",
 				"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "registry-connection",
 				"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
-			} {
-				environment.values[key] = value
-			}
+			})
 			binding, err := json.Marshal(synthesis.ACRBinding{
 				Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
 				ProjectResourceID: projectID, PrincipalID: "principal",

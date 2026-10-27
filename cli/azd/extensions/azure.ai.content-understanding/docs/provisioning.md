@@ -49,8 +49,10 @@ data-plane access are separate.
 | Deploy models to an existing resource | Permission for the subscription-scope deployment and the required model deployment actions on that resource. |
 | Call Content Understanding | Cognitive Services User on the Foundry resource, or equivalent data-plane permissions. Contributor alone does not grant this access. |
 
-Role assignment is disabled by default. Pass `--assign-roles` to opt in when
-creating a resource and when your identity has the required permissions.
+Role assignment defaults to No. Interactive generation asks when neither role
+flag is supplied for a new resource. Pass `--assign-roles` to opt in when
+creating a resource and when your identity has the required permissions, or
+`--no-assign-roles` to skip the question.
 Otherwise, have an administrator grant data-plane access once the resource
 exists, then rerun `azd up` to complete Content Understanding setup.
 
@@ -75,9 +77,30 @@ cd provision
 azd up
 ```
 
-Generation selects a subscription through azd. Defaults are environment `dev`,
-region `eastus2`, and interactive model selection. The model prompt runs during
-post-provision setup, after the resource exists.
+Generation selects a subscription through azd. For a new resource, its wizard
+asks for an environment name, optional resource prefix, supported region, and
+whether to assign a data-plane role. Explicit flags skip the corresponding
+questions, including `--assign-roles=false` and `--foundry-prefix ""`.
+An inherited `AZD_ENVIRONMENT` also skips the environment question.
+Defaults are environment `dev` (or the inherited environment), region `eastus2`,
+an automatically generated resource name, and no role assignment.
+There is no additional new/existing-resource question: use `--foundry-endpoint`
+explicitly to target an existing resource.
+
+The wizard generates state in the output directory; it does not read deployment
+settings from another project's selected environment. For existing resources,
+generation skips the prefix, region, and role questions. An omitted region uses
+the discovered resource region when available.
+
+Generation prints the directory, environment, files written, reuse status, and
+next commands. Scripts that parse the result must pass `--output json`; its
+structured result is unchanged. Both `--output json` and `--no-prompt` skip
+the new wizard questions and use explicit inputs, environment context, and
+defaults. JSON output alone does not disable the existing subscription selector;
+use `--no-prompt` for unattended execution.
+
+Omitting `--models` retains interactive model selection during post-provision
+setup, after the resource exists; generation itself never deploys models.
 
 The new-resource path creates a resource group, a Microsoft Foundry resource,
 a Foundry project, and selected model deployments. The azd environment identifies
@@ -143,6 +166,16 @@ hook deploys the selected models and configures defaults.
 `--models` also accepts comma-separated `model@version` selectors. The live
 CU-supported catalog validates selections during model setup.
 `--foundry-endpoint` and `--foundry-prefix` cannot be combined.
+
+Interactive model setup shows the live catalog together, including model name,
+version, kind, and SKU. Recommended models are marked and preselected when an
+unambiguous recommendation is available. Review and submit the selection, then explicitly confirm deployment (default
+No), or clear all selections to deploy no models. Declining confirmation
+cancels model setup rather than silently accepting recommendations. If recommendations
+are ambiguous, the picker explains why nothing is preselected. Selecting
+multiple versions of one family keeps the picker open for correction;
+cancellation starts no model deployment. It does not roll back resources that
+`azd up` already provisioned.
 
 ## Generated post-provision behavior
 

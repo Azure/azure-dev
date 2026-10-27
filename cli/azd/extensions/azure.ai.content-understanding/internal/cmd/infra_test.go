@@ -35,6 +35,8 @@ type infraCommandHost struct {
 	calls        []string
 	selected     string
 	request      infra.PostRequest
+	prompts      []generationPrompts
+	prompt       func(infra.Choices) (infra.Choices, error)
 }
 
 func infraCommandFixture(t *testing.T) *infraCommandHost {
@@ -73,6 +75,15 @@ func (f *infraCommandHost) Capabilities(_ context.Context, _ infraSnapshot, requ
 	return f.capabilities, f.capabilities, nil
 }
 func (f *infraCommandHost) Close() { f.calls = append(f.calls, "close") }
+func (f *infraCommandHost) PromptGeneration(
+	_ context.Context, choices infra.Choices, prompts generationPrompts,
+) (infra.Choices, error) {
+	f.prompts = append(f.prompts, prompts)
+	if f.prompt != nil {
+		return f.prompt(choices)
+	}
+	return choices, nil
+}
 
 type infraCommandCapabilities struct {
 	calls []string
@@ -135,7 +146,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	t.Setenv("CU_API_KEY", "private-not-read")
 	target := filepath.Join(testutil.TempDir(t), "generated")
 	stdout, stderr, err := executeInfra(t, f,
-		"infra", "generate", "-d", target, "-e", "new-env", "--models", "none", "--no-prompt")
+		"infra", "generate", "-d", target, "-e", "new-env", "--models", "none", "--no-prompt", "-o", "json")
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
 	var result infra.Generation
@@ -147,7 +158,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	assert.Len(t, result.Files, 10)
 	f.calls = nil
 	stdout, _, err = executeInfra(t, f, "infra", "generate", "-d", target, "-e", "new-env", "--models", "none",
-		"--foundry-endpoint", "foundry")
+		"--foundry-endpoint", "foundry", "-o", "json")
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))
 	assert.True(t, result.ReusedExistingTemplate)
@@ -227,7 +238,7 @@ func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
 			host := infraCommandFixture(t)
 			target := filepath.Join(testutil.TempDir(t), "project")
 			stdout, stderr, err := executeInfra(t, host, "infra", "generate", "--output-dir", target,
-				"--models", "none", "--no-prompt", test.flag)
+				"--models", "none", "--no-prompt", "-o", "json", test.flag)
 			require.NoError(t, err)
 			assert.Empty(t, stderr)
 			var result infra.Generation
@@ -340,6 +351,10 @@ type infraRPC struct {
 	tenantResponse      *azdext.LookupTenantResponse
 	tenantErr           error
 	defaultEnvironment  string
+	promptText          func(*azdext.PromptRequest) (*azdext.PromptResponse, error)
+	selectOption        func(*azdext.SelectRequest) (*azdext.SelectResponse, error)
+	confirm             func(*azdext.ConfirmRequest) (*azdext.ConfirmResponse, error)
+	multiSelect         func(*azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error)
 }
 
 func (h *infraRPC) record(value string) {
@@ -434,6 +449,40 @@ type infraPromptRPC struct {
 type infraUserConfigRPC struct {
 	azdext.UnimplementedUserConfigServiceServer
 	rpc *infraRPC
+}
+
+func (h *infraPromptRPC) Prompt(ctx context.Context, request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+	h.rpc.record("prompt-text")
+	if h.rpc.promptText == nil {
+		return h.UnimplementedPromptServiceServer.Prompt(ctx, request)
+	}
+	return h.rpc.promptText(request)
+}
+
+func (h *infraPromptRPC) Select(ctx context.Context, request *azdext.SelectRequest) (*azdext.SelectResponse, error) {
+	h.rpc.record("select")
+	if h.rpc.selectOption == nil {
+		return h.UnimplementedPromptServiceServer.Select(ctx, request)
+	}
+	return h.rpc.selectOption(request)
+}
+
+func (h *infraPromptRPC) Confirm(ctx context.Context, request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+	h.rpc.record("confirm")
+	if h.rpc.confirm == nil {
+		return h.UnimplementedPromptServiceServer.Confirm(ctx, request)
+	}
+	return h.rpc.confirm(request)
+}
+
+func (h *infraPromptRPC) MultiSelect(
+	ctx context.Context, request *azdext.MultiSelectRequest,
+) (*azdext.MultiSelectResponse, error) {
+	h.rpc.record("multi-select")
+	if h.rpc.multiSelect == nil {
+		return h.UnimplementedPromptServiceServer.MultiSelect(ctx, request)
+	}
+	return h.rpc.multiSelect(request)
 }
 
 func (h *infraUserConfigRPC) Get(

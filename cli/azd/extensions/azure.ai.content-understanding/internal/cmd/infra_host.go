@@ -30,6 +30,7 @@ type infraSnapshot struct {
 type infraHost interface {
 	Subscription(context.Context, bool) (*azdext.Subscription, error)
 	Resolve(context.Context, *azdext.Subscription, string) (armclient.Account, error)
+	PromptGeneration(context.Context, infra.Choices, generationPrompts) (infra.Choices, error)
 	Snapshot(context.Context, string) (infraSnapshot, error)
 	Capabilities(context.Context, infraSnapshot, infra.PostRequest) (infra.PostCapabilities, infra.ModelCapabilities, error)
 	Close()
@@ -267,29 +268,7 @@ func (c *infraCapabilities) PromptModels(ctx context.Context, models []infra.Mod
 		return nil, commandError("model_selection_required", "Model selection requires an interactive decision.",
 			"Set CU_MODEL_SELECTION to none, recommended, or explicit model@version selectors.")
 	}
-	selected := []infra.Model{}
-	for _, model := range models {
-		response, err := c.host.client.Prompt().Confirm(ctx, &azdext.ConfirmRequest{Options: &azdext.ConfirmOptions{
-			Message: "Deploy " + model.Selector() + " (" + model.SKU + ")?", DefaultValue: new(false),
-		}})
-		if err != nil {
-			return nil, err
-		}
-		if response == nil || response.Value == nil {
-			return nil, commandError("invalid_confirmation_response", "The host returned no model deployment decision.",
-				"Use an explicit --selection value.")
-		}
-		if response.GetValue() {
-			for _, previous := range selected {
-				if strings.EqualFold(previous.Name, model.Name) {
-					return nil, commandError("duplicate_model_family", "Only one version of each family can be deployed.",
-						"Retry with explicit model@version selectors.")
-				}
-			}
-			selected = append(selected, model)
-		}
-	}
-	return selected, ctx.Err()
+	return c.host.promptModels(ctx, models)
 }
 func (c *infraCapabilities) SetupModels(ctx context.Context) error {
 	if c.host.noPrompt && c.request.Selection == "prompt" {

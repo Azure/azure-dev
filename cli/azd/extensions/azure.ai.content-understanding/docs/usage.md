@@ -453,7 +453,8 @@ set `NO_COLOR=1` for plain text.
 ## Usage guidance
 
 - Supported output formats are `default`, `json`, and `none`. Analysis defaults
-  to readable LLM-input text, and `doctor` defaults to readable diagnostics.
+  to readable LLM-input text, `doctor` defaults to readable diagnostics, and
+  `infra generate` defaults to a readable project summary.
   Other commands, analysis summaries, dry runs, and
   `--usage` wrappers use JSON. Use `--output json` for complete analysis JSON.
 - `--output none` suppresses successful stdout, not service operations, requested

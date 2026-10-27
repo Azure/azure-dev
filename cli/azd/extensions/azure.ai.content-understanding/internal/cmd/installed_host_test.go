@@ -122,6 +122,26 @@ func TestInstalledHostOffline(t *testing.T) {
 	})
 	require.Contains(t, string(run(true, "extension", "list", "--installed", "-o", "json")), extensionID)
 	require.Contains(t, string(run(true, "ai", "cu", "--help")), "analyzer")
+	require.Contains(t, string(run(true, "ai", "cu", "infra", "generate", "--help")), "human-readable")
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"invalid region", []string{"--location", "invalid"}, "CU-supported"},
+		{"empty environment", []string{"--environment", ""}, "--environment cannot be empty"},
+		{"empty models", []string{"--models", ""}, "--models cannot be empty"},
+		{"empty endpoint", []string{"--foundry-endpoint", ""}, "--foundry-endpoint cannot be empty"},
+		{"conflicting prefix", []string{"--foundry-endpoint", "foundry", "--foundry-prefix", ""},
+			"Remove --foundry-endpoint or --foundry-prefix"},
+		{"conflicting roles", []string{"--assign-roles=false", "--no-assign-roles=false"},
+			"Use --assign-roles or --no-assign-roles"},
+	} {
+		target := filepath.Join(work, "not-generated", test.name)
+		args := append([]string{"ai", "cu", "infra", "generate", "--output-dir", target}, test.args...)
+		require.Contains(t, string(run(false, args...)), test.want, test.name)
+		require.NoDirExists(t, target, test.name)
+	}
 	var actual map[string]string
 	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "version", "-o", "json"), &actual))
 	require.Equal(t, map[string]string{"name": extensionID, "version": version}, actual)

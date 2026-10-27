@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 
 	"azure.ai.content-understanding/internal/config"
@@ -24,6 +26,10 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	var output, location, api, models, endpoint, prefix string
 	var roles, noRoles, force bool
 	generate := &cobra.Command{Use: "generate", Short: "Generate the canonical azd/Bicep project", Args: cobra.NoArgs}
+	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
+		"Prompt for omitted environment, region, optional new-resource prefix, and role assignment.\n" +
+		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
+		"Show a readable summary by default; use --output json for the complete structured result."
 	generate.Example = `  azd ai cu infra generate
     Interactively generate an azd/Bicep project without deploying resources.
 
@@ -73,7 +79,11 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	post.RunE = func(cmd *cobra.Command, _ []string) error {
 		return exterrors.FromError(runInfraPost(cmd, extCtx, open))
 	}
-	group.AddCommand(jsonCommand(generate), jsonCommand(modelCommand), jsonCommand(post))
+	azdext.RegisterFlagOptions(generate, azdext.FlagOptions{
+		Name: "output", AllowedValues: []string{"default", "json", "none"},
+		Usage: "Output format: default (human-readable), json, or none",
+	})
+	group.AddCommand(generate, jsonCommand(modelCommand), jsonCommand(post))
 	return group
 }
 
@@ -81,6 +91,18 @@ func runInfraGenerate(
 	cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infraHostFactory,
 	output, location, api, models, endpoint, prefix string, roles, force bool,
 ) error {
+	for _, name := range []string{"environment", "location", "api-version", "models", "foundry-endpoint", "output-dir"} {
+		if cmd.Flags().Changed(name) {
+			value, err := cmd.Flags().GetString(name)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(value) == "" {
+				return commandError("empty_infra_argument", "--"+name+" cannot be empty.",
+					"Omit the flag to use its default or supply a valid value.")
+			}
+		}
+	}
 	environment := extCtx.Environment
 	if environment == "" {
 		environment = "dev"
@@ -93,9 +115,13 @@ func runInfraGenerate(
 	if choices, err = choices.Normalize(); err != nil {
 		return err
 	}
-	if prefix != "" && endpoint != "" {
+	if cmd.Flags().Changed("foundry-prefix") && cmd.Flags().Changed("foundry-endpoint") {
 		return commandError("conflicting_foundry_resource", "Use an existing Foundry resource or a new prefix, not both.",
 			"Remove --foundry-endpoint or --foundry-prefix.")
+	}
+	output, err = expandInfraPath(output)
+	if err != nil {
+		return err
 	}
 	ctx := azdext.WithAccessToken(cmd.Context())
 	host, err := open(cmd, extCtx)
@@ -126,15 +152,54 @@ func runInfraGenerate(
 			choices.Location = resolved.Region
 		}
 	}
-	output, err = expandInfraPath(output)
-	if err != nil {
-		return err
+	if !extCtx.NoPrompt && extCtx.OutputFormat != "json" {
+		choices, err = host.PromptGeneration(ctx, choices, generationPrompts{
+			environment: extCtx.Environment == "",
+			location:    !cmd.Flags().Changed("location") && endpoint == "",
+			prefix:      !cmd.Flags().Changed("foundry-prefix") && endpoint == "",
+			roles: !cmd.Flags().Changed("assign-roles") &&
+				!cmd.Flags().Changed("no-assign-roles") && endpoint == "",
+		})
+		if err != nil {
+			return err
+		}
 	}
 	result, err := infra.Materialize(ctx, output, choices, force)
 	if err != nil {
 		return err
 	}
-	return writeServiceResult(cmd, extCtx.OutputFormat, result)
+	if extCtx.OutputFormat == "json" || extCtx.OutputFormat == "none" {
+		return writeServiceResult(cmd, extCtx.OutputFormat, result)
+	}
+	var summary strings.Builder
+	action := "Generated"
+	if result.ReusedExistingTemplate {
+		action = "Updated"
+	}
+	fmt.Fprintf(&summary, "%s project: %s\nEnvironment: %s\nRegion: %s\nSubscription: %s (%s)\n",
+		action, result.OutputDirectory, result.Environment, result.Location, result.SubscriptionName, result.SubscriptionID)
+	if result.ReusedExistingTemplate {
+		summary.WriteString("Reused existing templates")
+		if !slices.Contains(result.Files, "infra/models.json") {
+			summary.WriteString("; preserved infra/models.json")
+		}
+		summary.WriteString(".\n")
+	}
+	summary.WriteString("Files written:\n")
+	for _, path := range result.Files {
+		fmt.Fprintf(&summary, "  %s\n", path)
+	}
+	summary.WriteString("\nNo Azure resources were deployed. Next:\n")
+	for index, step := range result.NextSteps {
+		if index == 0 && runtime.GOOS == "windows" {
+			step = "Set-Location -LiteralPath '" + strings.ReplaceAll(result.OutputDirectory, "'", "''") + "'"
+		}
+		fmt.Fprintf(&summary, "  %s\n", step)
+	}
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), summary.String()); err != nil {
+		return fmt.Errorf("write infrastructure summary: %w", err)
+	}
+	return nil
 }
 
 func runInfraModels(

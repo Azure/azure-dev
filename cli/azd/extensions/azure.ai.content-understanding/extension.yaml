@@ -12,4 +12,4 @@ tags:
     - ai
     - content-understanding
 usage: azd ai cu <command> [options]
-version: 0.1.0-preview
+version: 0.1.1-preview

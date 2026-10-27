@@ -53,9 +53,26 @@ func (h *infraPlaybackHost) Capabilities(
 }
 
 func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
+	for _, selection := range []string{"recommended", "prompt"} {
+		t.Run(selection, func(t *testing.T) {
+			testGeneratedProjectPostprovision(t, selection)
+		})
+	}
+}
+
+func testGeneratedProjectPostprovision(t *testing.T, selection string) {
+	t.Helper()
 	_ = infraCommandFixture(t)
 	rpc := &infraRPC{section: &azdext.GetConfigSectionResponse{}, writes: map[string]json.RawMessage{},
 		subscriptions: []*azdext.Subscription{{Id: "sub", Name: "Subscription", TenantId: "tenant", IsDefault: true}}}
+	rpc.multiSelect = func(request *azdext.MultiSelectRequest) (*azdext.MultiSelectResponse, error) {
+		assert.Len(t, request.GetOptions().GetChoices(), 2)
+		return &azdext.MultiSelectResponse{Values: request.GetOptions().GetChoices()}, nil
+	}
+	rpc.confirm = func(request *azdext.ConfirmRequest) (*azdext.ConfirmResponse, error) {
+		assert.False(t, request.GetOptions().GetDefaultValue())
+		return &azdext.ConfirmResponse{Value: new(true)}, nil
+	}
 	_ = infraRPCClient(t, rpc)
 	models := []string{"gpt-5.2", "text-embedding-3-large"}
 	deployed := map[string]bool{}
@@ -145,23 +162,27 @@ func TestGeneratedProjectPostprovisionThroughHostAndRESTPlayback(t *testing.T) {
 		return stdout.String(), err
 	}
 	directory := filepath.Join(testutil.TempDir(t), "generated")
-	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", "recommended", "--no-prompt")
+	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", selection, "--no-prompt")
 	require.NoError(t, err)
 	assert.Empty(t, calls)
 	env, err := localio.Read(filepath.Join(directory, ".azure/dev/.env"))
 	require.NoError(t, err)
-	assert.Contains(t, string(env), `CU_MODEL_SELECTION="recommended"`)
+	assert.Contains(t, string(env), `CU_MODEL_SELECTION="`+selection+`"`)
 	rpc.mu.Lock()
 	rpc.values = []*azdext.KeyValue{
 		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
 		{Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
 		{Key: "CU_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
 		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
-		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: "recommended"},
+		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: selection},
 	}
 	rpc.mu.Unlock()
 	t.Chdir(directory)
-	stdout, err := execute("infra", "_postprovision-v1", "-e", "dev", "--no-prompt")
+	postArgs := []string{"infra", "_postprovision-v1", "-e", "dev"}
+	if selection != "prompt" {
+		postArgs = append(postArgs, "--no-prompt")
+	}
+	stdout, err := execute(postArgs...)
 	require.NoError(t, err)
 	var result infra.PostResult
 	require.NoError(t, json.Unmarshal([]byte(stdout), &result))

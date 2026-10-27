@@ -5,14 +5,11 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
@@ -144,6 +141,16 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		return nil // Non-critical: let deployment handle parse errors.
 	}
 
+	// Foundry User on the project is checked, and granted when missing, by the shared helper.
+	if err := azdext.EnsureFoundryDeveloperAccess(ctx, azdClient, azdext.FoundryDeveloperAccessOptions{
+		Writer: os.Stdout,
+	}); err != nil {
+		return err
+	}
+	if !hasHosted {
+		return nil
+	}
+
 	tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: info.SubscriptionID,
 	})
@@ -159,49 +166,9 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		return nil // Non-critical: auth issues will surface during deploy.
 	}
 
-	fmt.Println()
-	fmt.Println("Developer RBAC pre-flight check")
-
-	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.Account(), info.SubscriptionID)
+	principalID, _, err := developerRBACPrincipal(ctx, azdClient.Account(), info.SubscriptionID)
 	if err != nil {
-		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping RBAC pre-flight check\n", err)
-		return nil
-	}
-
-	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
-
-	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
-	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
-	if err != nil {
-		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)
-	} else if !hasAIAccess {
-		fmt.Println("  Foundry User role not found — attempting to auto-assign...")
-		if _, assignErr := assignRoleToIdentity(
-			ctx, cred, principalID, roleAzureAIUser,
-			"Foundry User → Foundry Project", info.ProjectScope,
-			principalType,
-		); assignErr != nil {
-			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
-				respErr.StatusCode == http.StatusForbidden {
-				fmt.Printf("%s\n", output.WithWarningFormat(
-					"Your identity (%s) does not have the 'Foundry User' role on the Foundry Project %s/%s "+
-						"and auto-assign was denied.\n"+
-						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
-						"      az role assignment create --assignee %s --role "+roleAzureAIUser+
-						" --scope %q  # Foundry User (formerly Azure AI User)",
-					principalID, info.AccountName, info.ProjectName,
-					principalID, info.ProjectScope,
-				))
-			} else {
-				fmt.Printf("  ⚠ Foundry User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
-			}
-		} else {
-			fmt.Println("  ✓ Foundry User auto-assigned to developer identity")
-		}
-	} else {
-		fmt.Println("  ✓ Foundry User on Foundry Project")
-	}
-	if !hasHosted {
+		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping hosted RBAC checks\n", err)
 		return nil
 	}
 

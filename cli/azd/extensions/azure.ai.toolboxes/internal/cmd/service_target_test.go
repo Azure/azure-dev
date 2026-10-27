@@ -449,6 +449,74 @@ func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
 	}
 }
 
+func TestDeployEnsuresDeveloperAccessBeforeCreatingVersion(t *testing.T) {
+	// No t.Parallel: projectctx.ReadAzdHostedSourcesFunc and setToolboxEndpointEnvFunc are package-level seams.
+	const endpoint = "https://project.services.ai.azure.com/api/projects/test"
+	previousReadSources := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+		return projectctx.AzdHostedSources{EnvValue: endpoint, EnvName: "test"}, nil
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previousReadSources })
+	stubToolboxEndpointEnv(t)
+
+	client := newMockToolboxClient(endpoint)
+	var ensureCalls, versionsAtEnsure int
+	target := &toolboxServiceTarget{
+		environmentClient: &stubEnvironmentReader{name: "test", subscriptionID: "sub"},
+		accountClient:     &stubAccountTenantLookup{tenantID: "tenant"},
+		resolver:          newStubConnectionResolver(),
+		newClient: func(string, string) (toolboxClient, error) {
+			return client, nil
+		},
+		ensureAccess: func(context.Context) error {
+			ensureCalls++
+			versionsAtEnsure = len(client.createVersionCalls)
+			return nil
+		},
+	}
+	properties, err := structpb.NewStruct(map[string]any{
+		"tools": []any{map[string]any{"type": "web_search"}},
+	})
+	require.NoError(t, err)
+
+	_, err = target.Deploy(
+		t.Context(),
+		&azdext.ServiceConfig{
+			Name:                 "research",
+			AdditionalProperties: properties,
+			Environment:          map[string]string{"TOOLBOX_SETTING": "value"},
+		},
+		nil, nil, nil,
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, ensureCalls)
+	assert.Zero(t, versionsAtEnsure, "access must be ensured before the version is created")
+	require.Len(t, client.createVersionCalls, 1)
+}
+
+func TestDeployReuseSkipsDeveloperAccess(t *testing.T) {
+	stubToolboxEndpointEnv(t)
+	called := false
+	target := &toolboxServiceTarget{
+		ensureAccess: func(context.Context) error {
+			called = true
+			return nil
+		},
+	}
+
+	_, err := target.deployReuse(
+		t.Context(),
+		"research",
+		&toolboxServiceConfig{Endpoint: "https://mcp.example.com/toolboxes/research"},
+		&azdext.ServiceConfig{Environment: map[string]string{"X": "y"}},
+		nil,
+	)
+
+	require.NoError(t, err)
+	assert.False(t, called)
+}
+
 func TestCredentialTenantIDErrors(t *testing.T) {
 	t.Parallel()
 

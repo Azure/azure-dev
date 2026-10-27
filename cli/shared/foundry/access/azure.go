@@ -129,7 +129,8 @@ func (b *AzureBackend) Resolve(ctx context.Context, target Target) (Project, err
 	advertised := *response.Properties.Endpoints["AI Foundry API"]
 	if _, err := validateTarget(Target{ProjectID: target.ProjectID, Endpoint: advertised}); err != nil ||
 		!strings.EqualFold(strings.TrimRight(advertised, "/"), strings.TrimRight(target.Endpoint, "/")) {
-		return Project{}, failure(TargetMismatch, "ARM project's advertised endpoint does not match the requested Foundry project", nil)
+		return Project{}, failure(TargetMismatch,
+			"ARM project's advertised endpoint does not match the requested Foundry project", nil)
 	}
 	return Project{
 		Target:   Target{ProjectID: id.String(), Endpoint: strings.TrimRight(advertised, "/")},
@@ -147,7 +148,8 @@ func (b *AzureBackend) EnsureGrant(ctx context.Context, project Project) (bool, 
 	}
 	if !strings.EqualFold(current.PrincipalID, project.PrincipalID) ||
 		!strings.EqualFold(current.TenantID, project.TenantID) || current.PrincipalType != project.PrincipalType {
-		return false, failure(IdentityUnavailable, "current identity changed since the Foundry access probe; retry the operation", nil)
+		return false, failure(IdentityUnavailable,
+			"current identity changed since the Foundry access probe; retry the operation", nil)
 	}
 	id, _ := arm.ParseResourceID(current.ProjectID) // verified by Resolve
 	client, err := armauthorization.NewRoleAssignmentsClient(id.SubscriptionID, current.Credential, &b.options)
@@ -231,7 +233,8 @@ func validateTarget(target Target) (*arm.ResourceID, error) {
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" ||
 		u.ForceQuery || strings.Contains(target.Endpoint, "#") || u.Opaque != "" ||
 		(u.Port() != "" && u.Port() != "443") {
-		return nil, failure(InvalidTarget, "a credential-free HTTPS Foundry project endpoint without a query or fragment is required", nil)
+		return nil, failure(InvalidTarget,
+			"a credential-free HTTPS Foundry project endpoint without a query or fragment is required", nil)
 	}
 	parts := strings.Split(strings.TrimSuffix(u.Path, "/"), "/")
 	if len(parts) != 4 || parts[0] != "" || parts[1] != "api" || parts[2] != "projects" ||

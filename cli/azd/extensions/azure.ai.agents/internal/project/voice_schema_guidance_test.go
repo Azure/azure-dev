@@ -89,6 +89,13 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 			require.Error(t, schema.validate(definition), "%s must be excluded from %v", field, definition)
 			delete(definition, field)
 		}
+		for _, field := range []string{
+			"subagent_config", "subagentConfig", "interim_response", "interimResponse",
+		} {
+			definition[field] = map[string]any{}
+			require.Error(t, schema.validate(definition), "%s must be excluded from %v", field, definition)
+			delete(definition, field)
+		}
 	}
 	hostedWrapper := map[string]any{
 		"kind": "voice", "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},

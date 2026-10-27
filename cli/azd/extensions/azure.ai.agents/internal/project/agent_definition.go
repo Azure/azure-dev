@@ -751,10 +751,12 @@ func resolveServiceProps(
 			resolved, err = normalizeRootVoiceDefinitionMap(resolved)
 		}
 		if err == nil {
-			for key, value := range values {
-				if key != AgentDefinitionRefKey {
-					resolved[key] = value
-				}
+			siblings := maps.Clone(values)
+			delete(siblings, AgentDefinitionRefKey)
+			var overlays map[string]any
+			overlays, err = foundry.ResolveFileRefs(siblings, projectRoot)
+			for key, value := range overlays {
+				resolved[key] = value
 			}
 		}
 	} else {

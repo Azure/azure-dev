@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package foundryaccess
+package access
 
 import (
 	"context"
@@ -16,11 +16,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 const testTenant = "22222222-2222-2222-2222-222222222222"
@@ -28,18 +26,14 @@ const testPrincipal = "33333333-3333-3333-3333-333333333333"
 
 type mockAccount struct{ mock.Mock }
 
-func (a *mockAccount) LookupTenant(
-	ctx context.Context, request *azdext.LookupTenantRequest, _ ...grpc.CallOption,
-) (*azdext.LookupTenantResponse, error) {
-	args := a.Called(ctx, request)
-	return args.Get(0).(*azdext.LookupTenantResponse), args.Error(1)
+func (a *mockAccount) ResolveTenant(ctx context.Context, subscription string) (string, error) {
+	args := a.Called(ctx, subscription)
+	return args.String(0), args.Error(1)
 }
 
-func (a *mockAccount) GetCurrentPrincipal(
-	ctx context.Context, request *azdext.GetCurrentPrincipalRequest, _ ...grpc.CallOption,
-) (*azdext.GetCurrentPrincipalResponse, error) {
-	args := a.Called(ctx, request)
-	return args.Get(0).(*azdext.GetCurrentPrincipalResponse), args.Error(1)
+func (a *mockAccount) ResolvePrincipal(ctx context.Context, subscription string) (Principal, error) {
+	args := a.Called(ctx, subscription)
+	return args.Get(0).(Principal), args.Error(1)
 }
 
 type testCredential struct{}
@@ -60,14 +54,9 @@ func testResponse(request *http.Request, status int, body string) *http.Response
 func newTestBackend(t *testing.T, transport testTransport) (*AzureBackend, *mockAccount) {
 	t.Helper()
 	account := &mockAccount{}
-	account.On("LookupTenant", mock.Anything, &azdext.LookupTenantRequest{
-		SubscriptionId: "11111111-1111-1111-1111-111111111111",
-	}).Return(&azdext.LookupTenantResponse{TenantId: testTenant}, nil)
-	account.On("GetCurrentPrincipal", mock.Anything, &azdext.GetCurrentPrincipalRequest{
-		SubscriptionId: "11111111-1111-1111-1111-111111111111",
-	}).Return(&azdext.GetCurrentPrincipalResponse{
-		ObjectId: testPrincipal, PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
-	}, nil)
+	account.On("ResolveTenant", mock.Anything, "11111111-1111-1111-1111-111111111111").Return(testTenant, nil)
+	account.On("ResolvePrincipal", mock.Anything, "11111111-1111-1111-1111-111111111111").
+		Return(Principal{ObjectID: testPrincipal, Type: "User"}, nil)
 	opts := &AzureOptions{CredentialProvider: func(
 		_ context.Context, subscription, tenant string,
 	) (azcore.TokenCredential, error) {
@@ -144,7 +133,7 @@ func TestAzureRejectsUnsafeTargetsBeforeIO(t *testing.T) {
 			for _, secret := range []string{"password", "secret"} {
 				require.NotContains(t, err.Error(), secret)
 			}
-			account.AssertNotCalled(t, "LookupTenant", mock.Anything, mock.Anything)
+			account.AssertNotCalled(t, "ResolveTenant", mock.Anything, mock.Anything)
 		})
 	}
 }
@@ -257,23 +246,22 @@ func TestAzureRefusesIdentityChange(t *testing.T) {
 func TestAzurePrincipalAndLookupFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
-		principalType azdext.PrincipalType
+		principalType string
 		tenantError   error
 		wantType      string
 	}{
-		{"service principal", azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL, nil, "ServicePrincipal"},
-		{"unsupported principal", azdext.PrincipalType_PRINCIPAL_TYPE_UNSPECIFIED, nil, ""},
-		{"tenant failure", azdext.PrincipalType_PRINCIPAL_TYPE_USER, errors.New("tenant lookup failed"), ""},
+		{"service principal", "ServicePrincipal", nil, "ServicePrincipal"},
+		{"unsupported principal", "Unknown", nil, ""},
+		{"tenant failure", "User", errors.New("tenant lookup failed"), ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			backend, account := newTestBackend(t, func(request *http.Request) (*http.Response, error) {
 				return projectResponse(t, request, testTarget.Endpoint), nil
 			})
 			account.ExpectedCalls = nil
-			account.On("LookupTenant", mock.Anything, mock.Anything).
-				Return(&azdext.LookupTenantResponse{TenantId: testTenant}, tt.tenantError)
-			account.On("GetCurrentPrincipal", mock.Anything, mock.Anything).
-				Return(&azdext.GetCurrentPrincipalResponse{ObjectId: testPrincipal, PrincipalType: tt.principalType}, nil)
+			account.On("ResolveTenant", mock.Anything, mock.Anything).Return(testTenant, tt.tenantError)
+			account.On("ResolvePrincipal", mock.Anything, mock.Anything).
+				Return(Principal{ObjectID: testPrincipal, Type: tt.principalType}, nil)
 			project, err := backend.Resolve(t.Context(), testTarget)
 			if tt.wantType == "" {
 				require.Error(t, err)
@@ -299,18 +287,15 @@ func TestAzureResolutionErrors(t *testing.T) {
 			switch stage {
 			case "nil tenant":
 				account.ExpectedCalls = nil
-				account.On("LookupTenant", mock.Anything, mock.Anything).
-					Return((*azdext.LookupTenantResponse)(nil), nil)
+				account.On("ResolveTenant", mock.Anything, mock.Anything).Return("", nil)
 			case "nil principal", "principal error":
 				account.ExpectedCalls = nil
-				account.On("LookupTenant", mock.Anything, mock.Anything).
-					Return(&azdext.LookupTenantResponse{TenantId: testTenant}, nil)
+				account.On("ResolveTenant", mock.Anything, mock.Anything).Return(testTenant, nil)
 				var principalError error
 				if stage == "principal error" {
 					principalError = failure
 				}
-				account.On("GetCurrentPrincipal", mock.Anything, mock.Anything).
-					Return((*azdext.GetCurrentPrincipalResponse)(nil), principalError)
+				account.On("ResolvePrincipal", mock.Anything, mock.Anything).Return(Principal{}, principalError)
 			case "credential error", "nil credential":
 				backend.credentials = func(context.Context, string, string) (azcore.TokenCredential, error) {
 					if stage == "credential error" {

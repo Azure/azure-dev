@@ -36,6 +36,9 @@
 /cli/azd/extensions/microsoft.foundry/      @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 
 # ── Extensions ────────────────────────────────────────────────────────────────
+# Independently released Foundry libraries (not installable extensions).
+/cli/shared/                              @JeffreyCA @glharper @trangevi @hund030 @RickWinter
+
 /ext/                                       @vhvb1989 @tg-msft @RickWinter
 /ext/azuredevops/                           @vhvb1989 @hemarina @tg-msft @RickWinter
 /ext/devcontainer/                          @vhvb1989 @hemarina @tg-msft @RickWinter

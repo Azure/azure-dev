@@ -24,12 +24,6 @@ for each environment.
 | `AZURE_APP_SERVICE_DASHBOARD_URI` | The URI for the Aspire dashboard hosted on Azure App Service. |
 | `AZURE_AKS_CLUSTER_NAME` | The name of the Azure Kubernetes Service cluster. |
 
-## Foundry Extension Variables
-
-| Variable | Description |
-| --- | --- |
-| `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS` | Boolean opt-out for the shared Foundry access adapter. True in either the azd environment or process environment bypasses its access checks and automatic developer grants. This applies only to extensions that adopt the adapter. See [Shared Foundry project access](extensions/foundry-access.md). |
-
 ## Dev Center Variables
 
 Variables for [Azure Dev Center](https://learn.microsoft.com/azure/dev-box/overview-what-is-microsoft-dev-box)

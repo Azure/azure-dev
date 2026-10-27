@@ -1,5 +1,12 @@
 version: 2
 updates:
+  - package-ecosystem: "gomod"
+    directory: "/cli/shared/foundry"
+    schedule:
+      interval: "weekly"
+    groups:
+      foundry-shared:
+        patterns: ["*"]
   - package-ecosystem: "github-actions"
     directories:
       - "/"

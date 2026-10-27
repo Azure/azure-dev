@@ -1,13 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package foundryaccess
+package access
 
 import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,25 +16,29 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
-	"google.golang.org/grpc"
 )
 
 // FoundryUserRoleID is the built-in Foundry User (formerly Azure AI User) role.
 const FoundryUserRoleID = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
 
-// AccountClient is the host-owned identity API used by Foundry access.
-// azdext.AzdClient.Account() implements it without requiring an active environment.
-type AccountClient interface {
-	LookupTenant(context.Context, *azdext.LookupTenantRequest, ...grpc.CallOption) (*azdext.LookupTenantResponse, error)
-	GetCurrentPrincipal(
-		context.Context, *azdext.GetCurrentPrincipalRequest, ...grpc.CallOption,
-	) (*azdext.GetCurrentPrincipalResponse, error)
+// Principal identifies an authenticated object in the subscription's resource tenant.
+// Type must be "User" or "ServicePrincipal"; ObjectID is not an application client ID.
+type Principal struct {
+	ObjectID string
+	Type     string
+}
+
+// IdentityResolver provides tenant and current-principal resolution without
+// exposing any host SDK, gRPC contract, or extension-specific type. Extensions
+// implement this interface using their existing host account APIs.
+type IdentityResolver interface {
+	ResolveTenant(context.Context, string) (string, error)
+	ResolvePrincipal(context.Context, string) (Principal, error)
 }
 
 // CredentialProvider creates a credential for the host-selected subscription and
-// user-access tenant. It must authenticate the same identity as AccountClient.
+// user-access tenant. It must authenticate the same identity as IdentityResolver.
 type CredentialProvider func(context.Context, string, string) (azcore.TokenCredential, error)
 
 // AzureOptions configures the Azure backend, including cloud and transport options.
@@ -49,15 +52,15 @@ type AzureOptions struct {
 // principal's Foundry User assignment. It never uses role-name heuristics to infer
 // effective data-plane access. It retains no mutable per-project or principal state.
 type AzureBackend struct {
-	account     AccountClient
+	account     IdentityResolver
 	credentials CredentialProvider
 	options     arm.ClientOptions
 }
 
 // NewAzureBackend creates an Azure backend without making network calls.
-func NewAzureBackend(account AccountClient, options *AzureOptions) (*AzureBackend, error) {
+func NewAzureBackend(account IdentityResolver, options *AzureOptions) (*AzureBackend, error) {
 	if account == nil {
-		return nil, fmt.Errorf("a host account client is required")
+		return nil, failure(InvalidOptions, "an identity resolver is required", nil)
 	}
 	b := &AzureBackend{account: account}
 	if options != nil {
@@ -82,55 +85,55 @@ func (b *AzureBackend) Resolve(ctx context.Context, target Target) (Project, err
 	if err != nil {
 		return Project{}, err
 	}
-	tenant, err := b.account.LookupTenant(ctx, &azdext.LookupTenantRequest{SubscriptionId: id.SubscriptionID})
+	tenant, err := b.account.ResolveTenant(ctx, id.SubscriptionID)
 	if err != nil {
-		return Project{}, fmt.Errorf("resolving project tenant: %w", err)
+		return Project{}, failure(IdentityUnavailable, "resolving project tenant", err)
 	}
-	if tenant == nil || !validUUID(tenant.TenantId) {
-		return Project{}, fmt.Errorf("host returned an invalid project tenant")
+	if !validUUID(tenant) {
+		return Project{}, failure(IdentityUnavailable, "identity resolver returned an invalid project tenant", nil)
 	}
-	principal, err := b.account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: id.SubscriptionID})
+	principal, err := b.account.ResolvePrincipal(ctx, id.SubscriptionID)
 	if err != nil {
-		return Project{}, fmt.Errorf("resolving current project principal: %w", err)
+		return Project{}, failure(IdentityUnavailable, "resolving current project principal", err)
 	}
-	if principal == nil || !validUUID(principal.ObjectId) {
-		return Project{}, fmt.Errorf("host returned an invalid current principal")
+	if !validUUID(principal.ObjectID) {
+		return Project{}, failure(IdentityUnavailable, "identity resolver returned an invalid current principal", nil)
 	}
 	var principalType string
-	switch principal.PrincipalType {
-	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
+	switch principal.Type {
+	case "User":
 		principalType = string(armauthorization.PrincipalTypeUser)
-	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+	case "ServicePrincipal":
 		principalType = string(armauthorization.PrincipalTypeServicePrincipal)
 	default:
-		return Project{}, fmt.Errorf("host returned an unsupported current principal type")
+		return Project{}, failure(IdentityUnavailable, "identity resolver returned an unsupported current principal type", nil)
 	}
-	credential, err := b.credentials(ctx, id.SubscriptionID, tenant.TenantId)
+	credential, err := b.credentials(ctx, id.SubscriptionID, tenant)
 	if err != nil {
-		return Project{}, fmt.Errorf("creating project credential: %w", err)
+		return Project{}, failure(IdentityUnavailable, "creating project credential", err)
 	}
 	if credential == nil {
-		return Project{}, fmt.Errorf("project credential provider returned no credential")
+		return Project{}, failure(IdentityUnavailable, "project credential provider returned no credential", nil)
 	}
 	client, err := armcognitiveservices.NewProjectsClient(id.SubscriptionID, credential, &b.options)
 	if err != nil {
-		return Project{}, fmt.Errorf("creating project ARM client: %w", err)
+		return Project{}, failure(ResolutionFailed, "creating project ARM client", err)
 	}
 	response, err := client.Get(ctx, id.ResourceGroupName, id.Parent.Name, id.Name, nil)
 	if err != nil {
-		return Project{}, fmt.Errorf("verifying project endpoint through ARM: %w", err)
+		return Project{}, failure(ResolutionFailed, "verifying project endpoint through ARM", err)
 	}
 	if response.Properties == nil || response.Properties.Endpoints["AI Foundry API"] == nil {
-		return Project{}, fmt.Errorf("ARM project has no advertised Foundry API endpoint")
+		return Project{}, failure(TargetMismatch, "ARM project has no advertised Foundry API endpoint", nil)
 	}
 	advertised := *response.Properties.Endpoints["AI Foundry API"]
 	if _, err := validateTarget(Target{ProjectID: target.ProjectID, Endpoint: advertised}); err != nil ||
 		!strings.EqualFold(strings.TrimRight(advertised, "/"), strings.TrimRight(target.Endpoint, "/")) {
-		return Project{}, fmt.Errorf("ARM project's advertised endpoint does not match the requested Foundry project")
+		return Project{}, failure(TargetMismatch, "ARM project's advertised endpoint does not match the requested Foundry project", nil)
 	}
 	return Project{
 		Target:   Target{ProjectID: id.String(), Endpoint: strings.TrimRight(advertised, "/")},
-		TenantID: tenant.TenantId, PrincipalID: principal.ObjectId, PrincipalType: principalType, Credential: credential,
+		TenantID: tenant, PrincipalID: principal.ObjectID, PrincipalType: principalType, Credential: credential,
 	}, nil
 }
 
@@ -144,12 +147,12 @@ func (b *AzureBackend) EnsureGrant(ctx context.Context, project Project) (bool, 
 	}
 	if !strings.EqualFold(current.PrincipalID, project.PrincipalID) ||
 		!strings.EqualFold(current.TenantID, project.TenantID) || current.PrincipalType != project.PrincipalType {
-		return false, fmt.Errorf("current identity changed since the Foundry access probe; retry the operation")
+		return false, failure(IdentityUnavailable, "current identity changed since the Foundry access probe; retry the operation", nil)
 	}
 	id, _ := arm.ParseResourceID(current.ProjectID) // verified by Resolve
 	client, err := armauthorization.NewRoleAssignmentsClient(id.SubscriptionID, current.Credential, &b.options)
 	if err != nil {
-		return false, fmt.Errorf("creating role assignments client: %w", err)
+		return false, failure(GrantFailed, "creating role assignments client", err)
 	}
 	roleID := "/subscriptions/" + id.SubscriptionID + "/providers/Microsoft.Authorization/roleDefinitions/" + FoundryUserRoleID
 	// Reuse pre-existing assignments, including assignments made with another name.
@@ -169,13 +172,13 @@ func (b *AzureBackend) EnsureGrant(ctx context.Context, project Project) (bool, 
 		response.ErrorCode == "RoleAssignmentExists" {
 		exists, readErr := matchingAssignment(ctx, client, current, roleID)
 		if readErr != nil {
-			return false, fmt.Errorf("reconciling concurrent role assignment: %w", readErr)
+			return false, failure(GrantFailed, "reconciling concurrent role assignment", readErr)
 		}
 		if exists {
 			return false, nil
 		}
 	}
-	return false, fmt.Errorf("creating project-scoped Foundry User assignment: %w", err)
+	return false, failure(GrantFailed, "creating project-scoped Foundry User assignment", err)
 }
 
 func matchingAssignment(
@@ -188,7 +191,7 @@ func matchingAssignment(
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return false, fmt.Errorf("checking existing project role assignment: %w", err)
+			return false, failure(GrantFailed, "checking existing project role assignment", err)
 		}
 		for _, assignment := range page.Value {
 			if assignment == nil || assignment.Properties == nil {
@@ -222,18 +225,18 @@ func validateTarget(target Target) (*arm.ResourceID, error) {
 	id, err := arm.ParseResourceID(target.ProjectID)
 	if err != nil || id.Parent == nil || !validUUID(id.SubscriptionID) || id.ResourceGroupName == "" ||
 		!strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") {
-		return nil, fmt.Errorf("a Foundry project ARM resource ID is required")
+		return nil, failure(InvalidTarget, "a Foundry project ARM resource ID is required", nil)
 	}
 	u, err := url.Parse(target.Endpoint)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" ||
 		u.ForceQuery || strings.Contains(target.Endpoint, "#") || u.Opaque != "" ||
 		(u.Port() != "" && u.Port() != "443") {
-		return nil, fmt.Errorf("a credential-free HTTPS Foundry project endpoint without a query or fragment is required")
+		return nil, failure(InvalidTarget, "a credential-free HTTPS Foundry project endpoint without a query or fragment is required", nil)
 	}
 	parts := strings.Split(strings.TrimSuffix(u.Path, "/"), "/")
 	if len(parts) != 4 || parts[0] != "" || parts[1] != "api" || parts[2] != "projects" ||
 		!strings.EqualFold(parts[3], id.Name) || u.RawPath != "" {
-		return nil, fmt.Errorf("Foundry endpoint must identify the project named by the ARM resource ID")
+		return nil, failure(InvalidTarget, "Foundry endpoint must identify the project named by the ARM resource ID", nil)
 	}
 	return id, nil
 }

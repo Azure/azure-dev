@@ -1,11 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package foundryaccess
+package access
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -22,12 +21,12 @@ type Service struct {
 // NewService constructs a service without performing network calls.
 func NewService(backend Backend, options *Options) (*Service, error) {
 	if backend == nil {
-		return nil, fmt.Errorf("a Foundry access backend is required")
+		return nil, failure(InvalidOptions, "a Foundry access backend is required", nil)
 	}
 	opts := Options{PropagationTimeout: 2 * time.Minute, InitialDelay: time.Second}
 	if options != nil {
 		if options.PropagationTimeout < 0 || options.InitialDelay < 0 {
-			return nil, fmt.Errorf("Foundry access timeouts must not be negative")
+			return nil, failure(InvalidOptions, "Foundry access timeouts must not be negative", nil)
 		}
 		if options.PropagationTimeout != 0 {
 			opts.PropagationTimeout = options.PropagationTimeout
@@ -47,10 +46,10 @@ func NewService(backend Backend, options *Options) (*Service, error) {
 func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 	result := Result{State: Unknown, Operation: request.Operation}
 	if request.Probe == nil || strings.TrimSpace(request.Operation) == "" {
-		return result, fmt.Errorf("an operation and a non-mutating access probe are required")
+		return result, failure(InvalidOptions, "an operation and a non-mutating access probe are required", nil)
 	}
 	if request.Policy != "" && request.Policy != CheckOnly && request.Policy != GrantFoundryUser {
-		return result, fmt.Errorf("unsupported Foundry access grant policy")
+		return result, failure(InvalidOptions, "unsupported Foundry access grant policy", nil)
 	}
 	if _, err := validateTarget(request.Target); err != nil {
 		return result, err
@@ -60,7 +59,7 @@ func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 	}
 	project, err := s.backend.Resolve(ctx, request.Target)
 	if err != nil {
-		return result, fmt.Errorf("resolving Foundry project access: %w", err)
+		return result, failure(ResolutionFailed, "resolving Foundry project access", err)
 	}
 	result.Project = project
 	check := func(ctx context.Context) error {
@@ -71,7 +70,7 @@ func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 		result.ProbeAttempts++
 		state, err := request.Probe(ctx, project)
 		if err != nil {
-			return fmt.Errorf("probing Foundry project access: %w", err)
+			return failure(ProbeFailed, "probing Foundry project access", err)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
@@ -81,7 +80,7 @@ func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 			result.State = state
 			return nil
 		default:
-			return fmt.Errorf("access probe returned an invalid state")
+			return failure(ProbeFailed, "access probe returned an invalid state", nil)
 		}
 	}
 	if err := check(ctx); err != nil {
@@ -97,13 +96,13 @@ func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 	}
 	created, err := s.backend.EnsureGrant(grantCtx, project)
 	if err != nil {
-		return result, fmt.Errorf("ensuring Foundry User access: %w", err)
+		return result, failure(GrantFailed, "ensuring Foundry User access", err)
 	}
 	result.AssignmentCreated, result.GrantEnsured = created, true
 	delay := min(s.options.InitialDelay, 10*time.Second)
 	for {
 		if err := grantCtx.Err(); err != nil {
-			return result, fmt.Errorf("waiting for Foundry access propagation: %w", err)
+			return result, failure(PropagationFailed, "waiting for Foundry access propagation", err)
 		}
 		if err := check(grantCtx); err != nil {
 			return result, err
@@ -115,7 +114,7 @@ func (s *Service) Ensure(ctx context.Context, request Request) (Result, error) {
 		select {
 		case <-grantCtx.Done():
 			timer.Stop()
-			return result, fmt.Errorf("waiting for Foundry access propagation: %w", grantCtx.Err())
+			return result, failure(PropagationFailed, "waiting for Foundry access propagation", grantCtx.Err())
 		case <-timer.C:
 		}
 		delay = min(delay*2, 10*time.Second)

@@ -797,17 +797,6 @@ for deprecated route retention and direct beta client construction.
 
 See [GetCurrentPrincipal](extension-framework.md#getcurrentprincipal) for the enum mapping, guest-user behavior, and host compatibility requirements.
 
-#### Shared Foundry project access
-
-The exported `pkg/foundryaccess` package provides opt-in, operation-specific access
-checks and explicitly authorized project-scoped Foundry User grants. It uses the
-existing stable account APIs (host 1.36.0 or later); it adds no gRPC contract and
-does not change extension or provisioning behavior until adopted. Consume a
-published azd module version containing the package before updating extensions.
-
-See [Shared Foundry project access](foundry-access.md) for probe requirements,
-grant policy, target verification, concurrency, and adoption guidance.
-
 #### TelemetryService
 
 `Telemetry().ReportUsage(ctx, &azdext.ReportUsageRequest{EventName: "deploy.completed", Attributes: attributes})`

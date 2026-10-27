@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package foundryaccess checks operation-specific Foundry project access and,
+// Package access checks operation-specific Foundry project access and,
 // only with explicit authorization, ensures a project-scoped Foundry User grant.
 // It does not register hooks, change provisioning, print output, or replay writes.
-package foundryaccess
+package access
 
 import (
 	"context"

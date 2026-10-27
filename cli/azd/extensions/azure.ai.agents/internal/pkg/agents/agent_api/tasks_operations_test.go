@@ -25,6 +25,13 @@ import (
 	"azureaiagent/internal/pkg/recordproxy"
 )
 
+// Contract assertions are grounded in the public Tasks API's routes.tsp and models.tsp:
+// https://github.com/Azure/azure-rest-api-specs/pull/45095/files
+// Lifecycle and opaque application payload semantics are documented in:
+// https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/agentserver/azure-ai-agentserver-core/docs/tasks-guide.md
+// Tests additionally cover the live-validated v1/preview-header wire contract
+// and local CLI safety policies; these are not new service API guarantees.
+
 type taskRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f taskRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }

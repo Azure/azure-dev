@@ -8,8 +8,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -52,13 +52,13 @@ func TestDeveloperRBACPrincipalUsesStableRPC(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(client.Close)
 
-	id, principalType, err := developerRBACPrincipal(t.Context(), client.Account(), "selected-subscription")
+	id, principalType, err := foundry.ResolvePrincipal(t.Context(), client.Account(), "selected-subscription")
 	require.NoError(t, err)
 	assert.Equal(t, "resource-tenant-object-id", id)
-	assert.Equal(t, armauthorization.PrincipalTypeUser, principalType)
+	assert.Equal(t, "User", string(principalType))
 	assert.Equal(t, "/azd.extensions.v1.AccountService/GetCurrentPrincipal", <-methods)
 
-	_, _, err = developerRBACPrincipal(t.Context(), client.Account(), "")
+	_, _, err = foundry.ResolvePrincipal(t.Context(), client.Account(), "")
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	assert.Equal(t, "/azd.extensions.v1.AccountService/GetCurrentPrincipal", <-methods)
 }
@@ -83,7 +83,7 @@ func TestDeveloperRBACPrincipal(t *testing.T) {
 		name     string
 		response *azdext.GetCurrentPrincipalResponse
 		err      error
-		wantType armauthorization.PrincipalType
+		wantType string
 		wantErr  string
 	}{
 		{
@@ -91,14 +91,14 @@ func TestDeveloperRBACPrincipal(t *testing.T) {
 			response: &azdext.GetCurrentPrincipalResponse{
 				ObjectId: "resource-tenant-object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			},
-			wantType: armauthorization.PrincipalTypeUser,
+			wantType: "User",
 		},
 		{
 			name: "service principal",
 			response: &azdext.GetCurrentPrincipalResponse{
 				ObjectId: "service-principal-object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL,
 			},
-			wantType: armauthorization.PrincipalTypeServicePrincipal,
+			wantType: "ServicePrincipal",
 		},
 		{name: "lookup failure", err: lookupErr, wantErr: "subscription unavailable"},
 		{name: "empty ID", response: &azdext.GetCurrentPrincipalResponse{}, wantErr: "empty current principal object ID"},
@@ -110,7 +110,7 @@ func TestDeveloperRBACPrincipal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			account := &developerRBACAccountClient{response: tt.response, err: tt.err}
-			id, principalType, err := developerRBACPrincipal(t.Context(), account, "selected-subscription")
+			id, principalType, err := foundry.ResolvePrincipal(t.Context(), account, "selected-subscription")
 			assert.Equal(t, "selected-subscription", account.subscriptionID)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
@@ -123,7 +123,7 @@ func TestDeveloperRBACPrincipal(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.response.ObjectId, id)
-			assert.Equal(t, tt.wantType, principalType)
+			assert.Equal(t, tt.wantType, string(principalType))
 		})
 	}
 }
@@ -208,4 +208,117 @@ func TestSufficientRoleLists(t *testing.T) {
 	assert.Contains(t, sufficientACRAbacRoles, roleAcrRepositoryWriter)
 	assert.Contains(t, sufficientACRAbacRoles, roleContainerRegistryRepositoryContributor)
 	assert.NotContains(t, sufficientACRAbacRoles, roleAcrPush)
+}
+
+type developerAccessEnvironmentServer struct {
+	azdext.UnimplementedEnvironmentServiceServer
+	values map[string]string
+	err    error
+}
+
+func (s *developerAccessEnvironmentServer) GetValues(
+	_ context.Context, req *azdext.GetEnvironmentRequest,
+) (*azdext.KeyValueListResponse, error) {
+	if req.GetName() != "" {
+		return nil, status.Error(codes.InvalidArgument, "wrong environment")
+	}
+	if s.err != nil {
+		return nil, s.err
+	}
+	response := &azdext.KeyValueListResponse{}
+	for key, value := range s.values {
+		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{Key: key, Value: value})
+	}
+	return response, nil
+}
+
+type developerAccessAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+	requests chan string
+	err      error
+}
+
+func (s *developerAccessAccountServer) LookupTenant(
+	_ context.Context, req *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	s.requests <- req.GetSubscriptionId()
+	return &azdext.LookupTenantResponse{}, s.err
+}
+
+func TestCheckDeveloperRBACScopeAndSkip(t *testing.T) {
+	const scope = "/subscriptions/sub/resourceGroups/rg/providers/" +
+		"Microsoft.CognitiveServices/accounts/acct/projects/proj"
+	const endpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	for _, tt := range []struct {
+		name        string
+		change      func(map[string]string)
+		processSkip string
+		envErr      error
+		tenantErr   error
+		wantLookup  bool
+		wantCode    codes.Code
+	}{
+		{name: "empty tenant stops before credential or role writes", wantLookup: true},
+		{name: "legacy endpoint", change: func(v map[string]string) {
+			delete(v, "FOUNDRY_PROJECT_ENDPOINT")
+			v["AZURE_AI_PROJECT_ENDPOINT"] = endpoint
+		}, wantLookup: true},
+		{name: "Foundry endpoint wins", change: func(v map[string]string) {
+			v["AZURE_AI_PROJECT_ENDPOINT"] = "https://other.services.ai.azure.com/api/projects/other"
+		}, wantLookup: true},
+		{name: "missing project", change: func(v map[string]string) { delete(v, "AZURE_AI_PROJECT_ID") }},
+		{name: "missing endpoint", change: func(v map[string]string) { delete(v, "FOUNDRY_PROJECT_ENDPOINT") }},
+		{name: "unrelated endpoint", change: func(v map[string]string) {
+			v["FOUNDRY_PROJECT_ENDPOINT"] = "https://other.services.ai.azure.com/api/projects/proj"
+		}},
+		{name: "child resource", change: func(v map[string]string) { v["AZURE_AI_PROJECT_ID"] += "/agents/agent" }},
+		{name: "subscription conflict", change: func(v map[string]string) { v["AZURE_SUBSCRIPTION_ID"] = "other" }},
+		{name: "explicit opt out", change: func(v map[string]string) { v["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"] = "true" }},
+		{name: "process opt out", processSkip: "true"},
+		{name: "persisted false wins", processSkip: "true", change: func(v map[string]string) {
+			v["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"] = "false"
+		}, wantLookup: true},
+		{name: "invalid persisted value does not skip", processSkip: "true", change: func(v map[string]string) {
+			v["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"] = "invalid"
+		}, wantLookup: true},
+		{name: "environment cancellation", envErr: status.Error(codes.Canceled, "cancelled"), wantCode: codes.Canceled},
+		{name: "tenant cancellation", tenantErr: status.Error(codes.Canceled, "cancelled"),
+			wantLookup: true, wantCode: codes.Canceled},
+		{name: "tenant deadline", tenantErr: status.Error(codes.DeadlineExceeded, "timeout"),
+			wantLookup: true, wantCode: codes.DeadlineExceeded},
+		{name: "tenant lookup unavailable", tenantErr: status.Error(codes.Unavailable, "unavailable"), wantLookup: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS", tt.processSkip)
+			values := map[string]string{"AZURE_AI_PROJECT_ID": scope, "FOUNDRY_PROJECT_ENDPOINT": endpoint}
+			if tt.change != nil {
+				tt.change(values)
+			}
+			account := &developerAccessAccountServer{requests: make(chan string, 2), err: tt.tenantErr}
+			server := grpc.NewServer()
+			azdext.RegisterEnvironmentServiceServer(server, &developerAccessEnvironmentServer{values: values, err: tt.envErr})
+			azdext.RegisterAccountServiceServer(server, account)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() {
+				server.Stop()
+				_ = listener.Close()
+			})
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(client.Close)
+
+			for _, hosted := range []bool{false, true} {
+				err := CheckDeveloperRBAC(t.Context(), client, hosted)
+				require.Equal(t, tt.wantCode, status.Code(err))
+				if tt.wantLookup {
+					require.Len(t, account.requests, 1)
+					assert.Equal(t, "sub", <-account.requests)
+				} else {
+					assert.Empty(t, account.requests, "invalid or skipped input must not reach authentication")
+				}
+			}
+		})
+	}
 }

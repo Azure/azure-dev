@@ -1288,10 +1288,10 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
 	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt}))
-	firstCalls := envServer.getCurrentCalls
-	require.GreaterOrEqual(t, firstCalls, 2)
+	firstCalls := envServer.getActiveValuesCalls
+	require.Equal(t, 1, firstCalls)
 	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted}))
-	require.GreaterOrEqual(t, envServer.getCurrentCalls, firstCalls+2)
+	require.Equal(t, firstCalls+1, envServer.getActiveValuesCalls)
 }
 
 func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
@@ -1318,7 +1318,7 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 			require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 				Project: proj, Service: svc,
 			}))
-			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
+			require.Equal(t, 1, envServer.getActiveValuesCalls)
 		})
 	}
 }

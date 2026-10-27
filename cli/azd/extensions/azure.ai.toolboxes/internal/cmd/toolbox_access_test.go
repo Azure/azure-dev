@@ -450,9 +450,21 @@ func TestToolboxCreateValidatesLocalInputBeforeAccess(t *testing.T) {
 }
 
 func TestToolboxCreateRejectsExplicitEmptyFlags(t *testing.T) {
+	stubToolboxEndpointEnv(t)
+	t.Setenv("AZD_SERVER", "")
 	for _, args := range [][]string{
 		{"create", "research", "--from-file="},
 		{"create", "research", "--from-file=tools.yaml", "--project-endpoint="},
+		{"publish", "research", "1", "--project-endpoint="},
+		{"connection", "add", "research", "mcp", "--from-file="},
+		{"connection", "add", "research", "mcp", "--index="},
+		{"skill", "add", "research", "skill", "--from-file="},
+		{"connection", "add", "research", "--from-file=tools.yaml", "--index="},
+		{"connection", "add", "research", "--from-file=tools.yaml", "--instance-name="},
+		{"connection", "add", "research", "mcp", "--from-version="},
+		{"connection", "remove", "research", "mcp", "--from-version="},
+		{"skill", "add", "research", "skill", "--from-version="},
+		{"skill", "remove", "research", "skill", "--from-version="},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			root := NewRootCommand()
@@ -469,19 +481,23 @@ func TestToolboxCreateRejectsExplicitEmptyFlags(t *testing.T) {
 type toolboxAccessEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	reads atomic.Int32
+	err   error
 }
 
 func (s *toolboxAccessEnvironmentServer) GetValues(
 	context.Context, *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
 	s.reads.Add(1)
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &azdext.KeyValueListResponse{KeyValues: []*azdext.KeyValue{
 		{Key: "FOUNDRY_PROJECT_ENDPOINT", Value: toolboxAccessTestEndpoint},
 		{Key: "AZURE_AI_PROJECT_ID", Value: "invalid-project-id"},
 	}}, nil
 }
 
-func TestToolboxCreateCommandReachesAccessPreparation(t *testing.T) {
+func TestToolboxWriteCommandsReachAccessPreparation(t *testing.T) {
 	server := grpc.NewServer()
 	environment := &toolboxAccessEnvironmentServer{}
 	azdext.RegisterEnvironmentServiceServer(server, environment)
@@ -493,14 +509,89 @@ func TestToolboxCreateCommandReachesAccessPreparation(t *testing.T) {
 	})
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	file := writeTempFile(t, ".yaml", "tools:\n  - type: web_search\n")
-	root := NewRootCommand()
-	root.SetOut(io.Discard)
-	root.SetErr(io.Discard)
-	root.SetArgs([]string{"create", "research", "--from-file=" + file, "--project-endpoint=" + toolboxAccessTestEndpoint})
-	err = root.ExecuteContext(t.Context())
-	local := requireLocalError(t, err, exterrors.CodeInvalidParameter)
-	assert.Contains(t, local.Message, "AZURE_AI_PROJECT_ID")
-	assert.Equal(t, int32(1), environment.reads.Load())
+	for _, args := range [][]string{
+		{"create", "research", "--from-file=" + file},
+		{"publish", "research", "1"},
+		{"connection", "add", "research", "mcp"},
+		{"connection", "remove", "research", "mcp", "--force"},
+		{"skill", "add", "research", "skill"},
+		{"skill", "remove", "research", "skill", "--force"},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			root := NewRootCommand()
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			root.SetArgs(append(args, "--project-endpoint="+toolboxAccessTestEndpoint))
+			err := root.ExecuteContext(t.Context())
+			local := requireLocalError(t, err, exterrors.CodeInvalidParameter)
+			assert.Contains(t, local.Message, "AZURE_AI_PROJECT_ID")
+		})
+	}
+	assert.Equal(t, int32(6), environment.reads.Load(), "every write command must reach scope validation")
+}
+
+func TestToolboxBroaderWritesValidateBeforeAccess(t *testing.T) {
+	t.Setenv("AZD_SERVER", "")
+	for _, args := range [][]string{
+		{"connection", "add", "research", "mcp", "--from-file=missing.yaml"},
+		{"connection", "add", "research", "--from-file=missing.yaml"},
+		{"connection", "add", "research", "mcp", "--index=x", "--instance-name=y"},
+		{"skill", "add", "research", "skill@"},
+		{"skill", "add", "research", "--from-file=" + writeTempFile(t, ".yaml", "skills:\n  - name: INVALID\n")},
+		{"skill", "add", "research", "--from-file=" + writeTempFile(t, ".yaml",
+			"skills:\n  - name: skill\n  - name: skill\n")},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			root := NewRootCommand()
+			root.SetOut(io.Discard)
+			root.SetErr(io.Discard)
+			root.SetArgs(append(args, "--project-endpoint="+toolboxAccessTestEndpoint))
+			err := root.ExecuteContext(t.Context())
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "endpoint")
+			assert.NotContains(t, err.Error(), "credential")
+		})
+	}
+}
+
+type accessWarningWriter struct {
+	bytes.Buffer
+	cancel context.CancelFunc
+}
+
+func (w *accessWarningWriter) Write(p []byte) (int, error) {
+	n, err := w.Buffer.Write(p)
+	w.cancel()
+	return n, err
+}
+
+func TestToolboxBroaderWriteWarningsUseInjectedWriter(t *testing.T) {
+	server := grpc.NewServer()
+	azdext.RegisterEnvironmentServiceServer(server, &toolboxAccessEnvironmentServer{err: errors.New("unavailable")})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+	for _, args := range [][]string{
+		{"publish", "research", "1"},
+		{"connection", "add", "research", "mcp"},
+		{"connection", "remove", "research", "mcp", "--force"},
+		{"skill", "add", "research", "skill"},
+		{"skill", "remove", "research", "skill", "--force"},
+	} {
+		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			diagnostics := &accessWarningWriter{cancel: cancel}
+			root := NewRootCommand()
+			root.SetOut(io.Discard)
+			root.SetErr(diagnostics)
+			root.SetArgs(append(args, "--project-endpoint="+toolboxAccessTestEndpoint))
+			require.ErrorIs(t, root.ExecuteContext(ctx), context.Canceled)
+			assert.Contains(t, diagnostics.String(), "Foundry roles will not be assigned automatically.")
+		})
+	}
 }
 
 func TestToolboxCreateRejectsMixedDuplicateNamesBeforeAccess(t *testing.T) {

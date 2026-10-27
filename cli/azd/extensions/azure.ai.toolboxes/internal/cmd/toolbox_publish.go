@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
@@ -30,7 +31,10 @@ use 'connection add', 'connection remove', 'skill add', or 'skill remove'.`,
   azd ai toolbox publish research 2`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runToolboxPublish(cmd.Context(), args[0], args[1], readToolboxFlags(cmd, extCtx))
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
+			return runToolboxPublish(cmd.Context(), args[0], args[1], readToolboxFlags(cmd, extCtx), cmd.ErrOrStderr())
 		},
 	}
 
@@ -41,6 +45,7 @@ use 'connection add', 'connection remove', 'skill add', or 'skill remove'.`,
 
 func runToolboxPublish(
 	ctx context.Context, name string, version string, parent toolboxFlags,
+	writer io.Writer,
 ) error {
 	if err := validateToolboxName(name); err != nil {
 		return err
@@ -57,7 +62,7 @@ func runToolboxPublish(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, name, writer)
 	if err != nil {
 		return err
 	}

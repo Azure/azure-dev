@@ -263,6 +263,35 @@ The optional [live preview scenario](tests/cli-interactive-tester-scenarios/tier
 is driven through `foundry-extension-scenario-orchestrator`; its setup incurs Azure
 cost and is not run automatically.
 
+## Developer Foundry access
+
+Agent predeploy uses the shared core `pkg/foundry` access preparation, also used
+by toolbox writes. A non-mutating agent-list probe checks effective data-plane
+access first, so working custom or externally managed permissions do not
+require role-assignment writes. On a confirmed authorization denial, it checks
+inherited Foundry roles and attempts a project-scoped Foundry User assignment
+only when needed, then waits for bounded propagation before deployment.
+Optional role-inspection or assignment failures warn and let deployment report
+the service result. Cancellation or an exhausted post-grant readiness check
+stops predeploy; wait and retry if propagation takes longer.
+
+Preparation requires a matching `AZURE_AI_PROJECT_ID` and
+`FOUNDRY_PROJECT_ENDPOINT` (falling back to `AZURE_AI_PROJECT_ENDPOINT`), with no
+conflicting `AZURE_SUBSCRIPTION_ID`. Guest users and service principals use the
+host's user-access tenant for credentials and resource-tenant principal for
+assignments. Missing or inconsistent project context warns without granting.
+
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` disables developer access preparation
+and hosted-agent permission checks. A non-empty active azd environment value
+takes precedence over the process environment; absent or empty values fall
+back to the process. Hosted agents retain their separate role-assignment-write
+and ACR classic/ABAC checks. Provisioning and read-only diagnostics do not
+automatically grant developer roles.
+
+This shared API must be released in core before updating the independently
+published extension's azd SDK dependency. Local cross-module builds can use a
+Go workspace; do not commit local module replacements.
+
 ## Extension telemetry API
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC

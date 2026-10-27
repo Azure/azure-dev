@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -44,11 +45,15 @@ Refuses to leave the toolbox with zero tools (use 'azd ai toolbox delete' instea
 `,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runConnectionRemove(
 				cmd.Context(), args[0], args[1:],
 				*flags,
 				readToolboxFlags(cmd, extCtx),
 				defaultConnectionResolver{},
+				cmd.ErrOrStderr(),
 			)
 		},
 	}
@@ -65,6 +70,7 @@ func runConnectionRemove(
 	ctx context.Context, toolboxName string, connNames []string,
 	verb connectionRemoveFlags,
 	parent toolboxFlags, resolver connectionResolver,
+	writer io.Writer,
 ) error {
 	if err := validateToolboxName(toolboxName); err != nil {
 		return err
@@ -96,7 +102,7 @@ func runConnectionRemove(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName, writer)
 	if err != nil {
 		return err
 	}

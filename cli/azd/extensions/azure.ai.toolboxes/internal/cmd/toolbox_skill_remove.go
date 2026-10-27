@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -44,8 +45,12 @@ Removing the last skill is allowed.`,
 `,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runSkillRemove(
 				cmd.Context(), args[0], args[1:], *flags, readToolboxFlags(cmd, extCtx),
+				cmd.ErrOrStderr(),
 			)
 		},
 	}
@@ -61,6 +66,7 @@ Removing the last skill is allowed.`,
 func runSkillRemove(
 	ctx context.Context, toolboxName string, skillNames []string,
 	verb skillRemoveFlags, parent toolboxFlags,
+	writer io.Writer,
 ) error {
 	if err := validateToolboxName(toolboxName); err != nil {
 		return err
@@ -88,7 +94,7 @@ func runSkillRemove(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName, writer)
 	if err != nil {
 		return err
 	}

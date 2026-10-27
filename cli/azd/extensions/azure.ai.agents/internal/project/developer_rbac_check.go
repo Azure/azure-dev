@@ -7,17 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+
+	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	// block Microsoft.Authorization/*/Write.
 	roleUserAccessAdministrator = "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9"
 	roleRBACAdministrator       = "f58310d9-a9f6-439a-9e8d-f62e7b41a168"
-	roleAzureAIProjectManager   = "eadc314b-1a2d-4efa-be10-5d325db5065e"
+	roleAzureAIProjectManager   = foundry.FoundryProjectManagerRole
 	roleAzureAIAccountOwner     = "e47c6f54-e4a2-4754-9501-8e0985b135e1"
 
 	// Classic ACR roles that grant push/build access.
@@ -48,12 +48,12 @@ const (
 	// Cognitive Services User: backward-compat alias for Foundry User.
 	// Assigned by older Bicep provisions (AZURE_PRINCIPAL_ID flow); has the same
 	// Microsoft.CognitiveServices/* dataActions as Foundry User and is accepted as equivalent.
-	roleCognitiveServicesUser = "a97b65f3-24c7-4388-baec-2e87135dc908"
+	roleCognitiveServicesUser = foundry.CognitiveServicesUserRole
 
 	// Foundry Owner: full Foundry project management + Microsoft.CognitiveServices/* dataActions.
 	// The code comment on sufficientAIUserRoles already recommends this role; include it so users
 	// with Foundry Owner are not falsely flagged as missing the data-plane role.
-	roleFoundryOwner = "c883944f-8b7b-4483-af10-35834be79c4a"
+	roleFoundryOwner = foundry.FoundryOwnerRole
 )
 
 // sufficientACRRoles lists every role that grants enough ACR access to build
@@ -83,12 +83,7 @@ var sufficientACRAbacRoles = []string{
 //   - roleAzureAIDeveloper: dataActions cover only OpenAI/Speech/ContentSafety/MaaS,
 //     NOT the AIServices.* namespace used by Foundry agents; Azure docs state
 //     "For Foundry project access, use the Foundry User or Foundry Owner roles instead"
-var sufficientAIUserRoles = []string{
-	roleAzureAIUser,           // 53ca6127-... Foundry User: dataActions Microsoft.CognitiveServices/*
-	roleCognitiveServicesUser, // a97b65f3-... backward compat: same dataActions, assigned by older Bicep
-	roleAzureAIProjectManager, // eadc314b-... Foundry Project Manager: dataActions Microsoft.CognitiveServices/*
-	roleFoundryOwner,          // c883944f-... Foundry Owner: dataActions Microsoft.CognitiveServices/*
-}
+var sufficientAIUserRoles = foundry.ProjectAccessRoles()
 
 // sufficientRoleAssignWriteRoles lists every role that grants
 // Microsoft.Authorization/roleAssignments/write on Azure Resource Manager.
@@ -105,110 +100,94 @@ var sufficientRoleAssignWriteRoles = []string{
 }
 
 // CheckDeveloperRBAC checks project access and hosted-only permissions when needed.
-// Missing roles are warnings so deployment can proceed when access is managed externally.
+// Optional ARM failures are warnings; newly granted data-plane access is checked before deployment.
 func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHosted bool) error {
-	envClient := azdClient.Environment()
-	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	values, err := foundry.LoadProjectEnvironment(ctx, azdClient.Environment())
 	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+		return fmt.Errorf("failed to get environment values for RBAC check: %w", err)
 	}
-	envName := envResp.Environment.Name
-
-	skipValue := ""
-	skipResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZD_AGENT_SKIP_ROLE_ASSIGNMENTS",
-	})
-	if err == nil {
-		skipValue = skipResp.Value
-	}
-	if skipValue == "" {
-		skipValue = os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")
-	}
-	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
+	if foundry.RoleAssignmentsSkipped(
+		values["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"], os.Getenv("AZD_AGENT_SKIP_ROLE_ASSIGNMENTS")) {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
 		return nil
 	}
 
-	projectResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_AI_PROJECT_ID",
-	})
-	if err != nil || projectResp.Value == "" {
-		// Can't check RBAC without the project ID; deployment will fail later with a clearer message.
+	warn := func(message string) { fmt.Println(output.WithWarningFormat("  Warning: %s", message)) }
+	endpoint := values["FOUNDRY_PROJECT_ENDPOINT"]
+	if endpoint == "" {
+		endpoint = values["AZURE_AI_PROJECT_ENDPOINT"]
+	}
+	resource, err := foundry.ProjectScopeFromEnvironment(endpoint, values)
+	if err != nil || resource == nil {
+		warn("No matching Foundry project ID and endpoint are available; skipping developer RBAC preparation.")
+		return nil
+	}
+	info := &agentIdentityInfo{
+		SubscriptionID: resource.SubscriptionID, ProjectScope: resource.String(),
+		AccountName: resource.Parent.Name, ProjectName: resource.Name,
+	}
+
+	tenantID, err := foundry.LookupProjectTenant(ctx, azdClient.Account(), info.SubscriptionID)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
+	if err != nil {
+		warn("Could not resolve the project user-access tenant; skipping developer RBAC preparation.")
 		return nil
 	}
 
-	info, err := parseAgentIdentityInfo(projectResp.Value)
+	cred, err := foundry.NewCredential(tenantID)
 	if err != nil {
-		return nil // Non-critical: let deployment handle parse errors.
-	}
-
-	tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: info.SubscriptionID,
-	})
-	if err != nil {
-		return nil // Non-critical: can't resolve tenant for pre-flight check.
-	}
-
-	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
-		TenantID:                   tenantResponse.TenantId,
-		AdditionallyAllowedTenants: []string{"*"},
-	})
-	if err != nil {
-		return nil // Non-critical: auth issues will surface during deploy.
+		warn("Could not create the project credential; skipping developer RBAC preparation.")
+		return nil
 	}
 
 	fmt.Println()
 	fmt.Println("Developer RBAC pre-flight check")
 
-	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.Account(), info.SubscriptionID)
-	if err != nil {
-		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping RBAC pre-flight check\n", err)
-		return nil
-	}
-
-	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
-
-	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
-	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
-	if err != nil {
-		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)
-	} else if !hasAIAccess {
-		fmt.Println("  Foundry User role not found — attempting to auto-assign...")
-		if _, assignErr := assignRoleToIdentity(
-			ctx, cred, principalID, roleAzureAIUser,
-			"Foundry User → Foundry Project", info.ProjectScope,
-			principalType,
-		); assignErr != nil {
-			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
-				respErr.StatusCode == http.StatusForbidden {
-				fmt.Printf("%s\n", output.WithWarningFormat(
-					"Your identity (%s) does not have the 'Foundry User' role on the Foundry Project %s/%s "+
-						"and auto-assign was denied.\n"+
-						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
-						"      az role assignment create --assignee %s --role "+roleAzureAIUser+
-						" --scope %q  # Foundry User (formerly Azure AI User)",
-					principalID, info.AccountName, info.ProjectName,
-					principalID, info.ProjectScope,
-				))
-			} else {
-				fmt.Printf("  ⚠ Foundry User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
-			}
-		} else {
-			fmt.Println("  ✓ Foundry User auto-assigned to developer identity")
+	agentClient := agent_api.NewAgentClient(strings.TrimRight(endpoint, "/"), cred)
+	if err := (foundry.AccessPreparation{
+		Account: azdClient.Account(), Credential: cred, Scope: info.ProjectScope,
+		Probe: func(ctx context.Context) error {
+			_, err := agentClient.ListAgents(ctx, &agent_api.ListAgentQueryParameters{Limit: new(int32(1))},
+				agent_api.AgentEndpointAPIVersion)
+			return err
+		},
+		Warn: warn,
+		Progress: func(message string) {
+			fmt.Println("  " + message)
+		},
+	}).Ensure(ctx); err != nil {
+		if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+			return cancelErr
 		}
-	} else {
-		fmt.Println("  ✓ Foundry User on Foundry Project")
+		serviceErr := exterrors.ServiceFromAzure(err, exterrors.OpCheckProjectAccess)
+		if structured, ok := errors.AsType[*azdext.ServiceError](serviceErr); ok {
+			structured.Suggestion = "Foundry User was assigned but access has not propagated. Wait and retry; " +
+				"if access is still denied, ask an administrator to verify project access."
+		}
+		return serviceErr
 	}
 	if !hasHosted {
 		return nil
 	}
+	principalID, principalType, err := foundry.ResolvePrincipal(ctx, azdClient.Account(), info.SubscriptionID)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
+	if err != nil {
+		warn("Could not resolve the current principal; skipping hosted-agent permission checks.")
+		return nil
+	}
+	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
 	// Check 2: roleAssignments/write capability on Foundry Project scope.
 	// Required for the postdeploy hook to assign Foundry User to agent service principals.
 	// Note: Contributor cannot write role assignments (it is excluded from sufficientRoleAssignWriteRoles).
-	hasRoleWrite, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientRoleAssignWriteRoles, info.ProjectScope)
+	hasRoleWrite, err := foundry.HasAnyRoleAssignment(ctx, cred, principalID, sufficientRoleAssignWriteRoles, info.ProjectScope)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check role-assignment-write capability: %s\n", err)
 	} else if !hasRoleWrite {
@@ -234,11 +213,8 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	}
 
 	// Check 3: ACR role — must branch on registry mode (ABAC vs classic).
-	acrResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
-	})
-	if err != nil || acrResp.Value == "" {
+	acrEndpoint := values["AZURE_CONTAINER_REGISTRY_ENDPOINT"]
+	if acrEndpoint == "" {
 		fmt.Println("  ⚠ AZURE_CONTAINER_REGISTRY_ENDPOINT not set — skipping ACR role check")
 		return nil
 	}
@@ -249,14 +225,13 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		acrResourceID string
 		isAbac        bool
 	)
-	acrRidResp, _ := envClient.GetValue(ctx, &azdext.GetEnvRequest{
-		EnvName: envName,
-		Key:     "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
-	})
-	if acrRidResp != nil && acrRidResp.Value != "" {
-		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)
+	if resourceID := values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; resourceID != "" {
+		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, resourceID)
 	} else {
-		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrResp.Value)
+		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrEndpoint)
+	}
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
 	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not resolve ACR resource info: %s — skipping ACR role check\n", err)
@@ -268,14 +243,17 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		acrRolesToCheck = sufficientACRAbacRoles
 	}
 
-	hasACRAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, acrRolesToCheck, acrResourceID)
+	hasACRAccess, err := foundry.HasAnyRoleAssignment(ctx, cred, principalID, acrRolesToCheck, acrResourceID)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
 	if err != nil {
 		fmt.Printf("  ⚠ Could not check ACR role: %s\n", err)
 		return nil
 	}
 
 	if !hasACRAccess {
-		acrName := strings.TrimSuffix(normalizeLoginServer(acrResp.Value), ".azurecr.io")
+		acrName := strings.TrimSuffix(normalizeLoginServer(acrEndpoint), ".azurecr.io")
 		if isAbac {
 			fmt.Printf("%s\n", output.WithWarningFormat(
 				"Your identity (%s) does not have the required role on the ABAC-mode Container Registry '%s' "+
@@ -315,81 +293,6 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	return nil
 }
 
-func developerRBACPrincipal(
-	ctx context.Context,
-	account azdext.AccountServiceClient,
-	subscriptionID string,
-) (string, armauthorization.PrincipalType, error) {
-	// The host resolves object IDs in the resource tenant for both user and app logins.
-	principal, err := account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
-	if err != nil {
-		return "", "", err
-	}
-	if strings.TrimSpace(principal.GetObjectId()) == "" {
-		return "", "", fmt.Errorf("the azd host returned an empty current principal object ID")
-	}
-	switch principal.GetPrincipalType() {
-	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
-		return principal.GetObjectId(), armauthorization.PrincipalTypeUser, nil
-	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
-		return principal.GetObjectId(), armauthorization.PrincipalTypeServicePrincipal, nil
-	default:
-		return "", "", fmt.Errorf("the azd host returned an unsupported current principal type: %v", principal.GetPrincipalType())
-	}
-}
-
-// hasAnyRoleAssignment checks whether the given principal has any of the specified roles
-// at the given scope (including inherited assignments from parent scopes).
-// Uses server-side filtering by principal to reduce API load on large subscriptions.
-func hasAnyRoleAssignment(
-	ctx context.Context,
-	cred *azidentity.AzureDeveloperCLICredential,
-	principalID string,
-	roleIDs []string,
-	scope string,
-) (bool, error) {
-	subscriptionID := extractSubscriptionID(scope)
-	if subscriptionID == "" {
-		return false, fmt.Errorf("could not extract subscription ID from scope: %s", scope)
-	}
-
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
-	if err != nil {
-		return false, fmt.Errorf("failed to create role assignments client: %w", err)
-	}
-
-	// Build a set of suffixes to match against.
-	suffixes := make(map[string]bool, len(roleIDs))
-	for _, id := range roleIDs {
-		suffixes[fmt.Sprintf("/roleDefinitions/%s", id)] = true
-	}
-
-	// Use server-side assignedTo filter to only return assignments for this principal.
-	filter := fmt.Sprintf("assignedTo('%s')", principalID)
-	pager := client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: &filter,
-	})
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return false, fmt.Errorf("failed to list role assignments: %w", err)
-		}
-		for _, assignment := range page.Value {
-			if assignment.Properties == nil || assignment.Properties.RoleDefinitionID == nil {
-				continue
-			}
-			roleDefID := *assignment.Properties.RoleDefinitionID
-			for suffix := range suffixes {
-				if strings.HasSuffix(roleDefID, suffix) {
-					return true, nil
-				}
-			}
-		}
-	}
-
-	return false, nil
-}
-
 // normalizeLoginServer strips protocol prefixes, trailing slashes, and lowercases
 // an ACR login server endpoint for consistent comparison.
 func normalizeLoginServer(loginServer string) string {
@@ -409,7 +312,7 @@ func normalizeLoginServer(loginServer string) string {
 // /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ContainerRegistry/registries/{name}
 func resolveACRInfoByResourceID(
 	ctx context.Context,
-	cred *azidentity.AzureDeveloperCLICredential,
+	cred azcore.TokenCredential,
 	resourceID string,
 ) (string, bool, error) {
 	// Parse resource group and registry name from the ARM resource ID.
@@ -461,7 +364,7 @@ func resolveACRInfoByResourceID(
 // isAbac is true when the registry uses roleAssignmentMode == AbacRepositoryPermissions.
 func resolveACRInfo(
 	ctx context.Context,
-	cred *azidentity.AzureDeveloperCLICredential,
+	cred azcore.TokenCredential,
 	subscriptionID string,
 	loginServer string,
 ) (resourceID string, isAbac bool, err error) {

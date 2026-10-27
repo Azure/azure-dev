@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 )
 
@@ -143,7 +144,7 @@ func QueryDeveloperRBAC(
 		return nil, fmt.Errorf("retrieve user profile: %w", err)
 	}
 
-	hasRole, err := hasAnyRoleAssignment(
+	hasRole, err := foundry.HasAnyRoleAssignment(
 		ctx, cred, userProfile.Id, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
 		return nil, fmt.Errorf("list role assignments: %w", err)

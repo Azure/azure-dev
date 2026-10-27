@@ -19,6 +19,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
+// Public API reference: AgentServerTaskStorage.getAgentServerTask and
+// listAgentServerTasks in src/agentserver-persistence/routes.tsp:
+// https://github.com/Azure/azure-rest-api-specs/tree/main/specification/ai-foundry/data-plane/Foundry
+// https://github.com/Azure/azure-rest-api-specs/pull/45095/files
+// Public lifecycle, lease, and storage semantics:
+// https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/agentserver/azure-ai-agentserver-core/docs/tasks-guide.md
+// The published TypeSpec removes Tasks from generated v1. The live-tested wire
+// contract remains api-version=v1 plus Routines=V2Preview; a virtual specification
+// version must not be substituted as a wire version without service validation.
+
 const (
 	tasksPreviewFeature = "Routines=V2Preview"
 	// These are local safety caps, not service contract limits. The transport applies

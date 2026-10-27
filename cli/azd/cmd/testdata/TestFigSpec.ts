@@ -33,6 +33,17 @@ interface AzdConfigOption {
 	EnvVar?: string;
 }
 
+function getEnvironmentVariableSuggestions(out: string): Fig.Suggestion[] {
+	try {
+		const envVars: Record<string, string> = JSON.parse(out);
+		return Object.keys(envVars).map((key) => ({
+			name: key,
+		}));
+	} catch {
+		return [];
+	}
+}
+
 const azdGenerators: Record<string, Fig.Generator> = {
 	listEnvironments: {
 		script: ['azd', 'env', 'list', '--output', 'json'],
@@ -50,16 +61,12 @@ const azdGenerators: Record<string, Fig.Generator> = {
 	},
 	listEnvironmentVariables: {
 		script: ['azd', 'env', 'get-values', '--output', 'json'],
-		postProcess: (out) => {
-			try {
-				const envVars: Record<string, string> = JSON.parse(out);
-				return Object.keys(envVars).map((key) => ({
-					name: key,
-				}));
-			} catch {
-				return [];
-			}
-		},
+		postProcess: getEnvironmentVariableSuggestions,
+	},
+	listEnvironmentVariablesForUnset: {
+		script: ['azd', 'env', 'get-values', '--output', 'json'],
+		postProcess: (out) => getEnvironmentVariableSuggestions(out)
+			.filter((suggestion) => suggestion.name !== 'AZURE_ENV_NAME'),
 	},
 	listTemplates: {
 		script: ['azd', 'template', 'list', '--output', 'json'],
@@ -411,274 +418,31 @@ const completionSpec: Fig.Spec = {
 						},
 						{
 							name: ['eval'],
-							description: 'Create and run quick evals for an agent.',
+							description: 'Migration guidance for legacy agent evaluation',
 							subcommands: [
 								{
 									name: ['generate'],
-									description: 'Generate a local eval suite for a deployed agent.',
-									options: [
-										{
-											name: ['--agent'],
-											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
-											args: [
-												{
-													name: 'agent',
-												},
-											],
-										},
-										{
-											name: ['--dataset'],
-											description: 'Existing local file or registered dataset name to use for evaluation (instead of generating a new dataset)',
-											args: [
-												{
-													name: 'dataset',
-												},
-											],
-										},
-										{
-											name: ['--eval-model'],
-											description: 'Model used for evaluation and generation',
-											args: [
-												{
-													name: 'eval-model',
-												},
-											],
-										},
-										{
-											name: ['--evaluator'],
-											description: 'Built-in or custom evaluator name',
-											isRepeatable: true,
-											args: [
-												{
-													name: 'evaluator',
-												},
-											],
-										},
-										{
-											name: ['--gen-instruction', '-g'],
-											description: 'Agent instruction used for dataset and evaluator generation',
-											args: [
-												{
-													name: 'gen-instruction',
-												},
-											],
-										},
-										{
-											name: ['--gen-instruction-file'],
-											description: 'Path to a file containing the agent instruction',
-											args: [
-												{
-													name: 'gen-instruction-file',
-												},
-											],
-										},
-										{
-											name: ['--max-samples'],
-											description: 'Number of samples to generate (15-1000)',
-											args: [
-												{
-													name: 'max-samples',
-												},
-											],
-										},
-										{
-											name: ['--name'],
-											description: 'Name for the eval suite',
-											args: [
-												{
-													name: 'name',
-												},
-											],
-										},
-										{
-											name: ['--no-wait'],
-											description: 'Submit generation jobs and return immediately',
-										},
-										{
-											name: ['--out-file'],
-											description: 'Eval config path',
-											args: [
-												{
-													name: 'out-file',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Microsoft Foundry project endpoint URL',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-										{
-											name: ['--reset-defaults'],
-											description: 'Overwrite an existing eval config',
-										},
-										{
-											name: ['--trace-days'],
-											description: 'Include agent traces from the last N days for evaluator generation (0 = no traces)',
-											args: [
-												{
-													name: 'trace-days',
-												},
-											],
-										},
-									],
+									description: 'Migration guidance for legacy agent evaluation',
+								},
+								{
+									name: ['init'],
+									description: 'Migration guidance for legacy agent evaluation',
 								},
 								{
 									name: ['list'],
-									description: 'List evaluations for the current project.',
-									options: [
-										{
-											name: ['--limit'],
-											description: 'Maximum number of evals to return',
-											args: [
-												{
-													name: 'limit',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Microsoft Foundry project endpoint URL',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
+									description: 'Migration guidance for legacy agent evaluation',
 								},
 								{
 									name: ['run'],
-									description: 'Execute an evaluation run from eval.yaml.',
-									options: [
-										{
-											name: ['--agent'],
-											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
-											args: [
-												{
-													name: 'agent',
-												},
-											],
-										},
-										{
-											name: ['--config'],
-											description: 'Local eval config YAML',
-											args: [
-												{
-													name: 'config',
-												},
-											],
-										},
-										{
-											name: ['--name'],
-											description: 'Name for the eval run (defaults to eval config name)',
-											args: [
-												{
-													name: 'name',
-												},
-											],
-										},
-										{
-											name: ['--no-wait'],
-											description: 'Start the run and return immediately without waiting for results',
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Microsoft Foundry project endpoint URL',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
+									description: 'Migration guidance for legacy agent evaluation',
 								},
 								{
 									name: ['show'],
-									description: 'Show an eval definition, run history, or run details.',
-									options: [
-										{
-											name: ['--eval-run-id'],
-											description: 'Show details for a specific eval run',
-											args: [
-												{
-													name: 'eval-run-id',
-												},
-											],
-										},
-										{
-											name: ['--limit'],
-											description: 'Maximum number of runs to show',
-											args: [
-												{
-													name: 'limit',
-												},
-											],
-										},
-										{
-											name: ['--out-file', '-O'],
-											description: 'Export full run results to a JSON file',
-											args: [
-												{
-													name: 'out-file',
-												},
-											],
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Microsoft Foundry project endpoint URL',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
+									description: 'Migration guidance for legacy agent evaluation',
 								},
 								{
 									name: ['update'],
-									description: 'Update evaluators and datasets from local files.',
-									options: [
-										{
-											name: ['--agent'],
-											description: 'Agent service name from azure.yaml, or Foundry agent name outside a project',
-											args: [
-												{
-													name: 'agent',
-												},
-											],
-										},
-										{
-											name: ['--config'],
-											description: 'Local eval config YAML',
-											args: [
-												{
-													name: 'config',
-												},
-											],
-										},
-										{
-											name: ['--dataset-only'],
-											description: 'Only update the dataset',
-										},
-										{
-											name: ['--evaluator-only'],
-											description: 'Only update evaluators',
-										},
-										{
-											name: ['--project-endpoint', '-p'],
-											description: 'Microsoft Foundry project endpoint URL',
-											args: [
-												{
-													name: 'project-endpoint',
-												},
-											],
-										},
-									],
+									description: 'Migration guidance for legacy agent evaluation',
 								},
 							],
 						},
@@ -1066,7 +830,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--model'],
-									description: 'For hosted and prompt agents, name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.',
+									description: 'For hosted and prompt agents, name of the AI model to deploy. Defaults to \'gpt-5.4-mini\' during interactive model selection; required to deploy a new model with --no-prompt. If --model-deployment is also provided, --model-deployment takes precedence except during template adoption, where the flags conflict. For new managed prompt voice agents, selects the service-hosted model (default: gpt-realtime); no model deployment is created.',
 									args: [
 										{
 											name: 'model',
@@ -1600,6 +1364,16 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
 											name: ['--project-endpoint', '-p'],
 											description: 'Foundry project endpoint URL',
 											args: [
@@ -1675,6 +1449,16 @@ const completionSpec: Fig.Spec = {
 											],
 										},
 										{
+											name: ['--output', '-o'],
+											description: 'The output format',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['json', 'table'],
+												},
+											],
+										},
+										{
 											name: ['--project-endpoint', '-p'],
 											description: 'Foundry project endpoint URL',
 											args: [
@@ -1685,7 +1469,7 @@ const completionSpec: Fig.Spec = {
 										},
 										{
 											name: ['--status'],
-											description: 'Filter by status (pending/running/completed/failed/cancelled)',
+											description: 'Filter by status (queued/in_progress/succeeded/failed/cancelled/skipped)',
 											args: [
 												{
 													name: 'status',
@@ -1754,7 +1538,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--config', '-c'],
-									description: 'Path to YAML config file (optional — values are prompted interactively if omitted)',
+									description: 'Optimization request file (YAML or JSON)',
 									args: [
 										{
 											name: 'config',
@@ -1763,7 +1547,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--dataset', '-d'],
-									description: 'Existing local file or registered dataset name',
+									description: 'Local JSONL file or registered dataset as name:version',
 									args: [
 										{
 											name: 'dataset',
@@ -1776,6 +1560,24 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'endpoint',
+										},
+									],
+								},
+								{
+									name: ['--eval'],
+									description: 'Evaluation name to reuse from the selected evaluation configuration',
+									args: [
+										{
+											name: 'eval',
+										},
+									],
+								},
+								{
+									name: ['--eval-config'],
+									description: 'Evaluation configuration from \'azd ai eval init\'',
+									args: [
+										{
+											name: 'eval-config',
 										},
 									],
 								},
@@ -1800,7 +1602,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--max-candidates'],
-									description: 'Maximum number of optimization candidates to generate (must be >= 1; default: 5)',
+									description: 'Maximum number of optimization candidates to generate (must be >= 1; service default when omitted)',
 									args: [
 										{
 											name: 'max-candidates',
@@ -1817,6 +1619,16 @@ const completionSpec: Fig.Spec = {
 									args: [
 										{
 											name: 'optimize-model',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
 										},
 									],
 								},
@@ -2679,12 +2491,55 @@ const completionSpec: Fig.Spec = {
 					description: 'Manage Microsoft Foundry Connections from your terminal. (Beta)',
 					subcommands: [
 						{
+							name: ['add'],
+							description: 'Add a local Connection service to this azd project.',
+							options: [
+								{
+									name: ['--file'],
+									description: 'Path to a Connection YAML or JSON definition',
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json', 'table'],
+										},
+									],
+								},
+								{
+									name: ['--project'],
+									description: 'Existing azure.ai.project service key to own this Connection',
+									args: [
+										{
+											name: 'project',
+										},
+									],
+								},
+								{
+									name: ['--project-endpoint', '-p'],
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
+									args: [
+										{
+											name: 'project-endpoint',
+										},
+									],
+								},
+							],
+						},
+						{
 							name: ['context'],
 							description: 'Get the context of the azd project & environment.',
 							options: [
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2806,7 +2661,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2863,7 +2718,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2897,7 +2752,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2922,7 +2777,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -2970,7 +2825,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -3004,7 +2859,7 @@ const completionSpec: Fig.Spec = {
 								},
 								{
 									name: ['--project-endpoint', '-p'],
-									description: 'Foundry project endpoint URL for connection operations only (not context or version)',
+									description: 'Foundry project endpoint URL for remote list, show, create, update, and delete only',
 									args: [
 										{
 											name: 'project-endpoint',
@@ -9075,6 +8930,22 @@ const completionSpec: Fig.Spec = {
 					description: 'Set a name as a reference to a Key Vault secret in the environment.',
 					args: {
 						name: 'name',
+					},
+				},
+				{
+					name: ['unset'],
+					description: 'Remove one or more keys from an environment. (Beta)',
+					options: [
+						{
+							name: ['--force'],
+							description: 'Skips removal confirmation and automatically attempts restoration if saving fails.',
+							isDangerous: true,
+						},
+					],
+					args: {
+						name: 'key',
+						isVariadic: true,
+						generators: azdGenerators.listEnvironmentVariablesForUnset,
 					},
 				},
 			],

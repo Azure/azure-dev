@@ -171,6 +171,48 @@ func TestEventManager_onInvokeProjectHandler_Success(t *testing.T) {
 	assert.Equal(t, "", status.Message)
 }
 
+func TestEventManager_onInvokeProjectHandler_CanceledHandlerReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["prepackage"] = func(context.Context, *ProjectEventArgs) error {
+		cancel()
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "prepackage",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetProjectHandlerStatus()
+	require.NotNil(t, status)
+	require.Equal(t, "failed", status.Status)
+	require.Equal(t, context.Canceled.Error(), status.Message)
+	require.ErrorIs(t, UnwrapError(status.Error), context.Canceled)
+}
+
+func TestEventManager_onInvokeProjectHandler_DeadlineHandlerReturnsContextError(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.projectEvents["prepackage"] = func(ctx context.Context, _ *ProjectEventArgs) error {
+		cancel(context.DeadlineExceeded)
+		return ctx.Err()
+	}
+
+	resp, err := eventManager.onInvokeProjectHandler(ctx, &InvokeProjectHandler{
+		EventName: "prepackage",
+		Project:   createTestProjectConfigForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetProjectHandlerStatus()
+	require.NotNil(t, status)
+	require.Equal(t, "failed", status.Status)
+	require.Equal(t, context.DeadlineExceeded.Error(), status.Message)
+	require.ErrorIs(t, UnwrapError(status.Error), context.DeadlineExceeded)
+}
+
 // Test onInvokeProjectHandler with handler error
 func TestEventManager_onInvokeProjectHandler_HandlerError(t *testing.T) {
 	ctx := t.Context()
@@ -286,6 +328,52 @@ func TestEventManager_onInvokeServiceHandler_Success(t *testing.T) {
 	assert.Equal(t, "test-service", status.ServiceName)
 	assert.Equal(t, "completed", status.Status)
 	assert.Equal(t, "", status.Message)
+}
+
+func TestEventManager_onInvokeServiceHandler_CanceledHandlerReturnsNil(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.serviceEvents["prepackage"] = func(context.Context, *ServiceEventArgs) error {
+		cancel()
+		return nil
+	}
+
+	resp, err := eventManager.onInvokeServiceHandler(ctx, &InvokeServiceHandler{
+		EventName:      "prepackage",
+		Project:        createTestProjectConfigForEvents(),
+		Service:        createTestServiceConfigForEvents(),
+		ServiceContext: createTestServiceContextForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	require.Equal(t, "failed", status.Status)
+	require.Equal(t, context.Canceled.Error(), status.Message)
+	require.ErrorIs(t, UnwrapError(status.Error), context.Canceled)
+}
+
+func TestEventManager_onInvokeServiceHandler_DeadlineHandlerReturnsContextError(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	eventManager := NewEventManager("microsoft.azd.demo", &AzdClient{}, nil)
+	eventManager.serviceEvents["prepackage"] = func(ctx context.Context, _ *ServiceEventArgs) error {
+		cancel(context.DeadlineExceeded)
+		return ctx.Err()
+	}
+
+	resp, err := eventManager.onInvokeServiceHandler(ctx, &InvokeServiceHandler{
+		EventName:      "prepackage",
+		Project:        createTestProjectConfigForEvents(),
+		Service:        createTestServiceConfigForEvents(),
+		ServiceContext: createTestServiceContextForEvents(),
+	})
+
+	require.NoError(t, err)
+	status := resp.GetServiceHandlerStatus()
+	require.NotNil(t, status)
+	require.Equal(t, "failed", status.Status)
+	require.Equal(t, context.DeadlineExceeded.Error(), status.Message)
+	require.ErrorIs(t, UnwrapError(status.Error), context.DeadlineExceeded)
 }
 
 // Test onInvokeServiceHandler with nil ServiceContext (should default to empty)

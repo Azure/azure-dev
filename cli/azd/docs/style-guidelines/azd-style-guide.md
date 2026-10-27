@@ -144,6 +144,42 @@ ERROR: Unable to complete provisioning of Azure resources, 'azd up' failed
 
 > Colors: Title → `WithBold`. `(✓) Done:` → `WithSuccessFormat`. `(x) Failed:` and error detail → `WithErrorFormat`. `ERROR:` line → `WithErrorFormat`.
 
+### Provision Validation Warnings
+
+Provision validation reports use `(!) Warning:` for regular findings and a bold yellow
+`(!) Critical warning:` heading for a built-in missing-role-permission finding
+only when a snapshot role assignment explicitly targets the subscription scope checked
+by the permission lookup. A successful subscription check also covers child scopes through
+RBAC inheritance. Child scopes remain regular warnings when that check does not find
+permission, while unrelated or unknown scopes always remain regular warnings. Explain that
+target-scope permissions were not verified without asserting likely deployment failure.
+Mixed-scope reports may contain both critical and regular findings.
+Critical warnings are advisory, not blocking errors. The failure-likelihood line is
+yellow; principal, subscription, and required-permission labels are gray.
+
+Indent warning details, suggestions, and reference links four spaces beyond the heading
+indentation. Separate warning blocks and suggestion paragraphs with a blank line. Place
+a yellow summary directly above confirmation. Use `N critical warnings found.` when
+all findings are critical, `N warnings found (M critical).` for a mix of regular and
+critical warnings, and `N warnings found.` for regular-only findings. Use singular
+`warning` for one finding. Totals count findings in that report, including critical warnings.
+
+Regular-only reports use `Proceed with deployment anyway?` for deployment confirmation
+and `Proceed with the preview anyway?` for preview confirmation, with the default Yes.
+Reports containing a critical warning use `Deployment will likely fail. Proceed anyway?`
+and render only the message in bold yellow. The `?` marker, `[y/N]` choices, and
+answer retain the standard blue prompt styling. Their
+default remains No, including with `--no-prompt`. Users can explicitly choose Yes to
+continue despite a critical warning.
+In no-prompt mode, declining critical warnings is a command failure: display an
+error with remediation guidance and exit nonzero. Do not display a success message
+or attribute the cancellation to the user. An interactive No remains an intentional
+cancellation with exit code 0.
+Exhausted piped input without a valid response also fails critical confirmation;
+an entered empty line may accept the default. Regular confirmation defaults are unchanged.
+Keep this pattern scoped to provision validation rather than changing global warning
+or error prefixes.
+
 ### Success / Error / Warning Logs
 
 These logs represent the final outcome of a command, displayed after execution completes. Standard logs (Success, Error, Warning) use an **all-caps prefix** followed by a colon to separate the log type from the message.

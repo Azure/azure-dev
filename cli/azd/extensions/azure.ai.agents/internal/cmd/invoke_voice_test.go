@@ -129,7 +129,7 @@ func TestVoiceInvocationGuidance(t *testing.T) {
 					},
 				}}
 				client := newHelpersTestAzdClient(t, project, &helpersPromptServer{})
-				// No environment/auth service is registered: both paths must stop before reaching it.
+				// Stop before authentication.
 				_, _, err = resolveAgentProtocol(t.Context(), client, "", true)
 				require.ErrorIs(t, err, errVoiceInvocationUnsupported)
 				localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -160,7 +160,7 @@ func TestVoiceInvocationGuidanceDoesNotClassifyManagedPrompt(t *testing.T) {
 			"kind": "prompt", "name": "managed-prompt", "model": "my-deployment", "instructions": "Be helpful.",
 		}
 		if withHarness {
-			fields["harness"] = map[string]any{"type": "github_copilot"}
+			fields["harness"] = map[string]any{"type": "microsoft_copilot_preview"}
 		}
 		props, err := structpb.NewStruct(fields)
 		require.NoError(t, err)

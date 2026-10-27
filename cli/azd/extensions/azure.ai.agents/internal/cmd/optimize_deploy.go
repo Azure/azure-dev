@@ -69,6 +69,8 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
 
+	gateAgentServices(cmd)
+
 	return cmd
 }
 
@@ -139,6 +141,9 @@ func (a *OptimizeDeployAction) runDirect(
 	// Extract definition from latest version using map[string]any for flexibility.
 	latestDef, err := extractLatestDefinition(agentObj)
 	if err != nil {
+		return err
+	}
+	if err := projectpkg.RequireDefinitionFeatures(latestDef); err != nil {
 		return err
 	}
 
@@ -245,8 +250,8 @@ func optimizeDeployAgentHeaders(def map[string]any, projectEndpoint string) map[
 	}
 
 	var features []string
-	if harnessTypeFromMap(def) == agent_api.ManagedAgentHarnessGitHubCopilot {
-		features = append(features, agent_api.GitHubCopilotPreviewFeature)
+	if agent_api.IsCopilotHarness(harnessTypeFromMap(def)) {
+		features = append(features, agent_api.MicrosoftCopilotPreviewFeature)
 	}
 	if skills, ok := def["skills"].([]any); ok && len(skills) > 0 {
 		features = append(features, agent_api.SkillsPreviewFeature)

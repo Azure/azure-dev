@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+func TestIsCopilotHarness(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		harness string
+		want    bool
+	}{
+		{ManagedAgentHarnessMicrosoftCopilot, true},
+		{ManagedAgentHarnessGitHubCopilot, true},
+		{"", false},
+		{"some_future_harness", false},
+		{"MICROSOFT_COPILOT_PREVIEW", false},
+		{"GITHUB_COPILOT_PREVIEW", false},
+		{" microsoft_copilot_preview", false},
+		{"github_copilot_preview ", false},
+	} {
+		t.Run(test.harness, func(t *testing.T) {
+			t.Parallel()
+			if got := IsCopilotHarness(test.harness); got != test.want {
+				t.Errorf("IsCopilotHarness(%q) = %v, want %v", test.harness, got, test.want)
+			}
+		})
+	}
+}
+
 func TestCreateAgentRequest_RoundTrip(t *testing.T) {
 	t.Parallel()
 

@@ -588,7 +588,7 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 //
 // The agent's Harness is omitted entirely when nil: a harness-less prompt
 // agent is run directly by Foundry, while a managed agent names its harness
-// (e.g. "github_copilot_preview") and the platform provisions a Brain+Hand
+// (e.g. "microsoft_copilot_preview") and the platform provisions a Brain+Hand
 // sandbox for it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,

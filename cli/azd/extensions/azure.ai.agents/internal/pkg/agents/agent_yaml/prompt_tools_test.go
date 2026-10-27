@@ -35,23 +35,23 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 		},
 		{
 			name:  "copilot toolset requires harness",
-			tools: []any{map[string]any{"type": githubCopilotToolsetPreview}},
-			wantErr: `tools[0] uses "github_copilot_toolset_preview", which requires ` +
-				`harness.type "github_copilot_preview"`,
+			tools: []any{map[string]any{"type": microsoftCopilotToolsetPreview}},
+			wantErr: `tools[0] uses "microsoft_copilot_toolset_preview", which requires ` +
+				`harness.type "microsoft_copilot_preview"`,
 		},
 		{
 			name: "copilot toolset rejects unknown tool",
 			tools: []any{map[string]any{
-				"type":    githubCopilotToolsetPreview,
+				"type":    microsoftCopilotToolsetPreview,
 				"configs": []any{map[string]any{"name": "browser"}},
 			}},
-			wantErr: `tools[0]: configs[0].name "browser" is not a GitHub Copilot built-in tool; ` +
+			wantErr: `tools[0]: configs[0].name "browser" is not a Microsoft Copilot built-in tool; ` +
 				`supported tools are filesystem_read, filesystem_write, shell, subagents, web`,
 		},
 		{
 			name: "copilot toolset rejects duplicate tool",
 			tools: []any{map[string]any{
-				"type": githubCopilotToolsetPreview,
+				"type": microsoftCopilotToolsetPreview,
 				"configs": []any{
 					map[string]any{"name": "web", "enabled": true},
 					map[string]any{"name": "web", "enabled": false},
@@ -62,7 +62,7 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 		{
 			name: "copilot toolset rejects unknown field",
 			tools: []any{map[string]any{
-				"type":            githubCopilotToolsetPreview,
+				"type":            microsoftCopilotToolsetPreview,
 				"default_enabled": false,
 			}},
 			wantErr: `tools[0]: unknown field "default_enabled"`,
@@ -70,7 +70,7 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 		{
 			name: "copilot toolset rejects snake case default config",
 			tools: []any{map[string]any{
-				"type":           githubCopilotToolsetPreview,
+				"type":           microsoftCopilotToolsetPreview,
 				"default_config": map[string]any{"enabled": false},
 			}},
 			wantErr: `tools[0]: unknown field "default_config"`,
@@ -124,7 +124,7 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 
 			agent := &PromptAgent{Tools: test.tools}
 			if strings.HasPrefix(test.name, "copilot toolset rejects") {
-				agent.Harness = NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot)
+				agent.Harness = NewPromptHarness(agent_api.ManagedAgentHarnessMicrosoftCopilot)
 			}
 			err := agent.ValidateTools()
 
@@ -137,24 +137,43 @@ func TestPromptAgent_ValidateTools(t *testing.T) {
 	}
 }
 
-func TestPromptAgent_ValidateCopilotToolset(t *testing.T) {
+func TestPromptAgent_ValidateMicrosoftCopilotToolsetCompatibility(t *testing.T) {
 	t.Parallel()
-	agent := &PromptAgent{
-		Harness: NewPromptHarness(agent_api.ManagedAgentHarnessGitHubCopilot),
-		Tools: []any{map[string]any{
-			"type":          githubCopilotToolsetPreview,
-			"defaultConfig": map[string]any{"enabled": false},
-			"configs":       []any{map[string]any{"name": "web", "enabled": true}},
-		}},
+	for _, harness := range []string{
+		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot, "", "other",
+	} {
+		for _, toolType := range []string{microsoftCopilotToolsetPreview, "github_copilot_toolset_preview"} {
+			t.Run(harness+"/"+toolType, func(t *testing.T) {
+				t.Parallel()
+				tool := map[string]any{
+					"type":          toolType,
+					"defaultConfig": map[string]any{"enabled": false},
+					"configs":       []any{map[string]any{"name": "web", "enabled": true}},
+				}
+				agent := &PromptAgent{Harness: NewPromptHarness(harness), Tools: []any{tool}}
+				require.Empty(t, agent.UnrecognizedToolTypes())
+				if !agent_api.IsCopilotHarness(harness) {
+					require.ErrorContains(t, agent.ValidateTools(), `requires harness.type "microsoft_copilot_preview"`)
+					return
+				}
+				require.NoError(t, agent.ValidateTools())
+				tool["configs"] = []any{map[string]any{"name": "browser"}}
+				require.ErrorContains(t, agent.ValidateTools(), "not a Microsoft Copilot built-in tool")
+				tool["configs"] = []any{map[string]any{"name": "web"}, map[string]any{"name": "web"}}
+				require.ErrorContains(t, agent.ValidateTools(), `configs[1].name "web" is duplicated`)
+				delete(tool, "configs")
+				tool["default_config"] = map[string]any{"enabled": false}
+				require.ErrorContains(t, agent.ValidateTools(), `unknown field "default_config"`)
+			})
+		}
 	}
-	require.NoError(t, agent.ValidateTools())
 }
 
 func TestPromptToolsForAPI(t *testing.T) {
 	t.Parallel()
 
 	authored := map[string]any{
-		"type":          githubCopilotToolsetPreview,
+		"type":          microsoftCopilotToolsetPreview,
 		"defaultConfig": map[string]any{"enabled": false},
 	}
 	passThrough := map[string]any{

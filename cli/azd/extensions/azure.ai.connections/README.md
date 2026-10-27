@@ -2,6 +2,8 @@
 
 Manage Microsoft Foundry Connections from your terminal. (Preview)
 
+Built with azd SDK 1.37.0; requires azd 1.37.0 or later.
+
 ## Help authoring
 
 See [the help authoring guide](docs/help-authoring.md) for formatter ownership,
@@ -35,6 +37,71 @@ The service key identifies the dependency in `uses`. When the block also has a
 used. Local `$ref` files and nested credential values are resolved by this
 extension. Removing the service from `azure.yaml` stops managing it but does
 not delete the remote Connection; use `azd ai connection delete` to delete it.
+
+### Author a local Connection service
+
+Use `azd ai connection add` to reference a definition file from an existing
+project without creating or deploying a remote resource:
+
+```console
+azd ai connection add search --file connections/search.yaml
+azd ai connection add search --file connections/search.yaml --project foundry
+```
+
+This local-only workflow requires azd 1.37.0 or later for
+`launch.noAzdEnvironment` command dispatch and raw configuration preservation
+through the existing Project APIs. This launch setting applies only to `add`,
+skipping loading, resolving, and injecting the selected azd environment;
+explicit Environment gRPC calls are unaffected. Older hosts read the active
+environment before starting an extension command. Output supports
+`--output json` and `--output table` (the default human-readable format).
+
+The command keeps the file in place and writes a project-relative `$ref` to
+the nearest `azure.yaml` or `azure.yml`, matching azd's project selection.
+If both filenames exist in the same directory, `azure.yaml` takes precedence.
+The file and every nested `$ref` must stay inside that project.
+For a new service, azd selects the only `azure.ai.project` service
+automatically; with several Projects, `--project` selects one explicitly or
+azd prompts when prompting is enabled. Selection prompts use stderr, keeping
+JSON stdout machine-readable. An update preserves its single valid
+Project owner. If an existing service has no unique Project owner, pass
+`--project` to repair it. Dangling or malformed `uses` entries must be fixed
+in `azure.yaml` first; the command never guesses or removes unknown
+dependencies.
+
+The command validates the complete candidate project before its first write.
+A new service uses the existing Project `AddService` request for its
+declaration, followed by a service setter when environment bindings are needed.
+The setter stores literal `${VAR}` bindings without the escaping that
+`AddService.Environment` applies. Updates set or remove only changed managed
+top-level fields through the existing service
+configuration APIs; unrelated properties stay on the host. Service names and
+environment keys containing dots remain literal keys, and raw persistence
+preserves large integers and literal environment templates.
+
+Authoring can require several requests and is not a transaction. A failed
+request may leave part of the update applied; the error tells you to inspect
+the manifest and rerun the command to reconcile it. The command does not roll
+back changes or detect concurrent edits. Avoid editing the same service while
+it runs. An unchanged service makes no mutation requests and leaves the file
+byte-identical.
+
+The supplied file is authoritative for Connection fields. Updating a service
+replaces its previous Connection definition while preserving unrelated service
+settings and existing environment entries. All referenced variables, including
+optional references, are added to the service `env` map as `${VAR}` bindings
+unless an optional variable already has a string binding. Only required
+variable names are reported. Conflicting required bindings fail without
+displaying their values, and stale entries are retained because their ownership
+cannot be determined safely.
+
+Local authoring does not read azd environment values or claim the definition
+is deployable. It validates statically known structure and authentication
+rules, reports required variable names, and leaves template expansion and
+value-dependent checks to deployment. Set the needed values in the selected
+environment, then run `azd deploy search` or `azd up`. Use the existing
+`azd ai connection create` and `update` commands for direct remote resource
+operations; `add` only authors the local service.
 
 Effective Connection names must be unique across Connection services, including
 names loaded through `$ref`; names that differ only by case also conflict.

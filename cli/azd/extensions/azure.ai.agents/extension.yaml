@@ -5,8 +5,8 @@ displayName: Foundry agents (Beta)
 description: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.20
-requiredAzdVersion: ">=1.34.2"
+version: 1.0.0-beta.22
+requiredAzdVersion: ">=1.37.0"
 dependencies:
   - id: azure.ai.inspector
     version: "~1.0.0-beta.1"

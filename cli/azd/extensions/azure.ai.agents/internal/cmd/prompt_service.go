@@ -119,6 +119,17 @@ func resolvePromptAgentService(
 		return nil, false, mapErr
 	}
 
+	// Only invocation needs a model; status and cleanup do not.
+	if proj != nil && resolutionOptions.resolvePromptModel {
+		model, modelErr := project.ResolvePromptAgentModel(
+			agentDef.Model, svc, proj.GetServices(), projectPath, envValues,
+		)
+		if modelErr != nil {
+			return nil, false, modelErr
+		}
+		agentDef.Model = model
+	}
+
 	pctx := &promptServiceContext{
 		AzdClient:   azdClient,
 		ServiceName: svc.Name,
@@ -134,6 +145,12 @@ func resolvePromptAgentService(
 	}
 
 	return pctx, true, nil
+}
+
+func withPromptModelResolution() agentServiceResolutionOption {
+	return func(options *agentServiceResolutionOptions) {
+		options.resolvePromptModel = true
+	}
 }
 
 // promptAgentNameForService returns the harness agent identity for a prompt

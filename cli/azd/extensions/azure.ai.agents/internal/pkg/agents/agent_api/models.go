@@ -382,14 +382,17 @@ type ManagedEnvironment struct {
 	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
 }
 
-// ManagedAgentHarnessGitHubCopilot is the discriminator sent in the managed
-// agent definition's `harness.type` field to run the agent on the GitHub
-// Copilot harness.
-//
-// This is the spelling the managed-agent spec defines, and the `_preview`
-// suffix is part of it: the harness is in preview and the service will version
-// the discriminator when it leaves preview.
+// ManagedAgentHarnessMicrosoftCopilot identifies the Microsoft Copilot preview harness.
+const ManagedAgentHarnessMicrosoftCopilot = "microsoft_copilot_preview"
+
+// ManagedAgentHarnessGitHubCopilot is the legacy Copilot harness discriminator.
+// It remains valid and must retain its original wire value.
 const ManagedAgentHarnessGitHubCopilot = "github_copilot_preview"
+
+// IsCopilotHarness reports whether harnessType exactly matches either Copilot harness discriminator.
+func IsCopilotHarness(harnessType string) bool {
+	return harnessType == ManagedAgentHarnessMicrosoftCopilot || harnessType == ManagedAgentHarnessGitHubCopilot
+}
 
 // SkillReference identifies a Foundry skill available to a prompt agent.
 //

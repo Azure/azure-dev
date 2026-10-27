@@ -345,6 +345,16 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 	if err := expandPromptAgentTools(&managed, toolEnv); err != nil {
 		return nil, err
 	}
+	model, err := ResolvePromptAgentModel(
+		managed.Model, p.serviceConfig, p.projectServices, p.projectPath, env,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if model != strings.TrimSpace(managed.Model) && progress != nil {
+		progress(fmt.Sprintf("Using model deployment %q for %q", model, managed.Model))
+	}
+	managed.Model = model
 
 	if _, mapErr := ResolvePromptTargetFromEnv(settings, env); mapErr != nil {
 		return nil, mapErr
@@ -459,8 +469,8 @@ func promptAgentRequestHeaders(
 ) map[string]string {
 	headers := map[string]string{"x-model-endpoint": settings.EffectiveModelEndpoint()}
 	var features []string
-	if managed != nil && managed.HarnessType() == agent_api.ManagedAgentHarnessGitHubCopilot {
-		features = append(features, agent_api.GitHubCopilotPreviewFeature)
+	if managed != nil && agent_api.IsCopilotHarness(managed.HarnessType()) {
+		features = append(features, agent_api.MicrosoftCopilotPreviewFeature)
 	}
 	if managed != nil && len(agent_yaml.PromptAgentSkillReferences(*managed)) > 0 {
 		features = append(features, agent_api.SkillsPreviewFeature)

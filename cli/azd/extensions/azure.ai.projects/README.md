@@ -2,6 +2,8 @@
 
 Manage Microsoft Foundry Project resources from your terminal. (Preview)
 
+Requires azd 1.37.0 or later. Deployment preview uses the stable v1 API.
+
 ## Extension telemetry API
 
 Extension code can report best-effort usage events through the shared
@@ -64,6 +66,70 @@ services:
 ```
 
 When `endpoint` is omitted, `azd provision` creates a Foundry account and project. When it is set, provisioning reuses that project and reconciles the declarations that can be applied to an existing account.
+
+For embedded infrastructure, the active azd environment's `AI_PROJECT_DEPLOYMENTS`
+JSON array overrides the portable `deployments` defaults in `azure.yaml`. A value
+of `[]` intentionally disables managed model deployments. When unset or blank,
+interactive provisioning selects models for the current subscription and location
+and saves the complete list to that environment; `--no-prompt` (or
+`AZD_NO_PROMPT=true`) saves the YAML defaults unchanged. Invalid non-blank values
+produce an error rather than being overwritten. `azd ai project deployment add`
+also seeds or updates this environment list. Ejected infrastructure retains
+user-owned deployment parameters.
+
+When `azd ai project add` changes the configured project identity, it clears the
+previous `AI_PROJECT_DEPLOYMENTS` override, including `[]` and malformed values,
+before deployment reconciliation. Reconciliation then starts from the current
+`azure.yaml` declarations instead of the previous project's list. Selecting the
+same project preserves the override and its validation rules. If replacement
+fails, the previous environment values are restored.
+
+Endpoint-only setup (`--project-endpoint`) validates the old override before this
+cleanup. Malformed values fail validation, and a non-empty deployment list blocks
+switching to a different project endpoint. Use `--project-id` to replace the
+project and reconcile managed deployments, or `--new-project` to configure a new
+project. An override of `[]` does not itself block endpoint-only replacement;
+other endpoint-only validation still applies.
+
+Embedded provisioning also initializes a missing or blank
+`AZURE_AI_MODEL_DEPLOYMENT_NAME` from the first effective deployment, including
+in a newly created environment. Existing runtime defaults are preserved,
+including names of reused deployments; an empty deployment list does not
+initialize a runtime default.
+For on-disk infrastructure, set `AZURE_AI_MODEL_DEPLOYMENT_NAME` explicitly
+with `azd env set` or publish it as an infrastructure output. azd does not
+guess this runtime default from YAML or environment deployment lists that
+the on-disk parameters override.
+
+Existing-project reuse is rechecked after preprovision hooks so a deployment
+list supplied by a hook is provisioned rather than silently skipped.
+
+Adopting an existing project reconciles the active environment's effective
+deployment list with reuse, "Choose a different model" (any existing deployment
+or a catalog model), and skip choices, including an explicit `[]` when no
+managed deployments remain. Ejecting infrastructure seeds the generated Bicep
+or Terraform deployment parameters from that effective list. Subsequent edits
+to those parameter files remain authoritative.
+
+An explicit "Choose a different model" selection also updates
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`, even when the previous default still exists.
+With multiple alternative selections, the first becomes the runtime default.
+Other adoption choices retain the existing default-selection behavior.
+
+`AI_PROJECT_DEPLOYMENT_BINDINGS` stores environment-local adoption bindings as a
+JSON object, for example `{"template-chat":"existing-chat"}`. Each declaration
+retains its own selected deployment independently of the global runtime default;
+an empty target records Skip. Declaration names are matched case-insensitively,
+and updates preserve existing declaration-key spelling. Targets that differ only
+by case are equivalent; genuinely conflicting targets for case-equivalent keys
+are rejected. Prompt-agent deploy and invoke honor these explicit
+bindings even after infrastructure ejection. Bindings are cleared when the
+environment switches to a different project. Legacy environments without bindings
+retain the single-missing-declaration fallback and reject ambiguous replacements.
+Adding a managed deployment with `azd ai project deployment add` resets that
+declaration's binding to its managed name. For hand-edited agent bindings,
+update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
+or set it to `'{}'` to clear explicit bindings.
 
 ### Deployment preview
 

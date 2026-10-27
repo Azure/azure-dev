@@ -20,7 +20,7 @@ func TestDefaultPromptAgentName(t *testing.T) {
 	t.Parallel()
 
 	plain := defaultPromptAgentName("")
-	harnessed := defaultPromptAgentName(agent_api.ManagedAgentHarnessGitHubCopilot)
+	harnessed := defaultPromptAgentName(agent_api.ManagedAgentHarnessMicrosoftCopilot)
 
 	require.NotEmpty(t, plain)
 	require.NotEmpty(t, harnessed)

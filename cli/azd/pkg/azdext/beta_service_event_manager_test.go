@@ -403,6 +403,83 @@ func TestBetaServiceEventErrors(t *testing.T) {
 	require.EqualError(t, envelope.GetError(message), string([]byte{0xff}))
 }
 
+func TestBetaSDKEventMessageEnvelopeSetsHandlerStatusError(t *testing.T) {
+	tests := []struct {
+		name    string
+		message *v1beta.EventMessage
+	}{
+		{
+			name: "project",
+			message: &v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_ProjectHandlerStatus{
+					ProjectHandlerStatus: &v1beta.ProjectHandlerStatus{
+						EventName: "prepackage",
+					},
+				},
+			},
+		},
+		{
+			name: "service",
+			message: &v1beta.EventMessage{
+				MessageType: &v1beta.EventMessage_ServiceHandlerStatus{
+					ServiceHandlerStatus: &v1beta.ServiceHandlerStatus{
+						EventName:   "predeploy",
+						ServiceName: "api",
+					},
+				},
+			},
+		},
+	}
+
+	envelope := &betaSDKEventMessageEnvelope{}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			envelope.SetRequestId(t.Context(), test.message, "invocation")
+			envelope.SetError(test.message, context.Canceled)
+
+			require.Equal(t, "invocation", test.message.GetRequestId())
+			require.Nil(t, test.message.GetError())
+
+			var handlerStatus string
+			var handlerMessage string
+			var handlerError *v1beta.ExtensionError
+			switch status := test.message.MessageType.(type) {
+			case *v1beta.EventMessage_ProjectHandlerStatus:
+				require.Equal(t, "prepackage", status.ProjectHandlerStatus.GetEventName())
+				handlerStatus = status.ProjectHandlerStatus.GetStatus()
+				handlerMessage = status.ProjectHandlerStatus.GetMessage()
+				handlerError = status.ProjectHandlerStatus.GetError()
+			case *v1beta.EventMessage_ServiceHandlerStatus:
+				require.Equal(t, "predeploy", status.ServiceHandlerStatus.GetEventName())
+				require.Equal(t, "api", status.ServiceHandlerStatus.GetServiceName())
+				handlerStatus = status.ServiceHandlerStatus.GetStatus()
+				handlerMessage = status.ServiceHandlerStatus.GetMessage()
+				handlerError = status.ServiceHandlerStatus.GetError()
+			default:
+				require.FailNow(t, "unexpected handler status type")
+			}
+
+			require.Equal(t, "failed", handlerStatus)
+			require.Equal(t, context.Canceled.Error(), handlerMessage)
+			require.NotNil(t, handlerError)
+			require.NoError(t, envelope.GetError(test.message))
+			wire, err := proto.Marshal(handlerError)
+			require.NoError(t, err)
+			stableError := new(ExtensionError)
+			require.NoError(t, proto.Unmarshal(wire, stableError))
+			require.ErrorIs(t, UnwrapError(stableError), context.Canceled)
+
+			envelope.SetError(test.message, nil)
+			switch status := test.message.MessageType.(type) {
+			case *v1beta.EventMessage_ProjectHandlerStatus:
+				require.Nil(t, status.ProjectHandlerStatus.GetError())
+			case *v1beta.EventMessage_ServiceHandlerStatus:
+				require.Nil(t, status.ServiceHandlerStatus.GetError())
+			}
+		})
+	}
+}
+
 func TestBetaSDKEventMessageEnvelope(t *testing.T) {
 	envelope := &betaSDKEventMessageEnvelope{}
 	require.Empty(t, envelope.GetRequestId(t.Context(), nil))

@@ -2,6 +2,8 @@
 
 Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
 
+Requires azd 1.37.0 or later.
+
 ## Deploy a toolbox through `azure.yaml`
 
 This extension owns `host: azure.ai.toolbox` services. Core `azd deploy` and

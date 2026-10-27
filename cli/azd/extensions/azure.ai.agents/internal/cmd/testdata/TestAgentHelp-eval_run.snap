@@ -1,14 +1,12 @@
-Execute an evaluation run from eval.yaml.
+Command "run" is deprecated, use 'azd ai eval run start' from 'azure.ai.evaluations' instead
+The legacy agent evaluation workflow has been removed. This command only provides migration guidance.
+
+Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use 'azd ai eval run start'. Legacy evaluation configuration and arguments are not automatically converted.
+
+Invocations fail without authentication, service requests, or changes to project or environment files. No arguments are forwarded to the new commands.
 
 Usage
   azd ai agent eval run [flags]
-
-Flags
-      --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
-      --config string           : Local eval config YAML (default "eval.yaml")
-      --name string             : Name for the eval run (defaults to eval config name)
-      --no-wait                 : Start the run and return immediately without waiting for results
-  -p, --project-endpoint string : Microsoft Foundry project endpoint URL
 
 Global Flags
   -C, --cwd string         : Sets the current working directory
@@ -19,8 +17,5 @@ Global Flags
   -o, --output string      : The output format (default "default")
 
 Examples
-  Run the evaluation configured in eval.yaml
-    azd ai agent eval run
-
-  Start a run without waiting for results
-    azd ai agent eval run --no-wait
+    azd extension install azure.ai.evaluations
+    azd ai eval run start

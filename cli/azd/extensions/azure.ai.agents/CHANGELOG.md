@@ -2,6 +2,53 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.22 (2026-10-23)
+
+### Breaking Changes
+
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Replace singular `toolbox` declarations with the plural `toolboxes` list and reject the former spelling with migration guidance.
+- [[#10640]](https://github.com/Azure/azure-dev/pull/10640) Require separate opt-ins for managed harness, voice, and long-running invocation previews through `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`, `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`, and `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true`, respectively.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Replace legacy `azd ai agent eval` workflows with migration guidance to `azd ai eval` from the `azure.ai.evaluations` extension. Thanks @Zyysurely for the contribution!
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Remove legacy agent evaluation configuration from optimization and require a standalone optimization API request for `--config`, using `--eval` or `--eval-config` to reuse evaluation configuration. Thanks @Zyysurely for the contribution!
+
+### Features Added
+
+- [[#10515]](https://github.com/Azure/azure-dev/pull/10515) Add Voice Agent telephony deployment through GA binding APIs with safe reconciliation of existing bindings and transfer targets.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Update agent optimization to the GA v1 API and add evaluation service selection through `--eval` and `--eval-config`, including file-backed definitions. Thanks @Zyysurely for the contribution!
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix adopted prompt agents to use each environment's selected model deployments during deployment and invocation, including after infrastructure ejection.
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix `azd ai agent init --model-deployment` to replace the selected template deployment without provisioning the original and reject ambiguous or conflicting model selectors before writing project files.
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Fix prompt-agent deployment to attach every declared toolbox with an authenticated Foundry project connection instead of ignoring references or failing invocation with HTTP 401.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix Copilot harness initialization to use live region policies with embedded fallback, including support for West US and Central US.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix generated and adopted Copilot harness initialization to reject mismatched project and model deployment locations before model selection.
+- [[#10526]](https://github.com/Azure/azure-dev/pull/10526) Fix initialization to always show a shell-safe `cd` hint when scaffolding into a subdirectory, including folders that already exist.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix legacy agent projects to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings and prompt for model deployments in a new environment while preserving YAML defaults in no-prompt mode.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Fix optimization candidate application and deployment to preserve baseline tools, skills, and explicit empty values. Thanks @Zyysurely for the contribution!
+
+### Other Changes
+
+- [[#10548]](https://github.com/Azure/azure-dev/pull/10548) Add step-level timing telemetry to `azd ai agent init` to help diagnose slow initialization without recording user input or resource names.
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+- [[#10683]](https://github.com/Azure/azure-dev/pull/10683) Read preview opt-ins only from the extension process environment and list the supported switches in root help.
+
+## 1.0.0-beta.21 (2026-10-19)
+
+### Features Added
+
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Add Microsoft Copilot preview harness and toolset names while retaining legacy GitHub Copilot definitions.
+
+### Bugs Fixed
+
+- [[#10462]](https://github.com/Azure/azure-dev/pull/10462) Fix hosted-agent resource errors to identify the affected service, effective CPU and memory settings, and deployment retry guidance.
+- [[#10320]](https://github.com/Azure/azure-dev/pull/10320) Fix post-deployment evaluation setup guidance to appear only when no evaluation service is declared and remain visible when local README guidance is shown.
+
+### Other Changes
+
+- [[#10467]](https://github.com/Azure/azure-dev/pull/10467) Move saved agent runtime state to extension-owned files with automatic legacy-state migration and cross-process locking to prevent lost updates.
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Update Copilot requests to use the Microsoft Copilot preview service contract, requiring the corresponding service rollout.
+
 ## 1.0.0-beta.20 (2026-10-15)
 
 ### Features Added

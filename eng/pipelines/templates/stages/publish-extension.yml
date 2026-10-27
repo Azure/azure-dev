@@ -94,7 +94,8 @@ stages:
 
       # Storage upload — runs for both nightly and manual. 1ES releaseJob keeps
       # production governance (package-publish approval on manual runs). No
-      # GH_TOKEN needed here. azcopy --overwrite=true makes retry safe.
+      # GH_TOKEN needed here. az storage blob upload-batch --overwrite true
+      # makes retries safe.
       - deployment: Publish_Storage
         ${{ if or(eq(variables['Build.Reason'], 'Schedule'), eq(parameters.PublishToRegistry, 'nightly')) }}:
           dependsOn: []

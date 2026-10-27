@@ -78,7 +78,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["github_copilot_preview"]
+          "enum": ["microsoft_copilot_preview", "github_copilot_preview"]
         }
       },
       "required": ["type"],
@@ -108,19 +108,9 @@
       "enum": ["python", "csharp", "docker"]
     },
     "toolbox": {
-      "type": "object",
-      "description": "Named Foundry toolbox consumed by the agent.",
-      "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 },
-        "projectConnectionId": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Optional Foundry project connection name or ID passed as the toolbox MCP tool's project_connection_id. Omit for toolbox endpoints that do not require project-connection authentication."
-        }
-      },
-      "required": ["name"],
-      "additionalProperties": false
+      "deprecated": true,
+      "description": "Unsupported legacy toolbox authoring field. Use toolboxes instead.",
+      "not": {}
     },
     "modelType": {
       "type": "string",
@@ -191,14 +181,14 @@
       "description": "Tools available to prompt and prompt-voice agents. Unknown tool types are passed through for forward compatibility.",
       "items": {
         "oneOf": [
-          { "$ref": "#/definitions/GitHubCopilotToolsetPreview" },
+          { "$ref": "#/definitions/MicrosoftCopilotToolsetPreview" },
           {
             "type": "object",
             "required": ["type"],
             "properties": {
               "type": {
                 "type": "string",
-                "not": { "const": "github_copilot_toolset_preview" }
+                "not": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] }
               }
             },
             "additionalProperties": true
@@ -334,6 +324,11 @@
       "then": { "not": {} }
     },
     {
+      "$comment": "The singular toolbox authoring shape is not supported. Use toolboxes instead.",
+      "if": { "required": ["toolbox"] },
+      "then": { "not": {} }
+    },
+    {
       "$comment": "A conversationEngine hosted_agent voice wrapper references a deployed hosted service.",
       "if": {
         "properties": {
@@ -369,7 +364,8 @@
             { "required": ["maxOutputTokens"] },
             { "required": ["include"] },
             { "required": ["handoff"] },
-            { "required": ["toolbox"] }
+            { "required": ["toolbox"] },
+            { "required": ["toolboxes"] }
           ]
         }
       }
@@ -407,6 +403,7 @@
           "anyOf": [
             { "required": ["targetAgent"] },
             { "required": ["toolbox"] },
+            { "required": ["toolboxes"] },
             { "required": ["policies"] },
             { "required": ["protocols"] },
             { "required": ["environmentVariables"] },
@@ -539,11 +536,11 @@
       },
       "additionalProperties": false
     },
-    "GitHubCopilotToolsetPreview": {
+    "MicrosoftCopilotToolsetPreview": {
       "type": "object",
-      "description": "Enablement configuration for GitHub Copilot built-in tools.",
+      "description": "Enablement configuration for Microsoft Copilot built-in tools.",
       "properties": {
-        "type": { "const": "github_copilot_toolset_preview" },
+        "type": { "enum": ["microsoft_copilot_toolset_preview", "github_copilot_toolset_preview"] },
         "defaultConfig": {
           "type": "object",
           "properties": {
@@ -684,9 +681,13 @@
       "description": "Foundry-side binding from a phone provider identifier to this prompt voice agent.",
       "properties": {
         "provider": { "type": "string", "enum": ["acs", "twilio"] },
-        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>), ACS purchased number (4:+<E.164>), or Twilio E.164 number (+<E.164>)." },
+        "identifier": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "ACS/TPE raw ID (28:orgid:<guid>) or Twilio E.164 number (+<E.164>)." },
         "connection": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Foundry project connection name used by the telephony runtime." },
-        "transferTargets": { "type": "array", "items": { "type": "object", "additionalProperties": true } }
+        "transferTargets": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/VoiceTelephonyTransferTarget" },
+          "uniqueItems": true
+        }
       },
       "required": ["provider", "identifier", "connection"],
       "allOf": [
@@ -696,10 +697,51 @@
         },
         {
           "if": { "properties": { "provider": { "const": "acs" } }, "required": ["provider"] },
-          "then": { "properties": { "identifier": { "pattern": "^(28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|4:\\+[1-9][0-9]{6,14})$" } } }
+          "then": { "properties": { "identifier": { "pattern": "^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" } } }
         }
       ],
       "additionalProperties": false
+    },
+    "VoiceTelephonyTransferTarget": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$" },
+        "description": { "type": "string", "minLength": 1, "pattern": "\\S", "description": "Maximum 1024 UTF-16 code units; enforced by azd validation." },
+        "destination": { "$ref": "#/definitions/VoiceTelephonyTransferDestination" }
+      },
+      "required": ["name", "description", "destination"],
+      "additionalProperties": false
+    },
+    "VoiceTelephonyTransferDestination": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "pstn" },
+            "value": { "type": "string", "pattern": "^\\+[1-9][0-9]{6,14}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "teams" },
+            "value": { "type": "string", "pattern": "^(28:[oO][rR][gG][iI][dD]:)?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "sip" },
+            "value": { "type": "string", "pattern": "^[sS][iI][pP][sS]?:([^\\s%;?@]|%[0-9a-fA-F]{2})+@([^\\s%;?@/#]|%[0-9a-fA-F]{2})+(?::[0-9]+)?(?:[;?]([^\\s%#]|%[0-9a-fA-F]{2})*)?$", "description": "Maximum 2048 UTF-16 code units; enforced by azd validation." }
+          },
+          "required": ["kind", "value"],
+          "additionalProperties": false
+        }
+      ]
     },
     "VoiceAudio": {
       "type": "object",

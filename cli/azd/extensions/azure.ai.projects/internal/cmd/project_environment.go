@@ -26,6 +26,7 @@ type environmentPlan struct {
 // registry-selection path rather than inheriting the old environment.
 var projectReplacementEnvironmentKeys = []string{
 	"AI_PROJECT_DEPLOYMENT_BINDINGS",
+	projectDeploymentsEnvKey,
 	"AZURE_AI_MODEL_DEPLOYMENT_NAME",
 	"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",

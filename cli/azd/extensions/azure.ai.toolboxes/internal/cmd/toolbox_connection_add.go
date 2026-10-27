@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
@@ -22,6 +23,8 @@ type connectionAddFlags struct {
 	instanceName string
 	fromFile     string
 	fromVersion  string
+	indexSet     bool
+	instanceSet  bool
 }
 
 // newToolboxConnectionAddCommand returns the `connection add` command.
@@ -84,6 +87,11 @@ At least one connection must be provided.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
+			flags.indexSet = cmd.Flags().Changed("index")
+			flags.instanceSet = cmd.Flags().Changed("instance-name")
 			connName := ""
 			if len(args) > 1 {
 				connName = args[1]
@@ -125,21 +133,18 @@ func runConnectionAdd(
 	if err := validateOutputFormat(parent.output); err != nil {
 		return err
 	}
-	if strings.TrimSpace(verb.fromFile) == "" && strings.TrimSpace(connName) == "" {
-		return exterrors.Validation(
-			exterrors.CodeInvalidPositionalArg,
-			"<connection> must not be empty when --from-file is not set",
-			"pass a connection name or use --from-file",
-		)
+	specs, err := collectConnectionSpecs(connName, verb)
+	if err != nil {
+		return err
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName)
 	if err != nil {
 		return err
 	}
 	logResolvedEndpoint("toolbox connection add", resolved)
 
-	return runConnectionAddWith(ctx, client, resolver, resolved.Endpoint, toolboxName, connName, verb, parent)
+	return addToolboxConnections(ctx, client, resolver, resolved.Endpoint, toolboxName, specs, verb, parent)
 }
 
 // runConnectionAddWith is the testable core.
@@ -150,6 +155,53 @@ func runConnectionAddWith(
 	endpoint, toolboxName, connName string,
 	verb connectionAddFlags,
 	parent toolboxFlags,
+) error {
+	specs, err := collectConnectionSpecs(connName, verb)
+	if err != nil {
+		return err
+	}
+	return addToolboxConnections(ctx, client, resolver, endpoint, toolboxName, specs, verb, parent)
+}
+
+func collectConnectionSpecs(connName string, verb connectionAddFlags) ([]toolboxConnectionSpec, error) {
+	if strings.TrimSpace(verb.fromFile) == "" && strings.TrimSpace(connName) == "" {
+		return nil, exterrors.Validation(exterrors.CodeInvalidPositionalArg,
+			"<connection> must not be empty when --from-file is not set", "pass a connection name or use --from-file")
+	}
+	specs := []toolboxConnectionSpec{{Name: connName, Index: verb.index, InstanceName: verb.instanceName}}
+	if strings.TrimSpace(verb.fromFile) != "" {
+		if strings.TrimSpace(connName) != "" {
+			return nil, exterrors.Validation(exterrors.CodeInvalidPositionalArg,
+				"do not pass <connection> when --from-file is set",
+				"either pass a single connection positional or use --from-file")
+		}
+		if verb.indexSet || verb.index != "" {
+			return nil, exterrors.Validation(exterrors.CodeUnsupportedIndexFlag,
+				"--index cannot be used together with --from-file", "set connection indexes in the file")
+		}
+		if verb.instanceSet || verb.instanceName != "" {
+			return nil, exterrors.Validation(exterrors.CodeUnsupportedInstanceNameFlag,
+				"--instance-name cannot be used together with --from-file", "set connection instance names in the file")
+		}
+		var input toolboxToolsFile
+		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
+			return nil, err
+		}
+		specs = input.Connections
+	} else if (verb.indexSet && strings.TrimSpace(verb.index) == "") ||
+		(verb.instanceSet && strings.TrimSpace(verb.instanceName) == "") {
+		return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+			"--index and --instance-name must not be empty when supplied", "provide a non-empty value or omit the flag")
+	}
+	if err := validateToolboxDefinition(&definition.Definition{Connections: specs}); err != nil {
+		return nil, err
+	}
+	return specs, nil
+}
+
+func addToolboxConnections(
+	ctx context.Context, client toolboxClient, resolver connectionResolver,
+	endpoint, toolboxName string, specs []toolboxConnectionSpec, verb connectionAddFlags, parent toolboxFlags,
 ) error {
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
@@ -172,55 +224,13 @@ func runConnectionAddWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolboxVersion)
 	}
 
-	newEntries := []map[string]any{}
-	addedConnectionNames := []string{}
-
-	if strings.TrimSpace(verb.fromFile) != "" {
-		if strings.TrimSpace(connName) != "" {
-			return exterrors.Validation(
-				exterrors.CodeInvalidPositionalArg,
-				"do not pass <connection> when --from-file is set",
-				"either pass a single connection positional or use --from-file",
-			)
-		}
-		if verb.index != "" {
-			return exterrors.Validation(
-				exterrors.CodeUnsupportedIndexFlag,
-				"--index cannot be used together with --from-file",
-				"set connection indexes in the file under connections[].index",
-			)
-		}
-		if verb.instanceName != "" {
-			return exterrors.Validation(
-				exterrors.CodeUnsupportedInstanceNameFlag,
-				"--instance-name cannot be used together with --from-file",
-				"set connection instance names in the file under connections[].instanceName",
-			)
-		}
-
-		var input toolboxToolsFile
-		if err := parseToolboxFile(verb.fromFile, &input); err != nil {
-			return err
-		}
-		resolvedEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
-		if err != nil {
-			return err
-		}
-		for _, c := range input.Connections {
-			addedConnectionNames = append(addedConnectionNames, c.Name)
-		}
-		newEntries = append(newEntries, resolvedEntries...)
-	} else {
-		conn, err := resolver.resolveConnection(ctx, endpoint, connName)
-		if err != nil {
-			return err
-		}
-		entry, err := buildToolEntry(conn, verb.index, verb.instanceName)
-		if err != nil {
-			return err
-		}
-		newEntries = append(newEntries, entry)
-		addedConnectionNames = append(addedConnectionNames, conn.Name)
+	newEntries, err := resolveConnectionSpecs(ctx, resolver, endpoint, specs)
+	if err != nil {
+		return err
+	}
+	addedConnectionNames := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		addedConnectionNames = append(addedConnectionNames, spec.Name)
 	}
 
 	if len(newEntries) == 0 {

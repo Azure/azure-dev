@@ -30,6 +30,9 @@ use 'connection add', 'connection remove', 'skill add', or 'skill remove'.`,
   azd ai toolbox publish research 2`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runToolboxPublish(cmd.Context(), args[0], args[1], readToolboxFlags(cmd, extCtx))
 		},
 	}
@@ -57,7 +60,7 @@ func runToolboxPublish(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, name)
 	if err != nil {
 		return err
 	}

@@ -16,8 +16,8 @@ Useful places to start:
 
 - `internal/cmd/`: Cobra commands, verb implementations, and `connection` subgroup
 - `internal/pkg/azure/`: `FoundryToolboxClient` (toolbox CRUD data-plane client)
-- `internal/foundry/`: Foundry primitives shared with sibling extensions
-  (project-endpoint cascade, credential factory, single-connection lookup)
+- `internal/foundry/`: project-endpoint cascade and single-connection lookup.
+  Credentials and developer-access policy use core's shared `pkg/foundry`.
 - `internal/exterrors/`: structured error factories and toolbox-specific codes
 
 ## Build and test
@@ -53,14 +53,16 @@ present.
 
 `internal/foundry/` holds Foundry data-plane primitives that are currently
 duplicated from `azure.ai.agents` and intended to be lifted into a shared module
-later. Two rules keep that future lift mechanical:
+later. Credentials and developer-access preparation already live in core's
+`pkg/foundry`; reuse those helpers rather than adding local copies.
+Two rules keep the remaining lift mechanical:
 
 1. **One-way import contract.** Files under `internal/foundry/` MUST NOT import
    anything under `internal/cmd/`. Files under `internal/cmd/` may import
    `internal/foundry/...` freely.
 2. **No toolbox-specific logic inside `internal/foundry/`.** Keep that package
    to primitives any sibling extension would also need (project-endpoint
-   resolution, single-connection lookup, credential factory). Toolbox-specific
+   resolution and single-connection lookup). Toolbox-specific
    concepts (`projectConnection`, `connectionResolver`, the `FoundryToolboxClient`)
    live in `internal/cmd/` and `internal/pkg/azure/`.
 

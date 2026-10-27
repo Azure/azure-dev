@@ -44,6 +44,9 @@ Removing the last skill is allowed.`,
 `,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runSkillRemove(
 				cmd.Context(), args[0], args[1:], *flags, readToolboxFlags(cmd, extCtx),
 			)
@@ -88,7 +91,7 @@ func runSkillRemove(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName)
 	if err != nil {
 		return err
 	}

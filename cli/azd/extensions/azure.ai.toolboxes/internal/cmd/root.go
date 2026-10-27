@@ -25,7 +25,12 @@ A toolbox is a versioned, named collection of connection-backed tools that
 agents reference at run time. Each version is immutable: mutations (connection
 add/remove, skill add/remove) create a new version but never change which
 version is the default. Use 'azd ai toolbox publish <toolbox> <version>'
-to promote a version.`,
+to promote a version.
+
+Create/update commands check Foundry access and may assign Foundry User when
+the target matches the active environment's project resource ID and endpoint.
+Read and delete commands do not assign roles. Provisioning does not assign
+developer access.`,
 	})
 
 	rootCmd.SilenceUsage = true

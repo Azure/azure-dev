@@ -44,6 +44,9 @@ Refuses to leave the toolbox with zero tools (use 'azd ai toolbox delete' instea
 `,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runConnectionRemove(
 				cmd.Context(), args[0], args[1:],
 				*flags,
@@ -96,7 +99,7 @@ func runConnectionRemove(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName)
 	if err != nil {
 		return err
 	}

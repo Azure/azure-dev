@@ -62,6 +62,9 @@ version at read time.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			rawSkill := ""
 			if len(args) > 1 {
 				rawSkill = args[1]
@@ -105,13 +108,17 @@ func runSkillAdd(
 		)
 	}
 
-	client, resolved, err := resolveToolboxAndClient(ctx, parent)
+	specs, err := collectSkillSpecs(rawSkill, verb)
+	if err != nil {
+		return err
+	}
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, toolboxName)
 	if err != nil {
 		return err
 	}
 	logResolvedEndpoint("toolbox skill add", resolved)
 
-	return runSkillAddWith(ctx, client, toolboxName, rawSkill, verb, parent)
+	return addToolboxSkills(ctx, client, toolboxName, specs, verb, parent)
 }
 
 // runSkillAddWith is the testable core.
@@ -125,6 +132,13 @@ func runSkillAddWith(
 		return err
 	}
 
+	return addToolboxSkills(ctx, client, toolboxName, specs, verb, parent)
+}
+
+func addToolboxSkills(
+	ctx context.Context, client toolboxClient, toolboxName string,
+	specs []skillSpec, verb skillAddFlags, parent toolboxFlags,
+) error {
 	tb, err := client.GetToolbox(ctx, toolboxName)
 	if err != nil {
 		return toolboxNotFoundOrService(err, toolboxName, exterrors.OpGetToolbox)
@@ -202,10 +216,17 @@ func collectSkillSpecs(rawSkill string, verb skillAddFlags) ([]skillSpec, error)
 			)
 		}
 		specs := make([]skillSpec, 0, len(input.Skills))
+		seen := map[string]bool{}
 		for _, s := range input.Skills {
 			if err := validateSkillName(s.Name); err != nil {
 				return nil, err
 			}
+			name := strings.TrimSpace(s.Name)
+			if seen[name] {
+				return nil, exterrors.Validation(exterrors.CodeDuplicateSkill,
+					"skill is duplicated in the input", "remove duplicate skills[] entries from the input file")
+			}
+			seen[name] = true
 			specs = append(specs, skillSpec{
 				Name:    strings.TrimSpace(s.Name),
 				Version: strings.TrimSpace(s.Version),

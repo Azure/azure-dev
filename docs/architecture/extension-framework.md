@@ -72,6 +72,28 @@ is separate from the [gRPC service and invocation store](../../cli/azd/internal/
 See the [SDK reference](../../cli/azd/docs/extensions/extension-sdk-reference.md#project-lifecycle-follow-up)
 for the API, host compatibility, and contribution ordering rules.
 
+## Shared Foundry access preparation
+
+The Go [`pkg/foundry`](../../cli/azd/pkg/foundry/access.go) package owns the
+common access policy used by agent predeploy and toolbox write operations:
+probe effective data-plane access, resolve the resource-tenant principal,
+check inherited built-in roles, conditionally assign project-scoped Foundry
+User, and wait for propagation. Successful probes never require role-assignment
+writes. Optional ARM failures produce warnings; cancellation and exhausted
+post-grant readiness checks stop the operation.
+
+Core also shares active-environment loading, endpoint/scope consistency checks,
+skip-setting precedence, user-access tenant lookup, and credential construction.
+Extensions own endpoint selection, non-mutating service-specific probes, and
+warning/error rendering. The ARM role client is created only after a probe
+confirms missing access. Provisioning, read/delete commands, and read-only
+diagnostics do not invoke automatic grants.
+Hosted-agent role-assignment-write and ACR checks remain agent-specific.
+
+New shared APIs must ship in a core SDK release before independently published
+extension modules can consume them. Validate cross-module development with a
+local Go workspace or temporary replacements; do not merge local replacements.
+
 ## Capabilities
 
 Extensions declare their capabilities in `extension.yaml`:

@@ -67,6 +67,63 @@ For direct resource operations:
 Removing a service from `azure.yaml` stops managing the toolbox but does not
 delete the remote resource; use `azd ai toolbox delete` to delete it.
 
+## Developer access
+
+Toolbox operations require Foundry data-plane access. Subscription **Owner** or
+**Contributor** alone does not grant that access; **Foundry User** or an
+equivalent role is required.
+
+Before deploying a managed toolbox, or running `create`, `connection add/remove`,
+`skill add/remove`, or `publish`, the extension checks access independently of
+any agent predeploy hook. It validates local inputs first, then probes toolbox
+read access before resolving remote connections or writing a toolbox version.
+If the probe succeeds, no role assignment is attempted, including when access
+comes from a custom or externally managed role.
+
+Automatic grants are limited to a verified active-environment project:
+`AZURE_AI_PROJECT_ID` must identify the project selected by
+`FOUNDRY_PROJECT_ENDPOINT` (or its `AZURE_AI_PROJECT_ENDPOINT` fallback), and the
+selected operation endpoint must match. If `AZURE_SUBSCRIPTION_ID` is set, it
+must agree with the resource ID. An explicit `--project-endpoint` matching that
+project participates in the check; an unrelated endpoint does not borrow its
+resource ID or tenant. Endpoint-only/global-context usage without matching
+project metadata continues without automatic grants.
+
+If the probe confirms an authorization denial, the extension checks inherited
+and equivalent roles, then attempts a project-scoped **Foundry User** assignment
+only when no sufficient assignment exists. Credentials use the subscription's
+user-access tenant, and the principal is resolved in its resource tenant, for
+both guest users and service-principal logins. A new assignment is followed by
+bounded readiness checks to allow role propagation. If propagation takes longer,
+wait and retry the command.
+
+When role inspection or assignment is unavailable or denied, the extension warns
+and lets the requested toolbox operation determine the final result. If it still
+returns 403, ask a subscription Owner or User Access Administrator to grant
+Foundry User on the target project. The assignment-denied warning includes an
+`az role assignment create` command for that scope.
+
+To disable automatic developer role checks and grants for toolbox writes, set
+`AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` in the active azd environment or process
+environment. A non-empty azd environment value takes precedence; an absent or
+empty value falls back to the process environment. The value is parsed as a
+boolean; invalid values do not enable skipping, and the default is not to skip.
+This setting does not grant access: externally managed permissions must already
+allow the requested operation.
+
+Read/list/show commands, toolbox deletion, local `add connection`/`add skill`
+authoring, and publication of a bring-your-own toolbox endpoint do not grant
+roles. Provisioning remains independent of developer role-assignment permission.
+Access-check warnings go to stderr, preserving JSON results on stdout.
+
+Developer access preparation is implemented by core's shared
+`pkg/foundry.AccessPreparation`; this extension retains endpoint selection,
+toolbox probes, and output/error integration. Environment access, scope checks,
+skip precedence, and tenant credentials also use shared core helpers. The agents
+extension uses the same role and propagation policy. Release the core helper
+before updating the independently published extensions' azd SDK dependencies;
+use a local Go workspace to validate both sides before that release.
+
 ## Extension telemetry API
 
 Extension code can report best-effort usage events through the shared

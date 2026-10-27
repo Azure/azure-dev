@@ -44,8 +44,8 @@ Classify each finding:
 After filtering kept findings:
 
 1. Group by file path.
-2. Within each file, order by line number (ascending).
-3. Deduplicate: if multiple lenses flagged the same file + line + similar concern, merge into one finding. Note all contributing lenses in the detail.
+2. Within each file, group by diff side, then order by that side's line number (ascending).
+3. Deduplicate: if multiple lenses flagged the same file + side + line + similar concern, merge into one finding. Note all contributing lenses in the detail.
 4. Tag each finding with severity: **critical** / **suggestion** / **nit** / **praise**.
 
 When a correctness finding shares a root cause with an extension contract finding, keep one inline comment with the
@@ -98,14 +98,20 @@ body: "One-sentence overall sentiment. Optional bullets for non-line findings."
 comments:
   - path: "relative/path/to/file.go"
     line: 42
+    side: RIGHT
     severity: critical | suggestion | nit | praise
     body: "[critical] Inline comment text following the voice rules. <!-- azd-code-reviewer -->"
 ```
 
-**Line constraint.** Every inline `line` value MUST be a line that appears in the diff (added or context lines on the `RIGHT` side). Findings that don't satisfy this go in the review body instead of `comments`.
+**Line constraint.** Every inline `line` value MUST appear on its selected diff side. Use `side: RIGHT` with new-file
+coordinates for additions and modifications (or context lines for ordinary findings), and `side: LEFT` with old-file
+coordinates for deletion-only findings. Existing findings without `side` default to `RIGHT`. Preserve an explicit
+side and its coordinates when adapting the host schema. Ordinary findings with no diff anchor go in the review body.
 
-**Extension contract constraint.** Contract findings require an added or changed line on the `RIGHT` side that
-directly evidences the change, not an unchanged context line. Never move them into the review body; surface an
-unavailable anchor or required evidence as a limitation to the host instead.
+**Extension contract constraint.** Contract findings require an explicit `side` and a diff line that directly
+evidences the change: added or modified lines on `RIGHT`, or deleted lines on `LEFT` for deletion-only changes,
+including deleted files. Unchanged context lines are not valid contract anchors. Never move these findings into
+the review body or onto unrelated RIGHT-side lines; if the host cannot publish LEFT-side comments or no valid
+anchor exists, retain the affected finding in the supported result channel and mark the pass blocked.
 
 If the harness expects a different schema (e.g., the GitHub Reviews API payload directly), adapt the field names but preserve the structure: a single review body plus zero or more line-anchored inline comments.

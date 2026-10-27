@@ -21,6 +21,7 @@ graders:
       assertions:
         - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1"
         - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].path === 'cli/azd/extensions/example/internal/cmd/list.go' && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 42"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].side === 'RIGHT'"
         - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('<!-- extension-user-contract-changes-reviewer -->')"
         - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread with a link to the approved experiences spec pull request that covers this contract change.')"
         - "/Extension user-contract review: complete.*1 files? inspected; 1 new contract comments?; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

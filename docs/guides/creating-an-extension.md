@@ -107,6 +107,11 @@ Reply in that finding's thread with the spec link, even when the change is inten
 provided by the PR author or repository collaborators in that same thread and avoids repeating existing findings,
 including those posted by the former workflow.
 
+Comments for additions and modifications use RIGHT-side new-file line numbers. Deletion-only changes, including
+removed commands or entire files, use LEFT-side deleted lines with old-file line numbers. The reviewer preserves
+the side and coordinates in its returned comments; a host that cannot publish LEFT-side comments receives an
+explicit blocked status rather than a comment on unrelated surviving code.
+
 Repository-wide and extension-specific reviewer instructions require this pass before the general review lenses,
 including on fork PRs. The skill accounts for every changed extension file and audits that findings survive triage.
 The review summary reports completion with inspected-file, new-comment, and existing-thread counts, or an explicit

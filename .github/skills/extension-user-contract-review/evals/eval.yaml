@@ -37,5 +37,6 @@ graders:
         - "typeof JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body === 'string'"
         - "Array.isArray(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments)"
         - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => typeof c.path === 'string' && Number.isInteger(c.line) && typeof c.body === 'string')"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.side === 'RIGHT' || c.side === 'LEFT')"
 tasks:
   - "tasks/*.yaml"

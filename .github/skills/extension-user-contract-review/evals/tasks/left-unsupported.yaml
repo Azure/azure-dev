@@ -1,0 +1,24 @@
+id: left-unsupported
+name: A RIGHT-only host receives an explicit deletion-anchor limitation
+tags: [negative, deletion, blocked]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Remove legacy flag".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/export.go, status modified.
+    Before: export supported --legacy. After: the flag is intentionally removed; tests, help, and docs match.
+    Complete relevant diff: deleted LEFT OLD-file line 24:
+    cmd.Flags().BoolVar(&legacy, "legacy", false, "Use legacy output")
+    There are no added or modified RIGHT lines. RIGHT line 24 is unrelated unchanged context.
+    This host explicitly cannot publish LEFT-side comments. It accepts RIGHT-side comments and a review body only.
+    Complete conversation and review history: empty, with no spec links or prior threads.
+graders:
+  - type: code
+    name: report-anchor-blocker-without-relocation
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
+        - "/Extension user-contract review: blocked/i.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "/LEFT/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body) && /24/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('cli/azd/extensions/example/internal/cmd/export.go')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('Extension user-contract review: complete')"

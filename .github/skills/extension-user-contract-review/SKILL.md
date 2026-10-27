@@ -20,7 +20,8 @@ Read and apply [the review procedure](references/review.md) in full. Use the com
 1. Account for every changed extension file in an internal coverage ledger.
 2. Identify observable contract changes, including intentional, correctly implemented additions.
 3. Match existing threads and approved experiences spec links per finding.
-4. Return one changed-line inline finding per distinct new contract change.
+4. Return one diff-line inline finding per distinct new contract change, preserving `side` and `line`:
+   `RIGHT` uses new-file coordinates; deletion-only `LEFT` uses old-file coordinates.
 5. Audit coverage and actual outgoing comments after triage; return `complete`, `blocked`, or `not-applicable`
    with file, new-comment, and existing-thread counts.
 

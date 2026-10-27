@@ -28,7 +28,8 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    confidence accordingly. Do not require a particular LSP server such as `gopls`.
 3. Keep an internal coverage ledger for every changed extension file: path, inspected contract surface, evidence,
    and disposition (`no-contract-change`, `new-finding`, `existing-thread`, or `blocked`). Account for renamed and
-   deleted contracts using the old path and behavior, then find an added or changed line that evidences the change.
+   deleted contracts using the old path and behavior, then find an added, modified, or deleted diff line that
+   evidences the change. Record the diff side and that side's line number with each finding.
    Never classify an unread, truncated, or inaccessible diff as `no-contract-change`.
 4. Identify contract changes in:
    - commands, subcommands, positional arguments, flags, aliases, defaults, validation, help text, exit behavior,
@@ -63,7 +64,7 @@ or a label such as "refactor" does not discharge this requirement.
 
 After shared triage and formatting, compare the actual outgoing comments with the retained contract findings.
 Restore any finding accidentally removed by ordinary noise filters or comment budgets. Preserve each contract
-marker and spec status; verify the changed-line anchor and one-comment-per-root-cause rule. If a host limit prevents
+marker and spec status; verify the diff side, its line coordinates, and the one-comment-per-root-cause rule. If a host limit prevents
 including all findings, report the omitted count and limitation. Do not claim completion.
 
 Return a completion status with the findings: `complete` only after both audits pass, `not-applicable` only when the
@@ -81,6 +82,7 @@ findings:
   - severity: suggestion
     file: cli/azd/extensions/example/internal/cmd/create.go
     line: 42
+    side: RIGHT
     summary: User contract change
     detail: |
       <!-- extension-user-contract-changes-reviewer -->
@@ -102,10 +104,17 @@ Set `<spec status>` to this when no qualifying spec link was previously supplied
 
 Otherwise use `Previously provided approved experiences spec: <link>` and do not ask for that finding's link again.
 
-The host must preserve the marker, contract explanation, and spec status in exactly one inline comment per distinct
-finding. Require an added or changed line on the right side of the diff that directly evidences the change; never
-use a general PR comment or an unchanged context line for these findings. If no valid anchor is available, report
-the limitation to the host instead of inventing a location.
+The host must preserve the marker, contract explanation, spec status, `side`, and `line` in exactly one inline
+comment per distinct finding. Use `side: RIGHT` with the new-file line number for additions and modifications.
+For deletion-only contract changes, use `side: LEFT` with the old-file line number of a deleted line. This includes
+removed flags, schema fields, commands, and entire files: a deletion-only diff does not itself block review.
+Use the path from the PR's changed-file entry; for a deleted file, this is its former path.
+
+The anchor must directly evidence the finding. Never use an unchanged context line, an unrelated RIGHT-side line,
+or a general PR comment instead of a deleted-line thread. Preserve the selected side and its coordinates through
+shared triage, the final comment object, and any host-schema adaptation; never reinterpret an old-file line number
+as a new-file line number. If the host cannot publish LEFT-side comments, or no valid anchor exists, return the
+affected finding and the specific limitation with `blocked` status without fabricating a publishable comment.
 
 When combined with `azd-code-reviewer`, keep these findings through triage even for intentional, correctly implemented
 contract additions. They are actionable spec-tracking requests, not summaries or praise, and are not subject to the
@@ -133,5 +142,7 @@ a blocker when read-only source inspection establishes the behavior.
 | Same contract changes again; trusted reply supplied its spec | One new finding retaining that link, without requesting it again |
 | Two independent flags; only one thread has a spec link | Do not apply that link to the other flag |
 | Authored schema and generated binding show one contract change | One finding anchored to authored source |
+| Flag or command file removed with no RIGHT-side changed lines | One LEFT-side finding using the deleted line's old-file coordinates |
+| Host cannot publish LEFT-side comments | Preserve the deletion finding and report blocked; do not relocate it |
 | Pure internal refactor with unchanged observable behavior | No contract comment after inspecting the diff |
 | Review history is unavailable | Explicit blocked status, not a fabricated missing-spec request or clean result |

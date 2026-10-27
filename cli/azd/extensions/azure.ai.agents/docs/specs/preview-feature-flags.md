@@ -5,11 +5,11 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent, default-off managed-harness, voice, long-running invocation, and A2A version-selection gates.
+- **Scope:** Independent, default-off managed-harness, voice, long-running invocation/Tasks inspection, and A2A version-selection gates.
 
 Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
-Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. Long-running means starting a background Responses invocation through `--long-running` or `--no-wait`, not ordinary invocation lifecycle commands.
+Managed harness means `kind: prompt` with harness type `microsoft_copilot_preview` or legacy `github_copilot_preview`. Voice includes `voice`, `prompt-voice`, and hosted definitions advertising `invocations_ws`. The long-running gate covers starting a background Responses invocation through `--long-running` or `--no-wait` and inspecting hosted-agent Tasks through `tasks list/show`, not ordinary invocation lifecycle commands.
 
 ## Ownership and code organization
 
@@ -70,10 +70,25 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | --- | --- | --- | --- |
 | `ManagedHarness` | `agents.managed_harness` | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
-| `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
+| `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations and hosted-agent Tasks inspection |
 | `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | A2A init selection, explicit wire versions, and the 1.0 message default |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
+
+### Tasks inspection policy
+
+`tasks list` and `tasks show <task-id>` reuse `LongRunning`; no new feature ID,
+environment variable, or CLI opt-in flag is introduced. The `tasks` command carries
+`previewCommand`, so it and its children are hidden from discovery while off and
+actual operations require the switch even when called directly. Direct help remains
+available without authentication. Pure local argument validation runs before a
+disabled-feature error; the gate runs before target resolution and service access.
+
+This is an exception to the retained-access rule for existing read commands.
+`invocations show/follow/cancel` remain executable while the switch is off, but
+Tasks inspection requires it. Tasks are read-only service resources, not aliases
+for Responses invocations or invocation lifecycle commands. CLI enablement does not
+grant service-side preview access, permissions, or protocol support.
 
 ### A2A compatibility policy
 
@@ -138,7 +153,7 @@ Normal project configuration, deployment environments, runtime settings, and com
 | --- | --- | --- |
 | `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
 | `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol invocations_ws` | Only the listed values require the feature, including repeated or comma-separated slice values. The flag stays visible |
-| `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
+| `previewCommand(cmd, feature)` | `tasks` (`LongRunning`) | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
 | `previewHelp(cmd, feature, long, examples)` | Voice, long-running, and A2A version help blocks | The blocks are removed while off |
 | `previewHelpText(cmd, feature, onText, offText)` | Existing inline preview mentions in command descriptions | Replaces the text only while off; enabled help retains its original wording |
@@ -178,7 +193,7 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. There is no state migration or automatic enablement. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
+Existing read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. The new `tasks list/show` inspection commands are explicitly gated by `LongRunning`. There is no state migration or automatic enablement. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim.
 
 ## Compatibility and future framework adoption
 

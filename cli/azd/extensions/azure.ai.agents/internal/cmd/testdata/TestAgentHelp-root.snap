@@ -34,6 +34,7 @@ Available Commands
   sessions     : Manage sessions for a hosted agent endpoint.
   show         : Show the status of a prompt, hosted, or voice agent.
   state-stores : Inspect hosted-agent State Stores and manage their items.
+  tasks        : Inspect hosted-agent Tasks (Preview).
   toolbox      : Manage toolbox service dependencies for an agent.
   version      : Prints the version of the application
 
@@ -89,7 +90,7 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_VOICE=true
     Voice, prompt-voice, and hosted voice agents.
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
-    Long-running Responses invocations.
+    Long-running Responses invocations and hosted-agent Tasks inspection.
   AZD_ALPHA_ENABLE_AGENTS_A2A=true
     A2A init selection, wire version selection, and the 1.0 message default.
 

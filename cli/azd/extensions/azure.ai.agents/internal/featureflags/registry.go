@@ -25,11 +25,11 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_A2A",
 		Description: "A2A init selection, wire version selection, and the 1.0 message default",
 	}
-	// LongRunning controls starting background Responses invocations.
+	// LongRunning controls starting background Responses invocations and Tasks inspection.
 	LongRunning = Feature{
 		ID:          "agents.long_running",
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
-		Description: "Long-running Responses invocations",
+		Description: "Long-running Responses invocations and hosted-agent Tasks inspection",
 	}
 )
 

@@ -88,7 +88,7 @@ Preview Feature Switches
   AZD_ALPHA_ENABLE_AGENTS_VOICE=true
     Voice, prompt-voice, and hosted voice agents.
   AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
-    Long-running Responses invocations.
+    Long-running Responses invocations and hosted-agent Tasks inspection.
   AZD_ALPHA_ENABLE_AGENTS_A2A=true
     A2A init selection, wire version selection, and the 1.0 message default.
 

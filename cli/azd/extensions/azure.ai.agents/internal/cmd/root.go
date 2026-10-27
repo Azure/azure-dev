@@ -107,6 +107,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newFilesCommand(extCtx))
 	rootCmd.AddCommand(newSessionCommand(extCtx))
 	rootCmd.AddCommand(newStateStoresCommand(extCtx))
+	rootCmd.AddCommand(newTasksCommand(extCtx))
 	rootCmd.AddCommand(newInvocationsCommand(extCtx))
 	rootCmd.AddCommand(newSampleCommand(extCtx))
 	rootCmd.AddCommand(newDoctorCommand())

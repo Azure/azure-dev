@@ -13,6 +13,7 @@ import (
 
 	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/exterrors"
+	"azure.ai.content-understanding/internal/testutil"
 
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +27,7 @@ func TestExecutionFailureDiagnosticsAreActionableAndBounded(t *testing.T) {
 			}
 			inputs, err := Discover(t.Context(), InputOptions{URLs: urls})
 			require.NoError(t, err)
-			plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: t.TempDir()})
+			plan, err := PlanOutputs(inputs, OutputOptions{Existing: "error", Directory: testutil.TempDir(t)})
 			require.NoError(t, err)
 			calls := 0
 			client := fakeAnalysisClient{analyze: func(

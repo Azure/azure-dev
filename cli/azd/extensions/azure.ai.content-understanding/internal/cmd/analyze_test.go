@@ -283,7 +283,7 @@ func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	directory := filepath.Join(testutil.TempDir(t), "not-created")
 	report := filepath.Join(directory, "report.json")
 	stdout, stderr, err := f.execute(t.Context(),
-		"--url", "https://example.com/a.pdf?sig=private#private", "--dry-run",
+		"--url", "https://example.com/a.pdf?sig=secret-signature#secret-fragment", "--dry-run",
 		"-d", directory, "--report-file", report, "-o", "json")
 	require.NoError(t, err)
 	assert.Empty(t, stderr)
@@ -303,7 +303,8 @@ func TestAnalyzeDryRunRedactedNoWritesNoRequests(t *testing.T) {
 	require.Len(t, plan.Outputs, 1)
 	assert.Equal(t, "https://example.com/a.pdf?REDACTED", plan.Outputs[0].Input)
 	assert.Equal(t, filepath.Join(directory, "a.pdf.result.json"), plan.Outputs[0].Output)
-	assert.NotContains(t, stdout, "private")
+	assert.NotContains(t, stdout, "secret-signature")
+	assert.NotContains(t, stdout, "secret-fragment")
 	assert.Empty(t, f.prompts)
 	assert.Zero(t, f.client.calls.Load())
 	_, err = os.Stat(directory)

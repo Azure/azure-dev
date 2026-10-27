@@ -116,7 +116,7 @@ func TestAnalyzerTestExecutionOrderingConcurrencyAndReaderOwnership(t *testing.T
 			}
 			assert.NotContains(t, report.Samples[1].Error, "secret")
 			for _, file := range bodies {
-				_, err := file.Stat()
+				_, err := file.Read(make([]byte, 1))
 				require.ErrorIs(t, err, os.ErrClosed)
 			}
 		})

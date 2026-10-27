@@ -1005,28 +1005,36 @@ func TestAgentDefinitionUsesFileRefIgnoresNestedResourceRefs(
 func TestAgentDefinitionUsesFileRefIgnoresInlineDefinition(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "settings.yaml"),
-		[]byte("startupCommand: python main.py\n"),
-		0o600,
-	))
-	props, err := structpb.NewStruct(map[string]any{
-		"$ref": "./settings.yaml",
-		"kind": "hosted",
-		"name": "inline-agent",
-	})
-	require.NoError(t, err)
-	svc := &azdext.ServiceConfig{
-		Name:                 "inline-agent",
-		Host:                 "azure.ai.agent",
-		AdditionalProperties: props,
+	for _, test := range []struct {
+		name     string
+		settings string
+		snapshot *bool
+	}{
+		{name: "startup settings", settings: "startupCommand: python main.py\n"},
+		{name: "snapshot disabled", settings: "enableMemorySnapshot: false\n", snapshot: new(false)},
+		{name: "snapshot enabled", settings: "enableMemorySnapshot: true\n", snapshot: new(true)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "settings.yaml"), []byte(test.settings), 0o600))
+			props, err := structpb.NewStruct(map[string]any{
+				"$ref": "./settings.yaml", "kind": "hosted", "name": "inline-agent",
+			})
+			require.NoError(t, err)
+			svc := &azdext.ServiceConfig{
+				Name: "inline-agent", Host: "azure.ai.agent", AdditionalProperties: props,
+			}
+			usesFileRef, err := AgentDefinitionUsesFileRef(svc, dir)
+			require.NoError(t, err)
+			require.False(t, usesFileRef)
+			agent, isHosted, found, _, err := AgentDefinitionFromResolvedService(svc, dir)
+			require.NoError(t, err)
+			require.True(t, found)
+			require.True(t, isHosted)
+			require.Equal(t, test.snapshot, agent.EnableMemorySnapshot)
+		})
 	}
-
-	usesFileRef, err := AgentDefinitionUsesFileRef(svc, dir)
-
-	require.NoError(t, err)
-	require.False(t, usesFileRef)
 }
 
 // TestUpsertAgentEnvVars verifies that env vars are added/updated on the inline

@@ -520,7 +520,7 @@ func AgentDefinitionUsesFileRef(
 	refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
 		"$ref": props.GetFields()["$ref"],
 	}}
-	resolved, err := resolveServiceProps(
+	resolved, err := resolveRawServiceProps(
 		refOnly,
 		svc.GetName(),
 		projectRoot,
@@ -727,6 +727,21 @@ func resolveServiceProps(
 	serviceName string,
 	projectRoot string,
 ) (*structpb.Struct, error) {
+	resolved, err := resolveRawServiceProps(props, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMemorySnapshotSetting(resolved); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+func resolveRawServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
 	if err := validateRootRefCoreFields(props, projectRoot); err != nil {
 		return nil, fmt.Errorf(
 			"validating service %q config: %w",
@@ -745,14 +760,7 @@ func resolveServiceProps(
 			err,
 		)
 	}
-	resolvedProps, err := normalizedServiceProps(resolved, serviceName)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateMemorySnapshotSetting(resolvedProps); err != nil {
-		return nil, err
-	}
-	return resolvedProps, nil
+	return normalizedServiceProps(resolved, serviceName)
 }
 
 func normalizeServiceProps(

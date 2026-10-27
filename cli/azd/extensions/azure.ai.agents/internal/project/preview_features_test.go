@@ -53,16 +53,27 @@ func TestMemorySnapshotFeatureSwitch(t *testing.T) {
 	for _, value := range []string{"", "false", "0", "on", "invalid", "true", "1", "T", "TRUE"} {
 		t.Run("value="+value, func(t *testing.T) {
 			t.Setenv(featureflags.MemorySnapshot.EnvVar, value)
-			for _, enabled := range []bool{false, true} {
-				err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", "enableMemorySnapshot": enabled})
-				if !enabled || value == "true" || value == "1" || value == "T" || value == "TRUE" {
-					require.NoError(t, err)
-				} else {
-					require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
-					require.ErrorContains(t, err, "disabled")
-				}
+			for _, field := range []string{"enableMemorySnapshot", "enable_memory_snapshot"} {
+				t.Run(field, func(t *testing.T) {
+					for _, enabled := range []bool{false, true} {
+						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled})
+						if !enabled || value == "true" || value == "1" || value == "T" || value == "TRUE" {
+							require.NoError(t, err)
+						} else {
+							require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
+							require.ErrorContains(t, err, "disabled")
+						}
+					}
+				})
 			}
 		})
+	}
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
+	for _, definition := range []map[string]any{
+		{"kind": "hosted", "enableMemorySnapshot": false, "enable_memory_snapshot": true},
+		{"kind": "hosted", "enableMemorySnapshot": true, "enable_memory_snapshot": false},
+	} {
+		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.MemorySnapshot.ID)
 	}
 	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
 	t.Setenv(featureflags.Voice.EnvVar, "false")

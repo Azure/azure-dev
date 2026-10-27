@@ -14753,6 +14753,78 @@
         "foundry",
         "dataset"
       ]
+    },
+    {
+      "id": "azure.ai.content-understanding",
+      "namespace": "ai.cu",
+      "displayName": "Azure Content Understanding (Preview)",
+      "description": "Extension for Azure Content Understanding. (Preview)",
+      "versions": [
+        {
+          "version": "0.1.0-preview",
+          "requiredAzdVersion": ">=1.37.0",
+          "capabilities": [
+            "custom-commands",
+            "metadata"
+          ],
+          "usage": "azd ai cu <command> [options]",
+          "examples": null,
+          "artifacts": {
+            "darwin/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "9ee99610ae5d4550dfd6d606aa46072de87d0a6c2d424eca3d3d0784bc8b035a"
+              },
+              "entryPoint": "azure-ai-content-understanding-darwin-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-darwin-amd64.zip"
+            },
+            "darwin/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "7882605f8d4cfd271f7a1559360e22a2811f52e8c0e1d6420b0db8b61f861a34"
+              },
+              "entryPoint": "azure-ai-content-understanding-darwin-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-darwin-arm64.zip"
+            },
+            "linux/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "358209071500904585209ea54fc530db0bec2709a50555154e7fcb90d74bae9f"
+              },
+              "entryPoint": "azure-ai-content-understanding-linux-amd64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-linux-amd64.tar.gz"
+            },
+            "linux/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "a1b7c13591bfacb28d7bcd9a5094196d3b21e07af1a9e7edc7b48d315722dcc3"
+              },
+              "entryPoint": "azure-ai-content-understanding-linux-arm64",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-linux-arm64.tar.gz"
+            },
+            "windows/amd64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2e5c922d692d8a8eb90613229e02165f224e606c94bfd58819556041a44545e1"
+              },
+              "entryPoint": "azure-ai-content-understanding-windows-amd64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-windows-amd64.zip"
+            },
+            "windows/arm64": {
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "eb72e2725f41524f56c11892e67b0d5e999eba6c2683958f5e7eb7022f8d3ef2"
+              },
+              "entryPoint": "azure-ai-content-understanding-windows-arm64.exe",
+              "url": "https://github.com/Azure/azure-dev/releases/download/azd-ext-azure-ai-content-understanding_0.1.0-preview/azure-ai-content-understanding-windows-arm64.zip"
+            }
+          }
+        }
+      ],
+      "tags": [
+        "ai",
+        "content-understanding"
+      ]
     }
   ]
 }

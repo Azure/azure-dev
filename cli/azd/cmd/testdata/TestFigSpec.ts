@@ -2871,6 +2871,1048 @@ const completionSpec: Fig.Spec = {
 					],
 				},
 				{
+					name: ['cu'],
+					description: 'Extension for Azure Content Understanding. (Preview)',
+					subcommands: [
+						{
+							name: ['analyze'],
+							description: 'Analyze local files, directories, or HTTPS URLs',
+							options: [
+								{
+									name: ['--analyzer', '-a'],
+									description: 'Analyzer ID (default: configured analyzer or prebuilt-layout)',
+									args: [
+										{
+											name: 'analyzer',
+										},
+									],
+								},
+								{
+									name: ['--api-version'],
+									description: 'CU API version (default: resolved setting or 2025-11-01)',
+									args: [
+										{
+											name: 'api-version',
+										},
+									],
+								},
+								{
+									name: ['--concurrency', '-j'],
+									description: 'Concurrent analyses (1-32)',
+									args: [
+										{
+											name: 'concurrency',
+										},
+									],
+								},
+								{
+									name: ['--dry-run'],
+									description: 'Plan without analyzing, prompting, creating directories, or writing files',
+								},
+								{
+									name: ['--endpoint'],
+									description: 'Microsoft Foundry resource endpoint',
+									args: [
+										{
+											name: 'endpoint',
+										},
+									],
+								},
+								{
+									name: ['--file'],
+									description: 'Local file (repeatable; cannot mix input modes)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'file',
+										},
+									],
+								},
+								{
+									name: ['--inline', '-i'],
+									description: 'Use preview inline analysis; never falls back to async',
+								},
+								{
+									name: ['--llm-input'],
+									description: 'Render YAML front matter and Markdown; set false for complete JSON; true conflicts with --output json',
+								},
+								{
+									name: ['--on-existing'],
+									description: 'Existing results: error, skip, reanalyze (default: CU_ON_EXISTS or error)',
+									args: [
+										{
+											name: 'on-existing',
+										},
+									],
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format: default (text for LLM input, otherwise JSON), json (complete response), or none',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['default', 'json', 'none'],
+										},
+									],
+								},
+								{
+									name: ['--output-dir', '-d'],
+									description: 'Save source-relative result files in this directory',
+									args: [
+										{
+											name: 'output-dir',
+										},
+									],
+								},
+								{
+									name: ['--output-file'],
+									description: 'Save one result to this file',
+									args: [
+										{
+											name: 'output-file',
+										},
+									],
+								},
+								{
+									name: ['--pattern'],
+									description: 'Source-relative fnmatch pattern; requires --source',
+									args: [
+										{
+											name: 'pattern',
+										},
+									],
+								},
+								{
+									name: ['--recursive', '-r'],
+									description: 'Discover files recursively, excluding hidden directories',
+								},
+								{
+									name: ['--report-file'],
+									description: 'Save a new cu-cli/analyze-report/v1 report; never overwrite',
+									args: [
+										{
+											name: 'report-file',
+										},
+									],
+								},
+								{
+									name: ['--source'],
+									description: 'Directory (repeatable; cannot mix input modes)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'source',
+										},
+									],
+								},
+								{
+									name: ['--url'],
+									description: 'HTTPS input URL (repeatable; cannot mix input modes)',
+									isRepeatable: true,
+									args: [
+										{
+											name: 'url',
+										},
+									],
+								},
+								{
+									name: ['--usage'],
+									description: 'Include usage metadata in streamed results or per-input summaries',
+								},
+								{
+									name: ['--yes', '-y'],
+									description: 'Confirm batches larger than 50 inputs without prompting',
+								},
+							],
+						},
+						{
+							name: ['analyzer'],
+							description: 'Manage Content Understanding analyzers',
+							subcommands: [
+								{
+									name: ['copy'],
+									description: 'Copy an analyzer without replacing an existing destination',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--destination'],
+											description: 'Analyzer ID at the destination resource',
+											args: [
+												{
+													name: 'destination',
+												},
+											],
+										},
+										{
+											name: ['--destination-resource'],
+											description: 'Account name, ARM account ID, or HTTPS endpoint',
+											args: [
+												{
+													name: 'destination-resource',
+												},
+											],
+										},
+										{
+											name: ['--destination-resource-group'],
+											description: 'Resource group for account discovery',
+											args: [
+												{
+													name: 'destination-resource-group',
+												},
+											],
+										},
+										{
+											name: ['--destination-subscription'],
+											description: 'Subscription for account discovery',
+											args: [
+												{
+													name: 'destination-subscription',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--source'],
+											description: 'Analyzer ID at the source resource',
+											args: [
+												{
+													name: 'source',
+												},
+											],
+										},
+										{
+											name: ['--source-resource'],
+											description: 'Account name, ARM account ID, or HTTPS endpoint',
+											args: [
+												{
+													name: 'source-resource',
+												},
+											],
+										},
+										{
+											name: ['--source-resource-group'],
+											description: 'Resource group for account discovery',
+											args: [
+												{
+													name: 'source-resource-group',
+												},
+											],
+										},
+										{
+											name: ['--source-subscription'],
+											description: 'Subscription for account discovery',
+											args: [
+												{
+													name: 'source-subscription',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['create'],
+									description: 'Create an analyzer from a JSON schema file',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Microsoft Foundry resource endpoint',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Custom analyzer ID: 1-64 ASCII letters, numbers, or underscores (-a is also accepted)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--schema', '-s'],
+											description: 'Path to a JSON analyzer schema',
+											args: [
+												{
+													name: 'schema',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['delete'],
+									description: 'Delete an analyzer',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Microsoft Foundry resource endpoint',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Analyzer name (-a is also accepted)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--yes', '-y'],
+											description: 'Confirm deletion without prompting',
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List analyzers in the Microsoft Foundry resource',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Microsoft Foundry resource endpoint',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--kind'],
+											description: 'Filter by kind: all, prebuilt, custom',
+											args: [
+												{
+													name: 'kind',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--sort-by'],
+											description: 'Sort by analyzerId, createdAt, lastModifiedAt',
+											args: [
+												{
+													name: 'sort-by',
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['schema'],
+									description: 'Author local analyzer schemas',
+									subcommands: [
+										{
+											name: ['create'],
+											description: 'Create a starter schema or derive fields from one document sample',
+											options: [
+												{
+													name: ['--api-version'],
+													description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+													args: [
+														{
+															name: 'api-version',
+														},
+													],
+												},
+												{
+													name: ['--base'],
+													description: 'Base analyzer name; defaults from --modality',
+													args: [
+														{
+															name: 'base',
+														},
+													],
+												},
+												{
+													name: ['--endpoint'],
+													description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+													args: [
+														{
+															name: 'endpoint',
+														},
+													],
+												},
+												{
+													name: ['--force'],
+													description: 'Explicitly replace an existing schema file; never replace the sample',
+													isDangerous: true,
+												},
+												{
+													name: ['--from-sample'],
+													description: 'Suggest extraction fields from one local document',
+													args: [
+														{
+															name: 'from-sample',
+														},
+													],
+												},
+												{
+													name: ['--from-template'],
+													description: 'Create an offline starter schema (the default)',
+												},
+												{
+													name: ['--modality'],
+													description: 'Modality: document, image, audio, or video',
+													args: [
+														{
+															name: 'modality',
+														},
+													],
+												},
+												{
+													name: ['--name', '-n'],
+													description: 'Custom analyzer name (-a is also accepted)',
+													args: [
+														{
+															name: 'name',
+														},
+													],
+												},
+												{
+													name: ['--output', '-o'],
+													description: 'Output format: default (complete JSON), json, or none',
+													args: [
+														{
+															name: 'output',
+															suggestions: ['default', 'json', 'none'],
+														},
+													],
+												},
+												{
+													name: ['--output-file'],
+													description: 'Save the schema as a local UTF-8 JSON file',
+													args: [
+														{
+															name: 'output-file',
+														},
+													],
+												},
+												{
+													name: ['--type'],
+													description: 'Template style: extraction or classification',
+													args: [
+														{
+															name: 'type',
+														},
+													],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show a complete analyzer definition as JSON',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Microsoft Foundry resource endpoint',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Analyzer name (-a is also accepted)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['test'],
+									description: 'Report field coverage and confidence over local samples',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--concurrency', '-j'],
+											description: 'Concurrent sample analyses (1-16)',
+											args: [
+												{
+													name: 'concurrency',
+												},
+											],
+										},
+										{
+											name: ['--dry-run'],
+											description: 'Show local samples without configuration, prompts, service calls, or writes',
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--file'],
+											description: 'Local sample file (repeatable)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'file',
+												},
+											],
+										},
+										{
+											name: ['--force'],
+											description: 'Explicitly replace an existing test report; never replace sample inputs',
+											isDangerous: true,
+										},
+										{
+											name: ['--name', '-n'],
+											description: 'Analyzer name (-a is also accepted)',
+											args: [
+												{
+													name: 'name',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--output-file'],
+											description: 'Save the complete structured test report',
+											args: [
+												{
+													name: 'output-file',
+												},
+											],
+										},
+										{
+											name: ['--pattern'],
+											description: 'Source-relative fnmatch pattern; requires --source',
+											args: [
+												{
+													name: 'pattern',
+												},
+											],
+										},
+										{
+											name: ['--recursive', '-r'],
+											description: 'Discover samples recursively',
+										},
+										{
+											name: ['--source'],
+											description: 'Local sample directory (repeatable)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'source',
+												},
+											],
+										},
+										{
+											name: ['--yes', '-y'],
+											description: 'Confirm billed batches larger than 50 samples without prompting',
+										},
+									],
+								},
+								{
+									name: ['validate'],
+									description: 'Validate a local analyzer schema without host or service access',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--schema', '-s'],
+											description: 'Path to a local UTF-8 JSON analyzer schema',
+											args: [
+												{
+													name: 'schema',
+												},
+											],
+										},
+										{
+											name: ['--spec'],
+											description: 'Also validate against the bundled offline CU create contract',
+										},
+										{
+											name: ['--strict'],
+											description: 'Treat authoring warnings as validation failures',
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['config'],
+							description: 'Manage CU user defaults without an azd project',
+							subcommands: [
+								{
+									name: ['get'],
+									description: 'Show one stored CU user default',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['list'],
+									description: 'List stored CU user defaults',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['set'],
+									description: 'Validate and save one CU user default',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+								{
+									name: ['unset'],
+									description: 'Remove one CU user default',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['defaults'],
+							description: 'Read or update CU resource model deployment defaults, not local azd configuration',
+							subcommands: [
+								{
+									name: ['set'],
+									description: 'Update Content Understanding service model deployment mappings',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--from-environment'],
+											description: 'Include resolved cu.modelDeployments; explicit --model mappings take precedence',
+										},
+										{
+											name: ['--model'],
+											description: 'Model mapping MODEL=DEPLOYMENT (repeatable)',
+											isRepeatable: true,
+											args: [
+												{
+													name: 'model',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--replace'],
+											description: 'Skip the client-side merge with existing defaults; service merge-patch semantics still apply',
+										},
+									],
+								},
+								{
+									name: ['show'],
+									description: 'Show the complete Content Understanding service defaults',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--endpoint'],
+											description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+											args: [
+												{
+													name: 'endpoint',
+												},
+											],
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['doctor'],
+							description: 'Check azd context, Entra authentication, CU access, and generative readiness',
+							options: [
+								{
+									name: ['--api-version'],
+									description: 'CU API version: 2025-11-01 or YYYY-MM-DD-preview (default: resolved setting or GA)',
+									args: [
+										{
+											name: 'api-version',
+										},
+									],
+								},
+								{
+									name: ['--endpoint'],
+									description: 'Azure CU resource endpoint (services.ai.azure.com or cognitiveservices.azure.com; HTTPS port 443)',
+									args: [
+										{
+											name: 'endpoint',
+										},
+									],
+								},
+								{
+									name: ['--fix-defaults'],
+									description: 'Merge resolved cu.modelDeployments into service defaults and derive prebuilt aliases',
+								},
+								{
+									name: ['--output', '-o'],
+									description: 'Output format: default (human-readable), json, or none',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['default', 'json', 'none'],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['env-var'],
+							description: 'Inspect supported compatibility process variables safely',
+							subcommands: [
+								{
+									name: ['list'],
+									description: 'List currently set supported process variables with secrets redacted',
+									options: [
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['infra'],
+							description: 'Generate infrastructure and complete azd-managed provisioning',
+							subcommands: [
+								{
+									name: ['generate'],
+									description: 'Generate the canonical azd/Bicep project',
+									options: [
+										{
+											name: ['--api-version'],
+											description: 'Content Understanding API version (default: GA)',
+											args: [
+												{
+													name: 'api-version',
+												},
+											],
+										},
+										{
+											name: ['--assign-roles'],
+											description: 'Assign Cognitive Services User to a new Foundry account (requires role-assignment permissions)',
+										},
+										{
+											name: ['--force'],
+											description: 'Replace known generated files and force CU configuration setup',
+											isDangerous: true,
+										},
+										{
+											name: ['--foundry-endpoint'],
+											description: 'Existing Foundry account name, ARM ID, or endpoint',
+											args: [
+												{
+													name: 'foundry-endpoint',
+												},
+											],
+										},
+										{
+											name: ['--foundry-prefix'],
+											description: 'Prefix for a new Foundry account',
+											args: [
+												{
+													name: 'foundry-prefix',
+												},
+											],
+										},
+										{
+											name: ['--location', '-l'],
+											description: 'CU-supported Azure region (default: eastus2)',
+											args: [
+												{
+													name: 'location',
+												},
+											],
+										},
+										{
+											name: ['--models'],
+											description: 'prompt, recommended, none, or comma-separated model@version selectors',
+											args: [
+												{
+													name: 'models',
+												},
+											],
+										},
+										{
+											name: ['--no-assign-roles'],
+											description: 'Do not add data-plane role assignments (the default)',
+										},
+										{
+											name: ['--output', '-o'],
+											description: 'Output format: default (complete JSON), json, or none',
+											args: [
+												{
+													name: 'output',
+													suggestions: ['default', 'json', 'none'],
+												},
+											],
+										},
+										{
+											name: ['--output-dir', '-d'],
+											description: 'Generated project directory',
+											args: [
+												{
+													name: 'output-dir',
+												},
+											],
+										},
+									],
+								},
+							],
+						},
+						{
+							name: ['version'],
+							description: 'Display the extension version',
+							options: [
+								{
+									name: ['--output', '-o'],
+									description: 'The output format',
+									args: [
+										{
+											name: 'output',
+											suggestions: ['json'],
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+				{
 					name: ['dataset'],
 					description: 'Register and version Foundry datasets from your terminal. (Beta)',
 					subcommands: [

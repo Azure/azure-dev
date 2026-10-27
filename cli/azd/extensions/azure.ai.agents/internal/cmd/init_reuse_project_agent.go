@@ -14,6 +14,7 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/paths"
 	projectpkg "azureaiagent/internal/project"
 
@@ -211,6 +212,32 @@ func describeProjectAgentServices(services []projectAgentService) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+func confirmProjectAgentReuse(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	noPrompt bool,
+	services []projectAgentService,
+) (bool, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.InitModeSelection)()
+
+	if noPrompt {
+		return true, nil
+	}
+	response, err := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
+		Options: &azdext.ConfirmOptions{
+			Message:      fmt.Sprintf("This project already configures %s. Use it?", describeProjectAgentServices(services)),
+			DefaultValue: new(true),
+		},
+	})
+	if err != nil {
+		if exterrors.IsCancellation(err) {
+			return false, exterrors.Cancelled("initialization was cancelled")
+		}
+		return false, fmt.Errorf("prompting for project agent reuse: %w", err)
+	}
+	return *response.Value, nil
 }
 
 // runReuseProjectAgentServices completes init for a project whose manifest

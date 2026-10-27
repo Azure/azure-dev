@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"azureaiagent/internal/pkg/agents/opt_eval"
+	"azureaiagent/internal/pkg/agents/optconfig"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,15 +20,15 @@ func TestHasModelConfig(t *testing.T) {
 
 	tests := []struct {
 		name string
-		oc   opt_eval.OptimizationConfig
+		oc   optconfig.OptimizationConfig
 		want bool
 	}{
 		{"nil config", nil, false},
-		{"empty config", opt_eval.OptimizationConfig{}, false},
-		{"has model_search_space key", opt_eval.OptimizationConfig{
+		{"empty config", optconfig.OptimizationConfig{}, false},
+		{"has model_search_space key", optconfig.OptimizationConfig{
 			"model_search_space": json.RawMessage(`["gpt-4o"]`),
 		}, true},
-		{"has other keys only", opt_eval.OptimizationConfig{
+		{"has other keys only", optconfig.OptimizationConfig{
 			"system_prompt": json.RawMessage(`"hello"`),
 		}, false},
 	}
@@ -52,7 +52,7 @@ func TestModelConfigIsPlainArray(t *testing.T) {
 	modelJSON, err := json.Marshal(models)
 	require.NoError(t, err)
 
-	oc := make(opt_eval.OptimizationConfig)
+	oc := make(optconfig.OptimizationConfig)
 	oc["model_search_space"] = modelJSON
 
 	// Deserialize and verify it's a plain array.
@@ -106,9 +106,9 @@ func TestResolveOptimizeSystemPrompt_NilClient_WithInstruction(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{
-				Instruction: opt_eval.InstructionRef{Value: "Be helpful"},
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{
+				Instruction: optconfig.InstructionRef{Value: "Be helpful"},
 			},
 		},
 	}
@@ -121,8 +121,8 @@ func TestResolveOptimizeSystemPrompt_NilClient_NoInstruction(t *testing.T) {
 	t.Parallel()
 
 	cfg := &OptimizeConfig{
-		Config: opt_eval.Config{
-			Agent: opt_eval.AgentRef{},
+		Config: optconfig.Config{
+			Agent: optconfig.AgentRef{},
 		},
 	}
 
@@ -131,12 +131,22 @@ func TestResolveOptimizeSystemPrompt_NilClient_NoInstruction(t *testing.T) {
 	assert.Contains(t, err.Error(), "instruction is required")
 }
 
+func TestResolveOptimizeSystemPrompt_NoPrompt_UsesPlainGuidance(t *testing.T) {
+	t.Parallel()
+	err := resolveOptimizeSystemPrompt(t.Context(), nil, &OptimizeConfig{}, "", false, true)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(),
+		"Set optimization_configuration.baseline_agent_configuration.system_prompt in your --config file")
+	assert.Contains(t, err.Error(), ".agent_configs/baseline/metadata.yaml")
+	assert.Contains(t, err.Error(), "Run without --no-prompt")
+}
+
 // ---- resolveOptimizeEvalModel — nil azdClient ----
 
 func TestResolveOptimizeEvalModel_NilClient(t *testing.T) {
 	t.Parallel()
 
-	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	cfg := &OptimizeConfig{Options: &optconfig.Options{}}
 	err := resolveOptimizeEvalModel(t.Context(), nil, cfg, false, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prompt")
@@ -147,7 +157,7 @@ func TestResolveOptimizeEvalModel_NilClient(t *testing.T) {
 func TestResolveOptimizeDataset_NilClient(t *testing.T) {
 	t.Parallel()
 
-	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	cfg := &OptimizeConfig{Options: &optconfig.Options{}}
 	err := resolveOptimizeDataset(t.Context(), nil, cfg, "", false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot prompt")
@@ -158,7 +168,7 @@ func TestResolveOptimizeDataset_NilClient(t *testing.T) {
 func TestResolveOptimizeOptimizationModel_NilClient(t *testing.T) {
 	t.Parallel()
 
-	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	cfg := &OptimizeConfig{Options: &optconfig.Options{}}
 	err := resolveOptimizeOptimizationModel(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Empty(t, cfg.Options.OptimizationModel)
@@ -169,7 +179,7 @@ func TestResolveOptimizeOptimizationModel_NilClient(t *testing.T) {
 func TestResolveOptimizeTargetModels_NilClient(t *testing.T) {
 	t.Parallel()
 
-	cfg := &OptimizeConfig{Options: &opt_eval.Options{}}
+	cfg := &OptimizeConfig{Options: &optconfig.Options{}}
 	err := resolveOptimizeTargetModels(t.Context(), nil, cfg, "")
 	assert.NoError(t, err) // silently skips
 	assert.Nil(t, cfg.Options.OptimizationConfig)

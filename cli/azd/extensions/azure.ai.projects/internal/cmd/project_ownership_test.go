@@ -843,6 +843,8 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 		"AZURE_RESOURCE_GROUP":              "old-rg",
 		"AZURE_AI_DEPLOYMENTS_LOCATION":     "eastus",
 		"AZURE_AI_MODEL_DEPLOYMENT_NAME":    "chat",
+		"AI_PROJECT_DEPLOYMENT_BINDINGS":    `{"template-chat":"chat"}`,
+		projectDeploymentsEnvKey:            `[{"name":"chat"}]`,
 		"AZURE_CONTAINER_REGISTRY_ENDPOINT": "https://old.azurecr.io",
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/acr-rg/providers/" +
 			"Microsoft.ContainerRegistry/registries/old",
@@ -953,6 +955,39 @@ func TestProjectEnvironmentTransitions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPlanProjectEnvironmentReplacementSkipsEmptyDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{projectDeploymentsEnvKey: ""},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.NotContains(t, plan.Unsets, projectDeploymentsEnvKey)
+}
+
+func TestPlanProjectEnvironmentReplacementClearsMalformedDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{projectDeploymentsEnvKey: "{"},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.Contains(t, plan.Unsets, projectDeploymentsEnvKey)
+}
+
+func TestPlanProjectEnvironmentReplacementDoesNotUnsetAbsentDeploymentsValue(t *testing.T) {
+	plan := planProjectEnvironment(
+		map[string]string{},
+		projectModeExistingID,
+		&resolvedProject{},
+		true,
+	)
+
+	assert.NotContains(t, plan.Unsets, projectDeploymentsEnvKey)
 }
 
 func TestProjectEnvironmentClearsOnlyNonEmptyValues(t *testing.T) {

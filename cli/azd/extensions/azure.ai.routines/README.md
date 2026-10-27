@@ -2,6 +2,8 @@
 
 Manage Microsoft Foundry Routines from your terminal. (Preview)
 
+Requires azd 1.37.0 or later.
+
 ## Extension telemetry API
 
 Extension code can report best-effort usage events through the shared

@@ -21,7 +21,6 @@ Available Commands
   delete       : Delete a prompt, hosted, or voice agent.
   doctor       : Diagnose problems with an azd ai agent project.
   endpoint     : Inspect agent endpoints and manage hosted endpoint/card configuration.
-  eval         : Create and run quick evals for an agent.
   files        : Manage files in a hosted agent session.
   init         : Initialize a new prompt, hosted, or voice agent project. (Preview)
   invocations  : Inspect and manage work created by invoking an agent.
@@ -82,6 +81,24 @@ Environments & Environment Variables
   azd environment value alone does not forward every value to the agent.
   Use 'azd ai agent run' for local development and 'azd deploy' to apply changes
   to the deployed agent.
+
+Preview Feature Switches
+  We recommend setting these in your shell or CI before running azd:
+  AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
+    Prompt agents that run on a Copilot harness.
+  AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+    Voice, prompt-voice, and hosted voice agents.
+  AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+    Long-running Responses invocations.
+  AZD_ALPHA_ENABLE_AGENTS_A2A=true
+    A2A init selection, wire version selection, and the 1.0 message default.
+
+  All switches default to off. Only 1, t, T, true, TRUE, or True enable them.
+  False, empty, and invalid values do not enable a switch.
+  The extension reads these switches from its process environment, including
+  values the azd host already injected from the selected environment.
+  It does not query azd config or load environment files from disk itself.
+  Regular hosted and plain prompt agents are outside these preview scopes.
 
 Learn More
   Agent documentation: https://aka.ms/azd-ai-agent-docs

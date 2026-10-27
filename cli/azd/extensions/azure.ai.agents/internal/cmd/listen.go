@@ -45,7 +45,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
-		WithBetaServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
+		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -80,6 +80,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := requireProjectPreviewFeatures(args.Project); err != nil {
+		return err
+	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
@@ -342,6 +345,10 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	svc := args.Service
 
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
+		return err
+	}
+
+	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
 		return err
 	}
 

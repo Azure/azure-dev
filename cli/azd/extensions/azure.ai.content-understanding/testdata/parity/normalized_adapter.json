@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "tests/parity/test_request_result_parity.py": "2103a9b09146921db4535277dfade0c900f0e3c93f7e5698044381ff58fdc80d",
+      "tests/parity/harness.py": "f91d93faf64b02ac2482c34e05adcdae1710c89f030da5c2d661238bf6d4823d",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/errors.py": "c0309966086ca146ab738ee4d9daef6d36b161001451dcfbb1cfd67710b518c4",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31",
+      "packages/core/src/cu_cli_core/operations/analyzers.py": "d560482e133c92eba8b3447d6618f0a6f28388a99dd8a1ed8b33eda877189399",
+      "packages/azd-extension/src/azd_cu/runtime.py": "9633def12b2f867edafcaa63319859d4c08234f9cd6fb51b1da59f336432c55a",
+      "packages/azure-cli-extension/azext_content_understanding/_analyzers.py": "84d2e7a7a4aacd1228c385482bee9b62f58b7041a6da0002406a526973c27dcc"
+    }
+  },
+  "data": {
+    "list_response": {
+      "value": [
+        {
+          "analyzerId": "zeta",
+          "description": "Z",
+          "status": "ready"
+        },
+        {
+          "analyzerId": "alpha",
+          "description": "A",
+          "status": "ready"
+        }
+      ]
+    },
+    "list_result": [
+      {
+        "analyzerId": "alpha",
+        "description": "A",
+        "status": "ready"
+      },
+      {
+        "analyzerId": "zeta",
+        "description": "Z",
+        "status": "ready"
+      }
+    ],
+    "delete_analyzer": {
+      "analyzerId": "invoice-v1",
+      "description": "existing",
+      "status": "ready"
+    },
+    "delete_result": {
+      "deleted": true,
+      "analyzerId": "invoice-v1"
+    },
+    "missing_list_status": {
+      "value": [
+        {
+          "analyzerId": "zeta",
+          "description": "Z"
+        },
+        {
+          "analyzerId": "alpha",
+          "description": "A"
+        }
+      ]
+    },
+    "missing_get_status": {
+      "analyzerId": "invoice-v1",
+      "description": "existing"
+    }
+  }
+}

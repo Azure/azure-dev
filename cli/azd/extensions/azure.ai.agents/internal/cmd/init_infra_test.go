@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
+	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -1802,6 +1804,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 			Value any `json:"value"`
 		} `json:"parameters"`
 	}
+
 	require.NoError(t, json.Unmarshal(raw, &doc),
 		"main.parameters.json must be valid JSON")
 
@@ -1828,6 +1831,61 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	} {
 		assert.NotContains(t, doc.Parameters, k,
 			"%s is supplied at provision time and must not be hard-coded in the ejected file", k)
+	}
+}
+
+func TestEjectInfraPreservesAdoptionChoices(t *testing.T) {
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider, func(t *testing.T) {
+			dir := t.TempDir()
+			endpoint := "https://acct.services.ai.azure.com/api/projects/p1"
+			template, _, _ := strings.Cut(validFoundryAzureYAML, "    agents:")
+			template = strings.Replace(template, "host: azure.ai.project",
+				"host: azure.ai.project\n    endpoint: "+endpoint, 1)
+			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), template)
+			env := map[string]string{
+				projectDeploymentsEnvKey:   "[]",
+				"FOUNDRY_PROJECT_ENDPOINT": endpoint,
+				"AZURE_AI_PROJECT_ID": "/subscriptions/sub/resourceGroups/rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/acct/projects/p1",
+				synthesis.DeploymentBindingsEnvKey: `{"gpt-4-1-mini":"selected-existing"}`,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "unrelated-default",
+			}
+			withCapturedStdout(t, func() {
+				require.NoError(t, ejectInfra(dir, provider, env))
+			})
+			filename := "main.parameters.json"
+			if provider == "terraform" {
+				filename = "main.tfvars.json"
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "infra", filename))
+			require.NoError(t, err)
+			var doc map[string]any
+			require.NoError(t, json.Unmarshal(raw, &doc))
+			var value any
+			if provider == "bicep" {
+				parameters, ok := doc["parameters"].(map[string]any)
+				require.True(t, ok)
+				deployments, ok := parameters["deployments"].(map[string]any)
+				require.True(t, ok)
+				value = deployments["value"]
+			} else {
+				value = doc["deployments"]
+			}
+			require.Equal(t, []any{}, value)
+			agent := &azdext.ServiceConfig{Uses: []string{"my-foundry"}}
+			services := map[string]*azdext.ServiceConfig{
+				"my-foundry": {
+					Host: project.FoundryProjectHost,
+					AdditionalProperties: mustStruct(t, map[string]any{
+						"deployments": []any{map[string]any{"name": "gpt-4-1-mini"}},
+					}),
+				},
+			}
+			model, err := project.ResolvePromptAgentModel("gpt-4-1-mini", agent, services, dir, env)
+			require.NoError(t, err)
+			require.Equal(t, "selected-existing", model)
+		})
 	}
 }
 
@@ -2499,10 +2557,14 @@ func TestEjectInfraAfterInit_UsesActiveEnvironmentForCondition(t *testing.T) {
 		},
 	}
 	azdClient := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+	ctx, timing := inittelemetry.NewContext(t.Context())
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfraAfterInit(t.Context(), "bicep", azdClient))
+		require.NoError(t, ejectInfraAfterInit(ctx, "bicep", azdClient))
 	})
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Len(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration), 1)
 
 	// G304: the test path comes from t.TempDir.
 	//nolint:gosec
@@ -2558,7 +2620,11 @@ func TestEjectInfraAfterInit_NoProject(t *testing.T) {
 	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
 	t.Chdir(t.TempDir())
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
 }
 
 func TestEjectInfraAfterInit_SkipsProjectWithoutFoundryService(t *testing.T) {
@@ -2571,8 +2637,32 @@ services:
 `), 0600))
 	t.Chdir(projectRoot)
 
-	assert.NoError(t, ejectInfraAfterInit(t.Context(), "bicep"))
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	assert.NoError(t, ejectInfraAfterInit(ctx, "bicep"))
 	assert.NoDirExists(t, filepath.Join(projectRoot, "infra"))
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+}
+
+func TestEjectInfraAfterInit_EnvironmentFailureIsNotGeneration(t *testing.T) {
+	t.Setenv("AZD_EXEC_PROJECT_DIR", "")
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"name: test\nservices:\n  project:\n    host: azure.ai.project\n",
+	), 0o600))
+	t.Chdir(root)
+	environment := &helpersFailingEnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}},
+		getValuesErr:                 errors.New("environment loading stopped"),
+	}
+	client := newTestAzdClient(t, environment, nil)
+	ctx, timing := inittelemetry.NewContext(t.Context())
+	require.ErrorContains(t, ejectInfraAfterInit(ctx, "bicep", client), "environment loading stopped")
+	recorder := &initTimingRecorder{}
+	timing.Flush(ctx, recorder)
+	require.Empty(t, recordedStepDurations(t, recorder, inittelemetry.InfraGeneration))
+	require.NoDirExists(t, filepath.Join(root, "infra"))
 }
 
 func TestEjectInfraAfterInit_PropagatesInvalidFoundryConfiguration(t *testing.T) {

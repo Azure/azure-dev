@@ -1,0 +1,142 @@
+schema_version: 1
+scenarios:
+  - id: 1
+    name: analyze-single-file-markdown
+    kind: command
+    mode: playback
+    recordings: [analyze_single]
+  - id: 2
+    name: analyze-directory-writes-results
+    kind: command
+    mode: playback
+    recordings: [analyze_batch]
+  - id: 3
+    name: analyze-prebuilt-invoice-json
+    kind: command
+    mode: playback
+    recordings: [analyze_prebuilt_invoice_json]
+  - id: 4
+    name: analyzer-list-json
+    kind: command
+    mode: playback
+    recordings: [analyzer_list]
+  - id: 5
+    name: analyzer-list-custom-sorted
+    kind: command
+    mode: playback
+    recordings: [analyzer_list]
+  - id: 6
+    name: analyzer-list-created-at
+    kind: command
+    mode: playback
+    recordings: [analyzer_list]
+  - id: 7
+    name: analyzer-create-show-delete
+    kind: command
+    mode: playback
+    recordings: [analyzer_create, analyzer_show, analyzer_delete]
+  - id: 8
+    name: analyzer-copy-same-resource
+    kind: command
+    mode: live-only
+    recordings: []
+  - id: 9
+    name: analyzer-copy-cross-resource
+    kind: command
+    mode: live-only
+    recordings: []
+  - id: 10
+    name: analyzer-test-field-report
+    kind: command
+    mode: playback
+    recordings: [analyzer_test]
+  - id: 11
+    name: template-analyzer-create-show-delete
+    kind: command
+    mode: playback
+    recordings: [template_analyzer_create, template_analyzer_show, template_analyzer_delete]
+  - id: 12
+    name: classifier-routing-lifecycle
+    kind: command
+    mode: playback
+    recordings:
+      - route_target_create
+      - classifier_route_create
+      - classifier_route_show
+      - classifier_route_delete
+      - route_target_delete
+  - id: 13
+    name: doctor-connectivity
+    kind: command
+    mode: playback
+    recordings: [doctor]
+  - id: 14
+    name: defaults-show-json
+    kind: command
+    mode: playback
+    recordings: [defaults_get]
+  - id: 15
+    name: schema-template-validate-lifecycle
+    kind: command
+    mode: playback
+    recordings: [analyzer_create, analyzer_show, analyzer_delete]
+  - id: 16
+    name: schema-create-from-sample
+    kind: command
+    mode: playback
+    recordings: [schema_suggest]
+  - id: 17
+    name: scrub-request-sas-basic
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 18
+    name: scrub-request-sas-apostrophe-path
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 19
+    name: scrub-request-sas-apostrophe-query
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 20
+    name: scrub-response-sas-basic-text
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 21
+    name: scrub-response-sas-apostrophe-path-text
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 22
+    name: scrub-response-sas-apostrophe-query-text
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 23
+    name: scrub-response-sas-basic-bytes
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 24
+    name: scrub-response-sas-apostrophe-path-bytes
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 25
+    name: scrub-response-sas-apostrophe-query-bytes
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 26
+    name: scrub-response-host-and-query
+    kind: hygiene
+    mode: offline
+    recordings: []
+  - id: 27
+    name: scrub-response-bytes-payload
+    kind: hygiene
+    mode: offline
+    recordings: []

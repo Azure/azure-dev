@@ -20,6 +20,7 @@
 /cli/azd/extensions/azure.ai.agents/        @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/test/functional/ai_agents/         @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
 /cli/azd/extensions/azure.ai.connections/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin
+/cli/azd/extensions/azure.ai.content-understanding/ @JeffreyCA @chienyuanchang @yungshinlintw
 /cli/azd/extensions/azure.ai.dataset/       @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin @m7md7sien @aprilk-ms @shrutiyer @sakoll
 /cli/azd/extensions/azure.ai.evaluations/   @JeffreyCA @glharper @trangevi @therealjohn @huimiu @eriolchan @hund030 @m5i-work @v1212 @JerryYangKai @Siglud @Yimin-Jin @m7md7sien @aprilk-ms @shrutiyer @sakoll
 /cli/azd/extensions/azure.ai.finetune/      @JeffreyCA @trangevi @achauhan-scc @kingernupur @saanikaguptamicrosoft

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -130,6 +131,42 @@ func TestInitACRManifestResolvesRefs(t *testing.T) {
 		"    host: azure.ai.project\n  agent:\n    host: azure.ai.agent\n    $ref: agent.yaml\n"),
 		root, &initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID})
 	require.ErrorContains(t, err, "without hosted-container source builds")
+}
+
+func TestPreflightAzdTemplateRejectsUnsupportedACRBeforeScaffolding(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	for _, tt := range []struct {
+		name       string
+		properties string
+	}{
+		{"prebuilt", "kind: hosted\n    image: registry.example.com/agent:v1"},
+		{"referenced prompt", "$ref: agent.yaml"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			templateDir := t.TempDir()
+			content := "name: test\nservices:\n  foundry:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    name: agent\n    " + tt.properties + "\n"
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "azure.yaml"), []byte(content), 0o600,
+			))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(templateDir, "agent.yaml"), []byte("kind: prompt\n"), 0o600,
+			))
+			workflow := &testWorkflowServiceServer{}
+			client := newTestAzdClient(t, &testEnvironmentServiceServer{}, workflow)
+			replaced, err := preflightAzdTemplate(
+				t.Context(), client, http.DefaultClient, templateDir,
+				&initFlags{acrResourceIDSet: true, acrResourceID: testInitACRID},
+			)
+			require.ErrorContains(t, err, "without hosted-container source builds")
+			require.Empty(t, replaced)
+			require.Zero(t, workflow.runCalls)
+			entries, err := os.ReadDir(root)
+			require.NoError(t, err)
+			require.Empty(t, entries)
+		})
+	}
 }
 
 type initACREnvironmentServer struct {

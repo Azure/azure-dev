@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/braydonk/yaml"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -277,6 +279,152 @@ delegation:
 	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
 	require.Equal(t, "teacher", got.Delegation.AgentName)
 	require.Equal(t, "3", got.Delegation.AgentVersion)
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveRawPropertiesAcrossSources(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	tests := []struct {
+		name    string
+		invalid map[string]any
+	}{
+		{name: "audio output volume", invalid: map[string]any{
+			"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+		}},
+		{name: "responses reasoning temperature", invalid: map[string]any{
+			"delegation": map[string]any{"type": "responses", "responses": map[string]any{
+				"model": "terra", "reasoning": map[string]any{"temperature": 0.5},
+			}},
+		}},
+		{name: "known forbidden root", invalid: map[string]any{"client": map[string]any{}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inline := maps.Clone(base)
+			maps.Copy(inline, test.invalid)
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(base)
+			definition["sub_protocol"] = definition["subProtocol"]
+			definition["model_type"] = definition["modelType"]
+			delete(definition, "subProtocol")
+			delete(definition, "modelType")
+			maps.Copy(definition, test.invalid)
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+			service := inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+			_, _, err = VoiceAgentFromResolvedService(service, root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveSiblingOverlayRawProperty(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+`), 0o600))
+	service := inlineAgentService(t, map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+	})
+	_, _, err := VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "audio.output.volume")
+}
+
+func TestVoiceAgentFromResolvedService_SubProtocolPresence(t *testing.T) {
+	validBase := map[string]any{"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"}}
+	for name, value := range map[string]any{"null": nil, "blank": "", "unknown": "Live"} {
+		t.Run(name, func(t *testing.T) {
+			inline := maps.Clone(validBase)
+			inline["subProtocol"] = value
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(validBase)
+			definition["sub_protocol"] = value
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "voice.yaml"), encoded, 0o600))
+			_, _, err = VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "voice.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+	for name, value := range map[string]any{"omitted": nil, "realtime": "realtime"} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(validBase)
+			if name != "omitted" {
+				definition["subProtocol"] = value
+			}
+			_, found, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.NoError(t, err)
+			require.True(t, found)
+		})
+	}
+	inlineAlias := maps.Clone(validBase)
+	inlineAlias["sub_protocol"] = "live"
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inlineAlias), t.TempDir())
+	require.ErrorContains(t, err, "sub_protocol is not valid inline")
+}
+
+func TestVoiceAgentFromResolvedService_RootRefRejectsDroppedAndConflictingAliases(t *testing.T) {
+	for name, suffix := range map[string]string{
+		"hosted config":      "code_configuration: {runtime: python_3_13, entry_point: app.py}",
+		"delegation aliases": "delegation: {type: foundry_managed_agent, agent_name: one, agentName: two}",
+		"responses aliases":  "delegation: {type: responses, responses: {model: terra, max_output_tokens: 1, maxOutputTokens: 2}}",
+		"input aliases":      "structured_inputs:\n  name: {default_value: Ada, defaultValue: Grace}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+				"model: {id: gpt-live-1}\n" + suffix + "\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+			_, _, err := VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsRootStyleSiblingOverlay(t *testing.T) {
+	root := t.TempDir()
+	definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	_, _, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml", "structured_inputs": map[string]any{}}), root)
+	require.ErrorContains(t, err, "root-style property")
+}
+
+func TestVoiceAgentFromResolvedService_RejectsInlineLiveSnakeCaseAliases(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	for name, value := range map[string]any{
+		"responses": map[string]any{"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "max_output_tokens": 1},
+		}},
+		"structured input": map[string]any{"structuredInputs": map[string]any{
+			"name": map[string]any{"default_value": "Ada"},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(base)
+			maps.Copy(definition, value.(map[string]any))
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.ErrorContains(t, err, "not valid inline")
+		})
+	}
 }
 
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {

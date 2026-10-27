@@ -397,6 +397,10 @@ func (v VoiceConfig) MarshalJSON() ([]byte, error) {
 	if v.LiveName != "" {
 		return json.Marshal(v.LiveName)
 	}
+	if v.ID != "" && v.Type == "" && v.Name == "" && v.Style == nil && v.Pitch == nil &&
+		v.Rate == nil && v.Locale == nil && v.Volume == nil {
+		return json.Marshal(map[string]any{"id": v.ID})
+	}
 	type alias VoiceConfig
 	return json.Marshal(alias(v))
 }
@@ -426,6 +430,10 @@ func (v *VoiceConfig) UnmarshalYAML(node *yaml.Node) error {
 func (v VoiceConfig) MarshalYAML() (any, error) {
 	if v.LiveName != "" {
 		return v.LiveName, nil
+	}
+	if v.ID != "" && v.Type == "" && v.Name == "" && v.Style == nil && v.Pitch == nil &&
+		v.Rate == nil && v.Locale == nil && v.Volume == nil {
+		return map[string]any{"id": v.ID}, nil
 	}
 	type alias VoiceConfig
 	return alias(v), nil

@@ -358,7 +358,13 @@
             { "required": ["handoff"] }, { "required": ["toolChoice"] },
             { "required": ["parallelToolCalls"] }, { "required": ["maxOutputTokens"] },
             { "required": ["include"] }, { "required": ["telephony"] },
-            { "required": ["toolbox"] },
+            { "required": ["toolbox"] }, { "required": ["toolboxes"] },
+            { "required": ["reasoning"] }, { "required": ["reasoningEffort"] },
+            { "required": ["reasoning_effort"] },
+            { "required": ["client"] }, { "required": ["input"] },
+            { "required": ["soundscape"] }, { "required": ["subagentConfig"] },
+            { "required": ["subagent_config"] }, { "required": ["interimResponse"] },
+            { "required": ["interim_response"] },
             { "required": ["protocols"] }, { "required": ["environmentVariables"] },
             { "required": ["codeConfiguration"] }, { "required": ["sessionConfiguration"] }
           ]
@@ -382,14 +388,14 @@
       "then": {
         "properties": {
           "kind": { "enum": ["prompt-voice", "voice"] },
-          "audio": { "$ref": "#/definitions/VoiceAudio" }
+          "audio": { "$ref": "#/definitions/VoiceAudio" },
+          "subProtocol": { "const": "realtime" }
         },
         "required": ["kind"],
         "not": {
           "anyOf": [
             { "required": ["model"] },
             { "required": ["modelType"] },
-            { "required": ["subProtocol"] },
             { "required": ["delegation"] },
             { "required": ["targetAgent"] },
             { "required": ["inputSchema"] },

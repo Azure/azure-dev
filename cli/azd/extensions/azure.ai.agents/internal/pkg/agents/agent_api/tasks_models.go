@@ -3,6 +3,12 @@
 
 package agent_api
 
+// Public API reference: ListAgentServerTasksRequest in
+// src/agentserver-persistence/routes.tsp, with record/page models in models.tsp:
+// https://github.com/Azure/azure-rest-api-specs/tree/main/specification/ai-foundry/data-plane/Foundry
+// The merged Tasks contract and its model/query definitions are also available at:
+// https://github.com/Azure/azure-rest-api-specs/pull/45095/files
+
 // TaskListOptions selects one page of project-scoped Tasks. AgentName is required.
 // Zero Limit and empty Order leave the service defaults unchanged. Boolean pointers
 // distinguish an omitted predicate from an explicit false predicate. Tags are repeated

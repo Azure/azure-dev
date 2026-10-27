@@ -755,9 +755,7 @@ func resolveServiceProps(
 			delete(siblings, AgentDefinitionRefKey)
 			var overlays map[string]any
 			overlays, err = foundry.ResolveFileRefs(siblings, projectRoot)
-			for key, value := range overlays {
-				resolved[key] = value
-			}
+			maps.Copy(resolved, overlays)
 		}
 	} else {
 		resolved, err = foundry.ResolveFileRefs(values, projectRoot)

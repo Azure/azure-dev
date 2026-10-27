@@ -1,3 +1,5 @@
+<!-- cspell:ignore waza evals -->
+
 # Creating an Extension
 
 This guide covers how to create, build, and publish an extension for the Azure Developer CLI.
@@ -91,6 +93,31 @@ For extensions that are still in development or preview, consider publishing to 
 
 > [!NOTE]
 > Extensions in the dev registry have no stability guarantees, are unsigned, and are not covered by Azure support. This is expected and appropriate for pre-release testing. See the [Dev/Experimental Extension Registry](../../cli/azd/docs/extensions/extension-resolution-and-versioning.md#devexperimental-extension-registry) guide for full details.
+
+## First-party user contract review
+
+The PR reviewer applies the
+[`extension-user-contract-review` skill](../../.github/skills/extension-user-contract-review/SKILL.md)
+through `azd-code-reviewer` when first-party extension changes affect commands, parameters, configuration, schemas,
+output, or compatibility. This replaces the standalone extension user-contract review workflow; the checks run when
+the PR reviewer runs, not as a separate Actions job.
+
+Each distinct contract change gets an inline thread requesting a link to its approved experiences spec PR.
+Reply in that finding's thread with the spec link, even when the change is intentional. The reviewer reuses links
+provided by the PR author or repository collaborators in that same thread and avoids repeating existing findings,
+including those posted by the former workflow.
+
+Repository-wide and extension-specific reviewer instructions require this pass before the general review lenses,
+including on fork PRs. The skill accounts for every changed extension file and audits that findings survive triage.
+The review summary reports completion with inspected-file, new-comment, and existing-thread counts, or an explicit
+blocked status when evidence or output capacity is missing. These are instructions to the reviewing agent, not a
+deterministic merge gate: they cannot force a host to invoke review or guarantee that a model detects every change.
+
+The skill includes a [behavioral evaluation suite](../../.github/skills/extension-user-contract-review/evals/eval.yaml)
+that invokes the parent reviewer and checks the returned inline comments. From the repository root, run
+`waza check .github/skills/extension-user-contract-review` for static readiness and
+`waza run .github/skills/extension-user-contract-review/evals/eval.yaml` for real-agent cases.
+The latter requires Copilot authentication and consumes model usage; it does not post GitHub comments.
 
 ## First-party CI builds
 

@@ -24,6 +24,16 @@ Dismiss a finding if ANY of these apply:
 - **Outside the diff** — references code unrelated to the PR. Missing companion changes required by the PR, including absent scaffold files, remain in scope.
 - **Hypothetical concern with no evidence** — "this could be a problem if..." where the scenario is unlikely given the context.
 
+**Extension contract exception.** Findings from `extension-user-contract-review` request the approved experiences spec
+for an evidenced contract change. Do not dismiss them as restating the PR description merely because the change is
+intentional or correctly implemented. Apply that skill's thread-specific duplicate and spec-link rules; an unanswered
+existing thread is not a reason to post another comment. Missing review history is an evidence limitation, not proof
+that a spec is missing.
+
+Contract findings are mandatory policy checks, not optional suggestions for the ordinary 0-3 per-lens target.
+Reserve output capacity for them before optional findings. If the host's limit still prevents returning all retained
+contract comments, report the omitted count and mark the pass blocked; never silently truncate.
+
 Classify each finding:
 
 - **Keep** — useful, correct, worth the author's time.
@@ -38,6 +48,10 @@ After filtering kept findings:
 3. Deduplicate: if multiple lenses flagged the same file + line + similar concern, merge into one finding. Note all contributing lenses in the detail.
 4. Tag each finding with severity: **critical** / **suggestion** / **nit** / **praise**.
 
+When a correctness finding shares a root cause with an extension contract finding, keep one inline comment with the
+correctness explanation, higher severity, contract marker, and experiences spec guidance. Do not merge independent
+contract changes into one thread.
+
 ## Voice rules
 
 All review text — the review body AND inline comments — follows these rules:
@@ -48,6 +62,10 @@ All review text — the review body AND inline comments — follows these rules:
 - No emoji, no exclamation marks for enthusiasm.
 - When uncertain, say "I might be wrong, but..." or "I'm curious about..." rather than hedging with "perhaps consider...".
 - Append `<!-- azd-code-reviewer -->` to every inline comment and non-line finding bullet. Do not add the marker to the one-sentence review sentiment.
+
+For extension contract findings, also preserve `<!-- extension-user-contract-changes-reviewer -->`, the
+**User contract change** and **Experiences spec** sections, and the companion skill's spec status. Do not replace
+these with a generic suggestion or drop a previously supplied spec link.
 
 ## Build the review body
 
@@ -64,6 +82,13 @@ Match the tone to the severity mix: if everything is nits/praise, keep it positi
 
 **Findings that do not map to a diff line.** If a kept finding cannot be pinned to a specific line, add it as a short bullet below the one-line review body. Keep each bullet to one sentence. This is the only case where the body exceeds one line.
 
+**Contract completion status.** For extension PRs, append a factual status sentence to the review body after the final
+coverage and outgoing-comment audit, even when there are no new findings:
+`Extension user-contract review: complete (<N> files inspected; <M> new contract comments; <K> existing threads).`
+Use `blocked` with the specific limitation and omitted count, if any, when the audit cannot pass. Do not claim that
+comments were posted when only returning them to the host. This status is an exception to the one-sentence body
+rule. If the host lacks a review body, expose it in the supported result channel, not a fabricated inline finding.
+
 ## Output format
 
 Return the final review as a structured object the harness can post:
@@ -78,5 +103,9 @@ comments:
 ```
 
 **Line constraint.** Every inline `line` value MUST be a line that appears in the diff (added or context lines on the `RIGHT` side). Findings that don't satisfy this go in the review body instead of `comments`.
+
+**Extension contract constraint.** Contract findings require an added or changed line on the `RIGHT` side that
+directly evidences the change, not an unchanged context line. Never move them into the review body; surface an
+unavailable anchor or required evidence as a limitation to the host instead.
 
 If the harness expects a different schema (e.g., the GitHub Reviews API payload directly), adapt the field names but preserve the structure: a single review body plus zero or more line-anchored inline comments.

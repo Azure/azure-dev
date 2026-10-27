@@ -1,0 +1,41 @@
+name: extension-user-contract-review-eval
+description: Exercise the parent PR reviewer so contract invocation, triage, and final comments are tested together.
+skill: azd-code-reviewer
+schemaVersion: "1.4"
+version: "1.0"
+config:
+  trials_per_task: 1
+  timeout_seconds: 300
+  parallel: false
+  executor: copilot-sdk
+  model: auto
+  skill_directories:
+    - ../../azd-code-reviewer
+    - ..
+  required_skills:
+    - azd-code-reviewer
+    - extension-user-contract-review
+  instruction_files:
+    - harness.instructions.md
+    - cli/azd/AGENTS.md
+metrics:
+  - name: task_completion
+    weight: 1.0
+    threshold: 1.0
+    description: All contract detection, deduplication, anchoring, and completion assertions must pass.
+graders:
+  - type: behavior
+    name: bounded-review
+    config:
+      max_tool_calls: 60
+  - type: code
+    name: review-shape
+    config:
+      language: javascript
+      # SDK output includes progress messages; grade the final host review object.
+      assertions:
+        - "typeof JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body === 'string'"
+        - "Array.isArray(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments)"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => typeof c.path === 'string' && Number.isInteger(c.line) && typeof c.body === 'string')"
+tasks:
+  - "tasks/*.yaml"

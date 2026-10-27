@@ -44,7 +44,7 @@ func TestOnboardingContractCompactPublicInput(t *testing.T) {
 	hosting := hostingContractParameters(t, result)
 	assert.Equal(t, true, hosting["enabled"])
 	assert.Equal(t, "ManagedCluster", hosting["hostingType"])
-	assert.Equal(t, "aks", hosting["name"])
+	assert.Equal(t, "default", hosting["name"])
 	assert.Equal(t, contractClusterID, hosting["clusterResourceId"])
 	for _, field := range []string{
 		"hostingManagementIdentityResourceId", "workloadIdentityResourceId", "storageAccountResourceId",
@@ -80,7 +80,7 @@ func TestOnboardingContractSuppliedChoicesAndFixedHostingValues(t *testing.T) {
 	assert.Equal(t, plan.StorageAccountResourceID, result.Hosting.StorageAccountResourceID)
 	hosting := hostingContractParameters(t, result)
 	assert.Equal(t, "ManagedCluster", hosting["hostingType"])
-	assert.Equal(t, "aks", hosting["name"])
+	assert.Equal(t, "default", hosting["name"])
 
 	result, err = Synthesize(hostingContractInput("      storageAccountResourceId: \"   \"\n"))
 	require.ErrorContains(t, err, "storageAccountResourceId")
@@ -90,7 +90,7 @@ func TestOnboardingContractSuppliedChoicesAndFixedHostingValues(t *testing.T) {
 func TestOnboardingContractRejectsUnsupportedHostingProperties(t *testing.T) {
 	for _, field := range []string{"hostingType", "name", "unknown"} {
 		for _, value := range []string{
-			"ManagedCluster", "aks", "customer-hosting", `""`, "null", `"   "`,
+			"ManagedCluster", "default", "aks", "customer-hosting", `""`, "null", `"   "`,
 			`"${REMOVED_HOSTING_INPUT}"`, "false", "123", "{}",
 		} {
 			for _, preserve := range []bool{false, true} {
@@ -115,7 +115,7 @@ func TestOnboardingContractHostingFileReferences(t *testing.T) {
 					hosting := map[string]any{"clusterResourceId": contractClusterID}
 					if field != "" {
 						hosting[field] = map[string]any{
-							"hostingType": "ManagedCluster", "name": "aks", "unknown": true,
+							"hostingType": "ManagedCluster", "name": "default", "unknown": true,
 						}[field]
 					}
 					var definition any = hosting
@@ -147,7 +147,7 @@ func TestOnboardingContractHostingFileReferences(t *testing.T) {
 					require.NoError(t, err)
 					resolved := hostingContractParameters(t, result)
 					assert.Equal(t, "ManagedCluster", resolved["hostingType"])
-					assert.Equal(t, "aks", resolved["name"])
+					assert.Equal(t, "default", resolved["name"])
 					assert.Equal(t, contractClusterID, resolved["clusterResourceId"])
 				})
 			}

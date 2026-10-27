@@ -52,7 +52,7 @@ func TestHostingNetworkSelectionEvaluatesGeneratedARM(t *testing.T) {
 			entry, ok := hosting[0].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, "ManagedCluster", entry["hostingType"])
-			assert.Equal(t, "aks", entry["name"])
+			assert.Equal(t, "default", entry["name"])
 			assert.Equal(t, contractClusterID, entry["clusterResourceId"])
 			assert.Empty(t, entry["workloadIdentityResourceId"])
 			assert.Empty(t, entry["hostingManagementIdentityResourceId"])
@@ -117,7 +117,7 @@ func TestHostingNetworkSelectionEvaluatesTerraformProperties(t *testing.T) {
 				configuration, ok := configurations[0].(map[string]any)
 				require.True(t, ok)
 				assert.Equal(t, "ManagedCluster", configuration["hostingType"])
-				assert.Equal(t, "aks", configuration["name"])
+				assert.Equal(t, "default", configuration["name"])
 			}
 			assert.NotContains(t, properties, "networkInjections", "hosting never controls network injection")
 		})

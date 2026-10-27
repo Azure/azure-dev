@@ -478,7 +478,7 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			parameters := "using './projection.json'\nparam location = 'eastus'\n" +
 				"param resourceGroupName = 'foundry-rg'\nparam foundryProjectName = 'project'\n" +
 				"param byoOnboarding = loadJsonContent('./plan.json')\n" +
-				"param agentHosting = { enabled: true, hostingType: 'ManagedCluster', name: 'aks', " +
+				"param agentHosting = { enabled: true, hostingType: 'ManagedCluster', name: 'default', " +
 				"clusterResourceId: '" + contractClusterID + "', hostingManagementIdentityResourceId: '', " +
 				"workloadIdentityResourceId: '', storageAccountResourceId: '' }\n"
 			params := filepath.Join(dir, "graph.bicepparam")
@@ -503,7 +503,7 @@ func TestBYOOnboardingEvaluatesDeterministicHostingIDs(t *testing.T) {
 			hosting, ok := evaluated.Outputs["hosting"].(map[string]any)
 			require.True(t, ok)
 			assert.Equal(t, "ManagedCluster", hosting["hostingType"])
-			assert.Equal(t, "aks", hosting["name"])
+			assert.Equal(t, "default", hosting["name"])
 			assert.Equal(t, plan.StorageAccountResourceID, hosting["storageAccountResourceId"])
 			assert.Equal(t, plan.HostingIdentityResourceID, hosting["hostingManagementIdentityResourceId"])
 			assert.Equal(t, plan.WorkloadIdentityResourceID, hosting["workloadIdentityResourceId"])

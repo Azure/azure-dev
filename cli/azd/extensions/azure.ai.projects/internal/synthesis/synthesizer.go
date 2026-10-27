@@ -863,7 +863,7 @@ func synthesizeAgentHosting(
 	return agentHostingParameter{
 		Enabled:                             true,
 		HostingType:                         managedClusterHostingType,
-		Name:                                "aks",
+		Name:                                "default",
 		ClusterResourceID:                   clusterID,
 		StorageAccountResourceID:            storageID,
 		HostingManagementIdentityResourceID: hostingID,

@@ -209,7 +209,7 @@ it references existing zones without creating their VNet links.
 BYO-created ACR remains Premium with public access enabled and no ACR private
 endpoint. Supplied ACR configuration is not changed by account isolation.
 
-azd uses the fixed hosting type `ManagedCluster` and configuration name `aks`.
+azd uses the fixed hosting type `ManagedCluster` and configuration name `default`.
 `agentHosting` accepts resource IDs only; unsupported properties are rejected.
 Optional `storageAccountResourceId` selects an existing Storage account.
 Select an existing container registry through `AZURE_CONTAINER_REGISTRY_RESOURCE_ID`.

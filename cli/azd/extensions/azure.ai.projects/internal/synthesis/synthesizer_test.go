@@ -525,7 +525,7 @@ services:
 	assert.Equal(t, agentHostingParameter{
 		Enabled:                  true,
 		HostingType:              managedClusterHostingType,
-		Name:                     "aks",
+		Name:                     "default",
 		ClusterResourceID:        clusterID,
 		StorageAccountResourceID: storageID,
 	}, hosting)
@@ -551,7 +551,7 @@ services:
 
 	hosting := result.Parameters["agentHosting"].(agentHostingParameter)
 	assert.Equal(t, "ManagedCluster", hosting.HostingType)
-	assert.Equal(t, "aks", hosting.Name)
+	assert.Equal(t, "default", hosting.Name)
 	assert.Equal(t, "${AKS_ID}", hosting.ClusterResourceID)
 	assert.Empty(t, hosting.HostingManagementIdentityResourceID)
 	assert.Equal(t, "${STORAGE_ID}", hosting.StorageAccountResourceID)
@@ -585,7 +585,7 @@ services:
 		{
 			name: "explicit hosting name",
 			yaml: strings.Replace(valid, "    agentHosting:\n",
-				"    agentHosting:\n      name: aks\n", 1),
+				"    agentHosting:\n      name: default\n", 1),
 			synthesize: Synthesize,
 			want:       "services.project.agentHosting.name: unsupported property",
 		},

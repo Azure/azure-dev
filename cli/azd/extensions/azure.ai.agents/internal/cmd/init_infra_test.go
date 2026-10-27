@@ -2116,7 +2116,7 @@ services:
 	require.True(t, ok, "agentHosting should be an object, got %T", bicepDoc.Parameters["agentHosting"].Value)
 	assert.Equal(t, true, hosting["enabled"])
 	assert.Equal(t, "ManagedCluster", hosting["hostingType"])
-	assert.Equal(t, "aks", hosting["name"])
+	assert.Equal(t, "default", hosting["name"])
 	assert.Equal(t, "${AKS_ID}", hosting["clusterResourceId"])
 	assert.NotContains(t, hosting, "agentSubnetResourceId")
 	assert.Empty(t, hosting["hostingManagementIdentityResourceId"])
@@ -2142,7 +2142,7 @@ services:
 
 func TestEjectInfra_RejectsUnsupportedAgentHostingProperties(t *testing.T) {
 	for _, field := range []string{"hostingType", "name"} {
-		for _, value := range []string{"ManagedCluster", "aks", `""`, "null"} {
+		for _, value := range []string{"ManagedCluster", "default", "aks", `""`, "null"} {
 			t.Run(field+"/"+value, func(t *testing.T) {
 				dir := t.TempDir()
 				original := "name: my-project\nservices:\n  my-foundry:\n    host: azure.ai.project\n" +

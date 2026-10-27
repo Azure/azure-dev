@@ -156,6 +156,13 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"CU_ENDPOINT": "https://resource.services.ai.azure.com", "CU_API_VERSION": "2027-01-01-preview",
 	}, userDefaults)
+	for _, flag := range []string{"--endpoint", "--api-version"} {
+		output := run(false, "ai", "cu", "analyzer", "list", flag, "")
+		require.Contains(t, string(output), "must not be empty")
+	}
+	var unchanged map[string]string
+	require.NoError(t, json.Unmarshal(run(true, "ai", "cu", "config", "list", "-o", "json"), &unchanged))
+	require.Equal(t, userDefaults, unchanged)
 	run(true, "ai", "cu", "config", "unset", "CU_ENDPOINT")
 	run(false, "ai", "cu", "config", "get", "CU_ENDPOINT")
 
@@ -171,6 +178,13 @@ func TestInstalledHostOffline(t *testing.T) {
 	require.NoError(t, json.Unmarshal(output, &result))
 	require.True(t, result.OK)
 	require.True(t, result.Strict)
+	invalidDefinition := "{\n  \"baseAnalyzerId\":\"prebuilt-document\",\n" +
+		"  \"fieldSchema\":{\"fields\":{\"private-field\":{\n    \"type\":\"currency\"\n  }}}\n}"
+	require.NoError(t, os.WriteFile(schema, []byte(invalidDefinition), 0o600))
+	diagnostic := string(run(false, "ai", "cu", "analyzer", "validate", "--schema", schema, "--spec"))
+	require.Contains(t, diagnostic, "Line 4, column 5")
+	require.NotContains(t, diagnostic, "private-field")
+	require.NotContains(t, diagnostic, "currency")
 	require.NoError(t, os.WriteFile(schema, []byte("{invalid"), 0o600))
 	require.Contains(t, string(run(false, "ai", "cu", "analyzer", "validate", "--schema", schema)), "ERROR")
 	run(true, "extension", "uninstall", extensionID)

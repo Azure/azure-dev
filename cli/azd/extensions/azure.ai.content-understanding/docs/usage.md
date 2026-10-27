@@ -173,6 +173,14 @@ writes. Analysis dry runs still require resolved endpoint and analyzer
 configuration. Select inputs using one mode: positional inputs, `--file`,
 `--source`, or `--url`.
 
+Analysis failures include safe reasons and guidance for the first failed inputs
+in discovery order, identified by input number without echoing file paths or URLs.
+Long diagnostics are shortened; use `--report-file` on the original run to retain
+all per-input outcomes. Diagnosing a failure does not issue another analysis request.
+Missing-resource errors suggest checking the endpoint and available analyzers;
+creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
+Service response bodies and authored content remain hidden.
+
 - Batch concurrency defaults to 4; `--concurrency` accepts 1-32.
 - More than 50 selected inputs require confirmation or explicit `--yes`.
 - Existing results fail by default. Use `--on-existing skip` to keep them or
@@ -222,6 +230,11 @@ azd ai cu analyzer validate \
 ```
 
 Validation is offline and does not require an azd project, endpoint, or sign-in.
+Errors in valid JSON identify the property by its one-based source line and column,
+without displaying authored field names or rejected values. Columns count Unicode
+characters; tabs count as one character. Missing properties point to their
+containing object when available. Ambiguous dotted paths list all matching source
+locations. Successful validation output retains its existing structured paths.
 
 Create a new analyzer from the reviewed definition:
 

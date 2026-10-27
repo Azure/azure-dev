@@ -75,8 +75,13 @@ func serviceResponseError(statusCode int, code, retryAfterHeader string) error {
 		suggestion = "Check the azd account, selected tenant, and access to the CU resource."
 	case http.StatusNotFound:
 		kind = ErrorNotFound
+		suggestion = "Verify the requested resource or analyzer exists and check the endpoint. " +
+			"Use azd ai cu analyzer list to inspect available analyzers."
 	case http.StatusConflict:
 		kind = ErrorConflict
+		suggestion = "For an analyzer creation conflict, inspect the existing definition with " +
+			"azd ai cu analyzer show <ANALYZER_NAME> and choose an unused analyzer ID. " +
+			"Do not retry an unchanged conflicting request."
 	case http.StatusRequestEntityTooLarge:
 		kind = ErrorLimit
 	case http.StatusTooManyRequests:
@@ -85,7 +90,7 @@ func serviceResponseError(statusCode int, code, retryAfterHeader string) error {
 	}
 	return &Error{
 		Kind: kind, Code: code, StatusCode: statusCode,
-		Message:    fmt.Sprintf("The Content Understanding request failed (HTTP %d).", statusCode),
+		Message:    fmt.Sprintf("The Content Understanding request failed (HTTP %d; code: %s).", statusCode, code),
 		Suggestion: suggestion, RetryAfter: retryAfter(retryAfterHeader, time.Now()),
 	}
 }

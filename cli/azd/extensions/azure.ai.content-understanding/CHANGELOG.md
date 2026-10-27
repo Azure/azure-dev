@@ -10,6 +10,10 @@
   before deploying interactively selected models.
 - Show a readable infrastructure generation summary by default. Use
   `--output json` to retain the structured result.
+- Include safe service codes and per-input analysis failure reasons, with
+  actionable guidance for missing analyzers and conflicting analyzer IDs.
+- Locate offline schema validation errors by line and column without exposing
+  authored field names or rejected values.
 
 ## 0.1.0-preview (2026-10-27)
 

@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.15.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
 	github.com/azure/azure-dev/cli/azd v1.37.0
 	github.com/fatih/color v1.19.0
 	github.com/spf13/cobra v1.10.2

@@ -6,12 +6,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
-	"azure.ai.toolboxes/internal/foundry/projectctx"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -42,7 +42,11 @@ tool entry, so 'create' takes its inputs from a JSON or YAML file via
 On success the toolbox's runtime MCP endpoint is written to the active azd
 environment under the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT variable (the same
 key agents consume), where <NORMALIZED_NAME> is the toolbox name uppercased with
-non-alphanumeric character runs replaced by underscores.`,
+non-alphanumeric character runs replaced by underscores.
+
+After local validation, checks Foundry access before resolving connections.
+May assign Foundry User when the target matches the active environment's
+project resource ID and endpoint. Access warnings and progress go to stderr.`,
 		Example: `  # Create a toolbox from a JSON definition
   azd ai toolbox create research --from-file ./tools.json
 
@@ -51,9 +55,13 @@ non-alphanumeric character runs replaced by underscores.`,
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateToolboxWriteFlags(cmd); err != nil {
+				return err
+			}
 			return runToolboxCreate(
 				cmd.Context(), args[0], *flags, readToolboxFlags(cmd, extCtx),
 				defaultConnectionResolver{},
+				cmd.ErrOrStderr(),
 			)
 		},
 	}
@@ -72,7 +80,7 @@ non-alphanumeric character runs replaced by underscores.`,
 
 func runToolboxCreate(
 	ctx context.Context, name string, verb toolboxCreateFlags,
-	parent toolboxFlags, resolver connectionResolver,
+	parent toolboxFlags, resolver connectionResolver, writer io.Writer,
 ) error {
 	if err := validateToolboxName(name); err != nil {
 		return err
@@ -81,18 +89,17 @@ func runToolboxCreate(
 		return err
 	}
 
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: parent.projectEndpoint})
+	input, err := loadCreateDefinition(name, verb)
+	if err != nil {
+		return err
+	}
+	client, resolved, err := resolveToolboxWriteAndClient(ctx, parent, name, writer)
 	if err != nil {
 		return err
 	}
 	logResolvedEndpoint("toolbox create", resolved)
 
-	client, err := newToolboxClient(resolved.Endpoint)
-	if err != nil {
-		return err
-	}
-
-	return runToolboxCreateWith(ctx, client, resolver, resolved.Endpoint, name, verb, parent)
+	return createToolboxFromDefinition(ctx, client, resolver, resolved.Endpoint, name, input, parent)
 }
 
 // runToolboxCreateWith is the testable core. It accepts injected client and
@@ -105,6 +112,17 @@ func runToolboxCreateWith(
 	verb toolboxCreateFlags,
 	parent toolboxFlags,
 ) error {
+	input, err := loadCreateDefinition(name, verb)
+	if err != nil {
+		return err
+	}
+	return createToolboxFromDefinition(ctx, client, resolver, endpoint, name, input, parent)
+}
+
+func createToolboxFromDefinition(
+	ctx context.Context, client toolboxClient, resolver connectionResolver,
+	endpoint, name string, input *definition.Definition, parent toolboxFlags,
+) error {
 	if _, err := client.GetToolbox(ctx, name); err == nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidToolboxName,
@@ -116,21 +134,6 @@ func runToolboxCreateWith(
 		return exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 	}
 
-	input := &definition.Definition{}
-	if strings.TrimSpace(verb.fromFile) != "" {
-		loaded, err := loadLocalToolboxDefinition(verb.fromFile)
-		if err != nil {
-			return err
-		}
-		input = loaded
-	}
-	if input.Name != "" && input.Name != name {
-		return exterrors.Validation(
-			exterrors.CodeInvalidToolboxName,
-			fmt.Sprintf("toolbox name %q in %q does not match command name %q", input.Name, verb.fromFile, name),
-			"use the same toolbox name in the definition and command, or remove 'name' from the definition",
-		)
-	}
 	req, err := buildToolboxVersionRequest(ctx, resolver, endpoint, input)
 	if err != nil {
 		return err
@@ -150,12 +153,37 @@ func runToolboxCreateWith(
 	return emitCreateResult(name, created.Version, parent.output, mcpURL)
 }
 
+func loadCreateDefinition(name string, verb toolboxCreateFlags) (*definition.Definition, error) {
+	input := &definition.Definition{}
+	if strings.TrimSpace(verb.fromFile) != "" {
+		loaded, err := loadLocalToolboxDefinition(verb.fromFile)
+		if err != nil {
+			return nil, err
+		}
+		input = loaded
+	}
+	if input.Name != "" && input.Name != name {
+		return nil, exterrors.Validation(
+			exterrors.CodeInvalidToolboxName,
+			fmt.Sprintf("toolbox name %q in %q does not match command name %q", input.Name, verb.fromFile, name),
+			"use the same toolbox name in the definition and command, or remove 'name' from the definition",
+		)
+	}
+	if err := validateToolboxDefinition(input); err != nil {
+		return nil, err
+	}
+	return input, nil
+}
+
 func buildToolboxVersionRequest(
 	ctx context.Context,
 	resolver connectionResolver,
 	endpoint string,
 	input *definition.Definition,
 ) (*azure.CreateToolboxVersionRequest, error) {
+	if err := validateToolboxDefinition(input); err != nil {
+		return nil, err
+	}
 	entries, err := resolveConnectionSpecs(ctx, resolver, endpoint, input.Connections)
 	if err != nil {
 		return nil, err
@@ -207,6 +235,54 @@ func buildToolboxVersionRequest(
 		Skills:      skillEntries,
 		Policies:    policies,
 	}, nil
+}
+
+// validateToolboxDefinition checks authored input without resolving remote connections.
+func validateToolboxDefinition(input *definition.Definition) error {
+	if len(input.Connections)+len(input.Skills)+len(input.Tools) == 0 {
+		return exterrors.Validation(exterrors.CodeInvalidToolboxName,
+			"toolbox definition requires at least one tool or skill entry",
+			"add a connection, skill, or raw tool to the toolbox definition")
+	}
+	seen := map[string]bool{}
+	for _, connection := range input.Connections {
+		name := strings.TrimSpace(connection.Name)
+		if name == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				"connection name must not be empty", "set connections[].name in the input file")
+		}
+		if seen[name] {
+			return exterrors.Validation(exterrors.CodeDuplicateConnection,
+				"connection is duplicated in the input", "remove duplicate connection entries")
+		}
+		if connection.Index != "" && connection.InstanceName != "" {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				"a connection cannot set both index and instanceName",
+				"use index for CognitiveSearch or instanceName for GroundingWithCustomSearch, not both")
+		}
+		seen[name] = true
+	}
+	skills := make([]map[string]any, 0, len(input.Skills))
+	for _, skill := range input.Skills {
+		if err := validateSkillName(skill.Name); err != nil {
+			return err
+		}
+		skills = append(skills, buildSkillEntry(skillSpec{Name: strings.TrimSpace(skill.Name), Version: skill.Version}))
+	}
+	if err := validateNoDuplicateSkills(skills); err != nil {
+		return err
+	}
+	if _, err := validateRawToolEntries(input.Tools); err != nil {
+		return err
+	}
+	if err := validateNoDuplicateToolNames(input.Tools); err != nil {
+		return err
+	}
+	if err := validateNoDuplicateConnectionIDs(input.Tools); err != nil {
+		return err
+	}
+	_, err := buildToolboxPolicies(input.Policies)
+	return err
 }
 
 func emitCreateResult(name, version, output, mcpURL string) error {

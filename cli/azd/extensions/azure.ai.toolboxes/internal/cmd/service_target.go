@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"azure.ai.toolboxes/internal/definition"
@@ -52,10 +53,11 @@ type toolboxServiceConfig struct {
 // artifact.
 type toolboxServiceTarget struct {
 	environmentClient environmentReader
-	accountClient     accountTenantLookup
+	accountClient     foundry.TenantResolver
 	projectClient     serviceConfigReader
 	resolver          connectionResolver
 	newClient         func(endpoint, tenantID string) (toolboxClient, error)
+	access            *toolboxAccess
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -67,6 +69,7 @@ func newToolboxServiceTarget(
 		accountClient:     azdClient.Account(),
 		projectClient:     azdClient.Project(),
 		resolver:          defaultConnectionResolver{},
+		access:            newToolboxAccess(azdClient),
 		newClient: func(endpoint, tenantID string) (toolboxClient, error) {
 			return newToolboxClientForTenant(endpoint, tenantID)
 		},
@@ -167,25 +170,23 @@ func (p *toolboxServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	rawTools, err := p.buildToolEntries(
-		ctx,
-		endpoint,
-		cfg.Tools,
-		environment,
-	)
-	if err != nil {
+	if err := validateToolboxName(name); err != nil {
 		return nil, err
 	}
-	request, err := buildToolboxVersionRequest(ctx, p.resolver, endpoint, &definition.Definition{
+	tools := make([]map[string]any, 0, len(cfg.Tools))
+	for _, tool := range cfg.Tools {
+		tools = append(tools, expandToolboxValue(tool, environment).(map[string]any))
+	}
+	input := &definition.Definition{
 		Name:        name,
 		Description: cfg.Description,
 		Connections: cfg.Connections,
 		Skills:      cfg.Skills,
-		Tools:       rawTools,
+		Tools:       tools,
 		Policies:    cfg.Policies,
 		Metadata:    cfg.Metadata,
-	})
-	if err != nil {
+	}
+	if err := validateToolboxDefinition(input); err != nil {
 		return nil, err
 	}
 
@@ -193,11 +194,26 @@ func (p *toolboxServiceTarget) Deploy(
 		progress(fmt.Sprintf("Upserting toolbox %q", name))
 	}
 
-	tenantID, err := p.credentialTenantID(ctx)
+	var scope *toolboxAccessScope
+	if p.access != nil {
+		scope, err = p.access.resolve(ctx, endpoint)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var tenantID string
+	if scope != nil {
+		tenantID, err = toolboxTenantID(ctx, p.accountClient, scope.resource.SubscriptionID)
+	} else {
+		tenantID, err = p.credentialTenantID(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
 	client, err := p.newClient(endpoint, tenantID)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return nil, cancelErr
+	}
 	if err != nil {
 		return nil, exterrors.Auth(
 			exterrors.CodeCredentialCreationFailed,
@@ -206,9 +222,23 @@ func (p *toolboxServiceTarget) Deploy(
 		)
 	}
 
+	if p.access != nil {
+		if err := p.access.prepare(ctx, scope, tenantID, client, name); err != nil {
+			return nil, err
+		}
+	}
+	input.Tools, err = p.buildToolEntries(ctx, endpoint, tools, nil)
+	if err != nil {
+		return nil, err
+	}
+	request, err := buildToolboxVersionRequest(ctx, p.resolver, endpoint, input)
+	if err != nil {
+		return nil, err
+	}
+
 	created, err := client.CreateToolboxVersion(ctx, name, request)
 	if err != nil {
-		return nil, fmt.Errorf("upserting toolbox %q: %w", name, err)
+		return nil, exterrors.ServiceFromAzure(err, exterrors.OpCreateToolboxVersion)
 	}
 
 	// Surface the toolbox's MCP endpoint to agents (and the developer) without re-running.
@@ -322,9 +352,9 @@ func (p *toolboxServiceTarget) buildToolEntries(
 ) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
-		entry, ok := expandToolboxValue(tool, env).(map[string]any)
-		if !ok {
-			continue
+		entry := maps.Clone(tool)
+		if env != nil {
+			entry = expandToolboxValue(tool, env).(map[string]any)
 		}
 		if connName, isString := entry["connection"].(string); isString && connName != "" {
 			conn, err := p.resolver.resolveConnection(ctx, endpoint, connName)
@@ -446,14 +476,6 @@ type environmentReader interface {
 	) (*azdext.KeyValueResponse, error)
 }
 
-type accountTenantLookup interface {
-	LookupTenant(
-		ctx context.Context,
-		in *azdext.LookupTenantRequest,
-		opts ...grpc.CallOption,
-	) (*azdext.LookupTenantResponse, error)
-}
-
 func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, error) {
 	current, err := p.environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -488,25 +510,7 @@ func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, 
 			"set AZURE_SUBSCRIPTION_ID in the active azd environment and retry",
 		)
 	}
-	tenantResponse, err := p.accountClient.LookupTenant(ctx, &azdext.LookupTenantRequest{
-		SubscriptionId: subscriptionID,
-	})
-	if err != nil {
-		return "", exterrors.Auth(
-			exterrors.CodeTenantLookupFailed,
-			fmt.Sprintf("failed to get tenant ID for subscription %s: %s", subscriptionID, err),
-			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
-		)
-	}
-	tenantID := strings.TrimSpace(tenantResponse.GetTenantId())
-	if tenantID == "" {
-		return "", exterrors.Auth(
-			exterrors.CodeTenantLookupFailed,
-			fmt.Sprintf("azd returned an empty tenant ID for subscription %s", subscriptionID),
-			"verify your Azure login with 'azd auth login' and that you have access to this subscription",
-		)
-	}
-	return tenantID, nil
+	return toolboxTenantID(ctx, p.accountClient, subscriptionID)
 }
 
 func serviceEnvDeclared(

@@ -8,18 +8,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"regexp"
 	"strings"
 
 	"azure.ai.toolboxes/internal/exterrors"
-	"azure.ai.toolboxes/internal/foundry"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"github.com/spf13/cobra"
 )
 
@@ -35,6 +36,24 @@ var toolboxNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 // maxToolboxNameLength caps positional names.
 const maxToolboxNameLength = 63
+
+func validateToolboxWriteFlags(cmd *cobra.Command) error {
+	for _, name := range []string{"project-endpoint", "from-file"} {
+		if !cmd.Flags().Changed(name) {
+			continue
+		}
+		value, err := cmd.Flags().GetString(name)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(value) == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("--%s must not be empty when supplied", name),
+				"provide a non-empty value, or omit the flag if it is optional")
+		}
+	}
+	return nil
+}
 
 // readToolboxFlags extracts the persistent flag values from a subcommand. The
 // reserved azd globals `--output` and `--no-prompt` come from extCtx. `output`
@@ -120,6 +139,18 @@ func newToolboxClientForTenant(endpoint, tenantID string) (*azure.FoundryToolbox
 	return azure.NewFoundryToolboxClient(endpoint, cred), nil
 }
 
+func toolboxTenantID(ctx context.Context, account foundry.TenantResolver, subscriptionID string) (string, error) {
+	tenantID, err := foundry.LookupProjectTenant(ctx, account, subscriptionID)
+	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
+	if err != nil {
+		return "", exterrors.Auth(exterrors.CodeTenantLookupFailed,
+			"could not resolve the Foundry project's user-access tenant", "run 'azd auth login' and retry")
+	}
+	return tenantID, nil
+}
+
 // resolveToolboxAndClient walks the endpoint cascade, validates flags, and
 // returns a toolbox client bound to the resolved endpoint.
 func resolveToolboxAndClient(
@@ -137,6 +168,32 @@ func resolveToolboxAndClient(
 		return nil, nil, err
 	}
 	return client, resolved, nil
+}
+
+// resolveToolboxWriteAndClient is deliberately separate from read/delete resolution.
+func resolveToolboxWriteAndClient(
+	ctx context.Context, flags toolboxFlags, name string, writer io.Writer,
+) (toolboxClient, *projectctx.Resolved, error) {
+	if err := validateOutputFormat(flags.output); err != nil {
+		return nil, nil, err
+	}
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{FlagValue: flags.projectEndpoint})
+	if err != nil {
+		return nil, nil, err
+	}
+	host, err := azdext.NewAzdClient()
+	if err != nil {
+		fmt.Fprintln(writer, "Warning: No azd host is available; Foundry roles will not be assigned automatically.")
+		client, clientErr := newToolboxClient(resolved.Endpoint)
+		return client, resolved, clientErr
+	}
+	defer host.Close()
+	access := newToolboxAccess(host)
+	access.writer = writer
+	client, err := access.writeClient(ctx, resolved.Endpoint, name, func(endpoint, tenantID string) (toolboxClient, error) {
+		return newToolboxClientForTenant(endpoint, tenantID)
+	})
+	return client, resolved, err
 }
 
 // isAzureNotFound reports whether err originates from an Azure response with HTTP 404.

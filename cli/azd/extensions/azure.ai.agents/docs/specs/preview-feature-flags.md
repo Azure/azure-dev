@@ -5,7 +5,7 @@
 ## Status and goal
 
 - **Component:** `cli/azd/extensions/azure.ai.agents`
-- **Scope:** Independent, default-off managed-harness, voice, and long-running invocation gates.
+- **Scope:** Independent, default-off managed-harness, voice, long-running invocation, and A2A version-selection gates.
 
 Keep preview opt-in decisions inside the Microsoft Foundry agents extension until the extension framework supports discovery and evaluation. Use the canonical `AZD_ALPHA_ENABLE_<NAME>` syntax so a future framework implementation can honor the same variables. General hosted agents and plain prompt functionality are not gated.
 
@@ -71,8 +71,24 @@ if err := featureflags.Require(featureflags.Voice); err != nil {
 | `ManagedHarness` | `agents.managed_harness` | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` | Prompt agents that run on a Copilot harness |
 | `Voice` | `agents.voice` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` | Voice, prompt-voice, and hosted voice agents |
 | `LongRunning` | `agents.long_running` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` | Long-running Responses invocations |
+| `A2A` | `agents.a2a` | `AZD_ALPHA_ENABLE_AGENTS_A2A` | Explicit A2A wire versions and the 1.0 message default |
 
 Each ID starts with `agents.`. Its canonical key is `AZD_ALPHA_ENABLE_` plus the ID in upper case with dots replaced by underscores. Registry tests enforce the identities, naming rule, unique IDs and keys, and nonempty descriptions. The evaluator reads the declared `EnvVar` rather than deriving a key at run time.
+
+### A2A compatibility policy
+
+Existing A2A invocation remains available with `agents.a2a` off: omitted
+`--a2a-version` uses 0.3 for both messages and files, with file bytes unchanged.
+Explicit `--a2a-version` requires the preview through the shared flag/root gate,
+after pure local validation (including explicitly empty values and ordinary
+argument conflicts). Version-specific flags, help, and examples are hidden off;
+legacy A2A message and file discovery remains visible.
+
+With the preview on, messages default to 1.0 and all A2A files require an
+explicit supported version (0.3 or 1.0). Invocation entry fixes one policy and
+default decision and passes the resolved version downstream. Builders, HTTP
+handlers, and renderers do not read feature state. No agent metadata or file
+heuristic selects the wire version.
 
 ## Process environment enablement
 
@@ -90,7 +106,7 @@ $env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
 azd ai agent init --help
 ```
 
-All three features default to off. Only `strconv.ParseBool` true values enable a feature: `1`, `t`, `T`, `true`, `TRUE`, or `True`. False values (`0`, `f`, `F`, `false`, `FALSE`, `False`), missing or empty values, and invalid values leave it off without an error. Values such as `on`, `yes`, mixed-case `TrUe`, and whitespace-padded strings are invalid.
+All features default to off. Only `strconv.ParseBool` true values enable a feature: `1`, `t`, `T`, `true`, `TRUE`, or `True`. False values (`0`, `f`, `F`, `false`, `FALSE`, `False`), missing or empty values, and invalid values leave it off without an error. Values such as `on`, `yes`, mixed-case `TrUe`, and whitespace-padded strings are invalid.
 
 Each feature is independent. There is no global toggle, experimentation default, or cross-feature opt-in.
 
@@ -110,11 +126,11 @@ Normal project configuration, deployment environments, runtime settings, and com
 
 | Annotation | Placed on | Effect |
 | --- | --- | --- |
-| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
+| `previewFlag(cmd, name, feature)` | `invoke --long-running`, `invoke --no-wait`, `invoke --a2a-version`, `init --voice` | Setting the flag requires the feature (a bool only when true). The flag is hidden while the feature is off |
 | `previewFlag(cmd, name, feature, values...)` | `init --kind prompt-voice`, `init --harness microsoft_copilot_preview` or `github_copilot_preview`, `init --protocol invocations_ws` | Only the listed values require the feature, including repeated or comma-separated slice values. The flag stays visible |
 | `previewCommand(cmd, feature)` | none today | The command and its children require the feature and are hidden while off |
 | `discoverCommand(cmd, feature)` | `invocations` | Hidden from help while off. The group and its subcommands still run |
-| `previewHelp(cmd, feature, long, examples)` | Voice and long-running help blocks | The blocks are removed while off |
+| `previewHelp(cmd, feature, long, examples)` | Voice, long-running, and A2A version help blocks | The blocks are removed while off |
 | `previewHelpText(cmd, feature, onText, offText)` | Existing inline preview mentions in command descriptions | Replaces the text only while off; enabled help retains its original wording |
 | `previewFlagUsage(cmd, name, feature, usage)` | `init --kind`, `--protocol`, `--acr-connection`, `--model`, `--instructions` | The flag keeps working. Its usage omits the feature while off |
 | `gateAgentServices(cmd)` | `invoke`, `run`, `optimize deploy`, `optimize apply`, `endpoint update` | Marks the context so shared selectors classify every selected agent service |

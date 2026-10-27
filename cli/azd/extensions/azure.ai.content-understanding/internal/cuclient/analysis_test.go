@@ -767,15 +767,18 @@ func TestAnalysisCancellationDuringPollRequest(t *testing.T) {
 
 func TestAnalysisResponseBodyTimeoutOverHTTPS(t *testing.T) {
 	var calls atomic.Int32
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+	release := make(chan struct{})
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_, err := io.WriteString(w, `{"status":`)
 		assert.NoError(t, err)
 		assert.NoError(t, http.NewResponseController(w).Flush())
-		<-request.Context().Done()
+		// Keep the response incomplete until the client returns; cancellation must not race a final EOF.
+		<-release
 	}))
 	defer server.Close()
+	defer close(release)
 	client, err := NewRESTTransport(server.URL, &testCredential{}, &TransportOptions{
 		APIVersion: PreviewAPIVersion, RequestTimeout: 100 * time.Millisecond, Transport: server.Client(),
 	})

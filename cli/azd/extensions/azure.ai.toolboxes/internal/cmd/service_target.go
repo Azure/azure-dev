@@ -160,12 +160,6 @@ func (p *toolboxServiceTarget) Deploy(
 		return p.deployReuse(ctx, name, cfg, serviceConfig, progress)
 	}
 
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
-	if err != nil {
-		return nil, err
-	}
-	endpoint := resolved.Endpoint
-
 	environment, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
@@ -190,6 +184,12 @@ func (p *toolboxServiceTarget) Deploy(
 	if err := validateToolboxDefinition(input); err != nil {
 		return nil, err
 	}
+
+	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := resolved.Endpoint
 
 	if progress != nil {
 		progress(fmt.Sprintf("Upserting toolbox %q", name))

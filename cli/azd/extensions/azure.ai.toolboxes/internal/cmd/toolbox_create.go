@@ -275,7 +275,11 @@ func validateToolboxDefinition(input *definition.Definition) error {
 	if _, err := validateRawToolEntries(input.Tools); err != nil {
 		return err
 	}
-	if err := validateNoDuplicateToolNames(input.Tools); err != nil {
+	tools := slices.Clone(input.Tools)
+	for name := range seen {
+		tools = append(tools, map[string]any{"name": name})
+	}
+	if err := validateNoDuplicateToolNames(tools); err != nil {
 		return err
 	}
 	if err := validateNoDuplicateConnectionIDs(input.Tools); err != nil {

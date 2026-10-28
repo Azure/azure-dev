@@ -39,11 +39,13 @@ type accessEnvironment struct {
 	stubEnvironmentReader
 	values map[string]string
 	err    error
+	reads  int
 }
 
 func (e *accessEnvironment) GetValues(
 	context.Context, *azdext.GetEnvironmentRequest, ...grpc.CallOption,
 ) (*azdext.KeyValueListResponse, error) {
+	e.reads++
 	if e.err != nil {
 		return nil, e.err
 	}
@@ -241,6 +243,63 @@ func TestToolboxDeployPreparesAccessWithoutAgentHook(t *testing.T) {
 	assert.Equal(t, []string{"roles", "grant", "read", "connection", "create"}, events)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.NotContains(t, client.createVersionCalls[0].req.Tools[0], "connection")
+}
+
+func TestToolboxDeployValidatesMixedToolNamesBeforeAccess(t *testing.T) {
+	for _, rawName := range []string{"mcp", "web"} {
+		t.Run(rawName, func(t *testing.T) {
+			envWrites := stubToolboxEndpointEnv(t)
+			var events []string
+			previous := projectctx.ReadAzdHostedSourcesFunc
+			projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+				events = append(events, "endpoint")
+				return projectctx.AzdHostedSources{EnvValue: toolboxAccessTestEndpoint, EnvName: "test"}, nil
+			}
+			t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previous })
+			access, client, account := accessTestSetup(t, &events, azdext.PrincipalType_PRINCIPAL_TYPE_USER)
+			environment, ok := access.environment.(*accessEnvironment)
+			require.True(t, ok)
+			target := &toolboxServiceTarget{
+				environmentClient: environment, accountClient: account, access: access,
+				resolver: accessConnectionResolver{events: &events, roles: client.roles},
+				newClient: func(endpoint, tenantID string) (toolboxClient, error) {
+					assert.Equal(t, toolboxAccessTestEndpoint, endpoint)
+					assert.Equal(t, "user-access-tenant", tenantID)
+					return client, nil
+				},
+			}
+			properties, err := structpb.NewStruct(map[string]any{
+				"connections": []any{map[string]any{"name": "mcp"}},
+				"tools":       []any{map[string]any{"type": "web_search", "name": "${TOOL_NAME}"}},
+			})
+			require.NoError(t, err)
+			result, err := target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "research", AdditionalProperties: properties, Environment: map[string]string{"TOOL_NAME": rawName},
+			}, nil, nil, nil)
+			if rawName == "mcp" {
+				local := requireLocalError(t, err, exterrors.CodeDuplicateToolName)
+				assert.Contains(t, local.Message, `"mcp"`)
+				assert.Nil(t, result)
+				assert.Empty(t, events)
+				assert.Zero(t, environment.reads)
+				assert.Nil(t, account.request)
+				assert.Empty(t, account.principalSub)
+				assert.False(t, client.roles.assigned)
+				assert.Empty(t, client.createVersionCalls)
+				assert.Empty(t, *envWrites)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			assert.Equal(t, []string{"endpoint", "roles", "grant", "read", "connection", "create"}, events)
+			require.Len(t, client.createVersionCalls, 1)
+			tools := client.createVersionCalls[0].req.Tools
+			require.Len(t, tools, 2)
+			assert.Equal(t, "mcp", tools[0]["name"])
+			assert.Equal(t, "web", tools[1]["name"])
+			assert.Len(t, *envWrites, 1)
+		})
+	}
 }
 
 func TestToolboxAccessDoesNotGrantForUnscopedSkippedOrAuthorizedOperations(t *testing.T) {
@@ -442,6 +501,51 @@ func TestToolboxCreateCommandReachesAccessPreparation(t *testing.T) {
 	local := requireLocalError(t, err, exterrors.CodeInvalidParameter)
 	assert.Contains(t, local.Message, "AZURE_AI_PROJECT_ID")
 	assert.Equal(t, int32(1), environment.reads.Load())
+}
+
+func TestToolboxCreateRejectsMixedDuplicateNamesBeforeAccess(t *testing.T) {
+	server := grpc.NewServer()
+	environment := &toolboxAccessEnvironmentServer{}
+	azdext.RegisterEnvironmentServiceServer(server, environment)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	t.Setenv("AZD_SERVER", listener.Addr().String())
+
+	endpointReads := 0
+	previous := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+		endpointReads++
+		return projectctx.AzdHostedSources{EnvValue: toolboxAccessTestEndpoint, EnvName: "test"}, nil
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previous })
+	envWrites := stubToolboxEndpointEnv(t)
+
+	for _, tc := range []struct {
+		extension string
+		content   string
+	}{
+		{".yaml", "connections:\n  - name: mcp\ntools:\n  - type: web_search\n    name: mcp\n"},
+		{".json", `{"connections":[{"name":"mcp"}],"tools":[{"type":"web_search","name":"mcp"}]}`},
+	} {
+		t.Run(tc.extension, func(t *testing.T) {
+			file := writeTempFile(t, tc.extension, tc.content)
+			var diagnostics bytes.Buffer
+			root := NewRootCommand()
+			root.SetOut(io.Discard)
+			root.SetErr(&diagnostics)
+			root.SetArgs([]string{"create", "research", "--from-file=" + file})
+
+			err := root.ExecuteContext(t.Context())
+			local := requireLocalError(t, err, exterrors.CodeDuplicateToolName)
+			assert.Contains(t, local.Message, `"mcp"`)
+			assert.Zero(t, endpointReads)
+			assert.Zero(t, environment.reads.Load())
+			assert.Empty(t, diagnostics.String())
+			assert.Empty(t, *envWrites)
+		})
+	}
 }
 
 func TestToolboxReadAndReuseDoNotPrepareAccess(t *testing.T) {

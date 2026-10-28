@@ -44,6 +44,11 @@ Toolbox-owned authoring properties use camelCase, including
 pass-through payloads and retain the field names and discriminator values defined
 by the corresponding service contract.
 
+Connection-backed tools use the connection's name as the tool name. Names must
+be unique across `connections[].name` and explicit `tools[].name` values.
+Create and managed deployment reject duplicates before endpoint resolution or
+access preparation.
+
 Configure a Foundry project endpoint before deploying. If the project or
 referenced Connections are also managed as services, declare those dependencies
 with `uses`. Run `azd provision` for the project, then `azd deploy --all` for

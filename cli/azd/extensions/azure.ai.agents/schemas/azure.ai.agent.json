@@ -383,7 +383,17 @@
           "audio": { "$ref": "#/definitions/LiveVoiceAudio" },
           "greeting": { "$ref": "#/definitions/LiveTemplateGreeting" },
           "structuredInputs": { "$ref": "#/definitions/LiveStructuredInputs" },
-          "delegation": { "$ref": "#/definitions/LiveVoiceDelegation" }
+          "delegation": { "$ref": "#/definitions/LiveVoiceDelegation" },
+          "policies": {
+            "type": "array",
+            "maxItems": 1,
+            "items": {
+              "allOf": [
+                { "$ref": "#/definitions/Policy" },
+                { "not": { "required": ["invocationsModeration"] } }
+              ]
+            }
+          }
         },
         "required": ["kind", "modelType", "model"],
         "not": {
@@ -399,6 +409,7 @@
             { "required": ["reasoning"] }, { "required": ["reasoningEffort"] },
             { "required": ["reasoning_effort"] },
             { "required": ["client"] }, { "required": ["input"] },
+            { "required": ["live_config"] },
             { "required": ["soundscape"] }, { "required": ["subagentConfig"] },
             { "required": ["subagent_config"] }, { "required": ["interimResponse"] },
             { "required": ["interim_response"] },

@@ -6,6 +6,7 @@ package agent_yaml
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"testing"
 
 	"azureaiagent/internal/pkg/agents/agent_api"
@@ -26,8 +27,14 @@ func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 			Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)},
 			Output: &VoiceAudioOutput{Voice: &VoiceConfig{LiveName: "marin"}},
 		},
-		Greeting:         map[string]any{"type": "template", "text": "Hello {{name}}"},
-		StructuredInputs: map[string]any{"name": map[string]any{"required": true}},
+		Greeting: map[string]any{"type": "template", "text": "Hello {{name}}"},
+		StructuredInputs: map[string]any{
+			"name":     map[string]any{"required": true, "defaultValue": "Ada"},
+			"nullable": map[string]any{"defaultValue": nil},
+			"scalar":   map[string]any{"defaultValue": 42},
+			"array":    map[string]any{"defaultValue": []any{"a", 2}},
+			"object":   map[string]any{"defaultValue": map[string]any{"enabled": true}},
+		},
 		Delegation: &LiveVoiceDelegation{
 			Type: "responses",
 			Responses: &LiveResponsesDelegation{
@@ -60,6 +67,13 @@ func TestCreateGPTLiveAgentAPIRequest_ResponsesDelegation(t *testing.T) {
 	delegation := got["delegation"].(map[string]any)
 	require.Equal(t, "responses", delegation["type"])
 	require.Equal(t, "gpt-5.6-terra", delegation["responses"].(map[string]any)["model"])
+	inputs := got["structured_inputs"].(map[string]any)
+	require.Equal(t, "Ada", inputs["name"].(map[string]any)["default_value"])
+	require.Contains(t, inputs["nullable"].(map[string]any), "default_value")
+	require.Nil(t, inputs["nullable"].(map[string]any)["default_value"])
+	require.EqualValues(t, 42, inputs["scalar"].(map[string]any)["default_value"])
+	require.Equal(t, []any{"a", float64(2)}, inputs["array"].(map[string]any)["default_value"])
+	require.Equal(t, true, inputs["object"].(map[string]any)["default_value"].(map[string]any)["enabled"])
 }
 
 func TestValidateGPTLiveAgent_RejectsRealtimeAndHostedFields(t *testing.T) {
@@ -163,6 +177,13 @@ func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
 		"model provider":          "model: {id: gpt-live-1, provider: custom}",
 		"policy extra":            "policies:\n  - type: rai_policy\n    rai_policy_name: policy\n    extra: no",
 		"structured input scalar": "structured_inputs:\n  learner: Ada",
+		"structured description":  "structured_inputs:\n  learner: {description: 1}",
+		"structured schema":       "structured_inputs:\n  learner: {schema: []}",
+		"structured required":     "structured_inputs:\n  learner: {required: yes}",
+		"empty live config":       "live_config: {}",
+		"empty tools":             "tools: []",
+		"empty avatar":            "avatar: {}",
+		"empty greeting":          "greeting: {}",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -174,6 +195,74 @@ func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
 			require.Error(t, ValidateAgentDefinition([]byte(definition)))
 		})
 	}
+}
+
+func TestValidateGPTLiveAgent_RejectsRawPolicyModerationAliases(t *testing.T) {
+	t.Parallel()
+	const policyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy"
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		t.Run(key, func(t *testing.T) {
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+				"model: {id: gpt-live-1}\npolicies:\n  - type: rai_policy\n    rai_policy_name: " + policyID +
+				"\n    " + key + ": {}\n"
+			require.ErrorContains(t, ValidateAgentDefinition([]byte(definition)),
+				"invocationsModeration is not supported for GPT Live")
+		})
+	}
+}
+
+func TestValidateVoiceRawProperties_GPTLiveRawContracts(t *testing.T) {
+	t.Parallel()
+	base := map[string]any{"subProtocol": "live"}
+	for name, invalid := range map[string]map[string]any{
+		"live config empty": {"live_config": map[string]any{}},
+		"tools empty":       {"tools": []any{}},
+		"avatar empty":      {"avatar": map[string]any{}},
+		"greeting empty":    {"greeting": map[string]any{}},
+		"greeting scalar":   {"greeting": "hello"},
+		"greeting type":     {"greeting": map[string]any{"type": "other", "text": "hello"}},
+		"greeting text type": {"greeting": map[string]any{
+			"type": "template", "text": 1,
+		}},
+		"greeting blank":   {"greeting": map[string]any{"type": "template", "text": "  "}},
+		"greeting extra":   {"greeting": map[string]any{"type": "template", "text": "hi", "extra": true}},
+		"structured entry": {"structuredInputs": map[string]any{"value": "bad"}},
+		"description type": {"structuredInputs": map[string]any{"value": map[string]any{"description": 1}}},
+		"schema type":      {"structuredInputs": map[string]any{"value": map[string]any{"schema": []any{}}}},
+		"required type":    {"structuredInputs": map[string]any{"value": map[string]any{"required": "yes"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := map[string]any{}
+			maps.Copy(values, base)
+			maps.Copy(values, invalid)
+			require.NotEmpty(t, ValidateVoiceRawProperties(values))
+		})
+	}
+
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		values := map[string]any{
+			"subProtocol": "live",
+			"policies": []any{map[string]any{
+				"type": "rai_policy", "raiPolicyName": "policy", key: nil,
+			}},
+		}
+		require.Contains(t, ValidateVoiceRawProperties(values),
+			"policies[0].invocationsModeration is not supported for GPT Live")
+	}
+
+	for _, defaultValue := range []any{nil, "text", 42, []any{1}, map[string]any{"enabled": true}} {
+		values := map[string]any{
+			"subProtocol": "live",
+			"structuredInputs": map[string]any{"value": map[string]any{
+				"description": "input", "schema": map[string]any{"type": "string"},
+				"required": false, "defaultValue": defaultValue,
+			}},
+			"greeting": map[string]any{"type": "template", "text": "Hello"},
+		}
+		require.Empty(t, ValidateVoiceRawProperties(values))
+	}
+	require.Empty(t, ValidateVoiceRawProperties(base), "omitting optional Live fields remains valid")
 }
 
 func TestVoiceConfigGPTLiveCustomObjectMarshalUsesOnlyID(t *testing.T) {

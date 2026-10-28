@@ -308,6 +308,83 @@ type testConcreteComponent[T comparable] struct {
 	concrete T
 }
 
+func Test_workflowCmdAdapter_WorkingDirectory(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		explicitCwd        bool
+		relativeCwd        bool
+		disableFlagParsing bool
+		fail               bool
+	}{
+		{name: "inherit current directory"},
+		{name: "explicit step cwd", explicitCwd: true},
+		{name: "relative step cwd", explicitCwd: true, relativeCwd: true},
+		{name: "extension step cwd", explicitCwd: true, disableFlagParsing: true},
+		{name: "restore parent options on error", fail: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+			parent := t.TempDir()
+			projectDir := t.TempDir()
+			stepDir := filepath.Join(projectDir, "step")
+			require.NoError(t, os.Mkdir(stepDir, 0755))
+			t.Chdir(projectDir)
+
+			originalArgs := os.Args
+			os.Args = []string{"azd", "--cwd", parent, "version"}
+			t.Cleanup(func() { os.Args = originalArgs })
+
+			opts := &internal.GlobalCommandOptions{Cwd: parent, NoPrompt: true}
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, opts)
+			var actualDir string
+			adapter := &workflowCmdAdapter{
+				globalArgs:    extractGlobalArgs(),
+				globalOptions: opts,
+				newCommand: func() *cobra.Command {
+					root := NewRootCmd(false, nil, container)
+					root.AddCommand(&cobra.Command{
+						Use:                "probe",
+						DisableFlagParsing: tt.disableFlagParsing,
+						RunE: func(cmd *cobra.Command, args []string) error {
+							var err error
+							actualDir, err = os.Getwd()
+							if tt.fail {
+								return assert.AnError
+							}
+							return err
+						},
+					})
+					return root
+				},
+			}
+			require.Empty(t, adapter.globalArgs, "the parent's --cwd must not be forwarded")
+			args := []string{"probe"}
+			wantDir := projectDir
+			if tt.explicitCwd {
+				if tt.relativeCwd {
+					args = append(args, "-C", "step")
+				} else {
+					args = append(args, "--cwd", stepDir)
+				}
+				wantDir = stepDir
+			}
+			err := adapter.ExecuteContext(t.Context(), args)
+			if tt.fail {
+				require.ErrorIs(t, err, assert.AnError)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, wantDir, actualDir)
+			currentDir, err := os.Getwd()
+			require.NoError(t, err)
+			require.Equal(t, projectDir, currentDir)
+			require.Equal(t, parent, opts.Cwd, "workflow steps must not change the parent's global options")
+		})
+	}
+}
+
 // Test_workflowCmdAdapter_ContextPropagation validates that the workflowCmdAdapter
 // properly marks contexts as child actions when executing subcommands.
 // The main.go entrypoint wraps the root context with context.WithoutCancel,

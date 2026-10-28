@@ -19,14 +19,40 @@ import (
 )
 
 func Test_WorkflowService_NestedInit_Offline(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		target    string
+		parentCwd bool
+	}{
+		{name: "current directory", target: "."},
+		{name: "child directory", target: "agent"},
+		{name: "child directory with parent cwd", target: "agent", parentCwd: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			testWorkflowNestedInit(t, tt.target, tt.parentCwd)
+		})
+	}
+}
+
+func testWorkflowNestedInit(t *testing.T, target string, parentCwd bool) {
+	t.Helper()
 	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
 	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
 	t.Setenv("NO_COLOR", "1")
-	t.Chdir(t.TempDir())
+	parent := t.TempDir()
+	t.Chdir(parent)
+	opts := &internal.GlobalCommandOptions{NoPrompt: true}
+	originalArgs := os.Args
+	os.Args = []string{"azd", "ai", "agent", "init"}
+	t.Cleanup(func() { os.Args = originalArgs })
+	if parentCwd {
+		opts.Cwd = parent
+		os.Args = append(os.Args, "--cwd", parent)
+	}
 
 	container := ioc.NewNestedContainer(nil)
 	ioc.RegisterInstance(container, t.Context())
-	ioc.RegisterInstance(container, &internal.GlobalCommandOptions{NoPrompt: true})
+	ioc.RegisterInstance(container, opts)
 
 	rootCmd := NewRootCmd(false, nil, container)
 	rootCmd.SetOut(io.Discard)
@@ -66,12 +92,22 @@ func Test_WorkflowService_NestedInit_Offline(t *testing.T) {
 			Name: "init",
 			Steps: []*azdext.WorkflowStep{{Command: &azdext.WorkflowCommand{
 				Args: []string{
-					"init", "-t", t.TempDir(), ".", "--environment", "repro", "--no-prompt",
+					"init", "-t", t.TempDir(), target, "--environment", "repro", "--no-prompt",
 				}}}},
 		},
 	})
 
 	require.NoError(t, err)
-	_, err = os.Stat(filepath.Join(".azure", "repro", ".env"))
+	projectDir := filepath.Join(parent, target)
+	currentDir, err := os.Getwd()
 	require.NoError(t, err)
+	require.Equal(t, projectDir, currentDir, "nested init must leave the host in the new project directory")
+	_, err = os.Stat(filepath.Join(projectDir, ".azure", "repro", ".env"))
+	require.NoError(t, err)
+	response, err := client.Project().Get(ctx, &azdext.EmptyRequest{})
+	require.NoError(t, err)
+	require.Equal(t, projectDir, response.Project.Path)
+	if target != "." {
+		require.NoFileExists(t, filepath.Join(parent, "azure.yaml"))
+	}
 }

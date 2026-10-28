@@ -926,12 +926,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(func() workflow.AzdCommandRunner {
+	container.MustRegisterSingleton(func(globalOptions *internal.GlobalCommandOptions) workflow.AzdCommandRunner {
 		return &workflowCmdAdapter{
 			newCommand: func() *cobra.Command {
 				return newRootCmdWithoutRegistration(container)
 			},
-			globalArgs: extractGlobalArgs(),
+			globalArgs:    extractGlobalArgs(),
+			globalOptions: globalOptions,
 		}
 	})
 	container.MustRegisterSingleton(workflow.NewRunner)
@@ -1063,8 +1064,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 // to avoid stale context or command state from previous executions.
 // See: https://github.com/Azure/azure-dev/issues/6530
 type workflowCmdAdapter struct {
-	newCommand func() *cobra.Command
-	globalArgs []string
+	newCommand    func() *cobra.Command
+	globalArgs    []string
+	globalOptions *internal.GlobalCommandOptions
 }
 
 // ExecuteContext implements workflow.AzdCommandRunner.
@@ -1080,6 +1082,21 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 	ctx = commandresult.EnsureFollowUpCommandOrder(ctx)
 	childCtx, cancel := context.WithCancel(middleware.WithChildAction(ctx))
 	defer cancel()
+
+	if w.globalOptions != nil {
+		// The outer --cwd has already been applied. Reapplying it would undo directory
+		// changes made by earlier workflow steps, such as init creating a project folder.
+		// Use only this step's --cwd, including for extensions that bypass Cobra parsing.
+		var stepOptions internal.GlobalCommandOptions
+		if err := ParseGlobalFlags(args, &stepOptions); err != nil {
+			return err
+		}
+		// Shared services read these options too. Restore the parent's value even
+		// when execution fails or a nested workflow changes it again.
+		parentCwd := w.globalOptions.Cwd
+		w.globalOptions.Cwd = stepOptions.Cwd
+		defer func() { w.globalOptions.Cwd = parentCwd }()
+	}
 
 	rootCmd := w.newCommand()
 	// Always set args explicitly to prevent Cobra from falling back to os.Args[1:].
@@ -1100,6 +1117,8 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
 // --environment would override the step-level value. Environment propagation to workflow
 // steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
+// The "cwd" flag is also excluded: the process already entered that directory,
+// and workflow steps must retain subsequent directory changes or use their own --cwd.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -1108,7 +1127,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName && f.Name != "cwd" {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

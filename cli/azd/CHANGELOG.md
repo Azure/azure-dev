@@ -1,14 +1,10 @@
 # Release History
 
-## 1.38.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.37.2 (2026-10-28)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix unattended provisioning proceeding after critical validation warnings; `--no-prompt` now fails with remediation, while interactive confirmation defaults to No. Thanks @hyoshis for the contribution!
 
 ## 1.37.1 (2026-10-21)
 

@@ -175,7 +175,8 @@ func (p *toolboxServiceTarget) Deploy(
 	}
 	tools := make([]map[string]any, 0, len(cfg.Tools))
 	for _, tool := range cfg.Tools {
-		tools = append(tools, expandToolboxValue(tool, environment).(map[string]any))
+		expanded, _ := expandToolboxValue(tool, environment).(map[string]any)
+		tools = append(tools, expanded)
 	}
 	input := &definition.Definition{
 		Name:        name,
@@ -223,7 +224,8 @@ func (p *toolboxServiceTarget) Deploy(
 	}
 
 	if p.access != nil {
-		if err := p.access.prepare(ctx, scope, tenantID, client, name); err != nil {
+		client, err = p.access.prepare(ctx, scope, tenantID, client, name)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -354,7 +356,7 @@ func (p *toolboxServiceTarget) buildToolEntries(
 	for _, tool := range tools {
 		entry := maps.Clone(tool)
 		if env != nil {
-			entry = expandToolboxValue(tool, env).(map[string]any)
+			entry, _ = expandToolboxValue(tool, env).(map[string]any)
 		}
 		if connName, isString := entry["connection"].(string); isString && connName != "" {
 			conn, err := p.resolver.resolveConnection(ctx, endpoint, connName)

@@ -197,7 +197,7 @@ func TestToolboxCreatePreparesAccessBeforeConnections(t *testing.T) {
 				&definition.Definition{Connections: []definition.ConnectionReference{{Name: "mcp"}}},
 				toolboxFlags{output: "json"})
 			require.NoError(t, err)
-			assert.Equal(t, []string{"read", "roles", "grant", "read", "read", "connection", "create"}, events)
+			assert.Equal(t, []string{"read", "roles", "grant", "read", "connection", "create"}, events)
 			assert.Equal(t, "Assigning Foundry User to the current principal.\n"+
 				"Waiting for Foundry access to propagate.\nFoundry access is ready.\n", diagnostics.String())
 		})
@@ -466,16 +466,35 @@ func TestToolboxReadAndReuseDoNotPrepareAccess(t *testing.T) {
 
 func TestToolboxDeployRejectsInvalidInputBeforeAccess(t *testing.T) {
 	toolboxDeployEndpoint(t)
-	properties, err := structpb.NewStruct(map[string]any{
-		"connections": []any{map[string]any{"name": "mcp"}},
-		"tools":       []any{map[string]any{"name": "missing-type"}},
-	})
-	require.NoError(t, err)
-	target := &toolboxServiceTarget{access: &toolboxAccess{}}
-	_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
-		Name: "research", AdditionalProperties: properties, Environment: map[string]string{"SETTING": "isolated"},
-	}, nil, nil, nil)
-	requireLocalError(t, err, exterrors.CodeMissingToolType)
+	for _, tc := range []struct {
+		name     string
+		tools    []any
+		wantCode string
+	}{
+		{
+			name:     "missing tool type",
+			tools:    []any{map[string]any{"name": "missing-type"}},
+			wantCode: exterrors.CodeMissingToolType,
+		},
+		{
+			name:     "null tool entry",
+			tools:    []any{nil},
+			wantCode: exterrors.CodeInvalidParameter,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			properties, err := structpb.NewStruct(map[string]any{
+				"connections": []any{map[string]any{"name": "mcp"}},
+				"tools":       tc.tools,
+			})
+			require.NoError(t, err)
+			target := &toolboxServiceTarget{access: &toolboxAccess{}}
+			_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "research", AdditionalProperties: properties, Environment: map[string]string{"SETTING": "isolated"},
+			}, nil, nil, nil)
+			requireLocalError(t, err, tc.wantCode)
+		})
+	}
 }
 
 func TestToolboxAccessOptionalFailuresAndCancellation(t *testing.T) {

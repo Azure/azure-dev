@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -76,29 +77,37 @@ func (a *toolboxAccess) resolve(ctx context.Context, endpoint string) (*toolboxA
 
 func (a *toolboxAccess) prepare(
 	ctx context.Context, scope *toolboxAccessScope, tenantID string, client toolboxClient, name string,
-) error {
+) (toolboxClient, error) {
 	if scope == nil || scope.skip {
-		return nil
+		return client, nil
 	}
 	credential, err := a.newCredential(tenantID)
 	if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
-		return cancelErr
+		return nil, cancelErr
 	}
 	if err != nil {
 		a.warn("Could not create the Foundry role-check credential; continuing without assigning a role.")
-		return nil
+		return client, nil
 	}
+	var cached *probedToolboxClient
 	prepare := foundry.AccessPreparation{
 		Account:    a.account,
 		Credential: credential,
 		Roles:      a.roles,
 		Scope:      scope.resource.String(),
 		Probe: func(ctx context.Context) error {
-			_, err := client.GetToolbox(ctx, name)
+			cached = nil
+			tb, err := client.GetToolbox(ctx, name)
 			if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
 				return cancelErr
 			}
-			if isAzureNotFound(err) {
+			if err == nil || isAzureNotFound(err) {
+				cached = &probedToolboxClient{
+					toolboxClient: client,
+					probedName:    name,
+					probedObj:     tb,
+					probedErr:     err,
+				}
 				return nil
 			}
 			return err
@@ -110,16 +119,35 @@ func (a *toolboxAccess) prepare(
 	}
 	if err := prepare.Ensure(ctx); err != nil {
 		if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
-			return cancelErr
+			return nil, cancelErr
 		}
 		serviceErr := exterrors.ServiceFromAzure(err, exterrors.OpGetToolbox)
 		if structured, ok := errors.AsType[*azdext.ServiceError](serviceErr); ok {
 			structured.Suggestion = "Foundry User was assigned on the project but access has not propagated. " +
 				"Wait and retry; if access is still denied, ask an administrator to verify project access."
 		}
-		return serviceErr
+		return nil, serviceErr
 	}
-	return nil
+	if cached != nil {
+		return cached, nil
+	}
+	return client, nil
+}
+
+type probedToolboxClient struct {
+	toolboxClient
+	probedName string
+	probedObj  *azure.ToolboxObject
+	probedErr  error
+	consumed   bool
+}
+
+func (c *probedToolboxClient) GetToolbox(ctx context.Context, name string) (*azure.ToolboxObject, error) {
+	if !c.consumed && name == c.probedName {
+		c.consumed = true
+		return c.probedObj, c.probedErr
+	}
+	return c.toolboxClient.GetToolbox(ctx, name)
 }
 
 func (a *toolboxAccess) writeClient(
@@ -145,8 +173,5 @@ func (a *toolboxAccess) writeClient(
 		return nil, exterrors.Auth(exterrors.CodeCredentialCreationFailed,
 			"could not create the Foundry credential", "run 'azd auth login' and retry")
 	}
-	if err := a.prepare(ctx, scope, tenantID, client, name); err != nil {
-		return nil, err
-	}
-	return client, nil
+	return a.prepare(ctx, scope, tenantID, client, name)
 }

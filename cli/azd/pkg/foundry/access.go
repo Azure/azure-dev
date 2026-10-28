@@ -50,14 +50,22 @@ func ProjectAccessRoles() []string {
 	return slices.Clone(projectAccessRoles)
 }
 
-// ProjectAccessScope validates that an ARM project ID identifies the endpoint being probed.
-// Errors deliberately omit the endpoint, which may contain authored credentials.
-func ProjectAccessScope(projectID, endpoint string) (*arm.ResourceID, error) {
+func parseProjectResourceID(projectID string) (*arm.ResourceID, error) {
 	id, err := arm.ParseResourceID(strings.TrimSpace(projectID))
 	if err != nil || !strings.EqualFold(id.ResourceType.String(), "Microsoft.CognitiveServices/accounts/projects") ||
 		id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" || id.Parent == nil ||
 		id.Parent.Name == "" || len(strings.Split(id.String(), "/")) != 11 {
 		return nil, fmt.Errorf("project ID is not a valid Foundry project resource ID")
+	}
+	return id, nil
+}
+
+// ProjectAccessScope validates that an ARM project ID identifies the endpoint being probed.
+// Errors deliberately omit the endpoint, which may contain authored credentials.
+func ProjectAccessScope(projectID, endpoint string) (*arm.ResourceID, error) {
+	id, err := parseProjectResourceID(projectID)
+	if err != nil {
+		return nil, err
 	}
 	u, err := url.Parse(strings.TrimRight(endpoint, "/"))
 	if err != nil || !strings.EqualFold(u.Scheme, "https") || u.User != nil ||
@@ -236,8 +244,8 @@ func (r *projectRoles) Assign(
 ) error {
 	// A stable name makes simultaneous preparations for the same project/principal idempotent.
 	name := uuid.NewSHA1(uuid.NameSpaceURL, []byte(strings.ToLower(scope+"/"+principalID+"/"+FoundryUserRole))).String()
-	resource, err := arm.ParseResourceID(scope)
-	if err != nil || resource.SubscriptionID == "" {
+	resource, err := parseProjectResourceID(scope)
+	if err != nil {
 		return fmt.Errorf("a subscription-scoped project resource ID is required for role assignment")
 	}
 	subscriptionID := resource.SubscriptionID
@@ -313,6 +321,16 @@ func IsProjectAccessDenied(err error) bool {
 	}
 }
 
+// IsProjectNotFound reports whether a data-plane 404 indicates that a freshly provisioned
+// Foundry project has not yet finished syncing to the regional Foundry data plane.
+func IsProjectNotFound(err error) bool {
+	response, ok := errors.AsType[*azcore.ResponseError](err)
+	if !ok || response.StatusCode != http.StatusNotFound {
+		return false
+	}
+	return strings.Contains(strings.ToLower(response.Error()), "project not found")
+}
+
 func (p AccessPreparation) warn(message string) {
 	if p.Warn != nil {
 		p.Warn(message)
@@ -325,87 +343,130 @@ func (p AccessPreparation) progress(message string) {
 	}
 }
 
+func (p AccessPreparation) retryTiming() (int, time.Duration, time.Duration) {
+	attempts := p.Attempts
+	if attempts <= 0 {
+		attempts = 60
+	}
+	delay := p.RetryDelay
+	initialDelay := 15 * time.Second
+	if delay > 0 {
+		initialDelay = delay
+	} else {
+		delay = 5 * time.Second
+	}
+	return attempts, delay, initialDelay
+}
+
+func waitContext(ctx context.Context, d time.Duration) error {
+	timer := time.NewTimer(d)
+	select {
+	case <-ctx.Done():
+		timer.Stop()
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // Ensure checks existing access, conditionally grants Foundry User, and waits for propagation.
 // Optional ARM failures are warnings; the caller's actual operation remains authoritative.
 func (p AccessPreparation) Ensure(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	probeErr := p.Probe(ctx)
-	if err := AccessCancellation(ctx, probeErr); err != nil {
-		return err
-	}
-	if probeErr == nil {
-		return nil
-	}
-	if !IsProjectAccessDenied(probeErr) {
-		p.warn("Could not establish missing Foundry access; continuing without assigning a role.")
-		return nil
-	}
-	resource, err := arm.ParseResourceID(p.Scope)
-	if err != nil || resource.SubscriptionID == "" {
-		return fmt.Errorf("a subscription-scoped project resource ID is required for access preparation")
-	}
-	principalID, principalType, err := ResolvePrincipal(ctx, p.Account, resource.SubscriptionID)
-	if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
-		return cancelErr
-	}
-	if err != nil {
-		p.warn("Could not resolve the current principal; continuing without assigning a role.")
-		return nil
-	}
-	roles := p.Roles
-	if roles == nil {
-		roles, err = newProjectRoles(resource.SubscriptionID, p.Credential)
+	attempts, delay, initialDelay := p.retryTiming()
+	var (
+		hasAccess  bool
+		assigned   bool
+		armWarning string
+	)
+	if p.Account != nil {
+		resource, err := parseProjectResourceID(p.Scope)
 		if err != nil {
-			p.warn("Could not create the Foundry role-assignment client; continuing without assigning a role.")
-			return nil
+			return fmt.Errorf("a subscription-scoped project resource ID is required for access preparation")
+		}
+		principalID, principalType, err := ResolvePrincipal(ctx, p.Account, resource.SubscriptionID)
+		if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
+			return cancelErr
+		}
+		if err != nil {
+			armWarning = "Could not resolve the current principal; continuing without assigning a role."
+		} else {
+			roles := p.Roles
+			if roles == nil {
+				roles, err = newProjectRoles(resource.SubscriptionID, p.Credential)
+				if err != nil {
+					armWarning = "Could not create the Foundry role-assignment client; continuing without assigning a role."
+				}
+			}
+			if roles != nil {
+				hasAccess, err = roles.HasAccess(ctx, p.Scope, principalID)
+				if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
+					return cancelErr
+				}
+				if err != nil {
+					armWarning = "Could not inspect inherited Foundry roles; continuing without assigning a role."
+				} else if !hasAccess {
+					p.progress("Assigning Foundry User to the current principal.")
+					if err := roles.Assign(ctx, p.Scope, principalID, principalType); err != nil {
+						if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
+							return cancelErr
+						}
+						armWarning = fmt.Sprintf(
+							"Could not assign Foundry User. Ask an administrator to run: "+
+								"az role assignment create --assignee %q --role %s --scope %q. Continuing.",
+							principalID, FoundryUserRole, p.Scope)
+					} else {
+						assigned = true
+						p.progress("Waiting for Foundry access to propagate.")
+						if err := waitContext(ctx, initialDelay); err != nil {
+							return err
+						}
+					}
+				}
+			}
 		}
 	}
-	hasAccess, err := roles.HasAccess(ctx, p.Scope, principalID)
-	if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
-		return cancelErr
-	}
-	if err != nil {
-		p.warn("Could not inspect inherited Foundry roles; continuing without assigning a role.")
+	if p.Probe == nil {
+		if armWarning != "" {
+			p.warn(armWarning)
+		}
 		return nil
 	}
-	if !hasAccess {
-		p.progress("Assigning Foundry User to the current principal.")
-		if err := roles.Assign(ctx, p.Scope, principalID, principalType); err != nil {
-			if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
-				return cancelErr
-			}
-			p.warn(fmt.Sprintf(
-				"Could not assign Foundry User. Ask an administrator to run: "+
-					"az role assignment create --assignee %q --role %s --scope %q. Continuing.",
-				principalID, FoundryUserRole, p.Scope))
-			return nil
-		}
-	}
-	p.progress("Waiting for Foundry access to propagate.")
-	attempts := p.Attempts
-	if attempts <= 0 {
-		attempts = 12
-	}
-	delay := p.RetryDelay
-	if delay <= 0 {
-		delay = 5 * time.Second
-	}
+	waited := assigned
 	for attempt := range attempts {
 		err := p.Probe(ctx)
 		if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
 			return cancelErr
 		}
 		if err == nil {
-			p.progress("Foundry access is ready.")
+			if waited {
+				p.progress("Foundry access is ready.")
+			}
 			return nil
 		}
-		if !IsProjectAccessDenied(err) {
-			p.warn("Foundry access readiness could not be confirmed; continuing with the operation.")
+		if armWarning != "" && !IsProjectNotFound(err) {
+			p.warn(armWarning)
 			return nil
+		}
+		if !IsProjectAccessDenied(err) && !IsProjectNotFound(err) {
+			if assigned {
+				p.warn("Foundry access readiness could not be confirmed; continuing with the operation.")
+			} else {
+				p.warn("Could not establish missing Foundry access; continuing without assigning a role.")
+			}
+			return nil
+		}
+		if !waited && armWarning == "" {
+			waited = true
+			p.progress("Waiting for Foundry access to propagate.")
 		}
 		if attempt == attempts-1 {
+			if armWarning != "" {
+				p.warn(armWarning)
+				return nil
+			}
 			if hasAccess {
 				p.warn("A sufficient Foundry role is already assigned; " +
 					"if access is still denied, verify role propagation or policy.")
@@ -413,12 +474,8 @@ func (p AccessPreparation) Ensure(ctx context.Context) error {
 			}
 			return fmt.Errorf("Foundry User was assigned but access has not propagated; wait and retry: %w", err)
 		}
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
+		if err := waitContext(ctx, delay); err != nil {
+			return err
 		}
 	}
 	return nil

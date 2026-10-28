@@ -297,6 +297,17 @@ func accessDenied() error {
 	return &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PermissionDenied"}
 }
 
+func projectNotFound() error {
+	return &azcore.ResponseError{
+		StatusCode: http.StatusNotFound,
+		ErrorCode:  "NotFound",
+		RawResponse: &http.Response{
+			StatusCode: http.StatusNotFound,
+			Status:     "404 Not Found: Project not found",
+		},
+	}
+}
+
 func TestAccessPreparation(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
@@ -313,11 +324,17 @@ func TestAccessPreparation(t *testing.T) {
 		wantWarning  bool
 		wantErr      error
 	}{
-		{name: "externally managed custom access", wantProbes: 1},
-		{name: "non-authorization probe failure", probeErr: errors.New("network failure"), wantProbes: 1, wantWarning: true},
-		{name: "unrelated forbidden", probeErr: &azcore.ResponseError{
-			StatusCode: 403, ErrorCode: "FirewallDenied",
-		}, wantProbes: 1, wantWarning: true},
+		{name: "externally managed custom access",
+			principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER, principalID: "object-id",
+			assignErr: accessDenied(), wantChecks: 1, wantAssigns: 1, wantProbes: 1},
+		{name: "non-authorization probe failure",
+			principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER, principalID: "object-id",
+			hasAccess: true, probeErr: errors.New("network failure"), wantChecks: 1, wantProbes: 1, wantWarning: true},
+		{name: "unrelated forbidden",
+			principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER, principalID: "object-id",
+			hasAccess: true, probeErr: &azcore.ResponseError{
+				StatusCode: 403, ErrorCode: "FirewallDenied",
+			}, wantChecks: 1, wantProbes: 1, wantWarning: true},
 		{name: "inherited Foundry User propagates", probeErr: accessDenied(),
 			principal:   azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			principalID: "guest-object-id", hasAccess: true, wantChecks: 1, wantProbes: 2},
@@ -337,14 +354,16 @@ func TestAccessPreparation(t *testing.T) {
 		{name: "grant denied", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			principalID: "object-id", assignErr: accessDenied(), wantChecks: 1, wantAssigns: 1,
 			wantProbes: 1, wantWarning: true},
-		{name: "probe cancellation", probeErr: context.Canceled, wantProbes: 1, wantErr: context.Canceled},
+		{name: "probe cancellation",
+			principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER, principalID: "object-id",
+			hasAccess: true, probeErr: context.Canceled, wantChecks: 1, wantProbes: 1, wantErr: context.Canceled},
 		{name: "principal cancellation", probeErr: accessDenied(), principalErr: context.DeadlineExceeded,
-			wantProbes: 1, wantErr: context.DeadlineExceeded},
+			wantErr: context.DeadlineExceeded},
 		{name: "role check cancellation", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
-			principalID: "object-id", checkErr: context.Canceled, wantChecks: 1, wantProbes: 1, wantErr: context.Canceled},
+			principalID: "object-id", checkErr: context.Canceled, wantChecks: 1, wantErr: context.Canceled},
 		{name: "grant cancellation", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			principalID: "object-id", assignErr: context.Canceled, wantChecks: 1, wantAssigns: 1,
-			wantProbes: 1, wantErr: context.Canceled},
+			wantErr: context.Canceled},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			account := &accessTestAccount{response: &azdext.GetCurrentPrincipalResponse{
@@ -355,6 +374,7 @@ func TestAccessPreparation(t *testing.T) {
 			var warnings []string
 			err := (AccessPreparation{
 				Account: account, Roles: roles, Scope: accessTestScope,
+				RetryDelay: time.Nanosecond,
 				Probe: func(context.Context) error {
 					probes++
 					if probes == 1 {
@@ -388,7 +408,7 @@ func TestAccessPreparationPropagation(t *testing.T) {
 		name    string
 		readyAt int
 	}{
-		{name: "eventual readiness", readyAt: 4},
+		{name: "eventual readiness", readyAt: 3},
 		{name: "bounded exhaustion"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -415,7 +435,7 @@ func TestAccessPreparationPropagation(t *testing.T) {
 				require.ErrorContains(t, err, "access has not propagated")
 				assert.True(t, IsProjectAccessDenied(err))
 			}
-			assert.Equal(t, 4, probes)
+			assert.Equal(t, 3, probes)
 			assert.Equal(t, 1, roles.assigns)
 		})
 	}
@@ -435,27 +455,35 @@ func TestAccessPreparationProgress(t *testing.T) {
 		wantWarning  bool
 		wantErr      error
 	}{
-		{name: "existing access", probeErrors: []error{nil}},
-		{name: "unrelated probe failure", probeErrors: []error{errors.New("network failure")}, wantWarning: true},
+		{name: "existing access", probeErrors: []error{nil}, hasAccess: true},
+		{name: "project not found then authorized with custom role",
+			probeErrors: []error{projectNotFound(), nil}, assignErr: accessDenied(),
+			wantProgress: []string{granting}},
+		{name: "project not found then granted",
+			probeErrors:  []error{projectNotFound(), nil},
+			wantProgress: []string{granting, waiting, ready}},
+		{name: "unrelated probe failure", probeErrors: []error{errors.New("network failure")},
+			hasAccess: true, wantWarning: true},
 		{name: "inherited role propagates", probeErrors: []error{accessDenied(), nil}, hasAccess: true,
 			wantProgress: []string{waiting, ready}},
 		{name: "inherited role still denied after propagation wait",
-			probeErrors: []error{accessDenied(), accessDenied(), accessDenied()}, hasAccess: true,
+			probeErrors: []error{accessDenied(), accessDenied()}, hasAccess: true,
 			wantProgress: []string{waiting}, wantWarning: true},
-		{name: "nil callbacks on warning path", probeErrors: []error{errors.New("network failure")}, nilProgress: true},
+		{name: "nil callbacks on warning path", probeErrors: []error{errors.New("network failure")},
+			hasAccess: true, nilProgress: true},
 		{name: "grant failure", probeErrors: []error{accessDenied()}, assignErr: accessDenied(),
 			wantProgress: []string{granting}, wantWarning: true},
-		{name: "immediate readiness", probeErrors: []error{accessDenied(), nil},
+		{name: "immediate readiness", probeErrors: []error{nil},
 			wantProgress: []string{granting, waiting, ready}},
-		{name: "eventual readiness", probeErrors: []error{accessDenied(), accessDenied(), nil},
+		{name: "eventual readiness", probeErrors: []error{accessDenied(), nil},
 			wantProgress: []string{granting, waiting, ready}},
-		{name: "readiness unconfirmed", probeErrors: []error{accessDenied(), errors.New("network failure")},
+		{name: "readiness unconfirmed", probeErrors: []error{errors.New("network failure")},
 			wantProgress: []string{granting, waiting}, wantWarning: true},
-		{name: "propagation exhausted", probeErrors: []error{accessDenied(), accessDenied(), accessDenied()},
+		{name: "propagation exhausted", probeErrors: []error{accessDenied(), accessDenied()},
 			wantProgress: []string{granting, waiting}, wantErr: accessDenied()},
-		{name: "propagation canceled", probeErrors: []error{accessDenied(), context.Canceled},
+		{name: "propagation canceled", probeErrors: []error{context.Canceled},
 			wantProgress: []string{granting, waiting}, wantErr: context.Canceled},
-		{name: "nil callback after grant", probeErrors: []error{accessDenied(), nil}, nilProgress: true},
+		{name: "nil callback after grant", probeErrors: []error{nil}, nilProgress: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			roles := &accessTestRoles{hasAccess: tt.hasAccess, assignErr: tt.assignErr}
@@ -479,13 +507,12 @@ func TestAccessPreparationProgress(t *testing.T) {
 					switch message {
 					case granting:
 						assert.Equal(t, 0, roles.assigns, "report the attempt before assigning")
-						assert.Equal(t, 1, probes)
+						assert.Equal(t, 0, probes, "assign in ARM before probing the data plane")
 					case waiting:
 						assert.True(t, roles.assigns == 1 || tt.hasAccess)
-						assert.Equal(t, 1, probes, "report the wait before probing propagation")
 					case ready:
 						assert.True(t, roles.assigns == 1 || tt.hasAccess)
-						require.Greater(t, probes, 1)
+						require.GreaterOrEqual(t, probes, 1)
 						assert.NoError(t, tt.probeErrors[probes-1], "readiness must follow a successful probe")
 					default:
 						t.Errorf("unexpected progress: %s", message)
@@ -522,6 +549,7 @@ func TestAccessPreparationCancellationDuringPropagation(t *testing.T) {
 			ObjectId: "object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 		}},
 		Roles: &accessTestRoles{}, Scope: accessTestScope,
+		RetryDelay: time.Nanosecond,
 		Probe: func(context.Context) error {
 			probes++
 			if probes == 2 {
@@ -656,5 +684,25 @@ func TestProjectRolesAssignmentRequest(t *testing.T) {
 			require.NoError(t, roles.Assign(t.Context(), accessTestScope, principalID, principalType))
 			assert.Equal(t, 1, calls, "the preparation's role check makes a second pre-check unnecessary")
 		})
+	}
+}
+
+func TestProjectRolesRejectsNonProjectScopes(t *testing.T) {
+	roles := newTestProjectRoles(t, func(request *http.Request) (*http.Response, error) {
+		t.Fatalf("unexpected request for invalid scope: %s", request.URL.Path)
+		return nil, nil
+	})
+	for _, scope := range []string{
+		"/subscriptions/sub",
+		"/subscriptions/sub/resourceGroups/rg",
+		"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/acct",
+	} {
+		require.Error(t, roles.Assign(t.Context(), scope, "principal", armauthorization.PrincipalTypeUser))
+		err := (AccessPreparation{
+			Account: &accessTestAccount{},
+			Scope:   scope,
+			Probe:   func(context.Context) error { return accessDenied() },
+		}).Ensure(t.Context())
+		require.Error(t, err)
 	}
 }

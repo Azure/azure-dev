@@ -3,8 +3,8 @@ capabilities:
     - custom-commands
     - service-target-provider
     - metadata
-description: Manage Microsoft Foundry Connections from your terminal. (Beta)
-displayName: Foundry Connections (Beta)
+description: Manage Microsoft Foundry Connections from your terminal.
+displayName: Foundry Connections
 id: azure.ai.connections
 language: go
 namespace: ai.connection
@@ -16,5 +16,5 @@ tags:
     - ai
     - connection
 usage: azd ai connection <command> [options]
-version: 1.0.0-beta.11
+version: 1.0.0
 requiredAzdVersion: ">=1.37.0"

@@ -1,21 +1,21 @@
 # yaml-language-server: $schema=../extension.schema.json
 id: azure.ai.agents
 namespace: ai.agent
-displayName: Foundry agents (Beta)
-description: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal. (Beta)
+displayName: Foundry agents
+description: Ship prompt, hosted, and voice agents with Microsoft Foundry from your terminal.
 usage: azd ai agent <command> [options]
 # NOTE: Make sure version.txt is in sync with this version.
-version: 1.0.0-beta.22
+version: 1.0.0
 requiredAzdVersion: ">=1.37.0"
 dependencies:
   - id: azure.ai.inspector
-    version: "~1.0.0-beta.1"
+    version: "~1.0.0"
   - id: azure.ai.projects
-    version: "~1.0.0-beta.12"
+    version: "~1.0.0"
   - id: azure.ai.connections
-    version: "~1.0.0-beta.7"
+    version: "~1.0.0"
   - id: azure.ai.toolboxes
-    version: "~1.0.0-beta.6"
+    version: "~1.0.0"
 language: go
 capabilities:
   - custom-commands

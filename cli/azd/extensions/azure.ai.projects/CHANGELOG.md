@@ -1,5 +1,13 @@
 # Release History
 
+## 1.0.0 (2026-10-29)
+
+First stable release of the Foundry Projects extension.
+
+### Bugs Fixed
+
+- [[#10713]](https://github.com/Azure/azure-dev/pull/10713) Fix Foundry project replacement reusing model deployment settings from the previous project.
+
 ## 1.0.0-beta.15 (2026-10-23)
 
 ### Bugs Fixed

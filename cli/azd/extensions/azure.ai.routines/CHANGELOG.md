@@ -2,6 +2,10 @@
 
 <!-- cspell:ignore Yimin -->
 
+## 1.0.0 (2026-10-29)
+
+First stable release of the Foundry Routines extension.
+
 ## 1.0.0-beta.11 (2026-10-23)
 
 ### Other Changes

@@ -2634,6 +2634,22 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
 		})
 	} else {
+		if va.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			managed := agent_yaml.PromptAgent{Policies: append([]agent_yaml.Policy(nil), va.Policies...)}
+			if err := expandPromptAgentPolicies(&managed, azdEnv); err != nil {
+				return nil, err
+			}
+			for i, policy := range managed.Policies {
+				if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("invalid GPT Live policies[%d].raiPolicyName after expansion: %s", i, err),
+						"set the referenced value to a valid RAI policy name or ARM ID",
+					)
+				}
+			}
+			va.Policies = managed.Policies
+		}
 		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
 	}
 	if err != nil {

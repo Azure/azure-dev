@@ -371,6 +371,10 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 	}
 	if inputs, ok := rawMap(values["structuredInputs"], values["structured_inputs"]); ok {
 		for name, input := range inputs {
+			if _, ok := input.(map[string]any); !ok {
+				errors = append(errors, fmt.Sprintf("structuredInputs.%s must be an object for GPT Live", name))
+				continue
+			}
 			validateRawObject("structuredInputs."+name, input,
 				[]string{"description", "defaultValue", "default_value", "schema", "required"})
 		}

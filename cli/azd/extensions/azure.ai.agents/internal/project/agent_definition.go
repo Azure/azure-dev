@@ -1159,11 +1159,11 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 	}
 	if s.GetFields()["policies"] != nil {
 		if inline.SubProtocol == agent_yaml.VoiceSubProtocolLive {
-			if len(inline.Policies) > 1 {
+			if len(inline.Policies) != 1 {
 				return exterrors.Validation(
 					exterrors.CodeInvalidAgentManifest,
-					"GPT Live supports at most one RAI policy",
-					"remove the extra policy entries",
+					"GPT Live policies must contain exactly one named rai_policy",
+					"provide one RAI policy entry or remove the policies field",
 				)
 			}
 			policy := inline.Policies[0]

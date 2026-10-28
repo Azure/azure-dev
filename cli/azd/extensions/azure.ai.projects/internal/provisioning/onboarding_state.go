@@ -241,10 +241,16 @@ func standardBYOTemplateDigest(template map[string]any) (string, error) {
 
 func byoBindingDigest(parameters map[string]any) (string, error) {
 	immutable := make(map[string]any, len(parameters))
-	for key, value := range parameters {
-		if key != "deployments" && key != "tags" {
-			immutable[key] = value
+	for key, parameter := range parameters {
+		if key == "deployments" || key == "tags" {
+			continue
 		}
+		envelope, _ := parameter.(map[string]any)
+		value, ok := envelope["value"]
+		if !ok {
+			return "", fmt.Errorf("BYO AKS deployment parameter %q must contain a literal value", key)
+		}
+		immutable[key] = value
 	}
 	return onboarding.Digest(immutable)
 }

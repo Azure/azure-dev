@@ -1253,21 +1253,22 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
-	if byoIntent != nil {
-		return p.deployBYO(ctx, src, dep, *byoIntent, progress)
-	}
-
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 	resourceGroupExisted := false
-	trackSupportingResourceGroup := p.isLayer ||
-		(p.brownfieldEndpoint != "" && p.existingProjectAcrMode(ctx) == "create")
+	trackSupportingResourceGroup := byoIntent == nil && (p.isLayer ||
+		(p.brownfieldEndpoint != "" && p.existingProjectAcrMode(ctx) == "create"))
 	if trackSupportingResourceGroup && !resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, p.rgName) {
 		resourceGroupExisted, err = p.resourceGroupExists(ctx)
 		if err != nil {
 			return nil, err
+		}
+	}
+	if byoIntent != nil {
+		if err := p.ownedBYOJournal().Save(ctx, *byoIntent); err != nil {
+			return nil, fmt.Errorf("save BYO AKS deployment intent before any Azure writes: %w", err)
 		}
 	}
 
@@ -1289,6 +1290,23 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
+	outputs := deploymentOutputs(resp.Properties)
+	if byoIntent != nil {
+		if resp.Properties == nil || resp.Properties.ProvisioningState == nil ||
+			*resp.Properties.ProvisioningState != "Succeeded" {
+			return nil, fmt.Errorf("BYO AKS deployment completion is unverified; retain %s", envKeyBYOJournal)
+		}
+		ownership, err := byoOwnership(outputs, byoIntent.Plan, byoIntent.Facts)
+		if err != nil {
+			return nil, err
+		}
+		byoIntent.Status, byoIntent.Ownership = "succeeded", ownership
+		if err := p.ownedBYOJournal().Save(ctx, *byoIntent); err != nil {
+			return nil, fmt.Errorf("Azure deployment succeeded but its local completion could not be saved; "+
+				"retain %s and do not retry automatically: %w", envKeyBYOJournal, err)
+		}
+	}
+
 	progress("Foundry deployment complete")
 	if trackSupportingResourceGroup {
 		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
@@ -1303,7 +1321,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(outputs))),
 		},
 	}, nil
 }
@@ -2180,6 +2198,7 @@ var canonicalOutputNames = []string{
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 	"AZD_FOUNDRY_ACR_MODE",
+	"AZD_BYO_AKS_OWNERSHIP",
 }
 
 var greenfieldOutputNames = []string{

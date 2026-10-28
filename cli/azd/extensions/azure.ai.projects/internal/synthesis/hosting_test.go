@@ -177,12 +177,20 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	require.NoError(t, err)
 	var template any
 	require.NoError(t, json.Unmarshal(raw, &template))
-	var registries, identities, storages int
+	var registries, identities, storages, clusterGrantModules int
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
 			switch value["type"] {
+			case "Microsoft.Resources/deployments":
+				loop, _ := value["copy"].(map[string]any)
+				if loop["name"] == "clusterGrants" {
+					clusterGrantModules++
+					assert.Equal(t, "[format('byo-cluster-{0}-{1}', uniqueString(parameters('plan').deploymentId), "+
+						"createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', "+
+						"'85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]", value["name"])
+				}
 			case "Microsoft.ContainerRegistry/registries":
 				registries++
 				assert.Equal(t, "2023-07-01", value["apiVersion"])
@@ -197,6 +205,12 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 				identities++
 			case "Microsoft.Storage/storageAccounts":
 				storages++
+				properties, ok := value["properties"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, false, properties["allowSharedKeyAccess"])
+				assert.Equal(t, false, properties["allowBlobPublicAccess"])
+				assert.Equal(t, true, properties["supportsHttpsTrafficOnly"])
+				assert.Equal(t, "TLS1_2", properties["minimumTlsVersion"])
 			}
 			for _, child := range value {
 				visit(child)
@@ -211,14 +225,7 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	assert.Equal(t, 1, registries, "prerequisites must not pre-create a second/custom registry")
 	assert.Equal(t, 2, identities)
 	assert.Equal(t, 1, storages)
-	text := string(raw)
-	for _, required := range []string{
-		"agentHostingConfigurations", "ManagedCluster", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
-		"kubeletObjectId", "ContainerRegistry", "AZD_BYO_AKS_OWNERSHIP",
-		"allowSharedKeyAccess", "allowBlobPublicAccess", "federatedIdentityRoleDefinitionId",
-	} {
-		assert.Contains(t, text, required)
-	}
+	assert.Equal(t, 1, clusterGrantModules)
 }
 
 func TestBicepToolVersionAndExplicitOverride(t *testing.T) {

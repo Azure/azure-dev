@@ -103,9 +103,7 @@ func testPlan(t *testing.T) Plan {
 
 func TestPlanKeepsDefaultResourcesSeparateAndDeterministic(t *testing.T) {
 	plan := testPlan(t)
-	assert.True(t, plan.Cluster.Supplied)
 	for _, resource := range []Resource{plan.Storage, plan.Hosting, plan.Workload, plan.Registry, plan.Account} {
-		assert.False(t, resource.Supplied)
 		assert.Contains(t, resource.ID, "/subscriptions/target-sub/resourceGroups/target-rg/")
 	}
 	assert.NotEqual(t, plan.Hosting.ID, plan.Workload.ID)

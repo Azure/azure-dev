@@ -137,11 +137,35 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 			} `json:"properties"`
 		}
 		require.NoError(f.t, json.NewDecoder(request.Body).Decode(&submitted))
+		for _, parameter := range submitted.Properties.Parameters {
+			envelope, ok := parameter.(map[string]any)
+			require.True(f.t, ok)
+			switch envelope["value"].(type) {
+			case string:
+				envelope["type"] = "String"
+			case bool:
+				envelope["type"] = "Bool"
+			case map[string]any:
+				envelope["type"] = "Object"
+			case []any:
+				envelope["type"] = "Array"
+			default:
+				f.t.Fatalf("unsupported test parameter type %T", envelope["value"])
+			}
+		}
 		f.template = submitted.Properties.Template
 		f.deployment = map[string]any{"id": path, "name": f.provider.deploymentName(), "location": "westus",
 			"properties": map[string]any{
 				"provisioningState": "Succeeded", "parameters": submitted.Properties.Parameters,
-				"outputs": map[string]any{"AZD_BYO_AKS_OWNERSHIP": map[string]any{"type": "object", "value": f.ownership}},
+				"outputs": map[string]any{
+					"azD_BYO_AKS_OWNERSHIP": map[string]any{"type": "object", "value": f.ownership},
+					"azurE_AI_PROJECT_ID":   map[string]any{"type": "string", "value": f.plan.Project.ID},
+					"azurE_AI_PROJECT_NAME": map[string]any{"type": "string", "value": f.plan.Project.Name},
+					"foundrY_PROJECT_ENDPOINT": map[string]any{"type": "string",
+						"value": "https://" + f.plan.Account.Name +
+							".services.ai.azure.com/api/projects/" + f.plan.Project.Name},
+					"azurE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"type": "string", "value": f.plan.Registry.ID},
+				},
 			}}
 		for _, target := range byoTargets(f.plan) {
 			if target.Source != "created" {
@@ -281,13 +305,28 @@ func TestBYOPreviewDoesNotMutateAzureOrEnvironment(t *testing.T) {
 
 func TestBYODeploySavesOriginalIntentBeforeWriteAndKeepsItOnReprovision(t *testing.T) {
 	p, journal, fake := offlineBYOProvider(t)
+	p.isLayer = true
 	result, err := p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	require.NotNil(t, result.Deployment)
+	for key, expected := range map[string]string{
+		"AZURE_AI_PROJECT_ID":                  fake.plan.Project.ID,
+		"AZURE_AI_PROJECT_NAME":                "project",
+		"FOUNDRY_PROJECT_ENDPOINT":             "https://cog-native.services.ai.azure.com/api/projects/project",
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": fake.plan.Registry.ID,
+	} {
+		require.Contains(t, result.Deployment.Outputs, key)
+		assert.Equal(t, expected, result.Deployment.Outputs[key].GetValue())
+	}
+	assert.Contains(t, result.Deployment.Outputs, "AZD_BYO_AKS_OWNERSHIP")
+	assert.Empty(t, p.foundryRGOwnerID, "the supplied resource group must not become azd-owned")
 	require.Len(t, journal.saves, 2)
 	assert.Equal(t, "deploying", journal.saves[0].Status)
 	assert.Equal(t, "succeeded", journal.saves[1].Status)
 	assert.NotEmpty(t, journal.saves[1].Ownership)
+	preview, err := p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, preview.Preview)
 	assert.Equal(t, 1, fake.writes)
 	for _, origin := range journal.state.Origins {
 		assert.Equal(t, origin.Source == "created", origin.InitiallyAbsent)
@@ -375,6 +414,18 @@ func TestBYOReprovisionRejectsChangedEvidenceWithoutAnotherWrite(t *testing.T) {
 				"principalId": "55555555-5555-4555-8555-555555555555"}
 		}},
 		{"modified template", func(f *byoARMFake, _ *memoryBYOJournal) { f.template["contentVersion"] = "2.0.0.0" }},
+		{"modified parameter value", func(f *byoARMFake, _ *memoryBYOJournal) {
+			parameters := f.deployment["properties"].(map[string]any)["parameters"].(map[string]any)
+			parameters["location"].(map[string]any)["value"] = "eastus2"
+		}},
+		{"modified nested parameter value", func(f *byoARMFake, _ *memoryBYOJournal) {
+			parameters := f.deployment["properties"].(map[string]any)["parameters"].(map[string]any)
+			parameters["byoOnboarding"].(map[string]any)["value"].(map[string]any)["storageName"] = "changed"
+		}},
+		{"missing parameter value", func(f *byoARMFake, _ *memoryBYOJournal) {
+			parameters := f.deployment["properties"].(map[string]any)["parameters"].(map[string]any)
+			delete(parameters["location"].(map[string]any), "value")
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p, journal, fake := offlineBYOProvider(t)

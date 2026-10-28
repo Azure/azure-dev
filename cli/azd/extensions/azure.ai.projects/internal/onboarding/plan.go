@@ -17,11 +17,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// Resource is an exact target and its original create/reference selection.
+// Resource is an exact ARM target.
 type Resource struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Supplied bool   `json:"supplied"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Network retains the standard Foundry network selections.
@@ -188,7 +187,7 @@ func BuildPlan(in Input) (Plan, error) {
 		Location:              in.Location, Environment: in.Environment, DeploymentID: in.DeploymentID,
 		Account:  Resource{ID: in.AccountID, Name: account.Name},
 		Project:  Resource{ID: in.AccountID + "/projects/" + in.ProjectName, Name: in.ProjectName},
-		Cluster:  Resource{ID: in.ClusterID, Name: cluster.Name, Supplied: true},
+		Cluster:  Resource{ID: in.ClusterID, Name: cluster.Name},
 		Storage:  owned("Microsoft.Storage/storageAccounts", storageName),
 		Registry: owned("Microsoft.ContainerRegistry/registries", in.RegistryName),
 		Hosting:  owned("Microsoft.ManagedIdentity/userAssignedIdentities", strings.ToLower(account.Name)+"-hosting-mi"),

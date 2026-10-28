@@ -11,12 +11,23 @@ import (
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
-	"azure.ai.projects/internal/synthesis"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
+
+type byoOnboardingParameters struct {
+	DeploymentID                      string `json:"deploymentId"`
+	ResourceGroupSupplied             bool   `json:"resourceGroupSupplied"`
+	StorageName                       string `json:"storageName"`
+	StorageSKU                        string `json:"storageSku"`
+	StorageAccountResourceID          string `json:"storageAccountResourceId"`
+	HostingIdentityName               string `json:"hostingIdentityName"`
+	HostingIdentityResourceID         string `json:"hostingIdentityResourceId"`
+	WorkloadIdentityName              string `json:"workloadIdentityName"`
+	WorkloadIdentityResourceID        string `json:"workloadIdentityResourceId"`
+	KubeletObjectID                   string `json:"kubeletObjectId"`
+	FederatedIdentityRoleDefinitionID string `json:"federatedIdentityRoleDefinitionId"`
+}
 
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
@@ -148,16 +159,13 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err := validateBYOFacts(plan, facts); err != nil {
 		return nil, err
 	}
-	bindings := synthesis.BYOOnboardingParameters{
+	bindings := byoOnboardingParameters{
 		DeploymentID: plan.DeploymentID, ResourceGroupSupplied: plan.ResourceGroupSupplied,
 		StorageName: plan.Storage.Name, StorageSKU: onboarding.StorageSKU(plan.Location),
 		StorageAccountResourceID: plan.Storage.ID,
 		HostingIdentityName:      plan.Hosting.Name, HostingIdentityResourceID: plan.Hosting.ID,
 		WorkloadIdentityName: plan.Workload.Name, WorkloadIdentityResourceID: plan.Workload.ID,
 		KubeletObjectID: facts.KubeletObjectID, FederatedIdentityRoleDefinitionID: facts.FederatedIdentityRoleDefinitionID,
-	}
-	if err := synthesis.ApplyBYOOnboarding(p.synthResult, bindings); err != nil {
-		return nil, err
 	}
 	source.parameters["byoOnboarding"] = map[string]any{"value": bindings}
 	source.parameters["tags"] = map[string]any{"value": tags}
@@ -215,44 +223,4 @@ func byoNetworkSelection(source *templateSource) (onboarding.Network, error) {
 		return network, fmt.Errorf("managedIsolationMode cannot take effect with BYO AKS")
 	}
 	return network, nil
-}
-
-func (p *FoundryProvisioningProvider) deployBYO(
-	ctx context.Context, source *templateSource, deployment armresources.Deployment, intent byoState,
-	progress grpcbroker.ProgressFunc,
-) (*azdext.ProvisioningDeployResult, error) {
-	client, err := p.deploymentsClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.ownedBYOJournal().Save(ctx, intent); err != nil {
-		return nil, fmt.Errorf("save BYO AKS deployment intent before any Azure writes: %w", err)
-	}
-	progress(fmt.Sprintf("Starting BYO AKS ARM deployment %q...", p.deploymentName()))
-	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, p.deploymentName(), deployment, nil)
-	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
-	}
-	response, err := pollWithProgress(ctx, poller, progress, "BYO AKS deployment in progress")
-	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
-	}
-	if response.Properties == nil || response.Properties.ProvisioningState == nil ||
-		*response.Properties.ProvisioningState != "Succeeded" {
-		return nil, fmt.Errorf("BYO AKS deployment completion is unverified; retain %s", envKeyBYOJournal)
-	}
-	ownership, err := byoOwnership(deploymentOutputs(response.Properties), intent.Plan, intent.Facts)
-	if err != nil {
-		return nil, err
-	}
-	intent.Status, intent.Ownership = "succeeded", ownership
-	if err := p.ownedBYOJournal().Save(ctx, intent); err != nil {
-		return nil, fmt.Errorf("Azure deployment succeeded but its local completion could not be saved; "+
-			"retain %s and do not retry automatically: %w", envKeyBYOJournal, err)
-	}
-	progress("BYO AKS deployment complete")
-	return &azdext.ProvisioningDeployResult{Deployment: &azdext.ProvisioningDeployment{
-		Parameters: armInputsToProto(source.parameters),
-		Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(response.Properties)))),
-	}}, nil
 }

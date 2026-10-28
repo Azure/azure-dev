@@ -46,7 +46,7 @@ module clusterGrants 'byo-role-assignment.bicep' = [
     'acdd72a7-3385-48ef-bd42-f606fba81ae7'
     '85cb6faf-e071-4c9b-8136-154b5a04f717'
   ]: {
-    name: 'byo-cluster-${role}'
+    name: 'byo-cluster-${uniqueString(plan.deploymentId)}-${role}'
     scope: resourceGroup(clusterParts[2], clusterParts[4])
     params: {
       resourceName: last(clusterParts)

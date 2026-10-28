@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "7813749531161098282"
+      "templateHash": "10214205510263207757"
     }
   },
   "definitions": {
@@ -290,7 +290,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11983817402828462392"
+              "templateHash": "8486065362117367356"
             }
           },
           "parameters": {
@@ -356,7 +356,7 @@
               },
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
-              "name": "[format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
+              "name": "[format('byo-cluster-{0}-{1}', uniqueString(parameters('plan').deploymentId), createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
               "subscriptionId": "[variables('clusterParts')[2]]",
               "resourceGroup": "[variables('clusterParts')[4]]",
               "properties": {
@@ -606,8 +606,8 @@
                 "hostingPrincipalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName), '2023-01-31').principalId]",
                 "workloadPrincipalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName), '2023-01-31').principalId]",
                 "roleAssignments": [
-                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[0])), '2025-04-01').outputs.grant.value]",
-                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[1])), '2025-04-01').outputs.grant.value]",
+                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}-{1}', uniqueString(parameters('plan').deploymentId), createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[0])), '2025-04-01').outputs.grant.value]",
+                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}-{1}', uniqueString(parameters('plan').deploymentId), createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[1])), '2025-04-01').outputs.grant.value]",
                   "[reference(resourceId('Microsoft.Resources/deployments', 'byo-federation-access'), '2025-04-01').outputs.grant.value]",
                   "[reference(resourceId('Microsoft.Resources/deployments', 'byo-storage-access'), '2025-04-01').outputs.grant.value]"
                 ]

@@ -232,8 +232,14 @@ func byoOwnership(outputs any, plan onboarding.Plan, facts onboarding.Facts) (ma
 	if !ok {
 		return nil, fmt.Errorf("BYO AKS ownership outputs are missing; retain the unresolved deployment intent")
 	}
-	envelope, ok := parameters["AZD_BYO_AKS_OWNERSHIP"].(map[string]any)
-	if !ok {
+	var envelope map[string]any
+	for name, value := range parameters {
+		if canonicalizeOutputName(name) == "AZD_BYO_AKS_OWNERSHIP" {
+			envelope, _ = value.(map[string]any)
+			break
+		}
+	}
+	if envelope == nil {
 		return nil, fmt.Errorf("BYO AKS ownership output is missing")
 	}
 	ownership, ok := envelope["value"].(map[string]any)

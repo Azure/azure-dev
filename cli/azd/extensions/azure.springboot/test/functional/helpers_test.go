@@ -27,11 +27,6 @@ func azdSourcePath(t *testing.T) string {
 	return source
 }
 
-func petclinicFixturePath(t *testing.T, name string) string {
-	t.Helper()
-	return filepath.Join(azdSourcePath(t), "test", "functional", "testdata", "samples", "spring-petclinic", name)
-}
-
 func newSpringCLI(t *testing.T) *azdcli.CLI {
 	t.Helper()
 	if os.Getenv("CLI_TEST_AZD_PATH") == "" {

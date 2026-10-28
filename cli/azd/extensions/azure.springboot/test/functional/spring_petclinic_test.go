@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -23,37 +24,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const petclinicRepository = "https://github.com/spring-projects/spring-petclinic"
+const (
+	petclinicRepository     = "https://github.com/XiaofeiCao/spring-petclinic"
+	petclinicBranch         = "azd-springboot-test"
+	petclinicTemplateCommit = "534f735dcfea7c009d89d244e737b39c5882359f"
+)
 
 type petclinicSourceManifest struct {
-	Commit string            `json:"commit"`
-	Files  map[string]string `json:"files"`
-}
-
-func Test_CLI_SpringPetclinic_FixtureContracts(t *testing.T) {
-	verifyPetclinicTemplate(t, petclinicFixturePath(t, "overlay"))
-	baselineYaml, err := os.ReadFile(filepath.Join(petclinicFixturePath(t, "baseline"), "azure.yaml"))
-	require.NoError(t, err)
-	require.Contains(t, string(baselineYaml), "host: containerapp")
-	require.Contains(t, string(baselineYaml), "preprovision:")
-	require.NotContains(t, string(baselineYaml), "azure.springboot")
-	for _, script := range []string{"preprovision.ps1", "preprovision.sh"} {
-		content, err := os.ReadFile(filepath.Join(petclinicFixturePath(t, "baseline"), "scripts", script))
-		require.NoError(t, err)
-		text := string(content)
-		require.Contains(t, text, "cannot be explicitly empty")
-		require.Contains(t, text, "conflicts with the persisted value")
-		require.Contains(t, text, "azd-env-name")
-		require.Contains(t, text, "Microsoft.DBforPostgreSQL/flexibleServers")
-		require.Contains(t, text, "Existing infrastructure has no local password")
-		require.Greater(
-			t,
-			strings.LastIndex(text, "azd env set SPRING_DATABASE_TYPE"),
-			strings.Index(text, "cannot be explicitly empty"),
-			"database mode must not be persisted before password validation in %s",
-			script,
-		)
-	}
+	Repository    string            `json:"repository"`
+	Commit        string            `json:"commit"`
+	HashAlgorithm string            `json:"hashAlgorithm"`
+	Files         map[string]string `json:"files"`
 }
 
 func verifyPetclinicTemplate(t *testing.T, projectDir string) {
@@ -104,9 +85,9 @@ func Test_CLI_SpringExtension_BundleInstallPreservesBaseTarget(t *testing.T) {
 	installSpringExtensionFixture(t, ctx, tempDirWithDiagnostics(t))
 }
 
-func Test_CLI_SpringPetclinic_InitFromExactUpstreamURL(t *testing.T) {
+func Test_CLI_SpringPetclinic_InitFromTestingBranch(t *testing.T) {
 	if os.Getenv("AZD_TEST_SPRING_PETCLINIC_INIT") != "1" {
-		t.Skip("set AZD_TEST_SPRING_PETCLINIC_INIT=1 to run the network-dependent upstream init test")
+		t.Skip("set AZD_TEST_SPRING_PETCLINIC_INIT=1 to initialize the network-dependent Petclinic testing branch")
 	}
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
@@ -136,24 +117,19 @@ func initPetclinicTemplate(
 	extraEnv ...string,
 ) *azdcli.CLI {
 	t.Helper()
+	verifyPetclinicBranch(t, ctx)
 	projectDir := tempDirWithDiagnostics(t)
-	require.NoError(t, os.CopyFS(projectDir, os.DirFS(petclinicFixturePath(t, "overlay"))))
-	preserved := map[string][]byte{}
-	for _, relative := range []string{
-		".dockerignore",
-		"README.fixture.md",
-		"source-revision.json",
-		"azure.yaml",
-		filepath.Join("infra", "main.bicep"),
-		filepath.Join("infra", "main.parameters.json"),
-		filepath.Join("infra", "resources.bicep"),
-		filepath.Join("infra", "petclinic.bicep"),
-		filepath.Join("infra", "petclinic.parameters.json"),
-	} {
-		data, err := os.ReadFile(filepath.Join(projectDir, relative))
+	repositoryRoot := filepath.Clean(filepath.Join(azdSourcePath(t), "..", ".."))
+	if strings.EqualFold(filepath.VolumeName(repositoryRoot), filepath.VolumeName(projectDir)) {
+		relative, err := filepath.Rel(repositoryRoot, projectDir)
 		require.NoError(t, err)
-		preserved[relative] = data
+		require.False(t, filepath.IsLocal(relative), "Petclinic must be initialized outside Azure Dev")
 	}
+	directory, err := os.Open(projectDir)
+	require.NoError(t, err)
+	_, err = directory.Readdirnames(1)
+	require.ErrorIs(t, err, io.EOF, "template initialization must start in an empty directory")
+	require.NoError(t, directory.Close())
 	cli := newSpringCLI(t)
 	cli.WorkingDirectory = projectDir
 	cli.Env = append(environmentWithout(
@@ -161,28 +137,39 @@ func initPetclinicTemplate(
 		"SPRING_DATABASE_TYPE",
 		"SPRING_DATABASE_PASSWORD",
 	), cli.Env...)
-	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir, "AZD_ALLOW_NON_EMPTY_FOLDER=1")
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+configDir)
 	cli.Env = append(cli.Env, extraEnv...)
-	_, err := cli.RunCommand(
-		ctx, "init", "-t", petclinicRepository,
+	_, err = cli.RunCommand(
+		ctx, "init", "-t", petclinicRepository, "--branch", petclinicBranch,
 		".", "-e", envName, "--no-prompt",
 	)
 	require.NoError(t, err)
-	for relative, expected := range preserved {
-		actual, err := os.ReadFile(filepath.Join(projectDir, relative))
-		require.NoError(t, err)
-		require.Equal(t, expected, actual, "%s changed during init", relative)
-	}
+	verifyPetclinicBranch(t, ctx)
 	require.FileExists(t, filepath.Join(projectDir, "pom.xml"))
 	require.FileExists(t, filepath.Join(projectDir, "mvnw"))
 	require.FileExists(t, filepath.Join(projectDir, "LICENSE.txt"))
-	require.FileExists(t, filepath.Join(projectDir, "README.fixture.md"))
+	require.FileExists(t, filepath.Join(projectDir, "README.azd.md"))
+	require.FileExists(t, filepath.Join(projectDir, ".dockerignore"))
+	require.NoFileExists(t, filepath.Join(projectDir, "Dockerfile"))
 	require.DirExists(t, filepath.Join(projectDir, ".azure", envName))
 	verifyPetclinicTemplate(t, projectDir)
 	verifyPetclinicSourceManifest(t, projectDir)
 	_, err = cli.RunCommand(ctx, "env", "set", "SPRING_DATABASE_TYPE", mode)
 	require.NoError(t, err)
 	return cli
+}
+
+func verifyPetclinicBranch(t *testing.T, ctx context.Context) {
+	t.Helper()
+	ref := "refs/heads/" + petclinicBranch
+	command := osexec.CommandContext(ctx, "git", "ls-remote", "--exit-code", petclinicRepository, ref)
+	output, err := command.CombinedOutput()
+	require.NoError(t, err, "reading the Petclinic testing branch: %s", output)
+	fields := strings.Fields(string(output))
+	require.Len(t, fields, 2, "expected exactly one Petclinic testing branch ref")
+	require.Equal(t, ref, fields[1])
+	require.Equal(t, petclinicTemplateCommit, fields[0],
+		"Petclinic testing branch drifted; review its changes before updating the template revision pin")
 }
 
 func environmentWithout(keys ...string) []string {
@@ -317,7 +304,21 @@ func verifyPetclinicSourceManifest(t *testing.T, projectDir string) {
 	require.NoError(t, err)
 	var manifest petclinicSourceManifest
 	require.NoError(t, json.Unmarshal(content, &manifest))
+	require.Equal(t, "https://github.com/spring-projects/spring-petclinic", manifest.Repository)
 	require.Equal(t, "500158f732419217507c7656904b8e6aa1bcc0d6", manifest.Commit)
+	require.Equal(t, "sha256-lf", manifest.HashAlgorithm)
+	for _, relative := range []string{
+		"pom.xml",
+		"mvnw",
+		"LICENSE.txt",
+		"src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java",
+		"src/main/resources/application.properties",
+		"src/main/resources/application-postgres.properties",
+		"src/main/resources/db/postgres/schema.sql",
+		"src/main/resources/db/postgres/data.sql",
+	} {
+		require.Contains(t, manifest.Files, relative, "source manifest must cover the selected upstream files")
+	}
 
 	for relative, expected := range manifest.Files {
 		content, err := os.ReadFile(filepath.Join(projectDir, filepath.FromSlash(relative)))

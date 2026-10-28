@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	charm.land/bubbles/v2 v2.2.1
-	charm.land/bubbletea/v2 v2.0.8
+	charm.land/bubbletea/v2 v2.1.0
 	charm.land/lipgloss/v2 v2.0.5
 	github.com/azure/azure-dev/cli/azd v1.23.13
 	github.com/fatih/color v1.19.0
@@ -30,7 +30,7 @@ require (
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/glamour v1.0.0 // indirect
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
 	github.com/charmbracelet/x/ansi v0.11.9 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/exp/slice v0.1.0 // indirect

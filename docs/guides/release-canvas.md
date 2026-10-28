@@ -216,7 +216,7 @@ Stored fields are deliberately compact: normalized statuses, validated
 identifiers/versions, distribution flags, and PR identities. URLs are reconstructed
 from validated identities. Raw logs, timeline names, previous-attempt diagnostics,
 free-form errors, gate diagnostics, credentials, signed URLs, permissions, and
-queue-preview tickets are not saved. Failure analysis refetches the live timeline
+queue-preview tickets are not saved. Failure analysis fetches the live timeline again
 and log references after Azure verification instead of using cached diagnostics.
 Append-only snapshots add issue comments; opening still reads the issue's
 paginated history, but no longer repeats slow live service queries.

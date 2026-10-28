@@ -161,6 +161,9 @@ overrides:
       words:
           - GOARCH
           - GOEXPERIMENT
+    - filename: docs/guides/release-canvas.md
+      words:
+          - runbook
     - filename: docs/reference/**/*.md
       words:
           - apphost

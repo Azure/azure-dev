@@ -742,11 +742,15 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	}
 
 	var compositeFramework CompositeFrameworkService
+	effectiveHost, err := sm.effectiveServiceTargetKind(serviceConfig.Host)
+	if err != nil {
+		return nil, err
+	}
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
 	// project that handles the containerization. Also applies when the user explicitly sets docker.path (opt-in
 	// containerization for any host, e.g., appservice with a Dockerfile).
 	requiresLanguage := serviceConfig.Language != ServiceLanguageDocker && serviceConfig.Language != ServiceLanguageNone
-	if (serviceConfig.Host.RequiresContainer() || serviceConfig.Docker.Path != "") && requiresLanguage {
+	if (effectiveHost.RequiresContainer() || serviceConfig.Docker.Path != "") && requiresLanguage {
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			return nil, fmt.Errorf(
 				"failed resolving composite framework service for '%s', language '%s': %w",
@@ -778,6 +782,32 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	}
 
 	return frameworkService, nil
+}
+
+func (sm *serviceManager) effectiveServiceTargetKind(host ServiceTargetKind) (ServiceTargetKind, error) {
+	var resolver ServiceTargetProviderResolver
+	if err := sm.serviceLocator.Resolve(&resolver); err != nil {
+		if errors.Is(err, ioc.ErrResolveInstance) {
+			return host, nil
+		}
+		return "", fmt.Errorf("resolving service-target provider metadata: %w", err)
+	}
+	if resolver == nil {
+		return host, nil
+	}
+
+	provider, err := resolver.FindServiceTargetProvider(string(host))
+	if err != nil {
+		return "", fmt.Errorf("finding service-target provider %q: %w", host, err)
+	}
+	baseTarget, hasBase, err := ResolveProviderBaseTarget(host, provider)
+	if err != nil {
+		return "", err
+	}
+	if hasBase {
+		return baseTarget, nil
+	}
+	return host, nil
 }
 
 func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {

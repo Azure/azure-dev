@@ -227,6 +227,27 @@ and how multiple handlers and workflow steps are resolved.
 
 Extensions can implement custom service targets that handle the full deployment lifecycle (package, publish, deploy) for specialized Azure services or custom deployment patterns. `ExtensionHost` handles registration and readiness by default.
 
+An initialize/decorate-only provider can instead reuse a built-in target by
+declaring `baseTarget` in `extension.yaml`:
+
+```yaml
+capabilities:
+  - lifecycle-events
+  - service-target-provider
+providers:
+  - name: my.framework
+    type: service-target
+    description: Prepares applications for Container Apps.
+    baseTarget: containerapp
+```
+
+The provider still registers with `WithServiceTarget` and its `Initialize`
+method runs first. azd then routes native target resolution, required tools,
+package, publish, deploy, endpoints, and supported preview behavior through the
+declared built-in target. The built-in target's container requirement is
+resolved before framework selection. This is explicit delegation, not fallback:
+unknown, empty, self-referential, or extension-provided bases are rejected.
+
 **Recommended:**
 ```go
 // Create a service target provider and register it using the extension host

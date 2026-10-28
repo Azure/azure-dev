@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "containerRegistryName": {
+      "value": "${AZURE_CONTAINER_REGISTRY_NAME}"
+    },
+    "containerAppsEnvironmentName": {
+      "value": "${AZURE_CONTAINER_ENVIRONMENT_NAME}"
+    },
+    "identityId": {
+      "value": "${SERVICE_PETCLINIC_IDENTITY_ID}"
+    },
+    "containerAppName": {
+      "value": "${AZURE_CONTAINER_APP_NAME}"
+    },
+    "databaseType": {
+      "value": "${SPRING_DATABASE_TYPE:-h2}"
+    },
+    "databasePassword": {
+      "value": "${SPRING_DATABASE_PASSWORD:-}"
+    },
+    "postgresHost": {
+      "value": "${AZURE_POSTGRES_HOST:-}"
+    },
+    "postgresDatabase": {
+      "value": "${AZURE_POSTGRES_DATABASE:-petclinic}"
+    },
+    "postgresUser": {
+      "value": "${AZURE_POSTGRES_USER:-petclinicadmin}"
+    },
+    "imageName": {
+      "value": "${SERVICE_PETCLINIC_IMAGE_NAME}"
+    }
+  }
+}

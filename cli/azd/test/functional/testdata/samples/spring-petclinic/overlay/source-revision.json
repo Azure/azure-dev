@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/spring-projects/spring-petclinic",
+  "commit": "500158f732419217507c7656904b8e6aa1bcc0d6",
+  "hashAlgorithm": "sha256-lf",
+  "files": {
+    "pom.xml": "7e61df0a43d538a5404e8130a55b8085541ec8e841fcf39f81bb6d3d81dcd2f4",
+    "mvnw": "c31b9938f5f17e2608f068c50bb5ada01465c1d8039f7e729d6e2b70126d31d4",
+    "LICENSE.txt": "56dfc19e0dc836e30177332f73e8e6fbc297941acf3d906eec6eaaa46c2c452a",
+    "src/main/java/org/springframework/samples/petclinic/PetClinicApplication.java": "9d99b4b59cc6e185e9a27964b24ede04180ca34211a7e19f968249ee3dac9df3",
+    "src/main/resources/application.properties": "67c1e7e0a0443d290301449110005ab75d223add305ed9c06897437df686de0e",
+    "src/main/resources/application-postgres.properties": "8ce709f68cabbd711d47856a73ec03a42f8fd1035aa6f4a96ae240ca768af4c5",
+    "src/main/resources/db/postgres/schema.sql": "c6e4b61e9ffabf2d89e2237738ac8a3a8b766030bd0a1b235e3f7b4be63221d0",
+    "src/main/resources/db/postgres/data.sql": "2d9e8bbf98d5267a15adb141342a67c5efef1e08de580fc7efa98c6d97b763a4"
+  }
+}

@@ -6,21 +6,30 @@ package grpcserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestNewDeploymentService(t *testing.T) {
 	t.Parallel()
 	svc := NewDeploymentService(nil, nil, nil, nil, nil)
 	require.NotNil(t, svc)
+}
+
+func TestDeploymentNotFoundErrorIsTransported(t *testing.T) {
+	err := deploymentNotFoundError(fmt.Errorf("retrieving deployment: %w", infra.ErrDeploymentsNotFound))
+	require.Equal(t, codes.NotFound, status.Code(err))
 }
 
 func TestDeploymentService_GetDeployment_AzdContextError(t *testing.T) {

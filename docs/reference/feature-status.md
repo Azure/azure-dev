@@ -53,6 +53,11 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Azure Functions | Stable |
 | Azure Kubernetes Service (AKS) | Beta |
 | Azure AI | Beta |
+| Spring Boot on Azure Container Apps (`azure.springboot`, development fixture only) | Alpha |
+
+The Spring Boot host is currently an unpublished first-party development
+fixture. Its version constraints describe local development builds and must
+not be treated as registry installation instructions.
 
 ## Clients
 

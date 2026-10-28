@@ -5,14 +5,18 @@ package grpcserver
 
 import (
 	"context"
+	"errors"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type deploymentService struct {
@@ -66,7 +70,7 @@ func (s *deploymentService) GetDeployment(
 
 	latestDeployment, err := bicepProvider.LastDeployment(ctx)
 	if err != nil {
-		return nil, err
+		return nil, deploymentNotFoundError(err)
 	}
 
 	deployment := &azdext.Deployment{
@@ -80,16 +84,27 @@ func (s *deploymentService) GetDeployment(
 	}
 
 	for key, value := range latestDeployment.Tags {
-		deployment.Tags[key] = *value
+		if value != nil {
+			deployment.Tags[key] = *value
+		}
 	}
 
 	for _, resource := range latestDeployment.Resources {
-		deployment.Resources = append(deployment.Resources, *resource.ID)
+		if resource != nil && resource.ID != nil {
+			deployment.Resources = append(deployment.Resources, *resource.ID)
+		}
 	}
 
 	return &azdext.GetDeploymentResponse{
 		Deployment: deployment,
 	}, nil
+}
+
+func deploymentNotFoundError(err error) error {
+	if errors.Is(err, infra.ErrDeploymentsNotFound) {
+		return status.Error(codes.NotFound, "no deployment exists for the selected environment")
+	}
+	return err
 }
 
 func (s *deploymentService) GetDeploymentContext(

@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -54,6 +56,48 @@ func builtInServiceTargetNames() []string {
 // BuiltInServiceTargetKinds returns the slice of built-in service target kinds
 func BuiltInServiceTargetKinds() []ServiceTargetKind {
 	return builtInServiceTargetKinds
+}
+
+// ServiceTargetProviderResolver resolves installed extension metadata for a service target provider.
+type ServiceTargetProviderResolver interface {
+	FindServiceTargetProvider(name string) (*extensions.Provider, error)
+}
+
+// ResolveProviderBaseTarget validates and returns a provider's optional built-in base target.
+func ResolveProviderBaseTarget(
+	host ServiceTargetKind,
+	provider *extensions.Provider,
+) (ServiceTargetKind, bool, error) {
+	if provider == nil || provider.BaseTarget == nil {
+		return "", false, nil
+	}
+
+	baseTarget := ServiceTargetKind(*provider.BaseTarget)
+	if strings.TrimSpace(string(baseTarget)) == "" {
+		return "", false, fmt.Errorf("service-target provider %q declares an empty baseTarget", host)
+	}
+	if string(baseTarget) != strings.TrimSpace(string(baseTarget)) {
+		return "", false, fmt.Errorf(
+			"service-target provider %q declares invalid baseTarget %q: whitespace is not allowed",
+			host,
+			baseTarget,
+		)
+	}
+	if baseTarget == host {
+		return "", false, fmt.Errorf(
+			"service-target provider %q cannot delegate to itself",
+			host,
+		)
+	}
+	if !slices.Contains(builtInServiceTargetKinds, baseTarget) {
+		return "", false, fmt.Errorf(
+			"service-target provider %q declares unsupported baseTarget %q; expected a built-in target",
+			host,
+			baseTarget,
+		)
+	}
+
+	return baseTarget, true, nil
 }
 
 // RequiresContainer returns true if the service target runs a container image.

@@ -72,6 +72,19 @@
           "type": "string",
           "title": "Description",
           "description": "Description of what this provider does."
+        },
+        "baseTarget": {
+          "type": "string",
+          "title": "Base Service Target",
+          "description": "Optional built-in service target that performs deployment operations for an initialize-only provider.",
+          "enum": [
+            "appservice",
+            "containerapp",
+            "function",
+            "staticwebapp",
+            "aks",
+            "ai.endpoint"
+          ]
         }
       },
       "required": [

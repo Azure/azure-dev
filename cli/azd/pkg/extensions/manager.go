@@ -629,6 +629,31 @@ func (m *Manager) GetInstalled(options FilterOptions) (*Extension, error) {
 	return nil, ErrInstalledExtensionNotFound
 }
 
+// FindServiceTargetProvider returns the installed service-target provider with the supplied name.
+// A nil provider and nil error indicate that no installed extension declares the provider.
+func (m *Manager) FindServiceTargetProvider(name string) (*Provider, error) {
+	installed, err := m.ListInstalled()
+	if err != nil {
+		return nil, err
+	}
+
+	var match *Provider
+	for _, extension := range installed {
+		for i := range extension.Providers {
+			provider := &extension.Providers[i]
+			if provider.Type != ServiceTargetProviderType || provider.Name != name {
+				continue
+			}
+			if match != nil {
+				return nil, fmt.Errorf("multiple installed extensions declare service-target provider %q", name)
+			}
+			match = provider
+		}
+	}
+
+	return match, nil
+}
+
 // IsOfficialRegistrySource verifies the configured source used by an
 // installed extension before allowing it to report telemetry.
 func (m *Manager) IsOfficialRegistrySource(ctx context.Context, name string) (bool, error) {

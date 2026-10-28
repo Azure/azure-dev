@@ -29,6 +29,7 @@ import (
 type ServiceTargetService struct {
 	azdext.UnimplementedServiceTargetServiceServer
 	container        *ioc.NestedContainer
+	sharedContainer  *ioc.NestedContainer
 	extensionManager *extensions.Manager
 	lazyEnv          *lazy.Lazy[*environment.Environment]
 	providerMap      map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]
@@ -42,8 +43,29 @@ func NewServiceTargetService(
 	extensionManager *extensions.Manager,
 	lazyEnv *lazy.Lazy[*environment.Environment],
 ) azdext.ServiceTargetServiceServer {
+	return newServiceTargetService(container, nil, extensionManager, lazyEnv)
+}
+
+// NewSharedServiceTargetService creates a service-target service that registers providers in both
+// the active command scope and the shared scope used to create nested workflow commands.
+func NewSharedServiceTargetService(
+	container *ioc.NestedContainer,
+	sharedContainer *ioc.NestedContainer,
+	extensionManager *extensions.Manager,
+	lazyEnv *lazy.Lazy[*environment.Environment],
+) azdext.ServiceTargetServiceServer {
+	return newServiceTargetService(container, sharedContainer, extensionManager, lazyEnv)
+}
+
+func newServiceTargetService(
+	container *ioc.NestedContainer,
+	sharedContainer *ioc.NestedContainer,
+	extensionManager *extensions.Manager,
+	lazyEnv *lazy.Lazy[*environment.Environment],
+) azdext.ServiceTargetServiceServer {
 	return &ServiceTargetService{
 		container:        container,
+		sharedContainer:  sharedContainer,
 		extensionManager: extensionManager,
 		lazyEnv:          lazyEnv,
 		providerMap:      make(map[string]*grpcbroker.MessageBroker[azdext.ServiceTargetMessage]),
@@ -141,25 +163,55 @@ func (s *ServiceTargetService) onRegisterRequest(
 		return nil, status.Errorf(codes.AlreadyExists, "provider %s already registered", hostType)
 	}
 
-	// Register external service target with DI container, passing the broker
-	err := s.container.RegisterNamedSingleton(hostType, func(
-		console input.Console,
-		prompter prompt.Prompter,
-	) project.ServiceTarget {
-		return project.NewExternalServiceTarget(
-			hostType,
-			project.ServiceTargetKind(hostType),
-			extension,
-			broker,
-			console,
-			prompter,
-			s.lazyEnv,
-			s.previewFunc(hostType, extension.Id),
-		)
-	})
-
+	provider, err := findRegisteredServiceTargetProvider(extension, hostType)
 	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	baseTarget, hasBaseTarget, err := project.ResolveProviderBaseTarget(project.ServiceTargetKind(hostType), provider)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	register := func(container *ioc.NestedContainer) error {
+		return container.RegisterNamedSingleton(hostType, func(
+			console input.Console,
+			prompter prompt.Prompter,
+			serviceLocator ioc.ServiceLocator,
+		) (project.ServiceTarget, error) {
+			externalTarget := project.NewExternalServiceTarget(
+				hostType,
+				project.ServiceTargetKind(hostType),
+				extension,
+				broker,
+				console,
+				prompter,
+				s.lazyEnv,
+				s.previewFunc(hostType, extension.Id),
+			)
+			if !hasBaseTarget {
+				return externalTarget, nil
+			}
+
+			var nativeTarget project.ServiceTarget
+			if err := serviceLocator.ResolveNamed(string(baseTarget), &nativeTarget); err != nil {
+				return nil, fmt.Errorf("resolving base service target %q: %w", baseTarget, err)
+			}
+			return project.NewDelegatingServiceTarget(
+				project.ServiceTargetKind(hostType),
+				baseTarget,
+				externalTarget,
+				nativeTarget,
+			), nil
+		})
+	}
+
+	if err := register(s.container); err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to register service target: %s", err.Error())
+	}
+	if s.sharedContainer != nil && s.sharedContainer != s.container {
+		if err := register(s.sharedContainer); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to register shared service target: %s", err.Error())
+		}
 	}
 
 	s.providerMap[hostType] = broker
@@ -172,4 +224,26 @@ func (s *ServiceTargetService) onRegisterRequest(
 			RegisterServiceTargetResponse: &azdext.RegisterServiceTargetResponse{},
 		},
 	}, nil
+}
+
+func findRegisteredServiceTargetProvider(
+	extension *extensions.Extension,
+	hostType string,
+) (*extensions.Provider, error) {
+	var match *extensions.Provider
+	for i := range extension.Providers {
+		provider := &extension.Providers[i]
+		if provider.Type != extensions.ServiceTargetProviderType || provider.Name != hostType {
+			continue
+		}
+		if match != nil {
+			return nil, fmt.Errorf(
+				"extension %q declares service-target provider %q more than once",
+				extension.Id,
+				hostType,
+			)
+		}
+		match = provider
+	}
+	return match, nil
 }

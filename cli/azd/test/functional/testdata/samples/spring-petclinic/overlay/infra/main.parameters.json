@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "databaseType": {
+      "value": "${SPRING_DATABASE_TYPE:-h2}"
+    },
+    "databasePassword": {
+      "value": "${SPRING_DATABASE_PASSWORD:-}"
+    },
+    "imageName": {
+      "value": "${SERVICE_PETCLINIC_IMAGE_NAME:-mcr.microsoft.com/k8se/quickstart:latest}"
+    }
+  }
+}

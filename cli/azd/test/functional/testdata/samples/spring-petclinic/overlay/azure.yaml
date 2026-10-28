@@ -1,0 +1,21 @@
+name: spring-petclinic
+
+requiredVersions:
+  azd: ">= 1.38.0-beta.1"
+  extensions:
+    azure.springboot: ">= 0.1.0"
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  petclinic:
+    project: .
+    language: java
+    host: azure.springboot
+    module: petclinic
+    config:
+      database:
+        type: ${SPRING_DATABASE_TYPE:-h2}

@@ -3,9 +3,10 @@
 
 package extensions
 
-import "maps"
-
-import "encoding/json"
+import (
+	"encoding/json"
+	"maps"
+)
 
 type ExtensionExample struct {
 	Name        string `json:"name"`
@@ -16,11 +17,14 @@ type ExtensionExample struct {
 // Provider represents a provider registered by an extension
 type Provider struct {
 	// Name is the unique identifier for this provider within the extension
-	Name string `json:"name"`
+	Name string `json:"name" yaml:"name"`
 	// Type is the type of provider
-	Type ProviderType `json:"type"`
+	Type ProviderType `json:"type" yaml:"type"`
 	// Description is the description of what this provider does
-	Description string `json:"description"`
+	Description string `json:"description" yaml:"description"`
+	// BaseTarget is an optional built-in service target that performs deployment operations.
+	// The extension provider remains responsible for initialization and lifecycle handlers.
+	BaseTarget *string `json:"baseTarget,omitempty" yaml:"baseTarget,omitempty"`
 }
 
 // CurrentRegistrySchemaVersion is the current registry schema version that azd produces.

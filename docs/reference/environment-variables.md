@@ -60,6 +60,18 @@ Used by `azd init --template` when checking GitHub repository metadata before cl
 |---|---|
 | `AZD_DEPLOYMENT_ID_FILE` | Absolute path to a file where `azd` writes ARM deployment resource IDs in NDJSON format (one JSON line per layer) during Bicep provisioning. The file is truncated at the start of each run; each layer appends `{"deploymentId":"...","layer":"<name>"}`. Enables external tooling (e.g., VS Code extension) to track all in-flight deployments without scraping console output. See [cli/azd/docs/environment-variables.md](../../cli/azd/docs/environment-variables.md) for the full contract. |
 
+## Spring Boot Development Extension
+
+The unpublished `azure.springboot` development extension uses the following
+values. See the [canonical reference](../../cli/azd/docs/environment-variables.md#azurespringboot)
+for precedence and persistence details.
+
+| Variable | Description |
+|---|---|
+| `SPRING_DATABASE_TYPE` | Select `h2` or `postgresql`; missing values default to H2. |
+| `SPRING_DATABASE_PASSWORD` | Sensitive PostgreSQL administrator password for a new or existing PostgreSQL environment; invalid for H2. |
+| `SPRING_DATABASE_PROVISIONED_TYPE` | Extension-managed binding between an azd environment and its provisioned database mode. |
+
 ## IDE Integration
 
 Set by IDE hosts (VS Code, Visual Studio) when spawning azd as a subprocess. Users do not set these manually.

@@ -86,6 +86,26 @@ Extensions declare their capabilities in `extension.yaml`:
 | `provisioning-provider` | Add custom infrastructure provisioning support |
 | `metadata` | Provide metadata about commands and capabilities |
 
+### Native service-target delegation
+
+A service-target provider can be an initialize/decorate-only host while reusing
+one built-in deployment target. Its manifest declares `baseTarget`, for example:
+
+```yaml
+providers:
+  - name: azure.springboot
+    type: service-target
+    description: Prepares Spring Boot applications for Container Apps.
+    baseTarget: containerapp
+```
+
+azd validates that the base is a built-in target, inherits its container
+requirement before framework selection, initializes the extension provider,
+and then routes target resolution, tools, package, publish, deploy, endpoints,
+artifacts, and supported preview behavior to the native target. Delegation is
+explicit routing, not fallback after an extension error. Empty, self,
+extension-to-extension, and unknown bases are rejected.
+
 ## Available gRPC Services
 
 Extensions can access these azd services via gRPC:

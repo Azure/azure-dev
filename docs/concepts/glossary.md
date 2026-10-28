@@ -82,6 +82,21 @@ A named event an extension reports through `TelemetryService.ReportUsage`, carry
 
 An extension capability that lets an extension provide a custom infrastructure provisioning experience as an alternative to built-in providers such as Bicep and Terraform.
 
+### Native Target Delegation
+
+An extension service-target mode in which manifest metadata names a built-in
+`baseTarget`. The extension initializes and contributes lifecycle preparation,
+while azd routes deployment operations through the native target. The authored
+host remains the extension host, and the base target's capabilities (including
+container requirements) are resolved before framework selection.
+
+### Spring Boot Host
+
+The unpublished `azure.springboot` development extension host. It validates a
+narrow Spring configuration, prepares a Maven/Java 17 container recipe, and
+delegates deployment to Azure Container Apps. The canonical Petclinic source is
+downloaded separately; the extension does not bundle or generate it.
+
 ## Architecture
 
 ### ActionDescriptor

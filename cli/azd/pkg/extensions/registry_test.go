@@ -87,3 +87,27 @@ func TestExtensionMetadata_WebsiteField(t *testing.T) {
 		assert.Empty(t, registry.Extensions[2].Website)
 	})
 }
+
+func TestProviderBaseTargetJSONRoundTrip(t *testing.T) {
+	base := "containerapp"
+	provider := Provider{
+		Name:        "azure.springboot",
+		Type:        ServiceTargetProviderType,
+		Description: "Spring Boot on Container Apps",
+		BaseTarget:  &base,
+	}
+
+	data, err := json.Marshal(provider)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"name":"azure.springboot",
+		"type":"service-target",
+		"description":"Spring Boot on Container Apps",
+		"baseTarget":"containerapp"
+	}`, string(data))
+
+	var decoded Provider
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.BaseTarget)
+	require.Equal(t, base, *decoded.BaseTarget)
+}

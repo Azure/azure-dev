@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../extension.schema.json
+id: azure.springboot
+namespace: spring
+displayName: Azure Spring Boot
+description: Prepares Spring Boot services for deployment to Azure Container Apps.
+usage: azd spring <command> [options]
+version: 0.1.0
+requiredAzdVersion: ">=1.38.0-beta.1"
+language: go
+capabilities:
+  - lifecycle-events
+  - service-target-provider
+  - metadata
+providers:
+  - name: azure.springboot
+    type: service-target
+    description: Prepares Spring Boot applications and delegates deployment to Azure Container Apps.
+    baseTarget: containerapp

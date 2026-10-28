@@ -45,6 +45,27 @@ capabilities:
   - lifecycle-events
 ```
 
+An initialize-only service target that decorates a built-in deployment target
+can declare `baseTarget`:
+
+```yaml
+capabilities:
+  - lifecycle-events
+  - service-target-provider
+providers:
+  - name: my.framework
+    type: service-target
+    description: Prepares the application for Container Apps.
+    baseTarget: containerapp
+```
+
+Use this only when the extension performs validation or lifecycle preparation
+and the built-in target should retain ownership of target resolution,
+container tooling, package, publish, deploy, endpoints, and preview. The
+extension must still register the named provider at runtime. `baseTarget` must
+name a built-in target; delegation chains and fallback behavior are not
+supported.
+
 ### 3. Implement the extension
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.

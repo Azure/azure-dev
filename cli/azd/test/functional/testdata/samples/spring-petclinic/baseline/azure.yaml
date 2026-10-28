@@ -1,0 +1,47 @@
+name: spring-petclinic
+
+requiredVersions:
+  azd: ">= 1.38.0-beta.1"
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: ./scripts/preprovision.ps1
+    posix:
+      shell: sh
+      run: ./scripts/preprovision.sh
+  postprovision:
+    windows:
+      shell: pwsh
+      run: ./scripts/reconcile-firewall.ps1
+    posix:
+      shell: sh
+      run: ./scripts/reconcile-firewall.sh
+
+services:
+  petclinic:
+    project: .
+    language: java
+    host: containerapp
+    module: petclinic
+    hooks:
+      predeploy:
+        windows:
+          shell: pwsh
+          run: ./scripts/reconcile-firewall.ps1
+        posix:
+          shell: sh
+          run: ./scripts/reconcile-firewall.sh
+      postdeploy:
+        windows:
+          shell: pwsh
+          run: ./scripts/reconcile-firewall.ps1
+        posix:
+          shell: sh
+          run: ./scripts/reconcile-firewall.sh

@@ -145,6 +145,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	fmt.Println()
 	fmt.Println("Developer RBAC pre-flight check")
 
+	accessWarned := false
 	agentClient := agent_api.NewAgentClient(strings.TrimRight(endpoint, "/"), cred)
 	if err := (foundry.AccessPreparation{
 		Account: azdClient.Account(), Credential: cred, Scope: info.ProjectScope,
@@ -153,7 +154,10 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 				agent_api.AgentEndpointAPIVersion)
 			return err
 		},
-		Warn: warn,
+		Warn: func(message string) {
+			accessWarned = true
+			warn(message)
+		},
 		Progress: func(message string) {
 			fmt.Println("  " + message)
 		},
@@ -168,7 +172,11 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		}
 		return serviceErr
 	}
+	if !accessWarned {
+		fmt.Println("  ✓ Foundry User on Foundry Project")
+	}
 	if !hasHosted {
+		fmt.Println()
 		return nil
 	}
 	principalID, principalType, err := foundry.ResolvePrincipal(ctx, azdClient.Account(), info.SubscriptionID)

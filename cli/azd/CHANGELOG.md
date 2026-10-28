@@ -1,14 +1,11 @@
 # Release History
 
-## 1.38.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.37.2 (2026-10-28)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[#10516]](https://github.com/Azure/azure-dev/pull/10516) Fix unresolved or empty environment variables in composite Deployment Stacks deny-list values being sent to Azure when the `deployment.stacks` alpha feature is enabled. Thanks @saikeerthan-14 for the contribution!
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning validation with clearer scope-aware warnings, default-No confirmation for critical warnings, errors for `--no-prompt` or unanswered critical confirmations, and cancellation that skips post-provision hooks without hiding parallel-layer failures. Thanks @hyoshis for the contribution!
 
 ## 1.37.1 (2026-10-21)
 

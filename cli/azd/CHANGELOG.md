@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[#10688]](https://github.com/Azure/azure-dev/issues/10688) Fix Bicep parameter files producing invalid JSON when an environment variable used inside a parameter value contains quotes, backslashes, or newlines. Placeholders inside strings are now substituted as literal text.
+
 ### Other Changes
 
 ## 1.37.1 (2026-10-21)

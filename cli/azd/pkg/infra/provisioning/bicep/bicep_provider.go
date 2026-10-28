@@ -2153,6 +2153,73 @@ type envSubstResult struct {
 	parametersMappedToAzureLocation []string
 }
 
+// merge accumulates the results of another substitution into r.
+func (r *envSubstResult) merge(other envSubstResult) {
+	r.hasUnsetEnvVar = r.hasUnsetEnvVar || other.hasUnsetEnvVar
+	r.hasVirtualEnvVar = r.hasVirtualEnvVar || other.hasVirtualEnvVar
+	r.mappedEnvVars = append(r.mappedEnvVars, other.mappedEnvVars...)
+	r.parametersMappedToAzureLocation = append(
+		r.parametersMappedToAzureLocation, other.parametersMappedToAzureLocation...)
+}
+
+// substituteParameter applies fn to every string in a parameter (the strings of its value, including object keys, and
+// the fields of a key vault reference) and returns the resulting parameter. Non-string values are returned unchanged.
+func substituteParameter(
+	param azure.ArmParameter, fn func(string) (string, error),
+) (azure.ArmParameter, error) {
+	value, err := substituteJSONStrings(param.Value, fn)
+	if err != nil {
+		return azure.ArmParameter{}, err
+	}
+	result := azure.ArmParameter{Value: value}
+
+	if ref := param.KeyVaultReference; ref != nil {
+		resolved := *ref
+		for _, field := range []*string{&resolved.KeyVault.ID, &resolved.SecretName, &resolved.SecretVersion} {
+			if *field, err = fn(*field); err != nil {
+				return azure.ArmParameter{}, err
+			}
+		}
+		result.KeyVaultReference = &resolved
+	}
+	return result, nil
+}
+
+// substituteJSONStrings walks a decoded JSON value and applies fn to each string and object key. Numbers, booleans and
+// null are returned as authored. The input is not modified.
+func substituteJSONStrings(value any, fn func(string) (string, error)) (any, error) {
+	switch v := value.(type) {
+	case string:
+		return fn(v)
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			resolved, err := substituteJSONStrings(item, fn)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = resolved
+		}
+		return out, nil
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			resolvedKey, err := fn(key)
+			if err != nil {
+				return nil, err
+			}
+			resolved, err := substituteJSONStrings(item, fn)
+			if err != nil {
+				return nil, err
+			}
+			out[resolvedKey] = resolved
+		}
+		return out, nil
+	default:
+		return value, nil
+	}
+}
+
 // evalParamEnvSubst evaluates environment variable substitution on a single parameter string value.
 // It returns the substituted string, env var mapping information, and any error.
 func evalParamEnvSubst(
@@ -2322,20 +2389,35 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			}
 		}
 
-		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs
-		paramBytes, err := json.Marshal(param)
-		if err != nil {
-			return loadParametersResult{}, fmt.Errorf("error decoding deployment parameter %s: %w", paramName, err)
+		// Path B: Handle all other cases: non-complex types, complex types with non-string values, keyvault refs.
+		//
+		// Substitution runs on the decoded string values (never on the serialized JSON text), so replacement text is
+		// always treated as literal string content. Quotes, backslashes and newlines in an env var value can't
+		// change the structure of the parameter, and values authored as objects, arrays, numbers or booleans in
+		// the parameters file keep their structure and type.
+		var substResult envSubstResult
+		substituteString := func(value string) (string, error) {
+			replaced, strResult, err := evalParamEnvSubst(
+				value,
+				principalId,
+				string(principalType),
+				paramName,
+				p.env,
+				p.options.VirtualEnv,
+			)
+			if err != nil {
+				return "", err
+			}
+			substResult.merge(strResult)
+			if strResult.hasVirtualEnvVar {
+				// virtual values are only known at runtime, no further processing
+				return replaced, nil
+			}
+			// resolve command substitutions like `secretOrRandomPassword`
+			return p.evalCommandSubstitution(ctx, replaced)
 		}
 
-		replaced, substResult, err := evalParamEnvSubst(
-			string(paramBytes),
-			principalId,
-			string(principalType),
-			paramName,
-			p.env,
-			p.options.VirtualEnv,
-		)
+		resolvedParam, err := substituteParameter(param, substituteString)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
 		}
@@ -2350,15 +2432,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 			continue
 		}
 
-		// resolve command substitutions like `secretOrRandomPassword`
-		replaced, err = p.evalCommandSubstitution(ctx, replaced)
-		if err != nil {
-			return loadParametersResult{}, err
-		}
-		var resolvedParam azure.ArmParameter
-		if err := json.Unmarshal([]byte(replaced), &resolvedParam); err != nil {
-			return loadParametersResult{}, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
-		}
 		if resolvedParam.Value == nil && resolvedParam.KeyVaultReference == nil {
 			// ignore parameters that are not set
 			continue

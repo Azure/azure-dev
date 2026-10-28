@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -21,33 +20,35 @@ import (
 )
 
 type invokeUsageRPCRecorder struct {
-	v1beta.UnimplementedTelemetryServiceServer
+	azdext.UnimplementedTelemetryServiceServer
 	mu       sync.Mutex
-	requests []*v1beta.ReportUsageRequest
+	requests []*azdext.ReportUsageRequest
 }
 
 func (r *invokeUsageRPCRecorder) ReportUsage(
-	_ context.Context, request *v1beta.ReportUsageRequest,
-) (*v1beta.ReportUsageResponse, error) {
+	_ context.Context, request *azdext.ReportUsageRequest,
+) (*azdext.ReportUsageResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.requests = append(r.requests, proto.Clone(request).(*v1beta.ReportUsageRequest))
+	r.requests = append(r.requests, proto.Clone(request).(*azdext.ReportUsageRequest))
 	// A dev-installed extension can send the request even when the host does not record a span.
-	return &v1beta.ReportUsageResponse{Accepted: false}, nil
+	return &azdext.ReportUsageResponse{Accepted: false}, nil
 }
 
-func (r *invokeUsageRPCRecorder) snapshot() []*v1beta.ReportUsageRequest {
+func (r *invokeUsageRPCRecorder) snapshot() []*azdext.ReportUsageRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]*v1beta.ReportUsageRequest(nil), r.requests...)
+	return append([]*azdext.ReportUsageRequest(nil), r.requests...)
 }
 
 func startInvokeUsageRPCServer(t *testing.T, project azdext.ProjectServiceServer) *invokeUsageRPCRecorder {
 	t.Helper()
 	server := grpc.NewServer()
 	recorder := &invokeUsageRPCRecorder{}
-	v1beta.RegisterTelemetryServiceServer(server, recorder)
+	require.Equal(t, "azd.extensions.v1.TelemetryService", azdext.TelemetryService_ServiceDesc.ServiceName)
+	azdext.RegisterTelemetryServiceServer(server, recorder)
 	azdext.RegisterProjectServiceServer(server, project)
+	azdext.RegisterEnvironmentServiceServer(server, &previewTestEnvironment{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	go func() { _ = server.Serve(listener) }()
@@ -71,7 +72,7 @@ func TestAgentInvokeSelectedRequestOverGRPC(t *testing.T) {
 		{"long-running responses", "responses", true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{})
+			recorder := startInvokeUsageRPCServer(t, &helpersProjectServer{project: &azdext.ProjectConfig{}})
 			action := &InvokeAction{
 				flags: &invokeFlags{
 					protocol: tt.protocol, message: "private prompt", longRunning: tt.longRunning, noWait: tt.noWait,

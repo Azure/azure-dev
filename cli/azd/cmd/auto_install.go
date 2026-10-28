@@ -355,6 +355,11 @@ func tryAutoInstallForPartialNamespace(
 	foundCmd *cobra.Command,
 	remainingArgs []string,
 ) (autoInstallResult, error) {
+	// A runnable leaf command's remaining arguments are values, not an incomplete extension namespace.
+	if foundCmd.Runnable() && !foundCmd.HasSubCommands() {
+		return autoInstallResult{}, nil
+	}
+
 	if _, isExtensionCmd := foundCmd.Annotations["extension.id"]; isExtensionCmd {
 		// Extension commands handle their own args via DisableFlagParsing
 		return autoInstallResult{}, nil

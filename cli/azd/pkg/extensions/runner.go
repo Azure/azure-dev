@@ -5,6 +5,7 @@ package extensions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -88,10 +89,27 @@ func (r *Runner) Invoke(ctx context.Context, extension *Extension, options *Invo
 		}
 	}
 
-	runResult, err := r.commandRunner.Run(ctx, runArgs)
-	if err != nil {
+	runResult, runErr := r.commandRunner.Run(ctx, runArgs)
+	// A canceled Windows process tree can surface as exit code 0 with no
+	// process error, so retain the invocation context cause as authoritative.
+	// TODO(#10035): Remove this fallback once the shared process wrapper
+	// resolves process completion and context cancellation atomically.
+	if ctxErr := context.Cause(ctx); ctxErr != nil {
+		switch {
+		case runErr == nil:
+			runErr = ctxErr
+		// Exact identity is intentional: wrapped or joined process failures
+		// must be preserved and combined with the authoritative context cause.
+		case runErr == ctx.Err(): //nolint:errorlint
+			runErr = ctxErr
+		case !errors.Is(runErr, ctxErr):
+			runErr = errors.Join(runErr, ctxErr)
+		}
+	}
+
+	if runErr != nil {
 		return &runResult, &ExtensionRunError{
-			Err:              err,
+			Err:              runErr,
 			ExtensionId:      extension.Id,
 			ExtensionVersion: extension.Version,
 		}

@@ -69,6 +69,8 @@ Use 'optimize apply' instead if you want to localize the config into your azd pr
 	_ = cmd.MarkFlagRequired("candidate")
 	flags.optimizeConnectionFlags.register(cmd)
 
+	gateAgentServices(cmd)
+
 	return cmd
 }
 
@@ -139,6 +141,9 @@ func (a *OptimizeDeployAction) runDirect(
 	// Extract definition from latest version using map[string]any for flexibility.
 	latestDef, err := extractLatestDefinition(agentObj)
 	if err != nil {
+		return err
+	}
+	if err := projectpkg.RequireDefinitionFeatures(latestDef); err != nil {
 		return err
 	}
 

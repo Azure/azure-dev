@@ -395,6 +395,26 @@ var (
 		Purpose:        FeatureInsight,
 		IsMeasurement:  true,
 	}
+	// EnvUnsetOutcomeKey records success, no_change, user_declined, or failed.
+	EnvUnsetOutcomeKey = AttributeKey{
+		Key:            attribute.Key("env.unset.outcome"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+	}
+	// EnvUnsetRemovedCountKey counts distinct keys removed by a fully successful save.
+	EnvUnsetRemovedCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.removed_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
+	// EnvUnsetMissingCountKey counts distinct requested keys observed missing, including after confirmation.
+	EnvUnsetMissingCountKey = AttributeKey{
+		Key:            attribute.Key("env.unset.missing_count"),
+		Classification: SystemMetadata,
+		Purpose:        FeatureInsight,
+		IsMeasurement:  true,
+	}
 )
 
 // Hooks command related fields
@@ -698,7 +718,7 @@ var (
 	// ProvisionValidationOutcomeKey records the outcome of provision validation.
 	//
 	// Example: "passed", "warnings_accepted", "canceled_by_errors",
-	//          "canceled_by_user", "skipped", "error"
+	//          "canceled_by_user", "canceled_by_no_prompt", "skipped", "error"
 	ProvisionValidationOutcomeKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.outcome"),
 		Classification: SystemMetadata,
@@ -708,7 +728,7 @@ var (
 	// ProvisionValidationDiagnosticsKey records the list of diagnostic IDs emitted by provision
 	// validation checks.
 	//
-	// Example: ["role_assignment_missing", "role_assignment_conditional"]
+	// Example: ["role_assignment_missing", "role_assignment_scope_unverified", "role_assignment_conditional"]
 	ProvisionValidationDiagnosticsKey = AttributeKey{
 		Key:            attribute.Key("validation.provision.diagnostics"),
 		Classification: SystemMetadata,

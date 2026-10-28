@@ -373,6 +373,9 @@ func ejectExistingProjectInfra(
 				"under your azure.ai.project service",
 		)
 	}
+	if err := applyProjectEjectDeployments(result, environment); err != nil {
+		return err
+	}
 
 	acrMode, err := resolveProjectEjectAcrMode(
 		result.Parameters, environment,
@@ -979,6 +982,17 @@ func writeExistingProjectBicep(
 		return err
 	}
 	return writeBicepEjectionMarker(infraDir)
+}
+
+func applyProjectEjectDeployments(result *synthesis.Result, environment map[string]string) error {
+	deployments, present, err := provisioning.DecodeProjectDeployments(environment[projectDeploymentsEnvKey])
+	if err != nil {
+		return err
+	}
+	if present {
+		result.Parameters["deployments"] = deployments
+	}
+	return nil
 }
 
 func projectEjectParameterValues(

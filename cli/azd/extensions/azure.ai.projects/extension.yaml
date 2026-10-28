@@ -22,5 +22,5 @@ tags:
     - ai
     - project
 usage: azd ai project <command> [options]
-version: 1.0.0-beta.14
-requiredAzdVersion: ">=1.36.0"
+version: 1.0.0-beta.15
+requiredAzdVersion: ">=1.37.0"

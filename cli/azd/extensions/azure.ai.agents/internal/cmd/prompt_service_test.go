@@ -204,3 +204,61 @@ func TestResolvePromptAgentServicePrefersDeployedName(t *testing.T) {
 	require.True(t, isPrompt)
 	require.Equal(t, "deployed-name", pctx.AgentName())
 }
+
+func TestResolvePromptAgentServiceModelErrorsOnlyBlockInvocation(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		declared []string
+		value    string
+		fallback string
+		want     string
+	}{
+		{"skipped", []string{"template-chat"}, "[]", "", "was skipped"},
+		{"ambiguous", []string{"template-chat", "embedding"}, "[]", "existing", "cannot be inferred"},
+		{"invalid list", []string{"template-chat"}, "{", "", "decoding AI_PROJECT_DEPLOYMENTS"},
+		{"reused", []string{"template-chat"}, "[]", "existing", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			deployments := []any{}
+			for _, name := range test.declared {
+				deployments = append(deployments, map[string]any{"name": name})
+			}
+			server := &helpersProjectServer{project: &azdext.ProjectConfig{
+				Path: t.TempDir(),
+				Services: map[string]*azdext.ServiceConfig{
+					"assistant": {
+						Name: "assistant", Host: AiAgentHost, Uses: []string{"project"},
+						AdditionalProperties: mustStruct(t, map[string]any{
+							"kind": "prompt", "model": "template-chat", "instructions": "Be helpful.",
+						}),
+					},
+					"project": {
+						Name: "project", Host: "azure.ai.project",
+						AdditionalProperties: mustStruct(t, map[string]any{"deployments": deployments}),
+					},
+				},
+			}}
+			env := &promptEnvironmentServer{values: map[string]string{
+				"AZURE_SUBSCRIPTION_ID":          "subscription",
+				"AZURE_RESOURCE_GROUP":           "rg",
+				"FOUNDRY_PROJECT_ENDPOINT":       "https://acct.services.ai.azure.com/api/projects/project",
+				"AI_PROJECT_DEPLOYMENTS":         test.value,
+				"AZURE_AI_MODEL_DEPLOYMENT_NAME": test.fallback,
+			}}
+			client := newHelpersTestAzdClient(t, server, &helpersPromptServer{}, env)
+			pctx, isPrompt, err := resolvePromptAgentService(t.Context(), client, "assistant", true)
+			require.NoError(t, err)
+			require.True(t, isPrompt)
+			require.Equal(t, "assistant", pctx.AgentName())
+			pctx, _, err = resolvePromptAgentService(
+				t.Context(), client, "assistant", true, withPromptModelResolution(),
+			)
+			if test.want != "" {
+				require.ErrorContains(t, err, test.want)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "existing", pctx.Agent.Model)
+		})
+	}
+}

@@ -1,538 +1,64 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// eval.go implements the top-level "eval" command group and shared context
-// resolution logic used by all eval subcommands (generate, run, update, list, show).
-//
-// The evalResolvedContext struct holds the resolved agent, project, and
-// endpoint information. It is built from azd project state, environment
-// variables, or interactive prompts, and threaded through all subcommands.
-
 package cmd
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/dataset_api"
-	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opt_eval"
-	projectpkg "azureaiagent/internal/project"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-// Default values for eval configuration.
-const (
-	defaultEvalConfigName = "eval.yaml"
-	defaultEvalName       = "smoke-core"
-	defaultEvalSamples    = 15
-	defaultEvalModel      = "gpt-4o"
-)
-
-// Type aliases to avoid repeating full package paths throughout the eval code.
-type evalConfig = eval_api.EvalConfig
-type evalAgentRef = opt_eval.AgentRef
-type evalDatasetRef = opt_eval.DatasetRef
-
-// evalResolvedContext holds the fully-resolved context for an eval operation,
-// including the azd client, API clients, project paths, and agent metadata.
-// Built by resolveEvalContext from azd project state, environment variables,
-// or interactive prompts.
-type evalResolvedContext struct {
-	azdClient             *azdext.AzdClient
-	evalClient            *eval_api.EvalClient
-	datasetClient         *dataset_api.DatasetClient
-	projectRoot           string               // azd project root directory
-	hasProject            bool                 // true if running within an azd project
-	agentProject          string               // agent service directory
-	agentProjectSource    string               // how agentProject was resolved
-	agentName             string               // deployed agent name
-	agentNameSource       string               // how agentName was resolved
-	version               string               // agent version
-	versionSource         string               // how version was resolved
-	agentKind             agent_yaml.AgentKind // hosted or prompt
-	agentKindSource       string               // how agentKind was resolved
-	serviceName           string               // azure.yaml service name
-	projectEndpoint       string               // Foundry project endpoint URL
-	projectEndpointSource string               // how projectEndpoint was resolved
-	envName               string               // azd environment name
-}
-
-// evalContextOptions configures the behavior of resolveEvalContext.
-type evalContextOptions struct {
-	envName         string // explicit environment name (from -e flag)
-	agent           string // explicit agent name (from --agent flag)
-	projectEndpoint string // explicit project endpoint (from --project-endpoint flag)
-	skipAgent       bool   // skip agent service and deployment metadata resolution
-	requireAgent    bool   // fail if agent name cannot be resolved
-	noPrompt        bool   // skip interactive prompts
-}
-
-type evalContextFlags struct {
-	agent           string
-	projectEndpoint string
-}
-
-func addEvalContextFlags(cmd *cobra.Command, flags *evalContextFlags) {
-	cmd.Flags().StringVar(
-		&flags.agent,
-		"agent",
-		"",
-		"Agent service name from azure.yaml, or Foundry agent name outside a project",
-	)
-	addEvalProjectEndpointFlag(cmd, &flags.projectEndpoint)
-}
-
-func addEvalProjectEndpointFlag(cmd *cobra.Command, projectEndpoint *string) {
-	cmd.Flags().StringVarP(
-		projectEndpoint,
-		"project-endpoint",
-		"p",
-		"",
-		"Microsoft Foundry project endpoint URL",
-	)
-}
-
-func (f evalContextFlags) options(envName string, noPrompt, requireAgent bool) evalContextOptions {
-	return evalContextOptions{
-		envName:         envName,
-		agent:           f.agent,
-		projectEndpoint: f.projectEndpoint,
-		requireAgent:    requireAgent,
-		noPrompt:        noPrompt,
-	}
-}
-
-func newEvalCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "eval <command>",
-		Short: "Create and run quick evals for an agent.",
-		Long: `Create and run quick evals for an agent.
-
-Generate an eval config and dataset, run evaluations, and inspect the results.
-Use 'azd ai agent eval update' to upload changes to local evaluators and datasets.`,
-		Example: `  # Generate an eval suite and run it
-  azd ai agent eval generate
-  azd ai agent eval run`,
-	}
-
-	cmd.AddCommand(newEvalGenerateCommand(extCtx))
-	cmd.AddCommand(newDeprecatedEvalInitCommand())
-	cmd.AddCommand(newEvalRunCommand(extCtx))
-	cmd.AddCommand(newEvalUpdateCommand(extCtx))
-	cmd.AddCommand(newEvalListCommand(extCtx))
-	cmd.AddCommand(newEvalShowCommand(extCtx))
-
-	return cmd
-}
-
-// newDeprecatedEvalInitCommand returns a hidden "init" command that tells users
-// to use "eval generate" instead. This preserves discoverability during the
-// deprecation period without silently accepting the old name.
-func newDeprecatedEvalInitCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:        "init",
-		Short:      "(deprecated) Use 'eval generate' instead.",
-		Hidden:     true,
-		Deprecated: "use 'azd ai agent eval generate' instead",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf(
-				"'eval init' has been renamed to 'eval generate'.\n\n" +
-					"Please run: azd ai agent eval generate")
-		},
-	}
-}
-
-// resolveEvalContext resolves the context for an eval operation by reading azd project state,
-// environment variables, and optionally prompting the user. It returns an evalResolvedContext
-// with API clients and metadata needed to run eval commands.
-func resolveEvalContext(ctx context.Context, options evalContextOptions) (*evalResolvedContext, error) {
-	fmt.Println(output.WithGrayFormat("Resolving eval context..."))
-
-	azdClient, err := azdext.NewAzdClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create azd client: %w", err)
-	}
-
-	fmt.Println(output.WithGrayFormat("  Reading project configuration..."))
-	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-
-	// If no azd workspace is found, fall back to prompt-based resolution.
-	if err != nil || projectResponse.Project == nil {
-		return resolveEvalContextWithoutProject(ctx, azdClient, options)
-	}
-	project := projectResponse.Project
-
-	fmt.Println(output.WithGrayFormat("  Detecting agent service..."))
-
-	// Read the current azd environment once — used for agent info, endpoint, and env name.
-	var envName string
-	if env := getExistingEnvironment(ctx, options.envName, azdClient); env != nil {
-		envName = env.Name
-	}
-
-	getEnvValue := func(key string) string {
-		if envName == "" {
-			return ""
+func newEvalCommand() *cobra.Command {
+	newMigrationCommand := func(name, replacement string) *cobra.Command {
+		suggestion := fmt.Sprintf(
+			"Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use '%s'. "+
+				"Legacy evaluation configuration and arguments are not automatically converted.",
+			replacement,
+		)
+		migrationError := func(cmd *cobra.Command, _ []string) error {
+			return exterrors.Compatibility(
+				exterrors.CodeDeprecatedEvalCommand,
+				fmt.Sprintf(
+					"'azd ai %s' is deprecated and no longer runs the legacy evaluation workflow.", cmd.CommandPath()),
+				suggestion,
+			)
 		}
-		v, e := azdClient.Environment().GetValue(ctx, &azdext.GetEnvRequest{
-			EnvName: envName, Key: key,
+		cmd := &cobra.Command{
+			Use:        name,
+			Short:      "Migration guidance for legacy agent evaluation",
+			Deprecated: fmt.Sprintf("use '%s' from 'azure.ai.evaluations' instead", replacement),
+			Long: "The legacy agent evaluation workflow has been removed. " +
+				"This command only provides migration guidance.\n\n" +
+				suggestion + "\n\n" +
+				"Invocations fail without authentication, service requests, or changes to project or environment files. " +
+				"No arguments are forwarded to the new commands.",
+			Example: "  azd extension install azure.ai.evaluations\n  " + replacement,
+			// Reject before persistent pre-run hooks can initialize the SDK or load project context.
+			Args: migrationError,
+			RunE: migrationError,
+		}
+		cmd.SetFlagErrorFunc(func(cmd *cobra.Command, _ error) error {
+			return migrationError(cmd, nil)
 		})
-		if e != nil || v.Value == "" {
-			return ""
-		}
-		return v.Value
+		return cmd
 	}
 
-	var (
-		svc  *azdext.ServiceConfig
-		info *AgentServiceInfo
-	)
-	if !options.skipAgent {
-		svc, err = resolveEvalAgentService(ctx, azdClient, options)
-		if err != nil {
-			azdClient.Close()
-			return nil, err
-		}
-		if svc != nil {
-			// Resolve deployed agent name/version from azd environment.
-			info = &AgentServiceInfo{ServiceName: svc.Name}
-			serviceKey := toServiceKey(svc.Name)
-			if v := getEnvValue(fmt.Sprintf("AGENT_%s_NAME", serviceKey)); v != "" {
-				info.AgentName = v
-			}
-			if v := getEnvValue(fmt.Sprintf("AGENT_%s_VERSION", serviceKey)); v != "" {
-				info.Version = v
-			}
-		}
+	cmd := newMigrationCommand("eval", "azd ai eval --help")
+	for _, migration := range []struct {
+		name        string
+		replacement string
+	}{
+		{"init", "azd ai eval init"},
+		{"generate", "azd ai eval generate"},
+		{"run", "azd ai eval run start"},
+		{"update", "azd deploy"},
+		{"list", "azd ai eval --help"},
+		{"show", "azd ai eval --help"},
+	} {
+		cmd.AddCommand(newMigrationCommand(migration.name, migration.replacement))
 	}
-
-	fmt.Println(output.WithGrayFormat("  Resolving Foundry project endpoint..."))
-	projectEndpoint := options.projectEndpoint
-	projectEndpointSource := "--project-endpoint"
-	if projectEndpoint == "" {
-		if v := getEnvValue("FOUNDRY_PROJECT_ENDPOINT"); v != "" {
-			projectEndpoint = v
-			projectEndpointSource = "FOUNDRY_PROJECT_ENDPOINT"
-		}
-	}
-	if projectEndpoint == "" {
-		if v := getEnvValue("AZURE_AI_PROJECT_ENDPOINT"); v != "" { // deprecated fallback
-			projectEndpoint = v
-			projectEndpointSource = "AZURE_AI_PROJECT_ENDPOINT (deprecated)"
-		}
-	}
-	if projectEndpoint == "" {
-		if v := getEnvValue("AZURE_AI_PROJECT_ID"); v != "" {
-			ep, epErr := endpointFromProjectID(v)
-			if epErr != nil {
-				azdClient.Close()
-				return nil, epErr
-			}
-			projectEndpoint = ep
-			projectEndpointSource = "AZURE_AI_PROJECT_ID"
-		}
-	}
-	if projectEndpoint == "" {
-		azdClient.Close()
-		return nil, exterrors.Dependency(
-			exterrors.CodeMissingAiProjectEndpoint,
-			"Foundry project context could not be resolved",
-			"run 'azd ai agent init' to configure your project, or pass --project-endpoint directly",
-		)
-	}
-
-	agentName := options.agent
-	agentNameSource := "--agent"
-	agentVersion := ""
-	agentVersionSource := "unresolved"
-	agentKind := agent_yaml.AgentKind("")
-	agentKindSource := "unresolved"
-	serviceName := ""
-	agentProject := project.Path
-	agentProjectSource := "workspace root"
-	if agentName == "" {
-		agentNameSource = "unresolved"
-	}
-	if svc != nil {
-		serviceName = svc.Name
-		agentProject = filepath.Join(project.Path, svc.RelativePath)
-		agentProjectSource = fmt.Sprintf("azure.yaml service %q project path", svc.Name)
-		serviceKey := toServiceKey(svc.Name)
-		if info != nil && info.AgentName != "" {
-			agentName = info.AgentName
-			agentNameSource = fmt.Sprintf("AGENT_%s_NAME", serviceKey)
-		}
-		if info != nil && info.Version != "" {
-			agentVersion = info.Version
-			agentVersionSource = fmt.Sprintf("AGENT_%s_VERSION", serviceKey)
-		}
-		ca, _, source, loadErr := projectpkg.LoadHostedAgentDefinition(svc, project.Path)
-		if loadErr != nil {
-			azdClient.Close()
-			return nil, exterrors.ValidationFromError(
-				loadErr,
-				exterrors.CodeInvalidServiceConfig,
-				fmt.Sprintf("failed to load agent definition for service %s", svc.Name),
-				"fix the agent service configuration in azure.yaml",
-			)
-		}
-		if agent_yaml.IsValidAgentKind(ca.Kind) {
-			agentKind = ca.Kind
-			agentKindSource = "azure.yaml (inline)"
-		}
-		if source.IsLegacy() {
-			projectpkg.WarnLegacyAgentShape(source)
-		}
-	}
-	if agentKind == "" {
-		agentKind = agent_yaml.AgentKindHosted
-		agentKindSource = "default"
-	}
-	if !agent_yaml.IsValidAgentKind(agentKind) {
-		azdClient.Close()
-		return nil, fmt.Errorf("unsupported agent kind %q", agentKind)
-	}
-
-	if options.requireAgent && agentName == "" {
-		azdClient.Close()
-		return nil, evalAgentContextError(nil)
-	}
-
-	credential, err := newAgentCredential()
-	if err != nil {
-		azdClient.Close()
-		return nil, err
-	}
-	evalClient := eval_api.NewEvalClient(projectEndpoint, credential)
-	datasetClient := dataset_api.NewDatasetClient(projectEndpoint, credential)
-
-	return &evalResolvedContext{
-		azdClient:             azdClient,
-		evalClient:            evalClient,
-		datasetClient:         datasetClient,
-		projectRoot:           project.Path,
-		hasProject:            true,
-		agentProject:          agentProject,
-		agentProjectSource:    agentProjectSource,
-		agentName:             agentName,
-		agentNameSource:       agentNameSource,
-		version:               agentVersion,
-		versionSource:         agentVersionSource,
-		agentKind:             agentKind,
-		agentKindSource:       agentKindSource,
-		serviceName:           serviceName,
-		projectEndpoint:       projectEndpoint,
-		projectEndpointSource: projectEndpointSource,
-		envName:               envName,
-	}, nil
-}
-
-func resolveEvalAgentService(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	options evalContextOptions,
-) (*azdext.ServiceConfig, error) {
-	svc, _, err := resolveAgentService(ctx, azdClient, options.agent, options.noPrompt)
-	if err != nil && (options.agent != "" || options.requireAgent) {
-		return nil, evalAgentContextError(err)
-	}
-	return svc, nil
-}
-
-// resolveEvalContextWithoutProject prompts the user for essential inputs when
-// there is no azd workspace (no azure.yaml). In --no-prompt mode it requires
-// --project-endpoint and --agent to be passed explicitly.
-func resolveEvalContextWithoutProject(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	options evalContextOptions,
-) (*evalResolvedContext, error) {
-	fmt.Println(output.WithGrayFormat("  No azd project found. Prompting for inputs..."))
-
-	projectEndpoint := options.projectEndpoint
-	agentName := options.agent
-
-	if options.noPrompt {
-		if projectEndpoint == "" {
-			azdClient.Close()
-			return nil, exterrors.Dependency(
-				exterrors.CodeMissingAiProjectEndpoint,
-				"--project-endpoint is required when running outside an azd project with --no-prompt",
-				"pass --project-endpoint (-p) with your Foundry project endpoint URL",
-			)
-		}
-		if agentName == "" && options.requireAgent {
-			azdClient.Close()
-			return nil, evalAgentContextError(nil)
-		}
-	} else {
-		prompt := azdClient.Prompt()
-
-		if projectEndpoint == "" {
-			resp, err := prompt.Prompt(ctx, &azdext.PromptRequest{
-				Options: &azdext.PromptOptions{
-					Message:        "Foundry project endpoint URL",
-					IgnoreHintKeys: true,
-				},
-			})
-			if err != nil {
-				azdClient.Close()
-				return nil, fmt.Errorf("prompting for project endpoint: %w", err)
-			}
-			projectEndpoint = strings.TrimSpace(resp.Value)
-			if projectEndpoint == "" {
-				azdClient.Close()
-				return nil, fmt.Errorf("project endpoint is required")
-			}
-		}
-
-		if agentName == "" && options.requireAgent {
-			resp, err := prompt.Prompt(ctx, &azdext.PromptRequest{
-				Options: &azdext.PromptOptions{
-					Message:        "Agent name",
-					IgnoreHintKeys: true,
-				},
-			})
-			if err != nil {
-				azdClient.Close()
-				return nil, fmt.Errorf("prompting for agent name: %w", err)
-			}
-			agentName = strings.TrimSpace(resp.Value)
-			if agentName == "" {
-				azdClient.Close()
-				return nil, fmt.Errorf("agent name is required")
-			}
-		}
-	}
-
-	credential, err := newAgentCredential()
-	if err != nil {
-		azdClient.Close()
-		return nil, err
-	}
-
-	cwd, _ := os.Getwd()
-	evalClient := eval_api.NewEvalClient(projectEndpoint, credential)
-	datasetClient := dataset_api.NewDatasetClient(projectEndpoint, credential)
-
-	return &evalResolvedContext{
-		azdClient:             azdClient,
-		evalClient:            evalClient,
-		datasetClient:         datasetClient,
-		projectRoot:           cwd,
-		agentProject:          cwd,
-		agentProjectSource:    "current directory",
-		agentName:             agentName,
-		agentNameSource:       "user input",
-		version:               "",
-		versionSource:         "unresolved",
-		agentKind:             agent_yaml.AgentKindHosted,
-		agentKindSource:       "default",
-		serviceName:           "",
-		projectEndpoint:       projectEndpoint,
-		projectEndpointSource: "user input",
-		envName:               "",
-	}, nil
-}
-
-func printEvalDetectedContext(resolved *evalResolvedContext, configPath string) {
-	fmt.Println()
-	fmt.Println(color.CyanString("Detected eval target:"))
-	if resolved.serviceName != "" {
-		printEvalField("Service", resolved.serviceName, "azure.yaml")
-	}
-	printEvalField("Agent", resolved.agentName, resolved.agentNameSource)
-	printEvalField("Version", resolved.version, resolved.versionSource)
-	printEvalField("Kind", string(resolved.agentKind), resolved.agentKindSource)
-	printEvalField("Endpoint", resolved.projectEndpoint, resolved.projectEndpointSource)
-	printEvalField("Project", resolved.agentProject, resolved.agentProjectSource)
-	fmt.Printf("  Eval config:      %s\n", output.WithHighLightFormat(configPath))
-	fmt.Println()
-}
-
-func printEvalField(label, value, source string) {
-	padded := fmt.Sprintf("%-16s", label+":")
-	if value == "" || source == "unresolved" {
-		fmt.Printf("  %s%s\n", padded, output.WithGrayFormat("%s (%s)", value, source))
-	} else {
-		fmt.Printf("  %s %s %s\n",
-			color.GreenString("(✓)"),
-			padded+output.WithHighLightFormat(value),
-			output.WithGrayFormat("(%s)", source),
-		)
-	}
-}
-
-func evalAgentContextError(cause error) error {
-	message := "agent context could not be resolved"
-	if cause != nil {
-		message = fmt.Sprintf("%s: %s", message, cause)
-	}
-	return exterrors.Dependency(
-		exterrors.CodeMissingAgentEnvVars,
-		message,
-		"run 'azd ai agent init' to configure your agent, or pass --agent and --project-endpoint directly",
-	)
-}
-
-func endpointFromProjectID(projectID string) (string, error) {
-	project, err := extractProjectDetails(projectID)
-	if err != nil {
-		return "", err
-	}
-	return buildAgentEndpoint(project.AccountName, project.ProjectName), nil
-}
-
-// pollEvalOperationWithSpinner polls a long-running eval operation with a spinner, updating the provided evalProgress with status. It returns the completed job or an error if the operation failed or timed out.
-func pollEvalOperationWithSpinner(
-	ctx context.Context,
-	label string,
-	operationID string,
-	get eval_api.GetJobFunc,
-	apiVersion string,
-	progress *evalProgress,
-) (*eval_api.GenerationJob, error) {
-	if operationID == "" {
-		return nil, fmt.Errorf("%s did not return an operation ID", strings.ToLower(label))
-	}
-
-	progress.setRunning(label, operationID)
-	poller := eval_api.NewPoller(operationID, apiVersion, get)
-	job, err := poller.Poll(ctx)
-
-	if err != nil {
-		if _, ok := errors.AsType[*eval_api.PollerTimeoutError](err); ok {
-			progress.setTimedOut(label)
-			return nil, err
-		}
-		if jfe, ok := errors.AsType[*eval_api.JobFailedError](err); ok {
-			if body, marshalErr := json.MarshalIndent(jfe.Job, "", "  "); marshalErr == nil {
-				log.Printf("[debug] %s: failed response:\n%s", label, body)
-			}
-			progress.setFailed(label)
-			errMsg := fmt.Sprintf("%s failed with status %q", strings.ToLower(label), jfe.Status)
-			if jfe.Job != nil && jfe.Job.Error != nil && jfe.Job.Error.Message != "" {
-				errMsg += ": " + jfe.Job.Error.Message
-			}
-			return nil, fmt.Errorf("%s", errMsg)
-		}
-		progress.setFailed(label)
-		return nil, err
-	}
-
-	progress.setDone(label)
-	return job, nil
+	return cmd
 }

@@ -691,6 +691,8 @@ down the connection.
 |--------|-----------|-------------|
 | `Client` | `() *AzdClient` | Returns the underlying gRPC client. |
 | `WithServiceTarget` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a custom deployment target. |
+| `WithServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Register a deployment target and stable read-only preview; provider also implements `ServiceTargetPreviewProvider`. Targets azd 1.37.0. |
+| `WithBetaServiceTargetPreview` | `(host string, factory ServiceTargetFactory) *ExtensionHost` | Deprecated beta preview registration; retained with the `preview.ServiceTargetPreviewProvider` interface. |
 | `WithFrameworkService` | `(language string, factory FrameworkServiceFactory) *ExtensionHost` | Register a custom language/framework build service. |
 | `WithProjectEventHandler` | `(eventName string, handler ProjectEventHandler) *ExtensionHost` | Register a project-level lifecycle event handler. |
 | `WithServiceEventHandler` | `(eventName string, handler ServiceEventHandler, options *ServiceEventOptions) *ExtensionHost` | Register a service-level lifecycle event handler (with optional filtering). |
@@ -723,6 +725,7 @@ gRPC client connecting to the azd framework. Auto-discovers the socket via
 | `Compose()` | `v1beta.ComposeServiceClient` (preview) |
 | `Workflow()` | `WorkflowServiceClient` |
 | `ServiceTarget()` | `ServiceTargetServiceClient` |
+| `BetaServiceTarget()` | `v1beta.ServiceTargetServiceClient` (deprecated for deployment preview; use `ServiceTarget()`) |
 | `FrameworkService()` | `FrameworkServiceClient` |
 | `Container()` | `ContainerServiceClient` |
 | `Extension()` | `ExtensionServiceClient` |
@@ -767,6 +770,17 @@ exposed through the stable `azdext` contract facade.
 |---|---|---|---|---|
 | Extension usage telemetry | `Telemetry().ReportUsage`, `azdext.ReportUsageRequest/Response` | 1.36.0 | Service, method, and messages deprecated; route retained | `>=1.36.0` |
 | Current Azure principal | `Account().GetCurrentPrincipal`, `azdext.GetCurrentPrincipalRequest/Response`, `azdext.PrincipalType` | 1.36.0 | Method, messages, enum, and `AccountBeta()` deprecated; route retained | `>=1.36.0` |
+| Deployment preview | `WithServiceTargetPreview`, `azdext.ServiceTargetPreviewProvider`, `ServiceTarget().Stream`, stable preview messages and `supports_preview` | 1.37.0 (target) | Preview messages/fields and beta SDK helpers deprecated; route and Go source compatibility retained | `>=1.37.0` |
+
+The deployment preview graduation targets host and SDK 1.37.0; its
+[audit](https://github.com/Azure/azure-dev/issues/10625) records actual release
+completion. Use only a published SDK pin. Implement the stable optional provider
+as `Preview(context.Context, *azdext.ServiceConfig) (*azdext.ServiceDeployPreviewResult, error)`.
+The SDK creates a fresh provider without `Initialize` and uses a dedicated
+stable stream; ordinary deployment behavior is unchanged. Migrate beta provider
+signatures, imports, registration calls, mocks, and test servers together.
+Deprecated beta clients and provider interfaces remain usable, including when
+recompiling against the new SDK. Structured deploy-hook messages do not graduate.
 
 Upgrading to the 1.36.0 SDK intentionally changes `Telemetry()` from a beta to
 a stable return type; replace `v1beta.ReportUsageRequest/Response` with

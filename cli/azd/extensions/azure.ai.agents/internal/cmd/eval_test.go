@@ -4,629 +4,135 @@
 package cmd
 
 import (
-	"context"
-	"encoding/json"
+	"bytes"
 	"errors"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"azureaiagent/internal/exterrors"
-	"azureaiagent/internal/pkg/agents/agent_yaml"
-	"azureaiagent/internal/pkg/agents/dataset_api"
-	"azureaiagent/internal/pkg/agents/eval_api"
-	"azureaiagent/internal/pkg/agents/opt_eval"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
-// fakeTokenCredential satisfies azcore.TokenCredential for tests.
-type fakeTokenCredential struct{}
-
-func (f *fakeTokenCredential) GetToken(
-	_ context.Context,
-	_ policy.TokenRequestOptions,
-) (azcore.AccessToken, error) {
-	return azcore.AccessToken{Token: "fake-token"}, nil
-}
-
-// ---------------------------------------------------------------------------
-// newEvalCommand — command tree shape
-// ---------------------------------------------------------------------------
-
-func TestNewEvalCommand_HasExpectedSubcommands(t *testing.T) {
-	t.Parallel()
-
-	cmd := newEvalCommand(&azdext.ExtensionContext{})
-	names := make([]string, 0, len(cmd.Commands()))
-	for _, sub := range cmd.Commands() {
-		names = append(names, sub.Name())
-	}
-
-	assert.Contains(t, names, "generate")
-	assert.Contains(t, names, "run")
-	assert.Contains(t, names, "list")
-	assert.Contains(t, names, "show")
-	// "init" remains registered as a hidden deprecated alias for "generate".
-	assert.Contains(t, names, "init")
-}
-
-func TestNewEvalCommand_UseString(t *testing.T) {
-	t.Parallel()
-	cmd := newEvalCommand(&azdext.ExtensionContext{})
-	assert.Equal(t, "eval <command>", cmd.Use)
-}
-
-func TestEvalCommandsExposeContextFlags(t *testing.T) {
-	t.Parallel()
-
-	commands := map[string]*cobra.Command{
-		"generate": newEvalGenerateCommand(&azdext.ExtensionContext{}),
-		"run":      newEvalRunCommand(&azdext.ExtensionContext{}),
-		"update":   newEvalUpdateCommand(&azdext.ExtensionContext{}),
-	}
-
-	for name, cmd := range commands {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			require.NotNil(t, cmd.Flags().Lookup("agent"))
-			endpointFlag := cmd.Flags().Lookup("project-endpoint")
-			require.NotNil(t, endpointFlag)
-			assert.Equal(t, "p", endpointFlag.Shorthand)
-		})
-	}
-
-	projectCommands := map[string]*cobra.Command{
-		"list": newEvalListCommand(&azdext.ExtensionContext{}),
-		"show": newEvalShowCommand(&azdext.ExtensionContext{}),
-	}
-	for name, cmd := range projectCommands {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			require.Nil(t, cmd.Flags().Lookup("agent"))
-			endpointFlag := cmd.Flags().Lookup("project-endpoint")
-			require.NotNil(t, endpointFlag)
-			assert.Equal(t, "p", endpointFlag.Shorthand)
-		})
-	}
-}
-
-func TestEvalContextFlagsOptions(t *testing.T) {
-	t.Parallel()
-
-	flags := evalContextFlags{
-		agent:           "service-a",
-		projectEndpoint: "https://example.services.ai.azure.com/api/projects/test",
-	}
-	options := flags.options("dev", true, false)
-
-	assert.Equal(t, "dev", options.envName)
-	assert.Equal(t, "service-a", options.agent)
-	assert.Equal(t, flags.projectEndpoint, options.projectEndpoint)
-	assert.True(t, options.noPrompt)
-	assert.False(t, options.requireAgent)
-}
-
-func TestEvalCommandsPropagateNoPromptContext(t *testing.T) {
-	t.Chdir(t.TempDir())
-
-	promptServer := &helpersPromptServer{}
-	grpcServer := grpc.NewServer()
-	azdext.RegisterProjectServiceServer(grpcServer, &helpersProjectServer{})
-	azdext.RegisterPromptServiceServer(grpcServer, promptServer)
-
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(func() {
-		grpcServer.Stop()
-		_ = listener.Close()
-	})
-	t.Setenv("AZD_SERVER", listener.Addr().String())
-	t.Setenv("NO_COLOR", "1")
-
-	commands := map[string]struct {
-		newCommand func(*azdext.ExtensionContext) *cobra.Command
-		usesAgent  bool
+func TestAgentEvalMigration(t *testing.T) {
+	for _, migration := range []struct {
+		name        string
+		replacement string
 	}{
-		"run":    {newCommand: newEvalRunCommand, usesAgent: true},
-		"update": {newCommand: newEvalUpdateCommand, usesAgent: true},
-		"list":   {newCommand: newEvalListCommand},
-		"show":   {newCommand: newEvalShowCommand},
-	}
-
-	for name, test := range commands {
-		t.Run(name, func(t *testing.T) {
-			cmd := test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
-			err := cmd.ExecuteContext(t.Context())
-			require.ErrorContains(t, err, "--project-endpoint is required")
-
-			cmd = test.newCommand(&azdext.ExtensionContext{NoPrompt: true})
-			args := []string{
-				"--project-endpoint", "://explicit-endpoint",
-			}
-			if test.usesAgent {
-				args = append(args, "--agent", "explicit-agent")
-			}
-			cmd.SetArgs(args)
-			err = cmd.ExecuteContext(t.Context())
-			require.Error(t, err)
-			require.NotContains(t, err.Error(), "--project-endpoint is required")
-			require.NotContains(t, err.Error(), "agent context could not be resolved")
-		})
-	}
-
-	require.Zero(t, promptServer.promptCalls.Load())
-}
-
-func TestResolveEvalAgentService_RejectsUnknownExplicitService(t *testing.T) {
-	t.Parallel()
-
-	projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
-		Path: t.TempDir(),
-		Services: map[string]*azdext.ServiceConfig{
-			"known": {Name: "known", Host: AiAgentHost, RelativePath: "."},
-		},
-	}}
-	azdClient := newHelpersTestAzdClient(t, projectServer, &helpersPromptServer{})
-
-	_, err := resolveEvalAgentService(t.Context(), azdClient, evalContextOptions{
-		agent:    "typo",
-		noPrompt: true,
-	})
-
-	require.ErrorContains(t, err, "no azure.ai.agent service named 'typo' found in azure.yaml")
-}
-
-func TestResolveEvalContext_PropagatesRuntimeDefinitionErrors(t *testing.T) {
-	for _, tt := range []struct {
-		name           string
-		config         bool
-		definitionPath string
-		legacyFile     string
-		wantCode       string
-		wantSuggestion string
-	}{
-		{
-			name:           "unsupported definition path",
-			definitionPath: " ",
-			wantCode:       exterrors.CodeUnsupportedAgentDefinitionPath,
-			wantSuggestion: "unset AGENT_DEFINITION_PATH, then move the agent definition to " +
-				"the azure.ai.agent service in azure.yaml, " +
-				"or add an explicit root $ref on the service entry to a direct agent definition",
-		},
-		{
-			name:     "deprecated nested config",
-			config:   true,
-			wantCode: exterrors.CodeDeprecatedAgentServiceConfig,
-			wantSuggestion: "move the agent definition to service-level properties in azure.yaml, " +
-				"or add an explicit root $ref on the service entry to a direct agent definition",
-		},
-		{
-			name:     "missing definition",
-			wantCode: exterrors.CodeAgentDefinitionNotFound,
-			wantSuggestion: "add the direct agent definition to the azure.ai.agent service in azure.yaml, " +
-				"or add an explicit root $ref on the service entry to a direct agent definition",
-		},
-		{
-			name:       "unreferenced legacy definition",
-			legacyFile: "agent.yaml",
-			wantCode:   exterrors.CodeAgentDefinitionNotFound,
-			wantSuggestion: "move the direct agent definition into the azure.ai.agent service in azure.yaml, " +
-				"or move any env, project, language, image, or docker fields onto the service before adding " +
-				"an explicit root $ref on the service entry to the remaining direct definition",
-		},
+		{"", "azd ai eval --help"},
+		{"init", "azd ai eval init"},
+		{"generate", "azd ai eval generate"},
+		{"run", "azd ai eval run start"},
+		{"update", "azd deploy"},
+		{"list", "azd ai eval --help"},
+		{"show", "azd ai eval --help"},
 	} {
-		t.Run(tt.name, func(t *testing.T) {
-			root := t.TempDir()
-			t.Setenv("AGENT_DEFINITION_PATH", tt.definitionPath)
-			if tt.legacyFile != "" {
-				require.NoError(t, os.WriteFile(
-					filepath.Join(root, tt.legacyFile),
-					[]byte("this content is intentionally not parsed"),
-					0o600,
-				))
-			}
-			svc := &azdext.ServiceConfig{Name: "agent", Host: AiAgentHost, RelativePath: "."}
-			if tt.config {
-				config, err := structpb.NewStruct(map[string]any{"kind": "hosted", "name": "agent"})
-				require.NoError(t, err)
-				svc.Config = config
-			}
-			projectServer := &helpersProjectServer{project: &azdext.ProjectConfig{
-				Path: root,
-				Services: map[string]*azdext.ServiceConfig{
-					svc.Name: svc,
-				},
-			}}
-			t.Setenv("AZD_SERVER", newProjectRecorderServer(t, projectServer))
+		t.Run(migration.name, func(t *testing.T) {
+			for _, invocation := range []struct {
+				name string
+				args []string
+			}{
+				{"bare", nil},
+				{"positional argument", []string{"legacy-evaluation"}},
+				{"old flags", []string{"--config", "legacy.yaml", "--reset-defaults"}},
+				{"explicit empty old flag", []string{"--agent="}},
+				{"non-interactive JSON", []string{"--no-prompt", "--output", "json"}},
+				{"invalid global flag", []string{"--no-prompt=not-a-bool"}},
+				{"credential-bearing endpoint", []string{
+					"--project-endpoint", "https://private-user:private-password@example.com?sig=private-signature",
+				}},
+			} {
+				t.Run(invocation.name, func(t *testing.T) {
+					root := NewRootCommand()
+					root.PersistentPreRunE = func(*cobra.Command, []string) error {
+						t.Fatal("migration must fail before SDK, project, authentication, and telemetry pre-run hooks")
+						return errors.New("unexpected pre-run")
+					}
+					root.PersistentPostRun = func(*cobra.Command, []string) {
+						t.Fatal("migration must not run post-run hooks")
+					}
+					var output bytes.Buffer
+					root.SetOut(&output)
+					root.SetErr(&output)
+					args := []string{"eval"}
+					if migration.name != "" {
+						args = append(args, migration.name)
+					}
+					root.SetArgs(append(args, invocation.args...))
 
-			resolved, err := resolveEvalContext(t.Context(), evalContextOptions{
-				noPrompt:        true,
-				projectEndpoint: "https://example.services.ai.azure.com/api/projects/test",
-			})
-
-			require.Nil(t, resolved)
-			localErr, ok := errors.AsType[*azdext.LocalError](err)
-			require.True(t, ok)
-			require.Equal(t, tt.wantCode, localErr.Code)
-			require.Equal(t, tt.wantSuggestion, localErr.Suggestion)
+					err := root.Execute()
+					require.Error(t, err)
+					localErr, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "expected a structured migration error, got %v", err)
+					require.Equal(t, exterrors.CodeDeprecatedEvalCommand, localErr.Code)
+					require.Equal(t, azdext.LocalErrorCategoryCompatibility, localErr.Category)
+					require.Contains(t, localErr.Message, "deprecated")
+					require.Contains(t, localErr.Suggestion, "azd extension install azure.ai.evaluations")
+					require.Contains(t, localErr.Suggestion, "'"+migration.replacement+"'")
+					require.Contains(t, output.String(), "deprecated")
+					require.Contains(t, output.String(), migration.replacement)
+					displayed := output.String() + err.Error() + localErr.Suggestion
+					require.NotContains(t, displayed, "unknown command")
+					require.NotContains(t, displayed, "unknown flag")
+					require.NotContains(t, displayed, "private-")
+					require.NotContains(t, displayed, "legacy.yaml")
+				})
+			}
 		})
 	}
 }
 
-// ---------------------------------------------------------------------------
-// GenerationJob methods
-// ---------------------------------------------------------------------------
-
-func TestGenerationJob_OperationID(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "op-123", (&eval_api.GenerationJob{ID: "op-123"}).OperationID())
-	assert.Equal(t, "", (&eval_api.GenerationJob{}).OperationID())
-}
-
-func TestGenerationJob_NormalizedStatus(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "completed", (&eval_api.GenerationJob{Status: "completed"}).NormalizedStatus())
-	assert.Equal(t, "running", (&eval_api.GenerationJob{}).NormalizedStatus())
-}
-
-func TestGenerationJob_ResolvedNameVersion(t *testing.T) {
-	t.Parallel()
-
-	// Empty job returns empty name and empty version.
-	name, version := (&eval_api.GenerationJob{}).ResolvedNameVersion()
-	assert.Equal(t, "", name)
-	assert.Equal(t, "", version)
-
-	// Extracts name and version from the result JSON.
-	job := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"name":"generated-ds","version":"v2"}`),
+func TestAgentEvalMigrationPreservesFiles(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	files := map[string]string{
+		"azure.yaml":                           "invalid: [",
+		"eval.yaml":                            "legacy evaluation configuration",
+		filepath.Join(".azure", "dev", ".env"): "LAST_EVAL_ID=existing-eval\n",
 	}
-	name, version = job.ResolvedNameVersion()
-	assert.Equal(t, "generated-ds", name)
-	assert.Equal(t, "v2", version)
-
-	// Extracts from result.outputs[0] (nested API response format).
-	jobNested := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"outputs":[{"type":"dataset","name":"nested-ds","version":"36735"}]}`),
+	for path, content := range files {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0750))
+		require.NoError(t, os.WriteFile(path, []byte(content), 0600))
 	}
-	name, version = jobNested.ResolvedNameVersion()
-	assert.Equal(t, "nested-ds", name)
-	assert.Equal(t, "36735", version)
-
-	// Defaults version to "latest" when missing.
-	jobNoVer := &eval_api.GenerationJob{
-		Result: json.RawMessage(`{"name":"smoke-core"}`),
-	}
-	name, version = jobNoVer.ResolvedNameVersion()
-	assert.Equal(t, "smoke-core", name)
-	assert.Equal(t, "latest", version)
-}
-
-func TestOpenAIEval_ResolvedID(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "eval-1", (&eval_api.OpenAIEval{ID: "eval-1", Name: "n"}).ResolvedID())
-	assert.Equal(t, "n", (&eval_api.OpenAIEval{Name: "n"}).ResolvedID())
-	assert.Equal(t, "", (&eval_api.OpenAIEval{}).ResolvedID())
-}
-
-// ---------------------------------------------------------------------------
-// eval_api.FormatTimestamp
-// ---------------------------------------------------------------------------
-
-func TestFormatTimestamp(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, "2024-01-15 10:30 UTC", eval_api.FormatTimestamp("2024-01-15 10:30 UTC"))
-	assert.Contains(t, eval_api.FormatTimestamp(float64(1705312200)), "2024-01-15")
-	assert.Contains(t, eval_api.FormatTimestamp(int64(1705312200)), "2024-01-15")
-	assert.Equal(t, "", eval_api.FormatTimestamp(nil))
-	assert.Equal(t, "", eval_api.FormatTimestamp(true))
-}
-
-// ---------------------------------------------------------------------------
-// eval_api.ResolveRelPath
-// ---------------------------------------------------------------------------
-
-func TestResolveRelPath(t *testing.T) {
-	t.Parallel()
-
-	t.Run("absolute path returned as-is", func(t *testing.T) {
-		t.Parallel()
-		abs := filepath.Join(os.TempDir(), "eval.yaml")
-		assert.Equal(t, abs, eval_api.ResolveRelPath(abs, "/project"))
-	})
-
-	t.Run("relative path joined with agent project", func(t *testing.T) {
-		t.Parallel()
-		result := eval_api.ResolveRelPath("eval.yaml", "/project/agent")
-		assert.Equal(t, filepath.Join("/project/agent", "eval.yaml"), result)
-	})
-}
-
-// ---------------------------------------------------------------------------
-// EvalState — stored in azd environment (integration-tested via eval generate/run)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// writeEvalReviewArtifacts
-// ---------------------------------------------------------------------------
-
-func TestWriteEvalReviewArtifacts(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	cfg := &evalConfig{}
-	cfg.Dataset = &evalDatasetRef{Name: "test-data", Version: "v1"}
-	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
-
-	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
-	require.NoError(t, err)
-
-	evPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
-	assert.FileExists(t, evPath)
-}
-
-func TestWriteEvalReviewArtifacts_NilDataset(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	cfg := &evalConfig{}
-	// No dataset reference — should not panic.
-	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
-	require.NoError(t, err)
-}
-
-// ---------------------------------------------------------------------------
-// saveEvaluatorResult
-// ---------------------------------------------------------------------------
-
-func TestSaveEvaluatorResult(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	result := json.RawMessage(`{"name":"smoke-core","definition":{"type":"rubric","dimensions":[{"id":"quality","weight":10}]}}`)
-	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "smoke-core", result))
-
-	path := filepath.Join(dir, "evaluators", "smoke-core", "rubric_dimensions.json")
-	assert.FileExists(t, path)
-	data, err := os.ReadFile(path) //nolint:gosec // test file path
-	require.NoError(t, err)
-	// Only the dimensions array is saved, not the outer fields.
-	assert.Contains(t, string(data), `"id": "quality"`)
-	assert.Contains(t, string(data), `"weight": 10`)
-	assert.NotContains(t, string(data), `"name": "smoke-core"`)
-}
-
-func TestSaveEvaluatorResult_WithVersion(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	result := json.RawMessage(`{"name":"custom","definition":{"type":"rubric","dimensions":[{"id":"d1","weight":5}]}}`)
-	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "custom", result))
-
-	path := filepath.Join(dir, "evaluators", "custom", "rubric_dimensions.json")
-	assert.FileExists(t, path)
-}
-
-func TestSaveEvaluatorResult_NilResult(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "test", nil))
-	path := filepath.Join(dir, "evaluators", "test", "rubric_dimensions.json")
-	assert.NoFileExists(t, path)
-}
-
-func TestSaveEvaluatorResult_EmptyName(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "", json.RawMessage(`{"name":"x"}`)))
-	// Should not create any file.
-	matches, _ := filepath.Glob(filepath.Join(dir, "evaluators", "*.json"))
-	assert.Empty(t, matches)
-}
-
-func TestWriteEvalReviewArtifacts_SkipsWhenResultExists(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-
-	// Pre-save a result file.
-	require.NoError(t, eval_api.SaveEvaluatorResult(dir, "quality", json.RawMessage(`{"name":"quality","definition":{"type":"rubric","dimensions":[{"id":"q","weight":1}]}}`)))
-
-	cfg := &evalConfig{}
-	cfg.Evaluators = opt_eval.EvaluatorList{{Name: "quality"}}
-	err := eval_api.WriteEvalReviewArtifacts(dir, cfg)
-	require.NoError(t, err)
-
-	// Should NOT create a .yaml stub since .json result already exists.
-	yamlPath := filepath.Join(dir, "evaluators", "quality", "quality.yaml")
-	assert.NoFileExists(t, yamlPath)
-}
-
-// ---------------------------------------------------------------------------
-// downloadDatasetArtifact
-// ---------------------------------------------------------------------------
-
-func TestDownloadDatasetArtifact_NilDataset(t *testing.T) {
-	t.Parallel()
-	_, err := eval_api.DownloadDatasetArtifact(t.Context(), nil, t.TempDir(), nil, "v1")
-	require.NoError(t, err)
-}
-
-func TestDownloadDatasetArtifact_WritesBlob(t *testing.T) {
-	t.Parallel()
-
-	// The Azure SDK bearer token policy rejects non-TLS test servers, so the
-	// credential call will fail. downloadDatasetArtifact now returns the error.
-	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"sas_uri":"http://blob.example/data?sig=abc"}`))
-	}))
-	t.Cleanup(apiServer.Close)
-
-	client := dataset_api.NewDatasetClient(apiServer.URL, &fakeTokenCredential{})
-	dir := t.TempDir()
-
-	ref := &evalDatasetRef{Name: "test-ds", Version: "v1"}
-	_, err := eval_api.DownloadDatasetArtifact(t.Context(), client, dir, ref, "v1")
+	root := NewRootCommand()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"eval", "generate", "--config", "eval.yaml", "--reset-defaults"})
+	err := root.Execute()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "getting dataset credential")
-
-	// No file written when credential fetch fails.
-	dest := eval_api.DatasetArtifactPath(dir, ref)
-	assert.NoDirExists(t, dest)
-}
-
-// ---------------------------------------------------------------------------
-// datasetArtifactPath
-// ---------------------------------------------------------------------------
-
-func TestDatasetArtifactPath(t *testing.T) {
-	t.Parallel()
-	ref := &evalDatasetRef{Name: "golden", Version: "v2"}
-	result := eval_api.DatasetArtifactPath("/project", ref)
-	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), result)
-
-	// No version — same path, version not included.
-	refNoVer := &evalDatasetRef{Name: "golden", Version: ""}
-	resultNoVer := eval_api.DatasetArtifactPath("/project", refNoVer)
-	assert.Equal(t, filepath.Join("/project", "datasets", "golden"), resultNoVer)
-}
-
-// ---------------------------------------------------------------------------
-// writeJSONFile
-// ---------------------------------------------------------------------------
-
-func TestWriteJSONFile(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "result.json")
-
-	err := eval_api.WriteJSONFile(path, map[string]string{"hello": "world"})
-	require.NoError(t, err)
-
-	data, err := os.ReadFile(path) //nolint:gosec // test file path
-	require.NoError(t, err)
-	assert.Contains(t, string(data), `"hello": "world"`)
-}
-
-// ---------------------------------------------------------------------------
-// evalAgentContextError
-// ---------------------------------------------------------------------------
-
-func TestEvalAgentContextError(t *testing.T) {
-	t.Parallel()
-
-	t.Run("without cause", func(t *testing.T) {
-		t.Parallel()
-		err := evalAgentContextError(nil)
-		assert.Contains(t, err.Error(), "agent context could not be resolved")
-		var localErr *azdext.LocalError
-		require.True(t, errors.As(err, &localErr))
-		assert.Contains(t, localErr.Suggestion, "azd ai agent init")
-	})
-
-	t.Run("with cause", func(t *testing.T) {
-		t.Parallel()
-		cause := assert.AnError
-		err := evalAgentContextError(cause)
-		assert.Contains(t, err.Error(), cause.Error())
-		var localErr *azdext.LocalError
-		require.True(t, errors.As(err, &localErr))
-		assert.Contains(t, localErr.Suggestion, "--agent")
-		assert.Contains(t, localErr.Suggestion, "--project-endpoint")
-	})
-}
-
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// eval_api.WriteEvalConfig / eval_api.LoadEvalConfig round-trip
-// ---------------------------------------------------------------------------
-
-func TestEvalConfigRoundTrip(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "eval.yaml")
-
-	original := &evalConfig{
-		Config: opt_eval.Config{
-			Name: "smoke-core",
-			Agent: evalAgentRef{
-				Name:    "my-agent",
-				Kind:    agent_yaml.AgentKindHosted,
-				Version: "v1",
-			},
-			Dataset:    &evalDatasetRef{Name: "ds", Version: "v1"},
-			Evaluators: opt_eval.EvaluatorList{{Name: "builtin.task_adherence"}},
-		},
-		Options: &opt_eval.Options{
-			EvalModel: "gpt-4o",
-		},
-		MaxSamples: 50,
-	}
-
-	err := eval_api.WriteEvalConfig(path, original)
-	require.NoError(t, err)
-
-	loaded, err := eval_api.LoadEvalConfig(path)
-	require.NoError(t, err)
-
-	assert.Equal(t, original.Name, loaded.Name)
-	assert.Equal(t, original.Agent.Name, loaded.Agent.Name)
-	assert.Equal(t, original.Agent.Kind, loaded.Agent.Kind)
-	assert.Equal(t, original.Agent.Version, loaded.Agent.Version)
-	assert.Equal(t, "gpt-4o", loaded.Options.EvalModel)
-	assert.Equal(t, original.MaxSamples, loaded.MaxSamples)
-	require.NotNil(t, loaded.Dataset)
-	assert.Equal(t, "ds", loaded.Dataset.Name)
-	require.Len(t, loaded.Evaluators, 1)
-	assert.Equal(t, "builtin.task_adherence", loaded.Evaluators[0].Name)
-}
-
-func TestReadEvalConfig_MissingFile(t *testing.T) {
-	t.Parallel()
-	_, err := eval_api.LoadEvalConfig("/nonexistent/path/eval.yaml")
-	assert.Error(t, err)
-}
-
-// ---------------------------------------------------------------------------
-// endpointFromProjectID — project ID to endpoint conversion
-// ---------------------------------------------------------------------------
-
-func TestEndpointFromProjectID(t *testing.T) {
-	t.Parallel()
-	t.Run("valid project ID", func(t *testing.T) {
-		t.Parallel()
-		projectID := "/subscriptions/sub123/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/myaccount/projects/myproject"
-		endpoint, err := endpointFromProjectID(projectID)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, exterrors.CodeDeprecatedEvalCommand, localErr.Code)
+	for path, content := range files {
+		after, err := os.ReadFile(path)
 		require.NoError(t, err)
-		assert.Contains(t, endpoint, "myaccount")
-		assert.Contains(t, endpoint, "myproject")
-	})
+		require.Equal(t, content, string(after))
+	}
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, len(files))
+}
 
-	t.Run("invalid project ID", func(t *testing.T) {
-		t.Parallel()
-		_, err := endpointFromProjectID("not-a-valid-id")
-		assert.Error(t, err)
-	})
-
-	t.Run("empty project ID", func(t *testing.T) {
-		t.Parallel()
-		_, err := endpointFromProjectID("")
-		assert.Error(t, err)
-	})
+func TestAgentEvalMigrationHelp(t *testing.T) {
+	for _, name := range []string{"", "init", "generate", "run", "update", "list", "show"} {
+		t.Run(name, func(t *testing.T) {
+			root := NewRootCommand()
+			var output bytes.Buffer
+			root.SetOut(&output)
+			root.SetErr(&output)
+			args := []string{"eval"}
+			if name != "" {
+				args = append(args, name)
+			}
+			root.SetArgs(append(args, "--help"))
+			require.NoError(t, root.Execute())
+			require.Contains(t, output.String(), "migration guidance")
+			require.Contains(t, output.String(), "azd extension install azure.ai.evaluations")
+		})
+	}
 }

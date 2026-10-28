@@ -5,14 +5,7 @@
 ### Bugs Fixed
 
 - [[#10516]](https://github.com/Azure/azure-dev/pull/10516) Fix unresolved or empty environment variables in composite Deployment Stacks deny-list values being sent to Azure when the `deployment.stacks` alpha feature is enabled. Thanks @saikeerthan-14 for the contribution!
-- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix unattended provisioning continuing after critical validation warnings; `--no-prompt` now fails with remediation, while interactive confirmation for critical warnings defaults to No. Thanks @hyoshis for the contribution!
-- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix critical provisioning confirmations accepting exhausted input without an explicit response. Thanks @hyoshis for the contribution!
-- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix canceled provisioning running post-provision hooks or hiding failures from parallel infrastructure layers. Thanks @hyoshis for the contribution!
-- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix role-assignment permission warnings treating unverified target scopes as confirmed deployment failures. Thanks @hyoshis for the contribution!
-
-### Other Changes
-
-- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Improve provisioning validation reports with clearer permission details, remediation guidance, and warning totals that distinguish regular and critical warnings. Thanks @hyoshis for the contribution!
+- [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning validation with clearer scope-aware warnings, default-No confirmation for critical warnings, errors for `--no-prompt` or unanswered critical confirmations, and cancellation that skips post-provision hooks without hiding parallel-layer failures. Thanks @hyoshis for the contribution!
 
 ## 1.37.1 (2026-10-21)
 

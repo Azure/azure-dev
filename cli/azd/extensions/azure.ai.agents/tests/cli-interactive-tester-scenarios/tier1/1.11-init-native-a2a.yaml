@@ -1,0 +1,32 @@
+# Tier 1 — configuration only; the fixture is not an A2A server.
+# Requires approval to run. Never provision, deploy, invoke, or clean up resources.
+name: "init-native-a2a"
+command: "azd ai agent init --deploy-mode code"
+cwd: "~/working/azd-agents-t1-native-a2a-{instance}"
+tags: ["tier:1", "cmd:init", "parallel-safe"]
+produces: "~/working/azd-agents-t1-native-a2a-{instance}"
+
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_AGENTS_A2A: "true"
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "false"
+
+pre:
+  - run: "mkdir -p ~/working/azd-agents-t1-native-a2a-{instance} && cp -r \"{fixtures_dir}/from-code/.\" ~/working/azd-agents-t1-native-a2a-{instance}/"
+    cwd: "~/working"
+    name: "seed existing-code fixture in a fresh run-unique directory (not an A2A implementation)"
+
+goals:
+  - "Use a fresh run-unique instance directory; do not reuse or delete any retained project or Azure resource. This scenario validates configuration only and must not run provision, deploy, run, invoke, or down."
+  - "At 'How do you want to initialize your agent?', select 'Use the code in the current directory'."
+  - "When prompted for the agent name, use exactly '{prefix}-t1-native-a2a-{instance}', replacing any pre-filled default. If asked for an azd environment name, use the same run-unique name."
+  - "At 'Select the runtime for your agent', select 'Python 3.13'. At the entry-point prompt, accept 'app.py'. At 'How should dependencies be resolved?', select 'Remote build (dependencies installed on server during deployment)'."
+  - "At 'Which protocols does your agent support?', confirm the choices include 'responses', 'invocations', 'activity', and 'a2a', but not 'invocations_ws' because the independent Voice preview is off. Responses must be selected by default and A2A unselected. Select only 'a2a'; leave every other choice unselected and continue."
+  - "There must be no A2A version prompt and no A2A 0.3 implementation choice."
+  - "If asked to select a Foundry project, select 'Create a new Foundry project'. If asked for its name, use exactly '{foundry_project_name}', replacing any default. This configures a future project only; do not create cloud resources."
+  - "If a 'Select a tenant' prompt appears, select the tenant provided for this run; if none was provided, fail without answering. If asked for a subscription, select '{subscription}'. If asked for a location, select '{region}'."
+  - "At 'How would you like to configure model(s) for your agent?', select 'Skip model configuration'."
+  - "Verify azure.yaml declares only a2a/1.0.0 in protocols and only a2a in agentEndpoint.protocols. Responses must not be added. Verify codeConfiguration and .agentignore are present."
+  - "Verify the output says 'A2A hosted agent (1.0) configured; init does not generate an A2A server.' and lists POST /a2a, POST /invocations/a2a, GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness. Init must not claim service onboarding, region availability, execution, or the full session/task lifecycle was verified."
+  - "Interpret protocols as the agent implementation and agentEndpoint.protocols as endpoint enablement; this need not be printed."
+  - "Verify the original fixture source files remain unchanged; they are not an A2A server. Capture the completed output, then STOP. Do not provision, deploy, invoke, or delete retained resources."

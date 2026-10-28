@@ -1,5 +1,78 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Preview feature opt-ins
+
+Four capabilities are off by default. Each one is turned on separately.
+
+| Feature ID | Scope | Environment variable |
+| --- | --- | --- |
+| `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
+| `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+| `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+
+Set the desired variable in your shell or CI before running azd:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
+export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
+export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+export AZD_ALPHA_ENABLE_AGENTS_A2A=true
+```
+
+In PowerShell, for example:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_VOICE = 'true'
+```
+
+Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable a feature. False, empty,
+missing, and invalid values leave it off. The evaluator reads the current
+process environment without querying azd config or loading environment files.
+Values already injected by the azd host count; the selected azd environment
+can override the same key from the shell or CI.
+
+User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
+`AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
+hosted and plain prompt agents need no opt-in.
+
+Root help always lists the canonical switches and their scopes. While a
+feature is off, its command-specific flags and help sections are hidden.
+Enabling a feature preserves the existing help without adding new text or
+revealing flags that were already hidden, including `--harness`.
+This covers `invoke --long-running`, `invoke --no-wait`, the
+`invocations` group, `init --voice`, and the `prompt-voice` choice of
+`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+`feature_not_enabled` error that names the preview feature ID and suggests
+setting its canonical variable to `true` in the shell or CI.
+
+Checks cover preview flags on init and invoke, `agent add` definitions,
+existing and staged project definitions, the selected service for invoke, run,
+optimize submissions, optimize deploy, optimize apply, and endpoint update,
+provisioning, and package, publish, and deploy. The init
+picker omits voice while it is off. Hosted init also omits `invocations_ws`
+from protocol help and selection while voice is off. Explicit `--protocol`
+values, including repeated flags and comma-separated lists, require the voice
+opt-in for `invocations_ws`. Protocol selection completes before project or
+environment creation; ordinary protocols and the no-prompt Responses default
+need no additional feature check. Template catalogs do not identify
+capabilities, so templates are checked after staging and before adoption.
+Explicit remote `--template` inputs are staged and checked before Azure
+authentication, including `$ref` definitions. Adoption reuses that directory.
+
+### Enforcement limits
+
+- An explicit HTTP `--agent-endpoint` stays unclassified. The extension does
+  not query its remote definition, so the managed harness check does not cover
+  that route. The long-running check still applies. Text invoke does not
+  accept voice WebSocket endpoints.
+- Read and cleanup commands stay available with features off. This includes
+  show, endpoint show, invocations show, follow, and cancel, delete, and down.
+- These checks do not govern requests from the evaluations or routines
+  extensions.
+
+See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
 ## Hosted agent deployment preview
 
 With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
@@ -216,7 +289,8 @@ never include prompts, responses, resource or service names, IDs, paths, URLs,
 connection values, or other customer content. The azd host records events only
 for extensions installed from the official registry.
 
-The events currently emitted by this extension are documented under
+Init also records [business-step elapsed times](docs/init-telemetry.md), including
+loading and interaction together. The other events are documented under
 [Agent context telemetry](#agent-context-telemetry),
 [Operation classification markers](#operation-classification-markers),
 [Remote invoke adoption telemetry](#remote-invoke-adoption-telemetry), and
@@ -376,11 +450,20 @@ Run `azd deploy --all` to reconcile these dependencies before their agents;
 declare Connection and Toolbox resources as sibling services. Agent runtime
 `toolConnections` and environment references remain agent-owned.
 
-Unlike the service-key references in `toolboxes`, singular `toolbox.name`
-retains the Foundry resource name. Local dependency wiring and deployment
-resolve its service key using the existing authoring convention: trim
-surrounding whitespace and remove ASCII spaces (`My Tools` becomes `MyTools`).
-The original resource name remains unchanged in the definition.
+The legacy singular `toolbox` field is not supported; use `toolboxes` to
+reference local `azure.ai.toolbox` service keys.
+
+For harnessed prompt agents, each Toolbox service key becomes its generated MCP
+`server_label`. To customize approval or tool options, add an MCP entry under
+`tools` with that service key as its `server_label` and omit `server_url`; azd
+fills the deployed endpoint and authenticated connection. An existing MCP entry
+with the exact deployed URL keeps its authored label and options, while azd sets
+its authentication connection. A different explicit URL is not automatically
+repinned: remove it to follow the Toolbox service, or use a distinct label to
+keep it as an independent tool. Conflicting labels fail before connection setup.
+References to the same endpoint share one attachment. Configure at most one MCP
+entry for that endpoint or its service keys; competing overrides are rejected
+before connection setup rather than silently merging their options.
 
 Prompt agents (`kind: prompt`) may also declare `connections` as a list of
 local `azure.ai.connection` service keys or effective resource names. An
@@ -405,16 +488,46 @@ when `azure.yaml` does not
 declare an `azure.ai.eval` service. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation
-documentation link, not the evaluation setup guidance. `azd ai agent eval generate` is a
-separate, supported command for this extension's own quick-eval workflow;
-only its hidden `azd ai agent eval init` alias is formally deprecated, in
-favor of `generate`.
+documentation link, not the evaluation setup guidance.
+
+**Deprecated:** `azd ai agent eval` commands only display migration guidance
+and exit non-zero; `--help` remains available. Use `azd ai eval` from
+`azure.ai.evaluations` instead. Old arguments are not forwarded, and legacy
+evaluation configuration is not automatically converted.
 
 `azd ai eval init` scaffolds evaluation configuration; follow the
 [evaluations guide](../azure.ai.evaluations/README.md) for deployment and run steps.
 The `azd ai agent show <service>` and `azd ai agent invoke <service>` next steps
 use the local service key from `azure.yaml`, which can differ from the deployed
 agent name shown in the endpoint.
+
+For adopted prompt agents, deploy and invoke resolve the template model against
+the active environment's deployment choices. `AI_PROJECT_DEPLOYMENT_BINDINGS` is
+an environment-local JSON object mapping each template deployment name to its
+selected deployment name. An empty target records an explicit skip. These
+names are matched case-insensitively, and updates preserve existing declaration-key
+spelling. Targets that differ only by case are equivalent; genuinely conflicting
+targets for keys that differ only by case are rejected. Bindings
+preserve independent choices for multiple declarations and take
+precedence over the project-wide runtime default. A skipped model, an ambiguous
+legacy replacement, or malformed deployment configuration returns an error
+rather than silently using another model. Model-resolution failures do not block
+`azd ai agent show` or `azd ai agent delete`.
+
+When adopting a template with `azd ai agent init --model-deployment`, init selects
+the template declaration to replace before copying project files or creating an
+environment. An ambiguous `--no-prompt` request or a cancelled replacement picker
+leaves the target unchanged. Template variable references in the selected
+declaration name are expanded against the final environment when applying the
+binding, with persisted values taking precedence over process values.
+
+For on-disk Bicep or Terraform infrastructure, deployment parameters are
+authoritative, not `AI_PROJECT_DEPLOYMENTS`. Ejection seeds deployment parameters
+from the adoption choices, and explicit per-declaration bindings remain effective
+after ejection. Without such a binding, deploy and invoke expand the agent's
+authored model without inferring replacements from the managed deployment list.
+Set the agent's model explicitly or use
+`${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
 
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
@@ -449,6 +562,179 @@ The command validates the agent definition before reading deployment state.
 Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
+
+## Initializing an A2A hosted agent
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing
+an A2A hosted agent. With the preview off, init hides the `a2a` choice and rejects
+explicit `--protocol a2a` selections (including repeated or comma-separated flags)
+before authentication or writes. Responses remains the no-prompt default.
+`invocations_ws` independently requires the Voice preview. Existing declarations
+are not gated during deployment or lifecycle operations by this init selection check.
+
+Foundry forwards requests directly to A2A hosted agents instead of converting them
+to Responses requests. Select `a2a` during init and deselect `responses` if your
+agent does not support it. For non-interactive initialization:
+
+```bash
+azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \
+  --deploy-mode code --runtime python_3_13 --entry-point app.py \
+  --dep-resolution remote_build --no-prompt
+```
+
+Selecting only `a2a` generates:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-a2a-agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: my-a2a-agent
+    protocols:
+      - protocol: a2a
+        version: 1.0.0
+    agentEndpoint:
+      protocols: [a2a]
+```
+
+`protocols` declares the agent's implementation; `agentEndpoint.protocols` enables
+its A2A endpoint. Foundry uses declaration `1.0.0`; public A2A requests use `1.0`.
+
+Your agent must serve:
+
+- `POST /a2a` and `POST /invocations/a2a` (hosted routing varies by runtime)
+- `GET /invocations/a2a/.well-known/agent-card.json`
+- `GET /readiness`
+
+Init writes configuration, not an A2A server. Service onboarding and region support
+are required separately.
+
+## Invoking agents over A2A
+
+Without the `agents.a2a` preview, messages and files use A2A 0.3. File bytes
+are sent unchanged; omit `--a2a-version`, which requires the preview:
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
+azd ai agent invoke -p a2a -f a2a-request-0.3.json
+```
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI for the
+version-selection behavior below. This changes the message default to 1.0
+and requires an explicit supported version for every A2A file invocation.
+
+Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
+agent using public A2A version `1.0` or `0.3` through its Foundry A2A endpoint:
+
+```bash
+# Explicitly select the public A2A request version
+azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
+azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+```
+
+These are public A2A protocol versions, not Foundry API versions or deployed
+agent versions. See the pinned [A2A 1.0 versioning specification](https://a2a-protocol.org/v1.0.0/specification/#36-versioning)
+and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
+
+For plain messages, azd composes both the version-specific JSON-RPC body and
+the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
+default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
+support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
+regardless of other protocols. Local working-tree definitions are not authoritative
+for the deployed target, even when `--version` selects the current deployment.
+Local inspection failures and compatibility findings are advisory diagnostics
+shown with `--debug`; Foundry enforces deployed target support. Request and
+file-argument validation remain blocking. Translation availability and restrictions
+can vary by service rollout.
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
+```
+
+With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
+`azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
+
+Generated 0.3 requests leave execution and output modes unspecified, preserving the
+non-blocking default. A Task may still be in progress; azd prints the initial response
+without polling. A2A 1.0 uses its [synchronous default](https://a2a-protocol.org/v1.0.0/specification/#322-sendmessageconfiguration),
+waiting for a terminal state or an input/authentication request.
+
+**File input requires an explicit version.** When using `--input-file` (`-f`)
+with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
+A2A hosted agent YAML declares a version. No heuristic infers the version
+from agent configuration or the request body.
+
+The file must contain a complete public JSON-RPC request for the selected A2A
+version, not a version envelope. The CLI sends the file bytes unchanged; it
+does not wrap, rewrite, or convert the body. The caller must match the body
+to `--a2a-version`, which selects the `A2A-Version` header.
+
+Formatted output supports non-streaming JSON-RPC responses. For streaming methods
+(`message/stream` or `SendStreamingMessage`), use `--output raw` to stream the SSE
+response without parsing it.
+
+For example, save this complete A2A 1.0 request as `a2a-request-1.0.json`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "hello-message-1",
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello!"}]
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"],
+      "returnImmediately": false
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke -p a2a --a2a-version 1.0 --input-file a2a-request-1.0.json
+```
+
+For A2A 0.3, save this request as `a2a-request-0.3.json` instead:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "kind": "message",
+      "messageId": "hello-message-1",
+      "role": "user",
+      "parts": [{"kind": "text", "text": "Hello!"}]
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
+```
+
+`--a2a-version` is valid only for A2A; do not use it with Responses or
+Invocations. It is separate from `--version`, which continues to select a
+**deployed agent version**, not an A2A protocol version. This CLI does not
+support A2A invocation with `--local`; this is a CLI limitation, not a
+restriction of the A2A protocol.
+
+For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
+artifacts over generic status messages such as “Done.” Other Tasks prefer status
+messages so prompts, progress, and failure details remain visible, falling back to
+artifacts when no status text is present. History is the final text fallback.
+Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
+
+A2A hosted-agent session affinity is service-controlled, even with a session or
+context ID. In-memory task stores may return `TaskNotFound` on later requests.
 
 ## Invoke latency diagnostics
 
@@ -597,6 +883,23 @@ service and protocol profile. Its `ext.route` attribute is exactly one of:
 The event is emitted before checking client availability, starting the local
 agent, or launching a client. It records route selection, not successful client
 launch.
+
+## Initializing a Project
+
+When `azd ai agent init` scaffolds into a subdirectory, the `Next:` block starts
+with `cd <folder>` before the provisioning command, even if that folder already
+existed. Run the `cd` command first: init does not change your shell's working
+directory. Initializing in the current directory does not need a `cd` hint.
+
+For paths requiring shell-specific quoting, the block labels alternatives for
+POSIX shells, PowerShell, and cmd.exe. Run only the navigation command for your
+shell, then continue with the remaining steps. If cmd.exe cannot safely express
+the path (for example, it contains `%` or `!`), use the PowerShell alternative.
+Drive-qualified paths also show these alternatives so cmd.exe switches drives.
+PowerShell alternatives preserve both straight and smart apostrophes literally.
+Paths containing smart double quotes also use the shell-specific alternatives.
+The same applies to paths starting with a Unicode dash that PowerShell treats
+as a parameter prefix.
 
 ## Migrating Legacy Agent Configuration
 
@@ -765,7 +1068,7 @@ Details:
 
 ## Voice agents (public preview)
 
-Voice initialization is available without a private-preview environment switch.
+Voice initialization needs the `agents.voice` [opt-in](#preview-feature-opt-ins).
 Use the existing commands to discover options and create a managed prompt voice
 agent:
 
@@ -841,9 +1144,13 @@ infra:
 
 Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
 a new prompt voice agent and is rejected when the chosen init flow cannot use it.
-Advanced settings such as `audio`, `structuredInputs`,
-`tools`, `greeting`, `avatar`, and `handoff` are described by the
+Advanced settings such as `audio`, `structuredInputs`, `tools`, `greeting`, and
+`avatar` are described by the
 [agent service schema](schemas/azure.ai.agent.json).
+Use `audio.input.format.rate` or `audio.output.format.rate` only for PCM sample
+rate (`24000`); omit format rate for G.711. Use `audio.output.speed` for speech
+speed. Legacy `handoff` and `audio.output.voice.rate` values are unsupported by
+the GA API.
 See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
 and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
 
@@ -889,29 +1196,45 @@ Supported providers and identifiers:
 
 - `twilio`: use a Twilio phone number in E.164 format, such as `+14255550123`.
 - `acs`: use `28:orgid:<guid>` for Teams Phone Extensibility Resource Accounts
-  or `4:+<E.164>` for ACS-purchased numbers. azd maps `acs` to the service
-  provider value `azure-communication-service`.
+  (the YAML provider name remains `acs` for compatibility). azd maps this to the
+  canonical `teams_phone_extensibility` provider and sends the GUID as
+  `resource_account_object_id`. Legacy `4:+<E.164>` ACS-purchased-number IDs are
+  rejected during authoring validation because the canonical GA contract cannot deploy them.
 
-Bindings are create-only in this preview. If a remote binding exists and matches
-the YAML, deploy continues. If the remote binding has different configuration,
-azd fails with a remediation message instead of silently keeping stale routing.
+Deploy lists every page of canonical bindings and matches provider identities
+without deriving binding IDs. If exactly one active remote binding matches the
+YAML, deploy continues. Missing bindings are created with repeatability headers.
+Drift or duplicate matches fail safely instead of changing or deleting remote
+routing. Existing per-binding `transferTargets` YAML remains migration-compatible:
+omitting it leaves the singleton unmanaged, while an explicit empty list manages
+an empty singleton. Multiple declarations must describe the same named targets
+(order does not matter). azd validates supported `pstn`, `teams`, and `sip`
+destinations locally. After binding reconciliation it validates the singleton;
+it replaces a drifted singleton only when this deployment created a binding, and
+uses the current ETag. Otherwise drift, unknown remote destination kinds, and
+unconfirmed writes fail safely with manual-reconciliation guidance.
 
 Cleanup: delete telephony bindings before deleting test agents. The service may
 leave bindings behind when an agent is deleted, so do not rely on agent deletion
 as binding cleanup.
 
-Delete a binding with the agent-scoped telephony API before deleting the agent:
+List bindings to obtain the service-generated opaque ID and ETag, then delete the
+binding before deleting the agent:
 
 ```bash
+curl \
+  -H "Authorization: Bearer $TOKEN" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings?api-version=v1"
+
 curl -X DELETE \
   -H "Authorization: Bearer $TOKEN" \
-  -H "Foundry-Features: VoiceAgents=V1Preview" \
-  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/$BINDING_ID?api-version=2025-11-15-preview"
+  -H "If-Match: $BINDING_ETAG" \
+  "$PROJECT_ENDPOINT/agents/$AGENT_NAME/telephony/bindings/$BINDING_ID?api-version=v1"
 ```
 
-The binding ID is the service provider plus identifier, for example
-`twilio:%2B14255550123` for `+14255550123`, or
-`azure-communication-service:28:orgid:<guid>` for ACS/TPE.
+Treat `BINDING_ID` as opaque: URL-escape the value returned by the list API and
+do not construct it from the provider or phone number. Use the item `etag` from
+the list response (or the `ETag` header from binding GET) as `BINDING_ETAG`.
 
 ### Moderating invocations-protocol traffic
 
@@ -1060,6 +1383,9 @@ services:
       type: hosted_agent
       name: voice-target
       version: deployed
+    greeting:
+      type: template
+      text: Hello, how can I help?
     store: false
 ```
 
@@ -1147,6 +1473,8 @@ conditional writes with ETags, and pagination. Editing state does not resume or
 stop agent work.
 
 ## Session carry-over across deploys
+
+For A2A hosted agents, [session-affinity limitations](#invoking-agents-over-a2a) still apply.
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
 sessions are bound to the version they were created on. By default, the first

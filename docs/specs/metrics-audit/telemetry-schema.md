@@ -292,6 +292,12 @@ meaning, allowed values, classification, and purpose are identical. The
 extension column lists the current emitter, not an exclusive owner. The current
 declarations are:
 
+The agents extension also supplies `extension.event=agent.init.step` on
+`ext.usage` for completed `azd ai agent init` business steps. It buffers timings
+and reports on return, including error and cancellation returns. The host span's
+duration measures reporting, while `ext.agent.init.step.duration_ms` measures the step. No new
+command completion, per-step outcome, category, or summary event is emitted.
+
 | Current extension | OTel Key | Classification | Purpose | Endpoint | Hashed | Measurement | Allowed values / event |
 |-----------|----------|----------------|---------|----------|--------|-------------|------------------------|
 | `microsoft.azd.demo` | `ext.demo.mode` | SystemMetadata | FeatureInsight | `N/A` | No | No | `sample` on `demo.telemetry.reported` |
@@ -303,15 +309,40 @@ declarations are:
 | `azure.ai.agents` | `ext.agent.invoke.protocol` | SystemMetadata | FeatureInsight | `N/A` | No | No | Currently `responses`, `invocations`, or `a2a` on `agent.invoke.selected`; emitted from the resolved invocable protocol, with no separate telemetry allowlist |
 | `azure.ai.agents` | `ext.agent.invoke.long_running` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
 | `azure.ai.agents` | `ext.agent.invoke.no_wait` | SystemMetadata | FeatureInsight | `N/A` | No | No | String-encoded boolean `true` or `false` on `agent.invoke.selected` |
+| `azure.ai.agents` | `ext.agent.init.step.id` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Fixed business-step identifier on `agent.init.step`; vocabulary below |
+| `azure.ai.agents` | `ext.agent.init.step.sequence` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | String-encoded start order, 1–96 within one Init invocation, on `agent.init.step`; repeated calls retain their ID and get new sequence numbers |
+| `azure.ai.agents` | `ext.agent.init.step.duration_ms` | SystemMetadata | PerformanceAndHealth | `N/A` | No | No | Nonnegative monotonic elapsed milliseconds, string encoded with three decimal places, on `agent.init.step`; convert to a number for percentiles |
 | `azure.ai.agents` | `ext.route` | SystemMetadata | FeatureInsight | `N/A` | No | No | `inspector`, `playground`, or `suppressed` on `local_client.route.selected` |
 | `azure.ai.inspector` | `ext.stage` | SystemMetadata | FeatureInsight | `N/A` | No | No | `ui_ready` on `inspector.funnel.stage` |
 | `azure.ai.inspector` | `ext.outcome` | SystemMetadata | FeatureInsight | `N/A` | No | No | `succeeded` on `inspector.funnel.stage` |
 | `azure.ai.dataset` | `ext.operation` | SystemMetadata | FeatureInsight | `N/A` | No | No | `create`, `update`, or `unknown` on `dataset.published` |
 | `azure.ai.evaluations` | `ext.source` | SystemMetadata | FeatureInsight | `N/A` | No | No | `traces`, `dataset`, or `unknown` on `init.completed` |
 
-These fields share a classification because their reviewed values are bounded
-product enums. `SystemMetadata` and `FeatureInsight` are not defaults for an
-unknown or future `ext.*` field.
+Product classification fields are bounded enums for `FeatureInsight`. Init timing
+fields use `PerformanceAndHealth`: the step ID is a fixed identifier and sequence
+and duration are string-encoded numbers, not enums or native measurements.
+`SystemMetadata` and `FeatureInsight` are not defaults for an unknown or future
+`ext.*` field.
+
+The `ext.agent.init.step.id` vocabulary is: `input_validation`, `ai_service_check`,
+`authentication`, `init_mode_selection`, `template_selection`, `template_loading`,
+`template_staging`, `project_scaffolding`, `agent_name_selection`,
+`agent_configuration`, `deploy_mode_selection`, `code_configuration`,
+`protocol_selection`, `subscription_selection`, `location_selection`,
+`foundry_project_selection`, `model_selection`, `model_deployment_selection`,
+`prompt_agent_configuration`, `rai_policy_configuration`,
+`environment_configuration`, `project_configuration`, `project_authoring`,
+`model_deployment_authoring`, `file_generation`, and `infra_generation`.
+Steps include loading, interaction, validation, and internal retries. Nested
+durations are inclusive and must not be summed to calculate Init duration.
+Project authoring delegated to the projects extension is measured from Init;
+standalone project commands do not emit these events. Reporting is bounded by a
+96-step local buffer, a one-second batch deadline, and the host's shared 100-event
+invocation budget. Missing rows do not establish non-execution. Full command
+success and duration remain on the existing completion record, correlated by
+operation ID. Event emission and the detailed guide are introduced separately in
+[the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
+the field declarations alone do not enable reporting.
 
 The following rules define the runtime and source-governance boundaries:
 
@@ -474,8 +505,8 @@ remain defined to support a possible future redesign without changing the teleme
 
 | Field | OTel Key | Classification | Purpose | Notes |
 |-------|----------|----------------|---------|-------|
-| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_conditional`) |
+| Outcome | `validation.provision.outcome` | SystemMetadata | FeatureInsight | Values: `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings require interactive confirmation; command fails), `skipped`, `error` |
+| Diagnostic IDs | `validation.provision.diagnostics` | SystemMetadata | FeatureInsight | List of diagnostic IDs emitted by provision validation checks (fixed code-defined enum, e.g. `role_assignment_missing`, `role_assignment_scope_unverified`, `role_assignment_conditional`) |
 | Rule IDs | `validation.provision.rules` | SystemMetadata | FeatureInsight | List of rule IDs that were executed (fixed code-defined enum, e.g. `role_assignment_permissions`) |
 | Extension rule IDs | `validation.provision.extension_rules` | SystemMetadata | FeatureInsight | List of rule IDs from extension-provided validation checks (fixed code-defined enum) |
 | Check type | `validation.provision.check_type` | SystemMetadata | FeatureInsight | Dispatch site: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Both share `validation.provision`; on Bicep provisions both fire, so consumers must group/filter by this to avoid double-counting |

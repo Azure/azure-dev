@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
 
@@ -42,6 +44,8 @@ func runInitManaged(
 	azdClient *azdext.AzdClient,
 	harness string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentConfiguration)()
+
 	recordInitProperties(ctx, map[string]any{"kind": "prompt"})
 	// Every prompt-agent init converges here — interactive picker, --kind prompt,
 	// and manifest adoption alike — so this is the one place the preview notice
@@ -298,6 +302,8 @@ func addPromptAgentService(
 	agentName, serviceRelPath string,
 	promptAgent *agent_yaml.PromptAgent,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	agentProps, err := project.PromptAgentDefinitionToServiceProperties(*promptAgent)
 	if err != nil {
 		return err
@@ -639,7 +645,10 @@ func printPromptInitNextSteps(folderDisplay string) {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	if folderDisplay != "" {
-		fmt.Printf("  cd %q\n", folderDisplay)
+		for _, suggestion := range nextstep.CdSuggestions(folderDisplay) {
+			fmt.Printf("  %s\n", suggestion.Command)
+			fmt.Printf("  # %s\n", suggestion.Description)
+		}
 	}
 	fmt.Println("  # Provision infrastructure and deploy the agent")
 	fmt.Println("  azd up")

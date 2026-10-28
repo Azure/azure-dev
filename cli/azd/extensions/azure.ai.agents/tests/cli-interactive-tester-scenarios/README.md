@@ -323,7 +323,7 @@ in any order, any time.
 | `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
-| `tier0/0.12-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `tier0/0.12-eval-migration-guidance.yaml` | Deprecated `eval list` gives migration guidance and exits non-zero without prompts or service requests, including with old flags |
 | `tier0/0.13-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
 | `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |
@@ -345,15 +345,30 @@ in any order, any time.
 | `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
 | `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
+| `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
+| `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
+| `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
 
+The Tier 0 A2A version scenario checks offline validation and help explanations
+of A2A implementation-version inference versus public endpoint enablement,
+the translation convenience rationale, explicit file versions, and service-controlled
+affinity caveats. It does not exercise translation or A2A hosted agent execution,
+verify file bytes on the wire, or establish session/task lifecycle support. The
+shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
+
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
 Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
+
+The two replacement-preflight scenarios use the local
+`fixtures/adopt-model-replacement/azure.yaml` fixture and abort before Azure
+authentication or scaffolding. They need no externally seeded deployment and
+never provision the fixture.
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -373,12 +388,34 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
+| `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, A2A-only configuration, and required application-route guidance; no server generation or cloud execution |
+
+The A2A hosted agent init scenario is a configuration-only specification. It is not
+an A2A server sample, deployment verifier, or execution test. Service onboarding
+and region support are required. The init picker has Go unit/mock coverage;
+this interactive scenario has **not** been executed. Do not run it without separate approval.
+Even after approval, stop after local init; do not provision, deploy, invoke, or delete
+retained resources. Init does not enable a subscription-level A2A service feature.
+Application `protocols` declare implementation capabilities; public
+`agentEndpoint.protocols` enablement alone does not establish an A2A implementation.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.
 Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
 but available with quota in an unsupported recovery region. The scenario does not create
 these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
+
+The two adoption-model scenarios require an externally prepared
+`~/working/azd-agents-adoption-seed-{run_id}.json` containing `project_id` (the
+full resource ID of a readable Foundry project in the configured subscription)
+and `existing_deployment` (a live deployment on its account using a model other
+than the fixture's gpt-4o). For the catalog case, the profile's `{model}` must
+differ from gpt-4o and have deployment quota in that project's location. The
+scenarios read this seed and Azure metadata but never create or modify cloud
+resources. They are opt-in `manual-seed` scenarios; missing fixtures fail setup.
+The external seed owner retains cleanup responsibility.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.

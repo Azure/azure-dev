@@ -114,7 +114,9 @@ services:
       MODEL_ENDPOINT: $${{project.endpoint}}
     protocols:
       - protocol: a2a
-        version: "0.2"
+        version: "1.0.0"
+    agentEndpoint:
+      protocols: [a2a]
     container:
       resources:
         cpu: "1.0"

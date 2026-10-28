@@ -400,8 +400,8 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings cannot be confirmed non-interactively; command fails), `skipped`, `error` |
+| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted, such as `role_assignment_missing`, `role_assignment_scope_unverified`, and `role_assignment_conditional` |
 | `validation.provision.rules` | string[] | Rule IDs executed |
 | `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.provision.check_type` | string | Dispatch site that emitted the event: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
@@ -511,6 +511,9 @@ Counts remain zero if validation or environment loading fails before keys can be
 | `ext.agent.invoke.protocol` | string | Resolved remote agent invoke protocol, currently `responses`, `invocations`, or `a2a` (`agent.invoke.selected`) |
 | `ext.agent.invoke.long_running` | string | Whether remote invoke selected `--long-running`: string-encoded `true` or `false` (`agent.invoke.selected`) |
 | `ext.agent.invoke.no_wait` | string | Whether remote invoke selected `--no-wait`: string-encoded `true` or `false` (`agent.invoke.selected`) |
+| `ext.agent.init.step.id` | string | Fixed business-step identifier for `azd ai agent init`, such as `project_scaffolding`, `location_selection`, or `model_selection` (`agent.init.step`) |
+| `ext.agent.init.step.sequence` | string | String-encoded step start order within one agent Init, starting at 1; repeated calls have the same ID and different sequence numbers (`agent.init.step`) |
+| `ext.agent.init.step.duration_ms` | string | Monotonic elapsed milliseconds for an agent Init step, with three decimal places; includes loading, interaction, validation, and internal retries (`agent.init.step`) |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
 | `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other` (`agent.context.resolved`); preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other` |
@@ -547,9 +550,12 @@ Service-target values are `service_target.initialize`, `service_target.package`,
 and `service_target.get_target_resource`.
 
 Each concrete first-party field has its own classification, purpose, and
-endpoint declaration. The currently declared fields are bounded enums
-classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
-is a decision about those fields, not a default for the whole `ext.*` class.
+endpoint declaration. Current declarations use `SystemMetadata` with endpoint
+`N/A`. Product classification enums use `FeatureInsight`; agent Init step IDs,
+sequence numbers, and elapsed milliseconds use `PerformanceAndHealth`. Sequence
+numbers and durations are string-encoded numbers, not bounded product enums or
+native telemetry measurements. These declarations describe the individual fields,
+not defaults for the whole `ext.*` class.
 Repository validation blocks undeclared or dynamically keyed
 attributes before release. Extension authors remain responsible for keeping
 values low cardinality and free of customer content, and for having them
@@ -565,6 +571,7 @@ Reviewed first-party extension usage events currently include:
 |-----------|-------------------|---------|--------------------|
 | `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; reported once per distinct kind/harness/container-mode classification before completion | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional hosted `ext.agent.container.mode`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` includes existing or azd-created ACR, `passthrough` does not imply a public image, and `passthrough_auth` indicates a configured registry connection rather than successful authentication; no customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote invoke resolves its target after validation; project-backed routes must be hosted, while explicit `--agent-endpoint` routes have no project kind to check. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe Foundry for a brownfield agent first, so earlier failures are not counted. Excludes local and non-hosted project routes | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running`, `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. `no_wait=true` requires `long_running=true`, supported only with remote Responses; no content or identifiers |
+| `azure.ai.agents` | `agent.init.step` | Completed business steps in `azd ai agent init`, buffered and reported on return, including failure and cancellation paths | `ext.agent.init.step.id`: fixed step ID; `ext.agent.init.step.sequence`: start order; `ext.agent.init.step.duration_ms`: elapsed milliseconds. All three are string properties; no answers, names, paths, or other customer content |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.agents` | `agent.operation.v1.<operation>.<category>.<telephony>` | Extension init fails in RunE or succeeds in post-run after the original context report; also agent preprovision/predeploy hooks | No additional attributes. Bounded operation/category/telephony tokens in existing `extension.event`; join existing command results, never marker success. See [vocabulary, query and coverage limits](../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md). |
@@ -863,6 +870,18 @@ To resolve template IDs to human-readable names, join with a template lookup tab
 
 ### Execution Time vs Duration
 
+`agent.init.step` is an `extension.event` value on `ext.usage`, not an additional
+Init command completion. Use `ext.agent.init.step.duration_ms`, converted to a number, for step
+percentiles; the native span duration measures reporting rather than the business
+step. Join on the operation ID to correlate steps with Init and continue counting
+Init samples from the existing completion records. Nested steps are inclusive,
+so their durations must not be added together. Standalone project commands do not
+emit these timings. The local 96-step buffer, one-second reporting batch deadline,
+and shared host 100-event budget can lose records; absence does not prove that a
+step did not run. Event emission and the detailed step timing guide are introduced
+separately in [the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
+this schema registration alone does not enable reporting.
+
 `DurationMs` includes time the user spent at prompts (confirmations, selections). To compute actual execution time:
 ```kql
 | extend ExecutionTimeMs = DurationMs - toreal(Measurements['perf.interact_time'])
@@ -884,6 +903,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Environment-Key Removal** | `cmd.env.unset` | `env.unset.outcome`, `env.unset.removed_count`, `env.unset.missing_count`, `cmd.flags` | Removal adoption, no-change and declined operations, completed key removals, and missing-key counts |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks and service-target operations), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command, lifecycle-hook, and service-target errors, usage events, and remaining legacy gRPC bridge use |
+| **Agent Init step timings** | `ext.usage` with `extension.event=agent.init.step` | `extension.id=azure.ai.agents`, `ext.agent.init.step.id`, `ext.agent.init.step.sequence`, `ext.agent.init.step.duration_ms` | Per-step elapsed-time percentiles including loading and interaction; no separate wait categories, step outcomes, or summaries |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

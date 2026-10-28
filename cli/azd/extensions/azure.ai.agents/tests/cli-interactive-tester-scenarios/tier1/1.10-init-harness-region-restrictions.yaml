@@ -11,6 +11,7 @@ tags: ["tier:1", "cmd:init", "parallel-safe", "picker", "negative-path", "manual
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS: "true"
   AZURE_ENV_NAME: ""
   AZURE_LOCATION: ""
   AZURE_SUBSCRIPTION_ID: ""
@@ -25,8 +26,13 @@ goals:
     Before answering product prompts, use read-only Azure queries to identify the seeded projects in
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
-    $existing_deployment for subsequent commands. Allowed region IDs are exactly eastus2, japaneast,
-    swedencentral, uksouth, australiaeast, westeurope, germanywestcentral, canadacentral, westus2.
+    $existing_deployment for subsequent commands. Read the current allowed region IDs from
+    https://aka.ms/azd-ai-agents/harness-region.
+    If the manifest is unavailable, use the harness-agent-regions.json embedded in the build under test.
+    Use this policy for every generated and adopted harness check below.
+    Internal harness regions must not appear in region pickers or supported-region
+    guidance in warnings and errors. Existing projects in internal harness regions must
+    appear in project pickers and be accepted when selected or supplied through --project-id.
     Do not create fixtures during this run.
   - >-
     RESOURCE NAMING: if asked for an azd environment name, clear any default and use '{prefix}-picker-{instance}'
@@ -64,7 +70,7 @@ goals:
     `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-recovery-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none --model {model}`.
     At 'Select a Foundry project to host your agent and model', choose 'Create a new Foundry project'.
-    The initial location picker must offer only the nine allowed region IDs (display labels may be friendly names)
+    The initial location picker must offer only the manifest's allowed region IDs available to the subscription (display labels may be friendly names)
     and must exclude the seeded disallowed region. Take a screenshot and select '{region}'.
   - >-
     At "Model '{model}' is selected.", choose "Use '{model}'". Expect the model-unavailable recovery flow.
@@ -95,8 +101,8 @@ goals:
     From the scenario root, create and enter a fresh 'adopt-new' subdirectory and run
     `azd ai agent init --template ../template/azure.yaml`. If asked for an environment name, use
     '{prefix}-adopt-new-{instance}'. Select the provided tenant and '{subscription}' if requested.
-    Choose to create a new Foundry project. Confirm the location picker offers only the nine allowed region
-    IDs and excludes the seeded disallowed region. Take a screenshot, then cancel before choosing a location.
+    Choose to create a new Foundry project. Confirm the location picker offers only the manifest's allowed region
+    IDs available to the subscription and excludes the seeded disallowed region. Take a screenshot, then cancel before choosing a location.
   - >-
     From the scenario root, create and enter a fresh 'adopt-id' subdirectory and run
     `AZURE_ENV_NAME={prefix}-adopt-id-{instance} azd ai agent init --template ../template/azure.yaml
@@ -105,6 +111,14 @@ goals:
     environment name through AZURE_ENV_NAME. Expect non-zero exit with the unsupported project region and
     'not supported for this agent setup', plus supported-region guidance. No product prompts or successful
     init summary may appear. The template's harness.type must enforce the guard without --harness.
+  - >-
+    Check split-location handling in fresh generated and adopted harness environments using the subscription
+    above. Set AZURE_LOCATION to the seeded disallowed region and AZURE_AI_DEPLOYMENTS_LOCATION to '{region}'.
+    Run the corresponding init with --no-prompt and --model '{model}', without --project-id or --model-deployment.
+    Both flows must reject the configured AZURE_LOCATION before requesting any location prompt or changing
+    either location value. With two distinct allowed locations, both flows must reject the mismatch with
+    guidance to align AZURE_LOCATION and AZURE_AI_DEPLOYMENTS_LOCATION, preserving both values and avoiding
+    model selection. Matching supported locations must pass the location checks. Do not provision or deploy any scaffold.
   - >-
     Take screenshots of the region errors and plain-prompt completion. STOP: do not run azd up, provision, deploy,
     or down. Report a finding for any unfiltered picker, accepted unsupported harness target, plain-prompt

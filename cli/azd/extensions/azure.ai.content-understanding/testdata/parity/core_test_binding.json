@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "microsoft-foundry/content-understanding-cli",
+    "commit": "25d39b30116a840491b7b6f393d6db792b38d4a4",
+    "license": "MIT",
+    "files": {
+      "packages/core/tests/test_command_spec.py": "d62624647ab1acfca46cf4a484f0df933c66b9642eaddcee39de606e78c4d0a0",
+      "packages/core/src/cu_cli_core/command_spec.py": "073fb0d107b050ac6a2ba97813620f01d690f5993af6b68ab6b5daf51b6d4286",
+      "packages/core/src/cu_cli_core/contracts.py": "1facc2b6b4cd36ede842c98431a35c798f5e6dcd66af8029b5f73ed8803a6fea",
+      "packages/core/src/cu_cli_core/serialization.py": "ec6645b824189daa5434adc2cede102ed6d10176672f5d6846c75fcaa026fd31"
+    }
+  },
+  "data": {
+    "input": {
+      "name": "sample_invoice.pdf",
+      "body": "%PDF-1.7\nsynthetic offline playback input\n%%EOF\n"
+    },
+    "envelope": {
+      "id": "synthetic-core-test",
+      "status": "Succeeded",
+      "usage": {
+        "documentPagesStandard": 1
+      },
+      "result": {
+        "analyzerId": "invoice-v1",
+        "apiVersion": "2025-11-01",
+        "contents": [
+          {
+            "kind": "document",
+            "mimeType": "application/pdf",
+            "fields": {
+              "Total": {
+                "type": "number",
+                "valueNumber": 0,
+                "confidence": 0.6
+              },
+              "Reference": {
+                "type": "string",
+                "valueString": "synthetic-invoice"
+              },
+              "Counter": {
+                "type": "integer",
+                "valueInteger": 9007199254740993
+              }
+            }
+          }
+        ],
+        "future": {
+          "synthetic": true
+        }
+      }
+    },
+    "report": {
+      "analyzerId": "invoice-v1",
+      "summary": {
+        "samplesTotal": 1,
+        "samplesOk": 1,
+        "samplesFailed": 0,
+        "disclaimer": "This is not a real accuracy benchmark. It only checks whether a value was extracted or generated, and reports confidence when the service returns it.",
+        "fields": {
+          "Total": {
+            "populated": 1,
+            "populatedPct": 100,
+            "meanConfidence": 0.6,
+            "lowConfidenceCount": 0
+          },
+          "Reference": {
+            "populated": 1,
+            "populatedPct": 100,
+            "meanConfidence": null,
+            "lowConfidenceCount": 0
+          },
+          "Counter": {
+            "populated": 1,
+            "populatedPct": 100,
+            "meanConfidence": null,
+            "lowConfidenceCount": 0
+          }
+        },
+        "lowConfidenceThreshold": 0.6
+      },
+      "samples": [
+        {
+          "input": "sample_invoice.pdf",
+          "status": "ok",
+          "fields": {
+            "Total": {
+              "value": 0,
+              "confidence": 0.6
+            },
+            "Reference": {
+              "value": "synthetic-invoice",
+              "confidence": null
+            },
+            "Counter": {
+              "value": 9007199254740993,
+              "confidence": null
+            }
+          }
+        }
+      ]
+    }
+  }
+}

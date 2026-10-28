@@ -145,7 +145,7 @@ type Workflow struct {
 //
 // Simple authoring can rely on defaults for omitted audio/runtime settings.
 // Advanced projects can override the audio pipeline, structured inputs, tools,
-// greeting, avatar, handoff, and response options supported by the service.
+// greeting, avatar, and response options supported by the service.
 // ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
 	AgentDefinition `json:",inline" yaml:",inline"`
@@ -179,7 +179,8 @@ type VoiceAgent struct {
 	Avatar map[string]any `json:"avatar,omitempty" yaml:"avatar,omitempty"`
 	// Greeting configures initial greeting behavior for services that support it.
 	Greeting map[string]any `json:"greeting,omitempty" yaml:"greeting,omitempty"`
-	// Handoff configures voice handoff behavior for services that support it.
+	// Handoff is a legacy field retained for parsing. Non-empty values are not
+	// supported by the GA API; use telephony transfer targets where applicable.
 	Handoff map[string]any `json:"handoff,omitempty" yaml:"handoff,omitempty"`
 	// ToolChoice configures service tool choice behavior, such as auto/none/required.
 	ToolChoice any `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
@@ -204,6 +205,54 @@ type VoiceTelephonyBinding struct {
 	Identifier      string           `json:"identifier" yaml:"identifier"`
 	Connection      string           `json:"connection" yaml:"connection"`
 	TransferTargets []map[string]any `json:"transferTargets,omitempty" yaml:"transfer_targets,omitempty"`
+}
+
+// MarshalJSON preserves the difference between omitted transfer targets and an
+// explicitly empty list. The latter manages the singleton as empty during deploy.
+func (b VoiceTelephonyBinding) MarshalJSON() ([]byte, error) {
+	type bindingWire struct {
+		Provider        string            `json:"provider"`
+		Identifier      string            `json:"identifier"`
+		Connection      string            `json:"connection"`
+		TransferTargets *[]map[string]any `json:"transferTargets,omitempty"`
+	}
+	var transferTargets *[]map[string]any
+	if b.TransferTargets != nil {
+		transferTargets = &b.TransferTargets
+	}
+	return json.Marshal(bindingWire{
+		Provider: b.Provider, Identifier: b.Identifier, Connection: b.Connection,
+		TransferTargets: transferTargets,
+	})
+}
+
+// UnmarshalJSON rejects the root-definition snake_case spelling in inline
+// azure.yaml services instead of silently ignoring transfer-target declarations.
+func (b *VoiceTelephonyBinding) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["transfer_targets"]; ok {
+		return fmt.Errorf("telephony binding transfer_targets is not valid inline; use transferTargets")
+	}
+	var wire struct {
+		Provider        string            `json:"provider"`
+		Identifier      string            `json:"identifier"`
+		Connection      string            `json:"connection"`
+		TransferTargets *[]map[string]any `json:"transferTargets,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	b.Provider = wire.Provider
+	b.Identifier = wire.Identifier
+	b.Connection = wire.Connection
+	b.TransferTargets = nil
+	if wire.TransferTargets != nil {
+		b.TransferTargets = *wire.TransferTargets
+	}
+	return nil
 }
 
 // VoiceAudio bundles optional prompt voice input/output audio overrides.
@@ -263,10 +312,12 @@ type VoiceTranscription struct {
 
 // VoiceConfig selects the output voice.
 type VoiceConfig struct {
-	Type   string  `json:"type" yaml:"type"`
-	Name   string  `json:"name" yaml:"name"`
-	Style  *string `json:"style,omitempty" yaml:"style,omitempty"`
-	Pitch  *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	Type  string  `json:"type" yaml:"type"`
+	Name  string  `json:"name" yaml:"name"`
+	Style *string `json:"style,omitempty" yaml:"style,omitempty"`
+	Pitch *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	// Rate is a legacy field retained for parsing. Non-blank values are not
+	// supported by the GA API; use audio.output.speed instead.
 	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
@@ -405,7 +456,6 @@ type Policy struct {
 type ContainerAgent struct {
 	AgentDefinition      `json:",inline" yaml:",inline"`
 	Language             string                  `json:"language,omitempty" yaml:"language,omitempty"`
-	Toolbox              *ToolboxReference       `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
 	Image                string                  `json:"image,omitempty" yaml:"image,omitempty"`
 	RegistryConnectionID string                  `json:"registryConnectionId,omitempty" yaml:"registryConnectionId,omitempty"`
 	Protocols            []ProtocolVersionRecord `json:"protocols" yaml:"protocols"`
@@ -641,10 +691,9 @@ type PromptAgent struct {
 	// names in their service-defined configuration.
 	Connections []string `json:"connections,omitempty" yaml:"connections,omitempty"`
 
-	// Toolbox optionally references an existing Foundry toolbox by name and
-	// version. When set, the deploy engine attaches that toolbox's MCP endpoint
-	// as an mcp tool instead of registering skills from the skills/ folder.
-	Toolbox *ToolboxReference `json:"toolbox,omitempty" yaml:"toolbox,omitempty"`
+	// Toolboxes references sibling azure.ai.toolbox services whose MCP endpoints
+	// are attached to a harnessed prompt agent as authenticated mcp tools.
+	Toolboxes []ToolboxReference `json:"toolboxes,omitempty" yaml:"toolboxes,omitempty"`
 }
 
 // PromptMemory declares the Foundry memory store a prompt agent recalls from.
@@ -726,18 +775,50 @@ type PromptMemoryOptions struct {
 // when they want a shared or per-tenant namespace instead.
 const DefaultMemoryScope = "{{$userId}}"
 
-// ToolboxReference identifies the Foundry toolbox consumed by an agent.
+// ToolboxReference identifies an azure.ai.toolbox service consumed by an agent.
 type ToolboxReference struct {
-	// Name is the toolbox name.
+	// Name is the azure.ai.toolbox service name.
 	Name string `json:"name" yaml:"name"`
+}
 
-	// Version is the toolbox version. When empty the toolbox's default version
-	// is used.
-	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+// UnmarshalYAML accepts both a toolbox service-name string and a name-only mapping.
+func (r *ToolboxReference) UnmarshalYAML(node *yaml.Node) error {
+	type toolboxRef ToolboxReference
+	var decoded toolboxRef
+	if node.Kind == yaml.ScalarNode {
+		if err := node.Decode(&decoded.Name); err != nil {
+			return err
+		}
+	} else if err := decodeStrict(node, &decoded); err != nil {
+		return fmt.Errorf("toolbox reference: %w", err)
+	}
+	if strings.TrimSpace(decoded.Name) == "" {
+		return fmt.Errorf("toolbox reference requires a non-empty name")
+	}
+	*r = ToolboxReference(decoded)
+	return nil
+}
 
-	// ProjectConnectionID is the optional Foundry project connection name or ID
-	// passed as the toolbox MCP tool's project_connection_id.
-	ProjectConnectionID string `json:"projectConnectionId,omitempty" yaml:"projectConnectionId,omitempty"`
+// UnmarshalJSON accepts both a toolbox service-name string and a name-only object.
+func (r *ToolboxReference) UnmarshalJSON(data []byte) error {
+	type toolboxRef ToolboxReference
+	var decoded toolboxRef
+	if data = bytes.TrimSpace(data); len(data) > 0 && data[0] == '"' {
+		if err := json.Unmarshal(data, &decoded.Name); err != nil {
+			return err
+		}
+	} else {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&decoded); err != nil {
+			return fmt.Errorf("toolbox reference: %w", err)
+		}
+	}
+	if strings.TrimSpace(decoded.Name) == "" {
+		return fmt.Errorf("toolbox reference requires a non-empty name")
+	}
+	*r = ToolboxReference(decoded)
+	return nil
 }
 
 // Binding Represents a binding between an input property and a tool parameter.

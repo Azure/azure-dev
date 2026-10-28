@@ -45,9 +45,8 @@ func TestKeysOfTypeCoversTheDeclarations(t *testing.T) {
 	assert.Empty(t, keysOfType("project.Unknown"))
 }
 
-// `azd ai agent eval` writes an eval.yaml of its own with an entirely different
-// shape. Suggesting a near-miss for each of its keys in turn would walk the
-// reader into rewriting another tool's file a line at a time.
+// Legacy agent evaluation files have an entirely different shape. Suggesting a
+// near-miss for each key would walk the reader into rewriting a file line by line.
 //
 // Its `evaluators` key happens to share a name with ours, so the mismatch
 // inside it reports against the nested type. That must not disqualify the check.
@@ -62,7 +61,9 @@ func TestExplainUnknownKeys_AnotherToolsFile(t *testing.T) {
 			"  line 16: field maxSamples not found in type project.EvalConfig")).Error()
 
 	assert.Contains(t, got, "not one")
-	assert.Contains(t, got, "azd ai agent eval run", "the reader is told where the file does belong")
+	assert.Contains(t, got, "not supported")
+	assert.Contains(t, got, "azd ai eval init")
+	assert.NotContains(t, got, "azd ai agent eval")
 	assert.NotContains(t, got, "did you mean",
 		"suggesting a fix per key sends the reader down the wrong path entirely")
 }

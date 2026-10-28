@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -197,6 +199,8 @@ var voiceInitChoice = &azdext.SelectChoice{
 // --kind prompt-voice in no-prompt mode).
 // Returns initModeFromCode, initModeTemplate, or initModeVoice.
 func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt bool) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.InitModeSelection)()
+
 	empty, err := dirIsEmpty(".")
 	if err != nil {
 		return "", fmt.Errorf("checking current directory: %w", err)
@@ -220,7 +224,13 @@ func promptInitMode(ctx context.Context, azdClient *azdext.AzdClient, noPrompt b
 			{Label: "Start new from a template", Value: initModeTemplate},
 		}
 	}
-	choices = append(choices, voiceInitChoice)
+	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
+	if err != nil {
+		return "", err
+	}
+	if voiceEnabled {
+		choices = append(choices, voiceInitChoice)
+	}
 
 	defaultIndex := int32(0)
 
@@ -375,6 +385,8 @@ func promptAgentTemplate(
 	httpClient *http.Client,
 	noPrompt bool,
 ) (*AgentTemplate, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.TemplateSelection)()
+
 	if noPrompt {
 		return nil, exterrors.Validation(
 			exterrors.CodePromptFailed,

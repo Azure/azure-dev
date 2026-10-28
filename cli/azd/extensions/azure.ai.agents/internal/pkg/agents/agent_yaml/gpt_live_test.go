@@ -206,6 +206,14 @@ func TestValidateVoiceAgent_SubProtocolPresence(t *testing.T) {
 		"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n")))
 }
 
+func TestValidateGPTLiveAgent_RejectsExplicitEmptyPolicies(t *testing.T) {
+	t.Parallel()
+	definition := []byte(
+		"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+			"model: {id: gpt-live-1}\npolicies: []\n")
+	require.ErrorContains(t, ValidateAgentDefinition(definition), "exactly one named rai_policy")
+}
+
 func TestCreateVoiceAgentAPIRequest_ExplicitRealtime(t *testing.T) {
 	t.Parallel()
 	req, err := CreateVoiceAgentAPIRequest(VoiceAgent{

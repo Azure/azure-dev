@@ -1335,6 +1335,11 @@ the same project-level setup. Before provisioning, a setup flag overrides the en
 a registry only when source builds need one. Setup displays the selected registry
 as externally owned without introducing a registry picker.
 
+Environment-only selections use the same validation, persisted reuse mode, and
+ownership output. An unreadable environment stops selection rather than
+defaulting to a new registry. A same-group registry ID alone is not evidence
+that azd owns the registry.
+
 The selector cannot be combined with `--image`, `--registry-connection`,
 `--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
 connection-selection flows keep their meanings. Repeated provisioning retains
@@ -1342,8 +1347,10 @@ the deployed registry; switching an already provisioned project's registry is
 not supported.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
-be outside the Foundry resource group that `azd down` deletes. azd preserves the
-external registry, images, and administrator-managed grants, and cleans up only
+be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside
+the Foundry resource group that `azd down` deletes. Cross-subscription registry
+reuse is not supported. azd preserves the external registry, images, and
+administrator-managed grants, and cleans up only
 access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).

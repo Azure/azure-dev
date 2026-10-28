@@ -239,6 +239,36 @@ func TestInitACRBindingPreflight(t *testing.T) {
 	}
 }
 
+func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
+	for _, template := range []string{"", "template.yaml"} {
+		t.Run(template, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n" +
+				"    host: azure.ai.project\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID": "other-subscription",
+						"AZURE_RESOURCE_GROUP":  "foundry-rg",
+					}},
+				},
+			}
+			client := newTestAzdClient(t, server, &recordingProjectWorkflowServer{})
+			err := validateInitACRProject(t.Context(), client, &initFlags{
+				acrResourceIDSet: true, acrResourceID: testInitACRID, templatePointer: template,
+			})
+			require.ErrorContains(t, err, "same subscription")
+			require.Empty(t, server.setKeys)
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
+	}
+}
+
 func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 	for _, tt := range []struct {
 		name       string
@@ -268,6 +298,7 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 					}},
 				},
 			}
+
 			client := newTestAzdClient(t, server, &recordingProjectWorkflowServer{})
 			err := validateInitACRProject(t.Context(), client, &initFlags{
 				acrResourceIDSet: true, acrResourceID: testInitACRID,

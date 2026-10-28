@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -263,6 +265,39 @@ func TestACRBindingRejectsEjectedMigration(t *testing.T) {
 	require.ErrorContains(t, p.validateACRTemplate(src), "migration")
 }
 
+func TestACRTemplateSubscriptionValidationBeforeCloudCalls(t *testing.T) {
+	for _, mode := range []string{"embedded", "ejected"} {
+		for _, subscription := range []string{"other", ""} {
+			t.Run(mode+"/"+subscription, func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				p.projectPath = t.TempDir()
+				p.subID = subscription
+				p.acrRequest = func(context.Context, string, string, string, any) error {
+					t.Fatal("invalid registry scope must be rejected before ARM requests")
+					return nil
+				}
+				if mode == "ejected" {
+					p.onDiskSource = acrTestSource()
+				} else {
+					p.armTemplate = acrTestSource().armTemplate
+					p.synthResult = &synthesis.Result{Parameters: map[string]any{
+						"includeAcr": true, "existingAcrResourceId": testACRID,
+					}}
+				}
+				_, err := p.Deploy(t.Context(), func(string) {})
+				if subscription == "" {
+					require.ErrorContains(t, err, "AZURE_SUBSCRIPTION_ID is required")
+				} else {
+					require.ErrorContains(t, err, "same subscription")
+				}
+				assert.Empty(t, env.config)
+				assert.Empty(t, env.set)
+				assert.Nil(t, p.acrPending)
+			})
+		}
+	}
+}
+
 func TestACRLegacyBindingUsesDeploymentFacts(t *testing.T) {
 	p, env := acrTestProvider(t)
 	p.greenfieldAcrMode = "reuse-connect"
@@ -290,6 +325,75 @@ func TestACRLegacyBindingUsesDeploymentFacts(t *testing.T) {
 	require.ErrorContains(t, p.prepareACRAccess(t.Context(), src), "migration")
 	assert.Empty(t, env.config)
 	assert.Empty(t, env.set)
+}
+
+func TestACRCreatedOutputRequiresDeploymentFacts(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, tt := range []struct {
+		name, deployedID, wantError string
+	}{
+		{name: "missing deployment", wantError: "cannot establish ownership"},
+		{name: "matching deployment", deployedID: registryID},
+		{name: "different deployed registry", deployedID: registryID + "other", wantError: "migration"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.synthesisEnv = map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": registryID}
+			src := acrTestSource()
+			src.parameters["existingAcrResourceId"] = map[string]any{"value": ""}
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				if tt.deployedID == "" {
+					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+				}
+				if path == testACRProject {
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				}
+				require.Contains(t, path, "/providers/Microsoft.Resources/deployments/")
+				return acrTestReply(out, map[string]any{"properties": map[string]any{
+					"outputs": map[string]any{
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": map[string]any{"value": tt.deployedID},
+						"AZURE_AI_PROJECT_ID":                  map[string]any{"value": testACRProject},
+					},
+				}})
+			}
+			require.NoError(t, p.recoverDeployedACRBinding(t.Context()))
+			err := p.prepareACRAccess(t.Context(), src)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				assert.Empty(t, env.config)
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, p.acrBinding)
+				assert.Equal(t, "create", p.acrBinding.Mode)
+				assert.Equal(t, registryID, p.acrBinding.RegistryResourceID)
+				assert.NotEmpty(t, env.config[synthesis.ACRBindingConfigKey])
+			}
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
+func TestACRUnverifiedLegacyOutputCannotDeleteResourceGroup(t *testing.T) {
+	p, env := acrTestProvider(t)
+	p.rgExplicit = true
+	p.synthesisEnv = map[string]string{
+		"AZURE_SUBSCRIPTION_ID":                "sub",
+		"AZURE_AI_PROJECT_ID":                  testACRProject,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": strings.Replace(testACRID, "/shared/", "/foundry/", 1),
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+	}
+	p.acrRequest = func(_ context.Context, method, path, _ string, _ any) error {
+		require.Equal(t, http.MethodGet, method)
+		require.Contains(t, path, "/providers/Microsoft.Resources/deployments/")
+		return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+	}
+	_, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.ErrorContains(t, err, "cannot establish ownership")
+	assert.Empty(t, env.set)
+	assert.Empty(t, env.config)
+	assert.Nil(t, p.credential, "unverified ownership must fail before destructive Azure operations")
 }
 
 func TestACRPendingIntentDoesNotFreezeUndeployedRegistry(t *testing.T) {
@@ -399,9 +503,264 @@ func TestACRDestroyMissingGroupRecoversPartialAccess(t *testing.T) {
 	result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, []string{acrTestPending().assignmentID()}, deleted)
+	assert.Equal(t, []string{
+		acrTestPending().assignmentID(),
+		"/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
+	}, deleted)
 	assert.Nil(t, p.acrPending)
 	assert.NotContains(t, env.config, acrPendingConfigKey)
+}
+
+type acrTestTransport func(*http.Request) (*http.Response, error)
+
+func (f acrTestTransport) Do(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+type acrTestCredential struct{}
+
+func (acrTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+func TestACRDestroyThenDeploy(t *testing.T) {
+	for _, mode := range []string{"create", "reuse-connect", "none"} {
+		for _, missingGroup := range []bool{false, true} {
+			name := mode + "/existing group"
+			if missingGroup {
+				name = mode + "/missing group"
+			}
+			t.Run(name, func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				p.projectPath = t.TempDir()
+				p.rgExplicit = true
+				p.location = "eastus2"
+				p.credential = acrTestCredential{}
+				p.greenfieldAcrMode = mode
+				p.armTemplate = acrTestSource().armTemplate
+				p.synthResult = &synthesis.Result{Parameters: map[string]any{"includeAcr": mode != "none"}}
+				registryID := strings.Replace(testACRID, "/shared/", "/foundry/", 1)
+				if mode == "reuse-connect" {
+					registryID = testACRID
+					p.synthResult.Parameters["existingAcrResourceId"] = registryID
+				}
+				if mode != "none" {
+					p.acrBinding = acrTestBinding()
+					p.acrBinding.Mode = mode
+					p.acrBinding.RegistryResourceID = registryID
+					data, err := json.Marshal(p.acrBinding)
+					require.NoError(t, err)
+					env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+				}
+				groupID := "/subscriptions/sub/resourceGroups/foundry"
+				deploymentID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				groupGone, deploymentExists, created := missingGroup, true, false
+				retired := false
+				operationID := ""
+				transport := acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					reply := func(code int, value any) (*http.Response, error) {
+						body, err := json.Marshal(value)
+						require.NoError(t, err)
+						if code == http.StatusNoContent {
+							body = nil
+						}
+						return &http.Response{
+							StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
+							Body: io.NopCloser(strings.NewReader(string(body))), Request: request,
+						}, nil
+					}
+					path := request.URL.Path
+					switch {
+					case request.Method == http.MethodGet && strings.HasSuffix(path, "/Microsoft.CognitiveServices/accounts"):
+						return reply(http.StatusOK, map[string]any{"value": []any{}})
+					case request.Method == http.MethodDelete && strings.EqualFold(path, groupID):
+						groupGone = true
+						if missingGroup {
+							return reply(http.StatusNotFound, nil)
+						}
+						return reply(http.StatusOK, nil)
+					case request.Method == http.MethodGet && strings.EqualFold(path, groupID):
+						require.True(t, groupGone)
+						return reply(http.StatusNotFound, nil)
+					case request.Method == http.MethodDelete && path == deploymentID:
+						require.True(t, groupGone)
+						if mode == "create" && !missingGroup {
+							response, err := reply(http.StatusAccepted, nil)
+							response.Header.Set("Location", "https://management.azure.com/operations/retire")
+							return response, err
+						}
+						deploymentExists = false
+						retired = true
+						return reply(http.StatusNoContent, nil)
+					case request.Method == http.MethodGet && path == "/operations/retire":
+						require.NotEmpty(t, env.config)
+						deploymentExists = false
+						retired = true
+						return reply(http.StatusNoContent, nil)
+					case request.Method == http.MethodGet && path == deploymentID:
+						if !deploymentExists {
+							return reply(http.StatusNotFound, nil)
+						}
+						outputs := map[string]any{"AZURE_AI_PROJECT_ID": map[string]any{"value": testACRProject}}
+						if mode != "none" {
+							outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = map[string]any{"value": registryID}
+						}
+						return reply(http.StatusOK, map[string]any{"properties": map[string]any{
+							"provisioningState": "Succeeded", "outputs": outputs,
+						}})
+					case request.Method == http.MethodPut && path == deploymentID:
+						require.True(t, retired)
+						require.False(t, deploymentExists)
+						var deployment struct {
+							Properties struct {
+								Parameters map[string]struct{ Value any }
+							}
+						}
+						require.NoError(t, json.NewDecoder(request.Body).Decode(&deployment))
+						operationID, _ = deployment.Properties.Parameters["acrAccessOperationId"].Value.(string)
+						deploymentExists, created = true, true
+						outputs := map[string]any{
+							"AZURE_AI_PROJECT_ID":           map[string]any{"value": testACRProject},
+							"AZD_FOUNDRY_RESOURCE_GROUP_ID": map[string]any{"value": groupID},
+						}
+						if mode != "none" {
+							outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = map[string]any{"value": registryID}
+						}
+						return reply(http.StatusOK, map[string]any{"properties": map[string]any{
+							"provisioningState": "Succeeded", "outputs": outputs,
+						}})
+					case request.Method == http.MethodGet && path == testACRProject:
+						require.True(t, created, "must not recover the deleted project's identity")
+						return reply(http.StatusOK, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+					case request.Method == http.MethodGet && path == testACRID:
+						return reply(http.StatusOK, map[string]any{"properties": map[string]any{}})
+					case request.Method == http.MethodGet && strings.Contains(path, "/roleAssignments/"):
+						require.NotEmpty(t, operationID)
+						assignment := acrTestAssignment()
+						assignment.ID = path
+						assignment.Properties.Description = "azd-foundry:" + operationID
+						return reply(http.StatusOK, assignment)
+					default:
+						t.Fatalf("unexpected ARM request: %s %s", request.Method, path)
+						return nil, errors.New("unexpected ARM request")
+					}
+				})
+				p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{Transport: transport}}
+				result, err := p.Destroy(t.Context(),
+					&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+				require.NoError(t, err)
+				require.NotNil(t, result)
+				require.True(t, retired)
+				require.Empty(t, env.config)
+				next := &FoundryProvisioningProvider{
+					azdClient: p.azdClient, projectPath: p.projectPath, envName: p.envName,
+					subID: p.subID, rgName: p.rgName, location: p.location, foundryName: p.foundryName,
+					credential: p.credential, armClientOptions: p.armClientOptions,
+					armTemplate: p.armTemplate, synthResult: p.synthResult, greenfieldAcrMode: mode,
+				}
+				deployed, err := next.Deploy(t.Context(), func(string) {})
+				require.NoError(t, err)
+				require.NotNil(t, deployed)
+				require.True(t, created)
+				if mode != "none" {
+					require.NotNil(t, next.acrBinding)
+					assert.Equal(t, mode, next.acrBinding.Mode)
+					assert.Equal(t, registryID, next.acrBinding.RegistryResourceID)
+				}
+			})
+		}
+	}
+}
+
+func TestACRDestroyRetirementFailurePreservesRecovery(t *testing.T) {
+	p, env := acrTestProvider(t)
+	p.acrBinding = acrTestBinding()
+	p.credential = acrOfflineCredential{}
+	p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+		return nil, false, nil
+	}
+	data, err := json.Marshal(p.acrBinding)
+	require.NoError(t, err)
+	env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+	deploymentID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+	fail := true
+	p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+		require.Equal(t, http.MethodDelete, method)
+		require.Equal(t, deploymentID, path)
+		require.Nil(t, out)
+		if fail {
+			return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+		}
+		return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+	}
+	result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.ErrorContains(t, err, "delete completed Foundry deployment record")
+	require.Nil(t, result)
+	assert.NotNil(t, p.acrBinding)
+	assert.JSONEq(t, string(data), string(env.config[synthesis.ACRBindingConfigKey]))
+	fail = false
+	env.configErr = errors.New("cannot clear local recovery state")
+	result, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.ErrorContains(t, err, "cannot clear local recovery state")
+	require.Nil(t, result)
+	assert.NotNil(t, p.acrBinding)
+	assert.JSONEq(t, string(data), string(env.config[synthesis.ACRBindingConfigKey]))
+	env.configErr = nil
+	result, err = p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Nil(t, p.acrBinding)
+	assert.Empty(t, env.config)
+}
+
+func TestACRDestroyFailureDoesNotRetireDeployment(t *testing.T) {
+	for _, failAt := range []string{"resource group", "purge"} {
+		t.Run(failAt, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.acrBinding = acrTestBinding()
+			p.rgExplicit = true
+			p.credential = acrTestCredential{}
+			data, err := json.Marshal(p.acrBinding)
+			require.NoError(t, err)
+			env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					statusCode := http.StatusOK
+					var body string
+					switch {
+					case request.Method == http.MethodGet &&
+						strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts"):
+						body = `{"value":[{"name":"account","location":"eastus2"}]}`
+					case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/deployments"):
+						body = `{"value":[]}`
+					case request.Method == http.MethodDelete &&
+						strings.HasSuffix(strings.ToLower(request.URL.Path), "/resourcegroups/foundry"):
+						if failAt == "resource group" {
+							statusCode = http.StatusForbidden
+						}
+					case request.Method == http.MethodDelete && strings.HasSuffix(request.URL.Path, "/deletedAccounts/account"):
+						require.Equal(t, "purge", failAt)
+						statusCode = http.StatusForbidden
+					default:
+						t.Fatalf("unexpected ARM request: %s %s", request.Method, request.URL.Path)
+					}
+					if statusCode == http.StatusForbidden {
+						body = `{"error":{"code":"AuthorizationFailed","message":"teardown failed"}}`
+					}
+					return &http.Response{
+						StatusCode: statusCode, Header: http.Header{"Content-Type": {"application/json"}},
+						Body: io.NopCloser(strings.NewReader(body)), Request: request,
+					}, nil
+				}),
+			}}
+			result, err := p.Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.ErrorContains(t, err, "teardown failed")
+			require.Nil(t, result)
+			assert.NotNil(t, p.acrBinding)
+			assert.JSONEq(t, string(data), string(env.config[synthesis.ACRBindingConfigKey]))
+		})
+	}
 }
 
 func TestACRGrantRecoveryFailureRetainsDurableIntent(t *testing.T) {

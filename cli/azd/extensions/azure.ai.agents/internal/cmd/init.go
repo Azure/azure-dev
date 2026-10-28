@@ -698,6 +698,8 @@ Use --acr-resource-id to select an externally owned Azure Container Registry
 for source builds in a new Foundry project. Project setup saves the selection
 for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
 image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
 
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
@@ -1301,7 +1303,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 	cmd.Flags().StringVar(
 		&flags.acrResourceID, "acr-resource-id", "",
-		"Existing ACR ARM resource ID for source builds in a new Foundry project",
+		"Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)",
 	)
 	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
 		"incompatible with code deploy"

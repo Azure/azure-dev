@@ -20,9 +20,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-const testExternalRegistryID = "/subscriptions/sub/resourceGroups/external/providers/" +
+const testExternalRegistryID = "/subscriptions/subscription/resourceGroups/external/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
 func TestProjectAddACRInvalidFlagsBeforeDaemon(t *testing.T) {
@@ -199,6 +201,209 @@ func TestProjectAddACRPlannedScopeBeforeScaffolding(t *testing.T) {
 				assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
 			}
 		})
+	}
+}
+
+func TestProjectAddACREnvironmentInputBeforeScaffolding(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		t.Run(strconv.FormatBool(layer), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			group := "rg-test"
+			if layer {
+				group += "-foundry"
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+					"name: test\ninfra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n"), 0o600))
+			}
+			client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+			env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = "/subscriptions/subscription/resourceGroups/" + group +
+				"/providers/Microsoft.ContainerRegistry/registries/shared"
+			before := maps.Clone(env.values)
+			action := &ProjectAddAction{
+				client: client,
+				flags:  &projectAddFlags{newProject: true, noPrompt: true, output: "none"},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			require.ErrorContains(t, action.Run(t.Context()), "azd down deletes")
+			assert.Empty(t, workflow.args)
+			assert.False(t, project.providerSet)
+			assert.Empty(t, project.project.Services)
+			assert.Empty(t, env.setLog)
+			assert.Equal(t, before, env.values)
+			assert.NoDirExists(t, filepath.Join(root, ".azure"))
+			if !layer {
+				assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+			}
+		})
+	}
+}
+
+func TestProjectAddExplicitEnvironmentInEmptyDirectory(t *testing.T) {
+	for _, selector := range []bool{false, true} {
+		t.Run(strconv.FormatBool(selector), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+			env.projectRoot = root
+			action := &ProjectAddAction{
+				client: client,
+				flags: &projectAddFlags{
+					newProject: true, noPrompt: true, output: "none",
+					acrResourceIDSet: selector,
+				},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			if selector {
+				action.flags.acrResourceID = testExternalRegistryID
+			}
+			require.NoError(t, action.Run(t.Context()))
+			require.NotEmpty(t, workflow.args)
+			assert.Contains(t, workflow.args[0], "--environment")
+			assert.Contains(t, workflow.args[0], "test")
+			assert.FileExists(t, filepath.Join(root, "azure.yaml"))
+			require.Len(t, project.project.Services, 1)
+			if selector {
+				assert.Equal(t, testExternalRegistryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+			}
+		})
+	}
+}
+
+func TestProjectAddACRRejectsCrossSubscriptionBeforeScaffolding(t *testing.T) {
+	for _, selectorFlag := range []bool{false, true} {
+		for _, layer := range []bool{false, true} {
+			t.Run(strconv.FormatBool(selectorFlag)+"/"+strconv.FormatBool(layer), func(t *testing.T) {
+				root := t.TempDir()
+				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+				if layer {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+						"name: test\ninfra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n"), 0o600))
+				}
+				client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+				selector := strings.Replace(testExternalRegistryID, "/subscription/", "/other-subscription/", 1)
+				flags := &projectAddFlags{newProject: true, noPrompt: true, output: "none"}
+				if selectorFlag {
+					flags.acrResourceIDSet, flags.acrResourceID = true, selector
+				} else {
+					env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = selector
+				}
+				before := maps.Clone(env.values)
+				action := &ProjectAddAction{
+					client: client, flags: flags,
+					extCtx: &azdext.ExtensionContext{Environment: "test"},
+				}
+				require.ErrorContains(t, action.Run(t.Context()), "same subscription")
+				assert.Empty(t, workflow.args)
+				assert.False(t, project.providerSet)
+				assert.Empty(t, project.project.Services)
+				assert.Empty(t, env.setLog)
+				assert.Equal(t, before, env.values)
+				assert.NoDirExists(t, filepath.Join(root, ".azure"))
+				if !layer {
+					assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+				}
+			})
+		}
+	}
+}
+
+func TestProjectACRPreflightDoesNotMaskEnvironmentFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name, message string
+		code          codes.Code
+		project       bool
+		environment   bool
+	}{
+		{name: "transport", code: codes.Unavailable, message: "environment service unavailable"},
+		{name: "unknown", code: codes.Unknown, message: "failed to read environment configuration"},
+		{name: "existing project", code: codes.Unknown,
+			message: "no project exists; to create a new project, run `azd init`", project: true},
+		{name: "existing environment", code: codes.Unknown,
+			message: "no project exists; to create a new project, run `azd init`", environment: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			if tt.project {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("name: test\n"), 0o600))
+			}
+			if tt.environment {
+				require.NoError(t, os.MkdirAll(filepath.Join(root, ".azure", "test"), 0o750))
+			}
+			client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+			env.readErr = status.Error(tt.code, tt.message)
+			before := maps.Clone(env.values)
+			action := &ProjectAddAction{
+				client: client,
+				flags:  &projectAddFlags{newProject: true, noPrompt: true, output: "none"},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			require.ErrorContains(t, action.Run(t.Context()), tt.message)
+			assert.Empty(t, workflow.args)
+			assert.False(t, project.providerSet)
+			assert.Empty(t, env.setLog)
+			assert.Equal(t, before, env.values)
+		})
+	}
+}
+
+func TestProjectAddEnvironmentRegistryOwnershipOutput(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		for _, format := range []string{"default", "json"} {
+			t.Run(strconv.FormatBool(managed)+"/"+format, func(t *testing.T) {
+				root := t.TempDir()
+				t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+				client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+				id := testExternalRegistryID
+				if managed {
+					id = "/subscriptions/subscription/resourceGroups/rg-test/" +
+						"providers/Microsoft.ContainerRegistry/registries/shared"
+					env.values["AZURE_AI_PROJECT_ID"] = "/subscriptions/subscription/resourceGroups/rg-test/" +
+						"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+					env.values["AZURE_RESOURCE_GROUP"] = "rg-test"
+					env.values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "shared.azurecr.io"
+				} else {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+						"name: test\ninfra:\n  provider: microsoft.foundry\n"+
+							"services:\n  project:\n    host: azure.ai.project\n"), 0o600))
+					project.project.Infra = &azdext.InfraOptions{Provider: provisioningFoundryProvider}
+					project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+					project.services["project"] = map[string]any{"host": aiProjectHost}
+				}
+				env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = id
+				var output, diagnostics bytes.Buffer
+				action := &ProjectAddAction{
+					client: client,
+					flags:  &projectAddFlags{newProject: true, noPrompt: true, output: format},
+					extCtx: &azdext.ExtensionContext{Environment: "test"},
+					stdout: &output, stderr: &diagnostics,
+				}
+				require.NoError(t, action.Run(t.Context()))
+				assert.Empty(t, diagnostics.String())
+				assert.Equal(t, id, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				if !managed {
+					assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+				}
+				if format == "json" {
+					var result projectAddOutput
+					require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+					require.NotNil(t, result.ContainerRegistry)
+					assert.Equal(t, id, result.ContainerRegistry.ResourceID)
+					assert.Equal(t, !managed, result.ContainerRegistry.ExternallyOwned)
+					if !managed {
+						assert.Equal(t, "updated", result.Mutation)
+					}
+				} else {
+					assert.Contains(t, output.String(), id)
+					label := "externally owned"
+					if managed {
+						label = "managed by azd"
+					}
+					assert.Contains(t, output.String(), label)
+				}
+			})
+		}
 	}
 }
 

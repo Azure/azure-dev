@@ -62,7 +62,12 @@ func TestACRBindingSynthesisGuard(t *testing.T) {
 	require.ErrorContains(t, err, "migration")
 	in.ACRBinding = nil
 	in.Env["AZD_FOUNDRY_ACR_MODE"] = "none"
-	assert.Equal(t, "reuse-connect", GreenfieldACRMode(in.Env, "foundry"))
+	mode, err := GreenfieldACRMode(in)
+	require.NoError(t, err)
+	assert.Equal(t, "reuse-connect", mode)
+	in.Env[ACRBindingEnvKey] = "{}"
+	_, err = GreenfieldACRMode(in)
+	require.ErrorContains(t, err, "invalid deployed ACR binding")
 }
 
 func TestACRRequirementsBeforeProjectSetup(t *testing.T) {
@@ -128,6 +133,9 @@ func TestGreenfieldACRSelectionForInput(t *testing.T) {
 	in.Env["AZURE_SUBSCRIPTION_ID"] = "SUB"
 	require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, id), "azd down deletes")
 	in.Env["AZURE_SUBSCRIPTION_ID"] = "other"
+	require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, id), "same subscription")
+	in.Env["AZURE_SUBSCRIPTION_ID"] = "SUB"
+	in.ResourceGroupName = "another-group"
 	require.NoError(t, ValidateGreenfieldACRSelectionForInput(in, id))
 	for _, suffix := range []string{"?sig=secret", "#secret", "%3Fsecret", "@secret", "/child", "\\secret"} {
 		err := ValidateGreenfieldACRSelectionForInput(in, id+suffix)

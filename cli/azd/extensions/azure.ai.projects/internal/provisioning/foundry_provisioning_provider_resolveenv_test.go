@@ -5,6 +5,7 @@ package provisioning
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
@@ -27,13 +29,16 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName   string
-	get       map[string]string
-	getErr    map[string]error
-	set       map[string]string
-	process   map[string]string
-	config    map[string][]byte
-	configErr error
+	envName    string
+	get        map[string]string
+	getErr     map[string]error
+	set        map[string]string
+	process    map[string]string
+	config     map[string][]byte
+	configErr  error
+	currentErr error
+	valuesErr  error
+	valuesN    int
 }
 
 func (s *resolveEnvStubEnvServer) GetConfig(
@@ -72,6 +77,9 @@ func (s *resolveEnvStubEnvServer) UnsetConfig(
 func (s *resolveEnvStubEnvServer) GetCurrent(
 	context.Context, *azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{Environment: &azdext.Environment{Name: s.envName}}, nil
 }
 
@@ -91,6 +99,10 @@ func (s *resolveEnvStubEnvServer) GetValue(
 func (s *resolveEnvStubEnvServer) GetValues(
 	_ context.Context, _ *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	s.valuesN++
+	if s.valuesErr != nil {
+		return nil, s.valuesErr
+	}
 	values := make([]*azdext.KeyValue, 0, len(s.get))
 	for key, value := range s.get {
 		values = append(values, &azdext.KeyValue{Key: key, Value: value})
@@ -568,10 +580,13 @@ func TestInitializeExistingRegistry(t *testing.T) {
 		wantMode string
 		wantErr  string
 		onDisk   bool
+		deployed bool
+		bound    bool
 	}{
 		{name: "reuse", group: "shared"},
 		{name: "on-disk reuse without recorded mode", group: "shared", onDisk: true},
-		{name: "on-disk recorded create", mode: "create", group: "rg-test", wantMode: "create", onDisk: true},
+		{name: "on-disk deployed create", mode: "create", group: "rg-test", wantMode: "create",
+			onDisk: true, deployed: true},
 		{name: "on-disk layer reuse", group: "shared", layer: true, onDisk: true},
 		{name: "on-disk same group rejected before prompting", group: "custom", explicit: true,
 			mode: "reuse-connect", rejected: true, onDisk: true},
@@ -582,9 +597,12 @@ func TestInitializeExistingRegistry(t *testing.T) {
 		{name: "layer can reuse root registry", group: "root", layer: true},
 		{name: "layer default group rejected", group: "rg-test-foundry", layer: true,
 			mode: "reuse-connect", rejected: true},
-		{name: "legacy in-group ID without mode records create", group: "rg-test", wantMode: "create"},
+		{name: "fresh in-group ID without mode rejected", group: "rg-test", rejected: true},
+		{name: "fresh layer in-group ID without mode rejected", group: "rg-test-foundry", layer: true, rejected: true},
+		{name: "legacy deployment outputs preserve create", group: "rg-test", wantMode: "create", deployed: true},
 		{name: "empty ID records create", noID: true, wantMode: "create"},
-		{name: "recorded create ignores created ID", mode: "create", group: "rg-test", wantMode: "create"},
+		{name: "create intent alone is not ownership", mode: "create", group: "rg-test", rejected: true},
+		{name: "binding preserves created registry", group: "rg-test", wantMode: "create", bound: true},
 		{name: "recorded reuse", mode: "reuse-connect", group: "shared"},
 		{name: "recorded reuse requires ID", mode: "reuse-connect", noID: true,
 			wantErr: "requires AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
@@ -592,7 +610,8 @@ func TestInitializeExistingRegistry(t *testing.T) {
 		{name: "malformed ID", invalid: "registry", wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
 		{name: "wrong resource type", invalid: "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.Storage/accounts/a",
 			wantErr: "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
-		{name: "no registry needed", noAcr: true, wantMode: "none"},
+		{name: "no registry needed", group: "shared", noAcr: true, wantMode: "none"},
+		{name: "project-only input cannot share teardown group", group: "rg-test", noAcr: true, rejected: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -635,6 +654,11 @@ func TestInitializeExistingRegistry(t *testing.T) {
 			if tt.layer {
 				values["AZURE_RESOURCE_GROUP"] = "root"
 			}
+			if tt.deployed {
+				values["AZURE_AI_PROJECT_ID"] = "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
+					"/providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+				values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "sharedregistry.azurecr.io"
+			}
 			if tt.explicit {
 				values["AZURE_RESOURCE_GROUP"] = tt.group
 			}
@@ -646,6 +670,15 @@ func TestInitializeExistingRegistry(t *testing.T) {
 				values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = "invalid-overridden-selector"
 			}
 			env := &resolveEnvStubEnvServer{envName: "test", get: values}
+			if tt.bound {
+				data, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "create", RegistryResourceID: id, PrincipalID: "principal",
+					ProjectResourceID: "/subscriptions/" + subscription + "/resourceGroups/" + tt.group +
+						"/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+				})
+				require.NoError(t, err)
+				env.config = map[string][]byte{synthesis.ACRBindingConfigKey: data}
+			}
 			prompt := &resolveEnvStubPromptServer{}
 			provider := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
 			err := provider.Initialize(t.Context(), root, options)
@@ -691,6 +724,62 @@ func TestInitializeExistingRegistry(t *testing.T) {
 			assert.Zero(t, prompt.locationN)
 		})
 	}
+}
+
+func TestInitializeRegistryEnvironmentReadFailure(t *testing.T) {
+	for _, read := range []string{"current", "values"} {
+		t.Run(read, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+				"services:\n  project:\n    host: azure.ai.project\n"+
+					"  agent:\n    host: azure.ai.agent\n"), 0o600))
+			env := &resolveEnvStubEnvServer{
+				envName: "test",
+				get: map[string]string{
+					envKeySubscriptionID: "sub", envKeyLocation: "eastus",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+				},
+			}
+			readErr := status.Error(codes.Unavailable, "temporary environment read failure")
+			if read == "current" {
+				env.currentErr = readErr
+			} else {
+				env.valuesErr = readErr
+			}
+			prompt := &resolveEnvStubPromptServer{}
+			provider := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+			options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
+			require.ErrorContains(t, provider.Initialize(t.Context(), root, options), "temporary environment read failure")
+			assert.Nil(t, provider.synthResult)
+			assert.Nil(t, provider.armTemplate)
+			assert.Empty(t, provider.synthesisEnv)
+			assert.Empty(t, env.set)
+			assert.Empty(t, env.config)
+			assert.Zero(t, prompt.subscriptionN)
+			assert.Zero(t, prompt.locationN)
+
+			env.currentErr, env.valuesErr = nil, nil
+			env.valuesN = 0
+			require.NoError(t, provider.Initialize(t.Context(), root, options))
+			assert.Equal(t, "reuse-connect", provider.greenfieldAcrMode)
+			assert.Equal(t, map[string]any{"value": testACRID}, provider.armParameters()["existingAcrResourceId"])
+			assert.Equal(t, 1, env.valuesN, "template selection must use one complete snapshot")
+		})
+	}
+}
+
+func TestRegistryTemplateEnvironmentStaysPinned(t *testing.T) {
+	env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+	}}
+	p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})}
+	_, err := p.synthesisEnvMap(t.Context())
+	require.NoError(t, err)
+	env.valuesErr = status.Error(codes.Unavailable, "later read must not replace the validated snapshot")
+	values, err := p.envValues(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, testACRID, values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+	assert.Equal(t, 1, env.valuesN)
 }
 
 func TestInitializeValidatesConfigBeforePrompting(t *testing.T) {

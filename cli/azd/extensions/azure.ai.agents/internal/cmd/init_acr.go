@@ -84,7 +84,7 @@ func validateInitACRManifestInEnvironment(
 }
 
 func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
-	if !flags.acrResourceIDSet || flags.templatePointer != "" {
+	if !flags.acrResourceIDSet {
 		return nil
 	}
 	root, err := azdext.GetProjectDir()
@@ -127,12 +127,19 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 		}
 	}
 	values["AZURE_ENV_NAME"] = envName
-	if err := synthesis.ValidateGreenfieldACRSelectionForInput(synthesis.Input{
+	input := synthesis.Input{
 		RawAzureYAML: content, ProjectRoot: root, Env: values,
-	}, flags.acrResourceID); err != nil {
+	}
+	if flags.templatePointer != "" {
+		// A template can replace the manifest and teardown scope.
+		input.RawAzureYAML = nil
+		input.Env = map[string]string{"AZURE_SUBSCRIPTION_ID": values["AZURE_SUBSCRIPTION_ID"]}
+	}
+	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, flags.acrResourceID); err != nil {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments, err.Error(),
-			"use a registry outside the Foundry resource group; deployed registry migration is not supported",
+			"use a registry in the Foundry project's subscription, outside its resource group; "+
+				"deployed registry migration is not supported",
 		)
 	}
 	if canReuseExistingAgentConfiguration(flags, false, flags.src != "") {

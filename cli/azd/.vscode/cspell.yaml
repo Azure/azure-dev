@@ -1,7 +1,5 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
-  - Abac
-  - ABAC
   - braydonk
   - osutil
   - upserted

@@ -1,5 +1,7 @@
 # AI extension non-interactive input reference
 
+<!-- cspell:ignore Abac ABAC -->
+
 `azd` may enable no-prompt mode automatically in CI and supported coding-agent
 environments. Every prompt in `azure.ai.agents` and `azure.ai.projects` must
 therefore have a deterministic alternative.
@@ -52,8 +54,10 @@ project connection without changing the registry's networking. Classic registrie
 receive `AcrPull`; registries with `AbacRepositoryPermissions` receive
 `Container Registry Repository Reader` instead (`AcrPull` is not honored there).
 Ensure the registry is reachable from the agent network. The registry must be
-outside the Foundry resource group (which `azd down` deletes). This is supported
-by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
+in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside the
+Foundry resource group (which `azd down` deletes). Cross-subscription reuse is
+rejected, including environment-only selections and ejected parameters. This is
+supported by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
 external registry.
 
 Without a selection, provisioning creates a registry only when source builds
@@ -62,6 +66,14 @@ registry. Explicit empty or malformed IDs, code/prebuilt-only configurations,
 conflicting connection selectors, and Terraform reuse fail rather than silently
 ignoring the selection. No registry picker is added.
 
+Registry selection uses one complete environment snapshot. A failed environment
+read stops provisioning rather than falling back to registry creation. A
+registry in the Foundry teardown group is rejected even during project-only
+setup, unless a deployed binding or matching legacy deployment outputs identify
+an azd-created registry. Legacy ownership is verified against Azure deployment
+state before provisioning or deleting the group. Environment-only selections
+are reported as externally owned just like flag-based selections.
+
 A deployed project keeps its registry choice across repeated provisioning.
 Registry migration is not supported: changing the selector or resetting
 `AZD_FOUNDRY_ACR_MODE` cannot switch a deployed project to another registry.
@@ -69,6 +81,12 @@ Use a separate environment for a different deployment. After a successful
 `azd down`, a new deployment can select another registry. Down preserves the
 external registry and its images, and removes only access grants and related
 resources that azd can establish it owns. Administrator-managed grants remain.
+After successful teardown, azd removes this environment's subscription-level
+Foundry deployment record before clearing lifecycle state. A subsequent provision
+starts a new deployment instead of recovering the deleted project. Cleanup
+failures retain the recovery state for retry.
+Custom deployment roles need `Microsoft.Resources/deployments/delete` at the
+project subscription scope to retire that deployment record.
 
 The deployer needs permission to create role assignments on the external
 registry (for example, Owner, User Access Administrator, or Role Based Access

@@ -226,7 +226,7 @@ func (p *FoundryProvisioningProvider) acrARM(
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	client, err := arm.NewClient("azure.ai.projects", "1.0.0", p.credential, nil)
+	client, err := arm.NewClient("azure.ai.projects", "v1.0.0", p.credential, p.armClientOptions)
 	if err != nil {
 		return err
 	}
@@ -414,6 +414,9 @@ func (p *FoundryProvisioningProvider) validateACRTemplate(src *templateSource) e
 	}
 	if id != "" {
 		mode = "reuse-connect"
+		if p.subID == "" {
+			return errors.New("AZURE_SUBSCRIPTION_ID is required to validate the source-build registry subscription")
+		}
 		if err := synthesis.ValidateACRSelector(id, p.subID, group); err != nil {
 			return err
 		}
@@ -454,6 +457,13 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 	if p.brownfieldEndpoint != "" {
 		return nil
 	}
+	include, _ := parameterValue(src, "includeAcr").(bool)
+	id, _ := parameterValue(src, "existingAcrResourceId").(string)
+	if recorded := p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; include && id == "" && recorded != "" {
+		if err := p.validateACRCreateBinding(recorded); err != nil {
+			return err
+		}
+	}
 	if err := p.validateACRTemplate(src); err != nil {
 		return err
 	}
@@ -463,8 +473,6 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 		}
 		p.acrBindingRecovered = false
 	}
-	include, _ := parameterValue(src, "includeAcr").(bool)
-	id, _ := parameterValue(src, "existingAcrResourceId").(string)
 	group, _ := parameterValue(src, "resourceGroupName").(string)
 	if group == "" {
 		group = p.rgName
@@ -590,6 +598,14 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 	src.parameters["acrPullAssigned"] = map[string]any{"value": false}
 	src.parameters["acrAccessOperationId"] = map[string]any{"value": p.acrPending.Token}
 	return nil
+}
+
+func (p *FoundryProvisioningProvider) validateACRCreateBinding(registryID string) error {
+	if p.acrBinding == nil {
+		return errors.New("cannot establish ownership of the recorded registry from a previous deployment; " +
+			"restore the deployed registry binding before provisioning or deleting the Foundry resource group")
+	}
+	return synthesis.ValidateACRBinding(p.acrBinding, "create", registryID)
 }
 
 func (p *FoundryProvisioningProvider) recoverACRAssignment(ctx context.Context) error {
@@ -801,6 +817,17 @@ func (p *FoundryProvisioningProvider) cleanupACROperations(
 		}
 	}
 	return nil
+}
+
+func (p *FoundryProvisioningProvider) completeDestroy(ctx context.Context) (*azdext.ProvisioningDestroyResult, error) {
+	path := "/subscriptions/" + p.subID + "/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+	if err := p.acrARM(ctx, http.MethodDelete, path, "2022-09-01", nil); err != nil && !isNotFound(err) {
+		return nil, fmt.Errorf("delete completed Foundry deployment record: %w", err)
+	}
+	if err := p.clearACRLifecycle(ctx); err != nil {
+		return nil, err
+	}
+	return p.destroyResult(), nil
 }
 
 func (p *FoundryProvisioningProvider) clearACRLifecycle(ctx context.Context) error {
@@ -1077,8 +1104,5 @@ func (p *FoundryProvisioningProvider) destroyOrphanACRAccess(
 		return nil, errors.New("owned external registry access was cleaned up, but the Foundry resource group " +
 			"cannot be proven owned by this environment; restore its recorded ownership before retrying azd down")
 	}
-	if err := p.clearACRLifecycle(ctx); err != nil {
-		return nil, err
-	}
-	return p.destroyResult(), nil
+	return p.completeDestroy(ctx)
 }

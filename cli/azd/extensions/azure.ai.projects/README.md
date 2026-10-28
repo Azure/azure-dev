@@ -222,12 +222,23 @@ Azure Container Registry by its full ARM resource ID:
 azd ai project add --new-project --acr-resource-id "/subscriptions/<subscription-id>/resourceGroups/<external-resource-group>/providers/Microsoft.ContainerRegistry/registries/<registry-name>"
 ```
 
-This is supported with Bicep only. The registry must be outside the Foundry
-resource group because `azd down` deletes that group. You are responsible for
-registry network connectivity and appropriate image push permissions.
+This is supported with Bicep only. The registry must be in the Foundry project's
+subscription (`AZURE_SUBSCRIPTION_ID`) and outside the Foundry resource group
+because `azd down` deletes that group. Cross-subscription registry reuse is not
+supported. You are responsible for registry network connectivity and appropriate
+image push permissions.
 The registry and its images remain externally owned and are retained by
 `azd down`. Default and JSON output identify the selected registry and its
 external ownership.
+
+Setting `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` selects the
+same external-registry workflow and reports the same ownership. A registry
+is not considered azd-managed merely because it is in the deployment resource
+group. Existing azd-created registries retain their deployed binding or matching
+legacy outputs; legacy ownership is verified against the previous Azure
+deployment before provisioning or deleting the group. Unreadable environment
+state or unverified ownership stops the operation instead of creating a
+replacement registry.
 
 Before provisioning, the flag overrides environment defaults and saves
 `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `AZD_FOUNDRY_ACR_MODE=reuse-connect`.
@@ -241,6 +252,13 @@ Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed
 project identity and ownership. Use a new azd environment to choose a different
 registry; do not clear internal mode or ownership state to bypass this check.
+
+Successful `azd down` also removes this environment's subscription-level Foundry
+deployment record before clearing registry lifecycle state, so provisioning again
+does not try to recover the deleted project. Failed cleanup preserves recovery
+state for a retry. Removing the deployment record does not delete external
+resources. Custom deployment roles must allow
+`Microsoft.Resources/deployments/delete` at the project subscription scope.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment

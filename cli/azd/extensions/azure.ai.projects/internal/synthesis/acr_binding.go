@@ -140,6 +140,10 @@ func ValidateACRSelector(registryID, subscriptionID, resourceGroup string) error
 			"of a Microsoft.ContainerRegistry/registries resource")
 	}
 	parts := strings.Split(registryID, "/")
+	if subscriptionID != "" && !strings.EqualFold(parts[2], subscriptionID) {
+		return errors.New("AZURE_CONTAINER_REGISTRY_RESOURCE_ID must use the same subscription " +
+			"as the Foundry project (AZURE_SUBSCRIPTION_ID); cross-subscription registry reuse is not supported")
+	}
 	if subscriptionID != "" && resourceGroup != "" &&
 		strings.EqualFold(parts[2], subscriptionID) && strings.EqualFold(parts[4], resourceGroup) {
 		return errors.New("AZURE_CONTAINER_REGISTRY_RESOURCE_ID must be outside the Foundry " +

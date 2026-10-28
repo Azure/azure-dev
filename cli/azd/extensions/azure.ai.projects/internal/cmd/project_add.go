@@ -85,6 +85,8 @@ type ProjectAddAction struct {
 	client *azdext.AzdClient
 	flags  *projectAddFlags
 	extCtx *azdext.ExtensionContext
+	stdout io.Writer
+	stderr io.Writer
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -98,7 +100,9 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			"source-built agents with Bicep. Project-only setup saves the selection\n" +
 			"until agents are added. Code, prebuilt-image, and non-container-only\n" +
 			"projects cannot use the selector. A deployed registry binding cannot\n" +
-			"be changed; repeating the same selection preserves the project.",
+			"be changed; repeating the same selection preserves the project.\n" +
+			"The registry must be in the project's subscription and outside its\n" +
+			"resource group. Cross-subscription reuse is not supported.",
 		Example: `  # Configure a Foundry project interactively
   azd ai project add
 
@@ -118,7 +122,10 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
 			flags.projectIDSet = cmd.Flags().Changed("project-id")
 			flags.projectEndpointSet = cmd.Flags().Changed("project-endpoint")
-			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
+			action := &ProjectAddAction{
+				flags: flags, extCtx: extCtx,
+				stdout: cmd.OutOrStdout(), stderr: cmd.ErrOrStderr(),
+			}
 			return action.Run(cmd.Context())
 		},
 	}
@@ -127,7 +134,7 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().BoolVar(&flags.newProject, "new-project", false, "Create a new Foundry project")
 	cmd.Flags().StringVar(
 		&flags.acrResourceID, "acr-resource-id", "",
-		"External registry ARM resource ID for --new-project source builds (Bicep only; no migration)",
+		"External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)",
 	)
 	cmd.Flags().StringVar(
 		&flags.infra, "infra", "", "Eject Bicep or Terraform infrastructure (optional value)",
@@ -145,6 +152,12 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func (a *ProjectAddAction) Run(ctx context.Context) error {
+	if a.stdout == nil {
+		a.stdout = os.Stdout
+	}
+	if a.stderr == nil {
+		a.stderr = os.Stderr
+	}
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
@@ -267,6 +280,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		if (target.ResourceId != "" && !strings.EqualFold(target.ResourceId, id)) ||
 			(target.Endpoint != "" && !equalProjectEndpoint(target.Endpoint, boundProject.Endpoint)) {
 			return projectACRValidation("cannot replace a project while its deployed registry binding is still in use")
+		}
+	}
+	if target.Mode == projectModeNew && !a.flags.acrResourceIDSet {
+		raw, err := readProjectACRManifest(projectRoot)
+		if err != nil {
+			return err
+		}
+		target.ACRResourceID, err = projectACRSelection(
+			raw, projectRoot, envName, oldValues, target, a.flags.deployedBinding,
+		)
+		if err != nil {
+			return err
 		}
 	}
 	if err := confirmExplicitProjectReplacement(
@@ -485,18 +510,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			ExternallyOwned: effectiveValues["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect",
 		}
 	}
-	registryChanged := a.flags.acrResourceIDSet &&
-		(!strings.EqualFold(oldValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], a.flags.acrResourceID) ||
+	registryChanged := target.ACRResourceID != "" &&
+		(!strings.EqualFold(oldValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], target.ACRResourceID) ||
 			oldValues["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect")
 	result.Mutation = projectAddMutation(mutation, reconciledChanged || registryChanged)
 	writeProjectEndpointWarning(
-		os.Stderr,
+		a.stderr,
 		target.EndpointPathWarning,
 		a.flags.output,
 		a.flags.noPrompt,
 	)
 
-	return writeProjectAddOutput(os.Stdout, a.flags.output, result)
+	return writeProjectAddOutput(a.stdout, a.flags.output, result)
 }
 
 func projectAddMutation(mutation string, reconciledChanged bool) string {
@@ -1865,21 +1890,11 @@ func ejectProjectInfra(
 			group += "-foundry"
 		}
 	}
-	environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
 	binding, err := readProjectACRBinding(ctx, client, environment["AZURE_ENV_NAME"])
 	if err != nil {
 		return err
 	}
-	if err := synthesis.ValidateACRBinding(binding,
-		environment["AZD_FOUNDRY_ACR_MODE"], environment["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]); err != nil {
-		return projectACRValidation(err.Error())
-	}
-	if provider == provisioning.TerraformProviderName && environment["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
-		return projectACRValidation(
-			"external registry reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
-		)
-	}
-	result, err := synthesis.Synthesize(synthesis.Input{
+	input := synthesis.Input{
 		RawAzureYAML:      raw,
 		ServiceName:       serviceName,
 		AcceptedHosts:     provisioning.FoundryProvisioningServiceHosts,
@@ -1888,7 +1903,18 @@ func ejectProjectInfra(
 		ProjectRoot:       projectRoot,
 		PreserveVarRefs:   true,
 		ACRBinding:        binding,
-	})
+	}
+	mode, err := synthesis.GreenfieldACRMode(input)
+	if err != nil {
+		return projectACRValidation(err.Error())
+	}
+	environment["AZD_FOUNDRY_ACR_MODE"] = mode
+	if provider == provisioning.TerraformProviderName && mode == "reuse-connect" {
+		return projectACRValidation(
+			"external registry reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+		)
+	}
+	result, err := synthesis.Synthesize(input)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,

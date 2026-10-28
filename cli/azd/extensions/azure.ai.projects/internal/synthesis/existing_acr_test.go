@@ -34,6 +34,8 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 		preserve   bool
 	}{
 		{name: "unset"},
+		{name: "environment selector", selector: id},
+		{name: "environment selector overrides undeployed create", mode: "create", selector: id},
 		{name: "reuse", mode: "reuse-connect", selector: id},
 		{name: "eject unset", preserve: true},
 		{name: "eject reuse", mode: "reuse-connect", selector: id, preserve: true},
@@ -41,12 +43,12 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 		{name: "eject same group", mode: "reuse-connect", selector: id, group: "SHARED",
 			preserve: true, wantError: "azd down deletes"},
 		{name: "eject private networking reuse", mode: "reuse-connect", selector: id, network: true, preserve: true},
-		{name: "output is not a selector", outputOnly: true},
-		{name: "create ignores output", mode: "create", outputOnly: true},
-		{name: "eject create ignores output", mode: "create", outputOnly: true, preserve: true},
+		{name: "legacy deployment outputs", outputOnly: true},
+		{name: "create preserves deployment outputs", mode: "create", outputOnly: true},
+		{name: "eject preserves deployment outputs", mode: "create", outputOnly: true, preserve: true},
 		{name: "reuse missing ID", mode: "reuse-connect", wantError: "requires AZURE_CONTAINER_REGISTRY_RESOURCE_ID"},
 		{name: "unsupported mode", mode: "already-connected", wantError: "AZD_FOUNDRY_ACR_MODE"},
-		{name: "none with registry required", mode: "none", wantError: "AZD_FOUNDRY_ACR_MODE"},
+		{name: "none becomes create when a registry is required", mode: "none"},
 		{name: "malformed", mode: "reuse-connect", selector: "sharedregistry", wantError: "full ARM ID"},
 		{name: "wrong type", mode: "reuse-connect",
 			selector: strings.Replace(id, "registries", "other", 1), wantError: "full ARM ID"},
@@ -54,8 +56,16 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 		{name: "empty subscription", mode: "reuse-connect",
 			selector: strings.Replace(id, subscription, "", 1), wantError: "full ARM ID"},
 		{name: "same group", mode: "reuse-connect", selector: id, group: "SHARED", wantError: "azd down deletes"},
+		{name: "same group without mode", selector: id, group: "SHARED", wantError: "azd down deletes"},
+		{name: "same group with create intent", mode: "create", selector: id, group: "SHARED",
+			wantError: "azd down deletes"},
 		{name: "different subscription", mode: "reuse-connect",
-			selector: strings.Replace(id, subscription, "other-sub", 1), group: "shared"},
+			selector: strings.Replace(id, subscription, "other-sub", 1), group: "shared",
+			wantError: "cross-subscription registry reuse is not supported"},
+		{name: "different subscription environment selector",
+			selector: strings.Replace(id, subscription, "other-sub", 1), wantError: "same subscription"},
+		{name: "eject different subscription", mode: "reuse-connect", preserve: true,
+			selector: strings.Replace(id, subscription, "other-sub", 1), wantError: "same subscription"},
 		{name: "private networking reuse", mode: "reuse-connect", selector: id, network: true},
 		{name: "private networking creation", network: true, wantError: "auto-created Azure Container Registry"},
 	}
@@ -68,7 +78,10 @@ func TestSynthesizeExistingRegistry(t *testing.T) {
 				"AZURE_RESOURCE_GROUP":                 "foundry",
 			}
 			if tt.outputOnly {
-				env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = id
+				env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = strings.Replace(id, "/shared/", "/foundry/", 1)
+				env["AZURE_AI_PROJECT_ID"] = "/subscriptions/" + subscription + "/resourceGroups/foundry/" +
+					"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+				env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "sharedregistry.azurecr.io"
 			}
 			yaml := raw
 			if tt.network {
@@ -116,6 +129,13 @@ func TestSynthesizeRegistryUsesOnlySnapshotAndMode(t *testing.T) {
 	result, err = Synthesize(input)
 	require.NoError(t, err)
 	assert.NotContains(t, result.Parameters, "existingAcrResourceId")
+	input.Env["AZURE_SUBSCRIPTION_ID"] = "other"
+	_, err = Synthesize(input)
+	require.ErrorContains(t, err, "same subscription")
+	input.Env["AZURE_SUBSCRIPTION_ID"] = "sub"
+	input.ResourceGroupName = "shared"
+	_, err = Synthesize(input)
+	require.ErrorContains(t, err, "azd down deletes")
 
 	input.RawAzureYAML = []byte("services:\n  project:\n    host: azure.ai.project\n" +
 		"  agent:\n    host: azure.ai.agent\n    kind: hosted\n")
@@ -133,29 +153,51 @@ func TestSynthesizeRegistryUsesOnlySnapshotAndMode(t *testing.T) {
 }
 
 func TestGreenfieldACRMode(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/foundry/providers/Microsoft.ContainerRegistry/registries/registry"
+	const projectID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
 	for _, tt := range []struct {
-		mode string
-		id   string
-		want string
+		name, mode, id, group, project, endpoint, want string
+		binding                                        *ACRBinding
 	}{
-		{want: "create"},
-		{id: "registry", want: "reuse-connect"},
-		{mode: "create", id: "created-output", want: "create"},
-		{mode: "reuse-connect", id: "registry", want: "reuse-connect"},
-		{mode: "already-connected", want: "already-connected"},
-		// Legacy env: azd-created registry output in the Foundry group, no mode yet.
-		{id: "/subscriptions/sub/resourceGroups/rg-foundry/providers/Microsoft.ContainerRegistry/registries/cr",
-			want: "create"},
-		{id: "/subscriptions/sub/resourceGroups/rg-shared/providers/Microsoft.ContainerRegistry/registries/cr",
-			want: "reuse-connect"},
-		{id: "/subscriptions/other/resourceGroups/rg-foundry/providers/Microsoft.ContainerRegistry/registries/cr",
-			want: "reuse-connect"},
+		{name: "explicit reuse", mode: "reuse-connect", id: id, group: "foundry", want: "reuse-connect"},
+		{name: "malformed reuse is validated by synthesis", mode: "reuse-connect", id: "invalid",
+			group: "foundry", want: "reuse-connect"},
+		{name: "fresh in-group input", id: id, group: "foundry", want: "reuse-connect"},
+		{name: "fresh in-group create intent", mode: "create", id: id, group: "foundry", want: "reuse-connect"},
+		{name: "malformed create intent", mode: "create", id: "created-output",
+			group: "foundry", want: "reuse-connect"},
+		{name: "external input after none", mode: "none", id: id, group: "external", want: "reuse-connect"},
+		{name: "no input", group: "foundry", want: "create"},
+		{name: "external input", id: id, group: "external", want: "reuse-connect"},
+		{name: "legacy deployment outputs", id: strings.ToUpper(id), group: "foundry",
+			project: projectID, endpoint: "registry.azurecr.io", want: "create"},
+		{name: "project ID alone is not ownership", id: id, group: "foundry",
+			project: projectID, want: "reuse-connect"},
+		{name: "endpoint alone is not ownership", id: id, group: "foundry",
+			endpoint: "registry.azurecr.io", want: "reuse-connect"},
+		{name: "mismatched project outputs", id: id, group: "foundry",
+			project:  strings.Replace(projectID, "/foundry/", "/other/", 1),
+			endpoint: "registry.azurecr.io", want: "reuse-connect"},
+		{name: "mismatched registry output", id: id, group: "foundry",
+			project: projectID, endpoint: "other.azurecr.io", want: "reuse-connect"},
+		{name: "binding without legacy output variables", id: id, group: "foundry",
+			binding: &ACRBinding{Mode: "create", RegistryResourceID: id}, want: "create"},
 	} {
-		t.Run(tt.mode+"/"+tt.id, func(t *testing.T) {
-			assert.Equal(t, tt.want, GreenfieldACRMode(map[string]string{
-				"AZD_FOUNDRY_ACR_MODE": tt.mode, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": tt.id,
-				"AZURE_SUBSCRIPTION_ID": "sub",
-			}, "rg-foundry"))
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := GreenfieldACRMode(Input{
+				Env: map[string]string{
+					"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": tt.id,
+					"AZURE_SUBSCRIPTION_ID":                "sub",
+					"AZURE_AI_PROJECT_ID":                  tt.project,
+					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    tt.endpoint,
+				},
+				ResourceGroupName: tt.group,
+				ACRBinding:        tt.binding,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, mode)
 		})
 	}
 }

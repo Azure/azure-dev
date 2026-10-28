@@ -29,6 +29,8 @@ const projectHelpFooter = `Environments & Environment Variables:
   With --new-project, --acr-resource-id selects an externally owned registry
   for source-built agents (Bicep only). The selection is saved even before
   agents are added. Registry migration after provisioning is not supported.
+  The registry must be in the project's subscription and outside its resource
+  group. Cross-subscription reuse is not supported.
   Use 'azd env set <key> <value>' to save a value and 'azd env get-values'
   to inspect values. They may contain secrets; do not share the output or
   commit .azure to source control.

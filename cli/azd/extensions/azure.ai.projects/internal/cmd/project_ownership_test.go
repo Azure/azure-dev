@@ -1811,6 +1811,13 @@ func TestEjectProjectInfraRecordedRegistryMode(t *testing.T) {
 				env := map[string]string{
 					"AZD_FOUNDRY_ACR_MODE": mode, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
 				}
+				if mode == "create" {
+					env["AZURE_SUBSCRIPTION_ID"] = "sub"
+					env["AZURE_RESOURCE_GROUP"] = "shared"
+					env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/shared/" +
+						"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+					env["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "registry.azurecr.io"
+				}
 				err = ejectProjectInfraWithTarget(t.Context(), client, root,
 					"project", provider, "", "", env)
 				switch {

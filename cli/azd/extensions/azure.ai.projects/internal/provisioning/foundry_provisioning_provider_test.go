@@ -1754,7 +1754,8 @@ func TestEnvValues_IncludesCanonicalKeysEvenWithoutAzdClient(t *testing.T) {
 		},
 		// azdClient intentionally nil
 	}
-	got := p.envValues(t.Context())
+	got, err := p.envValues(t.Context())
+	require.NoError(t, err)
 	assert.Equal(t, "sub-id", got[envKeySubscriptionID])
 	assert.Equal(t, "westus2", got[envKeyLocation])
 	assert.Equal(t, "my-rg", got[envKeyResourceGroup])

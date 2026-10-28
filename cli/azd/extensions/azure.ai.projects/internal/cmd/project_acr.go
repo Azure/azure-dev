@@ -49,8 +49,8 @@ func projectACRValidation(message string) error {
 	return exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		message,
-		"use an external registry ARM resource ID with --new-project and Bicep source builds; "+
-			"registry migration is not supported",
+		"use an external registry in the project's subscription, outside its resource group, "+
+			"with --new-project and Bicep source builds; registry migration is not supported",
 	)
 }
 
@@ -173,7 +173,7 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 				values["AZD_FOUNDRY_ACR_MODE"] != "create")) {
 		return projectACRValidation("external registry reuse is not supported with --infra=terraform")
 	}
-	if !a.flags.acrResourceIDSet {
+	if !greenfield || (!a.flags.acrResourceIDSet && values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] == "") {
 		return nil
 	}
 	raw, err := readProjectACRManifest(root)
@@ -181,29 +181,62 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 		return err
 	}
 	project := &resolvedProject{
-		Mode: projectModeNew, ACRResourceID: a.flags.acrResourceID,
+		Mode:             projectModeNew,
 		PreserveDeployed: a.flags.preserveProjectID != "",
 	}
-	plan := planProjectEnvironment(values, projectModeNew, project, projectIdentityChanged(values, "", project))
-	effective := applyProjectEnvironmentPlan(values, plan)
-	effective["AZURE_ENV_NAME"] = plannedEnvName
-	if err := synthesis.ValidateGreenfieldACRSelectionForInput(synthesis.Input{
-		RawAzureYAML: raw, ProjectRoot: root, Env: effective,
-	}, a.flags.acrResourceID); err != nil {
-		return projectACRValidation(err.Error())
+	if a.flags.acrResourceIDSet {
+		project.ACRResourceID = a.flags.acrResourceID
 	}
-	if len(raw) == 0 {
+	selection, err := projectACRSelection(raw, root, plannedEnvName, values, project, a.flags.deployedBinding)
+	if err != nil {
+		return err
+	}
+	if selection != "" && a.flags.infra == provisioning.TerraformProviderName {
+		return projectACRValidation("external registry reuse is not supported with --infra=terraform")
+	}
+	if len(raw) == 0 || !a.flags.acrResourceIDSet {
 		return nil
 	}
+	effective := applyProjectEnvironmentPlan(values,
+		planProjectEnvironment(values, projectModeNew, project, projectIdentityChanged(values, "", project)))
 	return validateProjectACRManifest(raw, root, effective)
+}
+
+func projectACRSelection(
+	raw []byte, root, envName string, values map[string]string, project *resolvedProject, binding *synthesis.ACRBinding,
+) (string, error) {
+	plan := planProjectEnvironment(values, projectModeNew, project, projectIdentityChanged(values, "", project))
+	effective := applyProjectEnvironmentPlan(values, plan)
+	effective["AZURE_ENV_NAME"] = envName
+	input := synthesis.Input{RawAzureYAML: raw, ProjectRoot: root, Env: effective, ACRBinding: binding}
+	mode, err := synthesis.GreenfieldACRMode(input)
+	if err != nil {
+		return "", projectACRValidation(err.Error())
+	}
+	if mode != "reuse-connect" {
+		return "", nil
+	}
+	id := effective["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, id); err != nil {
+		return "", projectACRValidation(err.Error())
+	}
+	return id, nil
 }
 
 func projectACREnvironmentMissing(root, name string, err error) bool {
 	if status.Code(err) == codes.NotFound {
 		return true
 	}
-	if status.Code(err) != codes.Unknown || filepath.Base(name) != name ||
-		!strings.Contains(status.Convert(err).Message(), "environment not found") {
+	if status.Code(err) != codes.Unknown || filepath.Base(name) != name {
+		return false
+	}
+	message := status.Convert(err).Message()
+	if strings.HasPrefix(message, "no project exists;") {
+		exists, inspectErr := projectFileExists(root)
+		if inspectErr != nil || exists {
+			return false
+		}
+	} else if !strings.Contains(message, "environment not found") {
 		return false
 	}
 	_, statErr := os.Stat(filepath.Join(root, ".azure", name))

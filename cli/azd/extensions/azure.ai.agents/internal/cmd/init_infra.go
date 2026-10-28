@@ -575,7 +575,6 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 				group += "-foundry"
 			}
 		}
-		environment["AZD_FOUNDRY_ACR_MODE"] = synthesis.GreenfieldACRMode(environment, group)
 		synthesisInput.Env = environment
 		synthesisInput.ResourceGroupName = group
 	}
@@ -2209,6 +2208,15 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 	result := make(map[string]string, len(values.KeyValues))
 	for _, item := range values.KeyValues {
 		result[item.Key] = item.Value
+	}
+	binding, err := azdClient.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
+		EnvName: current.Environment.Name, Path: synthesis.ACRBindingConfigKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read deployed registry binding for infrastructure eject: %w", err)
+	}
+	if binding.GetFound() {
+		result[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
 	}
 	return result, nil
 }

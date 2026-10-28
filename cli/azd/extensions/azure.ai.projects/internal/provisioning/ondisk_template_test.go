@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -188,7 +189,7 @@ func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
 			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
 		ServiceName:     "project",
-		Env:             map[string]string{key: id, "AZD_FOUNDRY_ACR_MODE": "reuse-connect"},
+		Env:             map[string]string{key: id, "AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_SUBSCRIPTION_ID": "sub"},
 		PreserveVarRefs: true,
 	})
 	require.NoError(t, err)
@@ -197,9 +198,10 @@ func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
-		name string
-		env  map[string]string
-		want string
+		name      string
+		env       map[string]string
+		want      string
+		wantError string
 	}{
 		{name: "reuse", env: map[string]string{key: id}, want: id},
 		{
@@ -209,6 +211,9 @@ func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
 		},
 		{name: "empty disables reuse", env: map[string]string{key: ""}},
 		{name: "unset disables reuse"},
+		{name: "cross-subscription parameter", env: map[string]string{
+			key: strings.Replace(id, "/sub/", "/other-sub/", 1),
+		}, wantError: "same subscription"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -219,10 +224,15 @@ func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
 			provider := &FoundryProvisioningProvider{
 				projectPath:      dir,
+				subID:            "sub",
 				virtualEnv:       tt.env,
 				bicepCliInstance: &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(armTemplate)}},
 			}
 			got, err := provider.resolveTemplate(t.Context(), func(string) {})
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
 			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, templateModeBicep, got.mode)

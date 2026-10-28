@@ -229,26 +229,9 @@ func Synthesize(in Input) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	mode := in.Env["AZD_FOUNDRY_ACR_MODE"]
-	binding := in.ACRBinding
-	if binding == nil {
-		binding, err = ParseACRBinding(in.Env[ACRBindingEnvKey])
-		if err != nil {
-			return nil, err
-		}
-	}
-	if binding != nil {
-		if err := ValidateACRBinding(binding, mode, in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]); err != nil {
-			return nil, err
-		}
-		if mode == "" {
-			mode = binding.Mode
-		}
-	}
-	if !includeAcr {
-		mode = "none"
-	} else if mode == "" {
-		mode = "create"
+	mode, err := GreenfieldACRMode(in)
+	if err != nil {
+		return nil, err
 	}
 	var existingAcrResourceID string
 	switch mode {
@@ -261,8 +244,9 @@ func Synthesize(in Input) (*Result, error) {
 	default:
 		return nil, fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
 	}
-	if includeAcr && mode == "none" {
-		return nil, errors.New("synthesis: AZD_FOUNDRY_ACR_MODE cannot be none when a registry is required")
+	if !includeAcr {
+		mode = "none"
+		existingAcrResourceID = ""
 	}
 
 	deployments := svc.Deployments
@@ -299,28 +283,54 @@ func Synthesize(in Input) (*Result, error) {
 	}, nil
 }
 
-// GreenfieldACRMode preserves in-group registry outputs.
-// Actual deployed choices are enforced by ValidateACRBinding.
-func GreenfieldACRMode(env map[string]string, resourceGroup string) string {
-	if mode := env["AZD_FOUNDRY_ACR_MODE"]; mode != "" && mode != "none" && mode != "create" {
-		return mode
-	}
+// GreenfieldACRMode distinguishes selectors from deployed outputs.
+func GreenfieldACRMode(in Input) (string, error) {
+	env := in.Env
+	mode := env["AZD_FOUNDRY_ACR_MODE"]
 	id := env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
-	if id == "" {
-		return "create"
-	}
-	if env["AZD_FOUNDRY_ACR_MODE"] == "create" &&
-		(resourceGroup == "" || !containerRegistryIDPattern.MatchString(id)) {
-		return "create"
-	}
-	if containerRegistryIDPattern.MatchString(id) && resourceGroup != "" {
-		parts := strings.Split(id, "/")
-		sub := env["AZURE_SUBSCRIPTION_ID"]
-		if strings.EqualFold(parts[4], resourceGroup) && (sub == "" || strings.EqualFold(parts[2], sub)) {
-			return "create"
+	binding := in.ACRBinding
+	if binding == nil {
+		var err error
+		binding, err = ParseACRBinding(env[ACRBindingEnvKey])
+		if err != nil {
+			return "", err
 		}
 	}
-	return "reuse-connect"
+	if binding != nil {
+		if err := ValidateACRBinding(binding, mode, id); err != nil {
+			return "", err
+		}
+		return binding.Mode, nil
+	}
+	switch mode {
+	case "", "none", "create":
+	case "reuse-connect":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
+	}
+	if id == "" {
+		return "create", nil
+	}
+	group, err := GreenfieldACRResourceGroup(in)
+	if err != nil {
+		return "", err
+	}
+	// Legacy environments retain outputs instead of a binding.
+	// A same-group registry ID alone is still an external input.
+	projectID := env["AZURE_AI_PROJECT_ID"]
+	if containerRegistryIDPattern.MatchString(id) && projectResourceIDPattern.MatchString(projectID) &&
+		!strings.EqualFold(env["USE_EXISTING_AI_PROJECT"], "true") {
+		registry, project := strings.Split(id, "/"), strings.Split(projectID, "/")
+		host, _, hasDomain := strings.Cut(env["AZURE_CONTAINER_REGISTRY_ENDPOINT"], ".")
+		if group != "" && strings.EqualFold(registry[4], group) &&
+			strings.EqualFold(registry[2], env["AZURE_SUBSCRIPTION_ID"]) &&
+			strings.EqualFold(project[2], registry[2]) && strings.EqualFold(project[4], group) &&
+			hasDomain && strings.EqualFold(host, registry[8]) {
+			return "create", nil
+		}
+	}
+	return "reuse-connect", nil
 }
 
 var containerRegistryIDPattern = regexp.MustCompile(
@@ -334,8 +344,17 @@ func existingContainerRegistry(in Input) (string, error) {
 		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")
 	}
-	if err := ValidateACRSelector(id, in.Env["AZURE_SUBSCRIPTION_ID"], in.ResourceGroupName); err != nil {
+	group, err := GreenfieldACRResourceGroup(in)
+	if err != nil {
+		return "", err
+	}
+	if err := ValidateACRSelector(id, in.Env["AZURE_SUBSCRIPTION_ID"], group); err != nil {
 		return "", fmt.Errorf("synthesis: %w", err)
+	}
+	if group != "" && in.Env["AZURE_SUBSCRIPTION_ID"] == "" &&
+		strings.EqualFold(strings.Split(id, "/")[4], group) {
+		return "", errors.New("cannot establish that the registry is outside the Foundry resource group; " +
+			"configure AZURE_SUBSCRIPTION_ID before selecting a registry with the same resource-group name")
 	}
 	return id, nil
 }

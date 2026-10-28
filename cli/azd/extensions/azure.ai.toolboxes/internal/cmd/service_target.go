@@ -206,7 +206,7 @@ func (p *toolboxServiceTarget) Deploy(
 			"run 'azd auth login' to authenticate",
 		)
 	}
-	if _, err := p.access.ensure(ctx, scope, client, name, progress); err != nil {
+	if _, err := p.access.ensure(ctx, scope, client, name, toolboxReadOptionalForDeploy, progress); err != nil {
 		return nil, err
 	}
 	input.Tools, err = p.resolveToolEntries(ctx, endpoint, input.Tools)

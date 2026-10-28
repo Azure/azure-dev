@@ -69,6 +69,13 @@ type toolboxAccessScope struct {
 	skip     bool
 }
 
+type toolboxReadPolicy int
+
+const (
+	toolboxReadRequired toolboxReadPolicy = iota
+	toolboxReadOptionalForDeploy
+)
+
 func newToolboxAccess(client *azdext.AzdClient) *toolboxAccess {
 	return &toolboxAccess{
 		environment: client.Environment(), account: client.Account(),
@@ -322,8 +329,11 @@ func waitToolboxAccess(ctx context.Context, duration time.Duration) error {
 
 // ensure returns the already-read toolbox (nil for an authorized missing toolbox).
 // ARM failures are deferred, never warned on successful custom-role access.
+// toolboxReadOptionalForDeploy also permits an unconfirmed authorization denial:
+// the caller must attempt the deployment write to establish actual access.
 func (a *toolboxAccess) ensure(
-	ctx context.Context, scope *toolboxAccessScope, client toolboxClient, name string, report func(string),
+	ctx context.Context, scope *toolboxAccessScope, client toolboxClient, name string,
+	readPolicy toolboxReadPolicy, report func(string),
 ) (toolbox *azure.ToolboxObject, resultErr error) {
 	parent := ctx
 	timeout := 5 * time.Minute
@@ -382,6 +392,10 @@ func (a *toolboxAccess) ensure(
 				report("Foundry toolbox access is ready.")
 			}
 			return toolbox, nil
+		}
+		// A custom role may allow the deployment write without granting agents/read.
+		if readPolicy == toolboxReadOptionalForDeploy && !confirmed && toolboxAccessDenied(err) {
+			return nil, nil
 		}
 		lastProbeError = err
 		retry := projectMissing || (confirmed && toolboxAccessDenied(err))

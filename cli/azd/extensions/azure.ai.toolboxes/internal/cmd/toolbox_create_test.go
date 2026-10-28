@@ -6,7 +6,9 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +17,8 @@ import (
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -49,6 +53,9 @@ func TestCreateLocalValidationBeforeEndpointAndAuthentication(t *testing.T) {
 		{"duplicate raw names", "tools:\n  - {type: web_search, name: dup}\n  - {type: mcp, name: dup}\n", exterrors.CodeDuplicateToolName},
 		{"mixed raw and connection names", "connections:\n  - name: dup\ntools:\n  - {type: web_search, name: dup}\n", exterrors.CodeDuplicateToolName},
 		{"duplicate connections", "connections:\n  - name: dup\n  - name: dup\n", exterrors.CodeDuplicateConnection},
+		{"duplicate inline connections", "tools:\n  - {type: mcp, connection: dup}\n  - {type: mcp, connection: dup}\n", exterrors.CodeDuplicateConnection},
+		{"trimmed inline connections", "tools:\n  - {type: mcp, connection: ' dup '}\n  - {type: mcp, connection: dup}\n", exterrors.CodeDuplicateConnection},
+		{"mixed connection references", "connections:\n  - name: dup\ntools:\n  - {type: mcp, connection: ' dup '}\n", exterrors.CodeDuplicateConnection},
 		{"conflicting connection options", "connections:\n  - {name: search, index: idx, instanceName: inst}\n", exterrors.CodeConflictingArguments},
 		{"invalid policy", "tools:\n  - {type: web_search}\npolicies:\n  raiConfig: {}\n", exterrors.CodeInvalidParameter},
 		{"unknown field", "tools:\n  - {type: web_search}\nunsupported: true\n", exterrors.CodeInvalidParameter},
@@ -67,6 +74,33 @@ func TestCreateLocalValidationBeforeEndpointAndAuthentication(t *testing.T) {
 		})
 	}
 	assert.Empty(t, *writes)
+}
+
+func TestStandaloneCreateRequiresReadAccess(t *testing.T) {
+	writes := stubToolboxEndpointEnv(t)
+	access := testToolboxAccess(t, func(request *http.Request) (*http.Response, error) {
+		return accessHTTPResponse(request, 403, map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}), nil
+	})
+	scope, err := access.resolve(t.Context(), accessTestEndpoint)
+	require.NoError(t, err)
+	mock := newMockToolboxClient(accessTestEndpoint)
+	mock.getResults["research"] = toolboxGetResult{err: &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}}
+	resolver := accessConnectionResolver(func(context.Context, string, string) (*projectConnection, error) {
+		t.Fatal("standalone create must not resolve connections after a forbidden existence check")
+		return nil, nil
+	})
+	var stdout, stderr bytes.Buffer
+	err = createToolboxFromInput(t.Context(), mock, resolver, accessTestEndpoint, "research",
+		&definition.Definition{Connections: []definition.ConnectionReference{{Name: "mcp"}}}, toolboxFlags{output: "json"},
+		access, scope, &stdout, func(message string) { stderr.WriteString(message) })
+	service, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	assert.Equal(t, 403, service.StatusCode)
+	assert.Contains(t, service.Message, exterrors.OpGetToolbox)
+	assert.Empty(t, mock.createVersionCalls)
+	assert.Empty(t, *writes)
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
 }
 
 func TestCreateRejectsExplicitEmptyFlagsBeforeAuthentication(t *testing.T) {

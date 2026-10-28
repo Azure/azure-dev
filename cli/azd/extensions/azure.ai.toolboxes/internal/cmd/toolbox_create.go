@@ -188,7 +188,7 @@ func createToolboxFromInput(
 	input *definition.Definition, parent toolboxFlags, access *toolboxAccess, scope *toolboxAccessScope,
 	out io.Writer, report func(string),
 ) error {
-	existing, err := access.ensure(ctx, scope, client, name, report)
+	existing, err := access.ensure(ctx, scope, client, name, toolboxReadRequired, report)
 	if err != nil {
 		return err
 	}
@@ -254,7 +254,8 @@ func validateLocalToolboxDefinition(input *definition.Definition) error {
 	}
 	for _, tool := range raw {
 		if value, present := tool["connection"]; present {
-			if name, ok := value.(string); !ok || strings.TrimSpace(name) == "" {
+			name, ok := value.(string)
+			if !ok || strings.TrimSpace(name) == "" {
 				return exterrors.Validation(exterrors.CodeInvalidParameter,
 					"tools[].connection must be a non-empty name", "set a connection name or omit the connection property")
 			}
@@ -263,6 +264,12 @@ func validateLocalToolboxDefinition(input *definition.Definition) error {
 					"tools[].connection conflicts with tools[].project_connection_id",
 					"specify the connection name or its project_connection_id, not both")
 			}
+			name = strings.TrimSpace(name)
+			if connections[name] {
+				return exterrors.Validation(exterrors.CodeDuplicateConnection,
+					fmt.Sprintf("connection %q appears more than once in the input", name), "remove duplicate connection entries")
+			}
+			connections[name] = true
 		}
 	}
 	skills := make([]map[string]any, 0, len(input.Skills))

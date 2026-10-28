@@ -131,7 +131,7 @@ func TestToolboxDeferredARMFailuresStillExerciseActualProbe(t *testing.T) {
 						return nil, &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
 					}
 					return &azure.ToolboxObject{Name: "research"}, nil
-				}}, "research", func(message string) { progress = append(progress, message) })
+				}}, "research", toolboxReadRequired, func(message string) { progress = append(progress, message) })
 				assert.Equal(t, denied, err != nil)
 				assert.Equal(t, 1, probes)
 				assert.NotContains(t, strings.Join(progress, "\n"), "Warning")
@@ -161,7 +161,7 @@ func TestToolboxRoleInspectionFollowsPages(t *testing.T) {
 	})
 	scope, err := access.resolve(t.Context(), accessTestEndpoint)
 	require.NoError(t, err)
-	_, err = access.ensure(t.Context(), scope, newMockToolboxClient(accessTestEndpoint), "research", nil)
+	_, err = access.ensure(t.Context(), scope, newMockToolboxClient(accessTestEndpoint), "research", toolboxReadRequired, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 2, pages)
 }
@@ -327,7 +327,7 @@ func TestToolboxRolesARMBeforeProbe(t *testing.T) {
 			_, err = access.ensure(t.Context(), scope, accessProbeClient{probe: func(context.Context, string) (*azure.ToolboxObject, error) {
 				events = append(events, "probe")
 				return nil, notFoundResponseError("toolbox not found")
-			}}, "research", nil)
+			}}, "research", toolboxReadRequired, nil)
 			require.NoError(t, err)
 			if tt.want {
 				assert.Equal(t, []string{"GET", "probe"}, events)
@@ -469,7 +469,7 @@ func TestToolboxAccessReadiness(t *testing.T) {
 			scope, err := access.resolve(t.Context(), accessTestEndpoint)
 			require.NoError(t, err)
 			messages := []string{}
-			_, err = access.ensure(t.Context(), scope, client, "research", func(message string) { messages = append(messages, message) })
+			_, err = access.ensure(t.Context(), scope, client, "research", toolboxReadRequired, func(message string) { messages = append(messages, message) })
 			assert.Equal(t, tt.wantErr, err != nil)
 			assert.Equal(t, tt.wantProbes, probes)
 			assert.Equal(t, tt.wantWaits, waits)
@@ -519,7 +519,7 @@ func TestToolboxOptOutAndUnverifiedContext(t *testing.T) {
 			_, err = access.ensure(t.Context(), scope, accessProbeClient{probe: func(context.Context, string) (*azure.ToolboxObject, error) {
 				probes++
 				return nil, notFoundResponseError("toolbox not found")
-			}}, "research", nil)
+			}}, "research", toolboxReadRequired, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantARM, armCalls > 0)
 			assert.Equal(t, 1, probes)
@@ -533,7 +533,7 @@ func TestToolboxCancellationPrecedesNotFound(t *testing.T) {
 			joined := errors.Join(notFoundResponseError("Project not found"), cause)
 			_, err := (*toolboxAccess)(nil).ensure(t.Context(), nil, accessProbeClient{probe: func(context.Context, string) (*azure.ToolboxObject, error) {
 				return nil, joined
-			}}, "research", nil)
+			}}, "research", toolboxReadRequired, nil)
 			require.ErrorIs(t, err, cause)
 			err = toolboxWriteError(t.Context(), joined, exterrors.OpGetToolbox, nil, "", "")
 			require.ErrorIs(t, err, cause)
@@ -578,7 +578,7 @@ func TestToolboxCancellationPrecedesNotFound(t *testing.T) {
 					}
 					t.Fatal("probe must not run after cancellation")
 					return nil, nil
-				}}, "research", nil)
+				}}, "research", toolboxReadRequired, nil)
 			}
 			if boundary == "probe deadline" {
 				require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -601,7 +601,7 @@ func TestToolboxReadinessBudgetRetainsServiceRemediation(t *testing.T) {
 	require.NoError(t, err)
 	_, err = access.ensure(t.Context(), scope, accessProbeClient{probe: func(context.Context, string) (*azure.ToolboxObject, error) {
 		return nil, &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
-	}}, "research", nil)
+	}}, "research", toolboxReadRequired, nil)
 	service, ok := errors.AsType[*azdext.ServiceError](err)
 	require.True(t, ok, "the internal budget should retain the Foundry failure: %v", err)
 	assert.Equal(t, 403, service.StatusCode)
@@ -611,7 +611,7 @@ func TestToolboxReadinessBudgetRetainsServiceRemediation(t *testing.T) {
 	defer cancel()
 	_, err = access.ensure(parent, scope, accessProbeClient{probe: func(context.Context, string) (*azure.ToolboxObject, error) {
 		return nil, &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
-	}}, "research", nil)
+	}}, "research", toolboxReadRequired, nil)
 	require.ErrorIs(t, err, context.DeadlineExceeded, "caller deadlines remain authoritative")
 }
 

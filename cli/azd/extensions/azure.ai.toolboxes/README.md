@@ -83,10 +83,14 @@ access propagation and project synchronization polling are bounded to five minut
 This ARM-first ordering avoids priming Foundry's negative authorization cache,
 but can add the built-in role even when a custom role already provides access.
 ARM inspection or assignment failures do not block working custom-role access
-and produce no advisory warning on success. Actual Foundry failures remain
-authoritative and include project-access remediation when applicable. Deployment
-reports transient status through azd progress; standalone create writes status
-to stderr so JSON on stdout remains machine-readable.
+and produce no advisory warning on success. When ARM cannot confirm a sufficient
+role and a readiness read is forbidden by an authorization failure, managed
+deployment attempts the actual write, preserving write-only custom-role access.
+Standalone create still requires its read to check whether the toolbox exists.
+Other readiness failures and confirmed-role propagation checks remain blocking.
+Actual write failures include project-access remediation when applicable.
+Deployment reports transient status through azd progress; standalone create
+writes status to stderr so JSON on stdout remains machine-readable.
 
 Automatic grants require the selected endpoint to match the active environment's
 `FOUNDRY_PROJECT_ENDPOINT` (falling back to `AZURE_AI_PROJECT_ENDPOINT` when blank),

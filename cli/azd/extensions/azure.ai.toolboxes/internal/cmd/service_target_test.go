@@ -19,6 +19,7 @@ import (
 	"azure.ai.toolboxes/internal/pkg/azure"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -110,6 +111,7 @@ func TestManagedDeployAccessFailureSerializesGuidance(t *testing.T) {
 	})
 	mock := newMockToolboxClient(accessTestEndpoint)
 	mock.getResults["research"] = toolboxGetResult{err: &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}}
+	mock.createVersionErr = &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
 	target := &toolboxServiceTarget{
 		access: access, resolver: newStubConnectionResolver(),
 		newClient: func(string, string) (toolboxClient, error) { return mock, nil },
@@ -122,10 +124,139 @@ func TestManagedDeployAccessFailureSerializesGuidance(t *testing.T) {
 	require.Error(t, err)
 	wire := azdext.WrapError(err)
 	assert.Contains(t, wire.GetMessage(), "HTTP 403")
+	assert.Contains(t, wire.GetMessage(), exterrors.OpCreateToolboxVersion)
 	assert.Contains(t, wire.GetSuggestion(), "az role assignment create")
 	assert.Contains(t, wire.GetSuggestion(), accessTestScope)
-	assert.Empty(t, mock.createVersionCalls)
+	assert.Len(t, mock.createVersionCalls, 1)
 	assert.Empty(t, *writes)
+}
+
+func TestManagedDeployAllowsWriteOnlyAccess(t *testing.T) {
+	stubAccessProjectEndpoint(t)
+	for _, boundary := range []string{"role list", "role assignment", "opt out", "unverified context"} {
+		t.Run(boundary, func(t *testing.T) {
+			writes := stubToolboxEndpointEnv(t)
+			var events, progress []string
+			access := testToolboxAccess(t, func(request *http.Request) (*http.Response, error) {
+				events = append(events, request.Method)
+				if boundary == "role list" || request.Method == http.MethodPut {
+					return accessHTTPResponse(request, 403, map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}), nil
+				}
+				return accessHTTPResponse(request, 200, map[string]any{"value": []any{}}), nil
+			})
+			values := accessEnvironmentValues()
+			switch boundary {
+			case "opt out":
+				values["AZD_AGENT_SKIP_ROLE_ASSIGNMENTS"] = "true"
+			case "unverified context":
+				delete(values, "AZURE_AI_PROJECT_ID")
+			}
+			access.environment = accessEnvironmentStub{values: values}
+			access.wait = func(context.Context, time.Duration) error {
+				t.Fatal("unconfirmed access must not trigger authorization polling")
+				return nil
+			}
+			mock := newMockToolboxClient(accessTestEndpoint)
+			target := &toolboxServiceTarget{
+				access: access, resolver: newStubConnectionResolver(),
+				environmentClient: &stubEnvironmentReader{name: "test", subscriptionID: accessTestSubscription},
+				accountClient:     &stubAccountTenantLookup{tenantID: "user-access-tenant"},
+				newClient: func(string, string) (toolboxClient, error) {
+					return accessProbeClient{toolboxClient: mock, probe: func(context.Context, string) (*azure.ToolboxObject, error) {
+						events = append(events, "probe")
+						return nil, &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
+					}}, nil
+				},
+			}
+			props, err := structpb.NewStruct(map[string]any{"tools": []any{map[string]any{"type": "web_search"}}})
+			require.NoError(t, err)
+			_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "research", AdditionalProperties: props, Environment: map[string]string{"SETTING": "value"},
+			}, nil, nil, func(message string) { progress = append(progress, message) })
+			require.NoError(t, err)
+			wantEvents := []string{"probe"}
+			switch boundary {
+			case "role list":
+				wantEvents = []string{"GET", "probe"}
+			case "role assignment":
+				wantEvents = []string{"GET", "PUT", "probe"}
+			}
+			assert.Equal(t, wantEvents, events)
+			assert.NotContains(t, strings.Join(progress, "\n"), "ready")
+			assert.NotContains(t, strings.Join(progress, "\n"), "propagate")
+			assert.Contains(t, strings.Join(progress, "\n"), "Upserting toolbox")
+			require.Len(t, mock.createVersionCalls, 1)
+			require.Len(t, *writes, 1)
+		})
+	}
+}
+
+func TestManagedDeployReadinessFailuresDoNotWrite(t *testing.T) {
+	stubAccessProjectEndpoint(t)
+	denied := &azcore.ResponseError{StatusCode: 403, ErrorCode: "PermissionDenied"}
+	for _, tt := range []struct {
+		name        string
+		role        string
+		probeErr    error
+		wantProbes  int
+		wantWaits   []time.Duration
+		cancelCause error
+	}{
+		{"existing role still polls", "existing", denied, 3, []time.Duration{5 * time.Second, 5 * time.Second}, nil},
+		{"new grant still settles and polls", "new", denied, 3, []time.Duration{15 * time.Second, 5 * time.Second, 5 * time.Second}, nil},
+		{"policy denied", "", &azcore.ResponseError{StatusCode: 403, ErrorCode: "PolicyDenied"}, 1, nil, nil},
+		{"unauthenticated", "", &azcore.ResponseError{StatusCode: 401}, 1, nil, nil},
+		{"server failure", "", &azcore.ResponseError{StatusCode: 500}, 1, nil, nil},
+		{"network failure", "", errors.New("network failed"), 1, nil, nil},
+		{"cancelled denial", "", errors.Join(denied, context.Canceled), 1, nil, context.Canceled},
+		{"deadline with denial", "", errors.Join(denied, context.DeadlineExceeded), 1, nil, context.DeadlineExceeded},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			writes := stubToolboxEndpointEnv(t)
+			access := testToolboxAccess(t, func(request *http.Request) (*http.Response, error) {
+				if tt.role == "" {
+					return accessHTTPResponse(request, 403, map[string]any{"error": map[string]string{"code": "AuthorizationFailed"}}), nil
+				}
+				if request.Method == http.MethodGet {
+					roles := []*armauthorization.RoleAssignment{}
+					if tt.role == "existing" {
+						roles = append(roles, testAccessRole(accessTestScope, foundryUserRole))
+					}
+					return accessHTTPResponse(request, 200, map[string]any{"value": roles}), nil
+				}
+				return accessHTTPResponse(request, 201, map[string]any{}), nil
+			})
+			var waits []time.Duration
+			access.wait = func(_ context.Context, duration time.Duration) error {
+				waits = append(waits, duration)
+				return nil
+			}
+			mock := newMockToolboxClient(accessTestEndpoint)
+			probes := 0
+			target := &toolboxServiceTarget{
+				access: access, resolver: newStubConnectionResolver(),
+				newClient: func(string, string) (toolboxClient, error) {
+					return accessProbeClient{toolboxClient: mock, probe: func(context.Context, string) (*azure.ToolboxObject, error) {
+						probes++
+						return nil, tt.probeErr
+					}}, nil
+				},
+			}
+			props, err := structpb.NewStruct(map[string]any{"tools": []any{map[string]any{"type": "web_search"}}})
+			require.NoError(t, err)
+			_, err = target.Deploy(t.Context(), &azdext.ServiceConfig{
+				Name: "research", AdditionalProperties: props, Environment: map[string]string{"SETTING": "value"},
+			}, nil, nil, nil)
+			require.Error(t, err)
+			if tt.cancelCause != nil {
+				assert.ErrorIs(t, err, tt.cancelCause)
+			}
+			assert.Equal(t, tt.wantProbes, probes)
+			assert.Equal(t, tt.wantWaits, waits)
+			assert.Empty(t, mock.createVersionCalls)
+			assert.Empty(t, *writes)
+		})
+	}
 }
 
 func TestManagedDeployValidatesLocallyBeforeAuthentication(t *testing.T) {
@@ -143,11 +274,14 @@ func TestManagedDeployValidatesLocallyBeforeAuthentication(t *testing.T) {
 		{"skills": []any{map[string]any{"name": "INVALID"}}},
 		{"tools": []any{map[string]any{"type": "web_search"}}, "policies": map[string]any{"raiConfig": map[string]any{}}},
 		{"tools": []any{map[string]any{"type": "mcp", "connection": "", "project_connection_id": "/connections/c"}}},
+		{"tools": []any{map[string]any{"type": "mcp", "connection": "dup"}, map[string]any{"type": "mcp", "connection": "dup"}}},
+		{"connections": []any{map[string]any{"name": "dup"}}, "tools": []any{map[string]any{"type": "mcp", "connection": " dup "}}},
+		{"tools": []any{map[string]any{"type": "mcp", "connection": "${CONNECTION}"}, map[string]any{"type": "mcp", "connection": "dup"}}},
 	} {
 		props, err := structpb.NewStruct(properties)
 		require.NoError(t, err)
 		_, err = (&toolboxServiceTarget{}).Deploy(t.Context(), &azdext.ServiceConfig{
-			Name: "research", AdditionalProperties: props, Environment: map[string]string{"SETTING": "value"},
+			Name: "research", AdditionalProperties: props, Environment: map[string]string{"CONNECTION": "dup"},
 		}, nil, nil, nil)
 		require.Error(t, err)
 		_, ok := errors.AsType[*azdext.LocalError](err)

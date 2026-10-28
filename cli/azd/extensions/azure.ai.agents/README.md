@@ -1019,6 +1019,11 @@ services:
         userProfileDetails: Remember stable preferences.
 ```
 
+Before creating the store, `memory.chatModel` and `memory.embeddingModel` resolve
+environment references and deployment bindings just like the agent's `model`.
+Reused or replacement deployments use their reconciled names; a binding that
+skips either model stops deployment before store creation.
+
 ## Content safety policies
 
 A hosted or prompt agent can be bound to an Azure AI Content Safety (RAI) policy so every

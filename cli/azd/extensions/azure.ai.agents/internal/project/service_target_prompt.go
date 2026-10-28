@@ -355,6 +355,11 @@ func (p *AgentServiceTargetProvider) deployPromptAgent(
 		progress(fmt.Sprintf("Using model deployment %q for %q", model, managed.Model))
 	}
 	managed.Model = model
+	if err := resolvePromptMemoryModels(
+		managed.Memory, p.serviceConfig, p.projectServices, p.projectPath, env,
+	); err != nil {
+		return nil, err
+	}
 
 	if _, mapErr := ResolvePromptTargetFromEnv(settings, env); mapErr != nil {
 		return nil, mapErr

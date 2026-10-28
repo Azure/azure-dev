@@ -1144,9 +1144,13 @@ infra:
 
 Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
 a new prompt voice agent and is rejected when the chosen init flow cannot use it.
-Advanced settings such as `audio`, `structuredInputs`,
-`tools`, `greeting`, `avatar`, and `handoff` are described by the
+Advanced settings such as `audio`, `structuredInputs`, `tools`, `greeting`, and
+`avatar` are described by the
 [agent service schema](schemas/azure.ai.agent.json).
+Use `audio.input.format.rate` or `audio.output.format.rate` only for PCM sample
+rate (`24000`); omit format rate for G.711. Use `audio.output.speed` for speech
+speed. Legacy `handoff` and `audio.output.voice.rate` values are unsupported by
+the GA API.
 See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
 and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
 
@@ -1379,6 +1383,9 @@ services:
       type: hosted_agent
       name: voice-target
       version: deployed
+    greeting:
+      type: template
+      text: Hello, how can I help?
     store: false
 ```
 

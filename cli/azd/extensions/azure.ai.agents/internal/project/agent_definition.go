@@ -913,6 +913,11 @@ func agentDefinitionFromStruct(
 	if structKind(s) == string(agent_yaml.AgentKindPrompt) {
 		return agent_yaml.ContainerAgent{}, false, nil
 	}
+	if agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
+		if err := validateUnsupportedVoiceFields(s); err != nil {
+			return agent_yaml.ContainerAgent{}, false, err
+		}
+	}
 
 	var inline AgentDefinitionInline
 	if err := UnmarshalStruct(s, &inline); err != nil {
@@ -1016,7 +1021,7 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 			"configure environment variables on the hosted target",
 		)
 	}
-	if len(inline.Protocols) > 0 {
+	if s.GetFields()["protocols"] != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"protocols are not supported on voice agents",
@@ -1037,7 +1042,7 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 			"remove toolboxes from the voice agent definition",
 		)
 	}
-	if len(inline.Policies) > 0 {
+	if s.GetFields()["policies"] != nil {
 		for _, policy := range inline.Policies {
 			if policy.InvocationsModeration != nil {
 				return exterrors.Validation(
@@ -1056,6 +1061,19 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 	}
 	if err := validateDirectAgentDefinition(inline.toVoiceAgent()); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateUnsupportedVoiceFields(s *structpb.Struct) error {
+	for _, field := range []string{"subagent_config", "subagentConfig", "interim_response", "interimResponse"} {
+		if _, found := s.GetFields()[field]; found {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				fmt.Sprintf("%s is not supported by this azd version", field),
+				"remove the field or upgrade azd",
+			)
+		}
 	}
 	return nil
 }
@@ -1259,6 +1277,9 @@ func VoiceAgentFromResolvedService(
 	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
 	if !agent_yaml.IsVoiceAgentKind(kind) {
 		return agent_yaml.VoiceAgent{}, false, nil
+	}
+	if err := validateUnsupportedVoiceFields(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
 	}
 
 	var inline AgentDefinitionInline

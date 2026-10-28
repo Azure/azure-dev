@@ -150,8 +150,9 @@ func TestGreenfieldACRSelectionRejectsAuthoredExistingProject(t *testing.T) {
 		t.Run(host, func(t *testing.T) {
 			in := Input{RawAzureYAML: []byte("services:\n  project:\n    host: " + host +
 				"\n    endpoint: ${FOUNDRY_PROJECT_ENDPOINT}\n")}
-			require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, id),
-				"only supported for a new Foundry project")
+			err := ValidateGreenfieldACRSelectionForInput(in, id)
+			require.ErrorContains(t, err, "only supported for a new Foundry project")
+			require.ErrorIs(t, err, ErrEndpointBrownfield)
 			in.RawAzureYAML = []byte(string(in.RawAzureYAML) + "    condition: false\n")
 			require.NoError(t, ValidateGreenfieldACRSelectionForInput(in, id))
 		})
@@ -163,6 +164,7 @@ func TestGreenfieldACRSelectionRejectsAuthoredExistingProject(t *testing.T) {
 		RawAzureYAML: []byte("services:\n  project:\n    $ref: project.yaml\n"),
 		ProjectRoot:  root,
 	}
-	require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, id),
-		"only supported for a new Foundry project")
+	err := ValidateGreenfieldACRSelectionForInput(in, id)
+	require.ErrorContains(t, err, "only supported for a new Foundry project")
+	require.ErrorIs(t, err, ErrEndpointBrownfield)
 }

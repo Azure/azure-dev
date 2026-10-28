@@ -8,7 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -523,6 +528,471 @@ func (acrTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (
 	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
+func acrTestHTTPReply(t *testing.T, request *http.Request, code int, value any) (*http.Response, error) {
+	t.Helper()
+	body, err := json.Marshal(value)
+	require.NoError(t, err)
+	if code == http.StatusNoContent {
+		body = nil
+	}
+	return &http.Response{
+		StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(strings.NewReader(string(body))), Request: request,
+	}, nil
+}
+
+func TestACRProjectOnlyProvisionPreservesPendingSelector(t *testing.T) {
+	for _, tt := range []struct {
+		mode string
+		down bool
+	}{
+		{mode: ""}, {mode: "reuse-connect"},
+		{mode: "", down: true}, {mode: "reuse-connect", down: true},
+	} {
+		t.Run(tt.mode+"/down="+strconv.FormatBool(tt.down), func(t *testing.T) {
+			root := t.TempDir()
+			manifest := "services:\n  project:\n    host: azure.ai.project\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
+			p, env := acrTestProvider(t)
+			env.get = map[string]string{
+				"AZURE_SUBSCRIPTION_ID":                "sub",
+				"AZURE_LOCATION":                       "eastus2",
+				"AZURE_RESOURCE_GROUP":                 "foundry",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+				"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
+			}
+			require.NoError(t, p.Initialize(t.Context(), root,
+				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+			require.Equal(t, "none", p.greenfieldAcrMode)
+			p.credential = acrTestCredential{}
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					if request.Method == http.MethodGet &&
+						strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts") {
+						return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+					}
+					if request.Method == http.MethodDelete {
+						if strings.EqualFold(request.URL.Path, "/subscriptions/sub/resourceGroups/foundry") {
+							return acrTestHTTPReply(t, request, http.StatusOK, nil)
+						}
+						require.Equal(t, "/subscriptions/sub/providers/Microsoft.Resources/deployments/"+
+							p.deploymentName(), request.URL.Path)
+						return acrTestHTTPReply(t, request, http.StatusNoContent, nil)
+					}
+					require.Contains(t, request.URL.Path, "/providers/Microsoft.Resources/deployments/")
+					if request.Method == http.MethodGet {
+						return acrTestHTTPReply(t, request, http.StatusNotFound, nil)
+					}
+					require.Equal(t, http.MethodPut, request.Method)
+					outputs := map[string]any{
+						"AZURE_AI_PROJECT_ID": map[string]any{"type": "string", "value": testACRProject},
+					}
+					for _, key := range []string{
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+						"AZURE_CONTAINER_REGISTRY_ENDPOINT",
+						"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+					} {
+						outputs[key] = map[string]any{"type": "string", "value": ""}
+					}
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+						"properties": map[string]any{"provisioningState": "Succeeded", "outputs": outputs},
+					})
+				}),
+			}}
+			result, err := p.Deploy(t.Context(), func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, result.Deployment)
+			values := maps.Clone(env.get)
+			maps.Copy(values, env.set)
+			for key, output := range result.Deployment.Outputs {
+				values[key] = output.Value
+			}
+			envPath := filepath.Join(root, ".azure", "test", ".env")
+			require.NoError(t, os.MkdirAll(filepath.Dir(envPath), 0o750))
+			require.NoError(t, godotenv.Write(values, envPath))
+			env.get, err = godotenv.Read(envPath)
+			require.NoError(t, err)
+			assert.Equal(t, testACRID, env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+			assert.Equal(t, tt.mode, env.get["AZD_FOUNDRY_ACR_MODE"])
+			assert.Empty(t, env.config)
+			assert.Nil(t, p.acrBinding)
+
+			if tt.down {
+				destroyed, err := p.Destroy(t.Context(),
+					&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+				require.NoError(t, err)
+				require.NotNil(t, destroyed)
+				assert.NotContains(t, destroyed.InvalidatedEnvKeys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				assert.Contains(t, destroyed.InvalidatedEnvKeys, "AZD_FOUNDRY_ACR_MODE")
+				for _, key := range destroyed.InvalidatedEnvKeys {
+					delete(env.get, key)
+				}
+				require.NoError(t, godotenv.Write(env.get, envPath))
+				env.get, err = godotenv.Read(envPath)
+				require.NoError(t, err)
+				require.Equal(t, testACRID, env.get["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				assert.Empty(t, env.config)
+				assert.Nil(t, p.acrBinding)
+			}
+
+			manifest += "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(manifest), 0o600))
+			next := &FoundryProvisioningProvider{azdClient: p.azdClient}
+			require.NoError(t, next.Initialize(t.Context(), root,
+				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+			assert.Equal(t, "reuse-connect", next.greenfieldAcrMode)
+			assert.Equal(t, map[string]any{"value": testACRID}, next.armParameters()["existingAcrResourceId"])
+		})
+	}
+}
+
+func TestACRFailedDeploymentRecoversIndependentOwnership(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		cancelled          bool
+		beginFailure       bool
+		assignmentFailure  bool
+		persistenceFailure bool
+		ownershipFailure   bool
+		preexistingGroup   bool
+	}{
+		{name: "cancelled deployment", cancelled: true},
+		{name: "uncertain submission", beginFailure: true},
+		{name: "assignment read fails", assignmentFailure: true},
+		{name: "assignment save fails", persistenceFailure: true},
+		{name: "both recoveries fail", assignmentFailure: true, ownershipFailure: true},
+		{name: "preexisting group is not adopted", assignmentFailure: true, preexistingGroup: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+				"services:\n  project:\n    host: azure.ai.project\n"+
+					"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"), 0o600))
+			p, env := acrTestProvider(t)
+			env.get = map[string]string{
+				envKeySubscriptionID: "sub", envKeyLocation: "eastus2", envKeyProjectName: "project",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+			}
+			require.NoError(t, p.Initialize(t.Context(), root,
+				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+			require.Equal(t, "rg-test", p.rgName)
+			require.False(t, p.rgExplicit)
+			p.credential = acrTestCredential{}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			submitted, assignmentRead, assignmentDeleted, groupDeleted := false, false, false, false
+			groupID := "/subscriptions/sub/resourceGroups/rg-test"
+			p.resourceGroupState = func(ctx context.Context) (map[string]*string, bool, error) {
+				if submitted {
+					assert.NoError(t, ctx.Err())
+					deadline, ok := ctx.Deadline()
+					assert.True(t, ok)
+					assert.LessOrEqual(t, time.Until(deadline), 30*time.Second)
+					if tt.ownershipFailure {
+						return nil, false, errors.New("resource-group recovery unavailable")
+					}
+				}
+				return map[string]*string{"azd-env-name": new("test")}, submitted || tt.preexistingGroup, nil
+			}
+			transport := acrTestTransport(func(request *http.Request) (*http.Response, error) {
+				switch {
+				case request.Method == http.MethodPut:
+					submitted = true
+					if tt.persistenceFailure {
+						env.configErr = errors.New("assignment recovery cannot save state")
+					}
+					if tt.cancelled {
+						cancel()
+					}
+					if tt.beginFailure {
+						return nil, errors.New("connection lost after submission")
+					}
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+						"properties": map[string]any{
+							"provisioningState": "Failed",
+							"error":             map[string]any{"code": "DeploymentFailed", "message": "deployment failed"},
+						},
+					})
+				case request.Method == http.MethodGet && strings.EqualFold(request.URL.Path, groupID):
+					return acrTestHTTPReply(t, request, http.StatusOK,
+						map[string]any{"tags": map[string]string{"azd-env-name": "test"}})
+				case request.Method == http.MethodGet &&
+					strings.HasSuffix(request.URL.Path, "/Microsoft.CognitiveServices/accounts"):
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{"value": []any{}})
+				case request.Method == http.MethodDelete && strings.EqualFold(request.URL.Path, groupID):
+					groupDeleted = true
+					return acrTestHTTPReply(t, request, http.StatusOK, nil)
+				default:
+					t.Fatalf("unexpected ARM request: %s %s", request.Method, request.URL.Path)
+					return nil, errors.New("unexpected ARM request")
+				}
+			})
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: transport, Retry: policy.RetryOptions{MaxRetries: -1},
+			}}
+			recovering := true
+			p.acrRequest = func(ctx context.Context, method, path, _ string, out any) error {
+				switch {
+				case path == testACRID:
+					return acrTestReply(out, map[string]any{"properties": map[string]any{}})
+				case strings.Contains(path, "/roleAssignments/"):
+					if method == http.MethodDelete {
+						assignmentDeleted = true
+						return nil
+					}
+					assignmentRead = true
+					if recovering {
+						assert.NoError(t, ctx.Err())
+						_, bounded := ctx.Deadline()
+						assert.True(t, bounded)
+						if tt.assignmentFailure {
+							return errors.New("assignment recovery unavailable")
+						}
+					}
+					actual := acrTestAssignment()
+					require.NotNil(t, p.acrPending)
+					actual.ID = p.acrPending.assignmentID()
+					actual.Properties.Description = "azd-foundry:" + p.acrPending.Token
+					return acrTestReply(out, actual)
+				default:
+					require.Contains(t, path, "/Microsoft.Resources/deployments/")
+					return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+				}
+			}
+			result, err := p.Deploy(ctx, func(string) {})
+			require.Error(t, err)
+			require.Nil(t, result)
+			require.True(t, submitted)
+			assert.True(t, assignmentRead)
+			assert.NotEmpty(t, env.config[acrPendingConfigKey])
+			if tt.assignmentFailure {
+				assert.ErrorContains(t, err, "assignment recovery unavailable")
+			}
+			if tt.persistenceFailure {
+				assert.ErrorContains(t, err, "assignment recovery cannot save state")
+			}
+			if tt.ownershipFailure {
+				assert.ErrorContains(t, err, "resource-group recovery unavailable")
+				return
+			}
+			if tt.preexistingGroup {
+				assert.Empty(t, env.set[envKeyFoundryRGOwner])
+				assert.Empty(t, p.foundryRGOwnerID)
+				return
+			}
+			require.Equal(t, groupID, env.set[envKeyFoundryRGOwner])
+			require.Equal(t, groupID, p.foundryRGOwnerID)
+			maps.Copy(env.get, env.set)
+			env.configErr = nil
+			recovering = false
+			next := &FoundryProvisioningProvider{azdClient: p.azdClient}
+			require.NoError(t, next.Initialize(t.Context(), root,
+				&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+			next.credential, next.armClientOptions, next.acrRequest = p.credential, p.armClientOptions, p.acrRequest
+			destroyed, err := next.Destroy(t.Context(),
+				&azdext.ProvisioningDestroyOptions{Force: true, Purge: true}, func(string) {})
+			require.NoError(t, err)
+			require.NotNil(t, destroyed)
+			assert.True(t, assignmentDeleted)
+			assert.True(t, groupDeleted)
+			assert.Empty(t, env.config)
+		})
+	}
+}
+
+func TestACRPreviewUsesReadOnlyAccessPlan(t *testing.T) {
+	for _, tt := range []struct {
+		name                                         string
+		history                                      string
+		abac, granted, pending, newProject, embedded bool
+	}{
+		{name: "classic existing access", granted: true},
+		{name: "ABAC existing access", abac: true, granted: true},
+		{name: "classic missing access"},
+		{name: "ABAC missing access", abac: true},
+		{name: "pending owned access", granted: true, pending: true},
+		{name: "project-only deployment", history: "project-only", granted: true},
+		{name: "legacy registry binding", history: "registry", granted: true},
+		{name: "new project", newProject: true},
+		{name: "embedded existing access", granted: true, embedded: true},
+		{name: "embedded missing access", embedded: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.projectPath = t.TempDir()
+			p.location = "eastus2"
+			p.credential = acrTestCredential{}
+			p.onDiskSource = acrTestSource()
+			if tt.embedded {
+				p.armTemplate = p.onDiskSource.armTemplate
+				p.onDiskSource = nil
+				p.synthResult = &synthesis.Result{Parameters: map[string]any{
+					"includeAcr": true, "existingAcrResourceId": testACRID, "resourceTokenSalt": "",
+				}}
+			}
+			p.acrBinding = acrTestBinding()
+			if tt.pending {
+				p.acrPending = acrTestPending()
+			}
+			if tt.pending || tt.newProject || tt.history != "" {
+				p.acrBinding = nil
+			}
+			pendingBefore, err := json.Marshal(p.acrPending)
+			require.NoError(t, err)
+			env.configErr = errors.New("preview must not persist registry lifecycle state")
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				switch path {
+				case testACRID:
+					mode := "LegacyRegistryPermissions"
+					if tt.abac {
+						mode = "AbacRepositoryPermissions"
+					}
+					return acrTestReply(out, map[string]any{"properties": map[string]any{"roleAssignmentMode": mode}})
+				case testACRProject:
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				case acrTestPending().assignmentID():
+					return acrTestReply(out, acrTestAssignment())
+				default:
+					if strings.Contains(path, "/providers/Microsoft.Resources/deployments/") {
+						if tt.history == "" {
+							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+						}
+						outputs := map[string]any{
+							"AZURE_AI_PROJECT_ID": map[string]any{"value": testACRProject},
+						}
+						if tt.history == "registry" {
+							outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = map[string]any{"value": testACRID}
+						}
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"provisioningState": "Succeeded", "outputs": outputs,
+							"parameters": map[string]any{
+								"existingAcrResourceId": map[string]any{"value": testACRID},
+							},
+						}})
+					}
+					require.Contains(t, path, "roleAssignments?")
+					assignments := []acrRoleAssignment{}
+					if tt.granted {
+						grant := acrTestAssignment()
+						if tt.abac {
+							grant.Properties.RoleDefinitionID = "/roles/" + acrRepositoryReader
+						}
+						assignments = append(assignments, grant)
+					}
+					return acrTestReply(out, map[string]any{"value": assignments})
+				}
+			}
+			var parameters map[string]struct{ Value any }
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: acrTestTransport(func(request *http.Request) (*http.Response, error) {
+					require.Equal(t, http.MethodPost, request.Method)
+					require.True(t, strings.HasSuffix(request.URL.Path, "/whatIf"))
+					var submitted struct {
+						Properties struct {
+							Parameters map[string]struct{ Value any }
+						}
+					}
+					require.NoError(t, json.NewDecoder(request.Body).Decode(&submitted))
+					parameters = submitted.Properties.Parameters
+					return acrTestHTTPReply(t, request, http.StatusOK, map[string]any{
+						"status": "Succeeded", "properties": map[string]any{"changes": []any{}},
+					})
+				}),
+			}}
+			_, err = p.Preview(t.Context(), func(string) {})
+			require.NoError(t, err)
+			require.Contains(t, parameters, "acrPullAssigned")
+			assert.Equal(t, tt.granted, parameters["acrPullAssigned"].Value)
+			if tt.pending {
+				assert.Equal(t, testACRToken, parameters["acrAccessOperationId"].Value)
+			}
+			pendingAfter, err := json.Marshal(p.acrPending)
+			require.NoError(t, err)
+			assert.Equal(t, pendingBefore, pendingAfter)
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+
+			env.configErr = nil
+			src, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			require.NoError(t, p.prepareACRAccess(t.Context(), src))
+			assert.Equal(t, parameters["acrPullAssigned"].Value, parameterValue(src, "acrPullAssigned"))
+		})
+	}
+}
+
+func TestACRPreviewAccessFailureDoesNotSubmitWhatIf(t *testing.T) {
+	for _, failure := range []string{"registry", "project", "assignments", "history", "pending", "pending identity"} {
+		t.Run(failure, func(t *testing.T) {
+			p, env := acrTestProvider(t)
+			p.projectPath = t.TempDir()
+			p.onDiskSource = acrTestSource()
+			p.acrBinding = acrTestBinding()
+			if failure == "history" {
+				p.acrBinding = nil
+			}
+			if failure == "pending" || failure == "pending identity" {
+				p.acrPending = acrTestPending()
+			}
+			pendingBefore, err := json.Marshal(p.acrPending)
+			require.NoError(t, err)
+			readErr := errors.New("registry access read unavailable")
+			p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+				require.Equal(t, http.MethodGet, method)
+				switch path {
+				case testACRID:
+					if failure == "registry" {
+						return readErr
+					}
+					return acrTestReply(out, map[string]any{"properties": map[string]any{}})
+				case testACRProject:
+					if failure == "project" {
+						return readErr
+					}
+					return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+				case acrTestPending().assignmentID():
+					if failure == "pending identity" {
+						assignment := acrTestAssignment()
+						assignment.Properties.PrincipalID = "other-principal"
+						return acrTestReply(out, assignment)
+					}
+					require.Equal(t, "pending", failure)
+					return readErr
+				default:
+					if failure == "history" {
+						require.Contains(t, path, "/providers/Microsoft.Resources/deployments/")
+					} else {
+						require.Equal(t, "assignments", failure)
+						require.Contains(t, path, "roleAssignments?")
+					}
+					return readErr
+				}
+			}
+			p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+				Transport: acrTestTransport(func(*http.Request) (*http.Response, error) {
+					t.Fatal("preview must not submit what-if when access planning fails")
+					return nil, readErr
+				}),
+			}}
+			p.credential = acrTestCredential{}
+			_, err = p.Preview(t.Context(), func(string) {})
+			if failure == "pending identity" {
+				require.ErrorContains(t, err, "current Foundry project identity")
+				err = p.prepareACRAccess(t.Context(), acrTestSource())
+				require.ErrorContains(t, err, "current Foundry project identity")
+			} else {
+				require.ErrorIs(t, err, readErr)
+			}
+			pendingAfter, err := json.Marshal(p.acrPending)
+			require.NoError(t, err)
+			assert.Equal(t, pendingBefore, pendingAfter)
+			assert.Empty(t, env.config)
+			assert.Empty(t, env.set)
+		})
+	}
+}
+
 func TestACRDestroyThenDeploy(t *testing.T) {
 	for _, mode := range []string{"create", "reuse-connect", "none"} {
 		for _, missingGroup := range []bool{false, true} {
@@ -559,15 +1029,7 @@ func TestACRDestroyThenDeploy(t *testing.T) {
 				operationID := ""
 				transport := acrTestTransport(func(request *http.Request) (*http.Response, error) {
 					reply := func(code int, value any) (*http.Response, error) {
-						body, err := json.Marshal(value)
-						require.NoError(t, err)
-						if code == http.StatusNoContent {
-							body = nil
-						}
-						return &http.Response{
-							StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}},
-							Body: io.NopCloser(strings.NewReader(string(body))), Request: request,
-						}, nil
+						return acrTestHTTPReply(t, request, code, value)
 					}
 					path := request.URL.Path
 					switch {

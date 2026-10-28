@@ -138,6 +138,29 @@ func TestProjectACRSelectionOverridesUndeployedDefaults(t *testing.T) {
 	assert.NotContains(t, plan.Unsets, "AZD_FOUNDRY_ACR_MODE")
 }
 
+func TestProjectACRSelectionDoesNotAdoptExistingProjectOutputs(t *testing.T) {
+	for _, mode := range []string{"already-connected", "none", "create", "reuse-connect"} {
+		t.Run(mode, func(t *testing.T) {
+			values := map[string]string{
+				"USE_EXISTING_AI_PROJECT": "true",
+				"AZURE_AI_PROJECT_ID": "/subscriptions/subscription/resourceGroups/existing/" +
+					"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+				"FOUNDRY_PROJECT_ENDPOINT":             "https://account.services.ai.azure.com/api/projects/project",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testExternalRegistryID,
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "shared.azurecr.io",
+				"AZD_FOUNDRY_ACR_MODE":                 mode,
+			}
+			before := maps.Clone(values)
+			project := &resolvedProject{Mode: projectModeNew}
+			selected, err := projectACRSelection(nil, t.TempDir(), "test", values, project, nil)
+			require.NoError(t, err)
+			assert.Empty(t, selected)
+			assert.Empty(t, project.ACRResourceID)
+			assert.Equal(t, before, values)
+		})
+	}
+}
+
 func TestProjectAddACRPendingSelection(t *testing.T) {
 	for _, mode := range []string{"create", "none", "reuse-connect"} {
 		t.Run(mode, func(t *testing.T) {
@@ -165,6 +188,49 @@ func TestProjectAddACRPendingSelection(t *testing.T) {
 				assert.Equal(t, aiProjectHost, service.GetHost())
 			}
 		})
+	}
+}
+
+func TestProjectAddACREnvironmentSelectionWithConfiguredName(t *testing.T) {
+	for _, key := range []string{"AZURE_AI_PROJECT_NAME", "AZURE_AI_ACCOUNT_NAME"} {
+		for _, mode := range []string{"", "reuse-connect"} {
+			for _, invalidScope := range []bool{false, true} {
+				t.Run(key+"/"+mode+"/"+strconv.FormatBool(invalidScope), func(t *testing.T) {
+					root := t.TempDir()
+					t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+					client, project, env, _, workflow := newSelfInitializingDeploymentClient(t, root)
+					selectedID := testExternalRegistryID
+					if invalidScope {
+						selectedID = strings.Replace(selectedID, "/external/", "/rg-test/", 1)
+					}
+					env.values[key] = "configured-name"
+					env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = selectedID
+					env.values["AZD_FOUNDRY_ACR_MODE"] = mode
+					before := maps.Clone(env.values)
+					action := &ProjectAddAction{
+						client: client,
+						flags:  &projectAddFlags{newProject: true, noPrompt: true, output: "none"},
+						extCtx: &azdext.ExtensionContext{Environment: "test"},
+					}
+					err := action.Run(t.Context())
+					if invalidScope {
+						require.ErrorContains(t, err, "azd down deletes")
+						assert.Equal(t, before, env.values)
+						assert.Empty(t, env.setLog)
+						assert.Empty(t, workflow.args)
+						assert.False(t, project.providerSet)
+						assert.Empty(t, project.project.Services)
+						assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
+						return
+					}
+					require.NoError(t, err)
+					assert.Equal(t, selectedID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+					assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+					assert.Empty(t, env.values["AZURE_AI_PROJECT_ID"])
+					assert.Len(t, project.project.Services, 1)
+				})
+			}
+		}
 	}
 }
 
@@ -304,6 +370,60 @@ func TestProjectAddACRRejectsCrossSubscriptionBeforeScaffolding(t *testing.T) {
 					assert.NoFileExists(t, filepath.Join(root, "azure.yaml"))
 				}
 			})
+		}
+	}
+}
+
+func TestProjectAddACRValidatesResolvedSubscription(t *testing.T) {
+	for _, selectorFlag := range []bool{false, true} {
+		for _, layer := range []bool{false, true} {
+			for _, subscription := range []string{"subscription", "other-subscription"} {
+				name := strconv.FormatBool(selectorFlag) + "/" + strconv.FormatBool(layer) + "/" + subscription
+				t.Run(name, func(t *testing.T) {
+					root := t.TempDir()
+					t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+					raw := "name: test\nservices: {}\n"
+					if layer {
+						raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n"
+					}
+					path := filepath.Join(root, "azure.yaml")
+					require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
+					prompt := &azureContextPromptServer{subscription: &azdext.Subscription{
+						Id: subscription, UserTenantId: "user-tenant",
+					}}
+					client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root, prompt)
+					delete(env.values, "AZURE_SUBSCRIPTION_ID")
+					flags := &projectAddFlags{newProject: true, output: "none"}
+					if selectorFlag {
+						flags.acrResourceIDSet, flags.acrResourceID = true, testExternalRegistryID
+					} else {
+						env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = testExternalRegistryID
+					}
+					before := maps.Clone(env.values)
+					action := &ProjectAddAction{
+						client: client, flags: flags,
+						extCtx: &azdext.ExtensionContext{Environment: "test"},
+					}
+					err := action.Run(t.Context())
+					assert.Equal(t, 1, prompt.subscriptionCalls)
+					if subscription == "subscription" {
+						require.NoError(t, err)
+						assert.Equal(t, subscription, env.values["AZURE_SUBSCRIPTION_ID"])
+						assert.Equal(t, testExternalRegistryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+						assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+						return
+					}
+					require.ErrorContains(t, err, "same subscription")
+					assert.False(t, project.providerSet)
+					assert.Empty(t, project.project.Services)
+					assert.Empty(t, env.setLog)
+					assert.Equal(t, before, env.values)
+					// #nosec G304 -- file created in t.TempDir.
+					after, readErr := os.ReadFile(path)
+					require.NoError(t, readErr)
+					assert.Equal(t, raw, string(after))
+				})
+			}
 		}
 	}
 }

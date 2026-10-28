@@ -206,6 +206,56 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 		"location should be persisted to the azd environment")
 }
 
+func TestInitializeUsesPromptedLocationInSynthesis(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		for _, onDisk := range []bool{false, true} {
+			for _, blank := range []bool{false, true} {
+				t.Run(fmt.Sprintf("layer=%t/onDisk=%t/blank=%t", layer, onDisk, blank), func(t *testing.T) {
+					root := t.TempDir()
+					vnetID := "/subscriptions/sub/resourceGroups/network-${AZURE_LOCATION}/" +
+						"providers/Microsoft.Network/virtualNetworks/vnet"
+					raw := "services:\n  project:\n    host: azure.ai.project\n    network:\n" +
+						"      peSubnet: {vnet: \"" + vnetID + "\", name: pe}\n"
+					options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
+					if layer {
+						raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+							"      path: infra/foundry\n"
+						options.Name, options.Path = "foundry", filepath.Join("infra", "foundry")
+					}
+					require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(raw), 0o600))
+					if onDisk {
+						path := options.Path
+						if path == "" {
+							path = onDiskInfraDir
+						}
+						require.NoError(t, os.MkdirAll(filepath.Join(root, path), 0o750))
+						require.NoError(t, os.WriteFile(filepath.Join(root, path, onDiskBicepFile),
+							[]byte("// ejected Bicep"), 0o600))
+					}
+					env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+						envKeySubscriptionID:                   "sub",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+					}}
+					if blank {
+						env.get[envKeyLocation] = ""
+					}
+					prompt := &resolveEnvStubPromptServer{location: "westus2"}
+					p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+					require.NoError(t, p.Initialize(t.Context(), root, options))
+					assert.Equal(t, "/subscriptions/sub/resourceGroups/network-westus2/"+
+						"providers/Microsoft.Network/virtualNetworks/vnet", p.synthResult.Parameters["vnetId"])
+					assert.Equal(t, "westus2", p.location)
+					assert.Equal(t, "westus2", env.set[envKeyLocation])
+					assert.Equal(t, 1, prompt.locationN)
+					assert.Equal(t, 1, env.valuesN)
+					assert.Equal(t, "", p.synthesisEnv[envKeyLocation])
+					assert.Equal(t, testACRID, p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				})
+			}
+		}
+	}
+}
+
 func TestResolveEnv_UsesVirtualEnvFromPreviousLayer(t *testing.T) {
 	env := &resolveEnvStubEnvServer{envName: "foundry-layer", get: map[string]string{}}
 	prompt := &resolveEnvStubPromptServer{}

@@ -282,7 +282,17 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			return projectACRValidation("cannot replace a project while its deployed registry binding is still in use")
 		}
 	}
-	if target.Mode == projectModeNew && !a.flags.acrResourceIDSet {
+	if err := confirmExplicitProjectReplacement(
+		ctx, client, target, service, oldValues, a.flags,
+	); err != nil {
+		return err
+	}
+	if err := resolveAzureContext(
+		ctx, client, target, oldValues, a.flags.noPrompt,
+	); err != nil {
+		return err
+	}
+	if target.Mode == projectModeNew {
 		raw, err := readProjectACRManifest(projectRoot)
 		if err != nil {
 			return err
@@ -293,16 +303,6 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-	}
-	if err := confirmExplicitProjectReplacement(
-		ctx, client, target, service, oldValues, a.flags,
-	); err != nil {
-		return err
-	}
-	if err := resolveAzureContext(
-		ctx, client, target, oldValues, a.flags.noPrompt,
-	); err != nil {
-		return err
 	}
 	if target.Mode == projectModeExistingEndpoint {
 		if err := validateExistingEndpointMode(

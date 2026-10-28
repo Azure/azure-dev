@@ -109,6 +109,19 @@ func (o *acrPendingOperation) assignmentID() string {
 	return o.RegistryResourceID + "/providers/Microsoft.Authorization/roleAssignments/" + o.Token
 }
 
+func (o *acrPendingOperation) matches(registryID, groupID, projectName, salt string) bool {
+	return strings.EqualFold(registryID, o.RegistryResourceID) &&
+		strings.EqualFold(groupID, o.ResourceGroupID) &&
+		strings.EqualFold(projectName, o.ProjectName) && salt == o.DeploymentSalt
+}
+
+type acrAccessPlan struct {
+	projectID        string
+	principalID      string
+	roleDefinitionID string
+	pullAssigned     bool
+}
+
 type acrRoleAssignment struct {
 	ID         string `json:"id"`
 	Properties struct {
@@ -484,9 +497,7 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 	salt, _ := parameterValue(src, "resourceTokenSalt").(string)
 	groupID := "/subscriptions/" + p.subID + "/resourceGroups/" + group
 	if p.acrPending != nil &&
-		(!include || !strings.EqualFold(id, p.acrPending.RegistryResourceID) ||
-			!strings.EqualFold(groupID, p.acrPending.ResourceGroupID) ||
-			!strings.EqualFold(projectName, p.acrPending.ProjectName) || salt != p.acrPending.DeploymentSalt) {
+		(!include || !p.acrPending.matches(id, groupID, projectName, salt)) {
 		var actual acrRoleAssignment
 		err := p.acrARM(ctx, http.MethodGet, p.acrPending.assignmentID(), "2022-04-01", &actual)
 		if !isNotFound(err) {
@@ -507,97 +518,156 @@ func (p *FoundryProvisioningProvider) prepareACRAccess(ctx context.Context, src 
 	if !include || id == "" {
 		return nil
 	}
-	declared, _ := src.armTemplate["parameters"].(map[string]any)
-	if declared["acrPullAssigned"] == nil || declared["acrAccessOperationId"] == nil {
-		return errors.New("the ejected Bicep registry access contract is outdated; " +
-			"re-eject the Foundry Bicep templates before provisioning an external registry")
+	plan, err := p.planACRAccess(ctx, src)
+	if err != nil {
+		return err
 	}
-	var registry acrResource
-	if err := p.acrARM(ctx, http.MethodGet, id, "2025-11-01", &registry); err != nil {
-		return fmt.Errorf("read external registry permission mode: %w", err)
-	}
-	permissionMode := registry.Properties.RoleAssignmentMode
-	abac := strings.EqualFold(permissionMode, "AbacRepositoryPermissions")
-	if !abac && permissionMode != "" && !strings.EqualFold(permissionMode, "LegacyRegistryPermissions") {
-		return errors.New("external registry has an unsupported role assignment mode")
-	}
-	principalID, projectID := "", ""
-	if p.acrBinding != nil {
-		projectID = p.acrBinding.ProjectResourceID
-		var project acrResource
-		if err := p.acrARM(ctx, http.MethodGet, projectID, "2025-10-01-preview", &project); err != nil {
-			return fmt.Errorf("read bound Foundry project identity: %w", err)
+	if p.acrPending != nil && plan.principalID != "" {
+		pending := *p.acrPending
+		pending.PrincipalID = plan.principalID
+		if plan.projectID != "" {
+			pending.ProjectResourceID = plan.projectID
 		}
-		principalID = project.Identity.PrincipalID
-		if !strings.EqualFold(principalID, p.acrBinding.PrincipalID) {
-			return errors.New("bound Foundry project identity changed; refusing to reassign registry access")
-		}
-	} else if p.acrExistingProjectID != "" && salt == p.acrExistingProjectSalt {
-		project, err := arm.ParseResourceID(p.acrExistingProjectID)
-		if err != nil {
-			return fmt.Errorf("invalid previously deployed project ID: %w", err)
-		}
-		if strings.EqualFold(project.SubscriptionID, p.subID) &&
-			strings.EqualFold(project.ResourceGroupName, group) && strings.EqualFold(project.Name, projectName) {
-			principalID, projectID = p.acrExistingPrincipalID, p.acrExistingProjectID
-		}
-	}
-	if p.acrPending != nil {
-		if err := p.recoverACRAssignment(ctx); err != nil {
-			return err
-		}
-		if principalID == "" {
-			principalID = p.acrPending.PrincipalID
-		}
-		if principalID == "" {
-			var err error
-			projectID, principalID, err = p.partialProjectIdentity(ctx)
-			if err != nil {
+		if pending.PrincipalID != p.acrPending.PrincipalID ||
+			pending.ProjectResourceID != p.acrPending.ProjectResourceID {
+			if err := p.writeACRConfig(ctx, acrPendingConfigKey, &pending); err != nil {
 				return err
 			}
-			if principalID != "" {
-				p.acrPending.ProjectResourceID = projectID
-				p.acrPending.PrincipalID = principalID
-				if err := p.writeACRConfig(ctx, acrPendingConfigKey, p.acrPending); err != nil {
-					return err
-				}
-			}
+			p.acrPending = &pending
 		}
 	}
-	if principalID != "" {
-		assigned, err := p.hasEffectiveACRPull(ctx, id, principalID, abac)
-		if err != nil {
-			return err
-		}
-		if assigned {
-			src.parameters["acrPullAssigned"] = map[string]any{"value": true}
-			return nil
-		}
+	if plan.pullAssigned {
+		return nil
 	}
 	if p.acrPending == nil {
-		role := acrPullRole
-		if abac {
-			role = acrRepositoryReader
-		}
 		token := uuid.NewString()
 		pending := &acrPendingOperation{
-			Version: 1, RegistryResourceID: id, ProjectResourceID: projectID,
-			PrincipalID: principalID, Token: token,
-			RoleDefinitionID: "/subscriptions/" + strings.Split(id, "/")[2] +
-				"/providers/Microsoft.Authorization/roleDefinitions/" + role,
-			DeploymentIDs:   acrAccessDeploymentIDs(id, token),
-			ResourceGroupID: groupID,
-			ProjectName:     projectName,
-			DeploymentSalt:  salt,
+			Version: 1, RegistryResourceID: id, ProjectResourceID: plan.projectID,
+			PrincipalID: plan.principalID, Token: token,
+			RoleDefinitionID: plan.roleDefinitionID,
+			DeploymentIDs:    acrAccessDeploymentIDs(id, token),
+			ResourceGroupID:  groupID,
+			ProjectName:      projectName,
+			DeploymentSalt:   salt,
 		}
 		if err := p.writeACRConfig(ctx, acrPendingConfigKey, pending); err != nil {
 			return err
 		}
 		p.acrPending = pending
 	}
-	src.parameters["acrPullAssigned"] = map[string]any{"value": false}
 	src.parameters["acrAccessOperationId"] = map[string]any{"value": p.acrPending.Token}
 	return nil
+}
+
+func (p *FoundryProvisioningProvider) planACRAccess(
+	ctx context.Context, src *templateSource,
+) (*acrAccessPlan, error) {
+	if p.brownfieldEndpoint != "" {
+		return nil, nil
+	}
+	include, _ := parameterValue(src, "includeAcr").(bool)
+	id, _ := parameterValue(src, "existingAcrResourceId").(string)
+	group, _ := parameterValue(src, "resourceGroupName").(string)
+	if group == "" {
+		group = p.rgName
+	}
+	projectName, _ := parameterValue(src, "foundryProjectName").(string)
+	if projectName == "" {
+		projectName = p.foundryName
+	}
+	salt, _ := parameterValue(src, "resourceTokenSalt").(string)
+	var pendingAssignment *acrRoleAssignment
+	pendingMatches := false
+	if p.acrPending != nil {
+		groupID := "/subscriptions/" + p.subID + "/resourceGroups/" + group
+		pendingMatches = include && p.acrPending.matches(id, groupID, projectName, salt)
+		var err error
+		pendingAssignment, err = p.readPendingACRAssignment(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !pendingMatches && pendingAssignment != nil {
+			return nil, errors.New("an unfinished registry access operation must be recovered with the original registry; " +
+				"retry provision or run azd down before selecting another registry")
+		}
+	}
+	if !include || id == "" {
+		return nil, nil
+	}
+	declared, _ := src.armTemplate["parameters"].(map[string]any)
+	if declared["acrPullAssigned"] == nil || declared["acrAccessOperationId"] == nil {
+		return nil, errors.New("the ejected Bicep registry access contract is outdated; " +
+			"re-eject the Foundry Bicep templates before provisioning an external registry")
+	}
+	var registry acrResource
+	if err := p.acrARM(ctx, http.MethodGet, id, "2025-11-01", &registry); err != nil {
+		return nil, fmt.Errorf("read external registry permission mode: %w", err)
+	}
+	permissionMode := registry.Properties.RoleAssignmentMode
+	abac := strings.EqualFold(permissionMode, "AbacRepositoryPermissions")
+	if !abac && permissionMode != "" && !strings.EqualFold(permissionMode, "LegacyRegistryPermissions") {
+		return nil, errors.New("external registry has an unsupported role assignment mode")
+	}
+	role := acrPullRole
+	if abac {
+		role = acrRepositoryReader
+	}
+	plan := &acrAccessPlan{
+		roleDefinitionID: "/subscriptions/" + strings.Split(id, "/")[2] +
+			"/providers/Microsoft.Authorization/roleDefinitions/" + role,
+	}
+	if p.acrBinding != nil {
+		plan.projectID = p.acrBinding.ProjectResourceID
+		var project acrResource
+		if err := p.acrARM(ctx, http.MethodGet, plan.projectID, "2025-10-01-preview", &project); err != nil {
+			return nil, fmt.Errorf("read bound Foundry project identity: %w", err)
+		}
+		plan.principalID = project.Identity.PrincipalID
+		if !strings.EqualFold(plan.principalID, p.acrBinding.PrincipalID) {
+			return nil, errors.New("bound Foundry project identity changed; refusing to reassign registry access")
+		}
+	} else if p.acrExistingProjectID != "" && salt == p.acrExistingProjectSalt {
+		project, err := arm.ParseResourceID(p.acrExistingProjectID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid previously deployed project ID: %w", err)
+		}
+		if strings.EqualFold(project.SubscriptionID, p.subID) &&
+			strings.EqualFold(project.ResourceGroupName, group) && strings.EqualFold(project.Name, projectName) {
+			plan.principalID, plan.projectID = p.acrExistingPrincipalID, p.acrExistingProjectID
+		}
+	}
+	if pendingMatches {
+		if pendingAssignment != nil && plan.principalID != "" &&
+			!strings.EqualFold(plan.principalID, pendingAssignment.Properties.PrincipalID) {
+			return nil, errors.New("pending registry assignment does not match the current Foundry project identity; " +
+				"refusing to reassign registry access")
+		}
+		if plan.principalID == "" {
+			plan.principalID, plan.projectID = p.acrPending.PrincipalID, p.acrPending.ProjectResourceID
+			if pendingAssignment != nil {
+				plan.principalID = pendingAssignment.Properties.PrincipalID
+			}
+		}
+		if plan.principalID == "" {
+			var err error
+			plan.projectID, plan.principalID, err = p.partialProjectIdentity(ctx)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if plan.principalID != "" {
+		assigned, err := p.hasEffectiveACRPull(ctx, id, plan.principalID, abac)
+		if err != nil {
+			return nil, err
+		}
+		plan.pullAssigned = assigned
+	}
+	src.parameters["acrPullAssigned"] = map[string]any{"value": plan.pullAssigned}
+	if pendingMatches {
+		src.parameters["acrAccessOperationId"] = map[string]any{"value": p.acrPending.Token}
+	}
+	return plan, nil
 }
 
 func (p *FoundryProvisioningProvider) validateACRCreateBinding(registryID string) error {
@@ -609,24 +679,37 @@ func (p *FoundryProvisioningProvider) validateACRCreateBinding(registryID string
 }
 
 func (p *FoundryProvisioningProvider) recoverACRAssignment(ctx context.Context) error {
+	actual, err := p.readPendingACRAssignment(ctx)
+	if err != nil || actual == nil {
+		return err
+	}
+	pending := *p.acrPending
+	pending.PrincipalID = actual.Properties.PrincipalID
+	if err := p.writeACRConfig(ctx, acrPendingConfigKey, &pending); err != nil {
+		return err
+	}
+	p.acrPending = &pending
+	return nil
+}
+
+func (p *FoundryProvisioningProvider) readPendingACRAssignment(ctx context.Context) (*acrRoleAssignment, error) {
 	pending := p.acrPending
 	if pending == nil {
-		return nil
+		return nil, nil
 	}
 	var actual acrRoleAssignment
 	err := p.acrARM(ctx, http.MethodGet, pending.assignmentID(), "2022-04-01", &actual)
 	if isNotFound(err) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return fmt.Errorf("recover pending registry access: %w", err)
+		return nil, fmt.Errorf("recover pending registry access: %w", err)
 	}
 	if !ownedACRAssignment(actual, pending.RegistryResourceID, pending.PrincipalID,
 		pending.RoleDefinitionID, pending.Token) {
-		return errors.New("pending registry assignment does not match azd ownership; leaving it unchanged")
+		return nil, errors.New("pending registry assignment does not match azd ownership; leaving it unchanged")
 	}
-	pending.PrincipalID = actual.Properties.PrincipalID
-	return p.writeACRConfig(ctx, acrPendingConfigKey, pending)
+	return &actual, nil
 }
 
 func ownedACRAssignment(actual acrRoleAssignment, registryID, principalID, roleID, token string) bool {
@@ -643,6 +726,11 @@ func (p *FoundryProvisioningProvider) persistACRBinding(
 ) error {
 	if p.brownfieldEndpoint != "" {
 		return nil
+	}
+	if registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; p.acrBinding == nil &&
+		p.greenfieldAcrMode == "none" && p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" &&
+		registry != nil && registry.Value == "" {
+		delete(outputs, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 	}
 	if p.acrBinding != nil {
 		registry := outputs["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]

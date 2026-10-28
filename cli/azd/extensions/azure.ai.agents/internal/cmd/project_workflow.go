@@ -121,6 +121,7 @@ func authorSelectedFoundryProject(
 var newProjectEnvironmentKeys = []string{
 	"AZURE_AI_PROJECT_NAME",
 	"AZURE_RESOURCE_GROUP",
+	"AZURE_FOUNDRY_RESOURCE_GROUP",
 	"AZURE_AI_ACCOUNT_NAME",
 	"AZURE_LOCATION",
 	"AZURE_AI_DEPLOYMENTS_LOCATION",

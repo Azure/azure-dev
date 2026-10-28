@@ -401,6 +401,7 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 		ACRBinding:        p.acrBinding,
 	}
 	input.Env[envKeySubscriptionID] = p.subID
+	input.Env[envKeyLocation] = p.location
 	var res *synthesis.Result
 	if endpoint != "" {
 		if err := warnNetworkIgnoredInBrownfield(
@@ -1268,7 +1269,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.recoverDeploymentFailure(ctx, err, trackSupportingResourceGroup && !resourceGroupExisted)
 	}
 
 	resp, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
@@ -1285,15 +1286,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 		}
 	}
 	if err != nil {
-		if recoveryErr := p.recoverACRAssignment(ctx); recoveryErr != nil {
-			return nil, errors.Join(err, recoveryErr)
-		}
-		if trackSupportingResourceGroup && !resourceGroupExisted {
-			if ownershipErr := p.persistCreatedResourceGroupOwnership(ctx); ownershipErr != nil {
-				log.Printf("[debug] recover Foundry resource-group ownership after deployment failure: %v", ownershipErr)
-			}
-		}
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.recoverDeploymentFailure(ctx, err, trackSupportingResourceGroup && !resourceGroupExisted)
 	}
 
 	progress("Foundry deployment complete")
@@ -1317,6 +1310,30 @@ func (p *FoundryProvisioningProvider) Deploy(
 			Outputs:    outputs,
 		},
 	}, nil
+}
+
+func (p *FoundryProvisioningProvider) recoverDeploymentFailure(
+	ctx context.Context, deploymentErr error, recoverGroup bool,
+) error {
+	var ownershipErr error
+	if recoverGroup {
+		ownershipErr = p.persistCreatedResourceGroupOwnership(ctx)
+	}
+	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	assignmentErr := p.recoverACRAssignment(recoveryCtx)
+	failure := exterrors.ServiceFromAzure(deploymentErr, exterrors.OpArmDeploymentCreate)
+	if recoveryErr := errors.Join(ownershipErr, assignmentErr); recoveryErr != nil {
+		message := fmt.Sprintf("%s\nRecovering deployment ownership: %s", failure, recoveryErr)
+		if classified, ok := errors.AsType[*azdext.ServiceError](failure); ok {
+			classified.Message = message
+		} else if classified, ok := errors.AsType[*azdext.LocalError](failure); ok {
+			classified.Message = message
+		} else {
+			return errors.Join(failure, recoveryErr)
+		}
+	}
+	return failure
 }
 
 func (p *FoundryProvisioningProvider) existingProjectReuseOutputs() map[string]*azdext.ProvisioningOutputParameter {
@@ -1529,6 +1546,17 @@ func (p *FoundryProvisioningProvider) Preview(
 
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
+		return nil, err
+	}
+	if p.greenfieldAcrMode == "reuse-connect" {
+		if err := p.recoverDeployedACRBinding(ctx); err != nil {
+			return nil, err
+		}
+		if err := p.validateACRTemplate(src); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := p.planACRAccess(ctx, src); err != nil {
 		return nil, err
 	}
 
@@ -1863,7 +1891,8 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 		}}
 	}
 	result := invalidatedEnvKeysResult()
-	if p.greenfieldAcrMode == "reuse-connect" {
+	if p.greenfieldAcrMode == "reuse-connect" ||
+		(p.greenfieldAcrMode == "none" && p.synthesisEnv["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "") {
 		result.InvalidatedEnvKeys = slices.DeleteFunc(result.InvalidatedEnvKeys, func(key string) bool {
 			return key == "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
 		})

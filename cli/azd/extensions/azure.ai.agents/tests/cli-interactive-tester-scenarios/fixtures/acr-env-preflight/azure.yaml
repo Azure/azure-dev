@@ -1,0 +1,6 @@
+name: acr-env-preflight
+infra:
+  provider: microsoft.foundry
+services:
+  ai-project:
+    host: azure.ai.project

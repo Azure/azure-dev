@@ -205,7 +205,20 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 func projectACRSelection(
 	raw []byte, root, envName string, values map[string]string, project *resolvedProject, binding *synthesis.ACRBinding,
 ) (string, error) {
-	plan := planProjectEnvironment(values, projectModeNew, project, projectIdentityChanged(values, "", project))
+	plannedProject := *project
+	if plannedProject.ACRResourceID == "" && !strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true") {
+		mode, err := synthesis.GreenfieldACRMode(synthesis.Input{
+			RawAzureYAML: raw, ProjectRoot: root, Env: values, ACRBinding: binding,
+		})
+		if err != nil {
+			return "", projectACRValidation(err.Error())
+		}
+		if mode == "reuse-connect" {
+			plannedProject.ACRResourceID = values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+		}
+	}
+	plan := planProjectEnvironment(values, projectModeNew, &plannedProject,
+		projectIdentityChanged(values, "", &plannedProject))
 	effective := applyProjectEnvironmentPlan(values, plan)
 	effective["AZURE_ENV_NAME"] = envName
 	input := synthesis.Input{RawAzureYAML: raw, ProjectRoot: root, Env: effective, ACRBinding: binding}

@@ -220,8 +220,8 @@ func ValidateGreenfieldACRSelectionForInput(in Input, selectedID string) error {
 	}
 	for _, project := range projects {
 		if strings.TrimSpace(project.Endpoint) != "" {
-			return errors.New("--acr-resource-id is only supported for a new Foundry project; " +
-				"use the existing project's registry connection instead of a source-build selector")
+			return fmt.Errorf("%w: --acr-resource-id is only supported for a new Foundry project; "+
+				"use the existing project's registry connection instead of a source-build selector", ErrEndpointBrownfield)
 		}
 	}
 	group, err := GreenfieldACRResourceGroup(in)

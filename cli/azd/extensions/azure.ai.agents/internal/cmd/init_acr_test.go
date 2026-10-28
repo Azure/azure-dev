@@ -7,9 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"azureaiagent/internal/synthesis"
@@ -312,6 +314,144 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 			require.NoError(t, err)
 			require.Equal(t, content, after)
+		})
+	}
+}
+
+func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		layer      bool
+		rootGroup  string
+		layerGroup string
+		registry   string
+		wantErr    bool
+	}{
+		{name: "retained root group", rootGroup: "registry-rg", registry: testInitACRID, wantErr: true},
+		{name: "external root registry", rootGroup: "foundry-rg", registry: testInitACRID},
+		{name: "retained layer group", layer: true, rootGroup: "application-rg",
+			layerGroup: "registry-rg", registry: testInitACRID, wantErr: true},
+		{name: "layer can reuse root registry", layer: true, rootGroup: "registry-rg",
+			layerGroup: "foundry-rg", registry: testInitACRID},
+		{name: "default root group", registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test/", 1),
+			wantErr: true},
+		{name: "default layer group", layer: true,
+			registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-foundry/", 1), wantErr: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := "name: test\nservices:\n  foundry:\n    host: azure.ai.project\n"
+			if tt.layer {
+				content += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(content), 0o600))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID":                "sub",
+						"AZURE_LOCATION":                       "eastus2",
+						"AZURE_RESOURCE_GROUP":                 tt.rootGroup,
+						"AZURE_FOUNDRY_RESOURCE_GROUP":         tt.layerGroup,
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": tt.registry,
+						"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
+					}},
+				},
+			}
+			before := maps.Clone(server.values["test"])
+			workflow := &recordingProjectWorkflowServer{}
+			client := newTestAzdClient(t, server, workflow)
+			err := validateInitACRProject(t.Context(), client, &initFlags{})
+			if tt.wantErr {
+				require.ErrorContains(t, err, "azd down deletes")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, before, server.values["test"])
+			require.Empty(t, server.setKeys)
+			require.Empty(t, workflow.requests)
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, content, string(after))
+		})
+	}
+}
+
+func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+	source := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(source, 0o750))
+	server := &initACREnvironmentServer{
+		testEnvironmentServiceServer: testEnvironmentServiceServer{
+			values: map[string]map[string]string{"test": {
+				"AZURE_SUBSCRIPTION_ID":                "sub",
+				"AZURE_LOCATION":                       "eastus2",
+				"AZURE_RESOURCE_GROUP":                 "registry-rg",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+			}},
+		},
+	}
+	workflow := &recordingProjectWorkflowServer{}
+	t.Setenv("AZD_SERVER", newTestAzdServer(t, server, workflow))
+	cmd := newInitCommand(&azdext.ExtensionContext{NoPrompt: true, Environment: "test"})
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--src", source})
+	require.ErrorContains(t, cmd.Execute(), "azd down deletes")
+	require.Empty(t, server.setKeys)
+	require.Empty(t, workflow.requests)
+	after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, content, after)
+	require.NoDirExists(t, filepath.Join(root, ".azure"))
+}
+
+func TestInitACREnvironmentSelectorPreservesOtherProjectFlows(t *testing.T) {
+	for _, flow := range []string{
+		"explicit existing", "saved existing", "endpoint", "referenced endpoint", "legacy create",
+	} {
+		t.Run(flow, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := "name: test\nservices:\n  foundry:\n    host: azure.ai.project\n"
+			values := map[string]string{
+				"AZURE_SUBSCRIPTION_ID":                "sub",
+				"AZURE_RESOURCE_GROUP":                 "registry-rg",
+				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+			}
+			flags := &initFlags{}
+			switch flow {
+			case "explicit existing":
+				flags.projectResourceId = "existing-project"
+			case "saved existing":
+				values["USE_EXISTING_AI_PROJECT"] = "true"
+			case "endpoint", "referenced endpoint":
+				values["AZD_FOUNDRY_ACR_MODE"] = "already-connected"
+				if flow == "endpoint" {
+					content += "    endpoint: https://account.services.ai.azure.com/api/projects/project\n"
+				} else {
+					content += "    $ref: project.yaml\n"
+					require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), []byte(
+						"endpoint: https://account.services.ai.azure.com/api/projects/project\n"), 0o600))
+				}
+			case "legacy create":
+				values["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/registry-rg/" +
+					"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+				values["AZURE_CONTAINER_REGISTRY_ENDPOINT"] = "shared.azurecr.io"
+				values["AZD_FOUNDRY_ACR_MODE"] = "create"
+			}
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(content), 0o600))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": values},
+				},
+			}
+			client := newTestAzdClient(t, server, &recordingProjectWorkflowServer{})
+			require.NoError(t, validateInitACRProject(t.Context(), client, flags))
+			require.Empty(t, server.setKeys)
 		})
 	}
 }

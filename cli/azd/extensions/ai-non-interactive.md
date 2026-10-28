@@ -73,6 +73,23 @@ setup, unless a deployed binding or matching legacy deployment outputs identify
 an azd-created registry. Legacy ownership is verified against Azure deployment
 state before provisioning or deleting the group. Environment-only selections
 are reported as externally owned just like flag-based selections.
+Source initialization validates against the root or Foundry-layer resource group
+retained by setup before changing project files or environment values. Locations
+chosen during provisioning prompts are applied when expanding
+`${AZURE_LOCATION}` in service configuration without rereading the registry
+selection.
+
+Project-only provisioning preserves a pending registry selection until source
+builds need it, including after project-only teardown. Configured project or
+account names do not discard an unused selection. Interactive setup revalidates
+the selector after resolving the subscription, before saving project services
+or environment values.
+Provisioning preview checks the same existing pull access as deployment without
+creating grants or persisting pending access operations.
+
+After a failed or canceled deployment, ownership recovery for the resource group
+and registry access grants is attempted independently. Errors are reported
+without skipping the other recovery operation.
 
 A deployed project keeps its registry choice across repeated provisioning.
 Registry migration is not supported: changing the selector or resetting

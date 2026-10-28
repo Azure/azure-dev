@@ -243,8 +243,14 @@ replacement registry.
 Before provisioning, the flag overrides environment defaults and saves
 `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `AZD_FOUNDRY_ACR_MODE=reuse-connect`.
 You can select a registry before adding agents; the selection remains pending
-until a source-built agent requires it. An explicit empty value, an existing
-project selector, or a manifest containing only code, prebuilt-image, or
+until a source-built agent requires it, including across project-only provisioning
+and teardown. Configured project or account names do not discard an unused
+selection. Source initialization validates environment-only selections against
+the root or Foundry-layer resource group retained by setup before changing files
+or environment values.
+Interactive setup validates the selection against the final chosen subscription
+before saving project services or environment values. An explicit empty value,
+an existing project selector, or a manifest containing only code, prebuilt-image, or
 non-container agents is rejected. Without a selector, source builds continue
 to create a registry automatically.
 
@@ -252,6 +258,14 @@ Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed
 project identity and ownership. Use a new azd environment to choose a different
 registry; do not clear internal mode or ownership state to bypass this check.
+
+Provisioning preview checks existing pull access using the same read-only access
+plan as deployment. It does not create access grants or persist pending access
+operations.
+
+If deployment fails or is canceled, resource-group and registry-access ownership
+recovery are attempted independently. Recovery errors are reported without
+preventing the other ownership record from being recovered.
 
 Successful `azd down` also removes this environment's subscription-level Foundry
 deployment record before clearing registry lifecycle state, so provisioning again

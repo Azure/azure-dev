@@ -84,7 +84,7 @@ func validateInitACRManifestInEnvironment(
 }
 
 func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
-	if !flags.acrResourceIDSet {
+	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || flags.templatePointer != "") {
 		return nil
 	}
 	root, err := azdext.GetProjectDir()
@@ -97,6 +97,20 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 	content, err := readProjectAzureYAML(root)
 	if err != nil {
 		return fmt.Errorf("read project registry configuration: %w", err)
+	}
+	if !flags.acrResourceIDSet && flags.infra != "" {
+		provider, err := parseInfraProvider(flags.infra)
+		if err != nil {
+			return err
+		}
+		gate, err := resolveInfraGate(provider)
+		if err != nil {
+			return err
+		}
+		if gate.standaloneEject {
+			// Eject validates its final scope during synthesis.
+			return nil
+		}
 	}
 	environments, err := client.Environment().List(ctx, &azdext.EmptyRequest{})
 	if err != nil {
@@ -116,6 +130,23 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 		if err != nil {
 			return fmt.Errorf("read registry selection: %w", err)
 		}
+	}
+	selectedID := flags.acrResourceID
+	values["AZURE_ENV_NAME"] = envName
+	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}
+	if !flags.acrResourceIDSet {
+		selectedID = values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+		if strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true") ||
+			(selectedID == "" && values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect") {
+			return nil
+		}
+		if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, selectedID); errors.Is(
+			err, synthesis.ErrEndpointBrownfield,
+		) {
+			return nil
+		}
+	}
+	if envName != "" {
 		binding, err := client.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
 			EnvName: envName, Path: synthesis.ACRBindingConfigKey,
 		})
@@ -126,16 +157,22 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 			values[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
 		}
 	}
-	values["AZURE_ENV_NAME"] = envName
-	input := synthesis.Input{
-		RawAzureYAML: content, ProjectRoot: root, Env: values,
+	if !flags.acrResourceIDSet {
+		mode, err := synthesis.GreenfieldACRMode(input)
+		if err != nil {
+			return exterrors.Validation(exterrors.CodeConflictingArguments, err.Error(),
+				"restore the deployed registry selection or use a new azd environment")
+		}
+		if mode != "reuse-connect" {
+			return nil
+		}
 	}
 	if flags.templatePointer != "" {
 		// A template can replace the manifest and teardown scope.
 		input.RawAzureYAML = nil
 		input.Env = map[string]string{"AZURE_SUBSCRIPTION_ID": values["AZURE_SUBSCRIPTION_ID"]}
 	}
-	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, flags.acrResourceID); err != nil {
+	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, selectedID); err != nil {
 		return exterrors.Validation(
 			exterrors.CodeConflictingArguments, err.Error(),
 			"use a registry in the Foundry project's subscription, outside its resource group; "+

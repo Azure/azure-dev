@@ -23,6 +23,8 @@ import (
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/agents"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
@@ -46,17 +48,19 @@ import (
 )
 
 type initFlags struct {
-	projectResourceId string
-	acrConnection     string
-	modelDeployment   string
-	model             string
-	templatePointer   string
-	agentName         string
-	agentNameExplicit bool
-	description       string
-	src               string
-	env               string
-	protocols         []string
+	projectResourceId       string
+	acrConnection           string
+	modelDeployment         string
+	model                   string
+	modelDeploymentExplicit bool
+	modelExplicit           bool
+	templatePointer         string
+	agentName               string
+	agentNameExplicit       bool
+	description             string
+	src                     string
+	env                     string
+	protocols               []string
 	// deploy mode flags for non-interactive code deploy support
 	deployMode    string // "container" or "code"; empty = prompt interactively
 	runtime       string // e.g. "python_3_13", "python_3_14", "dotnet_10"
@@ -160,6 +164,8 @@ const agentsV2ModelCapability = "agentsV2"
 // checkAiModelServiceAvailable is a temporary check to ensure the azd host supports
 // required gRPC services. Remove once azd core enforces requiredAzdVersion.
 func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClient) error {
+	defer inittelemetry.Start(ctx, inittelemetry.AiServiceCheck)()
+
 	_, err := azdClient.Ai().ListModels(ctx, &azdext.ListModelsRequest{})
 	if err == nil {
 		return nil
@@ -189,6 +195,8 @@ func checkAiModelServiceAvailable(ctx context.Context, azdClient *azdext.AzdClie
 // getAuthStatusJSON is the function that runs the command and returns stdout. Production
 // callers pass authStatusFromCLI; tests inject a stub.
 func ensureLoggedIn(ctx context.Context, getAuthStatusJSON func(ctx context.Context) ([]byte, error)) error {
+	defer inittelemetry.Start(ctx, inittelemetry.Authentication)()
+
 	out, err := getAuthStatusJSON(ctx)
 
 	// Context cancellation / deadline always takes priority.
@@ -253,6 +261,8 @@ func resolveInitAgentName(
 	flags *initFlags,
 	defaultName string,
 ) (string, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.AgentNameSelection)()
+
 	if flags.agentName != "" {
 		return validateInitAgentName(flags.agentName)
 	}
@@ -693,32 +703,7 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
-Voice Agents:
-Use --kind prompt-voice to initialize a managed prompt voice agent without
-source code or container scaffolding.
-The managed model defaults to gpt-realtime and does not require a model deployment.
---voice sets the output voice only when creating a new prompt voice agent through
---kind prompt-voice or the interactive voice option.
-Edit azure.yaml to customize existing voice settings.
-
-New prompt voice initialization does not use source directories or code/container
-settings. Explicit --src (including a positional directory), --protocol,
---deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
-the voice path. Use --model for the managed voice model; --model-deployment and
-prompt-only or registry options are not supported by this voice initialization.
-
-Prompt voice services support modelType: managed or self_deployed (bring your own model
-deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
-conversationEngine.type: hosted_agent and conversationEngine.name to reference
-the hosted target service in azure.yaml. The old modelType: hosted_agent and
-targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
-azure.yaml containing both the hosted target and the voice wrapper.
-Configure advanced settings in azure.yaml.
-Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
-the voice WebSocket endpoint with a Voice Live client.
-
-Agent Names:
+` + initA2AHelp + initVoiceHelp + `Agent Names:
 The agent name written to azure.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -739,14 +724,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
   # Initialize from local agent code
   azd ai agent init --src ./src/my-agent --agent-name my-unique-agent
 
-  # Initialize a managed prompt voice agent
-  azd ai agent init --kind prompt-voice --agent-name support-voice
-
-  # Initialize a prompt voice agent with an explicit realtime model and voice
-  azd ai agent init --kind prompt-voice --agent-name support-voice \
-    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
-
-  # Non-interactive code deploy (CI/CD)
+` + initVoiceExamples + `  # Non-interactive code deploy (CI/CD)
   azd ai agent init --no-prompt --project-id "<resource-id>" \
     --deploy-mode code --runtime python_3_13 --entry-point app.py
 
@@ -767,13 +745,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 			ctx := withInitOperationContext(azdext.WithAccessToken(cmd.Context()), "", false)
+			ctx, timing := inittelemetry.NewContext(ctx)
+			defer func() {
+				if runErr != nil {
+					timing.Report(ctx)
+				}
+			}()
 			cmd.SetContext(ctx)
 			defer func() {
 				if runErr != nil {
 					reportInitOperation(ctx)
 				}
 			}()
+			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
+			defer func() { endValidation() }()
 			flags.noPrompt = extCtx.NoPrompt
+			flags.modelDeploymentExplicit = cmd.Flags().Changed("model-deployment")
+			flags.modelExplicit = cmd.Flags().Changed("model")
+			if err := validateInitModelSelectors(flags, false); err != nil {
+				return err
+			}
 			if flags.env == "" {
 				flags.env = extCtx.Environment
 			}
@@ -797,6 +788,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// set flags.templatePointer. This drives the opinionated-defaults path.
 			userProvidedTemplate := flags.templatePointer != ""
 			if userProvidedTemplate {
+				if err := validateInitModelSelectors(flags, true); err != nil {
+					return err
+				}
 				if err := checkNotDirectory(flags.templatePointer); err != nil {
 					return err
 				}
@@ -831,25 +825,72 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			if len(flags.protocols) > 0 {
+				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+					return err
+				}
+			}
+
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
+				return err
+			}
 			if err := validateDeployMode(flags.deployMode); err != nil {
 				return err
 			}
+			endValidation()
 			printBanner(cmd.OutOrStdout())
 
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
+			httpClient := &http.Client{
+				Timeout: 30 * time.Second,
+			}
 			var cachedExplicitAzureYaml []byte
+			var explicitTemplateDir string
 			if userProvidedTemplate {
-				content, cached, err := validateLocalExplicitAzureYaml(flags.templatePointer)
+				if err := validateUnifiedInitFlags(cmd); err != nil {
+					return err
+				}
+				content, cached, err := validateLocalExplicitAzureYaml(ctx, flags.templatePointer)
 				if err != nil {
 					return err
 				}
 				if cached {
-					cachedExplicitAzureYaml = content
+					root := filepath.Dir(flags.templatePointer)
+					if err := requireManifestPreviewFeatures(content, root); err != nil {
+						return err
+					}
+				} else {
+					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
+					if err != nil {
+						if exterrors.IsCancellation(err) {
+							return exterrors.Cancelled("initialization was cancelled")
+						}
+						return err
+					}
+					defer cleanup()
+					explicitTemplateDir = stagingDir
+					//nolint:gosec // trusted staging directory
+					content, err = os.ReadFile(filepath.Join(stagingDir, "azure.yaml"))
+					if err != nil {
+						return fmt.Errorf("reading staged azure.yaml: %w", err)
+					}
+					content, err = validateExplicitAzureYamlContent(flags.templatePointer, content)
+					if err != nil {
+						return err
+					}
+					if err := validateStagedAzureYaml(stagingDir, flags.templatePointer); err != nil {
+						return err
+					}
+					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
+						return err
+					}
 				}
+				cachedExplicitAzureYaml = content
 			}
 			sourceValidated := false
 			explicitSource := cmd.Flags().Changed("src") ||
@@ -894,15 +935,32 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := validateStandaloneEjectArgs(cmd, args); err != nil {
 						return err
 					}
+					endValidation()
 					env, err := readInfraEjectEnvironment(ctx, azdClient)
 					if err != nil {
 						return err
 					}
+					defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
 					return ejectInfra(gate.projectRoot, infraProvider, env)
 				}
 			}
+			endValidation()
 
 			flags.agentNameExplicit = cmd.Flags().Changed("agent-name")
+
+			var projectResponse *azdext.GetProjectResponse
+			var projectErr error
+			if !userProvidedTemplate {
+				projectResponse, projectErr = azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
+				if projectErr == nil && projectResponse.GetProject() != nil {
+					if err := requireProjectPreviewFeatures(projectResponse.GetProject()); err != nil {
+						return err
+					}
+					if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
+						return err
+					}
+				}
+			}
 
 			if err := checkAiModelServiceAvailable(ctx, azdClient); err != nil {
 				return err
@@ -920,24 +978,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 
-			var httpClient = &http.Client{
-				Timeout: 30 * time.Second,
-			}
-
 			// Explicit YAML input is authoritative and must be a unified azure.yaml.
 			if userProvidedTemplate {
-				content := cachedExplicitAzureYaml
-				if content == nil {
-					var err error
-					content, err = loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
-					if err != nil {
-						return err
-					}
-				}
-				if err := validateUnifiedInitFlags(cmd); err != nil {
-					return err
-				}
-				if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+				if err := runInitFromAzureYaml(
+					ctx, flags, azdClient, httpClient, cachedExplicitAzureYaml, explicitTemplateDir,
+				); err != nil {
 					if exterrors.IsCancellation(err) {
 						return exterrors.Cancelled("initialization was cancelled")
 					}
@@ -949,20 +994,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			// With no explicit template, --kind selects the runtime directly. A
 			// harness is an optional capability of kind: prompt, not a separate
 			// agent kind. Omitting --kind preserves the existing hosted flow.
+			endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 			requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
 			isPromptVoice = strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
 			if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
 				return err
-			}
-
-			// Project().Get discovers a parent azd project even when init runs
-			// from one of its subdirectories. Validate configured agent services
-			// before any generated init path can prompt or mutate the project.
-			projectResponse, projectErr := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
-			if projectErr == nil && projectResponse.GetProject() != nil {
-				if err := validateExistingProjectAgentServices(projectResponse.GetProject()); err != nil {
-					return err
-				}
 			}
 
 			switch {
@@ -971,6 +1007,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if harnessErr != nil {
 					return harnessErr
 				}
+				endValidation()
 				return runInitManaged(ctx, flags, azdClient, harness)
 			}
 			if strings.TrimSpace(flags.instructions) != "" {
@@ -1010,6 +1047,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return err
 			}
 			flags.registryConnection = strings.TrimSpace(flags.registryConnection)
+			endValidation()
 
 			if flags.image != "" {
 				targetDir, folderDisplay := fastPathProjectTarget(
@@ -1038,6 +1076,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			}
 
 			if projectErr != nil || projectResponse.GetProject() == nil {
+				endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 				checkDir := flags.src
 				if checkDir == "" {
 					checkDir = "."
@@ -1049,6 +1088,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if legacyFile != "" {
 					return legacyInitSourceError(legacyFile)
 				}
+				endValidation()
 			}
 
 			// When the project's own manifest already declares agent
@@ -1077,24 +1117,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						detection.projectRoot,
 						detection.services,
 					) {
-					useExisting := flags.noPrompt
-					if !flags.noPrompt {
-						confirmResp, promptErr := azdClient.Prompt().Confirm(ctx, &azdext.ConfirmRequest{
-							Options: &azdext.ConfirmOptions{
-								Message: fmt.Sprintf(
-									"This project already configures %s. Use it?",
-									describeProjectAgentServices(detection.services),
-								),
-								DefaultValue: new(true),
-							},
-						})
-						if promptErr != nil {
-							if exterrors.IsCancellation(promptErr) {
-								return exterrors.Cancelled("initialization was cancelled")
-							}
-							return fmt.Errorf("prompting for project agent reuse: %w", promptErr)
-						}
-						useExisting = *confirmResp.Value
+					useExisting, err := confirmProjectAgentReuse(ctx, azdClient, flags.noPrompt, detection.services)
+					if err != nil {
+						return err
 					}
 					if useExisting {
 						recordInitProject(ctx, detection.project)
@@ -1133,9 +1158,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					case TemplateTypeAzureYaml:
 						// Unified azure.yaml template — download and adopt via
 						// the Foundry adoption flow (not git clone).
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzureYaml); err != nil {
 							return err
 						}
+						endValidation()
 						flags.templatePointer = selectedTemplate.Source
 						content, err := loadExplicitAzureYaml(ctx, azdClient, flags, httpClient)
 						if err != nil {
@@ -1168,7 +1195,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							flags.src = sanitizeAgentName(resolvedName)
 						}
 
-						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content); err != nil {
+						if err := runInitFromAzureYaml(ctx, flags, azdClient, httpClient, content, ""); err != nil {
 							if exterrors.IsCancellation(err) {
 								return exterrors.Cancelled("initialization was cancelled")
 							}
@@ -1176,9 +1203,11 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						}
 
 					case TemplateTypeAzd:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						if err := validateCatalogInitFlags(cmd, TemplateTypeAzd); err != nil {
 							return err
 						}
+						endValidation()
 						if err := runInitFromAzdTemplate(
 							ctx, flags, azdClient, httpClient, selectedTemplate,
 						); err != nil {
@@ -1188,6 +1217,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 							return err
 						}
 					default:
+						endValidation = inittelemetry.Start(ctx, inittelemetry.InputValidation)
 						return exterrors.Validation(
 							exterrors.CodeInvalidAgentManifest,
 							fmt.Sprintf("unsupported agent template type %q", selectedTemplate.EffectiveType()),
@@ -1245,22 +1275,24 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
+		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
-		"Foundry Azure Container Registry connection name to use for an existing project; "+
-			"incompatible with code deploy, --image, and prompt-voice agents")
+		acrConnectionUsage+", --image, and prompt-voice agents")
 
 	cmd.Flags().StringVarP(&flags.modelDeployment, "model-deployment", "d", "",
 		"Name of an existing model deployment to use from the Foundry project. Only used when paired with an existing Foundry project, either via --project-id or interactive prompts")
 
+	modelUsage := fmt.Sprintf(
+		"For hosted and prompt agents, name of the AI model to deploy. "+
+			"Defaults to '%s' during interactive model selection; "+
+			"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
+			"--model-deployment takes precedence except during template adoption, where the flags conflict.",
+		defaultAgentModel,
+	)
 	cmd.Flags().StringVar(&flags.model, "model", "",
-		fmt.Sprintf(
-			"For hosted and prompt agents, name of the AI model to deploy. "+
-				"Defaults to '%s' during interactive model selection; "+
-				"required to deploy a new model with --no-prompt. If --model-deployment is also provided, "+
-				"--model-deployment takes precedence. For new managed prompt voice agents, selects the "+
-				"service-hosted model (default: gpt-realtime); no model deployment is created.",
-			defaultAgentModel,
-		))
+		modelUsage+" For new managed prompt voice agents, selects the "+
+			"service-hosted model (default: gpt-realtime); no model deployment is created.")
 
 	cmd.Flags().StringVarP(&flags.templatePointer, "template", "t", "",
 		"Path or supported GitHub URI to an azure.yaml project document")
@@ -1274,7 +1306,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVar(&flags.description, "description", "",
 		"Prompt-agent description to write to azure.yaml. Used as the agent's human-readable summary.")
 	cmd.Flags().StringVar(&flags.instructions, "instructions", "",
-		"System instructions for a prompt agent, including one using --harness. Written to azure.yaml; not supported for hosted agents.")
+		"System instructions for a prompt agent, including one using --harness. "+
+			"Written to azure.yaml; not supported for hosted agents.")
 
 	cmd.Flags().StringVarP(&flags.src, "src", "s", "",
 		"Source directory for generated agents, or target directory when adopting an azure.yaml project")
@@ -1320,9 +1353,26 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"voice agent). When omitted, the hosted runtime is used. With --no-prompt, "+
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
-		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand). "+
-			"Requires a Foundry project in a supported harness region; see the extension README for supported regions.")
+		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
 	_ = cmd.Flags().MarkHidden("harness")
+	previewFlag(cmd, "harness", featureflags.ManagedHarness,
+		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
+	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
+	previewFlag(cmd, "protocol", featureflags.Voice, "invocations_ws")
+	previewFlagUsage(cmd, "protocol", featureflags.Voice,
+		"Protocols supported by the agent ("+strings.Join(protocolNames(false, true), ", ")+"). Can be specified multiple times.")
+	previewFlagUsage(cmd, "kind", featureflags.Voice,
+		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
+			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
+			"With --no-prompt, 'prompt' requires --agent-name and either --model or --model-deployment.")
+	previewFlag(cmd, "voice", featureflags.Voice)
+	previewFlagUsage(cmd, "acr-connection", featureflags.Voice, acrConnectionUsage+" and --image")
+	previewFlagUsage(cmd, "model", featureflags.Voice, modelUsage)
+	previewFlagUsage(cmd, "instructions", featureflags.ManagedHarness,
+		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
+	previewHelpText(cmd, featureflags.Voice, "a new prompt, hosted, or voice agent", "a new agent")
+	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
+	previewHelp(cmd, featureflags.A2A, []string{initA2AHelp}, nil)
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+
@@ -1344,7 +1394,88 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"Ignored for hosted agents. Explicit --rai-policy is rejected when adopting an "+
 			"azure.yaml project document or a full repository template; declare policies in azure.yaml instead.")
 
+	validateBeforePreview(cmd, func(cmd *cobra.Command, args []string) error {
+		localFlags := *flags
+		localFlags.noPrompt = extCtx.NoPrompt
+		return validateInitPreviewArgs(cmd, args, localFlags)
+	})
 	return cmd
+}
+
+func validateInitPreviewArgs(cmd *cobra.Command, args []string, flags initFlags) error {
+	if err := validateTemplateFlagAliases(cmd); err != nil {
+		return err
+	}
+	isPromptVoice := flags.templatePointer == "" &&
+		strings.EqualFold(strings.TrimSpace(flags.kind), kindFlagPromptVoice)
+	// A positional path needs file reads to decide which init flow applies.
+	if len(args) == 0 {
+		voiceSpecified := cmd.Flags().Changed("voice")
+		if err := validateInitVoiceInput(&flags, voiceSpecified); err != nil {
+			return err
+		}
+		voiceInputErr := validateVoiceInitOptions(cmd, len(args) > 0 && flags.src != "")
+		if voiceSpecified || isPromptVoice {
+			if voiceInputErr != nil {
+				return voiceInputErr
+			}
+		}
+	}
+	if flags.image != "" {
+		if err := validateImageFlag(flags.image, flags.deployMode); err != nil {
+			return err
+		}
+	}
+	if len(args) == 0 && flags.templatePointer == "" {
+		if err := validateFastPathAgentName(&flags, isPromptVoice); err != nil {
+			return err
+		}
+		if _, err := validateExplicitProtocols(flags.protocols); err != nil {
+			return err
+		}
+	}
+	if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
+		return err
+	}
+	if err := validateDeployMode(flags.deployMode); err != nil {
+		return err
+	}
+	if flags.infra != "" {
+		if _, err := parseInfraProvider(flags.infra); err != nil {
+			return err
+		}
+	}
+	// Positional input needs file reads. A valid --infra may take the standalone
+	// eject path, which skips all remaining init checks.
+	if len(args) > 0 || flags.infra != "" {
+		return nil
+	}
+	if flags.templatePointer != "" {
+		return validateUnifiedInitFlags(cmd)
+	}
+	requestedKind := agentKindChoice(strings.ToLower(strings.TrimSpace(flags.kind)))
+	if err := validateInitKindHarness(requestedKind, flags.kind, flags.harness, isPromptVoice); err != nil {
+		return err
+	}
+	if requestedKind == AgentKindChoicePrompt {
+		_, err := resolveInitHarness(flags.harness, "")
+		return err
+	}
+	if strings.TrimSpace(flags.instructions) != "" {
+		return promptOnlyInstructionsError()
+	}
+	return validateRegistryConnectionFlag(flags.registryConnection, flags.image, false, flags.deployMode, flags.kind)
+}
+
+func validateInitHarnessFlag(cmd *cobra.Command, harness string) error {
+	if !cmd.Flags().Changed("harness") || strings.TrimSpace(harness) != "" {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeInvalidParameter,
+		"--harness cannot be empty",
+		"omit --harness or use --harness none for a plain prompt agent",
+	)
 }
 
 func fastPathProjectTarget(
@@ -1356,10 +1487,7 @@ func fastPathProjectTarget(
 		return ".", ""
 	}
 	targetDir := sanitizeAgentName(agentName)
-	if _, err := os.Stat(targetDir); errors.Is(err, fs.ErrNotExist) {
-		return targetDir, filepath.ToSlash(targetDir)
-	}
-	return targetDir, ""
+	return targetDir, filepath.ToSlash(targetDir)
 }
 
 func validateFastPathAgentName(flags *initFlags, isPromptVoice bool) error {
@@ -1416,6 +1544,8 @@ func promptInitModeForVoice(
 	if err != nil {
 		return "", err
 	}
+	defer inittelemetry.Start(ctx, inittelemetry.InputValidation)()
+
 	if voiceSpecified && mode != initModeVoice {
 		return "", unusedInitVoiceError()
 	}
@@ -1547,6 +1677,8 @@ func ensureProject(
 ) (*azdext.ProjectConfig, error) {
 	projectResponse, err := azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil {
+		defer inittelemetry.Start(ctx, inittelemetry.ProjectScaffolding)()
+
 		fmt.Println("Let's get your project initialized.")
 
 		envName := deriveEnvName(flags, targetDir)
@@ -1929,6 +2061,8 @@ func printAgentAddedMessage(agentName string) {
 func (a *InitAction) addVoiceAgentToProject(
 	ctx context.Context, targetDir string, voiceDef *agent_yaml.VoiceAgent,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.ProjectConfiguration)()
+
 	if targetDir == "." {
 		if cwd, err := os.Getwd(); err == nil && a.projectConfig != nil && a.projectConfig.Path != "" {
 			if relPath, err := filepath.Rel(a.projectConfig.Path, cwd); err == nil && relPath != "." {
@@ -2762,3 +2896,48 @@ func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle str
 
 	return msg
 }
+
+// initA2AHelp is removed from help while the A2A preview is off.
+const initA2AHelp = `Hosted protocols:
+Use --protocol a2a if your agent code serves A2A 1.0 directly. Init declares
+version 1.0.0 and enables its A2A endpoint; it does not generate an A2A server.
+
+`
+
+// initVoiceHelp and initVoiceExamples are removed from help while voice is off.
+const initVoiceHelp = `Voice Agents:
+Use --kind prompt-voice to initialize a managed prompt voice agent without
+source code or container scaffolding.
+The managed model defaults to gpt-realtime and does not require a model deployment.
+--voice sets the output voice only when creating a new prompt voice agent through
+--kind prompt-voice or the interactive voice option.
+Edit azure.yaml to customize existing voice settings.
+
+New prompt voice initialization does not use source directories or code/container
+settings. Explicit --src (including a positional directory), --protocol,
+--deploy-mode, --runtime, --entry-point, and --dep-resolution are rejected on
+the voice path. Use --model for the managed voice model; --model-deployment and
+prompt-only or registry options are not supported by this voice initialization.
+
+Prompt voice services support modelType: managed or self_deployed (bring your own model
+deployment), audio input/output, structured inputs, tools, greeting, avatar,
+and telephony bindings (acs or twilio). Legacy handoff is not supported by the
+GA Voice Agent API; use telephony transferTargets where applicable. Hosted voice wrappers use
+conversationEngine.type: hosted_agent and conversationEngine.name to reference
+the hosted target service in azure.yaml. The old modelType: hosted_agent and
+targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample
+azure.yaml containing both the hosted target and the voice wrapper.
+Configure advanced settings in azure.yaml.
+Run 'azd provision' and 'azd deploy' to deploy voice services, then connect to
+the voice WebSocket endpoint with a Voice Live client.
+
+`
+
+const initVoiceExamples = `  # Initialize a managed prompt voice agent
+  azd ai agent init --kind prompt-voice --agent-name support-voice
+
+  # Initialize a prompt voice agent with an explicit realtime model and voice
+  azd ai agent init --kind prompt-voice --agent-name support-voice \
+    --model gpt-realtime --voice en-US-Ava:DragonHDLatestNeural
+
+`

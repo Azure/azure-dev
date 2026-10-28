@@ -1,0 +1,21 @@
+{
+  "kind": "voice",
+  "model_type": "managed",
+  "model": "gpt-realtime",
+  "instructions": "You are a helpful voice assistant. Respond naturally and concisely.",
+  "audio": {
+    "input": {
+      "format": { "type": "audio/pcm", "rate": 24000 },
+      "turn_detection": { "type": "server_vad" },
+      "transcription": { "model": "azure-speech" }
+    },
+    "output": {
+      "format": { "type": "audio/pcm", "rate": 24000 },
+      "voice": "en-US-Ava:DragonHDLatestNeural",
+      "voice_type": "azure-standard",
+      "voice_locale": "en-US",
+      "speed": 1.1
+    }
+  },
+  "output_modalities": ["audio"]
+}

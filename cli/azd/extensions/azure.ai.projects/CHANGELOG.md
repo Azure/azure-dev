@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.15 (2026-10-23)
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix template adoption to offer existing deployments and catalog models for every declared deployment while preserving per-environment selections without rewriting `azure.yaml`.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix Foundry provisioning to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings, prompt for model deployments in a new environment, and preserve YAML defaults in no-prompt mode.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix `azd ai project deployment add` to persist the complete deployment list in the active environment and preserve other deployments when replacing an entry.
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
 ## 1.0.0-beta.14 (2026-10-15)
 
 ### Breaking Changes

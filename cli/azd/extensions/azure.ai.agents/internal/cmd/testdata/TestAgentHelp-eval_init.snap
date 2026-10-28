@@ -1,0 +1,21 @@
+Command "init" is deprecated, use 'azd ai eval init' from 'azure.ai.evaluations' instead
+The legacy agent evaluation workflow has been removed. This command only provides migration guidance.
+
+Install the evaluations extension with 'azd extension install azure.ai.evaluations', then use 'azd ai eval init'. Legacy evaluation configuration and arguments are not automatically converted.
+
+Invocations fail without authentication, service requests, or changes to project or environment files. No arguments are forwarded to the new commands.
+
+Usage
+  azd ai agent eval init [flags]
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for init
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (default "default")
+
+Examples
+    azd extension install azure.ai.evaluations
+    azd ai eval init

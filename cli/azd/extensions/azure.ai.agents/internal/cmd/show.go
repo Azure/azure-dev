@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
@@ -134,6 +135,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
+	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},

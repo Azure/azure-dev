@@ -4,6 +4,10 @@
 package nextstep
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -258,7 +262,7 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		out := ResolveAfterInit(state, nil)
 		require.NotEmpty(t, out)
 		assert.Equal(t, "cd my-agent", out[0].Command)
-		assert.Equal(t, "enter your new project folder", out[0].Description)
+		assert.Equal(t, "enter your project folder", out[0].Description)
 		assert.Equal(t, 0, out[0].Priority, "cd suggestion should have highest priority")
 		// Next primary is run, trailing is deploy
 		assert.Contains(t, out[1].Command, "azd ai agent run")
@@ -286,6 +290,203 @@ func TestResolveAfterInit_CreatedFolder(t *testing.T) {
 		assert.Equal(t, "cd hello-world", out[0].Command)
 		assert.Equal(t, "azd provision", out[1].Command)
 	})
+}
+
+func TestResolveAfterInit_CreatedFolderQuoting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		folder string
+		want   string
+	}{
+		{folder: "my-agent", want: "cd my-agent"},
+		{folder: "My Agent", want: "cd 'My Agent'"},
+		{folder: "My\tAgent", want: "cd 'My\tAgent'"},
+		{folder: `My"Agent`, want: `cd 'My"Agent'`},
+		{folder: "My&Agent", want: "cd 'My&Agent'"},
+		{folder: "my-$USER", want: "cd 'my-$USER'"},
+		{folder: "my-$(whoami)", want: "cd 'my-$(whoami)'"},
+		{folder: "Bob's Agent", want: `cd 'Bob'\''s Agent'`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{
+				HasProjectEndpoint:   true,
+				CreatedFolderDisplay: tt.folder,
+			}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			assert.Equal(t, tt.want, out[0].Command)
+		})
+	}
+}
+
+func TestCdSuggestionsShellAlternatives(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{
+		"My Agent", "my~agent", "Bob's Agent", "my-$USER", "agent[1]", "@agent", "my,agent",
+		"D:/agents/demo", "d:/agents/demo", "D:agents/demo",
+	} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := ResolveAfterInit(&State{CreatedFolderDisplay: folder}, nil)
+			require.GreaterOrEqual(t, len(out), 4)
+			assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+
+				strings.ReplaceAll(folder, "'", "''")+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			for i, shell := range []string{"POSIX shells", "PowerShell", "cmd.exe"} {
+				assert.Contains(t, out[i].Description, shell)
+				assert.Contains(t, out[i].Description, "choose one")
+				assert.Less(t, out[i].Priority, out[3].Priority)
+			}
+		})
+	}
+}
+
+func TestCdSuggestionsPowerShellSmartQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u2018", "\u2019", "\u201a", "\u201b"} {
+		for _, suffix := range []string{"s Agent", "sAgent"} {
+			folder := "Bob" + quote + suffix
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "Set-Location -LiteralPath 'Bob"+quote+quote+suffix+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+			})
+		}
+	}
+}
+
+func TestCdSuggestionsPowerShellSmartDoubleQuotes(t *testing.T) {
+	t.Parallel()
+	for _, quote := range []string{"\u201c", "\u201d", "\u201e", "\u201f"} {
+		for _, folder := range []string{"my" + quote + "agent", "my" + quote + "agent" + quote, "my " + quote + "agent"} {
+			t.Run(folder, func(t *testing.T) {
+				t.Parallel()
+				out := CdSuggestions(folder)
+				require.Len(t, out, 3)
+				assert.Equal(t, "cd "+shellQuoteCdPath(folder), out[0].Command)
+				assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+				assert.Contains(t, out[1].Description, "PowerShell")
+				assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			})
+		}
+	}
+}
+
+func TestCdSuggestionsPowerShellUnicodeDashes(t *testing.T) {
+	t.Parallel()
+	for _, dash := range []string{"\u2013", "\u2014", "\u2015"} {
+		t.Run(dash, func(t *testing.T) {
+			t.Parallel()
+			folder := dash + "agent"
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd "+folder, out[0].Command)
+			assert.Equal(t, "Set-Location -LiteralPath '"+folder+"'", out[1].Command)
+			assert.Equal(t, "cd /d \""+folder+"\"", out[2].Command)
+			embedded := "my" + dash + "agent"
+			out = CdSuggestions(embedded)
+			require.Len(t, out, 1)
+			assert.Equal(t, "cd "+embedded, out[0].Command)
+		})
+	}
+}
+
+func TestCdSuggestionsUnsafeCmdPath(t *testing.T) {
+	t.Parallel()
+	for _, folder := range []string{"my-%PATH%", "my-!PATH!", "my\"agent", "my\nagent", "my\ragent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
+			assert.Contains(t, out[2].Description, "cannot be represented safely")
+		})
+	}
+}
+
+func TestCdSuggestionsOptionLikePath(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX cd round trip; Windows shells are covered in resolver_windows_test.go")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+	for _, folder := range []string{"-agent", "-my agent"} {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			out := CdSuggestions(folder)
+			require.Len(t, out, 3)
+			assert.Equal(t, "cd -- "+shellQuoteCdPath(folder), out[0].Command)
+
+			root := t.TempDir()
+			target := filepath.Join(root, folder)
+			require.NoError(t, os.Mkdir(target, 0o700))
+			command := exec.Command("sh", "-c", out[0].Command+" && pwd")
+			command.Dir = root
+			output, err := command.Output()
+			require.NoError(t, err)
+			got, err := os.Stat(strings.TrimSpace(string(output)))
+			require.NoError(t, err)
+			want, err := os.Stat(target)
+			require.NoError(t, err)
+			assert.True(t, os.SameFile(got, want), "%s", output)
+		})
+	}
+}
+
+func TestCdSuggestionsUNCPath(t *testing.T) {
+	t.Parallel()
+	out := CdSuggestions("//server/share/agent")
+	require.Len(t, out, 3)
+	assert.Equal(t, "cd //server/share/agent", out[0].Command)
+	assert.Equal(t, "Set-Location -LiteralPath '//server/share/agent'", out[1].Command)
+	assert.Equal(t, "cmd.exe: use a shell-specific alternative above", out[2].Command)
+}
+
+func TestShellQuoteCdPathRoundTrip(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh is not available on PATH")
+	}
+
+	folders := []string{
+		"my-agent",
+		"My Agent",
+		"My\tAgent",
+		`My"Agent`,
+		"My&Agent",
+		"my-$USER",
+		"my-$(whoami)",
+		"Bob's Agent",
+		"my~agent",
+		"my-%PATH%",
+		"my-!PATH!",
+		"agent[1]",
+		"@agent",
+		"my,agent",
+		"my^agent",
+	}
+	for _, folder := range folders {
+		t.Run(folder, func(t *testing.T) {
+			t.Parallel()
+			state := &State{HasProjectEndpoint: true, CreatedFolderDisplay: folder}
+			out := ResolveAfterInit(state, nil)
+			require.NotEmpty(t, out)
+			require.True(t, strings.HasPrefix(out[0].Command, "cd "))
+
+			arg := strings.TrimPrefix(out[0].Command, "cd ")
+			output, err := exec.Command("sh", "-c", "printf %s "+arg).Output()
+			require.NoError(t, err)
+			assert.Equal(t, folder, string(output))
+		})
+	}
 }
 
 // TestResolveAfterInit_ManualVarsSingleEmitsEnrichedShape locks the

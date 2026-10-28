@@ -1,0 +1,23 @@
+# Tier 0: read-only preview help visibility; no auth or Azure cost.
+name: "preview-help-visibility"
+command: "azd ai agent init --help"
+cwd: "/tmp"
+tags: ["tier:0", "cmd:init", "cmd:invoke", "cmd:add", "cmd:delete", "cmd:show", "cmd:endpoint", "cmd:invocations", "cmd:help", "parallel-safe"]
+env:
+  AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS: "false"
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "false"
+  AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING: "false"
+goals:
+  - "Confirm the command exits with code 0 without a picker, login prompt, or project mutation."
+  - "With no preview opt-ins, confirm init help does not list --voice or --harness, the --kind text names only 'hosted' and 'prompt', and there is no Voice Agents section or prompt-voice example."
+  - "With no preview opt-ins, confirm command-specific help does not name voice, prompt-voice, harness, or long-running. Check init, add, delete, show, and endpoint show help, including the --acr-connection, --instructions, and --model usages. Root help must still list all three canonical switches and their scopes under Preview Feature Switches."
+  - "Run 'azd ai agent invoke --help'. Confirm it does not list --long-running or --no-wait and has no Long-running Invocations or Voice Agents section."
+  - "Run 'azd ai agent --help'. Confirm the command list does not include invocations."
+  - "Run 'azd ai agent invocations show --help'. Confirm it still exits with code 0 and shows the command help."
+  - "Run 'AZD_ALPHA_ENABLE_AGENTS_VOICE=true azd ai agent init --help'. Confirm --voice, the prompt-voice --kind option, the Voice Agents section, the prompt-voice examples, and the voice notes in the --acr-connection and --model usages are shown."
+  - "Run 'AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true azd ai agent invoke --help'. Confirm --long-running, --no-wait, and the Long-running Invocations section are shown."
+  - "Run 'AZD_ALPHA_ENABLE_AGENTS_VOICE=true azd ai agent add --help'. Confirm the existing supported-definition list includes voice and prompt-voice, without a new standalone 'Voice and prompt-voice Agent definitions are also supported' paragraph."
+  - "Run 'AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true azd ai agent init --help'. Confirm --instructions retains its existing 'including one using --harness' note, but the --harness flag remains absent from the flags table."
+  - "Run 'azd ai agent init --kind prompt-voice --agent-name voice-check --no-prompt'. Confirm it exits non-zero naming agents.voice and does not create files."
+  - "Take a screenshot of the default and enabled help output."
+  - "Report a finding if disabled preview commands, flags, or help blocks are shown outside the root switch list, an enabled preview is missing, a hidden command cannot run, or any command prompts or mutates a project."

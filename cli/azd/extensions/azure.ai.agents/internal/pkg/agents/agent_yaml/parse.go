@@ -6,10 +6,13 @@ package agent_yaml
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf16"
 
+	"github.com/google/uuid"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -18,6 +21,9 @@ var e164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{6,14}$`)
 var acsTpeRawIDPattern = regexp.MustCompile(
 	`^28:orgid:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-` +
 		`[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var telephonyTargetNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+var canonicalUUIDPattern = regexp.MustCompile(
+	`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // ValidateAgentDefinition validates a direct agent definition.
 func ValidateAgentDefinition(templateBytes []byte) error {
@@ -55,6 +61,15 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if _, ok := fields["conversation_engine"]; ok && !IsVoiceAgentKind(agentDef.Kind) {
 					errors = append(errors,
 						"conversationEngine is only valid for voice agents")
+				}
+				if _, hasToolbox := fields["toolbox"]; hasToolbox && !IsVoiceAgentKind(agentDef.Kind) {
+					if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+						errors = append(errors,
+							"cannot specify both 'toolbox' and 'toolboxes'; remove 'toolbox' and use 'toolboxes'")
+					} else {
+						errors = append(errors,
+							"field 'toolbox' is no longer supported; use 'toolboxes'")
+					}
 				}
 			}
 
@@ -153,6 +168,14 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 				if err := yaml.Unmarshal(templateBytes, &agent); err == nil {
 					var fields map[string]yaml.Node
 					if fieldErr := yaml.Unmarshal(templateBytes, &fields); fieldErr == nil {
+						for _, field := range []string{
+							"subagent_config", "subagentConfig", "interim_response", "interimResponse",
+						} {
+							if _, ok := fields[field]; ok {
+								errors = append(errors,
+									field+" is not supported by this azd version; remove it or upgrade azd")
+							}
+						}
 						if _, hasCodeConfig := fields["code_configuration"]; hasCodeConfig {
 							errors = append(errors,
 								"codeConfiguration is not supported for a prompt-voice agent; "+
@@ -173,23 +196,17 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 								"toolbox is not supported for a prompt-voice agent; "+
 									"remove it from the agent definition")
 						}
+						if _, hasToolboxes := fields["toolboxes"]; hasToolboxes {
+							errors = append(errors,
+								"toolboxes is not supported for a prompt-voice agent; "+
+									"remove it from the agent definition")
+						}
 						if _, hasProtocols := fields["protocols"]; hasProtocols {
 							errors = append(errors,
 								"protocols is not supported for a prompt-voice agent; "+
 									"configure protocols on the hosted target")
 						}
-					}
-					var policyEnvelope struct {
-						Policies []Policy `json:"policies,omitempty" yaml:"policies,omitempty"`
-					}
-					if err := yaml.Unmarshal(templateBytes, &policyEnvelope); err != nil {
-						errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
-					} else if len(policyEnvelope.Policies) > 0 {
-						hasModeration := false
-						for _, policy := range policyEnvelope.Policies {
-							hasModeration = hasModeration || policy.InvocationsModeration != nil
-						}
-						if !hasModeration {
+						if _, hasPolicies := fields["policies"]; hasPolicies {
 							errors = append(errors,
 								"policies is not supported for prompt-voice agents; "+
 									"move target-owned policies to the hosted target")
@@ -222,15 +239,9 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 						if agent.Model != nil {
 							errors = append(errors, "model is not allowed for hosted voice wrappers")
 						}
-						if agent.InputSchema != nil || agent.OutputSchema != nil || agent.Instructions != nil ||
-							len(agent.StructuredInputs) > 0 || len(agent.Tools) > 0 ||
-							agent.ToolChoice != nil || agent.ParallelToolCalls != nil ||
-							agent.MaxOutputTokens != nil ||
-							len(agent.Include) > 0 || len(agent.Handoff) > 0 {
+						if agent.Instructions != nil || len(agent.Tools) > 0 || agent.ToolChoice != nil {
 							errors = append(errors,
-								"inputSchema, outputSchema, instructions, structuredInputs, tools, toolChoice, "+
-									"parallelToolCalls, maxOutputTokens, include, and handoff belong to the "+
-									"target hosted agent")
+								"model, modelType, instructions, tools, and toolChoice belong to the target hosted agent")
 						}
 					} else {
 						if agent.Model == nil || strings.TrimSpace(agent.Model.Id) == "" {
@@ -276,6 +287,10 @@ func isHostedVoiceWrapper(agent VoiceAgent) bool {
 
 func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 	var errors []string
+	if agent.InputSchema != nil || agent.OutputSchema != nil {
+		errors = append(errors,
+			"inputSchema and outputSchema are not properties of the GA voice agent definition; remove them")
+	}
 	if agent.OutputModalities != nil && len(agent.OutputModalities) == 0 {
 		errors = append(errors, "outputModalities must not be empty when specified")
 	}
@@ -284,10 +299,9 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			errors = append(errors, fmt.Sprintf("outputModalities[%d] must not be blank", i))
 		}
 	}
-	if agent.ParallelToolCalls != nil {
+	if len(agent.Handoff) > 0 {
 		errors = append(errors,
-			"parallelToolCalls is not currently supported by the prompt voice runtime; "+
-				"remove it from the agent definition")
+			"handoff is not supported by the GA voice agent API; remove it and use telephony transferTargets where applicable")
 	}
 	if err := validateVoiceMaxOutputTokens(agent.MaxOutputTokens); err != nil {
 		errors = append(errors, err.Error())
@@ -332,6 +346,10 @@ func validateVoiceAgentAdvancedConfig(agent VoiceAgent) []string {
 			}
 			if strings.TrimSpace(voice.Name) == "" {
 				errors = append(errors, "audio.output.voice.name must not be blank")
+			}
+			if voice.Rate != nil && strings.TrimSpace(*voice.Rate) != "" {
+				errors = append(errors,
+					"audio.output.voice.rate is not supported by the GA voice agent API; use audio.output.speed")
 			}
 		}
 		if speed := agent.Audio.Output.Speed; speed != nil && (!isFinite(*speed) || *speed < 0.25 || *speed > 1.5) {
@@ -380,12 +398,8 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 			if identifier == "" {
 				continue
 			}
-			if after, ok := strings.CutPrefix(identifier, "4:"); ok {
-				if !e164Pattern.MatchString(after) {
-					errors = append(errors, path+".identifier must be 4:+<E.164> for acs-purchased numbers")
-				}
-			} else if !acsTpeRawIDPattern.MatchString(identifier) {
-				errors = append(errors, path+".identifier must be 28:orgid:<guid> or 4:+<E.164> for acs")
+			if !acsTpeRawIDPattern.MatchString(identifier) {
+				errors = append(errors, path+".identifier must be 28:orgid:<guid> for acs")
 			}
 		case "twilio":
 			if identifier != "" && !e164Pattern.MatchString(identifier) {
@@ -395,8 +409,139 @@ func validateVoiceTelephony(telephony *VoiceTelephony) []string {
 		default:
 			errors = append(errors, path+".provider must be acs or twilio")
 		}
+		errors = append(errors, validateVoiceTransferTargets(path, binding.TransferTargets)...)
 	}
 	return errors
+}
+
+// ValidateVoiceTelephony validates authored telephony configuration before it is converted or deployed.
+func ValidateVoiceTelephony(telephony *VoiceTelephony) error {
+	errors := validateVoiceTelephony(telephony)
+	if len(errors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(errors, "; "))
+}
+
+func validateVoiceTransferTargets(bindingPath string, targets []map[string]any) []string {
+	if targets == nil {
+		return nil
+	}
+	var errors []string
+	names := map[string]struct{}{}
+	for i, target := range targets {
+		path := fmt.Sprintf("%s.transferTargets[%d]", bindingPath, i)
+		for key := range target {
+			if key != "name" && key != "description" && key != "destination" {
+				errors = append(errors, path+" contains unsupported field "+fmt.Sprintf("%q", key))
+			}
+		}
+		name, nameOK := target["name"].(string)
+		description, descriptionOK := target["description"].(string)
+		if !nameOK || !telephonyTargetNamePattern.MatchString(name) {
+			errors = append(errors, path+".name must be 1-64 ASCII letters, digits, underscores, or hyphens and start with a letter or digit")
+		} else if _, duplicate := names[strings.ToLower(name)]; duplicate {
+			errors = append(errors, path+".name duplicates transfer target "+name)
+		} else {
+			names[strings.ToLower(name)] = struct{}{}
+		}
+		if !descriptionOK || strings.TrimSpace(description) == "" {
+			errors = append(errors, path+".description is required")
+		} else if len(utf16.Encode([]rune(description))) > 1024 {
+			errors = append(errors, path+".description is too long")
+		}
+		destination, ok := target["destination"].(map[string]any)
+		if !ok {
+			errors = append(errors, path+".destination must be an object")
+			continue
+		}
+		for key := range destination {
+			if key != "kind" && key != "value" {
+				errors = append(errors, path+".destination contains unsupported field "+fmt.Sprintf("%q", key))
+			}
+		}
+		kind, kindOK := destination["kind"].(string)
+		value, valueOK := destination["value"].(string)
+		if !kindOK || !valueOK || value == "" {
+			errors = append(errors, path+".destination.kind and value are required strings")
+			continue
+		}
+		if len(utf16.Encode([]rune(value))) > 2048 {
+			errors = append(errors, path+".destination.value is too long")
+			continue
+		}
+		switch kind {
+		case "pstn":
+			if !e164Pattern.MatchString(value) {
+				errors = append(errors, path+".destination.value must be +<E.164> for pstn")
+			}
+		case "teams":
+			if !isTeamsTransferTarget(value) {
+				errors = append(errors, path+".destination.value must be a canonical object GUID or 28:orgid:<guid> for teams")
+			}
+		case "sip":
+			if !isAuthoredSIPUri(value) {
+				errors = append(errors, path+".destination.value must be a sip or sips URI with user@host")
+			}
+		default:
+			errors = append(errors, path+".destination.kind must be pstn, teams, or sip")
+		}
+	}
+	return errors
+}
+
+func isTeamsTransferTarget(value string) bool {
+	const prefix = "28:orgid:"
+	if len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix) {
+		value = value[len(prefix):]
+	}
+	if !canonicalUUIDPattern.MatchString(value) {
+		return false
+	}
+	_, err := uuid.Parse(value)
+	return err == nil
+}
+
+func isAuthoredSIPUri(value string) bool {
+	if strings.ContainsAny(value, " \t\r\n") || strings.Contains(value, "#") || hasMalformedPercentEscape(value) {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed == nil {
+		return false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "sip" && scheme != "sips" {
+		return false
+	}
+	address := value[strings.Index(value, ":")+1:]
+	if suffix := strings.IndexAny(address, ";?"); suffix >= 0 {
+		address = address[:suffix]
+	}
+	at := strings.LastIndex(address, "@")
+	if strings.Count(address, "@") != 1 || at <= 0 || at == len(address)-1 {
+		return false
+	}
+	hostURI, err := url.Parse("https://" + address[at+1:])
+	return err == nil && hostURI.Hostname() != "" && hostURI.User == nil &&
+		(hostURI.Path == "" || hostURI.Path == "/")
+}
+
+func hasMalformedPercentEscape(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] != '%' {
+			continue
+		}
+		if i+2 >= len(value) || !isHex(value[i+1]) || !isHex(value[i+2]) {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+func isHex(value byte) bool {
+	return value >= '0' && value <= '9' || value >= 'a' && value <= 'f' || value >= 'A' && value <= 'F'
 }
 
 func telephonyValidationProvider(provider string) string {
@@ -490,8 +635,15 @@ func validateVoiceAudioFormat(path string, format *VoiceAudioFormat) []string {
 	} else if formatType != "audio/pcm" && formatType != "audio/pcmu" && formatType != "audio/pcma" {
 		errors = append(errors, path+".type must be 'audio/pcm', 'audio/pcmu', or 'audio/pcma'")
 	}
-	if format.Rate != nil && *format.Rate <= 0 {
-		errors = append(errors, path+".rate must be greater than 0")
+	if format.Rate != nil {
+		switch formatType {
+		case "audio/pcm":
+			if *format.Rate != 24000 {
+				errors = append(errors, path+".rate must be 24000 for audio/pcm")
+			}
+		case "audio/pcmu", "audio/pcma":
+			errors = append(errors, path+".rate must be omitted for G.711 audio/pcmu and audio/pcma")
+		}
 	}
 	return errors
 }

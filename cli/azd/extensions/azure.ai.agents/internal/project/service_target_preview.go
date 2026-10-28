@@ -23,14 +23,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext/preview"
 	"github.com/azure/azure-dev/cli/azd/pkg/foundry"
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/proto"
 )
 
-var _ preview.ServiceTargetPreviewProvider = (*AgentServiceTargetProvider)(nil)
+var _ azdext.ServiceTargetPreviewProvider = (*AgentServiceTargetProvider)(nil)
 
 const previewImagePath = "definition.container_configuration.image"
 
@@ -41,20 +39,12 @@ type agentPreviewReader interface {
 // Preview compares unified hosted-agent configuration with the latest remote
 // version on a fresh provider, without deployment preparation or terminal output.
 func (p *AgentServiceTargetProvider) Preview(
-	ctx context.Context, betaService *v1beta.ServiceConfig,
-) (*v1beta.ServiceDeployPreviewResult, error) {
-	if betaService == nil {
+	ctx context.Context, serviceConfig *azdext.ServiceConfig,
+) (*azdext.ServiceDeployPreviewResult, error) {
+	if serviceConfig == nil {
 		return nil, previewConfigurationError()
 	}
-	// Stable and beta ServiceConfig messages share the same wire fields.
-	wire, err := proto.Marshal(betaService)
-	if err != nil {
-		return nil, previewConfigurationError()
-	}
-	service := &azdext.ServiceConfig{}
-	if err := proto.Unmarshal(wire, service); err != nil {
-		return nil, previewConfigurationError()
-	}
+	service := proto.CloneOf(serviceConfig)
 	project, err := p.azdClient.Project().Get(ctx, &azdext.EmptyRequest{})
 	if err != nil && ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -519,7 +509,7 @@ func previewEnvironmentInputUnknown(expression string, lookup func(string) (stri
 func previewAgentRequest(
 	ctx context.Context, reader agentPreviewReader, service string,
 	request *agent_api.CreateAgentRequest, inputs previewInputs,
-) (*v1beta.ServiceDeployPreviewResult, error) {
+) (*azdext.ServiceDeployPreviewResult, error) {
 	existing, err := reader.GetAgent(ctx, request.Name, agent_api.AgentEndpointAPIVersion,
 		activityProfileFromCreateRequest(request).IsActivity)
 	if err != nil {

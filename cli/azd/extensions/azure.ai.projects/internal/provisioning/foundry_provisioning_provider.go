@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -105,6 +106,10 @@ type FoundryProvisioningProvider struct {
 
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
+	armClientOptions *arm.ClientOptions
+	byoNames         func(context.Context, *templateSource) (byoResolvedNames, error)
+	byoChecker       onboarding.ResourceChecker
+	byoJournal       byoJournal
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -308,7 +313,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
-	if !onDisk && endpoint == "" {
+	if endpoint == "" {
 		// Validate embedded config before any interactive prompts.
 		_, validationErr := synthesis.Synthesize(synthesis.Input{
 			RawAzureYAML:    rawYAML,
@@ -321,6 +326,13 @@ func (p *FoundryProvisioningProvider) Initialize(
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
+		}
+	} else {
+		if _, err := synthesis.SynthesizeExistingProject(synthesis.Input{
+			RawAzureYAML: rawYAML, ServiceName: svcName, ProjectRoot: projectRoot,
+			Env: p.networkEnvMap(ctx), PreserveVarRefs: true,
+		}); err != nil {
+			return foundrySynthesisError(svcName, err)
 		}
 	}
 
@@ -1083,6 +1095,9 @@ func (p *FoundryProvisioningProvider) promptLocation(ctx context.Context) error 
 
 // setEnv persists a single key/value to the active azd environment.
 func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value string) error {
+	if p.azdClient == nil {
+		return fmt.Errorf("persist %s: azd environment service is unavailable", key)
+	}
 	if _, err := p.azdClient.Environment().SetValue(ctx, &azdext.SetEnvRequest{
 		EnvName: p.envName,
 		Key:     key,
@@ -1090,6 +1105,10 @@ func (p *FoundryProvisioningProvider) setEnv(ctx context.Context, key, value str
 	}); err != nil {
 		return fmt.Errorf("persist %s to azd environment %q: %w", key, p.envName, err)
 	}
+	if p.virtualEnv == nil {
+		p.virtualEnv = map[string]string{}
+	}
+	p.virtualEnv[key] = value
 	return nil
 }
 
@@ -1184,6 +1203,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
+	if err := p.guardBYOMode(ctx); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1211,6 +1233,13 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	var byoIntent *byoState
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		byoIntent, err = p.prepareBYO(ctx, src, progress)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	dep := armresources.Deployment{
 		Location: new(p.location),
@@ -1223,6 +1252,9 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-env-name":                  new(p.envName),
 			"azd-provision-template-source": new(src.mode.String()),
 		},
+	}
+	if byoIntent != nil {
+		return p.deployBYO(ctx, src, dep, *byoIntent, progress)
 	}
 
 	client, err := p.deploymentsClient(ctx)
@@ -1487,6 +1519,9 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
+	if err := p.guardBYOMode(ctx); err != nil {
+		return nil, err
+	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1501,6 +1536,17 @@ func (p *FoundryProvisioningProvider) Preview(
 	src, err := p.resolveTemplate(ctx, progress)
 	if err != nil {
 		return nil, err
+	}
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		if _, err := p.prepareBYO(ctx, src, progress); err != nil {
+			return nil, err
+		}
+		summary := "BYO AKS read-only plan: default Storage account, separate hosting/workload identities, " +
+			"native Container Registry, Foundry account/project and their required grants. No resources are written."
+		progress(summary)
+		return &azdext.ProvisioningPreviewResult{
+			Preview: &azdext.ProvisioningDeploymentPreview{Summary: summary},
+		}, nil
 	}
 
 	client, err := p.deploymentsClient(ctx)
@@ -1574,6 +1620,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
+	if err := p.refuseBYODestroy(ctx); err != nil {
+		return nil, err
+	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
@@ -2169,7 +2218,11 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	options := p.armClientOptions
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		options = onboarding.ARMOptions(options)
+	}
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, options)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,

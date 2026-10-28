@@ -30,6 +30,16 @@ type deploymentType = {
   }
 }
 
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -54,8 +64,22 @@ param foundryProjectName string
 @description('Model deployments to provision on the Foundry account.')
 param deployments deploymentsType = []
 
-@description('Include an Azure Container Registry. Set true when any agent uses docker:.')
+@description('Include the native Azure Container Registry. Required for docker: agents or BYO AKS.')
 param includeAcr bool = false
+
+@description('Existing AKS cluster hosting. Supporting resource IDs are bound by microsoft.foundry.')
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
+
+@description('Internal default-resource deployment plan, managed by microsoft.foundry.')
+param byoOnboarding object = {}
 
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
@@ -98,15 +122,35 @@ param dnsZonesSubscription string = ''
 
 // Resources
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
+var hasOnboardingPlan = agentHosting.enabled && !empty(byoOnboarding)
+var suppliedResourceGroup = hasOnboardingPlan ? byoOnboarding.resourceGroupSupplied : false
+var effectiveHosting = hasOnboardingPlan ? union(agentHosting, {
+  hostingManagementIdentityResourceId: byoOnboarding.hostingIdentityResourceId
+  workloadIdentityResourceId: byoOnboarding.workloadIdentityResourceId
+  storageAccountResourceId: byoOnboarding.storageAccountResourceId
+}) : agentHosting
+
+resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (!suppliedResourceGroup) {
   name: resourceGroupName
   location: location
   tags: tags
 }
 
+module prerequisites 'modules/byo-prerequisites.bicep' = if (hasOnboardingPlan) {
+  name: 'byo-prerequisites'
+  scope: az.resourceGroup(resourceGroupName)
+  params: {
+    location: location
+    tags: tags
+    clusterResourceId: agentHosting.clusterResourceId
+    plan: byoOnboarding
+  }
+  dependsOn: [resourceGroup]
+}
+
 module resources 'modules/resources.bicep' = {
   name: 'foundry-resources'
-  scope: resourceGroup
+  scope: az.resourceGroup(resourceGroupName)
   params: {
     location: location
     tags: tags
@@ -114,6 +158,9 @@ module resources 'modules/resources.bicep' = {
     foundryProjectName: foundryProjectName
     deployments: deployments
     includeAcr: includeAcr
+    agentHosting: effectiveHosting
+    byoDeploymentId: hasOnboardingPlan ? byoOnboarding.deploymentId : ''
+    kubeletObjectId: hasOnboardingPlan ? byoOnboarding.kubeletObjectId : ''
     enableNetworkIsolation: enableNetworkIsolation
     useManagedEgress: useManagedEgress
     vnetId: vnetId
@@ -127,6 +174,7 @@ module resources 'modules/resources.bicep' = {
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
+  dependsOn: [resourceGroup, prerequisites]
 }
 
 // Outputs
@@ -143,3 +191,10 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CON
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE
+output AZD_BYO_AKS_OWNERSHIP object = hasOnboardingPlan ? union(prerequisites!.outputs.ownership, {
+  deploymentId: byoOnboarding.deploymentId
+  registryResourceId: resources.outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID
+  projectPrincipalId: resources.outputs.projectPrincipalId
+  kubeletPrincipalId: byoOnboarding.kubeletObjectId
+  roleAssignments: concat(prerequisites!.outputs.ownership.roleAssignments, resources.outputs.registryRoleAssignments)
+}) : {}

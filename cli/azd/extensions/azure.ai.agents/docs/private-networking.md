@@ -6,7 +6,9 @@ Do **not** place `network:` on `host: azure.ai.agent`. Agent services describe d
 
 The `azure.ai.projects` extension owns the project service and the `microsoft.foundry` provider. `azd ai agent init` continues to author the block and eject its IaC during the staged ownership migration.
 
-When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
+When `network:` is present, azd always provisions an **account private endpoint** and disables public data-plane access. Without `agentHosting:`, dependent stores (Cosmos DB, AI Search, Storage) stay platform-managed.
+
+For **existing AKS hosting**, also set `agentHosting.clusterResourceId` on the project service. It requires the BYO-egress `agentSubnet` and `peSubnet` configuration below. That mode creates a Storage account, two separate managed identities, and the native azd registry with its Project connection and grants. Storage and ACR expose public authenticated endpoints; only the Foundry data plane uses the account private endpoint. See [Existing AKS hosting](../../azure.ai.projects/README.md#existing-aks-hosting) for cluster prerequisites and the explicit `down` restriction.
 
 Legacy `network.mode`, `network.byo`, and `network.managed` fields are no
 longer migrated into a project service. Rewrite legacy configuration using the
@@ -94,7 +96,7 @@ azd env set AZURE_DNS_SUBSCRIPTION_ID "<subscription-id>"
 
 - **Project-owned network settings.** `network:` is supported only on the `host: azure.ai.project` service. Multiple agents may depend on the same project; they do not carry separate VNet settings.
 - **Single VNet (v1).** When `agentSubnet` is present it must live in the same VNet as `peSubnet`. Managed egress is unaffected because it needs only the `peSubnet` VNet.
-- **BYO container image required.** Secured agents should use a pre-built image. The image belongs to the `azure.ai.agent` service; the VNet configuration belongs to the `azure.ai.project` service. The developer owns the registry's SKU, private endpoint, DNS, and firewall.
+- **BYO container image required without AKS hosting.** Ordinary secured agents should use a pre-built image. The image belongs to the `azure.ai.agent` service; the VNet configuration belongs to the `azure.ai.project` service. The developer owns the registry's SKU, private endpoint, DNS, and firewall. Existing AKS hosting instead uses the native azd-created registry.
 - **Brownfield (`endpoint:`) ignores `network:`.** When `endpoint:` is set on the project service, the account's network posture is fixed by whoever created it; azd warns and does not reconcile `network:`.
 - **One default-DNS account per VNet.** Without a `dns:` block azd links the three `privatelink.*` AI zones to your VNet, and a VNet may hold only one link per namespace. A second account (or a brownfield hub that pre-links the zones) must use `dns:` reference mode to bind the private endpoint without re-linking.
 - **Terraform IaC is not supported for private networking (v1).** Bicep-only today; `azd ai agent init --infra=terraform` is refused when `network:` is declared. Eject Bicep instead.

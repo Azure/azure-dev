@@ -150,6 +150,48 @@ The built-in provisioning template does not assign a role to the developer. Befo
 
 User-authored on-disk Bicep templates can still declare their own role assignments. Supply any required `principalId` and `principalType` values in the template's parameter file; the provider does not generate them.
 
+### Existing AKS hosting
+
+Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
+
+```yaml
+infra:
+  provider: microsoft.foundry
+services:
+  ai-project:
+    host: azure.ai.project
+    agentHosting:
+      clusterResourceId: ${AKS_CLUSTER_ID}
+    network:
+      agentSubnet:
+        vnet: ${AZURE_VNET_ID}
+        name: agents
+      peSubnet:
+        vnet: ${AZURE_VNET_ID}
+        name: endpoints
+```
+
+Both named subnets must belong to the same existing VNet and have different names. Omit `prefix` to reference an existing subnet; an explicit `prefix` uses the standard network module to create that subnet. The agent subnet must be private IPv4, `/27` or larger, delegated to `Microsoft.App/environments`, and disjoint from the AKS node and private-endpoint subnets. The private-endpoint subnet must not be delegated.
+
+The cluster must use Base AKS (not Automatic), Kubernetes **1.31+** (the running version), Azure CNI overlay or a User-pool pod subnet, managed identity, OIDC, and Workload Identity. System pools require **4 vCPUs / 16 GiB** or more. One ready User pool must satisfy all sandbox requirements: AzureLinux, Kata, at least one node, **8 vCPUs / 32 GiB**, node image **202608.14.0+**, label `agents.ai.azure.com/sandbox-node=true`, and SSH disabled. The network policy must support the Azure, Calico, or Cilium configuration. These checks use Azure reads; they do not reconfigure the cluster.
+
+The default resource graph creates:
+
+- One StorageV2 account, with shared keys, anonymous blobs, and insecure transport disabled.
+- Separate hosting-management and workload user-assigned managed identities.
+- One native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities.
+- Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
+
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data plane remains private behind the standard account private endpoint. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. The registry uses legacy registry permissions, not ABAC repository permissions. The deploying principal needs read access to the selected subscriptions, AKS pools, Compute SKUs and network resources, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes.
+
+Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting, and Microsoft-managed egress is not supported. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
+
+`azd provision --preview` produces a **read-only validation and resource-plan summary**, not ARM what-if changes. Before the first Azure write, the provider saves `AZD_FOUNDRY_BYO_AKS_PREPARATION` as extension-managed JSON in the azd environment, recording exact targets, their original create/reference sources, initial absence, and deployment bindings. It is not read directly from the process environment and must not be edited or cleared to bypass safety checks. Existing names without this original intent are rejected. A completed deployment can be reprovisioned with the same targets, graph and bindings; model deployment and ordinary tag updates remain supported.
+
+Unresolved attempts, including a cloud success whose local completion could not be saved, require manual recovery; automatic adoption/retry is not supported. **`azd down` is refused for BYO AKS**, including when the YAML hosting block has been removed but its deployment intent remains. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
+
+Embedded provisioning and standard Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. BYO AKS requires the standard generated graph and provider-managed bindings, rather than a customized resource graph.
+
 ### Infrastructure layers
 
 For projects that use `infra.layers`, declare exactly one layer with

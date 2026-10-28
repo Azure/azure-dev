@@ -27,6 +27,16 @@ type deploymentType = {
   }
 }
 
+type agentHostingType = {
+  enabled: bool
+  hostingType: 'ManagedCluster' | ''
+  name: string
+  clusterResourceId: string
+  hostingManagementIdentityResourceId: string
+  storageAccountResourceId: string
+  workloadIdentityResourceId: string
+}
+
 // Parameters
 
 @description('Azure region for all resources.')
@@ -46,8 +56,21 @@ param foundryProjectName string
 @description('Model deployments to provision on the Foundry account.')
 param deployments deploymentsType = []
 
-@description('Include an Azure Container Registry. Set true when any agent uses docker:.')
+@description('Include the native Azure Container Registry. Required for docker: agents or BYO AKS.')
 param includeAcr bool = false
+
+param agentHosting agentHostingType = {
+  enabled: false
+  hostingType: ''
+  name: ''
+  clusterResourceId: ''
+  hostingManagementIdentityResourceId: ''
+  storageAccountResourceId: ''
+  workloadIdentityResourceId: ''
+}
+
+param byoDeploymentId string = ''
+param kubeletObjectId string = ''
 
 // Network isolation parameters. All default off so an absent network: block in
 // azure.yaml yields a public account identical to the pre-network template.
@@ -151,7 +174,7 @@ var agentNetworkInjections = useByoNetwork
         ]
       : null)
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
   name: foundryAccountName
   location: location
   tags: tags
@@ -159,9 +182,16 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     name: 'S0'
   }
   kind: 'AIServices'
-  identity: {
-    type: 'SystemAssigned'
-  }
+  identity: agentHosting.enabled
+    ? {
+        type: 'SystemAssigned, UserAssigned'
+        userAssignedIdentities: {
+          '${agentHosting.hostingManagementIdentityResourceId}': {}
+        }
+      }
+    : {
+        type: 'SystemAssigned'
+      }
   properties: {
     allowProjectManagement: true
     customSubDomainName: foundryAccountName
@@ -174,6 +204,18 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
       ipRules: []
     }
     networkInjections: agentNetworkInjections
+    ...(agentHosting.enabled ? {
+      agentHostingConfigurations: [
+        {
+          hostingType: 'ManagedCluster'
+          name: 'default'
+          clusterResourceId: agentHosting.clusterResourceId
+          hostingManagementIdentityResourceId: agentHosting.hostingManagementIdentityResourceId
+          storageAccountResourceId: agentHosting.storageAccountResourceId
+          workloadIdentityResourceId: agentHosting.workloadIdentityResourceId
+        }
+      ]
+    } : {})
   }
 
   // The account injects into the agent subnet via a deterministic id (above),
@@ -240,6 +282,9 @@ module acr 'acr.bicep' = if (includeAcr) {
     foundryProjectName: foundryAccount::project.name
     foundryProjectPrincipalId: foundryAccount::project.identity.principalId
     enableNetworkIsolation: enableNetworkIsolation
+    byoAks: agentHosting.enabled
+    kubeletObjectId: kubeletObjectId
+    deploymentId: byoDeploymentId
   }
 }
 
@@ -269,5 +314,7 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.service
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
+output projectPrincipalId string = foundryAccount::project.identity.principalId
+output registryRoleAssignments array = includeAcr ? acr!.outputs.roleAssignments : []
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

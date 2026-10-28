@@ -31,6 +31,11 @@ param foundryProjectPrincipalId string
 @description('When true, the registry disables public network access to stay inside the isolation boundary.')
 param enableNetworkIsolation bool = false
 
+@description('Enable the standard registry for an existing AKS cluster with managed-identity image pulls.')
+param byoAks bool = false
+param kubeletObjectId string = ''
+param deploymentId string = ''
+
 // Variables
 
 // Built-in role definition ids. See: https://learn.microsoft.com/azure/role-based-access-control/built-in-roles
@@ -41,7 +46,7 @@ var acrPullRoleId = subscriptionResourceId(
 
 // Resources
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2025-03-01-preview' = {
   name: name
   location: location
   tags: tags
@@ -53,11 +58,10 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
   properties: {
     adminUserEnabled: false
-    // Disable public access when network isolation is enabled so the registry
-    // stays inside the VNet boundary. Docker-backed agents in isolated projects
-    // must pull via the private endpoint; public access would leave a dependency
-    // outside the isolation perimeter and can break pulls in locked-down egress.
-    publicNetworkAccess: enableNetworkIsolation ? 'Disabled' : 'Enabled'
+    // BYO AKS uses public authenticated pulls; ordinary network isolation
+    // retains its disabled public endpoint.
+    publicNetworkAccess: enableNetworkIsolation && !byoAks ? 'Disabled' : 'Enabled'
+    ...(byoAks ? { roleAssignmentMode: 'LegacyRegistryPermissions' } : {})
     zoneRedundancy: 'Disabled'
   }
 }
@@ -71,6 +75,18 @@ resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
+    ...(!empty(deploymentId) ? { description: deploymentId } : {})
+  }
+}
+
+resource kubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (byoAks) {
+  name: guid(registry.id, kubeletObjectId, acrPullRoleId)
+  scope: registry
+  properties: {
+    principalId: kubeletObjectId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: acrPullRoleId
+    description: deploymentId
   }
 }
 
@@ -113,3 +129,14 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 output loginServer string = registry.properties.loginServer
 output resourceId string = registry.id
 output connectionName string = foundryAccount::project::acrConnection.name
+output roleAssignments array = concat([{
+  id: foundryAcrPull.id
+  scope: registry.id
+  principalId: foundryProjectPrincipalId
+  roleDefinitionId: acrPullRoleId
+}], byoAks ? [{
+  id: kubeletAcrPull!.id
+  scope: registry.id
+  principalId: kubeletObjectId
+  roleDefinitionId: acrPullRoleId
+}] : [])

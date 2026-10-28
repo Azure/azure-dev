@@ -45,6 +45,8 @@ For a service that sets `endpoint:`, Bicep eject keeps the
 so ejected and embedded provisioning use the same resource graph. Terraform
 eject uses the built-in `terraform` provider.
 
+With `agentHosting.clusterResourceId`, Bicep eject also retains `microsoft.foundry`. The standard generated graph creates the default AKS supporting resources; the provider binds their exact names and grants after read-only validation and saves a write-ahead intent before deployment. Keep the standard graph and do not author the internal `byoOnboarding` parameter. Terraform eject is rejected without modifying files. See [Existing AKS hosting](../../azure.ai.projects/README.md#existing-aks-hosting), including the explicit refusal of BYO AKS `down`.
+
 ## Existing files
 
 Eject never overwrites generated-file collisions.
@@ -133,8 +135,8 @@ value.
 
 ## Limitations
 
-- Terraform eject does not support a service with a private `network:` block;
-  use Bicep for private networking.
+- Terraform eject does not support a service with a private `network:` block or `agentHosting:`;
+  use standard Bicep and `microsoft.foundry` for existing AKS hosting.
 - During migration from a legacy Foundry service, `network.mode`, `network.byo`,
   and `network.managed` are retired. Move the configuration to the current
   project `network.peSubnet` schema before running eject.

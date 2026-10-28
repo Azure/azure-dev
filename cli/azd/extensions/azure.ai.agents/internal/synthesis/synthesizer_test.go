@@ -1110,7 +1110,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 	assert.NotContains(t, text, "a97b65f3-24c7-4388-baec-2e87135dc908")
 	assert.Contains(t, text, "acrPullRoleId", "ACR pull assignment must remain")
 	wantDisable := `"disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]"`
-	wantPublic := `"publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]"`
+	wantPublic := "'publicNetworkAccess', if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')"
 	assert.Contains(t, text, wantDisable,
 		"public data-plane access must be disabled for every network-isolated account")
 	assert.Contains(t, text, wantPublic,
@@ -1124,7 +1124,7 @@ func TestARMTemplate_IsValidJSONWithExpectedShape(t *testing.T) {
 		"byo egress must inject the agent subnet (useMicrosoftManagedNetwork=false)")
 	assert.Contains(t, text, "'useMicrosoftManagedNetwork', true()",
 		"managed egress must use the Microsoft-managed network (useMicrosoftManagedNetwork=true)")
-	assert.Contains(t, text, `"networkInjections": "[variables('agentNetworkInjections')]"`,
+	assert.Contains(t, text, "'networkInjections', variables('agentNetworkInjections')",
 		"account must carry the computed networkInjections")
 
 	// isolationMode must be wired to the V2 managed network child resource

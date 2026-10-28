@@ -601,6 +601,13 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		}
 	}
 	if provider == project.TerraformProviderName {
+		if res.Hosting != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter,
+				"BYO AKS requires the microsoft.foundry provisioning provider",
+				"use embedded provisioning or Bicep eject to retain AKS validation and the write-ahead deployment intent",
+			)
+		}
 		// Private networking is Bicep-only today: the Terraform module has no
 		// VNet / private-endpoint / DNS / networkInjections resources, so ejecting
 		// it for a network: service would silently drop the config and provision a

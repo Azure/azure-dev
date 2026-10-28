@@ -117,6 +117,16 @@
       "description": "Voice agent model-inference mode. 'managed' uses a Voice Live-hosted model; 'self_deployed' references a Foundry model deployment. For Hosted Voice wrappers, use conversationEngine instead.",
       "enum": ["managed", "self_deployed"]
     },
+    "definitionOverlay": {
+      "type": "object",
+      "description": "Experimental add-only GA wire fields merged into a Voice Agent definition.",
+      "additionalProperties": true
+    },
+    "definition_overlay": {
+      "type": "object",
+      "description": "Experimental YAML alias for definitionOverlay.",
+      "additionalProperties": true
+    },
     "targetAgent": {
       "$ref": "#/definitions/VoiceTargetAgent",
       "deprecated": true,
@@ -311,6 +321,20 @@
     {
       "if": { "required": ["enableMemorySnapshot"] },
       "then": { "properties": { "kind": { "const": "hosted" } } }
+    },
+    {
+      "$comment": "Definition overlays are supported only for voice agents.",
+      "if": {
+        "anyOf": [
+          { "required": ["definitionOverlay"] },
+          { "required": ["definition_overlay"] }
+        ]
+      },
+      "then": {
+        "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
+        "required": ["kind"],
+        "not": { "required": ["definitionOverlay", "definition_overlay"] }
+      }
     },
     {
       "$comment": "The modelType hosted_agent authoring shape is not supported.",

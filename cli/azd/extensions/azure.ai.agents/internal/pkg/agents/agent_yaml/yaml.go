@@ -148,7 +148,8 @@ type Workflow struct {
 // greeting, avatar, and response options supported by the service.
 // ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
-	AgentDefinition `json:",inline" yaml:",inline"`
+	AgentDefinition   `json:",inline" yaml:",inline"`
+	DefinitionOverlay map[string]any `json:"definitionOverlay,omitempty" yaml:"definition_overlay,omitempty"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the

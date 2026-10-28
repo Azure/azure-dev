@@ -143,6 +143,7 @@ type AgentDefinitionInline struct {
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
+	DefinitionOverlay  map[string]any                      `json:"definitionOverlay,omitempty"`
 	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
 	Model              *agent_yaml.Model                   `json:"model,omitempty"`
 	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
@@ -169,6 +170,7 @@ type AgentDefinitionInline struct {
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
 		AgentDefinition:    va.AgentDefinition,
+		DefinitionOverlay:  va.DefinitionOverlay,
 		ModelType:          va.ModelType,
 		Model:              va.Model,
 		TargetAgent:        va.TargetAgent,
@@ -195,6 +197,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
 		AgentDefinition:    d.AgentDefinition,
+		DefinitionOverlay:  d.DefinitionOverlay,
 		ModelType:          d.ModelType,
 		Model:              d.Model,
 		TargetAgent:        d.TargetAgent,
@@ -946,6 +949,9 @@ func agentDefinitionFromStruct(
 	if err := validateMemorySnapshotSetting(s); err != nil {
 		return agent_yaml.ContainerAgent{}, false, err
 	}
+	if err := validateDefinitionOverlayKind(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
+	}
 	// The kind gate has to come before the decode, not after it. Every agent
 	// kind lands in the same property bag but they do not agree on types: a
 	// prompt agent's `model` is a deployment name, while the hosted and voice
@@ -968,6 +974,7 @@ func agentDefinitionFromStruct(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
+	copySnakeDefinitionOverlay(s, &inline)
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
@@ -1104,6 +1111,54 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 		return err
 	}
 	return nil
+}
+
+func validateDefinitionOverlayKind(s *structpb.Struct) error {
+	fields := s.GetFields()
+	camel, hasCamel := fields["definitionOverlay"]
+	snake, hasSnake := fields["definition_overlay"]
+	if !hasCamel && !hasSnake {
+		return nil
+	}
+	if !agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay is only supported on voice agents",
+			"remove definitionOverlay or change the service to kind: voice",
+		)
+	}
+	if hasCamel && hasSnake {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"cannot specify both definitionOverlay and definition_overlay",
+			"keep only one definition overlay spelling",
+		)
+	}
+	overlay := camel
+	if hasSnake {
+		overlay = snake
+	}
+	if overlay == nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay must be an object and cannot be null",
+			"set definitionOverlay to an object or remove it",
+		)
+	}
+	if _, isStruct := overlay.GetKind().(*structpb.Value_StructValue); !isStruct {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay must be an object and cannot be null",
+			"set definitionOverlay to an object or remove it",
+		)
+	}
+	return nil
+}
+
+func copySnakeDefinitionOverlay(s *structpb.Struct, inline *AgentDefinitionInline) {
+	if overlay := s.GetFields()["definition_overlay"]; overlay != nil {
+		inline.DefinitionOverlay = overlay.GetStructValue().AsMap()
+	}
 }
 
 func validateUnsupportedVoiceFields(s *structpb.Struct) error {
@@ -1315,6 +1370,9 @@ func VoiceAgentFromResolvedService(
 	if !structHasKind(resolved) {
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
+	if err := validateDefinitionOverlayKind(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
 	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
 	if !agent_yaml.IsVoiceAgentKind(kind) {
 		return agent_yaml.VoiceAgent{}, false, nil
@@ -1331,6 +1389,7 @@ func VoiceAgentFromResolvedService(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
+	copySnakeDefinitionOverlay(resolved, &inline)
 	if err := validateVoiceInlineAgent(inline, resolved); err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}

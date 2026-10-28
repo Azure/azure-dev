@@ -264,23 +264,30 @@ func (r *projectRoles) Assign(
 	return err
 }
 
-// AccessPreparation prepares access only after a data-plane probe establishes an authorization denial.
-// Probe must be a non-mutating check of the operation's required Foundry read access.
+// AccessPreparation inspects and, if needed, grants project-scoped Foundry User access before probing.
+// ARM preparation precedes the probe to avoid populating the data plane's negative authorization cache.
+// Callers opting into preparation permit a grant even if custom data-plane access already works.
 type AccessPreparation struct {
+	// Account optionally enables ARM preparation; without it, only project synchronization is retried.
 	Account    PrincipalResolver
 	Credential azcore.TokenCredential
 	Scope      string
-	Probe      func(context.Context) error
-	Warn       func(string)
-	// Progress optionally reports a grant attempt, propagation wait, and confirmed readiness.
+	// Probe checks the operation's required Foundry read access without mutating it.
+	// A nil Probe disables preparation, including ARM operations.
+	Probe func(context.Context) error
+	// Warn optionally reports advisory failures; a successful probe suppresses ARM warnings.
+	Warn func(string)
+	// Progress optionally reports a grant attempt, propagation or synchronization wait, and confirmed readiness.
 	// Calls are synchronous and contain plain text; the caller owns formatting and output.
 	// A grant or wait notification does not imply success. Readiness requires a successful probe.
 	Progress func(string)
-	// Roles optionally replaces the ARM client; by default it is created only after a denied probe.
+	// Roles optionally replaces the ARM client used when Account is provided.
 	Roles ProjectRoles
-	// RetryDelay is the interval for a newly granted role to reach the data plane.
+	// RetryDelay defaults to 5 seconds between probes, with a 15-second settle wait after a new grant.
+	// A positive value overrides both delays.
 	RetryDelay time.Duration
-	Attempts   int
+	// Attempts bounds the total number of probes across propagation and synchronization; defaults to 60.
+	Attempts int
 }
 
 // ResolvePrincipal resolves the resource-tenant object ID and ARM principal type through the azd host.
@@ -369,11 +376,16 @@ func waitContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Ensure checks existing access, conditionally grants Foundry User, and waits for propagation.
-// Optional ARM failures are warnings; the caller's actual operation remains authoritative.
+// Ensure prepares ARM access before probing, then waits for role propagation or project synchronization.
+// Authorization retries require a confirmed existing role or successful grant; project-sync retries do not.
+// Optional ARM failures and exhausted existing-role propagation are warnings; the operation remains authoritative.
+// Exhausted new-role propagation or project synchronization returns an error.
 func (p AccessPreparation) Ensure(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if p.Probe == nil {
+		return nil
 	}
 	attempts, delay, initialDelay := p.retryTiming()
 	var (
@@ -428,13 +440,11 @@ func (p AccessPreparation) Ensure(ctx context.Context) error {
 			}
 		}
 	}
-	if p.Probe == nil {
-		if armWarning != "" {
-			p.warn(armWarning)
-		}
-		return nil
-	}
 	waited := assigned
+	waitMessage := ""
+	if assigned {
+		waitMessage = "Waiting for Foundry access to propagate."
+	}
 	for attempt := range attempts {
 		err := p.Probe(ctx)
 		if cancelErr := AccessCancellation(ctx, err); cancelErr != nil {
@@ -446,11 +456,18 @@ func (p AccessPreparation) Ensure(ctx context.Context) error {
 			}
 			return nil
 		}
-		if armWarning != "" && !IsProjectNotFound(err) {
+		notFound := IsProjectNotFound(err)
+		if armWarning != "" && !notFound {
 			p.warn(armWarning)
 			return nil
 		}
-		if !IsProjectAccessDenied(err) && !IsProjectNotFound(err) {
+		denied := IsProjectAccessDenied(err)
+		if denied && !assigned && !hasAccess {
+			p.warn("Could not confirm a sufficient Foundry role without an account; " +
+				"continuing without waiting for role propagation.")
+			return nil
+		}
+		if !denied && !notFound {
 			if assigned {
 				p.warn("Foundry access readiness could not be confirmed; continuing with the operation.")
 			} else {
@@ -458,14 +475,21 @@ func (p AccessPreparation) Ensure(ctx context.Context) error {
 			}
 			return nil
 		}
-		if !waited && armWarning == "" {
-			waited = true
-			p.progress("Waiting for Foundry access to propagate.")
+		message := "Waiting for Foundry access to propagate."
+		if notFound {
+			message = "Waiting for the Foundry project to synchronize."
+		}
+		waited = true
+		if message != waitMessage {
+			waitMessage = message
+			p.progress(message)
 		}
 		if attempt == attempts-1 {
-			if armWarning != "" {
-				p.warn(armWarning)
-				return nil
+			if notFound {
+				if armWarning != "" {
+					p.warn(armWarning)
+				}
+				return fmt.Errorf("Foundry project has not synchronized; wait and retry: %w", err)
 			}
 			if hasAccess {
 				p.warn("A sufficient Foundry role is already assigned; " +

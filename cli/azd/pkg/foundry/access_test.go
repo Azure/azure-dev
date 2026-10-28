@@ -345,6 +345,11 @@ func TestAccessPreparation(t *testing.T) {
 			wantChecks: 1, wantAssigns: 1, wantProbes: 2},
 		{name: "principal unavailable", probeErr: accessDenied(), principalErr: errors.New("lookup failed"),
 			wantProbes: 1, wantWarning: true},
+		{name: "principal unavailable with working custom access", principalErr: errors.New("lookup failed"),
+			wantProbes: 1},
+		{name: "role visibility denied with working custom access",
+			principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER, principalID: "object-id",
+			checkErr: accessDenied(), wantChecks: 1, wantProbes: 1},
 		{name: "principal empty", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			wantProbes: 1, wantWarning: true},
 		{name: "unsupported principal", probeErr: accessDenied(), principalID: "object-id",
@@ -377,6 +382,9 @@ func TestAccessPreparation(t *testing.T) {
 				RetryDelay: time.Nanosecond,
 				Probe: func(context.Context) error {
 					probes++
+					assert.Equal(t, 1, account.calls, "resolve the principal before probing")
+					assert.Equal(t, tt.wantChecks, roles.checks, "inspect ARM roles before probing")
+					assert.Equal(t, tt.wantAssigns, roles.assigns, "attempt the ARM grant before probing")
 					if probes == 1 {
 						return tt.probeErr
 					}
@@ -444,6 +452,7 @@ func TestAccessPreparationPropagation(t *testing.T) {
 func TestAccessPreparationProgress(t *testing.T) {
 	const granting = "Assigning Foundry User to the current principal."
 	const waiting = "Waiting for Foundry access to propagate."
+	const syncing = "Waiting for the Foundry project to synchronize."
 	const ready = "Foundry access is ready."
 	for _, tt := range []struct {
 		name         string
@@ -458,10 +467,10 @@ func TestAccessPreparationProgress(t *testing.T) {
 		{name: "existing access", probeErrors: []error{nil}, hasAccess: true},
 		{name: "project not found then authorized with custom role",
 			probeErrors: []error{projectNotFound(), nil}, assignErr: accessDenied(),
-			wantProgress: []string{granting}},
+			wantProgress: []string{granting, syncing, ready}},
 		{name: "project not found then granted",
 			probeErrors:  []error{projectNotFound(), nil},
-			wantProgress: []string{granting, waiting, ready}},
+			wantProgress: []string{granting, waiting, syncing, ready}},
 		{name: "unrelated probe failure", probeErrors: []error{errors.New("network failure")},
 			hasAccess: true, wantWarning: true},
 		{name: "inherited role propagates", probeErrors: []error{accessDenied(), nil}, hasAccess: true,
@@ -510,8 +519,10 @@ func TestAccessPreparationProgress(t *testing.T) {
 						assert.Equal(t, 0, probes, "assign in ARM before probing the data plane")
 					case waiting:
 						assert.True(t, roles.assigns == 1 || tt.hasAccess)
+					case syncing:
+						require.GreaterOrEqual(t, probes, 1)
+						assert.True(t, IsProjectNotFound(tt.probeErrors[probes-1]))
 					case ready:
-						assert.True(t, roles.assigns == 1 || tt.hasAccess)
 						require.GreaterOrEqual(t, probes, 1)
 						assert.NoError(t, tt.probeErrors[probes-1], "readiness must follow a successful probe")
 					default:
@@ -538,6 +549,193 @@ func TestAccessPreparationProgress(t *testing.T) {
 			assert.Equal(t, tt.wantWarning, warned)
 		})
 	}
+}
+
+func TestAccessPreparationRetryEligibility(t *testing.T) {
+	const granting = "Assigning Foundry User to the current principal."
+	const waiting = "Waiting for Foundry access to propagate."
+	const syncing = "Waiting for the Foundry project to synchronize."
+	const ready = "Foundry access is ready."
+	for _, tt := range []struct {
+		name         string
+		noAccount    bool
+		hasAccess    bool
+		principalErr error
+		checkErr     error
+		assignErr    error
+		probeErrors  []error
+		wantChecks   int
+		wantAssigns  int
+		wantWarning  string
+		wantErr      string
+		wantProgress []string
+	}{
+		{name: "no account denied", noAccount: true, probeErrors: []error{accessDenied()},
+			wantWarning: "without an account"},
+		{name: "no account custom access", noAccount: true, probeErrors: []error{nil}},
+		{name: "no account unrelated failure", noAccount: true, probeErrors: []error{errors.New("network failure")},
+			wantWarning: "Could not establish missing Foundry access"},
+		{name: "no account unrelated not found", noAccount: true,
+			probeErrors: []error{&azcore.ResponseError{StatusCode: http.StatusNotFound, ErrorCode: "ToolboxNotFound"}},
+			wantWarning: "Could not establish missing Foundry access"},
+		{name: "no account project sync", noAccount: true, probeErrors: []error{projectNotFound(), nil},
+			wantProgress: []string{syncing, ready}},
+		{name: "no account sync exhausted", noAccount: true,
+			probeErrors: []error{projectNotFound(), projectNotFound(), projectNotFound()},
+			wantErr:     "project has not synchronized", wantProgress: []string{syncing}},
+		{name: "no account sync then denied", noAccount: true,
+			probeErrors: []error{projectNotFound(), accessDenied()},
+			wantWarning: "without an account", wantProgress: []string{syncing}},
+		{name: "no account sync canceled", noAccount: true,
+			probeErrors: []error{projectNotFound(), context.Canceled},
+			wantErr:     "context canceled", wantProgress: []string{syncing}},
+		{name: "no account sync deadline exceeded", noAccount: true,
+			probeErrors: []error{projectNotFound(), context.DeadlineExceeded},
+			wantErr:     "context deadline exceeded", wantProgress: []string{syncing}},
+		{name: "no account sync transported deadline", noAccount: true,
+			probeErrors: []error{projectNotFound(), status.Error(codes.DeadlineExceeded, "deadline")},
+			wantErr:     "DeadlineExceeded", wantProgress: []string{syncing}},
+		{name: "principal unavailable sync then denied", principalErr: errors.New("unavailable"),
+			probeErrors: []error{projectNotFound(), accessDenied()},
+			wantWarning: "Could not resolve the current principal", wantProgress: []string{syncing}},
+		{name: "role inspection failed sync then denied", checkErr: accessDenied(), wantChecks: 1,
+			probeErrors: []error{projectNotFound(), accessDenied()},
+			wantWarning: "Could not inspect inherited Foundry roles", wantProgress: []string{syncing}},
+		{name: "assignment failed sync then denied", assignErr: accessDenied(), wantChecks: 1, wantAssigns: 1,
+			probeErrors: []error{projectNotFound(), accessDenied()},
+			wantWarning: "Could not assign Foundry User", wantProgress: []string{granting, syncing}},
+		{name: "assignment failed sync exhausted", assignErr: accessDenied(), wantChecks: 1, wantAssigns: 1,
+			probeErrors: []error{projectNotFound(), projectNotFound(), projectNotFound()},
+			wantErr:     "project has not synchronized", wantWarning: "Could not assign Foundry User",
+			wantProgress: []string{granting, syncing}},
+		{name: "existing role sync exhausted", hasAccess: true, wantChecks: 1,
+			probeErrors: []error{projectNotFound(), projectNotFound(), projectNotFound()},
+			wantErr:     "project has not synchronized", wantProgress: []string{syncing}},
+		{name: "new role sync exhausted", wantChecks: 1, wantAssigns: 1,
+			probeErrors: []error{projectNotFound(), projectNotFound(), projectNotFound()},
+			wantErr:     "project has not synchronized", wantProgress: []string{granting, waiting, syncing}},
+		{name: "existing role sync then denied then ready", hasAccess: true, wantChecks: 1,
+			probeErrors:  []error{projectNotFound(), accessDenied(), nil},
+			wantProgress: []string{syncing, waiting, ready}},
+		{name: "new role sync then denied then ready", wantChecks: 1, wantAssigns: 1,
+			probeErrors:  []error{projectNotFound(), accessDenied(), nil},
+			wantProgress: []string{granting, waiting, syncing, waiting, ready}},
+		{name: "existing role denied then sync then ready", hasAccess: true, wantChecks: 1,
+			probeErrors:  []error{accessDenied(), projectNotFound(), nil},
+			wantProgress: []string{waiting, syncing, ready}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &accessTestAccount{response: &azdext.GetCurrentPrincipalResponse{
+				ObjectId: "object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
+			}, err: tt.principalErr}
+			roles := &accessTestRoles{hasAccess: tt.hasAccess, checkErr: tt.checkErr, assignErr: tt.assignErr}
+			var warnings, progress []string
+			probes := 0
+			preparation := AccessPreparation{
+				Account: account, Roles: roles, Scope: accessTestScope,
+				Attempts: 3, RetryDelay: time.Nanosecond,
+				Probe: func(context.Context) error {
+					require.Less(t, probes, len(tt.probeErrors), "must not retry without an eligible reason")
+					assert.Equal(t, tt.wantChecks, roles.checks)
+					assert.Equal(t, tt.wantAssigns, roles.assigns)
+					err := tt.probeErrors[probes]
+					probes++
+					return err
+				},
+				Warn: func(message string) { warnings = append(warnings, message) },
+				Progress: func(message string) {
+					progress = append(progress, message)
+					if message == ready {
+						require.Positive(t, probes)
+						assert.NoError(t, tt.probeErrors[probes-1])
+					}
+				},
+			}
+			if tt.noAccount {
+				preparation.Account = nil
+			}
+			err := preparation.Ensure(t.Context())
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.ErrorIs(t, err, tt.probeErrors[len(tt.probeErrors)-1])
+				assert.NotContains(t, err.Error(), "was assigned")
+			} else {
+				require.NoError(t, err)
+			}
+			if tt.wantWarning != "" {
+				require.Len(t, warnings, 1)
+				assert.Contains(t, warnings[0], tt.wantWarning)
+			} else {
+				assert.Empty(t, warnings)
+			}
+			assert.Equal(t, len(tt.probeErrors), probes)
+			assert.Equal(t, tt.wantProgress, progress)
+			assert.Equal(t, tt.wantChecks, roles.checks)
+			assert.Equal(t, tt.wantAssigns, roles.assigns)
+			if tt.noAccount {
+				assert.Zero(t, account.calls)
+			} else {
+				assert.Equal(t, 1, account.calls)
+			}
+		})
+	}
+}
+
+func TestAccessPreparationWithoutProbe(t *testing.T) {
+	account := &accessTestAccount{}
+	roles := &accessTestRoles{}
+	err := (AccessPreparation{
+		Account: account, Roles: roles, Scope: accessTestScope,
+		Warn:     func(message string) { t.Errorf("unexpected warning: %s", message) },
+		Progress: func(message string) { t.Errorf("unexpected progress: %s", message) },
+	}).Ensure(t.Context())
+	require.NoError(t, err)
+	assert.Zero(t, account.calls)
+	assert.Zero(t, roles.checks)
+	assert.Zero(t, roles.assigns)
+}
+
+func TestAccessPreparationRetryTiming(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		preparation   AccessPreparation
+		attempts      int
+		delay, settle time.Duration
+	}{
+		{name: "defaults", attempts: 60, delay: 5 * time.Second, settle: 15 * time.Second},
+		{name: "overrides", preparation: AccessPreparation{Attempts: 3, RetryDelay: time.Nanosecond},
+			attempts: 3, delay: time.Nanosecond, settle: time.Nanosecond},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			attempts, delay, settle := tt.preparation.retryTiming()
+			assert.Equal(t, tt.attempts, attempts)
+			assert.Equal(t, tt.delay, delay)
+			assert.Equal(t, tt.settle, settle)
+		})
+	}
+}
+
+func TestAccessPreparationCancellationDuringSettle(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	roles := &accessTestRoles{}
+	err := (AccessPreparation{
+		Account: &accessTestAccount{response: &azdext.GetCurrentPrincipalResponse{
+			ObjectId: "object-id", PrincipalType: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
+		}},
+		Roles: roles, Scope: accessTestScope,
+		Probe: func(context.Context) error {
+			t.Error("must not probe after cancellation during the settle wait")
+			return nil
+		},
+		Progress: func(message string) {
+			if message == "Waiting for Foundry access to propagate." {
+				cancel()
+			}
+		},
+	}).Ensure(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, roles.assigns)
 }
 
 func TestAccessPreparationCancellationDuringPropagation(t *testing.T) {

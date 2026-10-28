@@ -56,6 +56,7 @@ type toolboxServiceTarget struct {
 	projectClient     serviceConfigReader
 	resolver          connectionResolver
 	newClient         func(endpoint, tenantID string) (toolboxClient, error)
+	access            *toolboxAccess
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -67,6 +68,7 @@ func newToolboxServiceTarget(
 		accountClient:     azdClient.Account(),
 		projectClient:     azdClient.Project(),
 		resolver:          defaultConnectionResolver{},
+		access:            newToolboxAccess(azdClient),
 		newClient: func(endpoint, tenantID string) (toolboxClient, error) {
 			return newToolboxClientForTenant(endpoint, tenantID)
 		},
@@ -156,59 +158,75 @@ func (p *toolboxServiceTarget) Deploy(
 	if strings.TrimSpace(cfg.Endpoint) != "" {
 		return p.deployReuse(ctx, name, cfg, serviceConfig, progress)
 	}
-
-	resolved, err := projectctx.Resolve(ctx, projectctx.ResolveOpts{})
-	if err != nil {
+	if err := validateToolboxName(name); err != nil {
 		return nil, err
 	}
-	endpoint := resolved.Endpoint
 
 	environment, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
-	rawTools, err := p.buildToolEntries(
-		ctx,
-		endpoint,
-		cfg.Tools,
-		environment,
-	)
+	input := &definition.Definition{
+		Name: name, Description: cfg.Description, Connections: cfg.Connections,
+		Skills: cfg.Skills, Tools: expandToolEntries(cfg.Tools, environment), Policies: cfg.Policies, Metadata: cfg.Metadata,
+	}
+	if err := validateLocalToolboxDefinition(input); err != nil {
+		return nil, err
+	}
+	resolved, err := resolveToolboxWriteEndpoint(ctx, "")
 	if err != nil {
 		return nil, err
 	}
-	request, err := buildToolboxVersionRequest(ctx, p.resolver, endpoint, &definition.Definition{
-		Name:        name,
-		Description: cfg.Description,
-		Connections: cfg.Connections,
-		Skills:      cfg.Skills,
-		Tools:       rawTools,
-		Policies:    cfg.Policies,
-		Metadata:    cfg.Metadata,
-	})
+	endpoint := resolved.Endpoint
+	scope, err := p.access.resolve(ctx, endpoint)
 	if err != nil {
 		return nil, err
 	}
-
-	if progress != nil {
-		progress(fmt.Sprintf("Upserting toolbox %q", name))
+	tenantID := ""
+	if scope != nil {
+		tenantID = scope.tenantID
 	}
-
-	tenantID, err := p.credentialTenantID(ctx)
+	// Preserve the managed-deployment user-access tenant fallback for an active
+	// environment endpoint whose ARM identity is unavailable. Never borrow it for
+	// an endpoint selected from another context.
+	if scope == nil && resolved.Source == projectctx.SourceAzdEnv {
+		tenantID, err = p.credentialTenantID(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
 	client, err := p.newClient(endpoint, tenantID)
+	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
+		return nil, cancelErr
+	}
 	if err != nil {
 		return nil, exterrors.Auth(
 			exterrors.CodeCredentialCreationFailed,
-			err.Error(),
+			"could not create the Foundry credential",
 			"run 'azd auth login' to authenticate",
 		)
+	}
+	if _, err := p.access.ensure(ctx, scope, client, name, progress); err != nil {
+		return nil, err
+	}
+	input.Tools, err = p.resolveToolEntries(ctx, endpoint, input.Tools)
+	if err != nil {
+		return nil, err
+	}
+	request, err := buildToolboxVersionRequest(ctx, p.resolver, endpoint, input)
+	if err != nil {
+		return nil, err
+	}
+	if progress != nil {
+		progress(fmt.Sprintf("Upserting toolbox %q", name))
 	}
 
 	created, err := client.CreateToolboxVersion(ctx, name, request)
 	if err != nil {
-		return nil, fmt.Errorf("upserting toolbox %q: %w", name, err)
+		return nil, toolboxWriteError(ctx, err, exterrors.OpCreateToolboxVersion, scope, "", "")
+	}
+	if cancelErr := toolboxAccessCancellation(ctx, nil); cancelErr != nil {
+		return nil, cancelErr
 	}
 
 	// Surface the toolbox's MCP endpoint to agents (and the developer) without re-running.
@@ -320,12 +338,21 @@ func (p *toolboxServiceTarget) buildToolEntries(
 	tools []map[string]any,
 	env map[string]string,
 ) ([]map[string]any, error) {
+	return p.resolveToolEntries(ctx, endpoint, expandToolEntries(tools, env))
+}
+
+func expandToolEntries(tools []map[string]any, env map[string]string) []map[string]any {
 	out := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
-		entry, ok := expandToolboxValue(tool, env).(map[string]any)
-		if !ok {
-			continue
-		}
+		out = append(out, expandToolboxValue(tool, env).(map[string]any))
+	}
+	return out
+}
+
+func (p *toolboxServiceTarget) resolveToolEntries(
+	ctx context.Context, endpoint string, tools []map[string]any,
+) ([]map[string]any, error) {
+	for _, entry := range tools {
 		if connName, isString := entry["connection"].(string); isString && connName != "" {
 			conn, err := p.resolver.resolveConnection(ctx, endpoint, connName)
 			if err != nil {
@@ -339,9 +366,8 @@ func (p *toolboxServiceTarget) buildToolEntries(
 			}
 			delete(entry, "connection")
 		}
-		out = append(out, entry)
 	}
-	return out, nil
+	return tools, nil
 }
 
 // parseToolboxServiceConfig reads the service-level (inline) toolbox properties, falling
@@ -456,6 +482,9 @@ type accountTenantLookup interface {
 
 func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, error) {
 	current, err := p.environmentClient.GetCurrent(ctx, &azdext.EmptyRequest{})
+	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
 	if err != nil {
 		return "", exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -474,6 +503,9 @@ func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, 
 		EnvName: envName,
 		Key:     "AZURE_SUBSCRIPTION_ID",
 	})
+	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
 	if err != nil {
 		return "", exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -491,6 +523,9 @@ func (p *toolboxServiceTarget) credentialTenantID(ctx context.Context) (string, 
 	tenantResponse, err := p.accountClient.LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: subscriptionID,
 	})
+	if cancelErr := toolboxAccessCancellation(ctx, err); cancelErr != nil {
+		return "", cancelErr
+	}
 	if err != nil {
 		return "", exterrors.Auth(
 			exterrors.CodeTenantLookupFailed,

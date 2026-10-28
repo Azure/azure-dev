@@ -80,24 +80,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Stacks | Alpha |
 | Extensions | Stable |
 
-## Foundry Extensions
-
-| Extension | Stage | Stable since |
-|---|---|---|
-| `microsoft.foundry` | Stable | 1.0.0 |
-| `azure.ai.agents` | Stable | 1.0.0 |
-| `azure.ai.connections` | Stable | 1.0.0 |
-| `azure.ai.inspector` | Stable | 1.0.0 |
-| `azure.ai.projects` | Stable | 1.0.0 |
-| `azure.ai.routines` | Stable | 1.0.0 |
-| `azure.ai.skills` | Stable | 1.0.0 |
-| `azure.ai.toolboxes` | Stable | 1.0.0 |
-
-These packages require azd `>=1.37.0`. Package GA does not graduate the opt-in
-agent previews: managed harness, voice, long-running invocation, A2A wire-version
-selection, and hosted A2A initialization retain their existing feature gates.
-See [Agents extension preview feature flags](../../cli/azd/extensions/azure.ai.agents/docs/specs/preview-feature-flags.md).
-
 ## Extension gRPC Contracts
 
 | Capability | Contract stage | Stable since | Beta status |

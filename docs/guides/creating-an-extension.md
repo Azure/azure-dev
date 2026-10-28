@@ -53,6 +53,21 @@ If your Go extension creates role assignments, use the stable [`Account().GetCur
 
 Go extensions that resolve local Foundry configuration `$ref` files should use [`foundry.ResolveFileRefs`](../../cli/azd/pkg/foundry/includes.go). Each referenced file must contain exactly one YAML or JSON object; additional documents, trailing content, arrays, and scalars are rejected. Resolution retains YAML value types, aliases, and sibling overlays. Pass only the selected configuration when unrelated references should remain unopened. Extensions must consume an SDK release containing this validation before their binaries enforce it.
 
+For Foundry developer access, reuse
+[`foundry.AccessPreparation`](../../cli/azd/pkg/foundry/access.go) rather than
+duplicating RBAC policy. Validate the selected endpoint against its ARM project
+ID with `foundry.ProjectAccessScope` (or `ProjectScopeFromEnvironment` when
+using an active environment). Reuse `LoadProjectEnvironment`,
+`RoleAssignmentsSkipped`, `LookupProjectTenant`, and `NewCredential` for
+common setup, then supply the credential, a non-mutating
+data-plane `Probe`, an injected `Warn` callback, and optionally `Progress` for
+grant attempts, propagation waits, and confirmed readiness. Keep both callbacks
+on the command's injected writer. Call `Ensure` only before
+operations intended to prepare access, never from read/delete or diagnostic
+paths. It skips grants when effective access already works and waits after a
+new grant. Consume a core SDK release containing these APIs before publishing
+the extension; use a local Go workspace for cross-module development.
+
 The default scaffolds and SDK `EventManager` use the stable `v1` contract.
 Go extensions can opt into beta structured messages for service
 `predeploy`/`postdeploy` handlers with

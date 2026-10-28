@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"io"
 	"os"
 	"testing"
 
@@ -237,6 +238,7 @@ func TestRunSkillRemove_NoPromptWithoutForce(t *testing.T) {
 		t.Context(), "tb", []string{"any-skill"},
 		skillRemoveFlags{force: false},
 		toolboxFlags{output: "table", noPrompt: true},
+		io.Discard,
 	)
 	requireLocalError(t, err, exterrors.CodeMissingForceFlag)
 }

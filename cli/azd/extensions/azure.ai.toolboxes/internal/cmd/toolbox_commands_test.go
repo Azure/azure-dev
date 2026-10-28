@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"errors"
+	"io"
 	"os"
 	"testing"
 
@@ -302,6 +303,7 @@ func TestRunConnectionAdd_RejectsEmptyConnectionWithoutFromFile(t *testing.T) {
 		connectionAddFlags{},
 		toolboxFlags{output: "table"},
 		newStubConnectionResolver(),
+		io.Discard,
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidPositionalArg)
 }
@@ -416,6 +418,7 @@ func TestRunToolboxPublish_WhitespaceVersion(t *testing.T) {
 	err := runToolboxPublish(
 		t.Context(), "tb", "  ",
 		toolboxFlags{output: "table"},
+		io.Discard,
 	)
 	requireLocalError(t, err, exterrors.CodeMissingUpdateField)
 }
@@ -877,6 +880,7 @@ func TestRunConnectionRemove_NoPromptWithoutForce(t *testing.T) {
 		connectionRemoveFlags{force: false},
 		toolboxFlags{output: "table", noPrompt: true},
 		newStubConnectionResolver(),
+		io.Discard,
 	)
 	requireLocalError(t, err, exterrors.CodeMissingForceFlag)
 }

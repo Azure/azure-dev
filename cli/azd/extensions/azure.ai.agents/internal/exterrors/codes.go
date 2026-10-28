@@ -218,6 +218,7 @@ const (
 	OpCreateAgent             = "create_agent"
 	OpCreateConversation      = "create_conversation"
 	OpCreateTelephonyBinding  = "create_telephony_binding"
+	OpCheckProjectAccess      = "check_project_access"
 	OpGetAgent                = "get_agent"
 	OpGetTelephonyBinding     = "get_telephony_binding"
 	OpUpdateAgent             = "update_agent"

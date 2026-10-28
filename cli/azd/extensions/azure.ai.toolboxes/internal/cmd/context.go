@@ -38,7 +38,7 @@ var toolboxNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 const maxToolboxNameLength = 63
 
 func validateToolboxWriteFlags(cmd *cobra.Command) error {
-	for _, name := range []string{"project-endpoint", "from-file"} {
+	for _, name := range []string{"project-endpoint", "from-file", "from-version"} {
 		if !cmd.Flags().Changed(name) {
 			continue
 		}

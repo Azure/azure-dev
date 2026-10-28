@@ -72,9 +72,10 @@ For direct resource operations:
 Removing a service from `azure.yaml` stops managing the toolbox but does not
 delete the remote resource; use `azd ai toolbox delete` to delete it.
 
-## Developer access for deployment and create
+## Developer access
 
-Managed toolbox deployment and `azd ai toolbox create` prepare Foundry access
+Managed toolbox deployment, `create`, `connection add/remove`, `skill add/remove`,
+and `publish` prepare Foundry access
 independently of any agent predeploy hook. Subscription **Owner** or
 **Contributor** alone does not grant data-plane access. After local input
 validation, the extension probes toolbox read access before resolving remote
@@ -106,8 +107,8 @@ the process environment. Values are parsed as booleans; invalid values do not
 enable skipping. Existing externally managed access is still required.
 
 Warnings and grant/propagation progress go to stderr, preserving JSON results
-on stdout. Read/list/show, delete, connection and skill mutations, publish,
-local authoring, and bring-your-own endpoint reuse do not prepare access.
+on stdout. Read/list/show, toolbox deletion, local authoring, and bring-your-own
+endpoint reuse do not prepare access.
 Provisioning remains independent of developer role-assignment permission.
 
 The adapter uses core `pkg/foundry.AccessPreparation`. Release the core helper

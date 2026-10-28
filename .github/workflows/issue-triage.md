@@ -78,7 +78,7 @@ gh label list --repo "${{ github.repository }}" --limit 500 --json name,descript
 
 Start each command directly with `gh`, without inline environment assignments such as `GH_PAGER=cat` or shell wrappers. These JSON reads do not need a pager override, and `gh label list` does not support `--no-pager`. Use the JSON field `issueType`, not `type`.
 
-If a command reports an unsupported flag or JSON field, inspect its help or listed supported fields and correct the syntax before reporting unavailable data. Keep retries in the direct `gh` command form. If a valid direct request is denied or the required data remains unavailable, report `missing_tool` or `missing_data` as appropriate; do not bypass the denial or guess. Do not report `missing_data` for user-authored issue content that lacks details or contains an unfilled template.
+If a command reports an unsupported flag or JSON field, inspect its help or listed supported fields and correct the syntax before reporting unavailable data. Keep retries in the direct `gh` command form. If a valid direct request is denied or the required data remains unavailable, call `report_missing_tool` or `report_missing_data` as appropriate; do not bypass the denial or guess. Do not call `report_missing_data` for user-authored issue content that lacks details or contains an unfilled template.
 
 ## Task
 
@@ -103,7 +103,7 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
    - add relevant `area/*` and `ext-*` labels based on their descriptions
    - add another allowed label only when the issue directly matches its description
    - add no more than four labels unless a cross-cutting issue clearly needs a fifth
-6. If the issue contains only an unfilled template, placeholder text, or lacks sufficient information to classify with high confidence, do not set an issue type or add labels. Call `noop` stating that more details are needed from the author. Do not report `missing_data` or `missing_tool` for insufficient user issue descriptions.
+6. If the issue contains only an unfilled template, placeholder text, or lacks sufficient information to classify with high confidence, do not set an issue type or add labels. Call `noop` stating that more details are needed from the author. Do not call `report_missing_data` or `report_missing_tool` for insufficient user issue descriptions.
 
 ## Extension routing
 
@@ -113,4 +113,4 @@ Objective: Reduce maintainer effort spent classifying new issues without mislabe
 
 Do not apply priority, ownership, workflow-state, or contributor labels. In particular, do not add `blocker`, `customer-reported`, `production`, `needs-*`, `good first issue`, `help wanted`, `need-upvotes`, or `keep`.
 
-Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed, including when an issue contains insufficient information or an unfilled template to classify with high confidence. Reserve `missing_tool` and `missing_data` strictly for tool execution or repository metadata access failures. Do not finish without calling `add_labels`, `set_issue_type`, `noop`, `missing_tool`, or `missing_data`.
+Use only the configured safe outputs. Include issue number `${{ github.event.issue.number }}` when calling `add_labels`. Call `noop` with a short reason when no label or issue type change is needed, including when an issue contains insufficient information or an unfilled template to classify with high confidence. Reserve `report_missing_tool` and `report_missing_data` strictly for tool execution or repository metadata access failures. Do not finish without calling `add_labels`, `set_issue_type`, `noop`, `report_missing_tool`, or `report_missing_data`.

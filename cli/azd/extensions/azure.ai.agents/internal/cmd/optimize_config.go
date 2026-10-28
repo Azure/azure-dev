@@ -67,10 +67,16 @@ func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 		return nil, fmt.Errorf("invalid optimization config file %s: %w", path, err)
 	}
 	if request.OptimizationConfiguration.Type != "agent_optimization" &&
-		request.OptimizationConfiguration.Type != "prompt_optimization" {
-		return nil, fmt.Errorf("optimization_configuration.type must be agent_optimization or prompt_optimization")
+		request.OptimizationConfiguration.Type != "prompt_optimization" &&
+		request.OptimizationConfiguration.Type != optimize_api.SkillOptimizationType {
+		return nil, fmt.Errorf("optimization_configuration.type must be " +
+			"agent_optimization, prompt_optimization, or skill_optimization")
 	}
-	if request.TargetConfiguration == nil || request.TargetConfiguration.Type != "foundry_agent" ||
+	if request.OptimizationConfiguration.Type == optimize_api.SkillOptimizationType {
+		if err := validateSkillOptimizeRequest(&request); err != nil {
+			return nil, fmt.Errorf("invalid skill optimization config: %w", err)
+		}
+	} else if request.TargetConfiguration == nil || request.TargetConfiguration.Type != "foundry_agent" ||
 		request.TargetConfiguration.Name == "" {
 		return nil, fmt.Errorf("target_configuration must name a foundry_agent")
 	}
@@ -78,13 +84,16 @@ func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 }
 
 func optimizeConfigFromRequest(request *optimize_api.OptimizeRequest) *OptimizeConfig {
-	cfg := defaultOptimizeConfig(request.TargetConfiguration.Name)
-	cfg.Agent.Version = request.TargetConfiguration.Version
+	cfg := defaultOptimizeConfig("")
+	if request.TargetConfiguration != nil {
+		cfg.Agent.Name = request.TargetConfiguration.Name
+		cfg.Agent.Version = request.TargetConfiguration.Version
+	}
 	cfg.Request = request
 	cfg.Options.OptimizationModel = request.OptimizationModelConfiguration.Model
 	config := &request.OptimizationConfiguration
 	if evaluation := config.EvaluationConfiguration; evaluation != nil {
-		cfg.TrainingSet = &evaluation.TrainingSet
+		cfg.TrainingSet = evaluation.TrainingSet
 		cfg.ValidationSet = evaluation.ValidationSet
 		cfg.Options.EvalModel = evaluation.EvaluationModel.Model
 		cfg.Options.MaxConcurrentAgentRuns = evaluation.MaxConcurrentAgentRuns
@@ -108,6 +117,15 @@ func optimizeConfigFromRequest(request *optimize_api.OptimizeRequest) *OptimizeC
 
 // Validate checks required fields and dataset constraints.
 func (c *OptimizeConfig) Validate() error {
+	if c.isSkillOptimization() {
+		if c.Options == nil || !validSkillIdentity(c.Options.OptimizationModel, 256) ||
+			strings.ContainsAny(c.Options.OptimizationModel, `/\?#`) {
+			return fmt.Errorf("optimization_model must be a deployment name of at most 256 characters " +
+				"without surrounding whitespace, control, path, or query characters: " +
+				"set --optimize-model or optimization_model_configuration.model")
+		}
+		return validateSkillOptimizeRequest(c.Request)
+	}
 	if c.Agent.Name == "" {
 		return fmt.Errorf("agent.name is required")
 	}
@@ -177,8 +195,10 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	} else {
 		req.DisplayName = c.Name
 	}
-	req.TargetConfiguration = &optimize_api.AgentIdentifier{
-		Type: "foundry_agent", Name: c.Agent.Name, Version: c.Agent.Version,
+	if !c.isSkillOptimization() || c.Request.TargetConfiguration != nil {
+		req.TargetConfiguration = &optimize_api.AgentIdentifier{
+			Type: "foundry_agent", Name: c.Agent.Name, Version: c.Agent.Version,
+		}
 	}
 	options := c.Options
 	if options == nil {
@@ -189,7 +209,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 	if config.Type == "" {
 		config.Type = "agent_optimization"
 	}
-	if config.Type == "prompt_optimization" {
+	if config.Type == "prompt_optimization" || config.Type == optimize_api.SkillOptimizationType {
 		return &req, nil, nil
 	}
 	evaluation := optimize_api.EvaluationConfiguration{}
@@ -204,7 +224,8 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		setType = "user_conversation_simulation"
 	}
 	if c.TrainingSet != nil {
-		evaluation.TrainingSet = *c.TrainingSet
+		trainingSet := *c.TrainingSet
+		evaluation.TrainingSet = &trainingSet
 	}
 	trainRef := c.Dataset
 	if c.DatasetFile != "" {
@@ -215,7 +236,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		if err != nil {
 			return nil, nil, fmt.Errorf("train dataset: %w", err)
 		}
-		evaluation.TrainingSet = optimize_api.SetInput{Type: setType, Source: *ds}
+		evaluation.TrainingSet = &optimize_api.SetInput{Type: setType, Source: *ds}
 	}
 	if c.ValidationSet != nil {
 		evaluation.ValidationSet = c.ValidationSet
@@ -232,7 +253,7 @@ func (c *OptimizeConfig) ToRequest() (*optimize_api.OptimizeRequest, []string, e
 		return nil, nil, fmt.Errorf("maxSamples must be >= 0")
 	}
 	if c.MaxSamples > 0 {
-		if evaluation.TrainingSet.Source.Type != optimize_api.DatasetTypeInline {
+		if evaluation.TrainingSet == nil || evaluation.TrainingSet.Source.Type != optimize_api.DatasetTypeInline {
 			return nil, nil, fmt.Errorf("maxSamples requires a local dataset for optimization")
 		}
 		cases := evaluation.TrainingSet.Source.TestCases

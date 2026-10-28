@@ -1,0 +1,30 @@
+Download a file declared in a candidate's files list, such as a trace-analysis report.
+
+Use 'optimize status <operation-id> --candidate <id> --output json' to inspect file paths.
+Pass the declared path unchanged with --file. The local filename defaults to its basename.
+Existing local files are never overwritten; choose another --target-path.
+
+Usage
+  azd ai agent optimize download <operation-id> [flags]
+
+Flags
+      --candidate string        : Candidate ID (required)
+      --endpoint string         : Optimization service endpoint (for local dev)
+  -f, --file string             : Declared candidate file path (required)
+  -p, --project-endpoint string : Foundry project endpoint URL
+  -t, --target-path string      : Local destination path (defaults to remote filename)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for download
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "table")
+
+Examples
+  Download a trace-analysis report
+    azd ai agent optimize download opt_abc123 --candidate candidate_abc123 --file trace-analysis-hash.json
+
+  Choose a local filename
+    azd ai agent optimize download opt_abc123 --candidate candidate_abc123 --file trace-analysis-hash.json --target-path report.json

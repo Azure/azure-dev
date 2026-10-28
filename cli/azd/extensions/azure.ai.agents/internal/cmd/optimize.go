@@ -5,7 +5,7 @@
 // agent optimization jobs. It resolves the agent, loads or builds a config,
 // resolves any required local inputs, and polls for results.
 //
-// Subcommands (status, list, cancel, apply, deploy) are registered here
+// Subcommands (status, list, cancel, download, apply, deploy) are registered here
 // and implemented in their own files.
 
 package cmd
@@ -138,13 +138,16 @@ func newOptimizeCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "optimize [agent-name]",
-		Short: "Evaluate and optimize AI agents.",
-		Long: `Evaluate and optimize AI agents — baseline scoring and iterative improvement.
+		Short: "Optimize AI agents, prompts, and skills.",
+		Long: `Optimize AI agents and prompts, or learn skills from agent traces.
 
 When run without a subcommand, submits an optimization job.
 Use --eval to reuse an agent-targeted evaluation from an azure.ai.eval service,
 or --eval-config to select an evaluation configuration file.
 Use --config for an optimization request file (YAML or JSON).
+Skill optimization requires --config with type skill_optimization and a trace window.
+It uses recorded feedback without requiring a dataset or a new evaluation run.
+Generated skill versions are not automatically attached or deployed to an agent.
 Omitted optional optimization settings use service defaults.
 Legacy agent eval.yaml files are not supported.`,
 		Example: `  # Optimize (auto-detect agent from azd project)
@@ -155,6 +158,9 @@ Legacy agent eval.yaml files are not supported.`,
 
   # Full control via config file
   azd ai agent optimize --config spec.yaml
+
+  # Learn skills from traces using a skill_optimization request
+  azd ai agent optimize --config skill-optimize.yaml
 
   # Reuse an evaluation from the new evaluation workflow
   azd ai agent optimize --eval quality --optimize-model optimizer-deployment
@@ -192,7 +198,7 @@ Legacy agent eval.yaml files are not supported.`,
 	cmd.Flags().StringVarP(&flags.agent, "agent", "a", "",
 		"Agent service name from azure.yaml, or Foundry agent name outside a project")
 	cmd.Flags().StringVarP(&flags.dataset, "dataset", "d", "", "Local JSONL file or registered dataset as name:version")
-	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation (required)")
+	cmd.Flags().StringVarP(&flags.evalModel, "eval-model", "m", "", "Model for evaluation-driven agent optimization")
 	cmd.Flags().StringVar(&flags.optimizationModel, "optimize-model", "",
 		"Model for optimization reasoning (gpt-5 family recommended; required)")
 	cmd.Flags().StringArrayVar(&flags.evaluators, "evaluator", nil,
@@ -209,6 +215,7 @@ Legacy agent eval.yaml files are not supported.`,
 	cmd.AddCommand(newOptimizeStatusCommand(extCtx))
 	cmd.AddCommand(newOptimizeListCommand(extCtx))
 	cmd.AddCommand(newOptimizeCancelCommand(extCtx))
+	cmd.AddCommand(newOptimizeDownloadCommand(extCtx))
 	cmd.AddCommand(newOptimizeApplyCommand(extCtx))
 	cmd.AddCommand(newOptimizeDeployCommand(extCtx))
 
@@ -222,6 +229,7 @@ type OptimizeAction struct {
 	noPrompt    bool
 	serviceName string // azd service name for per-agent env key derivation
 	promptAgent bool   // deployed prompt agents use the service-side definition
+	client      *optimize_api.OptimizeClient
 }
 
 // Run resolves inputs, submits a GA optimization job, and optionally polls for results.
@@ -232,10 +240,6 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 		out = cmd.ErrOrStderr()
 	}
 
-	fmt.Fprintf(out, "\n  %s Optimization creates candidate agents as draft versions.\n"+
-		"  Your live agent versions are not affected until you explicitly deploy a candidate.\n\n",
-		color.CyanString("Note:"))
-
 	cfg, configSource, agentProject, err := a.resolveConfig(ctx)
 	if err != nil {
 		return err
@@ -245,6 +249,14 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 	if err := a.applyOverrides(ctx, cfg, agentProject); err != nil {
 		return err
 	}
+	if cfg.isSkillOptimization() {
+		fmt.Fprintf(out, "\n  %s Skill optimization publishes skill versions.\n"+
+			"  Skills are not automatically attached or deployed to an agent.\n\n", color.CyanString("Note:"))
+	} else {
+		fmt.Fprintf(out, "\n  %s Optimization creates candidate agents as draft versions.\n"+
+			"  Your live agent versions are not affected until you explicitly deploy a candidate.\n\n",
+			color.CyanString("Note:"))
+	}
 	endpoint, err := a.flags.resolve(ctx, a.envName)
 	if err != nil {
 		return err
@@ -252,7 +264,11 @@ func (a *OptimizeAction) Run(ctx context.Context, cmd *cobra.Command) error {
 
 	bold := color.New(color.Bold)
 
-	_, _ = bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
+	if cfg.isSkillOptimization() {
+		_, _ = bold.Fprintln(out, "Optimizing skills from agent traces...")
+	} else {
+		_, _ = bold.Fprintf(out, "Optimizing agent %q...\n", cfg.Agent.Name)
+	}
 	if configSource != "" {
 		fmt.Fprintf(out, "  Config: %s\n", configSource)
 	}
@@ -296,6 +312,9 @@ func (a *OptimizeAction) resolveConfig(
 		cfg, err = LoadOptimizeConfig(a.flags.configFile)
 		if err != nil {
 			return nil, "", "", fmt.Errorf("%w\n\nCheck that the file path is correct and contains valid YAML", err)
+		}
+		if cfg.isSkillOptimization() && cfg.Request.TargetConfiguration == nil {
+			return cfg, a.flags.configFile, "", nil
 		}
 
 		// Explicit GA target identities and pins are authoritative.
@@ -398,7 +417,8 @@ func (a *OptimizeAction) applyOverrides(
 	cfg *OptimizeConfig,
 	agentProject string,
 ) error {
-	if cfg.Request != nil && cfg.Request.OptimizationConfiguration.Type == "prompt_optimization" {
+	if cfg.Request != nil &&
+		(cfg.Request.OptimizationConfiguration.Type == "prompt_optimization" || cfg.isSkillOptimization()) {
 		if a.flags.optimizationModel != "" {
 			cfg.Options.OptimizationModel = a.flags.optimizationModel
 		}
@@ -582,11 +602,14 @@ func (a *OptimizeAction) submitJob(
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build optimization request: %w", err)
 	}
-	credential, err := newAgentCredential()
-	if err != nil {
-		return nil, nil, err
+	client := a.client
+	if client == nil {
+		credential, err := newAgentCredential()
+		if err != nil {
+			return nil, nil, err
+		}
+		client = optimize_api.NewOptimizeClient(endpoint, credential)
 	}
-	client := optimize_api.NewOptimizeClient(endpoint, credential)
 
 	for _, w := range warnings {
 		fmt.Fprintf(out, "  warning: %s\n", w)
@@ -594,7 +617,7 @@ func (a *OptimizeAction) submitJob(
 
 	// Save baseline config before starting optimization.
 	hasProject := agentProject != ""
-	if hasProject && !a.promptAgent {
+	if hasProject && !a.promptAgent && !cfg.isSkillOptimization() {
 		if err := cfg.saveBaseline(agentProject, optimizeReq); err != nil {
 			fmt.Fprintf(out, "  warning: failed to save baseline config: %s\n", err)
 		} else {
@@ -615,7 +638,9 @@ func (a *OptimizeAction) submitJob(
 	fmt.Fprintf(out, "  Job ID: %s\n", color.CyanString(resp.ID))
 	fmt.Fprintf(out, "  Status: %s\n", resp.Status)
 
-	printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.ID, a.envName)
+	if cfg.Agent.Name != "" {
+		printOptimizePortalLink(ctx, out, cfg.Agent.Name, resp.ID, a.envName)
+	}
 	fmt.Fprintln(out)
 
 	saveLastOptimizeJobID(ctx, optimizeEnvKeyName(a.serviceName, cfg.Agent.Name), resp.ID, a.envName)
@@ -707,6 +732,9 @@ func pollOptimizeJob(
 				}
 			}
 			candidates = completed
+			if status.OptimizationConfiguration.Type == optimize_api.SkillOptimizationType {
+				candidates = nil
+			}
 
 			// Erase the previous status line (spinner / "Evaluating…") so the
 			// new candidate row or header takes its place.
@@ -803,6 +831,12 @@ func printOptimizeResults(ctx context.Context, out io.Writer, status *optimize_a
 	}
 
 	if len(status.Candidates()) == 0 {
+		return
+	}
+	if status.OptimizationConfiguration.Type == optimize_api.SkillOptimizationType {
+		for _, candidate := range status.Candidates() {
+			printSkillOptimizeCandidate(out, status.ID, candidate)
+		}
 		return
 	}
 

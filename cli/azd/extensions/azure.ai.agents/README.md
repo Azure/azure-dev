@@ -1613,6 +1613,133 @@ deployment.
 
 Foundry project services can be provisioned as network-secured, VNet-bound accounts by adding a `network:` block to the `host: azure.ai.project` service in `azure.yaml`. The `azure.ai.projects` extension owns that service and the `microsoft.foundry` provider; this extension still authors the block during agent init. See [Private networking for `host: azure.ai.project`](docs/private-networking.md) for the schema reference, BYO-image requirements, and VNet deployment cheatsheet.
 
+## Skill optimization from traces
+
+Use the existing optimization job API to learn reusable skills from recorded agent
+traces. This flow publishes skill versions; it does not automatically attach them
+to an agent, deploy an agent version, or update your local agent baseline.
+
+Copy [examples/skill-optimization.yaml](examples/skill-optimization.yaml), then
+set your deployed agent name/version, optimizer deployment, and trace window.
+The window is half-open (`start_time` inclusive, `end_time` exclusive), uses
+timezone-aware ISO timestamps, and accepts `max_traces` from 1 to 100.
+Omitting `max_traces` retains the service default.
+
+```powershell
+azd ai agent optimize --config skill-optimization.yaml `
+  --project-endpoint "https://<resource>.services.ai.azure.com/api/projects/<project>" `
+  --no-wait
+
+azd ai agent optimize status <job-id> --watch --project-endpoint <project-endpoint>
+```
+
+In an initialized azd project, the project endpoint can be resolved from the
+environment instead. Explicit identities and version pins in the request remain
+authoritative unless you supply an agent override.
+
+The service owns trace selection, conversation context, and attribution of existing
+human annotations and automated/rubric assessments. These recorded assessments do
+not require `--eval`, a new evaluation run, or a dataset supplied by azd.
+Skill requests reject the agent-search flags `--dataset`, `--eval-model`,
+`--evaluator`, and `--max-candidates`. To explicitly request fresh assessment,
+author `evaluation_configuration` with an `evaluation_model` and either existing
+`evaluators` or `evaluator_generation_configuration` (`type: agent_traces`,
+optional `prompt`). This requires a registered target agent; `training_set` is
+not accepted. The CLI never injects evaluation into skill requests.
+
+### Other trace and baseline inputs
+
+For explicit trace selection, replace the fixed window with:
+
+```yaml
+trace_window:
+  type: trace_ids
+  trace_ids: ["trace-operation-id-1", "trace-operation-id-2"]
+  lookback_hours: 168
+```
+
+The service resolves the selected conversations within the lookback horizon.
+The IDs must be unique, with 1 to 100 IDs; do not combine this variant with fixed
+timestamps or `max_traces`.
+
+Optional `skill_references` context supplies exact existing skill versions:
+
+```yaml
+type: skill_references
+skill_references:
+  - type: foundry_skill
+    name: existing-procedure
+    version: "2"
+```
+
+The top-level `optimization_configuration.additional_skills` array remains
+supported. References from both forms are combined; conflicting versions and
+more than 20 distinct explicit skill references are rejected.
+
+For traces without a registered Foundry target, omit `target_configuration`
+and supply this field alongside `trace_window` in the `agent_traces` context:
+
+```yaml
+trace_connection_configuration:
+  type: appinsights
+  resource_id: /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.Insights/components/<component>
+  agent_name: exact-emitted-telemetry-service-name
+```
+
+The component must be authorized and linked to the project. `agent_name` is the
+exact emitted telemetry service identity, not a KQL expression. Omit it when
+`target_configuration` is present. Agentless requests do not support new
+evaluation execution.
+
+### Inspect outcomes and download the report
+
+Candidate lists contain summaries. Inspect the full candidate to get individual
+skill outcomes, rationale, execution steps, resolved context, and declared files:
+
+```powershell
+azd ai agent optimize status <job-id> --candidate <candidate-id> `
+  --project-endpoint <project-endpoint> --output json
+
+azd ai agent optimize download <job-id> --candidate <candidate-id> `
+  --file <files-path> --target-path trace-analysis.json `
+  --project-endpoint <project-endpoint>
+```
+
+Pass `files[].path` from candidate details unchanged; do not prepend a storage
+directory. The default local filename is the basename of that path. Downloads
+never overwrite existing files, including files created after input validation.
+Use another `--target-path` if the destination already exists.
+
+Each `output.skill_results` entry reports `created`, `no_change`, `rejected`,
+`pending`, `failed`, or `publication_unknown`. Only `created` confirms a published
+output version; `no_change` retains the input baseline rather than inventing a new
+version. Inspect individual outcomes even when the overall job succeeds. An
+uncertain publication must be verified before retrying.
+
+`optimize apply` and `optimize deploy` do not treat skill results as agent
+configuration files. Attach the desired published skill versions explicitly.
+`status --candidate` is a one-time detail read and cannot be combined with `--watch`.
+
+### Local verification
+
+From the extension directory, the focused offline tests exercise request
+serialization, validation before authentication, a local HTTP job lifecycle,
+skill publication outcomes, and report download:
+
+```powershell
+go test .\internal\pkg\agents\optimize_api .\internal\cmd -run 'Skill|OptimizeDownload'
+```
+
+Build and register the extension using the local development workflow below.
+Use a dedicated `AZD_CONFIG_DIR` when testing installs or configuration changes.
+The existing `--endpoint` flag can target a local optimization API's complete
+route base instead of `--project-endpoint`; use trusted HTTPS and the normal
+authorized development credentials.
+
+Testing a local CLI against a cloud project exercises that project's deployed
+backend, not an unreleased local backend branch. The offline tests do not invoke
+agents, submit live optimization jobs, or publish skills to Azure.
+
 ## Local Development
 
 ### Prerequisites

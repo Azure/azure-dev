@@ -118,6 +118,62 @@ azd ai cu analyze \
   --output-file invoice.result.md
 ```
 
+### Optional terminal preview
+
+The default stdout retains the original Markdown, including HTML tables. This
+also applies to redirects and pipes, so GUI viewers and other consumers can do
+their own rendering:
+
+```bash
+azd ai cu analyze invoice.pdf > invoice.result.md
+```
+
+Opt in to a human-readable preview with `--render`; use `--render=false` or omit
+the flag to retain original text:
+
+```bash
+azd ai cu analyze invoice.pdf --render
+```
+
+The preview uses the existing Glamour renderer for Markdown, including standard
+bold/italic syntax. Each LLM-input YAML front matter section is displayed as a
+separate Metadata code block, not interpreted as document headings or tables.
+The existing azd table/cards formatter handles supported HTML
+tables. It renders all columns without truncation and selects labeled cards when
+the full table exceeds the terminal width. Individual long values can still
+overflow. This reuses existing dependencies; the HTML extraction adapter is
+extension code.
+
+Supported tables have one explicit header row, unique nonempty headings, and
+rectangular nonempty plain-text data cells. Whitespace is normalized and captions
+are retained. Merged cells, rich cell markup, empty cells, duplicate headings, and
+unsupported structures show a notice and the table source instead. Markdown
+markers inside plain-text HTML cells remain literal. Native Markdown tables stay
+with Glamour and can shorten long links. The pinned azd cards implementation has
+a known label-alignment limitation with mixed Unicode headings; values are not
+lost.
+
+Offline preview probes cover Traditional Chinese, Japanese, Korean, French,
+German, Hindi, Arabic, and emoji/combining-character sequences. They check text
+retention, not service language support or visual font/shaping/RTL correctness.
+The Hindi table probe exposes another pinned-formatter limitation: its rune-width
+padding disagrees with ANSI grapheme-width measurements, so columns can lose alignment.
+Neither that issue nor Unicode card-label alignment is fixed by the adapter.
+
+Preview output removes terminal controls and URL credentials, queries, and fragments,
+including in fallback source. It is not a byte-for-byte result representation.
+Colors are used only for terminal writers when color is enabled; explicit
+`--render` with a pipe, redirected file, or other writer produces an uncolored
+preview at width 80. The preview does not fetch links or images.
+
+`--render` requires a single streamed LLM-input result. It cannot be combined with
+`--output json`, `--output none`, `--llm-input=false`, `--usage`, `--dry-run`,
+`--output-file`, or `--output-dir`; these conflicts are rejected before
+authentication. Saved result files, reports, and the default stdout format are
+unchanged. To save original Markdown/HTML, omit `--render`.
+
+### Complete JSON response
+
 For the complete JSON response envelope, including the result, service warnings,
 and usage when present, use `--output json`. These examples display the JSON
 in the console and save it to a file, respectively:

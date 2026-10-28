@@ -61,12 +61,7 @@ func numericVersion(raw string, minimum []int) (bool, bool) {
 		}
 		values[i] = value
 	}
-	for i, required := range minimum {
-		if values[i] != required {
-			return true, values[i] > required
-		}
-	}
-	return true, true
+	return true, slices.Compare(values[:len(minimum)], minimum) >= 0
 }
 
 func agentImage(raw string) (bool, bool) {
@@ -234,7 +229,7 @@ func selectedAgentPool(
 
 func aksResourceChecks(
 	cluster armcontainerservice.ManagedCluster, pools []*armcontainerservice.AgentPool, skus []*armcompute.ResourceSKU,
-) (string, Report) {
+) (string, *armcontainerservice.AgentPool, Report) {
 	scope := resourceValue(cluster.ID)
 	var report Report
 	add := func(id, expected string, known, valid bool, observed string) {
@@ -245,7 +240,7 @@ func aksResourceChecks(
 		for i := 1; i <= 11; i++ {
 			report = append(report, resourceCheck(fmt.Sprintf("A%02d", i), scope, "readable AKS properties"))
 		}
-		return "", report
+		return "", nil, report
 	}
 	sku := "Base"
 	if cluster.SKU != nil && cluster.SKU.Name != nil {
@@ -345,5 +340,5 @@ func aksResourceChecks(
 			policy != "" || dataplane == "azure" || dataplane == "cilium", valid,
 			"networkPolicy="+policy+"; networkDataplane="+dataplane)
 	}
-	return kubelet, report
+	return kubelet, selected, report
 }

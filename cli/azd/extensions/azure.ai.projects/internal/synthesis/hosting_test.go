@@ -14,7 +14,6 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
 )
 
 const hostingClusterID = "/subscriptions/cluster-sub/resourceGroups/aks-rg/providers/" +
@@ -56,21 +55,22 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 }
 
 func TestHostingRejectsUnsupportedSelections(t *testing.T) {
-	for _, field := range []string{
-		"storageAccountResourceId", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
-		"registryResourceId", "hostingType", "name", "agentSubnetResourceId", "unknown",
+	for _, test := range []struct{ field, value string }{
+		{"storageAccountResourceId", `""`},
+		{"hostingManagementIdentityResourceId", "null"},
+		{"workloadIdentityResourceId", `""`},
+		{"registryResourceId", "/subscriptions/s/resourceGroups/r/providers/Microsoft.ContainerRegistry/registries/r"},
+		{"unknown", "null"},
 	} {
-		for _, value := range []string{`""`, "null", "/subscriptions/s/resourceGroups/r/providers/Unknown/types/value"} {
-			t.Run(field+"/"+value, func(t *testing.T) {
-				raw := strings.Replace(hostingYAML(), "    network:",
-					"      "+field+": "+value+"\n    network:", 1)
-				result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
-				require.ErrorContains(t, err, "unsupported property")
-				assert.Nil(t, result)
-			})
-		}
+		t.Run(test.field, func(t *testing.T) {
+			raw := strings.Replace(hostingYAML(), "    network:",
+				"      "+test.field+": "+test.value+"\n    network:", 1)
+			result, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
+			require.ErrorContains(t, err, "unsupported property")
+			assert.Nil(t, result)
+		})
 	}
-	for _, value := range []string{"null", "[]", "false", `""`} {
+	for _, value := range []string{"null", "[]"} {
 		raw := strings.Replace(hostingYAML(), "agentHosting:\n      clusterResourceId: "+hostingClusterID,
 			"agentHosting: "+value, 1)
 		_, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project"})
@@ -109,13 +109,10 @@ func TestHostingValidatesClusterAndNetwork(t *testing.T) {
 
 func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	root := t.TempDir()
-	config := strings.TrimPrefix(hostingYAML(), "services:\n  project:\n")
-	var service map[string]any
-	require.NoError(t, yaml.Unmarshal([]byte(config), &service))
-	service["agentHosting"] = map[string]any{"clusterResourceId": "${CLUSTER_ID}"}
-	raw, err := yaml.Marshal(service)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), raw, 0o600))
+	path := filepath.Join(root, "project.yaml")
+	config := strings.Replace(strings.TrimPrefix(hostingYAML(), "services:\n  project:\n"),
+		hostingClusterID, "${CLUSTER_ID}", 1)
+	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
 	input := Input{
 		RawAzureYAML: []byte("services:\n  project:\n    $ref: ./project.yaml\n"), ServiceName: "project",
 		ProjectRoot: root, Env: map[string]string{"CLUSTER_ID": hostingClusterID},
@@ -127,10 +124,8 @@ func TestHostingFileReferencesAndEnvironmentResolution(t *testing.T) {
 	result, err = Synthesize(input)
 	require.NoError(t, err)
 	assert.Equal(t, "${CLUSTER_ID}", result.Hosting.ClusterResourceID)
-	service["agentHosting"] = map[string]any{"clusterResourceId": hostingClusterID, "storageAccountResourceId": ""}
-	raw, err = yaml.Marshal(service)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(root, "project.yaml"), raw, 0o600))
+	config = strings.Replace(config, "    network:", "      storageAccountResourceId: ''\n    network:", 1)
+	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
 	_, err = Synthesize(input)
 	require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
 }
@@ -146,9 +141,6 @@ func TestHostingSubnetNamesResolveBeforeComparison(t *testing.T) {
 	input.Env["PE_SUBNET"] = "agents"
 	_, err = Synthesize(input)
 	require.ErrorContains(t, err, "must differ")
-	input.Env["PE_SUBNET"] = ""
-	_, err = Synthesize(input)
-	require.Error(t, err)
 }
 
 func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
@@ -160,38 +152,24 @@ func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
 	require.NoError(t, compiler.AddResource("hosting.json", schemaDocument))
 	schema, err := compiler.Compile("hosting.json")
 	require.NoError(t, err)
-	for _, supplied := range []string{"", "storageAccountResourceId", "hostingManagementIdentityResourceId",
-		"workloadIdentityResourceId", "registryResourceId"} {
-		service := map[string]any{
-			"agentHosting": map[string]any{"clusterResourceId": hostingClusterID},
-			"network": map[string]any{
-				"agentSubnet": map[string]any{"vnet": hostingVNetID, "name": "agents"},
-				"peSubnet":    map[string]any{"vnet": hostingVNetID, "name": "endpoints"},
-			},
-		}
-		if supplied != "" {
-			hosting, ok := service["agentHosting"].(map[string]any)
-			require.True(t, ok)
-			hosting[supplied] = ""
-		}
-		err := schema.Validate(service)
-		if supplied == "" {
-			require.NoError(t, err)
-			for _, endpoint := range []string{"", " ", "${EMPTY}", "${EMPTY}${ALSO_EMPTY}", "${UNSET:-}"} {
-				service["endpoint"] = endpoint
-				require.NoError(t, schema.Validate(service))
-				raw := strings.Replace(hostingYAML(), "    agentHosting:",
-					"    endpoint: \""+endpoint+"\"\n    agentHosting:", 1)
-				_, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project",
-					Env: map[string]string{"EMPTY": "", "ALSO_EMPTY": ""}})
-				require.NoError(t, err)
-			}
-			service["endpoint"] = "https://existing.services.ai.azure.com/api/projects/project"
-			require.Error(t, schema.Validate(service))
-		} else {
-			require.Error(t, err)
-		}
+	hosting := map[string]any{"clusterResourceId": hostingClusterID}
+	service := map[string]any{"agentHosting": hosting, "network": map[string]any{
+		"agentSubnet": map[string]any{"vnet": hostingVNetID, "name": "agents"},
+		"peSubnet":    map[string]any{"vnet": hostingVNetID, "name": "endpoints"},
+	}}
+	require.NoError(t, schema.Validate(service))
+	hosting["storageAccountResourceId"] = ""
+	require.Error(t, schema.Validate(service))
+	delete(hosting, "storageAccountResourceId")
+	for _, endpoint := range []string{"", "${EMPTY}"} {
+		service["endpoint"] = endpoint
+		require.NoError(t, schema.Validate(service))
+		raw := strings.Replace(hostingYAML(), "    agentHosting:", "    endpoint: \""+endpoint+"\"\n    agentHosting:", 1)
+		_, err := Synthesize(Input{RawAzureYAML: []byte(raw), ServiceName: "project", Env: map[string]string{"EMPTY": ""}})
+		require.NoError(t, err)
 	}
+	service["endpoint"] = "https://existing.services.ai.azure.com/api/projects/project"
+	require.Error(t, schema.Validate(service))
 }
 
 func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {

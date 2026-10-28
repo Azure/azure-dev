@@ -71,7 +71,7 @@ func readSynthesisFiles(t *testing.T, root string) map[string][]byte {
 
 func isParityFile(path string) bool {
 	path = filepath.ToSlash(path)
-	if path == "bicep_tool_test.go" {
+	if path == "schema_test.go" {
 		return true
 	}
 	if strings.HasPrefix(path, "templates/") {

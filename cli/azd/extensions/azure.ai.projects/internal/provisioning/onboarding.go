@@ -122,19 +122,10 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return nil, err
 	}
-	planDigest, err := onboarding.Digest(plan)
-	if err != nil {
-		return nil, err
-	}
-	if previous != nil {
-		previousDigest, err := onboarding.Digest(previous.Plan)
-		if err != nil {
-			return nil, err
-		}
-		if previous.Version != 1 || previousDigest != planDigest || previous.TemplateDigest != templateDigest {
-			return nil, fmt.Errorf("BYO AKS target, network or template differs from its completed deployment intent; " +
-				"changing the resource selection is not supported")
-		}
+	if previous != nil &&
+		(previous.Version != 1 || previous.Plan != plan || previous.TemplateDigest != templateDigest) {
+		return nil, fmt.Errorf("BYO AKS target, network or template differs from its completed deployment intent; " +
+			"changing the resource selection is not supported")
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err

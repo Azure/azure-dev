@@ -24,9 +24,9 @@ const (
 
 // Check records one prerequisite and its evidence.
 type Check struct {
-	ID, Scope, Expected, Observed, Missing, Remediation string
-	Status                                              Status
-	Cause                                               error
+	ID, Scope, Expected, Observed string
+	Status                        Status
+	Cause                         error
 }
 
 // Report contains the AKS and network prerequisites.

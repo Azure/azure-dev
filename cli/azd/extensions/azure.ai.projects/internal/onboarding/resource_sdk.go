@@ -66,12 +66,12 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	if cluster == nil {
 		return facts, report, report.Err()
 	}
-	facts.KubeletObjectID, checks = aksResourceChecks(*cluster, pools, skus)
+	kubelet, selected, checks := aksResourceChecks(*cluster, pools, skus)
+	facts.KubeletObjectID = kubelet
 	report = append(report, checks...)
 	if err := report.Err(); err != nil {
 		return facts, report, err
 	}
-	selected, _ := selectedAgentPool(*cluster, pools, skus)
 	report = append(report, c.networkChecks(ctx, plan, cluster, selected)...)
 	if err := report.Err(); err != nil {
 		return facts, report, err

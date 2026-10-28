@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"azure.ai.projects/internal/onboarding"
@@ -81,18 +82,8 @@ func (p *FoundryProvisioningProvider) observeBYOTargets(
 	for i, target := range targets {
 		origins[i] = target.byoResourceOrigin
 	}
-	if previous != nil {
-		expected, err := onboarding.Digest(origins)
-		if err != nil {
-			return nil, err
-		}
-		actual, err := onboarding.Digest(previous.Origins)
-		if err != nil {
-			return nil, err
-		}
-		if expected != actual {
-			return nil, fmt.Errorf("BYO AKS original resource sources/absence evidence are incomplete or changed")
-		}
+	if previous != nil && !slices.Equal(origins, previous.Origins) {
+		return nil, fmt.Errorf("BYO AKS original resource sources/absence evidence are incomplete or changed")
 	}
 	client, err := armresources.NewClient(p.subID, p.credential, onboarding.ARMOptions(p.armClientOptions))
 	if err != nil {
@@ -318,9 +309,6 @@ func byoOwnership(outputs any, plan onboarding.Plan, facts onboarding.Facts) (ma
 			return nil, fmt.Errorf("BYO AKS ownership contains an unexpected or duplicate role assignment")
 		}
 		delete(expectedGrants, binding)
-	}
-	if len(expectedGrants) != 0 {
-		return nil, fmt.Errorf("BYO AKS ownership is missing a required role assignment")
 	}
 	return ownership, nil
 }

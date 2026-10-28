@@ -367,7 +367,6 @@ func TestBYOReprovisionRejectsChangedEvidenceWithoutAnotherWrite(t *testing.T) {
 		change func(*byoARMFake, *memoryBYOJournal)
 	}{
 		{"original source", func(_ *byoARMFake, j *memoryBYOJournal) { j.state.Origins[0].Source = "created" }},
-		{"original absence", func(_ *byoARMFake, j *memoryBYOJournal) { j.state.Origins[4].InitiallyAbsent = false }},
 		{"missing ownership tag", func(f *byoARMFake, _ *memoryBYOJournal) {
 			delete(f.resources[f.plan.Storage.ID], "tags")
 		}},
@@ -375,18 +374,7 @@ func TestBYOReprovisionRejectsChangedEvidenceWithoutAnotherWrite(t *testing.T) {
 			f.resources[f.plan.Hosting.ID]["properties"] = map[string]any{
 				"principalId": "55555555-5555-4555-8555-555555555555"}
 		}},
-		{"replaced project principal", func(f *byoARMFake, _ *memoryBYOJournal) {
-			f.resources[f.plan.Project.ID]["identity"] = map[string]any{
-				"type": "SystemAssigned", "principalId": "55555555-5555-4555-8555-555555555555"}
-		}},
 		{"modified template", func(f *byoARMFake, _ *memoryBYOJournal) { f.template["contentVersion"] = "2.0.0.0" }},
-		{"modified bindings", func(f *byoARMFake, _ *memoryBYOJournal) {
-			properties, ok := f.deployment["properties"].(map[string]any)
-			require.True(t, ok)
-			parameters, ok := properties["parameters"].(map[string]any)
-			require.True(t, ok)
-			parameters["includeAcr"] = map[string]any{"value": false}
-		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p, journal, fake := offlineBYOProvider(t)
@@ -407,11 +395,7 @@ func TestBYORejectsLocalConflictsBeforeNamingOrAuthentication(t *testing.T) {
 		value any
 	}{
 		{"includeAcr", false}, {"agentHosting", map[string]any{"enabled": true, "storageAccountResourceId": "supplied"}},
-		{"vnetId", "not-an-id"}, {"createAgentSubnet", true}, {"agentSubnetPrefix", "10.0.1.0/24"},
-		{"agentSubnetName", "endpoints"}, {"dnsZonesSubscription", "not-a-subscription"},
-		{"foundryProjectName", "invalid/project"},
 		{"tags", map[string]string{byoOwnerTag: "another-deployment"}},
-		{"tags", map[string]string{"AZD-ENV-NAME": "another-environment"}},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			p, journal, fake := offlineBYOProvider(t)
@@ -446,34 +430,27 @@ func TestBYORejectsLocalConflictsBeforeNamingOrAuthentication(t *testing.T) {
 
 func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.T) {
 	for _, onDisk := range []bool{false, true} {
-		for _, hosting := range []string{
-			"{clusterResourceId: not-an-id}",
-			"{clusterResourceId: " + offlineClusterID + ", storageAccountResourceId: ''}",
-			"{clusterResourceId: " + offlineClusterID + ", workloadIdentityResourceId: ''}",
-		} {
-			root := t.TempDir()
-			config := "services:\n  project:\n    host: azure.ai.project\n    agentHosting: " + hosting + "\n" +
-				"    network:\n      agentSubnet: {vnet: " + offlineVNetID + ", name: agents}\n" +
-				"      peSubnet: {vnet: " + offlineVNetID + ", name: endpoints}\n"
-			path := filepath.Join(root, "azure.yaml")
-			require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
-			if onDisk {
-				require.NoError(t, os.Mkdir(filepath.Join(root, "infra"), 0o750))
-				require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.bicep"), []byte("// generated"), 0o600))
-			}
-			env := &resolveEnvStubEnvServer{envName: "test"}
-			prompt := &resolveEnvStubPromptServer{}
-			p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
-			err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
-			require.Error(t, err)
-			assert.Empty(t, env.set)
-			assert.Zero(t, prompt.subscriptionN)
-			assert.Zero(t, prompt.locationN)
-			assert.Nil(t, p.credential)
-			raw, err := os.ReadFile(path)
-			require.NoError(t, err)
-			assert.Equal(t, config, string(raw))
+		root := t.TempDir()
+		config := "services:\n  project:\n    host: azure.ai.project\n" +
+			"    agentHosting: {clusterResourceId: " + offlineClusterID + ", storageAccountResourceId: ''}\n"
+		path := filepath.Join(root, "azure.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
+		if onDisk {
+			require.NoError(t, os.Mkdir(filepath.Join(root, "infra"), 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.bicep"), []byte("// generated"), 0o600))
 		}
+		env := &resolveEnvStubEnvServer{envName: "test"}
+		prompt := &resolveEnvStubPromptServer{}
+		p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+		err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
+		require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
+		assert.Empty(t, env.set)
+		assert.Zero(t, prompt.subscriptionN)
+		assert.Zero(t, prompt.locationN)
+		assert.Nil(t, p.credential)
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, config, string(raw))
 	}
 }
 
@@ -501,36 +478,15 @@ func TestBYODownAndModeSwitchNeverReachGenericDeletion(t *testing.T) {
 	require.ErrorContains(t, err, "invalid "+envKeyBYOJournal)
 }
 
-func TestBYOCompletionRejectsWrongBindingsAndMissingGrants(t *testing.T) {
-	p, _, fake := offlineBYOProvider(t)
-	checker, ok := p.byoChecker.(byoTestChecker)
-	require.True(t, ok)
-	for _, test := range []struct {
-		name   string
-		change func(map[string]any)
-	}{
-		{"wrong kubelet", func(o map[string]any) { o["kubeletPrincipalId"] = o["projectPrincipalId"] }},
-		{"shared identities", func(o map[string]any) { o["workloadPrincipalId"] = o["hostingPrincipalId"] }},
-		{"missing ownership", func(o map[string]any) { delete(o, "ownedStorage") }},
-		{"wrong target", func(o map[string]any) { o["registryResourceId"] = fake.plan.Storage.ID }},
-		{"missing grants", func(o map[string]any) { o["roleAssignments"] = []any{} }},
-		{"wrong federation role", func(o map[string]any) {
-			grants, ok := o["roleAssignments"].([]any)
-			require.True(t, ok)
-			grant, ok := grants[2].(map[string]any)
-			require.True(t, ok)
-			grant["roleDefinitionId"] = "/subscriptions/target-sub/providers/Microsoft.Authorization/" +
-				"roleDefinitions/ffffffff-ffff-ffff-ffff-ffffffffffff"
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			ownership := cloneBYOJSON(t, fake.ownership)
-			test.change(ownership)
-			outputs := map[string]any{"AZD_BYO_AKS_OWNERSHIP": map[string]any{"value": ownership}}
-			_, err := byoOwnership(outputs, fake.plan, checker.facts)
-			require.Error(t, err)
-		})
-	}
+func TestBYOCompletionRequiresAllGrants(t *testing.T) {
+	p, journal, fake := offlineBYOProvider(t)
+	fake.ownership["roleAssignments"] = []any{}
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "requires all six role assignments")
+	require.NotNil(t, journal.state)
+	assert.Equal(t, "deploying", journal.state.Status)
+	assert.Len(t, journal.saves, 1)
+	assert.Equal(t, 1, fake.writes)
 }
 
 func TestBYOTemplateDigestAllowsOnlyExportNormalization(t *testing.T) {

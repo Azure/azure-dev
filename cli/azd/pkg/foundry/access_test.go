@@ -92,6 +92,10 @@ func TestProjectScopeFromEnvironment(t *testing.T) {
 			v["AZURE_AI_PROJECT_ENDPOINT"] = v["FOUNDRY_PROJECT_ENDPOINT"]
 			delete(v, "FOUNDRY_PROJECT_ENDPOINT")
 		}},
+		{name: "whitespace Foundry key falls back to legacy endpoint", change: func(v map[string]string) {
+			v["AZURE_AI_PROJECT_ENDPOINT"] = v["FOUNDRY_PROJECT_ENDPOINT"]
+			v["FOUNDRY_PROJECT_ENDPOINT"] = "   "
+		}},
 		{name: "Foundry key wins", change: func(v map[string]string) {
 			v["AZURE_AI_PROJECT_ENDPOINT"] = "https://other.services.ai.azure.com/api/projects/proj"
 		}},
@@ -314,8 +318,9 @@ func TestAccessPreparation(t *testing.T) {
 		{name: "unrelated forbidden", probeErr: &azcore.ResponseError{
 			StatusCode: 403, ErrorCode: "FirewallDenied",
 		}, wantProbes: 1, wantWarning: true},
-		{name: "inherited Foundry User", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
-			principalID: "guest-object-id", hasAccess: true, wantChecks: 1, wantProbes: 1, wantWarning: true},
+		{name: "inherited Foundry User propagates", probeErr: accessDenied(),
+			principal:   azdext.PrincipalType_PRINCIPAL_TYPE_USER,
+			principalID: "guest-object-id", hasAccess: true, wantChecks: 1, wantProbes: 2},
 		{name: "owner without data access", probeErr: accessDenied(), principal: azdext.PrincipalType_PRINCIPAL_TYPE_USER,
 			principalID: "guest-object-id", wantChecks: 1, wantAssigns: 1, wantProbes: 2},
 		{name: "service principal", probeErr: accessDenied(),
@@ -355,7 +360,8 @@ func TestAccessPreparation(t *testing.T) {
 					if probes == 1 {
 						return tt.probeErr
 					}
-					require.Equal(t, 1, roles.assigns, "probe may only be retried after a grant")
+					require.True(t, roles.assigns == 1 || tt.hasAccess,
+						"probe may only be retried after a grant or existing role")
 					return nil
 				},
 				Warn: func(message string) { warnings = append(warnings, message) },
@@ -431,7 +437,12 @@ func TestAccessPreparationProgress(t *testing.T) {
 	}{
 		{name: "existing access", probeErrors: []error{nil}},
 		{name: "unrelated probe failure", probeErrors: []error{errors.New("network failure")}, wantWarning: true},
-		{name: "inherited role", probeErrors: []error{accessDenied()}, hasAccess: true, wantWarning: true},
+		{name: "inherited role propagates", probeErrors: []error{accessDenied(), nil}, hasAccess: true,
+			wantProgress: []string{waiting, ready}},
+		{name: "inherited role still denied after propagation wait",
+			probeErrors: []error{accessDenied(), accessDenied(), accessDenied()}, hasAccess: true,
+			wantProgress: []string{waiting}, wantWarning: true},
+		{name: "nil callbacks on warning path", probeErrors: []error{errors.New("network failure")}, nilProgress: true},
 		{name: "grant failure", probeErrors: []error{accessDenied()}, assignErr: accessDenied(),
 			wantProgress: []string{granting}, wantWarning: true},
 		{name: "immediate readiness", probeErrors: []error{accessDenied(), nil},
@@ -470,10 +481,10 @@ func TestAccessPreparationProgress(t *testing.T) {
 						assert.Equal(t, 0, roles.assigns, "report the attempt before assigning")
 						assert.Equal(t, 1, probes)
 					case waiting:
-						assert.Equal(t, 1, roles.assigns)
+						assert.True(t, roles.assigns == 1 || tt.hasAccess)
 						assert.Equal(t, 1, probes, "report the wait before probing propagation")
 					case ready:
-						assert.Equal(t, 1, roles.assigns)
+						assert.True(t, roles.assigns == 1 || tt.hasAccess)
 						require.Greater(t, probes, 1)
 						assert.NoError(t, tt.probeErrors[probes-1], "readiness must follow a successful probe")
 					default:
@@ -484,6 +495,9 @@ func TestAccessPreparationProgress(t *testing.T) {
 			}
 			if tt.nilProgress {
 				preparation.Progress = nil
+				if !tt.wantWarning {
+					preparation.Warn = nil
+				}
 			}
 			err := preparation.Ensure(t.Context())
 			if IsProjectAccessDenied(tt.wantErr) {

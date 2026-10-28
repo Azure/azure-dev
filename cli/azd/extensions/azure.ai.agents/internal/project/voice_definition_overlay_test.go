@@ -167,3 +167,15 @@ definition_overlay: {}
 	_, err := LoadAgentDefinitionFile(root, path, "prompt")
 	require.ErrorContains(t, err, "definitionOverlay is only supported on voice agents")
 }
+
+func TestVoiceDefinitionOverlaySchemaAllowsRootRefKind(t *testing.T) {
+	t.Parallel()
+	schema := loadDocSchema(t, extensionRoot(t))
+	require.NoError(t, schema.validate(map[string]any{
+		"$ref":              "./voice.yaml",
+		"definitionOverlay": map[string]any{"future": true},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"definitionOverlay": map[string]any{"future": true},
+	}))
+}

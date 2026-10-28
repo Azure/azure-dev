@@ -332,7 +332,10 @@
       },
       "then": {
         "properties": { "kind": { "enum": ["prompt-voice", "voice"] } },
-        "required": ["kind"],
+        "anyOf": [
+          { "required": ["kind"] },
+          { "required": ["$ref"] }
+        ],
         "not": { "required": ["definitionOverlay", "definition_overlay"] }
       }
     },

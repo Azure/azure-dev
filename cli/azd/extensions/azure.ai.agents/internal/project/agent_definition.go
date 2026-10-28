@@ -1611,6 +1611,19 @@ func normalizeRootVoiceDefinitionMap(values map[string]any) (map[string]any, err
 					delete(responses, source)
 				}
 			}
+			if choice, ok := responses["toolChoice"].(map[string]any); ok {
+				if value, found := choice["server_label"]; found {
+					if _, conflict := choice["serverLabel"]; conflict {
+						return nil, exterrors.Validation(
+							exterrors.CodeInvalidAgentManifest,
+							"voice tool choice contains both server_label and serverLabel",
+							"use snake_case in a root $ref definition",
+						)
+					}
+					choice["serverLabel"] = value
+					delete(choice, "server_label")
+				}
+			}
 		}
 	}
 	if inputs, ok := values["structuredInputs"].(map[string]any); ok {

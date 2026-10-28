@@ -406,6 +406,27 @@ func TestVoiceAgentFromResolvedService_RejectsRootStyleSiblingOverlay(t *testing
 	require.ErrorContains(t, err, "root-style property")
 }
 
+func TestVoiceAgentFromResolvedService_NormalizesRootMCPServerLabel(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+delegation:
+  type: responses
+  responses:
+    model: terra
+    tool_choice: {type: mcp, name: lookup, server_label: tools}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	got, found, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "tools", got.Delegation.Responses.ToolChoice.(map[string]any)["serverLabel"])
+}
+
 func TestVoiceAgentFromResolvedService_RejectsInlineLiveSnakeCaseAliases(t *testing.T) {
 	base := map[string]any{
 		"kind": "voice", "name": "live", "subProtocol": "live",

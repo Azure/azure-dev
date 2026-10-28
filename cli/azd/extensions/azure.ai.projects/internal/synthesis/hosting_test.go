@@ -185,10 +185,14 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 			switch value["type"] {
 			case "Microsoft.ContainerRegistry/registries":
 				registries++
+				assert.Equal(t, "2023-07-01", value["apiVersion"])
 				assert.Equal(t, "[parameters('name')]", value["name"])
 				sku, ok := value["sku"].(map[string]any)
 				require.True(t, ok)
 				assert.Equal(t, "Premium", sku["name"])
+				properties, ok := value["properties"].(map[string]any)
+				require.True(t, ok)
+				assert.NotContains(t, properties, "roleAssignmentMode")
 			case "Microsoft.ManagedIdentity/userAssignedIdentities":
 				identities++
 			case "Microsoft.Storage/storageAccounts":
@@ -210,7 +214,7 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	text := string(raw)
 	for _, required := range []string{
 		"agentHostingConfigurations", "ManagedCluster", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
-		"LegacyRegistryPermissions", "kubeletObjectId", "ContainerRegistry", "AZD_BYO_AKS_OWNERSHIP",
+		"kubeletObjectId", "ContainerRegistry", "AZD_BYO_AKS_OWNERSHIP",
 		"allowSharedKeyAccess", "allowBlobPublicAccess", "federatedIdentityRoleDefinitionId",
 	} {
 		assert.Contains(t, text, required)

@@ -46,7 +46,7 @@ var acrPullRoleId = subscriptionResourceId(
 
 // Resources
 
-resource registry 'Microsoft.ContainerRegistry/registries@2025-03-01-preview' = {
+resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: name
   location: location
   tags: tags
@@ -61,7 +61,6 @@ resource registry 'Microsoft.ContainerRegistry/registries@2025-03-01-preview' = 
     // BYO AKS uses public authenticated pulls; ordinary network isolation
     // retains its disabled public endpoint.
     publicNetworkAccess: enableNetworkIsolation && !byoAks ? 'Disabled' : 'Enabled'
-    ...(byoAks ? { roleAssignmentMode: 'LegacyRegistryPermissions' } : {})
     zoneRedundancy: 'Disabled'
   }
 }

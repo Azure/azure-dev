@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
@@ -79,7 +80,7 @@ type accessRoles struct {
 
 func (r *accessRoles) HasAccess(context.Context, string, string) (bool, error) {
 	*r.events = append(*r.events, "roles")
-	return false, nil
+	return r.assigned, nil
 }
 
 func (r *accessRoles) Assign(_ context.Context, scope, id string, kind armauthorization.PrincipalType) error {
@@ -161,7 +162,7 @@ func accessTestSetup(
 			assert.Equal(t, "user-access-tenant", tenantID)
 			return nil, nil
 		},
-		roles: roles, writer: io.Discard,
+		roles: roles, retryDelay: time.Nanosecond, writer: io.Discard,
 	}
 	return access, client, account
 }
@@ -197,7 +198,7 @@ func TestToolboxCreatePreparesAccessBeforeConnections(t *testing.T) {
 				&definition.Definition{Connections: []definition.ConnectionReference{{Name: "mcp"}}},
 				toolboxFlags{output: "json"})
 			require.NoError(t, err)
-			assert.Equal(t, []string{"read", "roles", "grant", "read", "connection", "create"}, events)
+			assert.Equal(t, []string{"roles", "grant", "read", "connection", "create"}, events)
 			assert.Equal(t, "Assigning Foundry User to the current principal.\n"+
 				"Waiting for Foundry access to propagate.\nFoundry access is ready.\n", diagnostics.String())
 		})
@@ -237,7 +238,7 @@ func TestToolboxDeployPreparesAccessWithoutAgentHook(t *testing.T) {
 		Name: "research", AdditionalProperties: properties, Environment: map[string]string{"CONNECTION": "mcp"},
 	}, nil, nil, nil)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"read", "roles", "grant", "read", "connection", "create"}, events)
+	assert.Equal(t, []string{"roles", "grant", "read", "connection", "create"}, events)
 	require.Len(t, client.createVersionCalls, 1)
 	assert.NotContains(t, client.createVersionCalls[0].req.Tools[0], "connection")
 }
@@ -260,8 +261,10 @@ func TestToolboxAccessDoesNotGrantForUnscopedSkippedOrAuthorizedOperations(t *te
 			case "managed access":
 				client.roles.assigned = true
 			case "404":
+				client.roles.assigned = true
 				client.probeErr = &azcore.ResponseError{StatusCode: http.StatusNotFound}
 			case "unknown 403":
+				client.roles.assigned = true
 				client.probeErr = &azcore.ResponseError{StatusCode: http.StatusForbidden, ErrorCode: "PolicyDenied"}
 			}
 			_, err := access.writeClient(t.Context(), toolboxAccessTestEndpoint, "research",
@@ -273,7 +276,6 @@ func TestToolboxAccessDoesNotGrantForUnscopedSkippedOrAuthorizedOperations(t *te
 				})
 			require.NoError(t, err)
 			assert.NotContains(t, events, "grant")
-			assert.NotContains(t, events, "roles")
 			assert.NotContains(t, diagnostics.String(), "Foundry access is ready.")
 		})
 	}
@@ -524,8 +526,10 @@ func TestToolboxAccessOptionalFailuresAndCancellation(t *testing.T) {
 			case "cancelled environment":
 				access.environment.(*accessEnvironment).err = context.Canceled
 			case "cancelled probe":
+				client.roles.assigned = true
 				client.probeErr = context.Canceled
 			case "cancelled not found":
+				client.roles.assigned = true
 				client.probeErr = errors.Join(context.Canceled, &azcore.ResponseError{StatusCode: http.StatusNotFound})
 			}
 			_, err := access.writeClient(t.Context(), toolboxAccessTestEndpoint, "research",

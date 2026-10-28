@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"azure.ai.toolboxes/internal/exterrors"
 	"azure.ai.toolboxes/internal/pkg/azure"
@@ -29,6 +30,7 @@ type toolboxAccess struct {
 	account       toolboxAccessAccount
 	newCredential func(string) (azcore.TokenCredential, error)
 	roles         foundry.ProjectRoles
+	retryDelay    time.Duration
 	writer        io.Writer
 }
 
@@ -94,6 +96,7 @@ func (a *toolboxAccess) prepare(
 		Account:    a.account,
 		Credential: credential,
 		Roles:      a.roles,
+		RetryDelay: a.retryDelay,
 		Scope:      scope.resource.String(),
 		Probe: func(ctx context.Context) error {
 			cached = nil
@@ -101,7 +104,7 @@ func (a *toolboxAccess) prepare(
 			if cancelErr := foundry.AccessCancellation(ctx, err); cancelErr != nil {
 				return cancelErr
 			}
-			if err == nil || isAzureNotFound(err) {
+			if err == nil || (isAzureNotFound(err) && !foundry.IsProjectNotFound(err)) {
 				cached = &probedToolboxClient{
 					toolboxClient: client,
 					probedName:    name,

@@ -4628,6 +4628,9 @@ func agentDeploymentErrorWithVersion(err error, projectResourceID, agentName, ve
 		}
 		return err
 	}
+	if serviceErr.ErrorCode == exterrors.OpCreateAgent+".timeout" {
+		serviceErr.Message = fmt.Sprintf("agent %q version %q: %s", agentName, version, serviceErr.Message)
+	}
 	if serviceErr.Suggestion == "" || serviceErr.Suggestion == "inspect the attempted agent version in the Foundry portal" {
 		serviceErr.Suggestion = inspectionSuggestion
 	} else {
@@ -4643,8 +4646,10 @@ func agentDeploymentTimeoutError(
 	if lastVersion != nil {
 		lastStatus = lastVersion.Status
 	}
-	message := fmt.Sprintf("stopped waiting for agent activation (last status: %s); "+
-		"the final deployment outcome is unknown and provisioning may still be running", lastStatus)
+	message := fmt.Sprintf("azd stopped waiting for agent activation (last status: %s); "+
+		"this does not mean the deployment failed. The final deployment outcome is unknown, "+
+		"and provisioning may still be running in Azure. Check this version's status "+
+		"before deploying again; another deploy creates a new version", lastStatus)
 	if lastPollErr != nil {
 		message += fmt.Sprintf("; last status check failed: %s", lastPollErr)
 	}

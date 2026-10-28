@@ -1442,6 +1442,10 @@ func TestAgentDeploymentErrorWithVersion(t *testing.T) {
 			require.Contains(t, serviceErr.Suggestion, `agent "attempted-agent" version "7"`)
 			require.NotContains(t, serviceErr.Suggestion, "azd ai agent show")
 			require.NotContains(t, serviceErr.Suggestion, "old-agent")
+			if serviceErr.ErrorCode == "create_agent.timeout" {
+				require.Contains(t, serviceErr.Message, `agent "attempted-agent" version "7"`)
+				require.NotContains(t, serviceErr.Message, "old-agent")
+			}
 			if test.projectID != "" {
 				require.Contains(t, serviceErr.Suggestion, "/build/agents/attempted-agent/build?version=7")
 			}
@@ -1473,6 +1477,9 @@ func TestAgentDeploymentTimeoutError(t *testing.T) {
 		require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
 		require.Contains(t, serviceErr.Message, "outcome is unknown")
 		require.Contains(t, serviceErr.Message, "may still be running")
+		require.Contains(t, serviceErr.Message, "does not mean the deployment failed")
+		require.Contains(t, serviceErr.Message, "before deploying again")
+		require.Contains(t, serviceErr.Message, "another deploy creates a new version")
 		require.Contains(t, serviceErr.Suggestion, "Foundry portal")
 		if version != nil {
 			require.Contains(t, serviceErr.Message, version.Status)

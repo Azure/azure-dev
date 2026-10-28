@@ -1495,8 +1495,9 @@ After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
 Snapshot opt-in does not add a separate activation wait budget. On activation
 failure, timeout, or cancellation, use the attempted-version link in the error;
 the environment may still refer to the previous successful deployment. Stopping
-the client wait does not cancel provisioning in Azure. Inspect that version's
-status before deploying again, since another deploy creates a new version.
+the client wait does not cancel provisioning in Azure, and an activation timeout
+does not confirm that the version failed. Inspect that version's status before
+deploying again, since another deploy creates a new version.
 
 Snapshots reuse version initialization; they are not conversation or session-state
 backups. Snapshot capture, restore, and persistence guarantees belong to the hosting

@@ -4,11 +4,14 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"azure.ai.toolboxes/internal/definition"
 	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry/projectctx"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,4 +40,31 @@ func TestCreateRejectsDefinitionNameMismatch(t *testing.T) {
 		toolboxCreateFlags{fromFile: path}, toolboxFlags{output: "json"},
 	)
 	requireLocalError(t, err, exterrors.CodeInvalidToolboxName)
+}
+
+func TestCreateEnsuresDeveloperAccessForActiveEnvironmentProject(t *testing.T) {
+	// No t.Parallel: package-level seams are swapped.
+	previousReadSources := projectctx.ReadAzdHostedSourcesFunc
+	projectctx.ReadAzdHostedSourcesFunc = func(context.Context) (projectctx.AzdHostedSources, error) {
+		return projectctx.AzdHostedSources{
+			EnvValue: "https://project.services.ai.azure.com/api/projects/test", EnvName: "test",
+		}, nil
+	}
+	t.Cleanup(func() { projectctx.ReadAzdHostedSourcesFunc = previousReadSources })
+
+	sentinel := errors.New("access check reached")
+	var calls int
+	previousEnsure := ensureDeveloperAccessFunc
+	ensureDeveloperAccessFunc = func(context.Context) error {
+		calls++
+		return sentinel
+	}
+	t.Cleanup(func() { ensureDeveloperAccessFunc = previousEnsure })
+
+	err := runToolboxCreate(
+		t.Context(), "research", toolboxCreateFlags{}, toolboxFlags{output: "json"}, nil,
+	)
+
+	assert.Equal(t, 1, calls)
+	require.ErrorIs(t, err, sentinel)
 }

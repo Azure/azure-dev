@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"azure.ai.toolboxes/internal/definition"
@@ -56,6 +57,8 @@ type toolboxServiceTarget struct {
 	projectClient     serviceConfigReader
 	resolver          connectionResolver
 	newClient         func(endpoint, tenantID string) (toolboxClient, error)
+	// ensureAccess grants the developer Foundry access before the first data-plane write.
+	ensureAccess func(ctx context.Context) error
 }
 
 // newToolboxServiceTarget creates the azure.ai.toolbox service-target provider.
@@ -69,6 +72,11 @@ func newToolboxServiceTarget(
 		resolver:          defaultConnectionResolver{},
 		newClient: func(endpoint, tenantID string) (toolboxClient, error) {
 			return newToolboxClientForTenant(endpoint, tenantID)
+		},
+		ensureAccess: func(ctx context.Context) error {
+			return azdext.EnsureFoundryDeveloperAccess(ctx, azdClient, azdext.FoundryDeveloperAccessOptions{
+				Writer: os.Stderr,
+			})
 		},
 	}
 }
@@ -162,6 +170,12 @@ func (p *toolboxServiceTarget) Deploy(
 		return nil, err
 	}
 	endpoint := resolved.Endpoint
+
+	if p.ensureAccess != nil {
+		if err := p.ensureAccess(ctx); err != nil {
+			return nil, err
+		}
+	}
 
 	environment, err := p.environmentValues(ctx, serviceConfig)
 	if err != nil {

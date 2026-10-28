@@ -6,6 +6,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -17,6 +18,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
 )
+
+// ensureDeveloperAccessFunc grants the developer Foundry access before the create call.
+// Provisioning no longer assigns developer roles, so writes must do it first.
+// It is a variable so tests can stub it.
+var ensureDeveloperAccessFunc = func(ctx context.Context) error {
+	return withAzdClient(func(c *azdext.AzdClient) error {
+		return azdext.EnsureFoundryDeveloperAccess(ctx, c, azdext.FoundryDeveloperAccessOptions{
+			Writer: os.Stderr,
+		})
+	})
+}
 
 // toolboxCreateFlags holds the verb-specific flags for `toolbox create`.
 type toolboxCreateFlags struct {
@@ -86,6 +98,14 @@ func runToolboxCreate(
 		return err
 	}
 	logResolvedEndpoint("toolbox create", resolved)
+
+	// The access check targets the active environment's project, so it only applies
+	// when that project is the one being written to.
+	if resolved.Source == projectctx.SourceAzdEnv {
+		if err := ensureDeveloperAccessFunc(ctx); err != nil {
+			return err
+		}
+	}
 
 	client, err := newToolboxClient(resolved.Endpoint)
 	if err != nil {

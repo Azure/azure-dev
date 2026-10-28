@@ -72,6 +72,11 @@ their structure and types. Only strings are searched for placeholders.
 ## Notes
 
 - Replacement text is not substituted a second time, so a variable whose value contains `${OTHER}` keeps that text.
-- Values must not be JSON-escaped when set with `azd env set`. `azd pipeline config` escapes values (quotes and
-  backslashes) before storing them in the CI system. Because replacement text is literal, a value read back from the CI
-  environment is used exactly as stored.
+- Values must not be JSON-escaped when set with `azd env set`.
+- `azd pipeline config` stores variables and secrets in the CI system exactly as they are in the azd environment, with
+  no escaping, so a CI run sees the same value as a local run. Pipelines configured with an earlier azd version still
+  hold escaped values (for example `[\"a\"]`); run `azd pipeline config` again to refresh them.
+- The Terraform provider substitutes `${VAR}` in `<module>.tfvars.json` and the remote backend configuration file the
+  same way when the file is valid JSON: on the string values, never on the JSON text. A file that is not valid JSON
+  before substitution (for example an unquoted placeholder such as `"count": ${COUNT}`) is still substituted as plain
+  text.

@@ -2167,7 +2167,7 @@ func (r *envSubstResult) merge(other envSubstResult) {
 func substituteParameter(
 	param azure.ArmParameter, fn func(string) (string, error),
 ) (azure.ArmParameter, error) {
-	value, err := substituteJSONStrings(param.Value, fn)
+	value, err := provisioning.SubstituteJSONStrings(param.Value, fn)
 	if err != nil {
 		return azure.ArmParameter{}, err
 	}
@@ -2183,41 +2183,6 @@ func substituteParameter(
 		result.KeyVaultReference = &resolved
 	}
 	return result, nil
-}
-
-// substituteJSONStrings walks a decoded JSON value and applies fn to each string and object key. Numbers, booleans and
-// null are returned as authored. The input is not modified.
-func substituteJSONStrings(value any, fn func(string) (string, error)) (any, error) {
-	switch v := value.(type) {
-	case string:
-		return fn(v)
-	case []any:
-		out := make([]any, len(v))
-		for i, item := range v {
-			resolved, err := substituteJSONStrings(item, fn)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = resolved
-		}
-		return out, nil
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for key, item := range v {
-			resolvedKey, err := fn(key)
-			if err != nil {
-				return nil, err
-			}
-			resolved, err := substituteJSONStrings(item, fn)
-			if err != nil {
-				return nil, err
-			}
-			out[resolvedKey] = resolved
-		}
-		return out, nil
-	default:
-		return value, nil
-	}
 }
 
 // evalParamEnvSubst evaluates environment variable substitution on a single parameter string value.

@@ -8,7 +8,7 @@
 
 ### Bugs Fixed
 
-- [[#10688]](https://github.com/Azure/azure-dev/issues/10688) Fix Bicep parameter files producing invalid JSON when an environment variable used inside a parameter value contains quotes, backslashes, or newlines. Placeholders inside strings are now substituted as literal text.
+- [[#10688]](https://github.com/Azure/azure-dev/issues/10688) Fix Bicep parameter files and Terraform tfvars files producing invalid JSON when an environment variable used inside a value contains quotes, backslashes, or newlines. Placeholders inside strings are now substituted as literal text. `azd pipeline config` no longer JSON-escapes the variables and secrets it stores in CI; rerun it on existing pipelines to store the plain values.
 
 ### Other Changes
 

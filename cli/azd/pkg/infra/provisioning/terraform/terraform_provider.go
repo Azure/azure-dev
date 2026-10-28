@@ -4,6 +4,7 @@
 package terraform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -782,14 +783,13 @@ func (t *TerraformProvider) createInputParametersFile(
 	if err != nil {
 		return fmt.Errorf("reading parameter file template: %w", err)
 	}
-	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
+	replaced, err := substituteParametersTemplate(parametersBytes, func(name string) string {
 		if name == environment.PrincipalIdEnvVarName {
 			return principalId
 		}
 
 		return t.env.Getenv(name)
 	})
-
 	if err != nil {
 		return fmt.Errorf("substituting parameter file: %w", err)
 	}
@@ -868,4 +868,37 @@ func (t *TerraformProvider) Parameters(ctx context.Context) ([]provisioning.Para
 func (t *TerraformProvider) PlannedOutputs(ctx context.Context) ([]provisioning.PlannedOutput, error) {
 	// not supported (no-op)
 	return nil, nil
+}
+
+// substituteParametersTemplate replaces environment variable references in the contents of a parameters template.
+//
+// When the template is valid JSON, the substitution runs on the decoded string values rather than on the JSON text, so
+// the replacement is always literal string content: quotes, backslashes or newlines in a value can't break the file,
+// and a value that looks like JSON stays a string. Numbers, booleans and null are written back as authored.
+//
+// A template that is not valid JSON before substitution (for example one with an unquoted placeholder such as
+// "count": ${COUNT}) is substituted as plain text, as it always was.
+func substituteParametersTemplate(template []byte, mapping func(string) string) (string, error) {
+	var parsed any
+	decoder := json.NewDecoder(bytes.NewReader(template))
+	decoder.UseNumber()
+	if err := decoder.Decode(&parsed); err != nil || decoder.More() {
+		return envsubst.Eval(string(template), mapping)
+	}
+
+	substituted, err := provisioning.SubstituteJSONStrings(parsed, func(value string) (string, error) {
+		return envsubst.Eval(value, mapping)
+	})
+	if err != nil {
+		return "", err
+	}
+
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(substituted); err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }

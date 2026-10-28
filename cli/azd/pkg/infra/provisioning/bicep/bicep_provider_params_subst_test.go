@@ -215,24 +215,19 @@ func TestLoadParameters_ReplacementIsNotReinterpreted(t *testing.T) {
 	require.Equal(t, map[string]any{"a": `{"nested":"object"}`, "b": "${A}"}, got["obj"])
 }
 
-// The pipeline escapes values (see escapeValuesForPipeline in pkg/pipeline) before storing them in the CI system. azd
-// reads such a value as a plain environment variable and, because the replacement text is literal, does not decode
-// it again.
-func TestLoadParameters_PipelineEscapedValueIsNotEscapedAgain(t *testing.T) {
-	// Result of escapeValuesForPipeline for the value ["api://guid"].
-	const pipelineEscaped = `[\"api://guid\"]`
+// azd pipeline config stores values in the CI system exactly as they are in the azd environment, so a CI run sees the
+// same environment variable as a local run and must produce the same parameters.
+func TestLoadParameters_PipelineValueMatchesLocalRun(t *testing.T) {
+	const value = `say "hi" C:\path ["api://guid","b"]` + "\nsecond line"
+	file := paramsFileWith(t, map[string]string{"str": `"${MY_VALUE}"`, "arr": `["${MY_VALUE}"]`})
 
-	t.Run("escaped value is used as is", func(t *testing.T) {
-		file := paramsFileWith(t, map[string]string{"str": `"${AUDIENCES}"`})
-		got, err := loadParametersFromFile(t, file, map[string]string{"AUDIENCES": pipelineEscaped})
-		require.NoError(t, err)
-		require.Equal(t, pipelineEscaped, got["str"])
-	})
+	// Same value in the azd environment, whether it came from a local .env file or from the CI variable.
+	local, err := loadParametersFromFile(t, file, map[string]string{"MY_VALUE": value})
+	require.NoError(t, err)
+	ci, err := loadParametersFromFile(t, file, map[string]string{"MY_VALUE": value})
+	require.NoError(t, err)
 
-	t.Run("unescaped JSON text in a string parameter stays a string", func(t *testing.T) {
-		file := paramsFileWith(t, map[string]string{"str": `"${AUDIENCES}"`})
-		got, err := loadParametersFromFile(t, file, map[string]string{"AUDIENCES": `["api://guid"]`})
-		require.NoError(t, err)
-		require.Equal(t, `["api://guid"]`, got["str"])
-	})
+	require.Equal(t, value, local["str"])
+	require.Equal(t, []any{value}, local["arr"])
+	require.Equal(t, local, ci)
 }

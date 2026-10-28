@@ -15,6 +15,11 @@ trigger:
       - /eng/pipelines/templates/variables/image.yml
 
 pr:
+  drafts: false
+  autoCancel: true
+  branches:
+    include:
+      - main
   paths:
     include:
       - cli/azd/extensions/azure.ai.skills

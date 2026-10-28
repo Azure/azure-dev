@@ -134,6 +134,23 @@ func TestCommandRunnerHelperProcess(t *testing.T) {
 			os.Exit(42)
 		}
 		os.Exit(0)
+	case "spawn-delayed-output-and-exit":
+		child := osexec.Command(os.Args[0], "-test.run=TestCommandRunnerHelperProcess") //nolint:gosec
+		child.Env = append(
+			os.Environ(),
+			commandRunnerHelperModeEnv+"=delayed-output",
+		)
+		child.Stdout = os.Stdout //nolint:forbidigo
+		child.Stderr = os.Stderr //nolint:forbidigo
+		require.NoError(t, child.Start())
+		_, err := io.WriteString(os.Stdout, "early output\n") //nolint:forbidigo
+		require.NoError(t, err)
+		os.Exit(0)
+	case "delayed-output":
+		time.Sleep(3 * time.Second)
+		_, err := io.WriteString(os.Stdout, "late output\n") //nolint:forbidigo
+		require.NoError(t, err)
+		os.Exit(0)
 	case "listen", "listen-after-parent-exit":
 		if mode == "listen-after-parent-exit" {
 			time.Sleep(250 * time.Millisecond)
@@ -457,28 +474,17 @@ func TestCommandRunner_CancellationTerminatesChildProcess(t *testing.T) {
 	}, 10*time.Second, 20*time.Millisecond)
 }
 
-func TestCommandRunner_InheritedPipesDoNotHang(t *testing.T) {
+func TestCommandRunner_NormalCompletionPreservesLateInheritedOutput(t *testing.T) {
 	runner := NewCommandRunner(nil)
-	addressPath := filepath.Join(t.TempDir(), "address")
 
-	response := make(chan error, 1)
-	go func() {
-		_, err := runner.Run(t.Context(), helperRunArgs("spawn-listener-and-exit", "", addressPath))
-		response <- err
-	}()
+	result, err := runner.Run(
+		t.Context(),
+		helperRunArgs("spawn-delayed-output-and-exit", "", ""),
+	)
 
-	waitForPath(t, addressPath)
-	address := strings.TrimSpace(string(mustReadFile(t, addressPath)))
-
-	require.ErrorIs(t, waitForError(t, response), osexec.ErrWaitDelay)
-	require.Eventually(t, func() bool {
-		listener, err := net.Listen("tcp", address)
-		if err != nil {
-			return false
-		}
-		_ = listener.Close()
-		return true
-	}, 10*time.Second, 20*time.Millisecond)
+	require.NoError(t, err)
+	require.Contains(t, result.Stdout, "early output")
+	require.Contains(t, result.Stdout, "late output")
 }
 
 func TestCommandRunner_NormalCompletionTerminatesRemainingChildProcess(t *testing.T) {

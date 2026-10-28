@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// defaultWaitDelay bounds shutdown when descendants retain inherited I/O.
+// defaultWaitDelay bounds cleanup after managed process setup fails.
 const defaultWaitDelay = 2 * time.Second
 
 var errFailedStartWaitTimeout = errors.New(
@@ -26,7 +26,9 @@ type Options struct {
 	Interactive bool
 	// ForwardInterrupts keeps interactive Windows commands in the parent's
 	// console process group so they receive Ctrl+C directly.
-	ForwardInterrupts        bool
+	ForwardInterrupts bool
+	// TerminateRemainingOnWait preserves each platform's native completion cleanup
+	// without running broad ownership discovery after an ordinary exit.
 	TerminateRemainingOnWait bool
 }
 
@@ -65,9 +67,6 @@ func New(ctx context.Context, cmd *exec.Cmd, options Options) *Tree {
 
 	if cmd.Cancel != nil {
 		cmd.Cancel = tree.cancel
-	}
-	if cmd.WaitDelay == 0 {
-		cmd.WaitDelay = defaultWaitDelay
 	}
 
 	return tree
@@ -117,12 +116,18 @@ func (t *Tree) Wait() error {
 	interrupted := exitErr != nil && IsInterruptExit(exitErr, exitErr.ExitCode())
 	// Successful scripting commands may intentionally leave background children,
 	// but an interrupted root must not release them before host cancellation arrives.
-	terminateRemainingOnWait := t.options.TerminateRemainingOnWait ||
-		waitDelayExpired ||
-		interrupted
+	terminateOwnedProcesses := waitDelayExpired || interrupted
 
-	if terminateRemainingOnWait {
+	if terminateOwnedProcesses {
 		if terminateErr := terminateRemaining(t); terminateErr != nil &&
+			!errors.Is(terminateErr, os.ErrProcessDone) {
+			err = errors.Join(
+				err,
+				fmt.Errorf("terminating remaining processes: %w", terminateErr),
+			)
+		}
+	} else if t.options.TerminateRemainingOnWait {
+		if terminateErr := terminateOnWait(t); terminateErr != nil &&
 			!errors.Is(terminateErr, os.ErrProcessDone) {
 			err = errors.Join(
 				err,
@@ -131,7 +136,10 @@ func (t *Tree) Wait() error {
 		}
 	}
 
-	if releaseErr := release(t, cause != nil || terminateRemainingOnWait); releaseErr != nil {
+	killRemaining := cause != nil ||
+		terminateOwnedProcesses ||
+		t.options.TerminateRemainingOnWait
+	if releaseErr := release(t, killRemaining); releaseErr != nil {
 		releaseErr = fmt.Errorf("releasing managed process resources: %w", releaseErr)
 		if err == nil {
 			err = releaseErr

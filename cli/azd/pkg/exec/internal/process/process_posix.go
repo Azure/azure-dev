@@ -80,6 +80,13 @@ func terminateRemaining(t *Tree) error {
 	return terminateTree(t, true)
 }
 
+func terminateOnWait(t *Tree) error {
+	if t.Cmd.Process == nil || t.options.Interactive {
+		return os.ErrProcessDone
+	}
+	return terminateProcessGroup(t.Cmd.Process.Pid)
+}
+
 func terminateTree(t *Tree, allowFinished bool) error {
 	if !allowFinished && t.finished.Load() {
 		return os.ErrProcessDone
@@ -88,20 +95,30 @@ func terminateTree(t *Tree, allowFinished bool) error {
 		return os.ErrProcessDone
 	}
 
+	discoverAncestry := !allowFinished && processMayBeRunning(t.Cmd.Process)
 	if t.options.Interactive {
-		return terminateOwnedTree(t, t.Cmd.Process.Kill)
+		return terminateOwnedTree(t, t.Cmd.Process.Kill, discoverAncestry)
 	}
 
 	return terminateOwnedTree(t, func() error {
 		return terminateProcessGroupAndRoot(t.Cmd.Process)
-	})
+	}, discoverAncestry)
+}
+
+func processMayBeRunning(process *os.Process) bool {
+	return !errors.Is(process.Signal(syscall.Signal(0)), os.ErrProcessDone)
+}
+
+func terminateProcessGroup(processID int) error {
+	err := syscall.Kill(-processID, syscall.SIGKILL)
+	if errors.Is(err, syscall.ESRCH) {
+		return os.ErrProcessDone
+	}
+	return err
 }
 
 func terminateProcessGroupAndRoot(process *os.Process) error {
-	groupErr := syscall.Kill(-process.Pid, syscall.SIGKILL)
-	if errors.Is(groupErr, syscall.ESRCH) {
-		groupErr = os.ErrProcessDone
-	}
+	groupErr := terminateProcessGroup(process.Pid)
 	rootErr := process.Kill()
 
 	switch {
@@ -122,22 +139,37 @@ func terminateProcessGroupAndRoot(process *os.Process) error {
 func terminateOwnedTree(
 	t *Tree,
 	terminateRoot func() error,
+	discoverAncestry bool,
 ) error {
-	// Cleanup runs after the execution context is canceled, so discovery needs
-	// an independent deadline to remain usable without delaying termination.
+	// Cleanup cannot rely on the execution context, which may already be canceled.
+	// Use an independent deadline so discovery cannot delay termination indefinitely.
 	discoveryCtx, cancelDiscovery := context.WithTimeout(
 		context.Background(),
 		processDiscoveryTimeout,
 	)
 	defer cancelDiscovery()
 
-	descendants := ownedProcessIDs(
-		discoveryCtx,
-		t.Cmd.Process.Pid,
-		t.platform.processTreeID,
-	)
+	markerDiscovery := startProcessIDDiscovery(func() []int {
+		return processIDsWithTreeID(discoveryCtx, t.platform.processTreeID)
+	})
+
+	var descendants []int
+	if discoverAncestry {
+		ancestryDiscovery := startProcessIDDiscovery(func() []int {
+			return descendantProcessIDs(discoveryCtx, t.Cmd.Process.Pid)
+		})
+		descendants = waitForProcessIDDiscovery(discoveryCtx, ancestryDiscovery)
+		if !processMayBeRunning(t.Cmd.Process) {
+			descendants = nil
+		}
+	}
 
 	rootErr := terminateRoot()
+	descendants = uniqueProcessIDs(
+		t.Cmd.Process.Pid,
+		descendants,
+		waitForProcessIDDiscovery(discoveryCtx, markerDiscovery),
+	)
 	terminatedDescendant := false
 	var descendantErr error
 	for attempt := range processTerminationDiscoveryPasses {
@@ -148,10 +180,17 @@ func terminateOwnedTree(
 		if attempt == processTerminationDiscoveryPasses-1 {
 			break
 		}
-		descendants = ownedProcessIDs(
-			discoveryCtx,
+		descendants = uniqueProcessIDs(
 			t.Cmd.Process.Pid,
-			t.platform.processTreeID,
+			waitForProcessIDDiscovery(
+				discoveryCtx,
+				startProcessIDDiscovery(func() []int {
+					return processIDsWithTreeID(
+						discoveryCtx,
+						t.platform.processTreeID,
+					)
+				}),
+			),
 		)
 		if len(descendants) == 0 {
 			break
@@ -213,28 +252,51 @@ func appendProcessTreeID(environ []string, processTreeID string) []string {
 	return append(updated, prefix+value)
 }
 
-func ownedProcessIDs(
-	ctx context.Context,
-	rootPID int,
-	processTreeID string,
-) []int {
-	candidates := append(
-		processIDsWithTreeID(ctx, processTreeID),
-		descendantProcessIDs(ctx, rootPID)...,
-	)
-	seen := map[int]struct{}{rootPID: {}}
-	owned := make([]int, 0, len(candidates))
-	for _, pid := range candidates {
-		if pid <= 0 {
-			continue
-		}
-		if _, ok := seen[pid]; ok {
-			continue
-		}
-		seen[pid] = struct{}{}
-		owned = append(owned, pid)
+func startProcessIDDiscovery(discover func() []int) <-chan []int {
+	result := make(chan []int, 1)
+	go func() {
+		// Some OS process metadata reads cannot be interrupted by context cancellation.
+		result <- discover()
+	}()
+	return result
+}
+
+func waitForProcessIDDiscovery(ctx context.Context, result <-chan []int) []int {
+	select {
+	case processIDs := <-result:
+		return processIDs
+	default:
 	}
-	return owned
+
+	select {
+	case processIDs := <-result:
+		return processIDs
+	case <-ctx.Done():
+		select {
+		case processIDs := <-result:
+			return processIDs
+		default:
+			return nil
+		}
+	}
+}
+
+func uniqueProcessIDs(rootPID int, processIDGroups ...[]int) []int {
+	seen := map[int]struct{}{rootPID: {}}
+	processIDs := []int{}
+	for _, group := range processIDGroups {
+		for _, pid := range group {
+			if pid <= 0 {
+				continue
+			}
+			if _, ok := seen[pid]; ok {
+				continue
+			}
+			seen[pid] = struct{}{}
+			processIDs = append(processIDs, pid)
+		}
+	}
+	return processIDs
 }
 
 func containsProcessTreeID(environ []byte, processTreeID string) bool {

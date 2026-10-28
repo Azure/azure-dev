@@ -143,13 +143,42 @@ func TestTerminateOwnedTreeDiscoversMarkerBeforeStalledAncestry(t *testing.T) {
 
 	require.NoError(t, terminateOwnedTree(tree, func() error {
 		return nil
-	}))
+	}, true))
 	select {
 	case <-waitDone:
 		require.Error(t, waitErr)
 	case <-time.After(2 * time.Second):
 		t.Fatal("marker-owned process survived stalled ancestry discovery")
 	}
+}
+
+func TestTerminateSkipsAncestryForExitedRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	calledPath := filepath.Join(tempDir, "ancestry-called")
+	psPath := filepath.Join(tempDir, "ps")
+	script := `#!/bin/sh
+echo called > "$AZD_ANCESTRY_DISCOVERY_CALLED_PATH"
+`
+	//nolint:gosec // G306: the process discovery fixture must be executable.
+	require.NoError(t, os.WriteFile(psPath, []byte(script), 0o700))
+	t.Setenv(
+		"PATH",
+		tempDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	t.Setenv("AZD_ANCESTRY_DISCOVERY_CALLED_PATH", calledPath)
+
+	cmd := exec.Command("/bin/true") //nolint:gosec // fixed test executable
+	require.NoError(t, cmd.Run())
+	tree := &Tree{
+		Cmd:     cmd,
+		options: Options{Interactive: true},
+		platform: platformState{
+			processTreeID: "missing",
+		},
+	}
+
+	require.ErrorIs(t, terminate(tree), os.ErrProcessDone)
+	require.NoFileExists(t, calledPath)
 }
 
 func waitForProcessPID(t *testing.T, path string) int {

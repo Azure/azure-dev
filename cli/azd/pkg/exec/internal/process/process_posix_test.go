@@ -6,6 +6,7 @@
 package process
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -102,11 +103,29 @@ func TestTerminateOwnedTreeBoundsProcessDiscovery(t *testing.T) {
 	err := terminateOwnedTree(tree, func() error {
 		rootTerminated = true
 		return nil
-	})
+	}, true)
 
 	require.NoError(t, err)
 	require.True(t, rootTerminated)
 	require.Less(t, time.Since(start), 2*time.Second)
+}
+
+func TestWaitForProcessIDDiscoveryDoesNotBlockPastDeadline(t *testing.T) {
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	defer close(unblock)
+	result := startProcessIDDiscovery(func() []int {
+		close(started)
+		<-unblock
+		return []int{123}
+	})
+	<-started
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	require.Empty(t, waitForProcessIDDiscovery(ctx, result))
+	require.Less(t, time.Since(start), time.Second)
 }
 
 func configureStalledProcessDiscovery(t *testing.T) {

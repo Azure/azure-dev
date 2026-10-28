@@ -77,18 +77,43 @@ func TestCommandRunnerDetachedHelperProcess(t *testing.T) {
 	}
 }
 
-func TestCommandRunner_NormalCompletionTerminatesDetachedProcess(t *testing.T) {
+func TestCommandRunner_NormalCompletionPreservesDetachedProcess(t *testing.T) {
 	runner := NewCommandRunner(nil)
-	pidPath := filepath.Join(t.TempDir(), "child.pid")
 
-	_, err := runner.Run(t.Context(), detachedHelperRunArgs("root-exit", pidPath))
+	for _, test := range []struct {
+		name string
+		run  func(context.Context, string) (RunResult, error)
+	}{
+		{
+			name: "run",
+			run: func(ctx context.Context, pidPath string) (RunResult, error) {
+				return runner.Run(ctx, detachedHelperRunArgs("root-exit", pidPath))
+			},
+		},
+		{
+			name: "run list",
+			run: func(ctx context.Context, pidPath string) (RunResult, error) {
+				return runner.RunList(ctx, []string{detachedHelperListCommand()}, RunArgs{
+					Env: []string{
+						helperExecutableEnv(os.Args[0]),
+						detachedHelperModeEnv + "=root-exit",
+						detachedHelperPIDEnv + "=" + pidPath,
+					},
+				})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pidPath := filepath.Join(t.TempDir(), "child.pid")
 
-	childPID := detachedHelperPID(t, pidPath)
-	cleanupDetachedHelper(t, childPID)
-	require.NoError(t, err)
-	require.Eventually(t, func() bool {
-		return !posixProcessRunning(childPID)
-	}, 5*time.Second, 10*time.Millisecond)
+			_, err := test.run(t.Context(), pidPath)
+
+			childPID := detachedHelperPID(t, pidPath)
+			cleanupDetachedHelper(t, childPID)
+			require.NoError(t, err)
+			require.True(t, posixProcessRunning(childPID))
+		})
+	}
 }
 
 func TestCommandRunner_CancellationTerminatesDetachedProcess(t *testing.T) {
@@ -162,6 +187,10 @@ func TestCommandRunner_CancellationTerminatesNestedDetachedProcess(t *testing.T)
 	require.Eventually(t, func() bool {
 		return !posixProcessRunning(siblingPID)
 	}, 5*time.Second, 10*time.Millisecond)
+}
+
+func detachedHelperListCommand() string {
+	return `"$` + commandRunnerHelperExeEnv + `" -test.run=^TestCommandRunnerDetachedHelperProcess$`
 }
 
 func detachedHelperRunArgs(mode, pidPath string) RunArgs {

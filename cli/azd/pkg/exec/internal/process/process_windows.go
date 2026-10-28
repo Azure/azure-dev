@@ -203,6 +203,10 @@ func terminateRemaining(t *Tree) error {
 	return terminateTree(t, true)
 }
 
+func terminateOnWait(t *Tree) error {
+	return terminateTree(t, true)
+}
+
 func terminateTree(t *Tree, allowFinished bool) error {
 	<-t.platform.ready
 

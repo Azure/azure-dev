@@ -45,26 +45,9 @@ capabilities:
   - lifecycle-events
 ```
 
-An initialize-only service target that decorates a built-in deployment target
-can declare `baseTarget`:
-
-```yaml
-capabilities:
-  - lifecycle-events
-  - service-target-provider
-providers:
-  - name: my.framework
-    type: service-target
-    description: Prepares the application for Container Apps.
-    baseTarget: containerapp
-```
-
-Use this only when the extension performs validation or lifecycle preparation
-and the built-in target should retain ownership of target resolution,
-container tooling, package, publish, deploy, endpoints, and preview. The
-extension must still register the named provider at runtime. `baseTarget` must
-name a built-in target; delegation chains and fallback behavior are not
-supported.
+For an initialize-only host backed by native Container Apps, declare
+`baseTarget: containerapp` in the provider entry and register it at runtime.
+See the [service-target contract](../../cli/azd/docs/extensions/extension-framework.md#service-target-providers).
 
 ### 3. Implement the extension
 

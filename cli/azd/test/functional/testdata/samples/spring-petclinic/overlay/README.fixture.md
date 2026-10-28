@@ -27,4 +27,19 @@ a production security architecture. If ACA outbound addresses change during a
 revision replacement, retry `azd deploy`; predeploy reconciliation observes the
 new set before the retry.
 
-Live Azure tests are opt-in and must not run without explicit authorization.
+Spring tests are owned by `cli/azd/extensions/azure.springboot/test/functional`.
+From `cli/azd`, run the local checks with the current development binary:
+
+```powershell
+go build -o .\azd.exe .
+$env:CLI_TEST_AZD_PATH = (Resolve-Path .\azd.exe).Path
+$env:AZD_TEST_SPRING_PETCLINIC_INIT = '1'
+$env:AZD_TEST_SPRING_PETCLINIC_BUILD = '1'
+$env:AZD_TEST_SPRING_PETCLINIC_LIVE = '0'
+Set-Location extensions\azure.springboot
+go test ./... -timeout 25m
+```
+
+These gates exercise bundle installation, upstream initialization, and local
+container builds for both database selections without deploying Azure resources.
+Live Azure tests remain opt-in and require separate authorization.

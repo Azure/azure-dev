@@ -178,6 +178,7 @@ func TestResolveProviderBaseTargetValidation(t *testing.T) {
 		{name: "empty", host: "custom", baseTarget: new(""), wantErr: "empty baseTarget"},
 		{name: "whitespace", host: "custom", baseTarget: new(" containerapp"), wantErr: "whitespace"},
 		{name: "self", host: "custom", baseTarget: new("custom"), wantErr: "delegate to itself"},
+		{name: "other native target", host: "custom", baseTarget: new("appservice"), wantErr: "only containerapp"},
 		{name: "extension chain", host: "custom", baseTarget: new("another.extension"), wantErr: "unsupported baseTarget"},
 	}
 

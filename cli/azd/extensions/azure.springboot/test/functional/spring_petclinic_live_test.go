@@ -5,6 +5,7 @@ package cli_test
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,8 +31,8 @@ func Test_CLI_SpringPetclinic_Live(t *testing.T) {
 	}
 	configDir := os.Getenv("AZD_TEST_SPRING_PETCLINIC_CONFIG_DIR")
 	require.NotEmpty(t, configDir, "provide a disposable, already authenticated AZD config directory")
-	require.NotEmpty(t, cfg.SubscriptionID, "AZD_TEST_AZURE_SUBSCRIPTION_ID is required")
-	require.NotEmpty(t, cfg.Location, "AZD_TEST_AZURE_LOCATION is required")
+	require.NotEmpty(t, os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID"), "AZD_TEST_AZURE_SUBSCRIPTION_ID is required")
+	require.NotEmpty(t, os.Getenv("AZD_TEST_AZURE_LOCATION"), "AZD_TEST_AZURE_LOCATION is required")
 
 	installCtx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
@@ -49,34 +50,13 @@ func runSpringPetclinicLiveMode(t *testing.T, configDir, mode string) {
 	ctx, cancel := context.WithTimeout(t.Context(), 75*time.Minute)
 	defer cancel()
 
-	projectDir := tempDirWithDiagnostics(t)
-	require.NoError(t, copySample(projectDir, "spring-petclinic/overlay"))
-	envName := "petclinic-" + mode + "-" + randomEnvName()
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = projectDir
-	cli.Env = append(environmentWithout("SPRING_DATABASE_TYPE", "SPRING_DATABASE_PASSWORD"), cli.Env...)
-	cli.Env = append(
-		cli.Env,
-		"AZD_CONFIG_DIR="+configDir,
-		"AZD_ALLOW_NON_EMPTY_FOLDER=1",
-		"AZURE_DEV_COLLECT_TELEMETRY=no",
-		"AZD_FORCE_TTY=false",
-		"NO_COLOR=1",
-		"AZURE_SUBSCRIPTION_ID="+cfg.SubscriptionID,
-		"AZURE_LOCATION="+cfg.Location,
+	envName := "petclinic-" + mode + "-" + strings.ToLower(rand.Text()[:8])
+	cli := initPetclinicTemplate(
+		t, ctx, configDir, envName, mode,
+		"AZURE_SUBSCRIPTION_ID="+os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID"),
+		"AZURE_LOCATION="+os.Getenv("AZD_TEST_AZURE_LOCATION"),
 	)
-
-	_, err := cli.RunCommand(
-		ctx,
-		"init",
-		"-t", petclinicRepository,
-		".",
-		"-e", envName,
-		"--no-prompt",
-	)
-	require.NoError(t, err)
-	_, err = cli.RunCommand(ctx, "env", "set", "SPRING_DATABASE_TYPE", mode)
-	require.NoError(t, err)
+	projectDir := cli.WorkingDirectory
 	ownedResources := map[string]string{}
 	expectedPassword := ""
 	t.Cleanup(func() {

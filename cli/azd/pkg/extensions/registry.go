@@ -22,7 +22,7 @@ type Provider struct {
 	Type ProviderType `json:"type" yaml:"type"`
 	// Description is the description of what this provider does
 	Description string `json:"description" yaml:"description"`
-	// BaseTarget is an optional built-in service target that performs deployment operations.
+	// BaseTarget optionally delegates deployment operations to containerapp.
 	// The extension provider remains responsible for initialization and lifecycle handlers.
 	BaseTarget *string `json:"baseTarget,omitempty" yaml:"baseTarget,omitempty"`
 }

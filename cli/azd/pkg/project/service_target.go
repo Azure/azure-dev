@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/mapper"
@@ -63,7 +62,7 @@ type ServiceTargetProviderResolver interface {
 	FindServiceTargetProvider(name string) (*extensions.Provider, error)
 }
 
-// ResolveProviderBaseTarget validates and returns a provider's optional built-in base target.
+// ResolveProviderBaseTarget validates a provider's optional Container Apps delegation.
 func ResolveProviderBaseTarget(
 	host ServiceTargetKind,
 	provider *extensions.Provider,
@@ -89,9 +88,9 @@ func ResolveProviderBaseTarget(
 			host,
 		)
 	}
-	if !slices.Contains(builtInServiceTargetKinds, baseTarget) {
+	if baseTarget != ContainerAppTarget {
 		return "", false, fmt.Errorf(
-			"service-target provider %q declares unsupported baseTarget %q; expected a built-in target",
+			"service-target provider %q declares unsupported baseTarget %q; only containerapp is supported",
 			host,
 			baseTarget,
 		)

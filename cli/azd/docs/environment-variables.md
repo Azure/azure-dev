@@ -210,18 +210,6 @@ Metadata requests are unauthenticated when no matching token is set.
 > **Note**: These variables are defined and consumed by individual azd extensions. As the extension
 > ecosystem grows, extension-specific variables may move to each extension's own documentation.
 
-### azure.springboot
-
-The unpublished `azure.springboot` development extension uses these values in
-the active azd environment. See the extension
-[README](../extensions/azure.springboot/README.md) for its full contract.
-
-| Variable | Description |
-| --- | --- |
-| `SPRING_DATABASE_TYPE` | Selects `h2` or `postgresql`. Missing values default to H2. The selected value is persisted before Bicep parameter evaluation. |
-| `SPRING_DATABASE_PASSWORD` | Sensitive PostgreSQL administrator password. A new PostgreSQL environment may supply it through the process/CI environment or let the extension generate and persist it. It is invalid for H2. |
-| `SPRING_DATABASE_PROVISIONED_TYPE` | Extension-managed state binding a provisioned environment to its database mode. Do not edit it to switch an existing environment in place. |
-
 ### azure.ai.agents
 
 | Variable | Description |

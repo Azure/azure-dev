@@ -84,18 +84,13 @@ An extension capability that lets an extension provide a custom infrastructure p
 
 ### Native Target Delegation
 
-An extension service-target mode in which manifest metadata names a built-in
-`baseTarget`. The extension initializes and contributes lifecycle preparation,
-while azd routes deployment operations through the native target. The authored
-host remains the extension host, and the base target's capabilities (including
-container requirements) are resolved before framework selection.
+A provider's `baseTarget: containerapp` declaration reuses native Container Apps
+deployment after extension initialization, preserving the authored host.
 
 ### Spring Boot Host
 
-The unpublished `azure.springboot` development extension host. It validates a
-narrow Spring configuration, prepares a Maven/Java 17 container recipe, and
-delegates deployment to Azure Container Apps. The canonical Petclinic source is
-downloaded separately; the extension does not bundle or generate it.
+The unpublished [`azure.springboot`](../../cli/azd/extensions/azure.springboot/README.md)
+host prepares Maven/Java 17 applications for native Container Apps deployment.
 
 ## Architecture
 

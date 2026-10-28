@@ -29,9 +29,6 @@ import (
 
 func TestEnvironmentSetValueIsVisibleToBicepParametersInSameCommandContext(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
-	sourceProjectPath := filepath.Join(
-		"..", "..", "test", "functional", "testdata", "samples", "spring-petclinic", "overlay",
-	)
 	projectPath := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "infra"), 0o755))
 	require.NoError(t, os.WriteFile(
@@ -39,12 +36,17 @@ func TestEnvironmentSetValueIsVisibleToBicepParametersInSameCommandContext(t *te
 		[]byte("name: same-command\n"),
 		0o600,
 	))
-	for _, module := range []string{"main", "petclinic"} {
-		parameters, err := os.ReadFile(filepath.Join(sourceProjectPath, "infra", module+".parameters.json"))
-		require.NoError(t, err)
+	for _, module := range []string{"main", "app"} {
 		require.NoError(t, os.WriteFile(
 			filepath.Join(projectPath, "infra", module+".parameters.json"),
-			parameters,
+			[]byte(`{
+				"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+				"contentVersion": "1.0.0.0",
+				"parameters": {
+					"databaseType": {"value": "${DATABASE_TYPE:-h2}"},
+					"databasePassword": {"value": "${DATABASE_PASSWORD:-}"}
+				}
+			}`),
 			0o600,
 		))
 		require.NoError(t, os.WriteFile(
@@ -76,27 +78,10 @@ func TestEnvironmentSetValueIsVisibleToBicepParametersInSameCommandContext(t *te
 		require.NoError(t, envManager.Delete(context.Background(), env.Name()))
 	})
 
-	for key, value := range map[string]string{
-		"AZURE_CONTAINER_REGISTRY_NAME":      "registry",
-		"AZURE_CONTAINER_ENVIRONMENT_NAME":   "environment",
-		"AZURE_CONTAINER_APP_NAME":           "petclinic",
-		"SERVICE_PETCLINIC_IDENTITY_ID":      "identity",
-		"SERVICE_PETCLINIC_IMAGE_NAME":       "registry/petclinic:test",
-		"AZURE_POSTGRES_HOST":                "server.postgres.database.azure.com",
-		"AZURE_POSTGRES_DATABASE":            "petclinic",
-		"AZURE_POSTGRES_USER":                "petclinicadmin",
-		environment.EnvNameEnvVarName:        env.Name(),
-		environment.LocationEnvVarName:       "westus2",
-		environment.SubscriptionIdEnvVarName: "00000000-0000-0000-0000-000000000000",
-	} {
-		env.DotenvSet(key, value)
-	}
-	require.NoError(t, envManager.Save(t.Context(), env))
-
 	service := NewEnvironmentService(lazy.From(azdContext), lazy.From(envManager))
 	for key, value := range map[string]string{
-		"SPRING_DATABASE_TYPE":     "postgresql",
-		"SPRING_DATABASE_PASSWORD": "Azd-SameCommand9!",
+		"DATABASE_TYPE":     "postgresql",
+		"DATABASE_PASSWORD": "Azd-SameCommand9!",
 	} {
 		_, err := service.SetValue(t.Context(), &azdext.SetEnvRequest{
 			EnvName: env.Name(),
@@ -118,7 +103,7 @@ func TestEnvironmentSetValueIsVisibleToBicepParametersInSameCommandContext(t *te
 		return strings.Contains(args.Cmd, "bicep") && len(args.Args) > 0 && args.Args[0] == "build"
 	}).Respond(exec.RunResult{Stdout: string(templateBytes)})
 
-	for _, module := range []string{"main", "petclinic"} {
+	for _, module := range []string{"main", "app"} {
 		t.Run(module+".parameters.json", func(t *testing.T) {
 			provider := bicepprovider.NewBicepProvider(
 				nil,
@@ -152,25 +137,9 @@ func TestEnvironmentSetValueIsVisibleToBicepParametersInSameCommandContext(t *te
 }
 
 func parameterVisibilityTemplate() azure.ArmTemplate {
-	definitions := azure.ArmTemplateParameterDefinitions{}
-	for _, name := range []string{
-		"environmentName",
-		"location",
-		"containerRegistryName",
-		"containerAppsEnvironmentName",
-		"identityId",
-		"containerAppName",
-		"databaseType",
-		"postgresHost",
-		"postgresDatabase",
-		"postgresUser",
-		"imageName",
-	} {
-		definitions[name] = azure.ArmTemplateParameterDefinition{Type: "string", DefaultValue: ""}
-	}
-	definitions["databasePassword"] = azure.ArmTemplateParameterDefinition{
-		Type:         "secureString",
-		DefaultValue: "",
+	definitions := azure.ArmTemplateParameterDefinitions{
+		"databaseType":     {Type: "string", DefaultValue: ""},
+		"databasePassword": {Type: "secureString", DefaultValue: ""},
 	}
 	return azure.ArmTemplate{
 		Schema: "https://schema.management.azure.com/schemas/" +

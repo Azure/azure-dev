@@ -64,6 +64,13 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		},
 		"delegation": map[string]any{"type": "client"},
 	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+		"model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{map[string]any{
+			"type": "rai_policy", "raiPolicyName": "policy", "invocationsModeration": map[string]any{},
+		}},
+	}))
 	require.NoError(t, schema.validate(map[string]any{
 		"kind": "voice", "subProtocol": "realtime", "model": map[string]any{"id": "gpt-realtime"},
 		"audio": map[string]any{},
@@ -89,7 +96,7 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 	}))
 	for _, forbidden := range []map[string]any{
 		{"reasoning": map[string]any{}}, {"client": map[string]any{}}, {"input": map[string]any{}},
-		{"toolboxes": []any{}},
+		{"toolboxes": []any{}}, {"live_config": map[string]any{}}, {"tools": []any{}}, {"avatar": map[string]any{}},
 		{"audio": map[string]any{"output": map[string]any{"volume": "loud"}}},
 		{"delegation": map[string]any{"type": "responses", "responses": map[string]any{
 			"model": "terra", "reasoning": map[string]any{"temperature": 0.5},
@@ -102,6 +109,24 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		maps.Copy(live, forbidden)
 		require.Error(t, schema.validate(live), "forbidden GPT Live shape: %v", forbidden)
 	}
+	for _, invalidGreeting := range []any{
+		map[string]any{},
+		map[string]any{"type": "template"},
+		map[string]any{"type": "template", "text": "   "},
+		map[string]any{"type": "other", "text": "hello"},
+		map[string]any{"type": "template", "text": "hello", "extra": true},
+		"hello",
+	} {
+		require.Error(t, schema.validate(map[string]any{
+			"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+			"model": map[string]any{"id": "gpt-live-1"}, "greeting": invalidGreeting,
+		}))
+	}
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+		"model":    map[string]any{"id": "gpt-live-1"},
+		"greeting": map[string]any{"type": "template", "text": "hello"},
+	}))
 	for _, invalid := range []map[string]any{
 		{"kind": "prompt-voice", "subProtocol": "live", "modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"}},
 		{"kind": "voice", "subProtocol": "live", "modelType": "managed", "model": map[string]any{"id": "gpt-live-1"}},

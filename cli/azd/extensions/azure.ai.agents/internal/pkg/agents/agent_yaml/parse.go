@@ -338,6 +338,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 	for _, key := range []string{
 		"input", "client", "reasoning", "reasoningEffort", "reasoning_effort",
 		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
+		"live_config", "tools", "avatar",
 	} {
 		if _, found := values[key]; found {
 			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))
@@ -371,7 +372,17 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 		}
 	}
 	if greeting, found := values["greeting"]; found {
-		validateRawObject("greeting", greeting, []string{"type", "text"})
+		object, ok := greeting.(map[string]any)
+		if !ok {
+			errors = append(errors, "greeting must be an object for GPT Live")
+		} else {
+			validateRawObject("greeting", object, []string{"type", "text"})
+			typ, typeOK := object["type"].(string)
+			text, textOK := object["text"].(string)
+			if !typeOK || strings.TrimSpace(typ) != "template" || !textOK || strings.TrimSpace(text) == "" {
+				errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
+			}
+		}
 	}
 	if inputs, ok := rawMap(values["structuredInputs"], values["structured_inputs"]); ok {
 		for name, input := range inputs {
@@ -379,8 +390,24 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 				errors = append(errors, fmt.Sprintf("structuredInputs.%s must be an object for GPT Live", name))
 				continue
 			}
-			validateRawObject("structuredInputs."+name, input,
+			inputObject := input.(map[string]any)
+			validateRawObject("structuredInputs."+name, inputObject,
 				[]string{"description", "defaultValue", "default_value", "schema", "required"})
+			if description, found := inputObject["description"]; found {
+				if _, ok := description.(string); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.description must be a string for GPT Live", name))
+				}
+			}
+			if schema, found := inputObject["schema"]; found {
+				if _, ok := schema.(map[string]any); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.schema must be an object for GPT Live", name))
+				}
+			}
+			if required, found := inputObject["required"]; found {
+				if _, ok := required.(bool); !ok {
+					errors = append(errors, fmt.Sprintf("structuredInputs.%s.required must be a boolean for GPT Live", name))
+				}
+			}
 		}
 	}
 	if delegation, ok := values["delegation"].(map[string]any); ok {
@@ -414,6 +441,12 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 		for i, policy := range policies {
 			validateRawObject(fmt.Sprintf("policies[%d]", i), policy,
 				[]string{"type", "raiPolicyName", "rai_policy_name", "invocationsModeration", "invocations_moderation"})
+			if object, ok := policy.(map[string]any); ok {
+				if _, found := rawProperty(object, "invocationsModeration", "invocations_moderation"); found {
+					errors = append(errors, fmt.Sprintf(
+						"policies[%d].invocationsModeration is not supported for GPT Live", i))
+				}
+			}
 		}
 	}
 	return errors

@@ -249,6 +249,11 @@ The test summarizes field population and confidence, not extraction accuracy
 against labeled ground truth. See [custom analyzer guidance](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#create-a-custom-analyzer)
 for validation rules and test options.
 
+Validation errors identify source line/column locations. Authoring checks locate
+the alias they actually use (for example, `field_schema` when `fieldSchema` is
+empty); `--spec` findings retain locations in the original service-contract body.
+Structured finding paths remain unchanged.
+
 ## Command overview
 
 | Command | Purpose |

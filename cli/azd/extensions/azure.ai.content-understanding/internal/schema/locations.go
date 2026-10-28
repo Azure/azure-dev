@@ -82,9 +82,36 @@ func SourceLocations(data []byte) (map[string][]string, error) {
 	return locations, nil
 }
 
-// DiagnosticLocation falls back to the containing object for missing properties.
+func (r *ValidationResult) resolveAuthoringLocations(root map[string]json.RawMessage) {
+	for _, names := range [][2]string{
+		{"analyzerId", "analyzer_id"},
+		{"baseAnalyzerId", "base_analyzer_id"},
+		{"fieldSchema", "field_schema"},
+	} {
+		primary := names[0]
+		name := authoringAliasName(root, primary, names[1])
+		if name == primary {
+			continue
+		}
+		for _, findings := range [][]Finding{r.Errors, r.Warnings} {
+			for i := range findings {
+				path := findings[i].Path
+				if path == primary || strings.HasPrefix(path, primary+".") {
+					findings[i].sourcePath = name + strings.TrimPrefix(path, primary)
+				}
+			}
+		}
+	}
+}
+
+// DiagnosticLocation uses the selected authoring alias or literal spec path,
+// falling back to the containing object for missing properties.
 func (f Finding) DiagnosticLocation(locations map[string][]string) string {
-	for path := f.Path; path != ""; {
+	path := f.Path
+	if f.sourcePath != "" {
+		path = f.sourcePath
+	}
+	for path != "" {
 		if positions := locations[path]; len(positions) != 0 {
 			return strings.Join(positions, "; ")
 		}

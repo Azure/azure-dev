@@ -33,13 +33,14 @@ func (h *azdInfraHost) PromptGeneration(
 		message string
 		help    string
 		value   *string
+		code    string
 	}{
 		{prompts.environment, "azd environment name",
 			"Generate files only; run azd up afterwards. This name identifies the deployment under .azure/<name>.",
-			&choices.Environment},
+			&choices.Environment, "invalid_environment"},
 		{prompts.prefix, "Optional Microsoft Foundry resource name prefix (blank for generated name)",
 			"The globally unique resource name becomes part of its public endpoint. Use 1-20 letters, numbers or hyphens.",
-			&choices.FoundryPrefix},
+			&choices.FoundryPrefix, "invalid_foundry_prefix"},
 	} {
 		if !field.enabled {
 			continue
@@ -62,6 +63,10 @@ func (h *azdInfraHost) PromptGeneration(
 			*field.value = response.GetValue()
 			normalized, err := choices.Normalize()
 			if err != nil {
+				local, ok := errors.AsType[*cuclient.Error](err)
+				if !ok || local.Kind != cuclient.ErrorValidation || local.Code != field.code {
+					return choices, err
+				}
 				help = field.help + "\nInvalid input: " + err.Error()
 				continue
 			}

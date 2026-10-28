@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.content-understanding/internal/cuclient"
 	"azure.ai.content-understanding/internal/infra"
 	"azure.ai.content-understanding/internal/testutil"
 
@@ -211,6 +212,44 @@ func TestInfraGenerationHostPrompts(t *testing.T) {
 	assert.Equal(t, "app", result.FoundryPrefix)
 	assert.Equal(t, "westus3", result.Location)
 	assert.False(t, result.AssignRoles)
+}
+
+func TestInfraGenerationHostDoesNotRetryOtherFields(t *testing.T) {
+	for _, test := range []struct {
+		name, environment, location, prefix, code string
+		prompts                                   generationPrompts
+	}{
+		{"environment with invalid location", "dev", "francecentral", "", "invalid_location",
+			generationPrompts{environment: true}},
+		{"prefix with invalid location", "dev", "francecentral", "", "invalid_location",
+			generationPrompts{prefix: true}},
+		{"environment with invalid prefix", "dev", "eastus2", "invalid prefix", "invalid_foundry_prefix",
+			generationPrompts{environment: true}},
+		{"prefix with invalid environment", "../invalid", "eastus2", "", "invalid_environment",
+			generationPrompts{prefix: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			rpc, host, choices := generationPromptFixture(t)
+			choices.Environment, choices.Location, choices.FoundryPrefix = test.environment, test.location, test.prefix
+			calls := 0
+			rpc.promptText = func(request *azdext.PromptRequest) (*azdext.PromptResponse, error) {
+				calls++
+				if calls > 1 {
+					return nil, status.Error(codes.FailedPrecondition, "unexpected repeated prompt")
+				}
+				return &azdext.PromptResponse{Value: request.GetOptions().GetDefaultValue()}, nil
+			}
+			_, err := host.PromptGeneration(azdext.WithAccessToken(t.Context()), choices, test.prompts)
+			require.Error(t, err)
+			local, ok := errors.AsType[*cuclient.Error](err)
+			require.True(t, ok, "expected the unrelated validation error, got %v", err)
+			assert.Equal(t, test.code, local.Code)
+			assert.Equal(t, 1, calls)
+			rpc.mu.Lock()
+			assert.Empty(t, rpc.writes)
+			rpc.mu.Unlock()
+		})
+	}
 }
 
 func TestInfraGenerationHostPromptErrors(t *testing.T) {

@@ -167,6 +167,35 @@ func TestAnalyzerValidateLocatesPrivateFieldErrors(t *testing.T) {
 	require.Empty(t, f.client.calls)
 }
 
+func TestAnalyzerValidateLocatesEmptyPrimaryAliasErrors(t *testing.T) {
+	f := newDefaultsFixture(t)
+	file := validationFile(t, `{
+  "baseAnalyzerId": "prebuilt-document",
+  "models": {"completion": "gpt-4.1"},
+  "fieldSchema": {},
+  "field_schema": {"fields": {
+    "private.field": {
+      "type": "currency"
+    }
+  }}
+}`)
+	for _, spec := range []bool{false, true} {
+		args := []string{"analyzer", "validate", file, "--strict"}
+		if spec {
+			args = append(args, "--spec")
+		}
+		stdout, stderr, err := f.execute(t.Context(), args...)
+		require.ErrorContains(t, err, "Line 7, column 7")
+		for _, private := range []string{"private", "currency", file} {
+			assert.NotContains(t, err.Error(), private)
+		}
+		assert.Empty(t, stdout)
+		assert.Empty(t, stderr)
+	}
+	assert.Zero(t, f.opens)
+	assert.Empty(t, f.client.calls)
+}
+
 func TestExplicitEmptyServiceSelectorsDoNotUseFallbacks(t *testing.T) {
 	t.Setenv("CU_ENDPOINT", "https://configured.services.ai.azure.com")
 	t.Setenv("CU_API_VERSION", cuclient.DefaultAPIVersion)

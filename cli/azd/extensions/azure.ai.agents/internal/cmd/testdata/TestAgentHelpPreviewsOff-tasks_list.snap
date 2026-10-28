@@ -1,0 +1,35 @@
+List one page of Tasks for a hosted agent. JSON is the default output; table output shows only safe summary metadata.
+
+Returns one page only. When has_more is true, use --output json to read last_id
+and pass it unchanged to --after. Keep the same filters, --order, and --limit.
+The cursor is opaque: do not derive it from a Task ID or encode it yourself.
+Table output always omits attachment values, even with --omit-attachment-values=false.
+
+Usage
+  azd ai agent tasks list [flags]
+
+Flags
+      --after string            : Opaque last_id from the previous JSON response
+  -n, --agent-name string       : Deployed agent name or local service name (resolved or selected when omitted)
+      --has-error               : Filter by error presence (true or false)
+      --lease-expired           : Filter by expired lease (true or false)
+      --lease-owner string      : Filter by lease owner
+      --limit int               : Maximum results per page (1-100) (default 20)
+      --omit-attachment-values  : Omit attachment values in JSON output
+      --order string            : Service-defined order: asc or desc (default "desc")
+  -p, --project-endpoint string : Foundry project endpoint URL
+      --session-id string       : Filter by exact session ID
+      --source-type string      : Filter by source type
+      --status string           : Filter: pending, in_progress, suspended, or completed
+      --tag stringArray         : Repeatable key:value tag equality (split at first colon)
+
+Global Flags
+  -C, --cwd string         : Sets the current working directory
+      --debug              : Enables debug and diagnostics logging
+  -e, --environment string : The name of the environment to use
+  -h, --help               : help for list
+      --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
+  -o, --output string      : The output format (supported: json, table) (default "json")
+
+Examples
+    azd ai agent tasks list --limit 20 --order desc

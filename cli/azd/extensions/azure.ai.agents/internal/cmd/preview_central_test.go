@@ -499,7 +499,9 @@ func TestAgentHelpPreviewsOff(t *testing.T) {
 	previous := color.NoColor
 	color.NoColor = true
 	t.Cleanup(func() { color.NoColor = previous })
-	for _, path := range [][]string{nil, {"init"}, {"invoke"}} {
+	for _, path := range [][]string{
+		nil, {"init"}, {"invoke"}, {"tasks"}, {"tasks", "list"}, {"tasks", "show"},
+	} {
 		name := strings.Join(path, "_")
 		if name == "" {
 			name = "root"

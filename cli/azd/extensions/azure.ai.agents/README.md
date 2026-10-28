@@ -8,7 +8,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
-| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+| `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait`, and hosted-agent Tasks inspection | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
 
 Set the desired variable in your shell or CI before running azd:
@@ -41,8 +41,9 @@ feature is off, its command-specific flags and help sections are hidden.
 Enabling a feature preserves the existing help without adding new text or
 revealing flags that were already hidden, including `--harness`.
 This covers `invoke --long-running`, `invoke --no-wait`, the
-`invocations` group, `init --voice`, and the `prompt-voice` choice of
-`init --kind`. Hidden commands still run. Using a disabled preview fails with a
+`invocations` and `tasks` groups, `init --voice`, and the `prompt-voice` choice of
+`init --kind`. Hidden commands still parse. Invocation show/follow/cancel remain
+available while the preview is off, but Tasks list/show require it. Using a disabled preview fails with a
 `feature_not_enabled` error that names the preview feature ID and suggests
 setting its canonical variable to `true` in the shell or CI.
 
@@ -66,8 +67,9 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
   not query its remote definition, so the managed harness check does not cover
   that route. The long-running check still applies. Text invoke does not
   accept voice WebSocket endpoints.
-- Read and cleanup commands stay available with features off. This includes
+- Existing read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
+  The new Tasks inspection commands are an exception: they require `agents.long_running`.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 
@@ -1465,6 +1467,127 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
+
+## Tasks inspection (Preview)
+
+Inspect existing hosted-agent Tasks with `azd ai agent tasks list` and
+`azd ai agent tasks show <task-id>`. Both use the existing long-running preview
+switch; there is no separate Tasks flag:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+azd ai agent tasks list --agent-name support-agent --output table
+azd ai agent tasks show 'task-id-from-list' --output table
+```
+
+When the switch is off, Tasks are hidden from root discovery, but direct
+`tasks --help`, `tasks list --help`, and `tasks show --help` remain available.
+Actual list/show operations fail with `feature_not_enabled` before target
+resolution, authentication, or service calls. Pure argument validation runs
+first, even while the preview is off. Turning the CLI switch on does not enable
+service-side preview access or grant project permissions.
+
+### Target selection
+
+By default, commands read the selected azd environment (`--environment/-e`
+overrides the current one), not workspace defaults or shell endpoint variables.
+List resolves a deployed agent service from that environment; `--agent-name/-n`
+can name a local service or a deployed agent. A single deployed service is selected
+automatically. Multiple candidates prompt for an agent service; use an explicit
+name with `--no-prompt` for automation. No Task picker or implicit Task selection
+is performed.
+
+`--project-endpoint/-p` overrides the environment project. Use an HTTPS Foundry
+project URL ending in `/api/projects/<project>` with no credentials, query, or
+fragment, not an agent endpoint. For list with an explicit project, only local
+services deployed to that same project are candidates; a remote deployed agent
+name can be supplied directly. Show is project-scoped: an explicit project
+endpoint and exact Task ID need no local service or agent name. Outside a
+checkout, supply both endpoint and deployed agent name for list, or endpoint and
+Task ID for show:
+
+```bash
+azd ai agent tasks list \
+  --project-endpoint https://my-account.services.ai.azure.com/api/projects/my-project \
+  --agent-name support-agent --no-prompt --output table
+azd ai agent tasks show 'task-id-from-list' \
+  --project-endpoint https://my-account.services.ai.azure.com/api/projects/my-project \
+  --output table
+```
+
+### List filters and pagination
+
+| List flag | Behavior |
+| --- | --- |
+| `--limit` | Page size, 1–100; default 20 |
+| `--order` | Service-defined `asc` or `desc`; default `desc` |
+| `--after` | Opaque `last_id` from the preceding JSON response |
+| `--session-id` | Exact session ID filter |
+| `--status` | `pending`, `in_progress`, `suspended`, or `completed` |
+| `--source-type` | Source type filter, passed to the service |
+| `--lease-owner` | Lease owner filter |
+| `--has-error` | Explicit `true` or `false` error-presence filter |
+| `--lease-expired` | Explicit `true` or `false` expired-lease filter |
+| `--tag` | Repeatable `key:value` equality filter; split at the first colon, with nonempty key and value |
+| `--omit-attachment-values` | Omit attachment values in list JSON when `true`; table always omits them |
+
+Omitted boolean filters are not sent; `--has-error=false` and
+`--lease-expired=false` are different from leaving them out. For example:
+
+```bash
+azd ai agent tasks list --agent-name support-agent --environment dev \
+  --limit 10 --order desc --status in_progress --session-id 'session-id' \
+  --source-type 'source-type-from-service' --lease-owner 'worker-id' \
+  --has-error=false --lease-expired=false \
+  --tag 'team:support' --tag 'route:queue:priority' \
+  --omit-attachment-values --output json
+```
+
+Each invocation returns **one page**, never an automatically aggregated inventory.
+If `has_more` is true, copy JSON `last_id` unchanged into `--after` on the next
+call, keeping the same project, agent, filters, order, and limit. Do not construct
+a cursor from a Task ID, decode it, or URL-encode it yourself. Table output
+provides a continuation hint, not a cursor. For example, after a JSON list with
+`--limit 10 --order desc --omit-attachment-values`:
+
+```bash
+azd ai agent tasks list --agent-name support-agent --limit 10 --order desc \
+  --omit-attachment-values --after 'opaque-last_id-from-previous-response' --output json
+```
+
+### Output, privacy, and live semantics
+
+`--output/-o json` is the default for both commands. JSON preserves the service
+object, including unknown fields, page metadata, and attachment values unless
+list explicitly requests their omission. Treat JSON as potentially sensitive:
+it can contain customer content, attachment values, error details, and identifiers.
+`--omit-attachment-values` is list-only and is not general redaction. Avoid copying
+raw JSON into shared logs or issues; `show` has no attachment-omission switch.
+
+`--output table` uses only summary metadata: ID, status, agent, session, and
+updated time, plus created/started/completed times, lease owner/expiry, and error presence
+for show. It excludes attachment values, tags, error bodies, and arbitrary extra
+fields. List table requests attachment omission even if
+`--omit-attachment-values=false` was supplied. Displayed service text is escaped
+and bounded for terminal safety. Identifiers and lease metadata may still be
+sensitive; table output does not hide identities. Tasks HTTP diagnostics avoid raw
+response/error bodies, Task IDs, filters, and opaque cursors in SDK request logs;
+this does not protect output you explicitly capture or shell history. Reads are
+bounded by a local 32 MiB response safety cap (not a service contract limit).
+If a page exceeds it, request fewer records or omit attachment values.
+
+These are read-only, live service reads, not a local cache or workflow engine.
+List uses the selected agent as a server-side filter; show fetches the exact
+project-scoped ID without an agent filter. They do not create, update, cancel,
+resume, lease, or run Tasks, invoke agents, or persist a selected Task. They do
+not provide polling, watch, delete, `--all`, protocol/version selectors, or
+invocation lifecycle aliases. Status/order/filter meaning and availability are
+controlled by the hosted-agent Tasks service; CLI opt-in alone does not establish
+support for every agent or protocol. Reads can change between calls, so pages
+are not promised to be a stable snapshot. A 403 can indicate missing preview
+access or permissions; a 404 can indicate a missing Task or an unavailable
+route/API version. Check the project and service availability rather than
+assuming every 404 proves the Task does not exist.
 
 ## State Stores
 

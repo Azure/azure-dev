@@ -1720,7 +1720,8 @@ func (p *AgentServiceTargetProvider) Deploy(
 			result.agentName,
 			result.agentVersion.Version,
 			10*time.Second,
-			agentDeploymentPollTimeout(agentDef.EnableMemorySnapshot),
+			agentDeploymentPollTimeout,
+			agentDef.EnableMemorySnapshot,
 			progress,
 		)
 		if pollErr != nil {
@@ -4532,12 +4533,7 @@ func AgentPlaygroundURL(projectResourceID, agentName, agentVersion string) (stri
 	return url, nil
 }
 
-func agentDeploymentPollTimeout(enableMemorySnapshot *bool) time.Duration {
-	if enableMemorySnapshot != nil && *enableMemorySnapshot {
-		return 45 * time.Minute
-	}
-	return 8 * time.Minute
-}
+const agentDeploymentPollTimeout = 8 * time.Minute
 
 type agentVersionStatusReader interface {
 	GetAgentVersion(context.Context, string, string, string, bool) (*agent_api.AgentVersionObject, error)
@@ -4554,6 +4550,7 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 	version string,
 	pollInterval time.Duration,
 	pollTimeout time.Duration,
+	enableMemorySnapshot *bool,
 	progress azdext.ProgressReporter,
 ) (*agent_api.AgentVersionObject, error) {
 	const confirmCount = 2 // consecutive times a terminal status must be seen
@@ -4613,21 +4610,28 @@ func (p *AgentServiceTargetProvider) waitForAgentActive(
 		}
 	}
 
+	if lastPollErr != nil && (enableMemorySnapshot == nil || !*enableMemorySnapshot) {
+		return nil, exterrors.ServiceFromAzure(lastPollErr, exterrors.OpCreateAgent)
+	}
 	return nil, agentDeploymentTimeoutError(lastVersion, serviceName, lastPollErr)
 }
 
 func agentDeploymentErrorWithVersion(err error, projectResourceID, agentName, version string) error {
+	inspectionSuggestion := fmt.Sprintf("inspect agent %q version %q in the Foundry portal", agentName, version)
+	if inspectionURL, linkErr := AgentPlaygroundURL(projectResourceID, agentName, version); linkErr == nil {
+		inspectionSuggestion += ": " + inspectionURL
+	}
 	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
 	if !ok {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("%w; %s", err, inspectionSuggestion)
+		}
 		return err
 	}
-	serviceErr.Suggestion = fmt.Sprintf("inspect agent %q version %q in the Foundry portal", agentName, version)
-	if inspectionURL, linkErr := AgentPlaygroundURL(projectResourceID, agentName, version); linkErr == nil {
-		serviceErr.Suggestion += ": " + inspectionURL
-	}
-	if serviceErr.ErrorCode == exterrors.OpCreateAgent+".SnapshotCreationError" {
-		serviceErr.Suggestion += "; check that version's logs for snapshot hook diagnostics " +
-			"and verify your hosting library supports memory snapshots"
+	if serviceErr.Suggestion == "" || serviceErr.Suggestion == "inspect the attempted agent version in the Foundry portal" {
+		serviceErr.Suggestion = inspectionSuggestion
+	} else {
+		serviceErr.Suggestion += "; " + inspectionSuggestion
 	}
 	return serviceErr
 }
@@ -4660,7 +4664,7 @@ func agentDeploymentFailedError(versionResp *agent_api.AgentVersionObject, servi
 	if versionResp.Error != nil {
 		code = versionResp.Error.Code
 		errMsg = fmt.Sprintf("agent deployment failed: [%s] %s", code, versionResp.Error.Message)
-		if versionResp.Error.Target != "" {
+		if code == "SnapshotCreationError" && versionResp.Error.Target != "" {
 			errMsg += fmt.Sprintf(" (stage: %s)", versionResp.Error.Target)
 		}
 		if code == "SnapshotCreationError" {

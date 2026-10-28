@@ -2,7 +2,7 @@
 
 ## Preview feature opt-ins
 
-Four capabilities are off by default. Each one is turned on separately.
+Five capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -1492,8 +1492,11 @@ with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2
 Update dependencies and lock files yourself; rebuild container images when applicable.
 azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
 After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
-On activation failure or timeout, use the attempted-version link in the error;
-the environment may still refer to the previous successful deployment.
+Snapshot opt-in does not add a separate activation wait budget. On activation
+failure, timeout, or cancellation, use the attempted-version link in the error;
+the environment may still refer to the previous successful deployment. Stopping
+the client wait does not cancel provisioning in Azure. Inspect that version's
+status before deploying again, since another deploy creates a new version.
 
 Snapshots reuse version initialization; they are not conversation or session-state
 backups. Snapshot capture, restore, and persistence guarantees belong to the hosting

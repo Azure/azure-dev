@@ -449,6 +449,16 @@ func TestVoiceAgentFromResolvedService_RejectsInlineLiveSnakeCaseAliases(t *test
 	}
 }
 
+func TestVoiceAgentFromResolvedService_RejectsEmptyLivePolicies(t *testing.T) {
+	definition := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{},
+	}
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+	require.ErrorContains(t, err, "exactly one named rai_policy")
+}
+
 func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
 	root := t.TempDir()
 	definition := `kind: voice

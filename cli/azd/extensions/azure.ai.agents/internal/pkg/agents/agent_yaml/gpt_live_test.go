@@ -153,15 +153,16 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 func TestValidateGPTLiveAgent_RejectsRawForbiddenProperties(t *testing.T) {
 	t.Parallel()
 	for name, suffix := range map[string]string{
-		"root reasoning":        "reasoning: {effort: low}",
-		"root client":           "client: {}",
-		"root input":            "input: {}",
-		"root reasoning effort": "reasoning_effort: low",
-		"root soundscape":       "soundscape: {}",
-		"audio output volume":   "audio:\n  output:\n    volume: loud",
-		"reasoning temperature": "delegation:\n  type: responses\n  responses:\n    model: terra\n    reasoning:\n      temperature: 0.5",
-		"model provider":        "model: {id: gpt-live-1, provider: custom}",
-		"policy extra":          "policies:\n  - type: rai_policy\n    rai_policy_name: policy\n    extra: no",
+		"root reasoning":          "reasoning: {effort: low}",
+		"root client":             "client: {}",
+		"root input":              "input: {}",
+		"root reasoning effort":   "reasoning_effort: low",
+		"root soundscape":         "soundscape: {}",
+		"audio output volume":     "audio:\n  output:\n    volume: loud",
+		"reasoning temperature":   "delegation:\n  type: responses\n  responses:\n    model: terra\n    reasoning:\n      temperature: 0.5",
+		"model provider":          "model: {id: gpt-live-1, provider: custom}",
+		"policy extra":            "policies:\n  - type: rai_policy\n    rai_policy_name: policy\n    extra: no",
+		"structured input scalar": "structured_inputs:\n  learner: Ada",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -445,6 +445,10 @@
             { "required": ["instructions"] },
             { "required": ["tools"] },
             { "required": ["toolChoice"] },
+            { "required": ["subagent_config"] },
+            { "required": ["subagentConfig"] },
+            { "required": ["interim_response"] },
+            { "required": ["interimResponse"] },
             { "required": ["toolbox"] },
             { "required": ["toolboxes"] }
           ]
@@ -502,7 +506,11 @@
             { "required": ["protocols"] },
             { "required": ["environmentVariables"] },
             { "required": ["codeConfiguration"] },
-            { "required": ["sessionConfiguration"] }
+            { "required": ["sessionConfiguration"] },
+            { "required": ["subagent_config"] },
+            { "required": ["subagentConfig"] },
+            { "required": ["interim_response"] },
+            { "required": ["interimResponse"] }
           ]
         }
       }

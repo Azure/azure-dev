@@ -92,6 +92,10 @@ environment under the TOOLBOX_<NORMALIZED_NAME>_MCP_ENDPOINT variable (the same
 key agents consume), where <NORMALIZED_NAME> is the toolbox name uppercased with
 non-alphanumeric character runs replaced by underscores.
 
+After local validation, checks Foundry access before resolving connections.
+May assign Foundry User when the target matches the active environment's
+project resource ID and endpoint. Access warnings and progress go to stderr.
+
 Usage
   azd ai toolbox create <name> --from-file <path> [flags]
 

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -90,8 +91,7 @@ func Cancelled(message string) error {
 // with operation context. If the error is not an azcore.ResponseError, it
 // returns a generic internal [azdext.LocalError].
 func ServiceFromAzure(err error, operation string) error {
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
+	if respErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		serviceName := ""
 		if respErr.RawResponse != nil && respErr.RawResponse.Request != nil {
 			serviceName = respErr.RawResponse.Request.Host
@@ -100,12 +100,17 @@ func ServiceFromAzure(err error, operation string) error {
 		if code == "" {
 			code = fmt.Sprintf("%d", respErr.StatusCode)
 		}
-		return &azdext.ServiceError{
+		serviceErr := &azdext.ServiceError{
 			Message:     fmt.Sprintf("%s: %s", operation, respErr.Error()),
 			ErrorCode:   fmt.Sprintf("%s.%s", operation, code),
 			StatusCode:  respErr.StatusCode,
 			ServiceName: serviceName,
 		}
+		if respErr.StatusCode == http.StatusForbidden {
+			serviceErr.Suggestion = "Verify that your identity has Foundry User or equivalent access on the target " +
+				"Foundry project. Subscription Owner or Contributor alone does not grant data-plane access."
+		}
+		return serviceErr
 	}
 	if IsCancellation(err) {
 		return Cancelled(fmt.Sprintf("%s was cancelled", operation))

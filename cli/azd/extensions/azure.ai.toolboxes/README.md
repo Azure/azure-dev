@@ -44,6 +44,11 @@ Toolbox-owned authoring properties use camelCase, including
 pass-through payloads and retain the field names and discriminator values defined
 by the corresponding service contract.
 
+Connection-backed tools use the connection's name as the tool name. Names must
+be unique across `connections[].name` and explicit `tools[].name` values.
+Create and managed deployment reject duplicates before endpoint resolution or
+access preparation.
+
 Configure a Foundry project endpoint before deploying. If the project or
 referenced Connections are also managed as services, declare those dependencies
 with `uses`. Run `azd provision` for the project, then `azd deploy --all` for
@@ -66,6 +71,49 @@ For direct resource operations:
 
 Removing a service from `azure.yaml` stops managing the toolbox but does not
 delete the remote resource; use `azd ai toolbox delete` to delete it.
+
+## Developer access for deployment and create
+
+Managed toolbox deployment and `azd ai toolbox create` prepare Foundry access
+independently of any agent predeploy hook. Subscription **Owner** or
+**Contributor** alone does not grant data-plane access. After local input
+validation, the extension probes toolbox read access before resolving remote
+connections or creating a version. A successful read or a toolbox-not-found
+response does not trigger a role assignment.
+
+Automatic grants require `AZURE_AI_PROJECT_ID` to identify the project selected
+by `FOUNDRY_PROJECT_ENDPOINT` (or its `AZURE_AI_PROJECT_ENDPOINT` fallback).
+The operation endpoint must match that project, including when explicitly
+selected with `--project-endpoint`. If `AZURE_SUBSCRIPTION_ID` is set, it must
+agree with the project ID. Unrelated endpoints and endpoint-only usage do not
+borrow the active project's scope or tenant and do not receive automatic grants.
+Managed deployment retains its existing subscription/user-tenant credential
+fallback when matching project metadata is unavailable.
+
+Only a confirmed authorization denial triggers inherited/equivalent role
+inspection and, if needed, a project-scoped **Foundry User** assignment.
+Credentials use the subscription's user-access tenant; principal lookup uses
+the project's resource tenant, including for guest users and service principals.
+New grants are followed by bounded readiness checks. If propagation takes longer,
+wait and retry. Inspection or assignment failures produce a warning and let the
+requested operation determine the final result. An assignment-denied warning
+includes an administrator command for the verified project scope.
+
+Set `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` in the active azd environment or
+process environment to disable these automatic checks and grants. A non-empty
+azd environment value takes precedence; an absent or empty value falls back to
+the process environment. Values are parsed as booleans; invalid values do not
+enable skipping. Existing externally managed access is still required.
+
+Warnings and grant/propagation progress go to stderr, preserving JSON results
+on stdout. Read/list/show, delete, connection and skill mutations, publish,
+local authoring, and bring-your-own endpoint reuse do not prepare access.
+Provisioning remains independent of developer role-assignment permission.
+
+The adapter uses core `pkg/foundry.AccessPreparation`. Release the core helper
+and bump this extension's azd dependency before merging/releasing the extension;
+an external Go workspace can validate both modules before that release without
+committing a local `replace` or inventing a dependency version.
 
 ## Extension telemetry API
 

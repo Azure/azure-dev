@@ -93,8 +93,33 @@ export function homebrewReadiness(content, cliVersion, cask) {
         ? [`${prefix}#{version}/azd-darwin-#{arch}.zip`, `${prefix}#{version}/azd-linux-#{arch}.tar.gz`]
         : ["darwin-amd64.zip", "darwin-arm64.zip", "linux-amd64.tar.gz", "linux-arm64.tar.gz"]
             .map((name) => `${prefix}${cliVersion}/azd-${name}`);
+    // Recognize the tap's generated download stanza without evaluating Ruby.
+    const lines = content.split(/\r?\n/).map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"));
+    const downloads = cask ? [
+        `version "${cliVersion}"`,
+        /^sha256 arm: "[a-f0-9]{64}",$/,
+        /^intel: "[a-f0-9]{64}",$/,
+        /^arm64_linux: "[a-f0-9]{64}",$/,
+        /^x86_64_linux: "[a-f0-9]{64}"$/,
+        "on_macos do", `url "${expected[0]}"`, 'binary "azd-darwin-#{arch}", target: "azd"', "end",
+        "on_linux do", `url "${expected[1]}"`, 'binary "azd-linux-#{arch}", target: "azd"', "end",
+    ] : [
+        "if OS.mac?",
+        "if Hardware::CPU.intel?", `url "${expected[0]}"`, /^sha256 "[a-f0-9]{64}"$/,
+        "elsif Hardware::CPU.arm?", `url "${expected[1]}"`, /^sha256 "[a-f0-9]{64}"$/, "end",
+        "elsif OS.linux?",
+        "if Hardware::CPU.intel?", `url "${expected[2]}"`, /^sha256 "[a-f0-9]{64}"$/,
+        "elsif Hardware::CPU.arm?", `url "${expected[3]}"`, /^sha256 "[a-f0-9]{64}"$/, "end",
+        "end", `version "${cliVersion}"`,
+    ];
+    const start = lines.indexOf(downloads[0]);
+    const activeDownloads = start >= 0 && downloads.every((expectedLine, index) => {
+        const line = lines[start + index];
+        return typeof expectedLine === "string" ? line === expectedLine : expectedLine.test(line ?? "");
+    });
     requireValue(urls.length === expected.length && expected.every((url) => urls.includes(url)) &&
-        (content.match(/"[a-f0-9]{64}"/g) ?? []).length === 4,
+        !lines.some((line) => /^=begin\b|^=end\b/.test(line)) && activeDownloads,
     "Homebrew definition does not contain the expected versioned downloads and architecture checksums. Inspect the tap.");
     return { status: "ready", detail: `Published definition references ${cliVersion} for macOS and Linux architectures.` };
 }

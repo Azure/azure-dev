@@ -10,6 +10,7 @@ import {
     observationComment, observationUpdate, readObservations, observationView, mergeObservations, OBSERVATION_MAX_AGE,
 } from "./observations.mjs";
 import { packageGates, releaseAssetNames } from "./packages.mjs";
+import { homebrewFixture } from "./homebrew-fixture.mjs";
 
 const source = "a".repeat(40);
 const metadata = {
@@ -58,12 +59,7 @@ function fixture() {
                 state: "closed", merged: true, base: { ref: "main", repo: { full_name: "Azure/azure-dev" } },
             };
             if (path.includes("homebrew-azd/contents/")) {
-                const cask = path.includes("/Casks/");
-                const names = cask ? ["darwin-#{arch}.zip", "linux-#{arch}.tar.gz"] :
-                    ["darwin-amd64.zip", "darwin-arm64.zip", "linux-amd64.tar.gz", "linux-arm64.tar.gz"];
-                const text = 'version "1.2.3"\n' + names.map((name) =>
-                    `url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${cask ? "#{version}" : "1.2.3"}/azd-${name}"`).join("\n") +
-                    `\n${Array.from({ length: 4 }, () => `sha256 "${"a".repeat(64)}"`).join("\n")}`;
+                const text = homebrewFixture(path.includes("/Casks/"));
                 return { encoding: "base64", content: Buffer.from(text).toString("base64") };
             }
             if (path.includes("/releases/tags/")) return {

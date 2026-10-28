@@ -260,8 +260,8 @@ the operator can recheck immediately before approval.
 | --- | --- |
 | WinGet | Refresh the local `winget` source and find the exact `Microsoft.Azd` MSI/package version in its available-version list. A newer version or merged PR does not substitute. |
 | Chocolatey | The exact `azd` MSI/package version has `IsApproved=true`, passing validation, and passing installation verification in public feed metadata. Submission or exact-version query success alone is insufficient. |
-| Homebrew cask | Public `Azure/homebrew-azd` main has the exact CLI version, expected versioned macOS/Linux download definitions, and architecture checksums in `Casks/azd.rb`. |
-| Homebrew formula | The same checks for `Formula/azd.rb`, including all four platform/architecture download URLs. |
+| Homebrew cask | Public `Azure/homebrew-azd` main has the exact CLI version, expected versioned macOS/Linux download definitions, and active checksums for all four architecture keys in `Casks/azd.rb`. |
+| Homebrew formula | The same checks for `Formula/azd.rb`, including all four platform/architecture download URLs with active checksum declarations in their corresponding branches. |
 | Standalone, MSI, DEB and RPM | The public, non-draft GA GitHub release contains all 11 expected assets, including the Windows ARM64 alpha archive. Each corresponding immutable, versioned public-storage URL responds to HEAD with the same positive size. |
 
 The expected **MSI/package version** comes from verified run metadata and is not
@@ -273,6 +273,9 @@ malformed metadata, unexpected definitions, and download size mismatches never
 count as ready. These checks inspect distribution evidence: they do not install
 packages, execute Homebrew definitions, download/checksum-test binaries, or prove
 an individual customer's installation will succeed.
+Homebrew checks recognize the tap's generated download layout without executing
+Ruby. Commented-out checksums do not count; unsupported layouts remain unknown
+and require inspection rather than being treated as ready.
 
 Checking is available to authorized drivers and observers after an explicit live
 refresh verifies access and a GA publishing run is linked, even if that run has failed or unrelated jobs are

@@ -42,6 +42,15 @@ async function readJson(request) {
 
 export async function startServer(service, session, issueNumber) {
     const selection = { issueNumber };
+    const snapshot = async () => {
+        const selected = selection.issueNumber;
+        const state = await service.snapshot(selected);
+        if (state.access?.github.ready && !state.restricted && state.release &&
+            selection.issueNumber === selected) {
+            selection.issueNumber = state.release.issueNumber;
+        }
+        return state;
+    };
     const token = randomBytes(32).toString("hex");
     const prefix = `/${token}/`;
     let origin;
@@ -69,7 +78,7 @@ export async function startServer(service, session, issueNumber) {
                 return;
             }
             if (request.method === "GET" && route === "api/state") {
-                json(200, await service.snapshot(selection.issueNumber));
+                json(200, await snapshot());
                 return;
             }
             const action = route.startsWith("api/") ? route.slice(4) : "";
@@ -114,7 +123,11 @@ export async function startServer(service, session, issueNumber) {
     });
     origin = `http://127.0.0.1:${server.address().port}`;
     return {
-        server, selection, url: `${origin}${prefix}`,
+        server, selection, snapshot, url: `${origin}${prefix}`,
+        selectedIssueNumber: async () => {
+            if (selection.issueNumber === undefined) await snapshot();
+            return selection.issueNumber;
+        },
         close: () => new Promise((resolve, reject) => {
             server.close((error) => error ? reject(error) : resolve());
             server.closeAllConnections();

@@ -409,10 +409,19 @@ $("adopt").onsubmit = async (event) => {
     if (await act("adopt", data)) $("adopt-dialog").close();
 };
 $("queue").onclick = async () => {
-    preview = await act("prepare-queue", {
-        issueNumber: snapshot.release.issueNumber, recordMode: $("record-mode").value,
+    const issueNumber = snapshot?.release?.issueNumber;
+    const login = snapshot?.access.github.login;
+    const result = await act("prepare-queue", {
+        issueNumber, recordMode: $("record-mode").value,
     });
-    if (!preview) return;
+    if (!result || !snapshot?.access.github.ready || snapshot.restricted || !snapshot.isDriver ||
+        snapshot.access.github.login !== login || snapshot.release?.issueNumber !== issueNumber ||
+        snapshot.release.version !== result.version || snapshot.release.issueState !== "open" ||
+        snapshot.release.runId || snapshot.release.intent || snapshot.release.outcome?.status === "partial") {
+        preview = undefined;
+        return;
+    }
+    preview = result;
     $("queue-mode-info").textContent = preview.parameters.AzureRecordMode === "playback"
         ? "Playback selected: tests use recorded responses instead of live validation. This still publishes a real release."
         : "Live selected: tests run against real Azure resources. This publishes a real release.";

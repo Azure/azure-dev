@@ -7,6 +7,7 @@ import {
     chocolateyReadiness, homebrewReadiness, releaseAssetNames, readPackageReadiness,
     currentPackageReadiness, PACKAGE_CHECK_MAX_AGE, publicPackageRead,
 } from "./packages.mjs";
+import { homebrewFixture as brew } from "./homebrew-fixture.mjs";
 
 const cliVersion = "1.2.3";
 const msiVersion = "1.2.400";
@@ -15,12 +16,6 @@ const xml = (values = {}) => `<entry><title type="text">${values.Id ?? "azd"}</t
     Version: msiVersion, IsApproved: "true", PackageValidationResultStatus: "Passing",
     PackageTestResultStatus: "Passing", PackageSubmittedStatus: "Ready", ...values,
 }).map(([key, value]) => `<d:${key} m:type="Edm.String">${value}</d:${key}>`).join("")}</m:properties></entry>`;
-const brew = (cask, v = cliVersion) => `version "${v}"\n` +
-    (cask ? ["darwin-#{arch}.zip", "linux-#{arch}.tar.gz"]
-        : ["darwin-amd64.zip", "darwin-arm64.zip", "linux-amd64.tar.gz", "linux-arm64.tar.gz"])
-        .map((name) => `url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${cask ? "#{version}" : v}/azd-${name}"`).join("\n") +
-    `\n${Array.from({ length: 4 }, () => `sha256 "${"a".repeat(64)}"`).join("\n")}`;
-
 function fixture() {
     const calls = [];
     return {
@@ -71,8 +66,33 @@ test("Homebrew checks exact versions and all expected architecture download defi
         assert.throws(() => homebrewReadiness(unsafe, cliVersion, cask), /expected versioned downloads/);
         try { homebrewReadiness(unsafe, cliVersion, cask); }
         catch (error) { assert.doesNotMatch(error.message, /user|secret|sig=|example\.test/); }
-        assert.throws(() => homebrewReadiness(brew(cask).replace(/sha256 "[a-f0-9]+"/, ""), cliVersion, cask));
+        assert.throws(() => homebrewReadiness(brew(cask).replace(/^sha256.*$/m, ""), cliVersion, cask));
     }
+});
+
+test("Homebrew requires active checksums in each expected platform and architecture branch", () => {
+    for (const cask of [true, false]) {
+        const content = brew(cask);
+        const commented = content.replace(/^(sha256.*|(?:intel|arm64_linux|x86_64_linux):.*)$/gm, "# $1");
+        assert.throws(() => homebrewReadiness(commented, cliVersion, cask), /architecture checksums/);
+        const missing = content.replace(/^sha256.*$/m, "# checksum removed");
+        assert.throws(() => homebrewReadiness(`${missing}\n# "${"a".repeat(64)}"`, cliVersion, cask));
+        assert.throws(() => homebrewReadiness(`=begin\n${content}\n=end`, cliVersion, cask));
+        assert.equal(homebrewReadiness(content.replace(/\n/g, "\n  # generated definition\n  "),
+            cliVersion, cask).status, "ready");
+    }
+    for (const change of [
+        (content) => content.replace("arm64_linux:", "arm:"),
+        (content) => content.replace("x86_64_linux:", "other:"),
+        (content) => content.replace("on_linux do", "on_macos do"),
+    ]) assert.throws(() => homebrewReadiness(change(brew(true)), cliVersion, true));
+    for (const change of [
+        (content) => content.replace("elsif OS.linux?", "elsif OS.mac?"),
+        (content) => content.replace("elsif Hardware::CPU.arm?", "elsif Hardware::CPU.intel?"),
+        (content) => content.replace(`sha256 "${"a".repeat(64)}"`, `"${"a".repeat(64)}"`),
+        (content) => content.replace(/darwin-(amd64|arm64)\.zip/g,
+            (_match, arch) => `darwin-${arch === "amd64" ? "arm64" : "amd64"}.zip`),
+    ]) assert.throws(() => homebrewReadiness(change(brew(false)), cliVersion, false));
 });
 
 test("all five gates must pass, with exact public artifact names and sizes and no installs or publishing", async () => {

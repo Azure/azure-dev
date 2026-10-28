@@ -29,22 +29,26 @@ const session = await joinSession({
             {
                 name: "check_packages",
                 description: "Check package readiness with fresh Azure verification. Refreshes local WinGet; the driver saves sanitized observations in the private issue, while observers' checks stay local. No publishing.",
-                handler: (ctx) => service.checkPackages({ issueNumber: panel(ctx.instanceId).selection.issueNumber }),
+                handler: async (ctx) => service.checkPackages({
+                    issueNumber: await panel(ctx.instanceId).selectedIssueNumber(),
+                }),
             },
             {
                 name: "refresh",
                 description: "Verify private GitHub access and load saved release observations. Does not query Azure, recheck public packages, or write tracking.",
-                handler: (ctx) => service.snapshot(panel(ctx.instanceId).selection.issueNumber),
+                handler: (ctx) => panel(ctx.instanceId).snapshot(),
             },
             {
                 name: "refresh_live",
                 description: "Explicitly refresh Azure DevOps and PR observations. The release driver saves sanitized snapshots to the private issue; observers get local results only. Does not publish or approve anything.",
-                handler: (ctx) => service.refreshLive({ issueNumber: panel(ctx.instanceId).selection.issueNumber }),
+                handler: async (ctx) => service.refreshLive({
+                    issueNumber: await panel(ctx.instanceId).selectedIssueNumber(),
+                }),
             },
             {
                 name: "analyze_failure",
                 description: "Return a read-only investigation prompt for the selected release's failed jobs. Does not queue an agent turn.",
-                handler: async (ctx) => service.diagnosis(panel(ctx.instanceId).selection.issueNumber),
+                handler: async (ctx) => service.diagnosis(await panel(ctx.instanceId).selectedIssueNumber()),
             },
         ],
         open: async (ctx) => {

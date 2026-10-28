@@ -3,6 +3,8 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
 import { startServer } from "./server.mjs";
 import { ReleaseService } from "./release-service.mjs";
 import { ReleaseError } from "./cli.mjs";
@@ -122,4 +124,76 @@ test("private-repository denial blocks every HTTP action without Azure, tracking
         assert.deepEqual(await result.json(), { error: ACCESS_REQUIRED, code: "access_required" });
     }
     assert.equal(panel.selection.issueNumber, 42);
+});
+
+test("HTTP and SDK saved refreshes persist discovery and keep actions on the displayed release", async (t) => {
+    let discovered = 42;
+    let denied = false;
+    const calls = [];
+    const service = {
+        requireAccess: async () => ({}),
+        snapshot: async (issueNumber) => {
+            calls.push(issueNumber);
+            return { access: { github: { ready: !denied } }, restricted: denied,
+                release: denied ? null : { issueNumber: issueNumber ?? discovered } };
+        },
+    };
+    const panel = await startServer(service, {});
+    const sdkFirst = await startServer(service, {});
+    const explicit = await startServer(service, {}, 99);
+    t.after(async () => { await panel.close(); await sdkFirst.close(); await explicit.close(); });
+    const state = await (await fetch(new URL("api/state", panel.url))).json();
+    assert.equal(state.release.issueNumber, 42);
+    assert.equal(panel.selection.issueNumber, 42);
+    discovered = 43;
+    assert.equal(await panel.selectedIssueNumber(), 42);
+    assert.equal((await panel.snapshot()).release.issueNumber, 42);
+    assert.equal(await sdkFirst.selectedIssueNumber(), 43, "SDK actions resolve discovery before the iframe loads");
+    assert.equal((await sdkFirst.snapshot()).release.issueNumber, 43);
+    assert.equal(await explicit.selectedIssueNumber(), 99);
+    assert.deepEqual(calls, [undefined, 42, undefined, 43]);
+
+    const token = new URL(panel.url).pathname.split("/")[1];
+    await fetch(new URL("api/select", panel.url), {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Azd-Release-Token": token },
+        body: JSON.stringify({ issueNumber: 44 }),
+    });
+    assert.equal((await panel.snapshot()).release.issueNumber, 44);
+    assert.equal(await panel.selectedIssueNumber(), 44);
+    assert.equal(await sdkFirst.selectedIssueNumber(), 43, "Selections remain panel-local");
+    denied = true;
+    assert.equal((await panel.snapshot()).release, null);
+    assert.equal(panel.selection.issueNumber, 44, "Access denial does not choose another release");
+});
+
+test("registered SDK actions use the same discovered release as their panel", async (t) => {
+    let canvas;
+    const calls = [];
+    const service = {
+        changelog: {},
+        snapshot: async (issueNumber) => ({
+            access: { github: { ready: true } }, release: { issueNumber: issueNumber ?? 42 },
+        }),
+        checkPackages: async (data) => { calls.push(["packages", data.issueNumber]); },
+        diagnosis: async (issueNumber) => { calls.push(["diagnosis", issueNumber]); },
+        refreshLive: async (data) => { calls.push(["live", data.issueNumber]); },
+    };
+    const source = (await readFile(new URL("extension.mjs", import.meta.url), "utf8"))
+        .replace(/^import .*;\r?\n/gm, "");
+    await runInNewContext(`(async () => { ${source} })()`, {
+        ReleaseService: class { constructor() { return service; } },
+        startServer,
+        createCanvas: (declaration) => declaration,
+        joinSession: async (config) => { canvas = config.canvases[0]; return {}; },
+        CanvasError: Error,
+    });
+    const ctx = { instanceId: "sdk-test" };
+    await canvas.open(ctx);
+    t.after(() => canvas.onClose(ctx));
+    const action = (name) => canvas.actions.find((item) => item.name === name).handler(ctx);
+    await action("check_packages");
+    await action("analyze_failure");
+    await action("refresh_live");
+    assert.equal((await action("refresh")).release.issueNumber, 42);
+    assert.deepEqual(calls, [["packages", 42], ["diagnosis", 42], ["live", 42]]);
 });

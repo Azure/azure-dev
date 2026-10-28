@@ -359,6 +359,70 @@ test("page omits the detailed pipeline section but retains failure analysis near
     assert.match(html, /<dialog id="adopt-dialog"/);
 });
 
+test("queue previews survive only a successful refresh for the same authorized driver and active release", async () => {
+    const source = await readFile(new URL("app.js", import.meta.url), "utf8");
+    for (const change of ["none", "denied", "network", "observer", "account", "issue", "version", "closed", "run", "intent", "partial"]) {
+        const elements = new Map();
+        const makeElement = () => ({
+            children: [], elements: { releaseVersion: {} }, open: false,
+            replaceChildren(...children) { this.children = children; },
+            append(...children) { this.children.push(...children); },
+            querySelector: () => ({}), setAttribute() {}, reset() {},
+            showModal() { this.open = true; }, close() { this.open = false; },
+        });
+        const element = (id) => {
+            if (!elements.has(id)) elements.set(id, makeElement());
+            return elements.get(id);
+        };
+        const state = {
+            access: { github: { ready: true, login: "driver" }, azure: { ready: true } },
+            releases: [], errors: [], isDriver: true,
+            release: { version: "1.2.3", changelogPr: 100, issueNumber: 42, author: "driver",
+                issueState: "open", runId: null, milestones: {} },
+            nextStep: { message: "Ready to preview", canQueue: true },
+        };
+        let reads = 0;
+        const context = {
+            document: { getElementById: element, createElement: makeElement, querySelectorAll: () => [] },
+            location: { pathname: "/token/" },
+            fetch: async (url) => {
+                if (url === "api/prepare-queue") return { ok: true, json: async () => ({
+                    version: "1.2.3", source: "a".repeat(40), ticket: "preview",
+                    parameters: { AzureRecordMode: "live" },
+                }) };
+                assert.equal(url, "api/state");
+                if (++reads === 2) {
+                    if (change === "network") throw new Error("Offline");
+                    if (change === "denied") {
+                        state.access.github.ready = false;
+                        state.restricted = true;
+                        state.release = null;
+                    }
+                    if (change === "observer") state.isDriver = false;
+                    if (change === "account") state.access.github.login = "another-driver";
+                    if (change === "issue") state.release.issueNumber = 43;
+                    if (change === "version") state.release.version = "1.2.4";
+                    if (change === "closed") state.release.issueState = "closed";
+                    if (change === "run") state.release.runId = 200;
+                    if (change === "intent") state.release.intent = { token: "reserved" };
+                    if (change === "partial") state.release.outcome = { status: "partial" };
+                }
+                return { ok: true, json: async () => structuredClone(state) };
+            },
+        };
+        runInNewContext(source, context);
+        await new Promise((resolve) => setImmediate(resolve));
+        await element("queue").onclick();
+        assert.equal(reads, 2);
+        assert.equal(element("queue-dialog").open, change === "none", change);
+        assert.equal(Boolean(runInNewContext("preview", context)), change === "none", change);
+        if (["denied", "network"].includes(change)) {
+            assert.equal(element("queue-preview").textContent, "", change);
+            assert.equal(element("workspace").hidden, true, change);
+        }
+    }
+});
+
 test("a package recheck clears previous success immediately; failed reads and access loss cannot retain a green view", async () => {
     for (const denied of [false, true]) {
         const elements = new Map();

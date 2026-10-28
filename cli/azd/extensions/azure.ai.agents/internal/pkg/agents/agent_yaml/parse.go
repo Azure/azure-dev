@@ -234,6 +234,10 @@ func ValidateAgentDefinition(templateBytes []byte) error {
 									errors = append(errors, fmt.Sprintf("policies is not valid: %v", err))
 								} else {
 									agent.Policies = policyEnvelope.Policies
+									if len(policyEnvelope.Policies) == 0 {
+										errors = append(errors,
+											"GPT Live policies must contain exactly one named rai_policy")
+									}
 									errors = append(errors, validateLivePolicies(policyEnvelope.Policies)...)
 								}
 							}

@@ -1,5 +1,5 @@
 # Run from cli/azd: mage generateProtos (prefers Docker, falls back to WSL Containers)
-FROM mcr.microsoft.com/oss/go/microsoft/golang:1.26.4-azurelinux3.0 AS go-tools
+FROM mcr.microsoft.com/oss/go/microsoft/golang:1.26.4 AS go-tools
 
 ARG PROTOC_GEN_GO_VERSION=v1.36.11
 ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1

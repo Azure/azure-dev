@@ -5,6 +5,7 @@ package eval_api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync/atomic"
@@ -120,6 +121,15 @@ func TestPollerTreatsCancellationAsFailure(t *testing.T) {
 func TestJobFailedErrorWithoutAMessage(t *testing.T) {
 	err := &JobFailedError{Status: JobStatusFailed}
 	assert.Contains(t, err.Error(), "failed")
+}
+
+func TestJobFailedErrorFallsBackToTheServiceCode(t *testing.T) {
+	var job GenerationJob
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"id":"job_1","status":"failed","error":{"code":"Throttled"}}`), &job))
+
+	err := &JobFailedError{Job: &job, Status: JobStatusFailed}
+	assert.Contains(t, err.Error(), "Throttled")
 }
 
 // Throttling and server faults are the service being busy, not the job being

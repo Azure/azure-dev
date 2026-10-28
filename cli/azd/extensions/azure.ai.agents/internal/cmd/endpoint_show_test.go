@@ -232,7 +232,7 @@ func TestRunPromptEndpointShowRepairsLegacyHarnessedEndpoint(t *testing.T) {
 				return &agent_api.AgentVersionObject{Definition: map[string]any{
 					"kind": "prompt",
 					"harness": map[string]any{
-						"type": agent_api.ManagedAgentHarnessGitHubCopilot,
+						"type": agent_api.ManagedAgentHarnessMicrosoftCopilot,
 					},
 				}}, nil
 			},

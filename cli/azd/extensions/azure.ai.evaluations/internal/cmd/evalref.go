@@ -58,7 +58,10 @@ func (ec *evalContext) resolveEvalRef(
 		eval, err := cfg.Eval(nameOrID)
 		switch {
 		case err == nil:
-			scope := ec.evalScopeOf(ctx, configPath)
+			scope, err := ec.evalScopeOf(ctx, configPath)
+			if err != nil {
+				return evalRef{}, err
+			}
 			id := ec.recordedEvalID(ctx, eval.Name, scope)
 			if id == "" {
 				// Nothing recorded is not the same as nothing published. The
@@ -135,15 +138,14 @@ func (ec *evalContext) recordedEvalID(ctx context.Context, evalName, scope strin
 }
 
 // evalScopeOf names the configuration an id lookup is about, the same way the
-// deploy that recorded it did. Empty when the project root cannot be read,
-// which answers with the unqualified key -- the one a single-configuration
-// project has always used.
-func (ec *evalContext) evalScopeOf(ctx context.Context, configPath string) string {
+// deploy that recorded it did. A failed project lookup must not fall back to
+// unqualified identity keys belonging to another configuration.
+func (ec *evalContext) evalScopeOf(ctx context.Context, configPath string) (string, error) {
 	root, err := ec.projectRoot(ctx)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return project.EvalScope(root, configPath)
+	return project.EvalScope(root, configPath), nil
 }
 
 // evalIDNamed finds the id of the eval the service lists under this name.

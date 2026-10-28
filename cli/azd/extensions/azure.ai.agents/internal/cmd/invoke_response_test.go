@@ -11,12 +11,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -162,23 +159,15 @@ func TestResponseIdentityTrackerRecordsSaveFailure(t *testing.T) {
 	assert.Contains(t, output.String(), "was not saved")
 }
 
-type failingResponseConfigServer struct {
-	*invokeUserConfigServer
-}
-
-func (s *failingResponseConfigServer) Set(
-	ctx context.Context, req *azdext.SetUserConfigRequest,
-) (*azdext.EmptyResponse, error) {
-	if req.Path == responsesConfigPath {
-		return nil, status.Error(codes.Unavailable, "test state write failure")
-	}
-	return s.invokeUserConfigServer.Set(ctx, req)
-}
-
 func TestResponsesRemoteNoWaitSaveFailurePrintsRecovery(t *testing.T) {
-	config := &failingResponseConfigServer{invokeUserConfigServer: newInvokeUserConfigServer()}
-	config.setJSON(t, responsesConfigPath, map[string]savedResponse{"agent-key": {ResponseID: "resp_previous"}})
+	config := newInvokeUserConfigServer()
 	client := newInvokeTestAzdClient(t, config)
+	saveAgentStateForTest(t, client, "agent-key", agentStateRecord{
+		Response: &savedResponse{ResponseID: "resp_previous"},
+	})
+	store, err := newAgentStateStoreForClient(client)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(store.statePath("agent-key"), []byte("{"), 0o600))
 	var methods []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		methods = append(methods, r.Method)
@@ -200,14 +189,11 @@ func TestResponsesRemoteNoWaitSaveFailurePrintsRecovery(t *testing.T) {
 	}
 	var invokeErr error
 	output := withCapturedStdout(t, func() { invokeErr = action.responsesRemote(t.Context()) })
-	require.ErrorContains(t, invokeErr, "test state write failure")
+	require.ErrorContains(t, invokeErr, "parse agent state")
 	assert.Contains(t, output, "Next:\n  "+
 		`azd ai agent invocations follow --id "resp_accepted" --protocol responses --agent-name "resp-test"`)
 	assert.NotContains(t, output, "must not render")
 	assert.Equal(t, []string{"POST"}, methods)
-	var saved map[string]savedResponse
-	config.getJSON(t, responsesConfigPath, &saved)
-	assert.Equal(t, "resp_previous", saved["agent-key"].ResponseID)
 }
 
 func TestNoWaitSavesIdentityAndStopsBeforeOutput(t *testing.T) {
@@ -662,10 +648,10 @@ func TestReadResponsesSSEEventSizeLimit(t *testing.T) {
 	}
 }
 
-func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
+func TestResponseStateStoreRoundTrip(t *testing.T) {
 	server := newInvokeUserConfigServer()
 	client := newInvokeTestAzdClient(t, server)
-	store := newUserConfigResponseStateStore(client)
+	store := newResponseStateStore(client)
 	want := savedResponse{ResponseID: "resp_123"}
 
 	require.NoError(t, store.Save(t.Context(), "agent-a", want))
@@ -680,10 +666,10 @@ func TestUserConfigResponseStateStoreRoundTrip(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestUserConfigResponseStateStoreReplacesCurrentID(t *testing.T) {
+func TestResponseStateStoreReplacesCurrentID(t *testing.T) {
 	server := newInvokeUserConfigServer()
 	client := newInvokeTestAzdClient(t, server)
-	store := newUserConfigResponseStateStore(client)
+	store := newResponseStateStore(client)
 
 	require.NoError(t, store.Save(t.Context(), "agent-a", savedResponse{ResponseID: "resp_1"}))
 	require.NoError(t, store.Save(t.Context(), "agent-a", savedResponse{ResponseID: "resp_2"}))
@@ -702,53 +688,33 @@ func TestCleanupAgentStateForKey(t *testing.T) {
 		otherKey     = "acct.services.ai.azure.com/api/projects/project/agents/other/versions/1/remote"
 	)
 	server := newInvokeUserConfigServer()
-	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{
-		selectionKey: "checkpoints", "another-agent": "other-store",
-	})
-	server.setJSON(t, configPath("sessions"), map[string]string{
-		agentKey: "sess_123",
-		otherKey: "sess_other",
-	})
-	server.setJSON(t, configPath("conversations"), map[string]string{
-		agentKey: "conv_123",
-		otherKey: "conv_other",
-	})
-	server.setJSON(t, responsesConfigPath, map[string]savedResponse{
-		agentKey: {ResponseID: "resp_123"},
-		otherKey: {ResponseID: "resp_other"},
-	})
-	server.setJSON(t, invocationsConfigPath, map[string]savedInvocation{
-		agentKey: {InvocationID: "inv_123"},
-		otherKey: {InvocationID: "inv_other"},
-	})
 	client := newInvokeTestAzdClient(t, server)
+	saveAgentStateForTest(t, client, selectionKey, agentStateRecord{StateStore: "checkpoints"})
+	saveAgentStateForTest(t, client, "another-agent", agentStateRecord{StateStore: "other-store"})
+	saveAgentStateForTest(t, client, agentKey, agentStateRecord{
+		SessionID: "sess_123", ConversationID: "conv_123",
+		Response: &savedResponse{ResponseID: "resp_123"}, Invocation: &savedInvocation{InvocationID: "inv_123"},
+	})
+	saveAgentStateForTest(t, client, otherKey, agentStateRecord{
+		SessionID: "sess_other", ConversationID: "conv_other",
+		Response: &savedResponse{ResponseID: "resp_other"}, Invocation: &savedInvocation{InvocationID: "inv_other"},
+	})
 
 	require.True(t, cleanupAgentStateForKey(t.Context(), client, agentKey))
 
-	var selection map[string]string
-	server.getJSON(t, configPath(stateStoreConfigField), &selection)
-	assert.NotContains(t, selection, selectionKey)
-	assert.Equal(t, "other-store", selection["another-agent"])
-
-	var sessions map[string]string
-	server.getJSON(t, configPath("sessions"), &sessions)
-	assert.NotContains(t, sessions, agentKey)
-	assert.Equal(t, "sess_other", sessions[otherKey])
-
-	var conversations map[string]string
-	server.getJSON(t, configPath("conversations"), &conversations)
-	assert.NotContains(t, conversations, agentKey)
-	assert.Equal(t, "conv_other", conversations[otherKey])
-
-	var responses map[string]savedResponse
-	server.getJSON(t, responsesConfigPath, &responses)
-	assert.NotContains(t, responses, agentKey)
-	assert.Equal(t, "resp_other", responses[otherKey].ResponseID)
-
-	var invocations map[string]savedInvocation
-	server.getJSON(t, invocationsConfigPath, &invocations)
-	assert.NotContains(t, invocations, agentKey)
-	assert.Equal(t, "inv_other", invocations[otherKey].InvocationID)
+	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
+	assert.Nil(t, loadAgentStateForTest(t, client, selectionKey))
+	selection := loadAgentStateForTest(t, client, "another-agent")
+	require.NotNil(t, selection)
+	assert.Equal(t, "other-store", selection.StateStore)
+	other := loadAgentStateForTest(t, client, otherKey)
+	require.NotNil(t, other)
+	assert.Equal(t, "sess_other", other.SessionID)
+	assert.Equal(t, "conv_other", other.ConversationID)
+	require.NotNil(t, other.Response)
+	require.NotNil(t, other.Invocation)
+	assert.Equal(t, "resp_other", other.Response.ResponseID)
+	assert.Equal(t, "inv_other", other.Invocation.InvocationID)
 }
 
 func TestCleanupAgentStateFromEnvironment(t *testing.T) {
@@ -776,10 +742,6 @@ func TestCleanupAgentStateFromEnvironment(t *testing.T) {
 			t.Parallel()
 
 			config := newInvokeUserConfigServer()
-			config.setJSON(t, configPath(stateStoreConfigField), map[string]string{
-				selectionKey: "checkpoints", "another-agent": "other-store",
-			})
-			config.setJSON(t, configPath("sessions"), map[string]string{agentKey: "sess_123"})
 			env := &testEnvironmentServiceServer{values: map[string]map[string]string{
 				"dev": {
 					"AGENT_WORKER_ENDPOINT":         tt.endpoint,
@@ -788,24 +750,29 @@ func TestCleanupAgentStateFromEnvironment(t *testing.T) {
 				},
 			}}
 			client := newInvokeTestAzdClient(t, config, env)
+			saveAgentStateForTest(t, client, selectionKey, agentStateRecord{StateStore: "checkpoints"})
+			saveAgentStateForTest(t, client, "another-agent", agentStateRecord{StateStore: "other-store"})
+			saveAgentStateForTest(t, client, agentKey, agentStateRecord{SessionID: "sess_123"})
 
 			assert.Equal(t, tt.wantCleaned, cleanupAgentState(t.Context(), client, "dev", "worker"))
 
-			var selection map[string]string
-			config.getJSON(t, configPath(stateStoreConfigField), &selection)
+			selection := loadAgentStateForTest(t, client, selectionKey)
 			if tt.wantCleaned {
-				assert.NotContains(t, selection, selectionKey)
+				assert.Nil(t, selection)
 			} else {
-				assert.Equal(t, "checkpoints", selection[selectionKey])
+				require.NotNil(t, selection)
+				assert.Equal(t, "checkpoints", selection.StateStore)
 			}
-			assert.Equal(t, "other-store", selection["another-agent"])
+			otherSelection := loadAgentStateForTest(t, client, "another-agent")
+			require.NotNil(t, otherSelection)
+			assert.Equal(t, "other-store", otherSelection.StateStore)
 
-			var sessions map[string]string
-			config.getJSON(t, configPath("sessions"), &sessions)
+			session := loadAgentStateForTest(t, client, agentKey)
 			if tt.wantSessionGone {
-				assert.NotContains(t, sessions, agentKey)
+				assert.Nil(t, session)
 			} else {
-				assert.Equal(t, "sess_123", sessions[agentKey])
+				require.NotNil(t, session)
+				assert.Equal(t, "sess_123", session.SessionID)
 			}
 		})
 	}
@@ -819,22 +786,18 @@ func TestCleanupPromptAgentStateUsesInvocationKey(t *testing.T) {
 	selectionKey := normalizeEndpoint(projectEndpoint) + "/agents/prompt-agent"
 	wrongKey := buildRemoteAgentKeyFromEndpoint(projectEndpoint + "/openai/v1/responses")
 	server := newInvokeUserConfigServer()
-	server.setJSON(t, configPath(stateStoreConfigField), map[string]string{selectionKey: "checkpoints"})
-	server.setJSON(t, configPath("conversations"), map[string]string{
-		agentKey: "resp_prompt",
-		wrongKey: "resp_other",
-	})
 	client := newInvokeTestAzdClient(t, server)
+	saveAgentStateForTest(t, client, selectionKey, agentStateRecord{StateStore: "checkpoints"})
+	saveAgentStateForTest(t, client, agentKey, agentStateRecord{ConversationID: "resp_prompt"})
+	saveAgentStateForTest(t, client, wrongKey, agentStateRecord{ConversationID: "resp_other"})
 
 	require.True(t, cleanupPromptAgentState(
 		t.Context(), client, projectEndpoint, "prompt-agent",
 	))
 
-	var conversations map[string]string
-	server.getJSON(t, configPath("conversations"), &conversations)
-	assert.NotContains(t, conversations, agentKey)
-	assert.Equal(t, "resp_other", conversations[wrongKey])
-	var selection map[string]string
-	server.getJSON(t, configPath(stateStoreConfigField), &selection)
-	assert.NotContains(t, selection, selectionKey)
+	assert.Nil(t, loadAgentStateForTest(t, client, agentKey))
+	wrong := loadAgentStateForTest(t, client, wrongKey)
+	require.NotNil(t, wrong)
+	assert.Equal(t, "resp_other", wrong.ConversationID)
+	assert.Nil(t, loadAgentStateForTest(t, client, selectionKey))
 }

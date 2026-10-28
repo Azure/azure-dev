@@ -2,6 +2,81 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
+## 1.0.0-beta.22 (2026-10-23)
+
+### Breaking Changes
+
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Replace singular `toolbox` declarations with the plural `toolboxes` list and reject the former spelling with migration guidance.
+- [[#10640]](https://github.com/Azure/azure-dev/pull/10640) Require separate opt-ins for managed harness, voice, and long-running invocation previews through `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true`, `AZD_ALPHA_ENABLE_AGENTS_VOICE=true`, and `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true`, respectively.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Replace legacy `azd ai agent eval` workflows with migration guidance to `azd ai eval` from the `azure.ai.evaluations` extension. Thanks @Zyysurely for the contribution!
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Remove legacy agent evaluation configuration from optimization and require a standalone optimization API request for `--config`, using `--eval` or `--eval-config` to reuse evaluation configuration. Thanks @Zyysurely for the contribution!
+
+### Features Added
+
+- [[#10515]](https://github.com/Azure/azure-dev/pull/10515) Add Voice Agent telephony deployment through GA binding APIs with safe reconciliation of existing bindings and transfer targets.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Update agent optimization to the GA v1 API and add evaluation service selection through `--eval` and `--eval-config`, including file-backed definitions. Thanks @Zyysurely for the contribution!
+
+### Bugs Fixed
+
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix adopted prompt agents to use each environment's selected model deployments during deployment and invocation, including after infrastructure ejection.
+- [[#10563]](https://github.com/Azure/azure-dev/pull/10563) Fix `azd ai agent init --model-deployment` to replace the selected template deployment without provisioning the original and reject ambiguous or conflicting model selectors before writing project files.
+- [[#10631]](https://github.com/Azure/azure-dev/pull/10631) Fix prompt-agent deployment to attach every declared toolbox with an authenticated Foundry project connection instead of ignoring references or failing invocation with HTTP 401.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix Copilot harness initialization to use live region policies with embedded fallback, including support for West US and Central US.
+- [[#10651]](https://github.com/Azure/azure-dev/pull/10651) Fix generated and adopted Copilot harness initialization to reject mismatched project and model deployment locations before model selection.
+- [[#10526]](https://github.com/Azure/azure-dev/pull/10526) Fix initialization to always show a shell-safe `cd` hint when scaffolding into a subdirectory, including folders that already exist.
+- [[#10502]](https://github.com/Azure/azure-dev/pull/10502) Fix legacy agent projects to honor per-environment `AI_PROJECT_DEPLOYMENTS` settings and prompt for model deployments in a new environment while preserving YAML defaults in no-prompt mode.
+- [[#10660]](https://github.com/Azure/azure-dev/pull/10660) Fix optimization candidate application and deployment to preserve baseline tools, skills, and explicit empty values. Thanks @Zyysurely for the contribution!
+
+### Other Changes
+
+- [[#10548]](https://github.com/Azure/azure-dev/pull/10548) Add step-level timing telemetry to `azd ai agent init` to help diagnose slow initialization without recording user input or resource names.
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+- [[#10683]](https://github.com/Azure/azure-dev/pull/10683) Read preview opt-ins only from the extension process environment and list the supported switches in root help.
+
+## 1.0.0-beta.21 (2026-10-19)
+
+### Features Added
+
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Add Microsoft Copilot preview harness and toolset names while retaining legacy GitHub Copilot definitions.
+
+### Bugs Fixed
+
+- [[#10462]](https://github.com/Azure/azure-dev/pull/10462) Fix hosted-agent resource errors to identify the affected service, effective CPU and memory settings, and deployment retry guidance.
+- [[#10320]](https://github.com/Azure/azure-dev/pull/10320) Fix post-deployment evaluation setup guidance to appear only when no evaluation service is declared and remain visible when local README guidance is shown.
+
+### Other Changes
+
+- [[#10467]](https://github.com/Azure/azure-dev/pull/10467) Move saved agent runtime state to extension-owned files with automatic legacy-state migration and cross-process locking to prevent lost updates.
+- [[#10511]](https://github.com/Azure/azure-dev/pull/10511) Update Copilot requests to use the Microsoft Copilot preview service contract, requiring the corresponding service rollout.
+
+## 1.0.0-beta.20 (2026-10-15)
+
+### Features Added
+
+- [[#10408]](https://github.com/Azure/azure-dev/pull/10408) Add schema and agent-kind validation for file-backed agent definitions, rejecting entry files outside the project.
+- [[#10410]](https://github.com/Azure/azure-dev/pull/10410) Add dependency planning for file-backed agents across Projects, Connections, Toolboxes, Skills, and hosted Voice services while preserving unrelated dependencies.
+- [[#10411]](https://github.com/Azure/azure-dev/pull/10411) Add agent service declaration planning that preserves unrelated authored fields and stores project-relative definition references.
+- [[#10412]](https://github.com/Azure/azure-dev/pull/10412) Add `azd ai agent add <name> --file <path>` to add or update file-backed agent services in an existing project without rewriting unchanged configuration.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Add read-only hosted-agent configuration comparison through `azd deploy --preview`, with grouped text and JSON changes and credential protection. Thanks @Siglud for the contribution!
+
+### Bugs Fixed
+
+- [[#10397]](https://github.com/Azure/azure-dev/pull/10397) Fix prompt-agent services rejecting local JSON root `$ref` definitions.
+- [[#10409]](https://github.com/Azure/azure-dev/pull/10409) Fix prompt-agent Connection references to resolve by service key or effective resource name and use the matching service for deployment dependencies.
+- [[#10425]](https://github.com/Azure/azure-dev/pull/10425) Fix remote OpenAPI discovery creating extra Foundry sessions by binding metadata requests to the completed invocation's session.
+- [[#10445]](https://github.com/Azure/azure-dev/pull/10445) Fix initialization prompts advertising an unavailable `?` hint by displaying environment-variable storage guidance before input.
+- [[#10441]](https://github.com/Azure/azure-dev/pull/10441) Fix Voice Agent reads to use the stable API contract without the preview feature header.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix deployment for users without role-assignment permission by checking developer access during predeploy and treating denied grants as warnings.
+- [[#10395]](https://github.com/Azure/azure-dev/pull/10395) Fix teardown failing when deployed prompt-agent instructions or skills are no longer valid locally.
+- [[#10450]](https://github.com/Azure/azure-dev/pull/10450) Fix generated GitHub Copilot harness initialization selecting unsupported Foundry regions.
+- [[#10470]](https://github.com/Azure/azure-dev/pull/10470) Fix adopted GitHub Copilot harness templates, including referenced definitions, selecting unsupported Foundry projects or regions.
+- [[#10366]](https://github.com/Azure/azure-dev/pull/10366) Fix agent deployment silently dropping list-valued metadata tags. Thanks @Siglud for the contribution!
+- [[#9878]](https://github.com/Azure/azure-dev/pull/9878) Fix hosted code-agent deployment to read `AZURE_LOCATION` from the CI process environment when it is absent from the azd environment.
+
+### Other Changes
+
+- [[#10391]](https://github.com/Azure/azure-dev/pull/10391) Improve post-initialization guidance by highlighting the `cd` command consistently with azd commands.
+
 ## 1.0.0-beta.19 (2026-10-08)
 
 ### Breaking Changes

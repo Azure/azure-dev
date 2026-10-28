@@ -102,7 +102,6 @@ func resolveFilesContext(ctx context.Context, flags *filesFlags, noPrompt bool) 
 		sessionID, err = resolveStoredID(
 			ctx, azdClient, buildRemoteAgentKeyFromEndpoint(info.AgentEndpoint),
 			flags.session, false, "sessions", false,
-			legacyKeysForRemote(info.AgentName)...,
 		)
 		if err != nil {
 			return nil, err

@@ -77,14 +77,6 @@ var pendingSessionCarryover = struct {
 	byService map[string]string
 }{byService: map[string]string{}}
 
-// sessionStoreWriteMu serializes carry-over writes to the shared "sessions" map
-// in UserConfig. setAgentSpecificContextValue does a read-modify-write on that
-// single map, which is last-writer-wins across keys (see its doc comment in
-// config_store.go). Because postdeploy handlers for multiple agent services can
-// run concurrently, unsynchronized writes could drop one service's carried
-// session. This mutex makes the carry-over path's read-modify-write atomic.
-var sessionStoreWriteMu sync.Mutex
-
 // stopSessionOutcome classifies how carry-over should react to the result of
 // StopSession.
 type stopSessionOutcome int
@@ -235,11 +227,7 @@ func carryOverSessionAfterDeploy(
 	}
 
 	newKey := buildRemoteAgentKeyFromEndpoint(newEndpointResp.Value)
-	// Serialize the read-modify-write of the shared sessions map so concurrent
-	// postdeploy handlers can't clobber each other's carried session.
-	sessionStoreWriteMu.Lock()
 	err = setAgentSpecificContextValue(ctx, azdClient, "sessions", newKey, sessionID)
-	sessionStoreWriteMu.Unlock()
 	if err != nil {
 		log.Printf(
 			"session carry-over: failed to persist carried session %q for agent %q: %v",

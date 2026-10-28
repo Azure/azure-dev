@@ -60,7 +60,7 @@ const (
 	defaultExtensionVersion = "0.0.1"
 
 	// minimumScaffoldAzdVersion is the first azd release that hosts the versioned extension gRPC endpoints.
-	minimumScaffoldAzdVersion = ">=1.33.0"
+	minimumScaffoldAzdVersion = ">=1.34.1"
 )
 
 const internalScaffoldResourceBase = "internal/go"

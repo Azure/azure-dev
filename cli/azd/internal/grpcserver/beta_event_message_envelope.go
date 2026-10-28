@@ -18,6 +18,7 @@ import (
 type betaEventMessageEnvelope struct{}
 
 var _ grpcbroker.MessageEnvelope[v1beta.EventMessage] = (*betaEventMessageEnvelope)(nil)
+var _ grpcbroker.PersistentHandlerContextEnvelope[v1beta.EventMessage] = (*betaEventMessageEnvelope)(nil)
 
 func newBetaEventMessageEnvelope() *betaEventMessageEnvelope {
 	return &betaEventMessageEnvelope{}
@@ -165,6 +166,18 @@ func (*betaEventMessageEnvelope) GetProgressMessage(*v1beta.EventMessage) string
 
 func (*betaEventMessageEnvelope) CreateProgressMessage(string, string) *v1beta.EventMessage {
 	return nil
+}
+
+func (e *betaEventMessageEnvelope) PreserveHandlerContext(
+	_ context.Context,
+	msg *v1beta.EventMessage,
+) bool {
+	switch e.GetInnerMessage(msg).(type) {
+	case *v1beta.SubscribeProjectEvent, *v1beta.SubscribeServiceEvent:
+		return true
+	default:
+		return false
+	}
 }
 
 func (*betaEventMessageEnvelope) GetInnerMessage(

@@ -323,7 +323,7 @@ in any order, any time.
 | `tier0/0.09-init-validate-no-prompt-missing.yaml` | `init --no-prompt` missing-input error |
 | `tier0/0.10-init-picker-navigation.yaml` | `init` interactive picker UX (abort before Azure) |
 | `tier0/0.11-invoke-validate-protocol.yaml` | `invoke --protocol` unsupported-value error |
-| `tier0/0.12-eval-context-required.yaml` | `eval list` outside a project requires a Foundry endpoint |
+| `tier0/0.12-eval-migration-guidance.yaml` | Deprecated `eval list` gives migration guidance and exits non-zero without prompts or service requests, including with old flags |
 | `tier0/0.13-optimize-apply-requires-candidate.yaml` | `optimize apply` missing required `--candidate` |
 | `tier0/0.14-endpoint-show-help.yaml` | `endpoint show --help` |
 | `tier0/0.15-code-download-help.yaml` | `code download --help` |
@@ -338,15 +338,37 @@ in any order, any time.
 | `tier0/0.21-doctor-legacy-source-migration.yaml` | `doctor` migration guidance for unsupported implicit legacy source files |
 | `tier0/0.22-state-stores-help-validation.yaml` | State Store command discovery, forward-pagination help, input-size guidance, and offline validation |
 | `tier0/0.23-init-deprecated-manifest-alias.yaml` | Deprecated `init --manifest/-m` compatibility alias warning and local missing-file failure |
+| `tier0/0.24-agent-add-new-idempotent.yaml` | `agent add` new-service JSON result and repeated no-op |
+| `tier0/0.25-agent-add-update-preserves-core-fields.yaml` | `agent add` updates a file-backed service and preserves core fields |
+| `tier0/0.26-agent-add-missing-connection.yaml` | `agent add` rejects a missing local Connection reference |
+| `tier0/0.27-agent-add-ambiguous-connection.yaml` | `agent add` rejects an ambiguous local Connection name |
+| `tier0/0.28-agent-add-multiple-projects.yaml` | `agent add` rejects multiple Project services before mutation |
+| `tier0/0.29-agent-add-path-safety.yaml` | `agent add` rejects definition and source paths outside the project |
+| `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
+| `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
+| `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
+| `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
 
+The Tier 0 A2A version scenario checks offline validation and help explanations
+of A2A implementation-version inference versus public endpoint enablement,
+the translation convenience rationale, explicit file versions, and service-controlled
+affinity caveats. It does not exercise translation or A2A hosted agent execution,
+verify file bytes on the wire, or establish session/task lifecycle support. The
+shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
+
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
 Tier 2 scenario checks the item lifecycle against an externally seeded store (see below).
+
+The two replacement-preflight scenarios use the local
+`fixtures/adopt-model-replacement/azure.yaml` fixture and abort before Azure
+authentication or scaffolding. They need no externally seeded deployment and
+never provision the fixture.
 
 ### Tier 1 — Auth, scaffold only (`tier1/`)
 Requires Azure login (reads subscriptions/Foundry projects) but **does not
@@ -363,14 +385,37 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.06-init-deploy-mode-code.yaml` | `init --deploy-mode code` (entry-point/runtime) |
 | `tier1/1.07-init-deploy-mode-container.yaml` | `init --deploy-mode container` (container build config) |
 | `tier1/1.08-init-validate-deploy-mode.yaml` | `init --deploy-mode` value validation (invalid value; code-mode required flags) — seeds from-code so the deploy-mode check is reached |
+| `tier1/1.09-init-from-code-eval-companion.yaml` | `init` → from-code, dedicated producer for `tier1b/1b.08`'s eval-service-declared deploy-note check |
 | `tier1/1.09-init-env-prompts.yaml` | Local `azure.yaml` adoption: storage guidance, unavailable hint suppression, literal `?` values, and secret masking/persistence |
-| `tier1/1.10-init-harness-region-restrictions.yaml` | GitHub Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
+| `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
+| `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, A2A-only configuration, and required application-route guidance; no server generation or cloud execution |
+
+The A2A hosted agent init scenario is a configuration-only specification. It is not
+an A2A server sample, deployment verifier, or execution test. Service onboarding
+and region support are required. The init picker has Go unit/mock coverage;
+this interactive scenario has **not** been executed. Do not run it without separate approval.
+Even after approval, stop after local init; do not provision, deploy, invoke, or delete
+retained resources. Init does not enable a subscription-level A2A service feature.
+Application `protocols` declare implementation capabilities; public
+`agentEndpoint.protocols` enablement alone does not establish an A2A implementation.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.
 Set `{region}` to a supported region and `{model}` to a catalog model unavailable there
 but available with quota in an unsupported recovery region. The scenario does not create
 these fixtures; missing prerequisites fail setup rather than skipping recovery coverage.
+
+The two adoption-model scenarios require an externally prepared
+`~/working/azd-agents-adoption-seed-{run_id}.json` containing `project_id` (the
+full resource ID of a readable Foundry project in the configured subscription)
+and `existing_deployment` (a live deployment on its account using a model other
+than the fixture's gpt-4o). For the catalog case, the profile's `{model}` must
+differ from gpt-4o and have deployment quota in that project's location. The
+scenarios read this seed and Azure metadata but never create or modify cloud
+resources. They are opt-in `manual-seed` scenarios; missing fixtures fail setup.
+The external seed owner retains cleanup responsibility.
 
 ### Tier 1b — Deploy-verify (`tier1b/`) — ⚠️ incurs Azure cost
 Verifies that Tier 1 scaffolds actually **deploy** and produce a working agent.
@@ -414,6 +459,7 @@ skipped.
 | `tier1b/1b.05-deploy-flag-agent-name.yaml` | Agent-name flag scaffold deploys | `tier1/1.05-init-flag-agent-name.yaml` |
 | `tier1b/1b.06-deploy-deploy-mode-code.yaml` | Code-deploy scaffold deploys | `tier1/1.06-init-deploy-mode-code.yaml` |
 | `tier1b/1b.07-deploy-deploy-mode-container.yaml` | Container-deploy scaffold deploys | `tier1/1.07-init-deploy-mode-container.yaml` |
+| `tier1b/1b.08-deploy-eval-service-suppresses-guidance.yaml` | Deploy-note evaluation suggestion is suppressed when azure.yaml already declares an `azure.ai.eval` service | `tier1/1.09-init-from-code-eval-companion.yaml` |
 
 ### Tier 2 — Cloud end-to-end (`tier2/`) — ⚠️ incurs Azure cost
 Provisions real resources. **Run order matters:**
@@ -427,6 +473,11 @@ so they operate on the same deployed agent. `2.00-setup` runs `init` there, whic
 scaffolds the project into the `{shared_agent_name}` subdirectory; the
 reuse and teardown scenarios run with `~/working/azd-agents-shared/{shared_agent_name}`
 as their `cwd`.
+`2.17a-deploy-preview` instead copies that project and selected environment into
+`~/working/azd-agents-preview-{instance}`. It changes description, tags, and public/
+substituted environment bindings only in the copy, so preview has deterministic
+visible differences and fake credential/URL sanitization assertions. Its post-hook
+checks the original shared files' checksums; it never deploys the fixture.
 
 | File | Targets |
 |------|---------|
@@ -448,6 +499,7 @@ as their `cwd`.
 | `tier2/2.15-doctor-provisioned-all-pass.yaml` | `doctor` (all checks pass) |
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
+| `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
@@ -728,6 +780,16 @@ passes the optional model version, and verifies the command's JSON result withou
 performing a second mutation. It exits successfully without calling `azd` when
 either the model or SKU is empty.
 
+### Isolated deployment preview helper
+
+[`fixtures/scripts/prepare_preview.py`](fixtures/scripts/prepare_preview.py)
+edits the generated shared scaffold's single inline hosted-service block in the
+scenario's isolated copy. It preserves service/agent identity, model bindings,
+code configuration, and sibling services, requires no Python YAML packages, and
+rejects an unexpected scaffold shape before writing. Run the offline helper
+checks with `python3 fixtures/scripts/test_prepare_preview.py`; this does not
+execute a scenario or contact Azure.
+
 ### Offline dependency composition fixture
 
 [`fixtures/agent-dependencies/azure.yaml`](fixtures/agent-dependencies/azure.yaml) is a local-only
@@ -748,6 +810,17 @@ contains no environment substitutions, and these scenarios clear inherited `AZUR
 They assume the development core and Agents extension are already installed; setup, extension
 installation, credentials, and remote-state configuration are not part of these offline flows.
 Telemetry and update checks are disabled in the scenario environment.
+
+### Offline Agent add fixtures
+
+`fixtures/agent-add/` contains local project variants and direct prompt
+definitions for the `0.24`–`0.30` Tier 0 scenarios. Each scenario copies only
+its project YAML and required definitions into its own `{instance}` directory.
+The fixtures exercise a new Agent service, an update with existing azd-owned
+fields, missing or ambiguous local Connection references, multiple Project
+services, a target service key owned by a non-Agent host, and out-of-project
+paths. They contain no credentials, deployable source, or live endpoint; no
+fixture is fetched or deployed.
 
 `0.19-standalone-deploy-migration` isolates the negative migration flow from both happy paths.
 It rejects standalone Agent deploy and both old add-order commands, verifies no project mutation

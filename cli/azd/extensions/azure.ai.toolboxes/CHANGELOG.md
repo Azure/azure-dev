@@ -1,5 +1,17 @@
 # Release History
 
+## 1.0.0-beta.12 (2026-10-23)
+
+### Other Changes
+
+- [[#10571]](https://github.com/Azure/azure-dev/pull/10571) Update the minimum supported azd version to `1.37.0`.
+
+## 1.0.0-beta.11 (2026-10-15)
+
+### Bugs Fixed
+
+- [[#10393]](https://github.com/Azure/azure-dev/pull/10393) Fix Linux amd64 binaries requiring the build agent's GLIBC version so the extension can start on Debian Bullseye.
+
 ## 1.0.0-beta.10 (2026-10-08)
 
 ### Breaking Changes

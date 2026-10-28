@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"azureaieval/internal/messages"
 	"azureaieval/internal/urlsafe"
@@ -24,21 +25,34 @@ func reportCreatePartial(
 	cmd *cobra.Command, ec *evalContext, name, path string, artifacts []reconciledArtifact, cause error,
 ) error {
 	retry, err := commandInProject(
-		"azd ai eval create "+messages.ShellArg(name)+" --from-file "+messages.ShellArg(path),
+		"azd ai eval create "+messages.ShellArg(name)+" --from-file "+quoteForShell(path),
 		ec.endpoint, ec.envName)
 	if err != nil {
 		return err
 	}
+	guidance := ""
+	if !messages.CanInlineShellArg(name) || !messages.CanInlineShellArg(filepath.ToSlash(path)) ||
+		!messages.CanInlineShellArg(ec.envName) {
+		guidance = messages.CreateRetryQuotingGuidance()
+	}
 	if isJSON(cmd) {
-		return emitJSON(cmd.OutOrStdout(), map[string]any{
+		document := map[string]any{
 			"status": "failed", "name": name, "artifacts": artifacts,
 			"error": jsonErrorBody{
 				Message: jsonMessage(cause), Code: errorCode(cause),
 				Suggestion: urlsafe.Text(azdext.ErrorSuggestion(cause)),
 			},
 			"recovery_command": retry,
-		})
+		}
+		if guidance != "" {
+			document["retry_guidance"] = guidance
+		}
+		return emitJSON(cmd.OutOrStdout(), document)
 	}
-	_, err = fmt.Fprint(cmd.OutOrStdout(), messages.CreateDependenciesRetained(retry))
+	text := messages.CreateDependenciesRetained(retry)
+	if guidance != "" {
+		text += guidance + "\n"
+	}
+	_, err = fmt.Fprint(cmd.OutOrStdout(), text)
 	return err
 }

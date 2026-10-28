@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"azureaiagent/internal/exterrors"
 
@@ -68,7 +69,11 @@ func configureFoundryProject(
 	skipACR bool,
 	filterHostedRegions bool,
 	preserveDeferredProjectState bool,
+	allowedLocations []string,
 ) (*foundryProjectSetupResult, error) {
+	ensureProjectLocation := func() error {
+		return ensureNewProjectLocation(ctx, azdClient, azureContext, envName, noPrompt, allowedLocations)
+	}
 	if err := validateAcrConnectionInput(
 		acrConnection,
 		skipACR,
@@ -112,6 +117,7 @@ func configureFoundryProject(
 			skipACR,
 			filterHostedRegions,
 			true, // bicepless
+			allowedLocations,
 		)
 		if err != nil {
 			return nil, err
@@ -145,8 +151,8 @@ func configureFoundryProject(
 		// Preserve an adopted endpoint with complete Azure context.
 		result.AuthoringMode = projectAuthoringCurrent
 	} else if noPrompt {
-		newCred, err := configureNewProjectForNoPrompt(
-			ctx, azdClient, envName, azureContext,
+		newCred, err := ensureSubscription(
+			ctx, azdClient, azureContext, envName,
 			"Select an Azure subscription to provision your agent and Foundry project resources.",
 		)
 		if err != nil {
@@ -154,6 +160,15 @@ func configureFoundryProject(
 		}
 		result.Credential = newCred
 		result.AuthoringMode = projectAuthoringNew
+		if err := ensureProjectLocation(); err != nil {
+			return nil, err
+		}
+		if err := setEnvValue(ctx, azdClient, envName, "USE_EXISTING_AI_PROJECT", "false"); err != nil {
+			return nil, err
+		}
+		if err := updatePendingProjectSignal(ctx, azdClient, envName, false); err != nil {
+			log.Printf("warning: failed to update project provision signal: %v", err)
+		}
 	} else {
 		// Interactive: prompt user to pick an existing Foundry project or create new resources
 		projectChoices := []*azdext.SelectChoice{
@@ -194,6 +209,7 @@ func configureFoundryProject(
 				skipACR,
 				filterHostedRegions,
 				true, // bicepless
+				allowedLocations,
 			)
 			if err != nil {
 				return nil, err
@@ -208,7 +224,7 @@ func configureFoundryProject(
 				if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 					return nil, err
 				}
-				if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
+				if err := ensureProjectLocation(); err != nil {
 					return nil, err
 				}
 				if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
@@ -234,7 +250,7 @@ func configureFoundryProject(
 			if err := validateAcrConnectionInput(acrConnection, false, true); err != nil {
 				return nil, err
 			}
-			newCred, err := ensureSubscriptionAndLocation(
+			newCred, err := ensureSubscription(
 				ctx, azdClient, azureContext, envName,
 				"Select an Azure subscription to provision your agent and Foundry project resources.",
 			)
@@ -242,6 +258,9 @@ func configureFoundryProject(
 				return nil, err
 			}
 			result.Credential = newCred
+			if err := ensureProjectLocation(); err != nil {
+				return nil, err
+			}
 
 			if err := ensureNewFoundryProjectName(ctx, azdClient, envName); err != nil {
 				return nil, err
@@ -261,4 +280,54 @@ func configureFoundryProject(
 	}
 
 	return result, nil
+}
+
+// ensureNewProjectLocation validates the project and effective model locations.
+// A new account hosts its model deployments in the same region, so model
+// selection and account provisioning must not target different locations.
+// Generated and adopted agents share this policy for new Foundry projects.
+func ensureNewProjectLocation(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	noPrompt bool,
+	allowedLocations []string,
+) error {
+	if len(allowedLocations) == 0 {
+		return ensureLocation(ctx, azdClient, azureContext, envName)
+	}
+	location, err := getEnvValue(ctx, azdClient, envName, "AZURE_LOCATION")
+	if err != nil {
+		return err
+	}
+	if location != "" && !initLocationAllowed(ctx, location, allowedLocations) {
+		return exterrors.Validation(
+			exterrors.CodeLocationMismatch,
+			fmt.Sprintf("configured AZURE_LOCATION %q is not supported for this agent setup", location),
+			"set AZURE_LOCATION to a supported region before retrying init: "+strings.Join(allowedLocations, ", "),
+		)
+	}
+	if noPrompt {
+		if err := validateInitLocation(ctx, azureContext.Scope.Location, allowedLocations); err != nil {
+			return err
+		}
+	}
+	if err := validateNewProjectLocation(location, azureContext.Scope.Location); err != nil {
+		return err
+	}
+	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func validateNewProjectLocation(projectLocation, modelLocation string) error {
+	if normalizeLocationName(projectLocation) == "" || normalizeLocationName(modelLocation) == "" ||
+		normalizeLocationName(projectLocation) == normalizeLocationName(modelLocation) {
+		return nil
+	}
+	return exterrors.Validation(
+		exterrors.CodeLocationMismatch,
+		"AZURE_LOCATION and AZURE_AI_DEPLOYMENTS_LOCATION must match when creating a new Foundry project",
+		"set both environment values to the same supported region, or unset AZURE_AI_DEPLOYMENTS_LOCATION "+
+			"to use AZURE_LOCATION, then retry init",
+	)
 }

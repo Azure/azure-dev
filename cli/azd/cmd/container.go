@@ -673,7 +673,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(containerregistry.NewRemoteBuildManager)
 	container.MustRegisterSingleton(keyvault.NewKeyVaultService)
 	container.MustRegisterSingleton(storage.NewFileShareService)
-	container.MustRegisterSingleton(ai.NewAiModelService)
+	container.MustRegisterSingleton(ai.NewAiModelServiceWithClock)
 	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *errorhandler.ErrorHandlerPipeline {
 		resolver := func(name string) (errorhandler.ErrorHandler, error) {
 			var handler errorhandler.ErrorHandler
@@ -1006,7 +1006,22 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterScoped(grpcserver.NewServer)
 	container.MustRegisterScoped(grpcserver.NewProjectService)
 	container.MustRegisterScoped(grpcserver.NewEnvironmentService)
-	container.MustRegisterScoped(grpcserver.NewPromptService)
+	container.MustRegisterScoped(func(
+		prompter prompt.PromptService,
+		resourceService *azapi.ResourceService,
+		aiModelService *ai.AiModelService,
+		globalOptions *internal.GlobalCommandOptions,
+		console input.Console,
+	) azdext.PromptServiceServer {
+		writer := console.Handles().Stderr
+		if os.Getenv("NO_COLOR") != "" {
+			writer = colorable.NewNonColorable(writer)
+		}
+
+		return grpcserver.NewPromptService(
+			prompter, resourceService, aiModelService, globalOptions, writer,
+		)
+	})
 	container.MustRegisterScoped(grpcserver.NewDeploymentService)
 	container.MustRegisterScoped(grpcserver.NewFollowUpManager)
 	container.MustRegisterScoped(grpcserver.NewEventService)

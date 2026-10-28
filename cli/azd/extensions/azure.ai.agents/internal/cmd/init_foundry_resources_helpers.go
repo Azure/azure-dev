@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/pkg/azure"
 	"context"
 	"fmt"
@@ -1486,6 +1487,8 @@ func ensureSubscription(
 	envName string,
 	promptMessage string,
 ) (azcore.TokenCredential, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.SubscriptionSelection)()
+
 	if azureContext.Scope.SubscriptionId == "" {
 		fmt.Println(promptMessage)
 
@@ -1562,11 +1565,13 @@ func ensureLocation(
 	azureContext *azdext.AzureContext,
 	envName string,
 ) error {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
 	allowedLocations, err := supportedRegionsForInit(ctx)
 	if err != nil {
 		return err
 	}
-	return ensureLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
 }
 
 func ensureLocationWithAllowedLocations(
@@ -1576,7 +1581,19 @@ func ensureLocationWithAllowedLocations(
 	envName string,
 	allowedLocations []string,
 ) error {
-	if azureContext.Scope.Location != "" && locationAllowed(azureContext.Scope.Location, allowedLocations) {
+	defer inittelemetry.Start(ctx, inittelemetry.LocationSelection)()
+
+	return resolveLocationWithAllowedLocations(ctx, azdClient, azureContext, envName, allowedLocations)
+}
+
+func resolveLocationWithAllowedLocations(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+	allowedLocations []string,
+) error {
+	if azureContext.Scope.Location != "" && initLocationAllowed(ctx, azureContext.Scope.Location, allowedLocations) {
 		if err := setEnvValue(ctx, azdClient, envName, "AZURE_AI_DEPLOYMENTS_LOCATION", azureContext.Scope.Location); err != nil {
 			return err
 		}
@@ -1703,6 +1720,8 @@ func selectNewModel(
 	azureContext *azdext.AzureContext,
 	modelFlag string,
 ) (*azdext.AiModel, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelSelection)()
+
 	defaultModel := defaultAgentModel
 	if modelFlag != "" {
 		defaultModel = modelFlag
@@ -1880,7 +1899,10 @@ func selectFoundryProject(
 	skipACR bool,
 	filterHostedRegions bool,
 	bicepless bool,
+	allowedLocations []string,
 ) (*FoundryProjectInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.FoundryProjectSelection)()
+
 	spinnerText := "Searching for Foundry projects in your subscription..."
 	if projectResourceId != "" {
 		spinnerText = "Getting details on the provided Foundry project..."
@@ -1916,6 +1938,15 @@ func selectFoundryProject(
 		}
 		return nil, fmt.Errorf("failed to list Foundry projects: %w", err)
 	}
+
+	if projectResourceId != "" && len(projects) > 0 {
+		if err := validateInitLocation(ctx, projects[0].Location, allowedLocations); err != nil {
+			return nil, err
+		}
+	}
+	projects = slices.DeleteFunc(projects, func(p FoundryProjectInfo) bool {
+		return !initLocationAllowed(ctx, p.Location, allowedLocations)
+	})
 
 	// Hosted agents (code deploy or a pre-built --image) must run in a region that
 	// supports hosted agents, so restrict the project list to those regions. This
@@ -2038,6 +2069,8 @@ func selectModelDeployment(
 	modelDeploymentFlag string,
 	modelFilter string,
 ) (*FoundryDeploymentInfo, error) {
+	defer inittelemetry.Start(ctx, inittelemetry.ModelDeploymentSelection)()
+
 	spinner := ux.NewSpinner(&ux.SpinnerOptions{
 		Text:        "Searching for model deployments in your Foundry Project...",
 		ClearOnStop: true,

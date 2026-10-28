@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	projectpkg "azureaiagent/internal/project"
@@ -134,6 +135,7 @@ configuration and the current azd environment. Optionally specify the service na
 		},
 	}
 
+	previewHelpText(cmd, featureflags.Voice, "a prompt, hosted, or voice agent", "an agent")
 	azdext.RegisterFlagOptions(cmd, azdext.FlagOptions{
 		Name:          "output",
 		AllowedValues: []string{"json", "table"},
@@ -353,12 +355,10 @@ func printPromptHarness(w io.Writer, deployed, local *agent_yaml.PromptHarness) 
 // displayHarness maps a harness identifier to a friendlier label, preserving
 // the raw identifier in parentheses for unambiguous reference.
 func displayHarness(harness string) string {
-	switch harness {
-	case agent_api.ManagedAgentHarnessGitHubCopilot:
-		return fmt.Sprintf("GitHub Copilot (%s)", harness)
-	default:
-		return harness
+	if agent_api.IsCopilotHarness(harness) {
+		return fmt.Sprintf("Microsoft Copilot (%s)", harness)
 	}
+	return harness
 }
 
 // promptAgentEndpoint returns the Foundry project endpoint the prompt agent is

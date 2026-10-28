@@ -50,7 +50,7 @@ func TestManagedConversationState(t *testing.T) {
 	userConfig := newInvokeUserConfigServer()
 	azdClient := newInvokeTestAzdClient(t, userConfig)
 	agentKey := "managed-agent-key"
-	userConfig.setJSON(t, configPath("conversations"), map[string]string{agentKey: "conv_previous"})
+	saveAgentStateForTest(t, azdClient, agentKey, agentStateRecord{ConversationID: "conv_previous"})
 	action := &InvokeAction{flags: &invokeFlags{}}
 	if got := action.storedManagedConversationID(t.Context(), azdClient, agentKey); got != "conv_previous" {
 		t.Fatalf("conversation id: got %q", got)
@@ -63,9 +63,8 @@ func TestManagedConversationState(t *testing.T) {
 	if got := action.storedManagedConversationID(t.Context(), azdClient, agentKey); got != "conv_explicit" {
 		t.Fatalf("explicit conversation id: got %q", got)
 	}
-	var conversations map[string]string
-	userConfig.getJSON(t, configPath("conversations"), &conversations)
-	if got := conversations[agentKey]; got != "conv_explicit" {
+	record := loadAgentStateForTest(t, azdClient, agentKey)
+	if got := record.ConversationID; got != "conv_explicit" {
 		t.Fatalf("stored explicit conversation id: got %q", got)
 	}
 }

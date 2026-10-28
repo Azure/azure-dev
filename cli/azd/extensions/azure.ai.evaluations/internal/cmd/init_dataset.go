@@ -176,10 +176,10 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 	if err != nil {
 		return project.DatasetDecl{}, err
 	}
-	if existing == nil {
-		if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
+	if decl, ok := cfg.DatasetDeclaration(requested.Name); ok {
+		if existing == nil {
 			existing = &project.DatasetDecl{
-				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File),
+				Name: decl.Name, File: project.ResolveSource(project.EvalDirOf(location), decl.File), Version: decl.Version,
 			}
 		}
 	}
@@ -190,6 +190,10 @@ func resolveInitLocalDataset(location, path string, cfg *project.EvalConfig) (pr
 		return requested, nil
 	}
 	if existing.File != "" {
+		// An unpinned local declaration may be published; pinned reuse keeps the broader lookup-name rules.
+		if strings.TrimSpace(existing.Version) == "" && !validAssetName(requested.Name) {
+			return project.DatasetDecl{}, messages.InitDatasetNameInvalid(filepath.ToSlash(path), requested.Name)
+		}
 		other, err := os.Stat(existing.File)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return project.DatasetDecl{}, messages.DatasetFileNotFound(existing.File, err)

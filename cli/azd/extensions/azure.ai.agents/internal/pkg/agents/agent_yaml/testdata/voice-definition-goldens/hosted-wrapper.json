@@ -1,0 +1,29 @@
+{
+  "kind": "voice",
+  "conversation_engine": {
+    "type": "hosted_agent",
+    "name": "target-agent",
+    "version": "7"
+  },
+  "structured_inputs": {
+    "tenant": { "default_value": "contoso" }
+  },
+  "audio": {
+    "input": {
+      "format": { "type": "audio/pcm", "rate": 24000 },
+      "turn_detection": { "type": "server_vad" },
+      "transcription": { "model": "azure-speech" }
+    },
+    "output": {
+      "format": { "type": "audio/pcm", "rate": 24000 },
+      "voice": "en-US-Ava:DragonHDLatestNeural",
+      "voice_type": "azure-standard",
+      "voice_locale": "en-US"
+    }
+  },
+  "output_modalities": ["audio"],
+  "greeting": { "type": "template", "text": "Hello" },
+  "parallel_tool_calls": true,
+  "max_output_tokens": 1024,
+  "include": ["item.input_audio_transcription.phrases"]
+}

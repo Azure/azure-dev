@@ -83,10 +83,6 @@ safe-outputs:
     title-prefix: "[auto] "
     labels: [automation, copilot-instructions]
     draft: false
-    # Open a fresh PR only when there isn't already an open one; otherwise reuse
-    # the same branch so the existing (unmerged) PR is updated in place.
-    preserve-branch-name: true
-    recreate-ref: true
     # If there were no new themes worth promoting, do nothing quietly.
     if-no-changes: "ignore"
     # Some orgs block "GitHub Actions creating/approving PRs" (Settings → Actions
@@ -126,6 +122,7 @@ safe-outputs:
       - .github/instructions/**
       - .github/prompts/**
       - .github/agents/**
+      - .github/skills/azd-code-reviewer/*.md
       - AGENTS.md
     protected-files: allowed
 ---
@@ -134,14 +131,14 @@ safe-outputs:
 
 You mine this repository's recently-merged pull request review feedback and turn
 recurring reviewer asks into additive edits to the repo's Copilot/agent
-customization files under `.github/`, then open (or update) a single pull request
-with the proposed changes. The goal: future PRs get the same feedback
-automatically, both from developers using Copilot locally and from Copilot Code
-Review acting as a backstop.
+customization files under `.github/`, then propose the changes on a new branch.
+When org policy blocks PR creation, the safe output opens an issue linking to
+that branch. The goal is to prevent recurring review mistakes in future PRs,
+both during development and in Copilot Code Review.
 
 Work entirely with the **GitHub tools** (to read PRs and comments) and the
 **edit tool** (to read and write the local `.github/` files). Do not shell out to
-`gh`, `jq`, or `git` — the GitHub tools provide everything you need to read, and
+`gh`, `jq`, or `git`. The GitHub tools provide everything you need to read, and
 the create-pull-request safe output handles all writing.
 
 ## Run parameters
@@ -198,7 +195,7 @@ Report the PR count and a sample of titles.
 Keep only genuine **reviewer asks**. Drop:
 
 - Bot/automation accounts (logins ending in `[bot]`, plus known automation like
-  `copilot-pull-request-reviewer`, `copilot-swe-agent`, `azure-sdk`).
+  `Copilot`, `copilot-pull-request-reviewer`, `copilot-swe-agent`, `azure-sdk`).
 - `LGTM` / `+1` / emoji-only / very short (< ~30 char) comments.
 - Quoted-only replies that add no new feedback.
 - **Author replies and status updates** — "Fixed in abc123", "Intentional",
@@ -206,7 +203,7 @@ Keep only genuine **reviewer asks**. Drop:
   asks; do not count them toward the promotion threshold. If such a reply
   clarifies a real reviewer concern, trace the rule back to the original ask.
 
-Report the kept-vs-dropped ratio.
+Count duplicate copies of the same ask once per PR. Report the kept-vs-dropped ratio.
 
 ## 4. Cluster into themes
 
@@ -231,38 +228,58 @@ workflow runs in** (the target repo, not the source repo you mined PRs from) to
 figure out where and how to update the Copilot/agent instructions. That target
 repo's main branch is the base for your subsequent pull request.
 
+Read `cli/azd/AGENTS.md` and the relevant scoped instructions before adding a
+rule. For review checks, read `.github/skills/azd-code-reviewer/SKILL.md` and
+the matching lens in `reviewers.md`. Do not load unrelated skills.
+
+Find open issues and pull requests labeled `copilot-instructions`, including
+human-maintained consolidated issues. Read their proposals and linked diffs
+when needed. Treat a theme already proposed there as pending, not a new rule.
+If a pending theme needs revision, describe it in the report and link the
+existing item rather than creating a competing patch.
+
+Build this run's changes on current main. Do not copy files from old proposal
+branches, modify those branches, or close their issues.
+
 ## 6. Propose and apply edits
 
 For each promoted theme:
 
-1. **Already covered?** Strengthen the existing wording rather than duplicating.
-2. **Has an obvious scoped home?** (e.g. Go-only → `.github/instructions/go.instructions.md`
+1. **Already covered or pending?** Skip it. Strengthen existing main-branch
+   wording only when the feedback identifies a specific gap.
+2. **Is it a review-only check?**
+   Add it to the matching lens in `.github/skills/azd-code-reviewer/reviewers.md`.
+3. **Has an obvious scoped home?** (e.g. Go-only → `.github/instructions/go.instructions.md`
    with `applyTo: '**/*.go'`) Edit that file.
-3. **Otherwise** add it to `.github/copilot-instructions.md` under a clearly
+4. **Otherwise** add it to `.github/copilot-instructions.md` under a clearly
    labeled section.
 
 Rules for the edits:
 
 - Prefer **minimal, additive** changes. Never rewrite existing instructions
   wholesale.
-- **Cite source PRs** in a trailing italic line on every rule you add, so future
-  maintainers can audit *why* it exists (e.g. `_Source: #7012, #7034_`).
+- **Keep the files lean.** Prefer refining an existing bullet over adding a
+  section. State each new rule in one or two sentences. Skip one-off fixes,
+  rules already enforced by tooling, and guidance covered elsewhere. Keep
+  examples and review history in the proposal body, not the instruction files.
+- **Cite source PRs** in the proposal body for each rule added or strengthened.
+  Keep citations out of reviewer skill files.
 - Keep language-specific rules in scoped `*.instructions.md` files, not in the
   always-on `copilot-instructions.md`.
 - If a theme contradicts an existing instruction, do **not** silently overwrite —
   describe the conflict in the PR body and leave the existing text in place.
-- Only modify files under `.github/` (and `AGENTS.md`). Do not touch source code,
-  manifests, or anything else.
+- Only edit files listed in `create-pull-request.allowed-files`. Do not change
+  workflow code, tooling, or manifests.
 
 If the repo has no `.github/` customization files at all, bootstrap a starter
 `.github/copilot-instructions.md` from the top themes.
 
-## 7. Open or update the pull request
+## 7. Publish the proposal
 
-Use the **create-pull-request** safe output to propose the changes on a stable
-branch named `automated/update-instructions-from-pr-reviews`. Because the branch
-name is preserved across runs, an existing unmerged PR on that branch is updated
-in place; if the previous PR was already merged, a fresh one is opened.
+Use the **create-pull-request** safe output with branch
+`automated/update-instructions-from-pr-reviews`. Leave branch-name preservation
+disabled so gh-aw appends a unique suffix. Each issue or PR then retains its own
+diff. Do not reuse or supersede an earlier proposal, even on a manual rerun.
 
 Keep the PR body short and scannable. Lead with a one-line link back to this
 workflow so a reader knows where the proposed edits came from, then use compact
@@ -273,29 +290,29 @@ bulleted sections — no big tables, no per-file summaries. Structure it as:
 - **Settings** — a short bullet list:
   - Repo: the source `owner/repo` that was mined.
   - Range: the effective PR range (e.g. `since 2026-01-01` or `last 6 months`).
-  - A link to the branch we've pushed our updates to. The text should include the short commit ID.
 - **Stats** — a short bullet list:
   - Signal ratio: kept-vs-dropped comments.
   - Resolved PRs: the number of merged PRs examined.
 - **PR comment themes** — one short bullet per promoted theme, each citing its
   source PRs (e.g. `Wrap errors with context — _#7012, #7034_`), with links to each PR.
-- **Troubleshooting** — only when relevant (the issue-fallback case below), a
-  short bullet list pointing the maintainer at how to enable real PRs:
-  - https://github.github.com/gh-aw/reference/faq/#why-is-my-create-pull-request-workflow-failing-with-github-actions-is-not-permitted-to-create-or-approve-pull-requests
+- **Not promoted**. Only when relevant, list skipped themes with their reason
+  and link any existing proposal that already tracks them.
 
 Keep each theme bullet to a single line, but always preserve its source-PR
-citations so the maintainer can audit why each rule was added.
+citations so the maintainer can audit why each rule was added. Do not guess the
+final branch name or commit ID. The safe output adds the actual branch and
+compare links to a fallback issue.
 
 If the org blocks Actions from creating pull requests, the safe-output job
 automatically falls back to opening an **issue** (assigned to `copilot`) with a
-link to the pushed branch, so the proposed edits are never lost and Copilot can
-open the PR from there. You don't need to do anything special — write the body
+link to the pushed branch. You don't need to do anything special. Write the body
 the same way; it's reused for the fallback issue.
 
 ## Guardrails
 
 - Never commit or push directly — all changes flow through the safe output.
 - Cluster first; never write one rule per individual comment.
-- Never cite zero source PRs on a promoted rule.
 - Do not declare success from raw comment counts alone — judge signal quality.
-- If there is no qualifying signal, make no edits, open no PR, and call `noop` with the reviewed PR count and why no theme qualified.
+- If no new actionable theme remains after checking existing guidance and
+  pending proposals, make no edits and call `noop` with the reviewed PR count
+  and the reason. Leave existing proposals untouched.

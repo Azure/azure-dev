@@ -204,10 +204,19 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 	// its text would point every one of those somewhere else and read a rename
 	// as a delete plus an add.
 	definition = fingerprintEra + definition
-	prior := r.ec.privateValue(ctx, project.FingerprintKey("eval", group.Name))
+	// Scoped like the id and local-request baseline: two configurations that
+	// declare the same eval name must not read or overwrite each other's
+	// definition baseline, or an edit to one config is misread as an edit to
+	// the other's (or masks a real edit entirely).
+	prior := r.ec.scopedValueOwnedBy(ctx,
+		project.FingerprintKey("eval", group.Name), idKey("eval", group.Name), r.scope)
 
 	recreate := substanceChanged(prior, definition, digest)
 	if recreate && group.Source != nil {
+		// Source became part of the definition after some evals were already
+		// deployed, so their recorded baseline never had it. Comparing against
+		// that source-omitting shape is what tells a genuine edit from a
+		// declaration that looked exactly like this before Source was hashed.
 		legacy := group
 		legacy.Source = nil
 		legacyDefinition, err := project.FingerprintDefinition(legacy)
@@ -253,21 +262,6 @@ func (r *evalReconciler) decide(ctx context.Context, group project.Eval) (evalDe
 			}
 		}
 	}
-	if recreate && group.Source != nil {
-		// Older v2 baselines omitted the source mode. Recognize that exact
-		// baseline without treating an upgrade as an edit; the stored request
-		// must still pass the source-contract check before reuse or adoption.
-		legacy := group
-		legacy.Source = nil
-		legacyDefinition, err := project.FingerprintDefinition(legacy)
-		if err != nil {
-			return evalDecision{}, err
-		}
-		if prior == legacyDefinition || prior == fingerprintEra+legacyDefinition {
-			recreate = false
-		}
-	}
-
 	if validated && group.IsLocalSource() {
 		// Reserve only after accounting for the immutable request prepared from
 		// local columns; an old name with a changed contract abandons its old ID.
@@ -576,9 +570,9 @@ func inspectJSONLContent(
 }
 
 func inspectJSONLReader(
-	ctx context.Context, path string, input io.Reader, validateRow func(map[string]any, int) error,
+	ctx context.Context, source string, content io.Reader, validateRow func(map[string]any, int) error,
 ) (map[string]bool, error) {
-	return inspectJSONLRows(ctx, path, input, validateRow, true)
+	return inspectJSONLRows(ctx, source, content, validateRow, true)
 }
 
 func inspectJSONLRows(
@@ -1047,7 +1041,7 @@ func (r *evalReconciler) EnsureEval(
 		// deployed under the name it had before. The environment records the id
 		// against the digest as well, which is what recognizes a rename rather
 		// than reading it as a delete plus an add.
-		adopted, err := r.adoptRenamed(ctx, group, digest, req)
+		adopted, err := r.adoptRenamed(ctx, group, digest, req, localRequest)
 		if err != nil {
 			return "", false, err
 		}
@@ -1090,7 +1084,11 @@ func (r *evalReconciler) EnsureEval(
 			// before fingerprinting existed never establishes a baseline and
 			// later edits go undetected. The identity digest is recorded beside
 			// it, which is what recognizes this declaration after a rename.
-			r.ec.remember(ctx, key, definition)
+			// Scoped alongside the id and local-request baseline: unscoped, a
+			// second configuration declaring the same eval name overwrites this
+			// one's baseline and alternating deploys between them would read a
+			// real edit as none, or an unrelated config's edit as this one's.
+			r.ec.rememberScopedOwnedBy(ctx, key, idKey("eval", group.Name), r.scope, definition)
 			r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, cached)
 			r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, cached)
 			if localFingerprint != "" {
@@ -1105,7 +1103,7 @@ func (r *evalReconciler) EnsureEval(
 	if err != nil {
 		return "", false, err
 	}
-	r.ec.remember(ctx, key, definition)
+	r.ec.rememberScopedOwnedBy(ctx, key, idKey("eval", group.Name), r.scope, definition)
 	r.ec.rememberScoped(ctx, idKey("eval", group.Name), r.scope, created.ID)
 	r.ec.rememberScoped(ctx, digestIDKey(digest), r.scope, created.ID)
 	if localFingerprint != "" {
@@ -1248,7 +1246,8 @@ func (r *evalReconciler) adoptRenamed(
 	ctx context.Context,
 	group project.Eval,
 	digest string,
-	request *eval_api.CreateOpenAIEvalRequest,
+	req *eval_api.CreateOpenAIEvalRequest,
+	localRequest *eval_api.CreateOpenAIEvalRequest,
 ) (string, error) {
 	id := r.ec.scopedValue(ctx, digestIDKey(digest), r.scope)
 	legacy := false
@@ -1282,19 +1281,19 @@ func (r *evalReconciler) adoptRenamed(
 		}
 		return "", err
 	}
-	if conflictingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria) ||
-		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, request.TestingCriteria)) ||
-		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, request) {
-		return "", nil
-	}
-	if group.IsLocalSource() {
-		matches, err := localRequestMatchesRemote(request, remote)
+	if localRequest != nil {
+		matches, err := localRequestMatchesRemote(localRequest, remote)
 		if err != nil {
 			return "", err
 		}
 		if !matches {
 			return "", nil
 		}
+	}
+	if conflictingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria) ||
+		(legacy && !matchingEvaluatorPins(remote.TestingCriteria, req.TestingCriteria)) ||
+		!responseSchemaMatches(&group, remote) || conflictingSourceContract(group, remote, req) {
+		return "", nil
 	}
 	r.pushMutable(ctx, id, group, remote)
 	return id, nil

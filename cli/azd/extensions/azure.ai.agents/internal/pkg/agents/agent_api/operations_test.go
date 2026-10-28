@@ -95,6 +95,11 @@ func newTestClient(endpoint string, transport policy.Transporter) *AgentClient {
 	return &AgentClient{
 		endpoint: endpoint,
 		pipeline: pipeline,
+		telephonyPipeline: runtime.NewPipeline(
+			"test", "v0.0.0-test",
+			runtime.PipelineOptions{},
+			&policy.ClientOptions{Transport: &telephonyResponseLimitTransport{next: transport}},
+		),
 	}
 }
 
@@ -115,6 +120,27 @@ func TestNewAgentClientUsesRecordProxyTransport(t *testing.T) {
 		"https://test.example.com/api/projects/proj/agents/test-agent?api-version=v1",
 		transport.request.URL.String(),
 	)
+}
+
+func TestNewAgentClientTelephonyPipelineUsesRecordProxyAndSharedPolicies(t *testing.T) {
+	transport := &captureRoundTripper{}
+	originalTransport := recordproxy.Transport
+	recordproxy.Transport = transport
+	t.Cleanup(func() {
+		recordproxy.Transport = originalTransport
+	})
+
+	client := NewAgentClient("https://test.example.com/api/projects/proj", fakeCredential{})
+	_, err := client.ListTelephonyBindings(t.Context(), "test-agent", TelephonyBindingListOptions{})
+
+	require.Error(t, err)
+	require.NotNil(t, transport.request)
+	require.Equal(t,
+		"https://test.example.com/api/projects/proj/agents/test-agent/telephony/bindings?api-version=v1",
+		transport.request.URL.String(),
+	)
+	require.Contains(t, transport.request.Header.Get("Authorization"), "Bearer")
+	require.NotEmpty(t, transport.request.Header.Get("User-Agent"))
 }
 
 func newCaptureClient(statusCode int, body string) (*AgentClient, *captureTransport) {
@@ -947,7 +973,7 @@ func TestGetPromptAgentVersionContract(t *testing.T) {
 	client, transport := newCaptureClient(
 		http.StatusOK,
 		`{"name":"prompt","version":"7","definition":{"kind":"prompt",`+
-			`"harness":{"type":"github_copilot_preview"}}}`,
+			`"harness":{"type":"microsoft_copilot_preview"}}}`,
 	)
 	version, err := client.GetPromptAgentVersion(t.Context(), "prompt", "7", AgentEndpointAPIVersion)
 	require.NoError(t, err)
@@ -958,13 +984,31 @@ func TestGetPromptAgentVersionContract(t *testing.T) {
 	require.Equal(t, http.MethodGet, req.Method)
 	require.Equal(t, "/api/projects/proj/agents/prompt/versions/7", req.URL.Path)
 	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
-	require.Equal(t, GitHubCopilotPreviewFeature, req.Header.Get("Foundry-Features"))
+	require.Equal(t, "MicrosoftCopilot=V1Preview", req.Header.Get("Foundry-Features"))
 
 	definition, ok := version.Definition.(map[string]any)
 	require.True(t, ok)
 	harness, ok := definition["harness"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, ManagedAgentHarnessGitHubCopilot, harness["type"])
+	require.Equal(t, ManagedAgentHarnessMicrosoftCopilot, harness["type"])
+}
+
+func TestGetPromptAgentVersion_LegacyHarnessPreserved(t *testing.T) {
+	t.Parallel()
+	client, transport := newCaptureClient(
+		http.StatusOK,
+		`{"name":"prompt","version":"7","definition":{"kind":"prompt",`+
+			`"harness":{"type":"github_copilot_preview"}}}`,
+	)
+	version, err := client.GetPromptAgentVersion(t.Context(), "prompt", "7", AgentEndpointAPIVersion)
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 1)
+	require.Equal(t, MicrosoftCopilotPreviewFeature, transport.requests[0].Header.Get("Foundry-Features"))
+	definition, ok := version.Definition.(map[string]any)
+	require.True(t, ok)
+	harness, ok := definition["harness"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "github_copilot_preview", harness["type"])
 }
 
 func TestGetVoiceAgentVersionUsesStableReadContract(t *testing.T) {
@@ -1191,6 +1235,48 @@ func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
 	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
 	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}
+
+func TestVoiceAgentCreateUpdateBodiesHaveDefinitionParity(t *testing.T) {
+	t.Parallel()
+	definition := VoiceAgentDefinition{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice},
+		ModelType:       VoiceModelTypeManaged,
+		Model:           "gpt-realtime",
+		Audio: &VoiceAudioConfig{
+			Input: &VoiceInputConfig{Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}},
+			Output: &VoiceOutputConfig{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}, Speed: new(1.1),
+			},
+		},
+	}
+	client, transport := newCaptureClient(http.StatusOK,
+		`{"object":"agent","id":"va-1","name":"voice","versions":{"latest":{}}}`)
+	_, err := client.CreateVoiceAgent(t.Context(), &CreateAgentRequest{
+		Name: "voice", CreateAgentVersionRequest: CreateAgentVersionRequest{Definition: definition},
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	_, err = client.UpdateVoiceAgent(t.Context(), "voice", &UpdateAgentRequest{
+		Definition: definition,
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 2)
+
+	definitions := make([]any, 2)
+	for i, request := range transport.requests {
+		body, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		var wire map[string]any
+		require.NoError(t, json.Unmarshal(body, &wire))
+		definitions[i] = wire["definition"]
+	}
+	require.Equal(t, definitions[0], definitions[1])
+	definitionWire := definitions[0].(map[string]any)
+	require.NotContains(t, definitionWire, "target_agent")
+	require.NotContains(t, definitionWire, "handoff")
+	output := definitionWire["audio"].(map[string]any)["output"].(map[string]any)
+	require.Equal(t, 1.1, output["speed"])
+	require.NotContains(t, output, "rate")
 }
 
 func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {

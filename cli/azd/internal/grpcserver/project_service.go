@@ -39,8 +39,9 @@ type projectService struct {
 	lazyProjectConfig   *lazy.Lazy[*project.ProjectConfig]
 	ghCli               *github.Cli
 	configMutationMu    sync.Mutex
-	saveProject         func(context.Context, *project.ProjectConfig, string) error
-	mapService          func(*azdext.ServiceConfig) (*project.ServiceConfig, error)
+	// saveProject overrides the default named-service persistence.
+	saveProject func(context.Context, *project.ProjectConfig, string) error
+	mapService  func(*azdext.ServiceConfig) (*project.ServiceConfig, error)
 }
 
 // NewProjectService creates a new project service instance with lazy-loaded dependencies.
@@ -69,7 +70,6 @@ func NewProjectService(
 		lazyProjectConfig:   lazyProjectConfig,
 		importManager:       importManager,
 		ghCli:               ghCli,
-		saveProject:         project.Save,
 		mapService: func(source *azdext.ServiceConfig) (*project.ServiceConfig, error) {
 			var service *project.ServiceConfig
 			err := mapper.Convert(source, &service)
@@ -338,7 +338,13 @@ func (s *projectService) addService(
 
 	previous, existed := projectConfig.Services[req.Service.Name]
 	projectConfig.Services[req.Service.Name] = serviceConfig
-	if err := s.saveProject(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
+	save := s.saveProject
+	if save == nil {
+		save = func(ctx context.Context, cfg *project.ProjectConfig, path string) error {
+			return project.SaveService(ctx, cfg, req.Service.Name, path)
+		}
+	}
+	if err := save(ctx, projectConfig, azdContext.ProjectPath()); err != nil {
 		if existed {
 			projectConfig.Services[req.Service.Name] = previous
 		} else {

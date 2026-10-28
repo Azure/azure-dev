@@ -9,14 +9,14 @@ root azd instructions with the conventions that are specific to this extension.
 `cli/azd/extensions/azure.ai.connections/`. It runs as a separate Go binary and
 talks to the azd host over gRPC.
 
-The user-facing surface is `azd ai connection <verb>` — `list`, `show`,
-`create`, `update`, `delete` against the connection resources attached to a
-Foundry project.
+The user-facing surface is `azd ai connection <verb>` — `add` authors a local
+Connection service, while `list`, `show`, `create`, `update`, and `delete`
+operate on connection resources attached to a Foundry project.
 
 Useful places to start:
 
 - `internal/cmd/`: extension boilerplate (context, version, metadata),
-  the extension root command, the connection CRUD verb implementations,
+  the extension root command, local authoring and connection CRUD verbs,
   and the ARM / data-plane glue (`resolveConnectionContext`,
   `discoverARMContext`).
 - `internal/pkg/connections/`: Foundry data-plane client and credential
@@ -140,6 +140,10 @@ abstraction from azd core.
   is set. Never use `log` for anything the user needs to see.
 - Do not use `log.Fatal` or `log.Panic` for expected failures — return a
   structured error via `exterrors` instead.
+- Keep local `add` results on Cobra's injected output writer. Read the raw
+  local manifest for planning, then write through existing Project APIs only.
+  Do not resolve environment or cloud values. Validate the complete candidate
+  before any write and report potentially partial updates with rerun guidance.
 
 ## Other extension conventions
 

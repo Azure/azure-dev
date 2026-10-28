@@ -564,9 +564,7 @@ func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 		sessionID = "existing-session"
 	)
 	agentKey := buildLocalAgentKey(port, "agent", "", projectDir)
-	userConfigServer.setJSON(t, configPath("sessions"), map[string]string{
-		agentKey: sessionID,
-	})
+	saveAgentStateForTest(t, nil, agentKey, agentStateRecord{SessionID: sessionID})
 
 	err = runRun(t.Context(), &runFlags{
 		name:             "agent",
@@ -578,11 +576,9 @@ func TestRunRun_PortCollisionDoesNotClearStoredSession(t *testing.T) {
 		t.Fatalf("runRun() error = %v, want equal-port validation error", err)
 	}
 
-	userConfigServer.mu.Lock()
-	stored := slices.Clone(userConfigServer.values[configPath("sessions")])
-	userConfigServer.mu.Unlock()
-	if !bytes.Contains(stored, []byte(agentKey)) || !bytes.Contains(stored, []byte(sessionID)) {
-		t.Fatalf("session store = %s, want existing session %q at key %q", stored, sessionID, agentKey)
+	stored := loadAgentStateForTest(t, nil, agentKey)
+	if stored == nil || stored.SessionID != sessionID {
+		t.Fatalf("session store = %+v, want existing session %q at key %q", stored, sessionID, agentKey)
 	}
 }
 

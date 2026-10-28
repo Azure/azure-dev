@@ -48,11 +48,13 @@ func NewRootCommand() *cobra.Command {
 	}))
 
 	// Register -p / --project-endpoint as a persistent flag inherited by
-	// connection CRUD subcommands (list, show, create, update, delete).
+	// remote connection CRUD subcommands (list, show, create, update, delete).
+	// Other commands, including local authoring with add, reject it.
 	rootCmd.PersistentFlags().StringP("project-endpoint", "p", "",
-		"Foundry project endpoint URL for connection operations only (not context or version)")
+		"Foundry project endpoint URL for remote list, show, create, update, and delete only")
 
-	// Connection CRUD subcommands (migrated from the azure.ai.agents extension).
+	// Local authoring and remote Connection CRUD subcommands.
+	rootCmd.AddCommand(newConnectionAddCommand(extCtx))
 	rootCmd.AddCommand(newConnectionListCommand(extCtx))
 	rootCmd.AddCommand(newConnectionShowCommand(extCtx))
 	rootCmd.AddCommand(newConnectionCreateCommand(extCtx))
@@ -63,7 +65,10 @@ func NewRootCommand() *cobra.Command {
   azd ai connection list
 
   # Inspect a connection without displaying its credentials
-  azd ai connection show my-search`
+  azd ai connection show my-search
+
+  # Author a local Connection service
+  azd ai connection add search --file connections/search.yaml`
 	helpformat.Install(rootCmd, "azd ai", connectionHelpFooter)
 
 	return rootCmd
@@ -88,8 +93,8 @@ func validateRemoteFlags(cmd *cobra.Command) error {
 	return nil
 }
 
-// configureExtensionHostForEnvironment registers the azure.ai.connection target
-// for `azd up`/`azd deploy`, preserving the environment selected by the caller.
+// configureExtensionHostForEnvironment registers the target for
+// `azd up`/`azd deploy`, preserving the selected environment.
 func configureExtensionHostForEnvironment(host *azdext.ExtensionHost, environmentName string) {
 	azdClient := host.Client()
 	host.WithServiceTarget(aiConnectionHost, func() azdext.ServiceTargetProvider {

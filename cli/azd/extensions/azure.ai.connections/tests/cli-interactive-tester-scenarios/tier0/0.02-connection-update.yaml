@@ -1,0 +1,28 @@
+name: "connection-update-offline"
+command: "azd ai connection add search --file connections/search.yaml --no-prompt --output json"
+cwd: "~/working/azd-connections-t0-update-{instance}"
+tags: ["tier:0", "cmd:connection", "parallel-safe"]
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'mkdir -p -- "$HOME/working/azd-connections-t0-update-{instance}" && cp -R -- "{fixtures_dir}/." "$HOME/working/azd-connections-t0-update-{instance}/" && cp -- "{fixtures_dir}/update.yaml" "$HOME/working/azd-connections-t0-update-{instance}/azure.yaml"'
+    cwd: "~/working"
+    name: "seed an existing Connection service"
+goals:
+  - >-
+    Do not answer prompts, authenticate, or make Azure calls. Wait for the
+    initial command to exit 0 with exactly one JSON result whose mutation is
+    'updated', ref is './connections/search.yaml', project is 'foundry', and
+    environmentVariables are ['SEARCH_ENDPOINT', 'SEARCH_KEY'].
+  - >-
+    Inspect azure.yaml. The foundry service, search.hooks, and search.env.KEEP
+    must remain unchanged. The old inline category and target must be removed.
+    search.$ref must be './connections/search.yaml', search.uses ['foundry'],
+    and the two required env bindings must remain literal ${VAR} templates.
+    No environment files or credential values may be created.
+  - >-
+    Run the same add command again in the same directory. It must return
+    mutation 'unchanged' and leave azure.yaml byte-for-byte unchanged.

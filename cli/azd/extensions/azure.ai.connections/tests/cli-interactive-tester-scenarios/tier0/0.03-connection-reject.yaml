@@ -1,0 +1,34 @@
+name: "connection-reject-offline"
+command: "azd ai connection add search --file connections/search.yaml --no-prompt"
+cwd: "~/working/azd-connections-t0-reject-host-{instance}"
+tags: ["tier:0", "cmd:connection", "parallel-safe"]
+env:
+  AZURE_ENV_NAME: ""
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'mkdir -p -- "$HOME/working/azd-connections-t0-reject-host-{instance}" "$HOME/working/azd-connections-t0-reject-name-{instance}" && cp -R -- "{fixtures_dir}/." "$HOME/working/azd-connections-t0-reject-host-{instance}/" && cp -R -- "{fixtures_dir}/." "$HOME/working/azd-connections-t0-reject-name-{instance}/" && cp -- "{fixtures_dir}/wrong-host.yaml" "$HOME/working/azd-connections-t0-reject-host-{instance}/azure.yaml" && cp -- "{fixtures_dir}/duplicate-name.yaml" "$HOME/working/azd-connections-t0-reject-name-{instance}/azure.yaml"'
+    cwd: "~/working"
+    name: "seed wrong-host and duplicate-name projects"
+  - run: 'mkdir -p -- "$HOME/working/azd-connections-t0-reject-project-{instance}" && cp -R -- "{fixtures_dir}/." "$HOME/working/azd-connections-t0-reject-project-{instance}/" && cp -- "{fixtures_dir}/invalid-project.yaml" "$HOME/working/azd-connections-t0-reject-project-{instance}/azure.yaml"'
+    cwd: "~/working"
+    name: "seed an invalid core project structure"
+goals:
+  - >-
+    Do not answer prompts, authenticate, make Azure calls, or edit the fixtures.
+    The initial command must fail because 'search' belongs to another host.
+    Confirm azure.yaml remains byte-for-byte equal to wrong-host.yaml.
+  - >-
+    Run exactly 'azd ai connection add search --file connections/search.yaml --no-prompt'
+    in '~/working/azd-connections-t0-reject-name-{instance}'. It must fail
+    because existing has the effective Connection name SEARCH (case-insensitive).
+    Confirm azure.yaml remains byte-for-byte equal to duplicate-name.yaml.
+    Neither error may disclose credential values.
+  - >-
+    Run exactly 'azd ai connection add search --file connections/search.yaml --no-prompt'
+    in '~/working/azd-connections-t0-reject-project-{instance}'. It must fail
+    during complete candidate validation, before any mutation.
+    Confirm azure.yaml remains byte-for-byte equal to invalid-project.yaml.
+    The error must identify invalid core configuration without printing
+    'private-parser-value' or any credential values.

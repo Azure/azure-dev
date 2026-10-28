@@ -20,16 +20,16 @@ import (
 // Reporting a run that errored and then exiting 0 tells the pipeline the
 // evaluation passed, which is the one answer that is never true.
 func TestRunCompleted(t *testing.T) {
-	require.NoError(t, runCompleted(nil),
+	require.NoError(t, runCompleted(nil, nil),
 		"nothing was waited for, so there is nothing to report")
-	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: "completed"}))
-	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: "Completed"}),
+	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: "completed"}, nil))
+	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1", Status: "Completed"}, nil),
 		"the service is not consistent about case")
-	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1"}),
+	require.NoError(t, runCompleted(&eval_api.OpenAIEvalRun{ID: "r1"}, nil),
 		"a status the service did not send is not a failure to report")
 
 	for _, status := range []string{"failed", "error", "canceled", "cancelled"} {
-		err := runCompleted(&eval_api.OpenAIEvalRun{ID: "run_abc", Status: status})
+		err := runCompleted(&eval_api.OpenAIEvalRun{ID: "run_abc", Status: status}, nil)
 		require.Error(t, err, "status %q must not exit 0", status)
 		assert.Contains(t, err.Error(), "run_abc")
 		assert.Contains(t, err.Error(), status,

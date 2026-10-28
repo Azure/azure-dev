@@ -62,6 +62,17 @@ reconcile it and no eval could name it.
 
 Once a file exists, `create` registers it here.
 
+Conversation generation produces scenario seeds, not completed transcripts.
+Use `azd ai eval init --conversation-mode simulation` to author an evaluation
+that turns those seeds into conversations; static mode instead scores completed
+messages without invoking an agent. Simulation requires an independent plain
+model name or `connection-name/model-deployment` reference. Plain names are passed
+unchanged without connection lookup; qualified references validate the project
+connection before init writes configuration. See the
+[evaluation authoring contract](../azure.ai.evaluations/README.md) for seed
+validation, qualified local-binding reuse, connection discovery, and evaluator
+selection. Dataset registration does not establish evaluator or model availability.
+
 ## Project endpoint
 
 Every command resolves the Foundry project endpoint in this order:
@@ -95,6 +106,8 @@ $ go test ./...
 
 ## Telemetry
 
+Requires azd 1.37.0 or later and uses the stable v1 telemetry API.
+
 When installed from the official registry, the extension reports the
 `dataset.published` usage event once a dataset version has been written. Its
 `ext.operation` attribute is exactly one of:
@@ -114,14 +127,14 @@ endpoints, or anything else a user typed. Failures and their structured error
 codes are already reported separately by the extension SDK; this event records
 usage only.
 
-## TODO before release
+## Installation and release prerequisites
 
-Both are files the azd extensions team owns, so they are not changed here:
+Registry installation resolves `azure.ai.dataset` through its entry in
+`cli/azd/extensions/registry.json`. A `microsoft.foundry/extension.yaml`
+dependency requires that registry entry to resolve. Local installation uses
+`azd x pack`, `azd x publish`, and the local extension source.
 
-- [ ] **`cli/azd/extensions/registry.json`** — add the `azure.ai.dataset` entry.
-  Until it exists `azd extension install azure.ai.dataset` cannot resolve, so
-  the extension is only reachable through `azd x pack` + `azd x publish` into
-  the local source registry.
-- [ ] **`microsoft.foundry/extension.yaml`** — add the dependency, but only
-  after the registry entry lands. Declaring a dependency that cannot resolve
-  breaks installing the bundle.
+Release execution requires a registered Azure DevOps pipeline under
+`azure-dev/extensions` with access to the shared release infrastructure;
+a YAML file alone does not register a pipeline.
+The `ext-dataset` issue label routes extension issues.

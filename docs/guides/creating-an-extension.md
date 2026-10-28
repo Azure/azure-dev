@@ -4,7 +4,7 @@ This guide covers how to create, build, and publish an extension for the Azure D
 
 ## Overview
 
-azd extensions use a gRPC-based framework to add functionality. Extensions can provide:
+azd extensions use a gRPC-based framework to add functionality. The extension framework is [generally available (GA)](https://devblogs.microsoft.com/azure-sdk/azd-extension-framework-ga/); individual extensions you create may still be experimental or pre-release until you publish a stable version. Extensions can provide:
 
 - **Custom commands** — Expose new command groups and commands to azd
 - **Lifecycle events** — Subscribe to project and service lifecycle events (pre/post provision, deploy, etc.)
@@ -74,6 +74,8 @@ go build
 
 When your extension is stable and ready for production use, add an entry to `cli/azd/extensions/registry.json` with version, capabilities, and download URLs.
 
+`ext-registry-ci` validates `requiredAzdVersion` for added or modified versions in both registries against [the latest published azd version](https://aka.ms/azure-dev/versions/cli/latest). This endpoint is updated by the core release pipeline's final `PublishVersionTxt` stage. Extension binaries may be published earlier, but registry updates must wait for core publishing to finish. Rerun the workflow once publishing completes.
+
 ### 6. Publish to the Dev Registry First (Recommended)
 
 For extensions that are still in development or preview, consider publishing to the **dev (experimental) registry** first to gather feedback before graduating to the main registry:
@@ -139,12 +141,33 @@ multiple handlers and workflow steps are resolved.
   first-party `ReportUsage` attributes must be declared and classified in
   `cli/azd/extensions/telemetry/fields.go`
 - **Deployment preview** — To support `azd deploy --preview`, register the host with
-  `WithBetaServiceTargetPreview` and implement `preview.ServiceTargetPreviewProvider`
-  from `pkg/azdext/preview`. This [v1beta-only contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
-  is experimental. A preview runs on a fresh provider without `Initialize` and must not
-  build, deploy, or persist deployment state.
+  `WithServiceTargetPreview` and implement `azdext.ServiceTargetPreviewProvider`
+  using stable `azdext.ServiceConfig` and `azdext.ServiceDeployPreviewResult`.
+  This [stable v1 contract](../../cli/azd/docs/extensions/extension-framework.md#deployment-preview)
+  targets host and SDK 1.37.0. Once published, pin SDK v1.37.0 or later and set
+  `requiredAzdVersion: ">=1.37.0"`. Deprecated beta APIs remain supported.
+  A preview runs on a fresh provider without `Initialize` and must not build,
+  deploy, or persist deployment state.
 
 ## Detailed Reference
+
+Commands that do not need the selected azd environment can emit
+`"launch": {"noAzdEnvironment": true}` on their command metadata. These launch
+settings are per-command, not inherited; they skip loading the selected azd
+environment, resolving its Key Vault references, and injecting its variables.
+Inherited parent-process environment variables and azd launch/protocol variables
+are still passed, and explicit Environment gRPC calls are unaffected. Omitting
+`launch` or setting `noAzdEnvironment` to `false` preserves the default behavior. Require
+azd 1.37.0 or later when relying on this behavior. See
+[command launch settings](../../cli/azd/docs/extensions/extension-sdk-reference.md#command-launch-settings).
+
+Use `Project().AddService` for complete service creation or replacement.
+For updates, prefer service-specific setters for the fields your extension
+owns, leaving unknown fields host-side. The host preserves unrelated raw YAML,
+including empty mappings, literal templates, and large integers. Explicitly
+send an empty section when `env: {}` is required. A sequence of RPCs is not
+transactional. See
+[service configuration persistence](../architecture/extension-framework.md#service-configuration-persistence).
 
 Treat failed mutating RPCs as uncertain unless the host confirms completion.
 For `Project.AddService`, use the optional

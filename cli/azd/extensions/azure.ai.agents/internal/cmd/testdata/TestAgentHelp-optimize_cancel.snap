@@ -1,6 +1,6 @@
-Cancel a running optimization or evaluation job by its operation ID.
+Cancel a queued or running optimization job by its operation ID.
 
-Only jobs in a non-terminal state (pending, running) can be cancelled.
+Only jobs in a non-terminal state (queued, in_progress) can be cancelled.
 
 Usage
   azd ai agent optimize cancel <operation-id> [flags]
@@ -15,7 +15,7 @@ Global Flags
   -e, --environment string : The name of the environment to use
   -h, --help               : help for cancel
       --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
-  -o, --output string      : The output format (default "default")
+  -o, --output string      : The output format (supported: json, table) (default "table")
 
 Examples
   Cancel a running job

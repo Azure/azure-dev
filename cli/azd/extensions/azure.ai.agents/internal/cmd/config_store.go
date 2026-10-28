@@ -14,12 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const (
-	// configPathPrefix is the UserConfig namespace for agent context state.
-	configPathPrefix = "extensions.ai-agents"
-)
-
-// validStoreFields is the allow-list of store fields that can be used as config map names.
+// validStoreFields is the allow-list of string fields in agent state.
 var validStoreFields = map[string]bool{
 	"sessions":      true,
 	"conversations": true,
@@ -43,15 +38,8 @@ func validateKeySegment(name, value string) error {
 	return nil
 }
 
-// configPath builds the full UserConfig path for a given store field.
-func configPath(storeField string) string {
-	return configPathPrefix + "." + storeField
-}
-
-// getAgentSpecificContextValue retrieves a single value from the named store field map in UserConfig.
+// getAgentSpecificContextValue retrieves a single value from the extension-owned state store.
 // Returns ("", nil) when the key is not found.
-// The JSON path for the property to retrieve is constructed like "extensions.ai-agents.<storeField>.<agentKey>",
-// where <agentKey> is a structured key representing the agent (e.g. "<project endpoint>/agents/<agent name>/version/<agent version>/{local|remote}").
 func getAgentSpecificContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -62,71 +50,30 @@ func getAgentSpecificContextValue(
 		return "", err
 	}
 
-	ch, err := azdext.NewConfigHelper(azdClient)
+	store, err := newAgentStateStoreForClient(azdClient)
 	if err != nil {
-		return "", fmt.Errorf("getAgentSpecificContextValue: %w", err)
+		return "", fmt.Errorf("open agent state store: %w", err)
 	}
-
-	var store map[string]string
-	found, err := ch.GetUserJSON(ctx, configPath(storeField), &store)
+	record, err := store.get(ctx, agentKey)
 	if err != nil {
-		return "", fmt.Errorf("getAgentSpecificContextValue: failed to read %s: %w", storeField, err)
+		return "", fmt.Errorf("read %s agent state: %w", storeField, err)
 	}
-
-	if !found || store == nil {
+	if record == nil {
 		return "", nil
 	}
-
-	return store[agentKey], nil
+	switch storeField {
+	case "sessions":
+		return record.SessionID, nil
+	case "conversations":
+		return record.ConversationID, nil
+	case "stateStores":
+		return record.StateStore, nil
+	default:
+		return "", fmt.Errorf("unsupported agent state field %q", storeField)
+	}
 }
 
-// getContextValueWithFallback tries the primary key first, then falls back to legacy keys.
-// If a value is found under a legacy key, it is rewritten to the primary key for future lookups.
-func getContextValueWithFallback(
-	ctx context.Context,
-	azdClient *azdext.AzdClient,
-	storeField string,
-	primaryKey string,
-	legacyKeys []string,
-) (string, error) {
-	if primaryKey == "" {
-		return "", nil
-	}
-
-	// Try primary key first.
-	val, err := getAgentSpecificContextValue(ctx, azdClient, storeField, primaryKey)
-	if err != nil {
-		return "", err
-	}
-	if val != "" {
-		return val, nil
-	}
-
-	// Try legacy keys.
-	for _, legacyKey := range legacyKeys {
-		if legacyKey == "" || legacyKey == primaryKey {
-			continue
-		}
-		val, err = getAgentSpecificContextValue(ctx, azdClient, storeField, legacyKey)
-		if err != nil {
-			continue
-		}
-		if val != "" {
-			// Rewrite under primary key for future lookups.
-			if err := setAgentSpecificContextValue(ctx, azdClient, storeField, primaryKey, val); err != nil {
-				log.Printf("getContextValueWithFallback: failed to rewrite %q under primary key: %v", legacyKey, err)
-			}
-			return val, nil
-		}
-	}
-
-	return "", nil
-}
-
-// setAgentSpecificContextValue persists a value into the named store field map in UserConfig.
-// It performs a read-modify-write on the map. This is not safe for concurrent updates to
-// different keys (last writer wins), which is acceptable for CLI use where only one command
-// runs at a time.
+// setAgentSpecificContextValue persists a value into the extension-owned state store.
 func setAgentSpecificContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -138,31 +85,23 @@ func setAgentSpecificContextValue(
 		return err
 	}
 
-	ch, err := azdext.NewConfigHelper(azdClient)
+	store, err := newAgentStateStoreForClient(azdClient)
 	if err != nil {
-		return fmt.Errorf("setAgentSpecificContextValue: %w", err)
+		return fmt.Errorf("open agent state store: %w", err)
 	}
-
-	var store map[string]string
-	found, err := ch.GetUserJSON(ctx, configPath(storeField), &store)
-	if err != nil {
-		return fmt.Errorf("setAgentSpecificContextValue: failed to read %s: %w", storeField, err)
-	}
-
-	if !found || store == nil {
-		store = make(map[string]string)
-	}
-
-	store[agentKey] = value
-
-	if err := ch.SetUserJSON(ctx, configPath(storeField), store); err != nil {
-		return fmt.Errorf("setAgentSpecificContextValue: failed to write %s: %w", storeField, err)
-	}
-
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		switch storeField {
+		case "sessions":
+			record.SessionID = value
+		case "conversations":
+			record.ConversationID = value
+		case "stateStores":
+			record.StateStore = value
+		}
+	})
 }
 
-// deleteContextValue removes a key from the named store field map in UserConfig.
+// deleteContextValue removes a field from an agent's extension-owned state.
 func deleteContextValue(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
@@ -173,50 +112,45 @@ func deleteContextValue(
 		return err
 	}
 
-	ch, err := azdext.NewConfigHelper(azdClient)
+	store, err := newAgentStateStoreForClient(azdClient)
 	if err != nil {
-		return fmt.Errorf("deleteContextValue: %w", err)
+		return fmt.Errorf("open agent state store: %w", err)
 	}
-
-	var store map[string]string
-	found, err := ch.GetUserJSON(ctx, configPath(storeField), &store)
-	if err != nil {
-		return fmt.Errorf("deleteContextValue: failed to read %s: %w", storeField, err)
-	}
-
-	if !found || store == nil {
-		return nil
-	}
-
-	delete(store, agentKey)
-
-	if err := ch.SetUserJSON(ctx, configPath(storeField), store); err != nil {
-		return fmt.Errorf("deleteContextValue: failed to write %s: %w", storeField, err)
-	}
-
-	return nil
+	return store.mutate(ctx, agentKey, func(record *agentStateRecord) {
+		switch storeField {
+		case "sessions":
+			record.SessionID = ""
+		case "conversations":
+			record.ConversationID = ""
+		case "stateStores":
+			record.StateStore = ""
+		}
+	})
 }
 
 // --- Agent Key Construction ---
 
 // normalizeEndpoint canonicalizes an endpoint string for use in agent keys.
-// Removes trailing slashes and lowercases the host portion.
+// Removes URL credentials, query, fragment, and trailing slashes, and lowercases the host.
 func normalizeEndpoint(endpoint string) string {
-	endpoint = strings.TrimRight(endpoint, "/")
+	endpoint, _, _ = strings.Cut(endpoint, "?")
+	endpoint, _, _ = strings.Cut(endpoint, "#")
 	// Strip the scheme (https://, http://) — it's unnecessary noise in the key.
 	if idx := strings.Index(endpoint, "://"); idx != -1 {
 		endpoint = endpoint[idx+3:]
 	}
-	// Lowercase the host portion (before the first path segment).
-	if hostEnd := strings.Index(endpoint, "/"); hostEnd == -1 {
-		endpoint = strings.ToLower(endpoint)
-	} else {
-		endpoint = strings.ToLower(endpoint[:hostEnd]) + endpoint[hostEnd:]
+	host, path, hasPath := strings.Cut(endpoint, "/")
+	if userEnd := strings.LastIndex(host, "@"); userEnd != -1 {
+		host = host[userEnd+1:]
 	}
-	return endpoint
+	host = strings.ToLower(host)
+	if !hasPath {
+		return host
+	}
+	return strings.TrimRight(host+"/"+path, "/")
 }
 
-// buildAgentKey constructs the structured agent key used as a map key in the config store.
+// buildAgentKey constructs the structured agent key used in extension-owned state.
 // Format: <endpoint>/agents/<name>/versions/<version>/{local|remote}
 func buildAgentKey(endpoint, agentName, version string, local bool) string {
 	if err := validateKeySegment("agentName", agentName); err != nil {
@@ -274,6 +208,7 @@ func setContextValueSafe(
 		return
 	}
 	if err := setAgentSpecificContextValue(ctx, azdClient, storeField, agentKey, value); err != nil {
-		log.Printf("setContextValueSafe: failed to persist %s for key %q: %v", storeField, agentKey, err)
+		log.Printf("setContextValueSafe: failed to persist %s for key %q: %v",
+			storeField, normalizeEndpoint(agentKey), err)
 	}
 }

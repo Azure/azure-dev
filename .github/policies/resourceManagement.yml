@@ -88,11 +88,16 @@ configuration:
       - addReply:
           reply: Hi @${issueAuthor}.  Thank you for your interest in helping to improve the Azure Developer CLI experience and for your contribution.  We've noticed that there hasn't been recent engagement on this pull request.  If this is still an active work stream, please let us know by pushing some changes or leaving a comment.  Otherwise, we'll close this out in 7 days.
     eventResponderTasks:
+    # Policy-generated labels and reminders must not clear the inactivity label.
     - if:
       - payloadType: Issues
       - not:
           isAction:
             action: Closed
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       - hasLabel:
           label: no-recent-activity
       then:
@@ -101,6 +106,11 @@ configuration:
       description: 
     - if:
       - payloadType: Issue_Comment
+      - isOpen
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       - hasLabel:
           label: no-recent-activity
       then:
@@ -235,6 +245,10 @@ configuration:
       - hasLabel:
           label: no-recent-activity
       - isOpen
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       - or:
         - isAction:
             action: Null
@@ -251,26 +265,10 @@ configuration:
       - hasLabel:
           label: no-recent-activity
       - isOpen
-      then:
-      - removeLabel:
-          label: no-recent-activity
-      description: 
-    - if:
-      - payloadType: Issue_Comment
-      - isAction:
-          action: Created
-      - hasLabel:
-          label: no-recent-activity
-      - isOpen
-      - and:
-        - not:
-            commentContains:
-              pattern: What is Check Enforcer?
-              isRegex: False
-        - not:
-            commentContains:
-              pattern: Since there hasn't been recent engagement, this is being closed out.
-              isRegex: False
+      - not:
+          isActivitySender:
+            user: microsoft-github-policy-service[bot]
+            issueAuthor: False
       then:
       - removeLabel:
           label: no-recent-activity

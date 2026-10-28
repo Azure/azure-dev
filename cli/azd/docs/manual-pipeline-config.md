@@ -9,6 +9,11 @@ The Azure Developer CLI provides the command `azd pipeline config` to automatica
 1. Configuring the git repo to use the created `Service Principal` to authenticate to Azure.
 1. Creating a pipeline definition.
 
+When the project requires azd extensions, the generated pipeline installs each required extension by ID and exact
+version. The generated definition does not reproduce the extension source used on the development machine. If CI must
+use a non-default registry or an unpublished azd build, update the generated pipeline to configure that source or
+installation before running azd project commands.
+
 This command **must** be executed by someone who has a `Contributor` role, in order to create the service principal with the given role.
 The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing service principal.
 

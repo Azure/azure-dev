@@ -1,16 +1,17 @@
-# Tier 1 (auth, local init only): temporary generated GitHub Copilot harness region guard.
+# Tier 1 (auth, local init only): Microsoft Copilot harness region guard for generation and adoption.
 # Requires Azure login and externally prepared, readable Foundry projects in both
 # an allowed and a disallowed region; the latter must have a usable model deployment.
 # Configure {region} to an allowed region and {model} to a catalog model unavailable
 # there but available with quota in a disallowed recovery region. Missing fixtures
-# fail setup, not pass with skipped checks. No adoption or cloud resource creation.
+# fail setup, not pass with skipped checks. No cloud resource creation.
 name: "init-harness-region-restrictions"
-command: "azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-picker-{instance} --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none"
+command: "azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-picker-{instance} --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none"
 cwd: "~/working/azd-agents-harness-regions-{instance}"
 tags: ["tier:1", "cmd:init", "parallel-safe", "picker", "negative-path", "manual-seed"]
 
 env:
   AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS: "true"
   AZURE_ENV_NAME: ""
   AZURE_LOCATION: ""
   AZURE_SUBSCRIPTION_ID: ""
@@ -25,15 +26,21 @@ goals:
     Before answering product prompts, use read-only Azure queries to identify the seeded projects in
     '{subscription}' and verify their locations and the recovery model prerequisites. Record the disallowed
     project's full resource ID as shell variable $unsupported_project_id and its usable deployment name as
-    $existing_deployment for subsequent commands. Allowed region IDs are exactly japaneast,
-    swedencentral, uksouth, australiaeast, westeurope, germanywestcentral, canadacentral, westus2.
+    $existing_deployment for subsequent commands. Read the current allowed region IDs from
+    https://aka.ms/azd-ai-agents/harness-region.
+    If the manifest is unavailable, use the harness-agent-regions.json embedded in the build under test.
+    Use this policy for every generated and adopted harness check below.
+    Internal harness regions must not appear in region pickers or supported-region
+    guidance in warnings and errors. Existing projects in internal harness regions must
+    appear in project pickers and be accepted when selected or supplied through --project-id.
     Do not create fixtures during this run.
   - >-
     RESOURCE NAMING: if asked for an azd environment name, clear any default and use '{prefix}-picker-{instance}'
     for the initial command, then '{prefix}-id-{instance}', '{prefix}-plain-{instance}', or
     '{prefix}-recovery-{instance}' for the corresponding checks below. If asked for a new Foundry project name,
     clear any default and enter '{foundry_project_name}'. No agent-name, description, instructions, init-method,
-    language, deploy-mode, or Responsible AI policy prompt should appear because flags supply those inputs.
+    language, deploy-mode, or Responsible AI policy prompt should appear in generated-init checks because flags
+    supply those inputs. Template adoption checks below use their own environment names.
   - >-
     For interactive checks, if 'Select a tenant' appears, select the tenant provided with this run; fail without
     answering if none was provided. If asked for a subscription, select '{subscription}'. For the initial command,
@@ -43,10 +50,10 @@ goals:
     disallowed project. Take a screenshot, then cancel before selecting a project. No agent service should be written.
   - >-
     From the scenario root, create and enter a fresh 'explicit-id' subdirectory. Run
-    `azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-id-{instance}
+    `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-id-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none
     --project-id "$unsupported_project_id" --model-deployment "$existing_deployment" --no-prompt`.
-    Expect non-zero exit with an error identifying the unsupported project region and the GitHub Copilot harness,
+    Expect non-zero exit with an error identifying the unsupported project region as 'not supported for this agent setup',
     and guidance to use a supported region. No product prompts, successful init summary, or harness agent service
     may appear; starter files or local environment state alone are not a completed agent scaffold.
   - >-
@@ -60,10 +67,10 @@ goals:
     region in the local environment. Do not provision or deploy it.
   - >-
     From the scenario root, create and enter a fresh 'recovery' subdirectory. Run
-    `azd ai agent init --kind prompt --harness github_copilot_preview --agent-name {prefix}-recovery-{instance}
+    `azd ai agent init --kind prompt --harness microsoft_copilot_preview --agent-name {prefix}-recovery-{instance}
     --description 'Region guard probe' --instructions 'Be helpful.' --rai-policy none --model {model}`.
     At 'Select a Foundry project to host your agent and model', choose 'Create a new Foundry project'.
-    The initial location picker must offer only the eight allowed region IDs (display labels may be friendly names)
+    The initial location picker must offer only the manifest's allowed region IDs available to the subscription (display labels may be friendly names)
     and must exclude the seeded disallowed region. Take a screenshot and select '{region}'.
   - >-
     At "Model '{model}' is selected.", choose "Use '{model}'". Expect the model-unavailable recovery flow.
@@ -74,11 +81,45 @@ goals:
   - >-
     If model version, SKU, or capacity is requested after recovery, accept the offered defaults. If asked for a
     model deployment name, clear its default and enter '{prefix}-model-{instance}'. Init must then exit non-zero
-    with an error identifying the final disallowed region and the GitHub Copilot harness, with supported-region
+    with an error identifying the final disallowed region as 'not supported for this agent setup', with supported-region
     guidance, before writing the harness agent service or printing a successful init summary. A region change
     during recovery must not bypass the guard. No later project-authoring prompt is expected.
   - >-
+    From the scenario root, create a local 'template' directory containing azure.yaml with name: harness-template
+    and a single service named assistant with host: azure.ai.agent, kind: prompt, name: assistant,
+    model: '{model}', instructions: 'Be helpful.', and harness.type: microsoft_copilot_preview. Do not put any
+    project resource ID or location in the template. Use this local azure.yaml as --template for all adoption
+    checks below, without --harness or --kind: the template itself must determine the region policy.
+  - >-
+    From the scenario root, create and enter a fresh 'adopt-picker' subdirectory and run
+    `azd ai agent init --template ../template/azure.yaml`. If asked for an environment name, use
+    '{prefix}-adopt-picker-{instance}'. Select the provided tenant and '{subscription}' if requested.
+    Choose an existing Foundry project. Confirm the picker includes the seeded allowed-region project and
+    excludes every disallowed-region project, including the seeded disallowed project. Take a screenshot,
+    then cancel before selecting a project; do not provision or deploy.
+  - >-
+    From the scenario root, create and enter a fresh 'adopt-new' subdirectory and run
+    `azd ai agent init --template ../template/azure.yaml`. If asked for an environment name, use
+    '{prefix}-adopt-new-{instance}'. Select the provided tenant and '{subscription}' if requested.
+    Choose to create a new Foundry project. Confirm the location picker offers only the manifest's allowed region
+    IDs available to the subscription and excludes the seeded disallowed region. Take a screenshot, then cancel before choosing a location.
+  - >-
+    From the scenario root, create and enter a fresh 'adopt-id' subdirectory and run
+    `AZURE_ENV_NAME={prefix}-adopt-id-{instance} azd ai agent init --template ../template/azure.yaml
+    --project-id "$unsupported_project_id"
+    --model-deployment "$existing_deployment" --no-prompt`. Use '{prefix}-adopt-id-{instance}' for the
+    environment name through AZURE_ENV_NAME. Expect non-zero exit with the unsupported project region and
+    'not supported for this agent setup', plus supported-region guidance. No product prompts or successful
+    init summary may appear. The template's harness.type must enforce the guard without --harness.
+  - >-
+    Check split-location handling in fresh generated and adopted harness environments using the subscription
+    above. Set AZURE_LOCATION to the seeded disallowed region and AZURE_AI_DEPLOYMENTS_LOCATION to '{region}'.
+    Run the corresponding init with --no-prompt and --model '{model}', without --project-id or --model-deployment.
+    Both flows must reject the configured AZURE_LOCATION before requesting any location prompt or changing
+    either location value. With two distinct allowed locations, both flows must reject the mismatch with
+    guidance to align AZURE_LOCATION and AZURE_AI_DEPLOYMENTS_LOCATION, preserving both values and avoiding
+    model selection. Matching supported locations must pass the location checks. Do not provision or deploy any scaffold.
+  - >-
     Take screenshots of the region errors and plain-prompt completion. STOP: do not run azd up, provision, deploy,
     or down. Report a finding for any unfiltered picker, accepted unsupported harness target, plain-prompt
-    regression, unexpected prompt, or missing final-region rejection. This scenario covers generated init only;
-    do not adopt or modify an existing azure.yaml or agent definition.
+    regression, unexpected prompt, or missing final-region rejection in generated init or template adoption.

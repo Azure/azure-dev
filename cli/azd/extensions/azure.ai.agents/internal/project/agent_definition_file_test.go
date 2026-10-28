@@ -353,7 +353,7 @@ func TestLoadAgentDefinitionFileResolvesNestedReferencesBesideDefinition(t *test
 	require.NoError(t, os.MkdirAll(definitionDir, 0o750))
 	require.NoError(t, os.WriteFile(
 		filepath.Join(definitionDir, "harness.json"),
-		[]byte(`{"type":"github_copilot_preview"}`),
+		[]byte(`{"type":"microsoft_copilot_preview"}`),
 		0o600,
 	))
 	require.NoError(t, os.WriteFile(
@@ -381,7 +381,7 @@ harness:
 	require.Equal(t, "referenced-agent", got.Name)
 	harness, ok := got.ResolvedProperties["harness"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "github_copilot_preview", harness["type"])
+	require.Equal(t, "microsoft_copilot_preview", harness["type"])
 }
 
 func TestLoadAgentDefinitionFilePathValidation(t *testing.T) {

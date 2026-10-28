@@ -206,7 +206,7 @@ func TestAgentRootRefRuntimeLoaders(t *testing.T) {
 					values["harness"] = map[string]any{"$ref": "./harness.json"}
 					require.NoError(t, os.WriteFile(
 						filepath.Join(definitionDir, "harness.json"),
-						[]byte(`{"type":"github_copilot_preview"}`),
+						[]byte(`{"type":"microsoft_copilot_preview"}`),
 						0o600,
 					))
 				case "hosted-code":
@@ -267,7 +267,7 @@ func TestAgentRootRefRuntimeLoaders(t *testing.T) {
 					require.Equal(t, "overlay-name", managed.Name)
 					require.Equal(t, "gpt-4.1-mini", managed.Model)
 					require.Equal(t, "definitions/instructions.md", managed.Instructions)
-					require.Equal(t, "github_copilot_preview", managed.Harness.Type)
+					require.Equal(t, "microsoft_copilot_preview", managed.Harness.Type)
 					validationDir, err := promptAgentValidationDir(
 						provider.agentDefinitionValidationServiceConfig(), root,
 					)

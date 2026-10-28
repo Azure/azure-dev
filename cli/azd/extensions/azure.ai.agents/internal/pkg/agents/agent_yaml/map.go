@@ -4,6 +4,7 @@
 package agent_yaml
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -585,7 +586,7 @@ func PromptAgentSkillReferences(promptAgent PromptAgent) []agent_api.SkillRefere
 //
 // The agent's Harness is omitted entirely when nil: a harness-less prompt
 // agent is run directly by Foundry, while a managed agent names its harness
-// (e.g. "github_copilot_preview") and the platform provisions a Brain+Hand
+// (e.g. "microsoft_copilot_preview") and the platform provisions a Brain+Hand
 // sandbox for it.
 func CreatePromptAgentAPIRequest(
 	promptAgent PromptAgent,
@@ -839,7 +840,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		out := buildVoiceConfig(name)
 		out.Style = voice.Style
 		out.Pitch = voice.Pitch
-		out.Rate = voice.Rate
 		out.Locale = voice.Locale
 		out.Volume = voice.Volume
 		return out
@@ -852,7 +852,6 @@ func mapVoiceConfig(voice *VoiceConfig, fallbackName string) *agent_api.VoiceCon
 		Name:   name,
 		Style:  voice.Style,
 		Pitch:  voice.Pitch,
-		Rate:   voice.Rate,
 		Locale: voice.Locale,
 		Volume: voice.Volume,
 	}
@@ -914,13 +913,10 @@ func createVoiceAgentAPIRequest(
 		if target == nil || strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Version) == "" {
 			return nil, fmt.Errorf("resolved target agent name and version are required when model_type is 'hosted_agent'")
 		}
-		if voiceAgent.Model != nil || voiceAgent.InputSchema != nil || voiceAgent.OutputSchema != nil ||
-			voiceAgent.Instructions != nil || len(voiceAgent.StructuredInputs) > 0 ||
-			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil || voiceAgent.ParallelToolCalls != nil ||
-			voiceAgent.MaxOutputTokens != nil || len(voiceAgent.Include) > 0 || len(voiceAgent.Handoff) > 0 {
+		if voiceAgent.Model != nil || voiceAgent.ModelType != "" || voiceAgent.Instructions != nil ||
+			len(voiceAgent.Tools) > 0 || voiceAgent.ToolChoice != nil {
 			return nil, fmt.Errorf(
-				"model, input_schema, output_schema, instructions, structured_inputs, tools, tool_choice, " +
-					"parallel_tool_calls, max_output_tokens, include, and handoff belong to the target hosted agent",
+				"model, model_type, instructions, tools, and tool_choice belong to the target hosted agent",
 			)
 		}
 	} else if modelType != agent_api.VoiceModelTypeManaged && modelType != agent_api.VoiceModelTypeSelfDeployed {
@@ -999,7 +995,6 @@ func createVoiceAgentAPIRequest(
 		},
 		ModelType:          voiceWireModelType(modelType, hostedAgent),
 		Model:              modelID,
-		TargetAgent:        nil,
 		ConversationEngine: voiceWireConversationEngine(voiceAgent.ConversationEngine, target),
 		Instructions:       instructions,
 		StructuredInputs:   mapVoiceStructuredInputs(voiceAgent.StructuredInputs),
@@ -1012,7 +1007,6 @@ func createVoiceAgentAPIRequest(
 				VoiceLocale: voiceWireLocale(outputVoice),
 				Style:       outputVoice.Style,
 				Pitch:       outputVoice.Pitch,
-				Rate:        outputVoice.Rate,
 				Volume:      outputVoice.Volume,
 				Speed:       outputSpeed,
 			},
@@ -1022,7 +1016,6 @@ func createVoiceAgentAPIRequest(
 		Tools:             voiceAgent.Tools,
 		Avatar:            voiceAgent.Avatar,
 		Greeting:          voiceAgent.Greeting,
-		Handoff:           voiceAgent.Handoff,
 		ToolChoice:        voiceAgent.ToolChoice,
 		ParallelToolCalls: voiceAgent.ParallelToolCalls,
 		MaxOutputTokens:   voiceAgent.MaxOutputTokens,
@@ -1081,9 +1074,16 @@ func createAgentAPIRequest(
 				metadata["authors"] = strings.Join(authorsStr, ",")
 			}
 		}
+		if tags, exists := (*agentDefinition.Metadata)["tags"]; exists {
+			value, err := agentMetadataTags(tags)
+			if err != nil {
+				return nil, err
+			}
+			metadata["tags"] = value
+		}
 		// Copy other metadata as strings
 		for key, value := range *agentDefinition.Metadata {
-			if key != "authors" {
+			if key != "authors" && key != "tags" {
 				if strValue, ok := value.(string); ok {
 					metadata[key] = strValue
 				}
@@ -1221,4 +1221,35 @@ func createAgentAPIRequest(
 	}
 
 	return request, nil
+}
+
+func agentMetadataTags(value any) (string, error) {
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	var tags []string
+	switch values := value.(type) {
+	case []string:
+		tags = values
+	case []any:
+		tags = make([]string, len(values))
+		for i, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+			}
+			tags[i] = text
+		}
+	default:
+		return "", fmt.Errorf("metadata.tags must be a string or a list of strings")
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	// Foundry metadata values are strings; JSON preserves commas and empty list items.
+	encoded, err := json.Marshal(tags)
+	if err != nil {
+		return "", fmt.Errorf("encode metadata.tags: %w", err)
+	}
+	return string(encoded), nil
 }

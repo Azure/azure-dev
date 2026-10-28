@@ -194,7 +194,7 @@ stages:
               ArtifactName: shield-standalone
               ArtifactDownloadPath: shields/standalone
               ArtifactFilename: standalone.json
-              StorageContainerName: '`$web'
+              StorageContainerName: '$web'
               PublishDestination: azd/standalone/latest
 
       - job: Increment_Version
@@ -328,14 +328,13 @@ stages:
               Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
             displayName: Write version.txt file for release
 
-          - task: AzurePowerShell@5
+          - task: AzureCLI@2
             displayName: Upload version.txt to storage account
             inputs:
               azureSubscription: 'Azure SDK Artifacts'
-              azurePowerShellVersion: LatestVersion
-              pwsh: true
-              ScriptType: InlineScript
-              Inline: |
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
                 $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
                   -CliVersion '$(CLI_VERSION)'
 
@@ -347,15 +346,20 @@ stages:
                 Get-ChildItem release/
 
                 foreach ($folder in $publishUploadLocations) {
-                  Write-Host "Upload to azd/standalone/$folder"
-                  azcopy copy "release/*" "$(publish-storage-location)/`$web/azd/standalone/$folder" --overwrite=true
+                  $destinationPath = "azd/standalone/$folder"
+                  Write-Host "Upload to `$web/$destinationPath"
+                  az storage blob upload-batch `
+                    --account-name "$(publish-storage-account-name)" `
+                    --auth-mode login `
+                    --source release `
+                    --destination '$web' `
+                    --destination-path $destinationPath `
+                    --overwrite true
                   if ($LASTEXITCODE) {
                     Write-Error "Upload failed"
                     exit 1
                   }
                 }
-            env:
-              AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'
 
   - stage: PublishIntegration
     dependsOn: Sign
@@ -673,18 +677,24 @@ stages:
                     Copy-Item install-sh/*.sh script-release/
                   displayName: Copy scripts for release upload
 
-                - task: AzurePowerShell@5
+                - task: AzureCLI@2
                   displayName: Upload installer to storage location
                   inputs:
                     azureSubscription: 'Azure SDK Artifacts'
-                    azurePowerShellVersion: LatestVersion
-                    pwsh: true
-                    ScriptType: InlineScript
-                    Inline: |
-                      azcopy copy "script-release/*" "$(publish-storage-location)/`$web/azd/standalone/installer" --overwrite=true
+                    scriptType: pscore
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      $destinationPath = 'azd/standalone/installer'
+                      Write-Host "Upload to `$web/$destinationPath"
+
+                      az storage blob upload-batch `
+                        --account-name "$(publish-storage-account-name)" `
+                        --auth-mode login `
+                        --source script-release `
+                        --destination '$web' `
+                        --destination-path $destinationPath `
+                        --overwrite true
                       if ($LASTEXITCODE) {
                         Write-Error "Upload failed"
                         exit 1
                       }
-                  env:
-                    AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

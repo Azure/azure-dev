@@ -11,6 +11,7 @@ const (
 	CodeInvalidAuthType         = "invalid_auth_type"
 	CodeMissingForceFlag        = "missing_force_flag"
 	CodeConnectionAlreadyExists = "connection_already_exists"
+	CodeProjectChanged          = "project_changed"
 )
 
 // Error codes for endpoint resolution.

@@ -13,8 +13,10 @@ import (
 	"strings"
 	"testing"
 
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,25 +37,35 @@ func TestResolveInitHarness(t *testing.T) {
 		{
 			// A manifest's `harness:` block arrives here as an implied value.
 			name:           "implied harness is honored",
+			impliedHarness: agent_api.ManagedAgentHarnessMicrosoftCopilot,
+			expected:       agent_api.ManagedAgentHarnessMicrosoftCopilot,
+		},
+		{
+			name:        "explicit harness is accepted case-insensitively",
+			harnessFlag: "Microsoft_Copilot_Preview",
+			expected:    agent_api.ManagedAgentHarnessMicrosoftCopilot,
+		},
+		{
+			name:           "legacy implied harness is preserved",
 			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
 			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
-			name:        "explicit harness is accepted case-insensitively",
+			name:        "legacy explicit harness is preserved",
 			harnessFlag: "GitHub_Copilot_Preview",
 			expected:    agent_api.ManagedAgentHarnessGitHubCopilot,
 		},
 		{
 			name:           "none opts out of an implied harness",
 			harnessFlag:    " none ",
-			impliedHarness: agent_api.ManagedAgentHarnessGitHubCopilot,
+			impliedHarness: agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			expected:       "",
 		},
 		{
 			name:           "explicit harness overrides a harness-less context",
-			harnessFlag:    agent_api.ManagedAgentHarnessGitHubCopilot,
+			harnessFlag:    agent_api.ManagedAgentHarnessMicrosoftCopilot,
 			impliedHarness: "",
-			expected:       agent_api.ManagedAgentHarnessGitHubCopilot,
+			expected:       agent_api.ManagedAgentHarnessMicrosoftCopilot,
 		},
 		{
 			name:        "unknown harness is rejected",
@@ -346,12 +358,13 @@ func TestPromptInitMode_NoPromptEmptyDirUsesTemplate(t *testing.T) {
 	require.Equal(t, initModeTemplate, mode)
 }
 
-func TestPromptInitMode_ShowsVoiceChoiceByDefault(t *testing.T) {
+func TestPromptInitMode_ShowsVoiceChoiceWhenEnabled(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	dir := t.TempDir()
 	t.Chdir(dir)
 
 	prompts := &helpersPromptServer{selectIndex: 0}
-	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 
 	mode, err := promptInitMode(t.Context(), azdClient, false)
 
@@ -363,11 +376,12 @@ func TestPromptInitMode_ShowsVoiceChoiceByDefault(t *testing.T) {
 }
 
 func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	dir := t.TempDir()
 	t.Chdir(dir)
 
 	prompts := &helpersPromptServer{selectIndex: 1}
-	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+	azdClient := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 
 	mode, err := promptInitMode(t.Context(), azdClient, false)
 
@@ -379,6 +393,7 @@ func TestPromptInitMode_SelectsVoiceChoice(t *testing.T) {
 }
 
 func TestPromptInitMode_NonEmptyDirectoryChoices(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	for _, tt := range []struct {
 		mode  string
 		index int32
@@ -392,7 +407,7 @@ func TestPromptInitMode_NonEmptyDirectoryChoices(t *testing.T) {
 			t.Chdir(dir)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, "main.py"), []byte("print('hello')\n"), 0600))
 			prompts := &helpersPromptServer{selectIndex: tt.index}
-			client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+			client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 
 			mode, err := promptInitMode(t.Context(), client, false)
 			require.NoError(t, err)

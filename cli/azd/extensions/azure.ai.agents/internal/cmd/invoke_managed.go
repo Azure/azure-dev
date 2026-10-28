@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
@@ -55,7 +56,7 @@ func (a *InvokeAction) storedManagedConversationID(
 	if azdClient == nil || a.flags.forceNewConversation() {
 		return ""
 	}
-	value, err := getContextValueWithFallback(ctx, azdClient, "conversations", agentKey, nil)
+	value, err := getAgentSpecificContextValue(ctx, azdClient, "conversations", agentKey)
 	if err != nil || !strings.HasPrefix(value, "conv_") {
 		return ""
 	}
@@ -135,7 +136,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 		harnessed := pctx.Agent.HarnessType() != ""
 		conversationEndpoint := promptConversationEndpoint(pctx.Settings.ProjectEndpoint, agentName, harnessed)
 		if harnessed {
-			headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
+			headers["Foundry-Features"] = agent_api.MicrosoftCopilotPreviewFeature
 		}
 		conversationID, err = client.CreateConversationAt(ctx, conversationEndpoint, headers)
 		if err != nil {
@@ -159,7 +160,7 @@ func (a *InvokeAction) runPromptInvoke(ctx context.Context, pctx *promptServiceC
 			"%s/agents/%s/endpoint/protocols/openai/responses?api-version=v1",
 			strings.TrimRight(pctx.Settings.ProjectEndpoint, "/"), agentName,
 		)
-		headers["Foundry-Features"] = "GitHubCopilot=V1Preview"
+		headers["Foundry-Features"] = agent_api.MicrosoftCopilotPreviewFeature
 		stream, _, err = client.CreateResponseStreamAt(ctx, endpoint, payload, headers)
 	}
 	if err != nil {

@@ -53,6 +53,10 @@ When investigating a pipeline:
 - Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
 - For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
+For an end-to-end core release roadmap, version correlation, and known recovery procedures, read
+[Tracking and recovering an azd core release](../../docs/guides/releasing-azd.md).
+Changelog preparation alone does not establish release completion.
+
 ## Development
 
 Commands assume you are in `cli/azd`.

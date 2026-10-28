@@ -402,8 +402,8 @@ func TestStateStoreStdinCancellation(t *testing.T) {
 func TestStateStoreItemActions(t *testing.T) {
 	for _, operation := range []string{"list", "show", "items list", "items show", "items set", "items delete"} {
 		t.Run(operation, func(t *testing.T) {
-			a, api, server, writer := newStateStoreTestAction(t)
-			server.setJSON(t, configPath(stateStoreConfigField), map[string]string{a.target.agentKey: "saved"})
+			a, api, _, writer := newStateStoreTestAction(t)
+			saveAgentStateForTest(t, a.host, a.target.agentKey, agentStateRecord{StateStore: "saved"})
 			a.flags.ifMatch, a.flags.yes = `"etag"`, true
 			a.request = agent_api.SetStateStoreItemRequest{Value: json.RawMessage(`{"large":9007199254740993}`)}
 			item := &agent_api.StateStoreItem{Key: "key", Value: a.request.Value, ETag: `"etag"`}
@@ -439,9 +439,9 @@ func TestStateStoreItemActions(t *testing.T) {
 				require.NotContains(t, writer.String(), `"tags"`,
 					"unavailable response tags must remain omitted rather than becoming null")
 			}
-			var selection map[string]string
-			server.getJSON(t, configPath(stateStoreConfigField), &selection)
-			require.Equal(t, map[string]string{a.target.agentKey: "saved"}, selection)
+			selection := loadAgentStateForTest(t, a.host, a.target.agentKey)
+			require.NotNil(t, selection)
+			require.Equal(t, "saved", selection.StateStore)
 		})
 	}
 }
@@ -450,7 +450,7 @@ func TestStateStoreExplicitOverrideDoesNotReadOrWriteSelection(t *testing.T) {
 	for _, operation := range []string{"show", "items show"} {
 		t.Run(operation, func(t *testing.T) {
 			a, api, _, _ := newStateStoreTestAction(t)
-			a.host = nil // Explicit targeting must not even attempt a UserConfig lookup.
+			a.host = nil // Explicit targeting must not attempt a saved selection lookup.
 			args := []string{"other"}
 			if operation == "show" {
 				api.On("GetStateStore", mock.Anything, "worker", "other").Return(&agent_api.StateStore{Name: "other"}, nil)

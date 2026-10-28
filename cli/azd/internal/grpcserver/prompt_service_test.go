@@ -4,8 +4,10 @@
 package grpcserver
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"slices"
 	"testing"
 	"time"
@@ -33,9 +35,41 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockprompt"
 )
 
+func TestPromptServiceSelectUsesInjectedWriterOverSDK(t *testing.T) {
+	var stderr bytes.Buffer
+	service := NewPromptService(nil, nil, nil, &internal.GlobalCommandOptions{}, &stderr)
+	implementation, ok := service.(*promptService)
+	require.True(t, ok)
+	implementation.askSelect = func(_ context.Context, options *ux.SelectOptions) (*int, error) {
+		if !assert.Same(t, &stderr, options.Writer) || !assert.Len(t, options.Choices, 2) {
+			return nil, errors.New("unexpected selection options")
+		}
+		selection := ux.NewSelect(options)
+		selection.Render(ux.NewPrinter(options.Writer))
+		return new(1), nil
+	}
+	_, ctx, client, cleanup := setupTestServer(t, service)
+	defer cleanup()
+	response, err := client.Prompt().Select(ctx, &azdext.SelectRequest{
+		Options: &azdext.SelectOptions{
+			Message: "Select the Foundry Project service",
+			Choices: []*azdext.SelectChoice{
+				{Value: "first", Label: "First Project"},
+				{Value: "second", Label: "Second Project"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, response.Value)
+	assert.Equal(t, int32(1), *response.Value)
+	assert.Contains(t, stderr.String(), "Select the Foundry Project service")
+	assert.Contains(t, stderr.String(), "First Project")
+	assert.Contains(t, stderr.String(), "Second Project")
+}
+
 func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.Confirm(t.Context(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -51,7 +85,7 @@ func Test_PromptService_Confirm_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	_, err := service.Confirm(t.Context(), &azdext.ConfirmRequest{
 		Options: &azdext.ConfirmOptions{
@@ -65,7 +99,7 @@ func Test_PromptService_Confirm_NoPromptWithoutDefault(t *testing.T) {
 
 func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.Select(t.Context(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -85,7 +119,7 @@ func Test_PromptService_Select_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	_, err := service.Select(t.Context(), &azdext.SelectRequest{
 		Options: &azdext.SelectOptions{
@@ -102,7 +136,7 @@ func Test_PromptService_Select_NoPromptWithoutDefault(t *testing.T) {
 
 func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.MultiSelect(t.Context(), &azdext.MultiSelectRequest{
 		Options: &azdext.MultiSelectOptions{
@@ -123,7 +157,7 @@ func Test_PromptService_MultiSelect_NoPrompt(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptWithDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -139,7 +173,7 @@ func Test_PromptService_Prompt_NoPromptWithDefault(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	_, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -154,7 +188,7 @@ func Test_PromptService_Prompt_NoPromptRequiredWithoutDefault(t *testing.T) {
 
 func Test_PromptService_Prompt_NoPromptNotRequiredWithoutDefault(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.Prompt(t.Context(), &azdext.PromptRequest{
 		Options: &azdext.PromptOptions{
@@ -192,7 +226,7 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 		On("PromptSubscription", mock.Anything, mock.Anything).
 		Return(expectedSub, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptSubscription(t.Context(), &azdext.PromptSubscriptionRequest{
 		Message:     "Select subscription:",
@@ -205,6 +239,42 @@ func Test_PromptService_PromptSubscription(t *testing.T) {
 	require.Equal(t, expectedSub.Name, resp.Subscription.Name)
 	require.Equal(t, expectedSub.TenantId, resp.Subscription.TenantId)
 	mockPrompter.AssertExpectations(t)
+}
+
+func TestPromptLocationRoutesOutputToInjectedWriter(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		allowed []string
+	}{
+		{"unrestricted", nil},
+		{"explicit empty", []string{}},
+		{"filtered", []string{"westus3", "eastus2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var writer bytes.Buffer
+			prompter := &mockPromptService{
+				promptLocationFn: func(
+					_ context.Context, _ *prompt.AzureContext, options *prompt.SelectOptions,
+				) (*account.Location, error) {
+					require.NotNil(t, options)
+					require.Same(t, &writer, options.Writer)
+					require.Equal(t, tt.allowed, options.AllowedValues)
+					_, err := io.WriteString(options.Writer, "Select location")
+					require.NoError(t, err)
+					return &account.Location{Name: "eastus2"}, nil
+				},
+			}
+			service := NewPromptService(prompter, nil, nil, &internal.GlobalCommandOptions{}, &writer)
+			_, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
+				AzureContext: &azdext.AzureContext{
+					Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
+				},
+				AllowedLocations: tt.allowed,
+			})
+			require.NoError(t, err)
+			require.Equal(t, "Select location", writer.String())
+		})
+	}
 }
 
 func Test_PromptService_PromptLocation(t *testing.T) {
@@ -221,7 +291,7 @@ func Test_PromptService_PromptLocation(t *testing.T) {
 		On("PromptLocation", mock.Anything, mock.Anything, mock.Anything).
 		Return(expectedLocation, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
 		AzureContext: &azdext.AzureContext{
@@ -255,7 +325,7 @@ func Test_PromptService_PromptLocation_WithAllowedLocations(t *testing.T) {
 		})).
 		Return(expectedLocation, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptLocation(t.Context(), &azdext.PromptLocationRequest{
 		AzureContext: &azdext.AzureContext{
@@ -294,7 +364,7 @@ func Test_PromptService_PromptResourceGroup(t *testing.T) {
 		})).
 		Return(expectedRg, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
@@ -330,10 +400,16 @@ func Test_PromptService_PromptResourceGroup_NilOptions(t *testing.T) {
 	}
 
 	mockPrompter.
-		On("PromptResourceGroup", mock.Anything, mock.Anything, (*prompt.ResourceGroupOptions)(nil)).
+		On("PromptResourceGroup", mock.Anything, mock.Anything,
+			mock.MatchedBy(func(options *prompt.ResourceGroupOptions) bool {
+				// Nil request options still route the picker to the injected writer.
+				return options != nil && options.SelectorOptions != nil &&
+					options.SelectorOptions.Writer == io.Discard &&
+					options.SelectorOptions.Message == ""
+			})).
 		Return(expectedRg, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptResourceGroup(t.Context(), &azdext.PromptResourceGroupRequest{
 		AzureContext: &azdext.AzureContext{
@@ -380,7 +456,7 @@ func Test_PromptService_PromptSubscriptionResource(t *testing.T) {
 		).
 		Return(expectedResource, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptSubscriptionResource(t.Context(), &azdext.PromptSubscriptionResourceRequest{
 		AzureContext: &azdext.AzureContext{
@@ -438,7 +514,7 @@ func Test_PromptService_PromptResourceGroupResource(t *testing.T) {
 		).
 		Return(expectedResource, nil)
 
-	service := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	service := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 
 	resp, err := service.PromptResourceGroupResource(t.Context(), &azdext.PromptResourceGroupResourceRequest{
 		AzureContext: &azdext.AzureContext{
@@ -518,7 +594,7 @@ func Test_CreateResourceGroupOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := createResourceGroupOptions(tt.input)
+			result := createResourceGroupOptions(tt.input, nil)
 
 			if tt.expected == nil {
 				require.Nil(t, result)
@@ -574,7 +650,7 @@ func Test_CreateResourceOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := createResourceOptions(tt.input)
+			result := createResourceOptions(tt.input, nil)
 
 			if tt.input == nil {
 				require.Equal(t, prompt.ResourceOptions{}, result)
@@ -667,7 +743,7 @@ func Test_PromptService_PromptSubscription_ErrorWithSuggestion(t *testing.T) {
 		On("PromptSubscription", mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
 	defer cleanup()
 
@@ -701,7 +777,7 @@ func Test_PromptService_PromptResourceGroup_ErrorWithSuggestion(t *testing.T) {
 		On("PromptResourceGroup", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, authErr)
 
-	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions)
+	promptSvc := NewPromptService(mockPrompter, nil, nil, globalOptions, io.Discard)
 	_, ctx, client, cleanup := setupTestServer(t, promptSvc)
 	defer cleanup()
 
@@ -1107,7 +1183,7 @@ func Test_selectModelNoPrompt(t *testing.T) {
 
 func Test_PromptService_NilOptions_Validation(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: true}
-	service := NewPromptService(nil, nil, nil, globalOptions)
+	service := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 
 	tests := []struct {
 		name   string
@@ -1150,7 +1226,7 @@ func Test_PromptService_NilOptions_Validation(t *testing.T) {
 
 func Test_PromptService_CreateAzureContext_NilScope(t *testing.T) {
 	globalOptions := &internal.GlobalCommandOptions{NoPrompt: false}
-	svc := NewPromptService(nil, nil, nil, globalOptions)
+	svc := NewPromptService(nil, nil, nil, globalOptions, io.Discard)
 	ps := svc.(*promptService)
 
 	tests := []struct {
@@ -1833,7 +1909,7 @@ func TestCreateAzureContext_InvalidResourceID(t *testing.T) {
 
 func TestCreateResourceOptions_Nil(t *testing.T) {
 	t.Parallel()
-	opts := createResourceOptions(nil)
+	opts := createResourceOptions(nil, nil)
 	require.Nil(t, opts.ResourceType)
 }
 
@@ -1847,7 +1923,7 @@ func TestCreateResourceOptions_WithValues(t *testing.T) {
 			Message:     "Select a web app",
 			HelpMessage: "Choose one",
 		},
-	})
+	}, nil)
 	require.NotNil(t, opts.ResourceType)
 	require.Equal(t, []string{"web"}, opts.Kinds)
 	require.Equal(t, "Web App", opts.ResourceTypeDisplayName)
@@ -1859,12 +1935,12 @@ func TestCreateResourceOptions_WithValues(t *testing.T) {
 
 func TestCreateResourceGroupOptions_Nil(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, createResourceGroupOptions(nil))
+	require.Nil(t, createResourceGroupOptions(nil, nil))
 }
 
 func TestCreateResourceGroupOptions_NilSelectOptions(t *testing.T) {
 	t.Parallel()
-	require.Nil(t, createResourceGroupOptions(&azdext.PromptResourceGroupOptions{}))
+	require.Nil(t, createResourceGroupOptions(&azdext.PromptResourceGroupOptions{}, nil))
 }
 
 func TestCreateResourceGroupOptions_WithValues(t *testing.T) {
@@ -1876,13 +1952,52 @@ func TestCreateResourceGroupOptions_WithValues(t *testing.T) {
 			AllowNewResource: &allowNew,
 			DisplayCount:     10,
 		},
-	})
+	}, nil)
 	require.NotNil(t, result)
 	require.NotNil(t, result.SelectorOptions)
 	require.Equal(t, "Select RG", result.SelectorOptions.Message)
 	require.NotNil(t, result.SelectorOptions.AllowNewResource)
 	require.True(t, *result.SelectorOptions.AllowNewResource)
 	require.Equal(t, 10, result.SelectorOptions.DisplayCount)
+}
+
+func TestCreateResourceOptionsRouteToInjectedWriter(t *testing.T) {
+	t.Parallel()
+	var writer bytes.Buffer
+
+	opts := createResourceOptions(nil, &writer)
+	require.NotNil(t, opts.SelectorOptions)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+
+	opts = createResourceOptions(&azdext.PromptResourceOptions{ResourceType: "Microsoft.Web/sites"}, &writer)
+	require.NotNil(t, opts.SelectorOptions)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+
+	opts = createResourceOptions(&azdext.PromptResourceOptions{
+		SelectOptions: &azdext.PromptResourceSelectOptions{Message: "Select a web app"},
+	}, &writer)
+	assert.Same(t, &writer, opts.SelectorOptions.Writer)
+	assert.Equal(t, "Select a web app", opts.SelectorOptions.Message)
+
+	for _, input := range []*azdext.PromptResourceGroupOptions{
+		nil,
+		{},
+		{SelectOptions: &azdext.PromptResourceSelectOptions{Message: "Select RG"}},
+	} {
+		result := createResourceGroupOptions(input, &writer)
+		require.NotNil(t, result)
+		require.NotNil(t, result.SelectorOptions)
+		assert.Same(t, &writer, result.SelectorOptions.Writer)
+	}
+}
+
+func TestNewMultiSelectOptionsUsesInjectedWriter(t *testing.T) {
+	t.Parallel()
+	var writer bytes.Buffer
+	options := newMultiSelectOptions(&azdext.MultiSelectOptions{
+		Choices: []*azdext.MultiSelectChoice{{Value: "a", Label: "A"}},
+	}, &writer)
+	assert.Same(t, &writer, options.Writer)
 }
 
 // --- promptLock tests ---
@@ -1928,7 +2043,7 @@ func TestAcquirePromptLock_CancelledContext(t *testing.T) {
 
 func TestPromptService_PromptAiModel_NilSubscription(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiModel(t.Context(), &azdext.PromptAiModelRequest{
 		AzureContext: nil,
 	})
@@ -1937,7 +2052,7 @@ func TestPromptService_PromptAiModel_NilSubscription(t *testing.T) {
 
 func TestPromptService_PromptAiDeployment_NilSubscription(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiDeployment(t.Context(), &azdext.PromptAiDeploymentRequest{
 		AzureContext: nil,
 	})
@@ -1946,7 +2061,7 @@ func TestPromptService_PromptAiDeployment_NilSubscription(t *testing.T) {
 
 func TestPromptService_PromptAiDeployment_QuotaRequiresOneLocation(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiDeployment(t.Context(), &azdext.PromptAiDeploymentRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
@@ -1961,7 +2076,7 @@ func TestPromptService_PromptAiDeployment_QuotaRequiresOneLocation(t *testing.T)
 
 func TestPromptService_PromptAiDeployment_QuotaWithMultipleLocations(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiDeployment(t.Context(), &azdext.PromptAiDeploymentRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
@@ -1976,7 +2091,7 @@ func TestPromptService_PromptAiDeployment_QuotaWithMultipleLocations(t *testing.
 
 func TestPromptService_PromptAiLocationWithQuota_NilSubscription(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiLocationWithQuota(t.Context(), &azdext.PromptAiLocationWithQuotaRequest{
 		AzureContext: nil,
 	})
@@ -1985,7 +2100,7 @@ func TestPromptService_PromptAiLocationWithQuota_NilSubscription(t *testing.T) {
 
 func TestPromptService_PromptAiModelLocationWithQuota_NilSubscription(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiModelLocationWithQuota(t.Context(), &azdext.PromptAiModelLocationWithQuotaRequest{
 		AzureContext: nil,
 	})
@@ -1994,7 +2109,7 @@ func TestPromptService_PromptAiModelLocationWithQuota_NilSubscription(t *testing
 
 func TestPromptService_PromptAiModelLocationWithQuota_EmptyModelName(t *testing.T) {
 	t.Parallel()
-	svc := NewPromptService(nil, nil, nil, nil)
+	svc := NewPromptService(nil, nil, nil, nil, io.Discard)
 	_, err := svc.PromptAiModelLocationWithQuota(t.Context(), &azdext.PromptAiModelLocationWithQuotaRequest{
 		AzureContext: &azdext.AzureContext{
 			Scope: &azdext.AzureScope{SubscriptionId: "sub-123"},
@@ -2051,7 +2166,7 @@ func (m *mockPromptService) PromptResourceGroupResource(
 }
 
 func newTestPromptService(prompter *mockPromptService, noPrompt bool) azdext.PromptServiceServer {
-	return NewPromptService(prompter, nil, nil, &internal.GlobalCommandOptions{NoPrompt: noPrompt})
+	return NewPromptService(prompter, nil, nil, &internal.GlobalCommandOptions{NoPrompt: noPrompt}, io.Discard)
 }
 
 func TestPromptService_Confirm_NilRequest(t *testing.T) {
@@ -2127,7 +2242,7 @@ func TestNewMultiSelectOptions(t *testing.T) {
 					{Value: "a", Label: "A"},
 				},
 				AllowEmptySelection: test.allowEmptySelection,
-			})
+			}, nil)
 
 			require.Equal(t, test.allowEmptySelection, options.AllowEmptySelection)
 		})

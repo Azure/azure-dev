@@ -62,3 +62,9 @@ func CreateDependenciesRetained(retry string) string {
 	return "Evaluation creation did not complete. Successfully resolved dependencies were kept; nothing was rolled back.\n" +
 		"After fixing the reported error, retry without republishing unchanged artifacts: " + retry + "\n"
 }
+
+// CreateRetryQuotingGuidance explains why a partial create retry is not copy-and-run.
+func CreateRetryQuotingGuidance() string {
+	return "Do not run the recovery command unchanged: replace each VALUE_NEEDS_QUOTING with its original " +
+		"argument, quoted literally for your shell, or repeat the original create command after fixing the error."
+}

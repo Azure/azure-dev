@@ -5,6 +5,7 @@ BeforeDiscovery {
     $metadata = @{
         'azure.ai.agents' = @('azureaiagent/internal/version')
         'azure.ai.connections' = @('azure.ai.connections/internal/version')
+        'azure.ai.content-understanding' = @('azure.ai.content-understanding/internal/cmd')
         'azure.ai.dataset' = @('azureaidataset/internal/version')
         'azure.ai.evaluations' = @('azureaieval/internal/version')
         'azure.ai.finetune' = @('azure.ai.finetune/internal/version')
@@ -13,6 +14,7 @@ BeforeDiscovery {
         'azure.ai.projects' = @('azure.ai.projects/internal/version')
         'azure.ai.rle' = @('azure.ai.rle/internal/cmd')
         'azure.ai.routines' = @('azure.ai.routines/internal/cmd')
+        'azure.ai.search' = @('azure.ai.search/internal/cmd')
         'azure.ai.skills' = @('azureaiskills/internal/version')
         'azure.ai.toolboxes' = @('azure.ai.toolboxes/internal/cmd', 'azure.ai.toolboxes/internal/version')
         'azure.ai.training' = @('azure.ai.training/internal/cmd')

@@ -238,7 +238,7 @@ RPC selects the stable path. Other capability failures stop before the root muta
 Without a matching typed acknowledgment, init retains the scaffold and reports
 manual inspection instead of an automatic retry. Inspect the retained eval and
 its root service reference; do not delete preexisting evaluations.
-The minimum supported host version is `>=1.33.0`.
+The minimum supported host version is `>=1.37.0`.
 Canonical beta descriptors are generated into a private registry so this extension
 continues to build against its released SDK pin without local dependency overrides.
 A matching completed-operation acknowledgment can cover rejection before a save,
@@ -274,7 +274,9 @@ init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique
 filename to add the new file, or the existing dataset's name or file path to
 reuse it. Equivalent paths to the same file are accepted, preserving references,
-version pins, and other authored metadata.
+version pins, and other authored metadata. Version-pinned local reuse also
+recognizes pins inherited through `$ref` entries and their authored overrides,
+without resolving unrelated declarations.
 When `--path` names a configuration file, dataset lookup uses that exact file,
 while artifact paths remain relative to its directory.
 The configuration destination must not be the selected local dataset itself,
@@ -424,7 +426,10 @@ Run metadata records that same resolved version.
 
 Registered versions cannot be sampled by this run API. A positive `maxSamples:`
 or `--max-samples` is refused rather than ignored or sent as anonymous inline
-rows. Remove the cap, or publish and select a smaller dataset.
+rows. Remove the cap, pass `--max-samples 0` to override a configured cap on an
+ordinary dataset eval, or publish and select a smaller dataset. The CLI does not
+publish temporary subset datasets automatically. A simulation declaration must
+not contain a positive `maxSamples:` cap, even when the flag is zero.
 
 For an ordinary dataset eval selected by name, an explicit `--max-samples 0`
 clears its configured cap. Trace/response sources and reruns selected by a bare
@@ -433,10 +438,28 @@ silently ignoring it. Omit the flag to repeat a previous run's source; use
 `source.maxTraces` to limit a declared trace source. Simulation declarations
 with a positive configured cap remain invalid even when the flag is zero.
 
-A local dataset file with no registered version runs inline and supports a cap,
-once a complete empty version listing (or a not-found response) and not-found
-first-version probes confirm that no version exists. Permissions, transient
-failures, and malformed listings fail the run instead of selecting local data.
+Genuinely unregistered local files still run inline and support a cap, but only
+after a typed not-found version-list response and not-found first-version probes
+confirm absence. A successful empty listing remains indeterminate when those
+probes find nothing: later registered versions may exist even if early versions
+were deleted. The run fails instead of selecting local data; retry after the
+registry catches up or declare a known dataset version. Permissions, transient
+failures, and malformed listings also fail the run without a local fallback.
+
+Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
+`--max-samples` flags; use `source.maxTraces` for trace limits or select
+`source.responseIds` explicitly. Reruns selected by eval ID also reject an
+explicit `--max-samples`, including zero, because they repeat the previous source.
+
+Reruns repeat the stored registered `file_id`. If the stored source contains inline
+rows attributed to a registered dataset, start the declared eval by name instead:
+replacing those possibly capped rows with a whole version would change what gets
+scored.
+
+The JSON handoff from `run start --no-wait -o json` retains the submitted dataset
+name and registered version even when the create response omits that metadata.
+Local unregistered runs do not invent a version, and anonymous reruns remain
+unattributed.
 
 Trace- and response-backed runs reject positive configured `maxSamples:` and explicitly supplied
 `--max-samples` flags; use `source.maxTraces` for trace limits or select
@@ -700,10 +723,11 @@ When the effective turn cap is too low, init names a valid `--max-turns` value
 to use on a new invocation, or asks you to lower the row's desired turns.
 Correcting the dataset never silently changes the selected cap.
 Local files derive their dataset name from the filename without its extension.
-For a new declaration, that name must use only letters, digits, dashes, and
-underscores, up to 255 bytes. Reusing an existing authored or registered
-dataset keeps the broader lookup-name rules: the name must be non-empty, cannot
-be `.` or `..`, and cannot contain path separators or control characters.
+For a new declaration or an unpinned local declaration that init may publish,
+that name must use only letters, digits, dashes, and underscores, up to 255
+bytes. Reusing a version-pinned authored dataset or a registered remote dataset
+keeps the broader lookup-name rules: the name must be non-empty, cannot be `.`
+or `..`, and cannot contain path separators or control characters.
 If that name is already declared for a different file (or has no local file),
 init refuses the collision rather than replacing the declaration or ignoring
 the supplied path. Interactive init asks for another dataset; use a unique
@@ -934,6 +958,9 @@ that the evaluator is absent. Missing or malformed list data and failed
 continuation pages remain errors. Unrelated invalid evals do not block this targeted
 command; `azd up` validates the entire evaluation service before publishing any
 of its dependencies. Validation does not write private reconciliation state.
+Creating or resolving a declared eval also stops if the project-root lookup fails,
+rather than using unqualified identity keys that may belong to another configuration.
+Standalone invocations with no project remain supported.
 The target-input check for a local dataset invoking an agent or model requires
 `query` in at least one row, using the union of row fields. This is separate from
 required evaluator inputs and explicit item bindings, whose columns must occur
@@ -956,6 +983,13 @@ For a partial `create -o json` failure, the single output document includes
 flags, the error, and a `recovery_command`. When the error supplies remediation,
 `error.suggestion` preserves it alongside `error.message`. The command still exits nonzero.
 URLs in both `error.message` and `error.suggestion` omit user information, query strings, and fragments.
+Recovery commands normalize native path separators and quote ordinary spaces.
+Arguments containing shell expansion syntax or embedded quotes (including
+PowerShell smart quotes) remain `VALUE_NEEDS_QUOTING` rather than being inlined
+unsafely. In that case, human
+output and the JSON `retry_guidance` field explain that the command is not
+copy-and-run: substitute the original arguments using literal quoting for your
+shell, or repeat the original create command after fixing the error.
 
 Datasets are fingerprinted locally, because the dataset API exposes no content
 hash and comparing against the service would mean downloading the blob on every
@@ -1274,7 +1308,10 @@ to five followed by a count of the rest. `job show` lists them the same way. The
 details appended in parentheses, redacted and limited to 300 characters each.
 When rows errored, the `run start --wait` summary also lists up to three
 distinct evaluator errors, most common first, with the number of rows each
-affected; `run show` makes no extra requests, so use the follow-up commands to
+affected. If a failed run has no run-level reason, its final human error line
+reuses up to three of those redacted, bounded row reasons, with a count of any
+remaining groups. Completed runs retain their existing exit behavior.
+`run show` makes no extra requests, so use the follow-up commands to
 list errored rows. `--output json` keeps its existing document
 shape and exit behavior without appending human guidance, except that an
 `error` sent in an unconventional shape (a bare string, an array, or a `message`
@@ -1298,6 +1335,11 @@ assignment by whitespace is redacted with that malformed URL candidate, rather
 than copied into the remaining diagnostic prose. This projection does not mutate the service response
 or rewrite dataset/output content and unknown fields. Those other fields can
 still contain sensitive source data; keep exported files private.
+
+`job show`, `job list` (including `--all`), and `job cancel` also redact URL
+credentials, query strings, and fragments from `error.code` and `error.message`
+in JSON, including messages decoded from bare-string errors. They sanitize an
+output copy without changing the service record, artifact result, or reattachment inputs.
 
 `run output show <item>` uses the lookup ID from the listing in its human
 header. The service may return a result-version URI as the detail object's
@@ -1516,6 +1558,8 @@ prints that path on stderr.
 
 ## Telemetry
 
+Requires azd 1.37.0 or later and uses the stable v1 telemetry API.
+
 When installed from the official registry, the extension reports the
 `init.completed` usage event once `azd ai eval init` has written a scaffold and
 wired the eval service into `azure.yaml`. Its `ext.source` attribute is exactly
@@ -1546,4 +1590,4 @@ dependency requires that registry entry to resolve. Local installation uses
 Release execution requires a registered Azure DevOps pipeline under
 `azure-dev/extensions` with access to the shared release infrastructure;
 a YAML file alone does not register a pipeline.
-The `ext-azure.ai.evaluations` issue label routes extension issues.
+The `ext-evals` issue label routes extension issues.

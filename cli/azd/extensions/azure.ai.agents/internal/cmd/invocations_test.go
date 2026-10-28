@@ -150,7 +150,7 @@ func TestResponsesHTTP(t *testing.T) {
 			defer server.Close()
 			config := newInvokeUserConfigServer()
 			client := newInvokeTestAzdClient(t, config)
-			store := newUserConfigResponseStateStore(client)
+			store := newResponseStateStore(client)
 			require.NoError(t, store.Save(t.Context(), "agent-key", savedResponse{ResponseID: "resp_current"}))
 			action := &InvokeAction{
 				flags: &invokeFlags{
@@ -205,8 +205,10 @@ func TestResolveInvocationCommandSelection(t *testing.T) {
 	t.Setenv("AZD_SERVER", listener.Addr().String())
 	const endpoint = "https://example.services.ai.azure.com/api/projects/project/agents/agent/endpoint/protocols/"
 	key := buildAgentKey("https://example.services.ai.azure.com/api/projects/project", "agent", "", false)
-	config.setJSON(t, responsesConfigPath, map[string]savedResponse{key: {ResponseID: "resp_current"}})
-	config.setJSON(t, invocationsConfigPath, map[string]savedInvocation{key: {InvocationID: "inv_current"}})
+	saveAgentStateForTest(t, nil, key, agentStateRecord{
+		Response:   &savedResponse{ResponseID: "resp_current"},
+		Invocation: &savedInvocation{InvocationID: "inv_current"},
+	})
 	for _, tt := range []struct{ name, path, protocol, explicitID, want string }{
 		{name: "Responses implicit", path: "openai/responses", protocol: "responses", want: "resp_current"},
 		{name: "Responses explicit", path: "openai/responses", protocol: "responses",
@@ -223,12 +225,12 @@ func TestResolveInvocationCommandSelection(t *testing.T) {
 			defer rc.azdClient.Close()
 			assert.Equal(t, tt.want, id)
 			assert.Equal(t, tt.protocol, action.flags.protocol)
-			var invocations map[string]savedInvocation
-			config.getJSON(t, invocationsConfigPath, &invocations)
-			assert.Equal(t, "inv_current", invocations[key].InvocationID)
-			var saved map[string]savedResponse
-			config.getJSON(t, responsesConfigPath, &saved)
-			assert.Equal(t, "resp_current", saved[key].ResponseID)
+			record := loadAgentStateForTest(t, rc.azdClient, key)
+			require.NotNil(t, record)
+			require.NotNil(t, record.Invocation)
+			require.NotNil(t, record.Response)
+			assert.Equal(t, "inv_current", record.Invocation.InvocationID)
+			assert.Equal(t, "resp_current", record.Response.ResponseID)
 		})
 	}
 }

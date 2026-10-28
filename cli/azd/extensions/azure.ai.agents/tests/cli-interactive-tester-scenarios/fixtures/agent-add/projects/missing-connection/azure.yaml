@@ -1,0 +1,4 @@
+name: agent-add-missing-connection
+services:
+  ai-project:
+    host: azure.ai.project

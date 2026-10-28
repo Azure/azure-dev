@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_api"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -54,6 +55,9 @@ protocol. Explicit IDs do not change the saved selection.`,
 	cmd.AddCommand(newInvocationsShowCommand(extCtx))
 	cmd.AddCommand(newInvocationsFollowCommand(extCtx))
 	cmd.AddCommand(newInvocationsCancelCommand(extCtx))
+	// The group is hidden from help while long-running invocations are off.
+	// Its subcommands keep running so existing work can be inspected.
+	discoverCommand(cmd, featureflags.LongRunning)
 	return cmd
 }
 
@@ -216,7 +220,7 @@ func resolveCurrentInvocationID(
 	var id string
 	switch protocol {
 	case agent_api.AgentProtocolResponses:
-		record, err := newUserConfigResponseStateStore(rc.azdClient).Get(ctx, rc.agentKey)
+		record, err := newResponseStateStore(rc.azdClient).Get(ctx, rc.agentKey)
 		if err != nil {
 			return "", classifyResponseStateReadError(err)
 		}

@@ -2,7 +2,7 @@ parameters:
   CreateGitHubRelease: true
   PublishUploadLocations:
   UploadInstaller: false
-  StorageContainerName: '`$web'
+  StorageContainerName: '$web'
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
@@ -126,24 +126,29 @@ steps:
         Copy-Item installer/uninstall-azd.ps1 release/
       displayName: Copy install scripts to release (PR only)
 
-  - task: AzurePowerShell@5
+  - task: AzureCLI@2
     displayName: Upload release to storage account
     inputs:
       azureSubscription: 'Azure SDK Artifacts'
-      azurePowerShellVersion: LatestVersion
-      pwsh: true
-      ScriptType: InlineScript
-      Inline: |
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
         $uploadLocations = "${{ parameters.PublishUploadLocations }}" -split ';'
+        $containerName = '${{ parameters.StorageContainerName }}'
 
         Get-ChildItem release/
         foreach ($folder in $uploadLocations) {
-            Write-Host "Upload to ${{ parameters.StorageContainerName }}/azd/standalone/$folder"
-            azcopy copy "release/*" "$(publish-storage-location)/${{ parameters.StorageContainerName }}/azd/standalone/$folder" --overwrite=true
-            if ($LASTEXITCODE) {
-              Write-Error "Upload failed"
-              exit 1
-            }
+          $destinationPath = "azd/standalone/$folder"
+          Write-Host "Upload to $containerName/$destinationPath"
+          az storage blob upload-batch `
+            --account-name "$(publish-storage-account-name)" `
+            --auth-mode login `
+            --source release `
+            --destination $containerName `
+            --destination-path $destinationPath `
+            --overwrite true
+          if ($LASTEXITCODE) {
+            Write-Error "Upload failed"
+            exit 1
+          }
         }
-    env:
-      AZCOPY_AUTO_LOGIN_TYPE: 'PSCRED'

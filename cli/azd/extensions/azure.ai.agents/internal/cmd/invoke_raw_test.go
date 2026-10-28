@@ -184,24 +184,9 @@ func TestCaptureResponseSession_SilentInRawMode(t *testing.T) {
 		t.Errorf("expected silent stdout in raw mode, got: %q", stdout)
 	}
 
-	// Session must still have been persisted to the sessions store. The whole
-	// "sessions" map is JSON-encoded at the "extensions.ai-agents.sessions"
-	// path, so we check that the session ID appears in any value at any
-	// recorded path.
-	configSrv.mu.Lock()
-	defer configSrv.mu.Unlock()
-	persisted := false
-	for path, val := range configSrv.values {
-		if strings.Contains(path, ".sessions") && bytes.Contains(val, []byte(newSid)) {
-			persisted = true
-			break
-		}
-	}
-	if !persisted {
-		t.Errorf(
-			"expected session %q to be persisted under *.sessions path, configSrv.values = %v",
-			newSid, configSrv.values,
-		)
+	record := loadAgentStateForTest(t, azdClient, agentKey)
+	if record == nil || record.SessionID != newSid {
+		t.Errorf("expected session %q to be persisted in extension state", newSid)
 	}
 }
 

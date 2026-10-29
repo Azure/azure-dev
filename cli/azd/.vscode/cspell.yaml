@@ -629,6 +629,19 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
+  - filename: "extensions/azure.ai.projects/internal/onboarding/{network,resource_rules,resource_sdk,types}.go"
+    words:
+      - armcompute
+      - armnetwork
+      - Kata
+      - katagen
+      - kubelet
+      - kubeletidentity
+      - OSSKU
+  - filename: "extensions/azure.ai.projects/{README.md,internal/provisioning/aks_hosting.go}"
+    words:
+      - Kata
+      - kubelet
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

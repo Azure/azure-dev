@@ -174,18 +174,31 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	require.NoError(t, err)
 	var template any
 	require.NoError(t, json.Unmarshal(raw, &template))
-	var registries, identities, storages, connections, roleTemplates int
+	var registries, identities, storages, connections, roleTemplates, clusterGrantModules int
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
 			switch value["type"] {
+			case "Microsoft.Resources/deployments":
+				loop, _ := value["copy"].(map[string]any)
+				if loop["name"] == "clusterGrants" {
+					clusterGrantModules++
+					assert.Equal(t, "[format('byo-cluster-{0}-{1}', "+
+						"uniqueString(resourceGroup().id, parameters('hostingIdentityName')), "+
+						"createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', "+
+						"'85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]", value["name"])
+				}
 			case "Microsoft.ContainerRegistry/registries":
 				registries++
+				assert.Equal(t, "2023-07-01", value["apiVersion"])
 				assert.Equal(t, "[parameters('name')]", value["name"])
 				sku, ok := value["sku"].(map[string]any)
 				require.True(t, ok)
 				assert.Equal(t, "Premium", sku["name"])
+				properties, ok := value["properties"].(map[string]any)
+				require.True(t, ok)
+				assert.NotContains(t, properties, "roleAssignmentMode")
 			case "Microsoft.ManagedIdentity/userAssignedIdentities":
 				identities++
 			case "Microsoft.Storage/storageAccounts":
@@ -195,6 +208,7 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 				assert.Equal(t, false, properties["allowSharedKeyAccess"])
 				assert.Equal(t, false, properties["allowBlobPublicAccess"])
 				assert.Equal(t, true, properties["supportsHttpsTrafficOnly"])
+				assert.Equal(t, "TLS1_2", properties["minimumTlsVersion"])
 			case "Microsoft.CognitiveServices/accounts/projects/connections":
 				connections++
 				properties, ok := value["properties"].(map[string]any)
@@ -219,10 +233,11 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	assert.Equal(t, 1, storages)
 	assert.Equal(t, 1, connections)
 	assert.Equal(t, 5, roleTemplates, "the cluster role template is instantiated for both AKS roles")
+	assert.Equal(t, 1, clusterGrantModules)
 	text := string(raw)
 	for _, required := range []string{
 		"agentHostingConfigurations", "ManagedCluster", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
-		"LegacyRegistryPermissions", "kubeletObjectId", "ContainerRegistry",
+		"kubeletObjectId", "ContainerRegistry",
 		"allowSharedKeyAccess", "allowBlobPublicAccess", "federatedIdentityRoleDefinitionId",
 		"acdd72a7-3385-48ef-bd42-f606fba81ae7", "85cb6faf-e071-4c9b-8136-154b5a04f717",
 		"ba92f5b4-2d11-453d-a403-e96b0029c9fe", "7f951dda-4ed3-4680-a7ca-43fe172d538d",

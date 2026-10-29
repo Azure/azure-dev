@@ -1259,7 +1259,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 			return nil, err
 		}
 	}
-
 	name := p.deploymentName()
 	progress(fmt.Sprintf("Starting ARM deployment %q...", name))
 
@@ -1278,6 +1277,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
 	}
 
+	outputs := deploymentOutputs(resp.Properties)
 	progress("Foundry deployment complete")
 	if trackSupportingResourceGroup {
 		p.foundryRGOwnerID = resolveLayerResourceGroupOwnership(
@@ -1292,7 +1292,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 	return &azdext.ProvisioningDeployResult{
 		Deployment: &azdext.ProvisioningDeployment{
 			Parameters: armInputsToProto(src.parameters),
-			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
+			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(outputs))),
 		},
 	}, nil
 }

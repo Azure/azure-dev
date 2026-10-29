@@ -327,6 +327,7 @@ func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.
 		assert.Zero(t, prompt.subscriptionN)
 		assert.Zero(t, prompt.locationN)
 		assert.Nil(t, p.credential)
+		//nolint:gosec // Test-owned azure.yaml under t.TempDir.
 		raw, err := os.ReadFile(path)
 		require.NoError(t, err)
 		assert.Equal(t, config, string(raw))

@@ -272,6 +272,7 @@ func TestResourceCheckerReadOnly(t *testing.T) {
 }
 
 func TestDiagnosticsDoNotDiscloseURLCredentials(t *testing.T) {
+	// #nosec G101 -- synthetic credentials used only to verify diagnostic redaction.
 	report := Report{{ID: "N02", Status: Fail, Scope: "https://user:password@host.test/path?sig=sas-secret#private",
 		Observed: "read https://user:password@host.test/path?sig=sas-secret#private failed"}}
 	var output bytes.Buffer

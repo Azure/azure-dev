@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "1213631071598182819"
+      "templateHash": "18338225953974513349"
     }
   },
   "definitions": {
@@ -330,7 +330,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11013888326270098768"
+              "templateHash": "15014802732520055281"
             }
           },
           "definitions": {
@@ -671,7 +671,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "7229290977011601062"
+                      "templateHash": "10935053073665570207"
                     }
                   },
                   "parameters": {
@@ -769,7 +769,7 @@
                       },
                       "type": "Microsoft.Resources/deployments",
                       "apiVersion": "2025-04-01",
-                      "name": "[format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
+                      "name": "[format('byo-cluster-{0}-{1}', uniqueString(resourceGroup().id, parameters('hostingIdentityName')), createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
                       "subscriptionId": "[variables('clusterParts')[2]]",
                       "resourceGroup": "[variables('clusterParts')[4]]",
                       "properties": {
@@ -1314,7 +1314,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "294987716441140155"
+                      "templateHash": "4757893513251572043"
                     }
                   },
                   "parameters": {
@@ -1386,7 +1386,7 @@
                       "name": "[format('{0}/{1}/{2}', parameters('foundryAccountName'), parameters('foundryProjectName'), format('{0}-conn', parameters('name')))]",
                       "properties": {
                         "category": "ContainerRegistry",
-                        "target": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2025-03-01-preview').loginServer]",
+                        "target": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]",
                         "authType": "ManagedIdentity",
                         "credentials": {
                           "clientId": "[parameters('foundryProjectPrincipalId')]",
@@ -1404,7 +1404,7 @@
                     },
                     {
                       "type": "Microsoft.ContainerRegistry/registries",
-                      "apiVersion": "2025-03-01-preview",
+                      "apiVersion": "2023-07-01",
                       "name": "[parameters('name')]",
                       "location": "[parameters('location')]",
                       "tags": "[parameters('tags')]",
@@ -1414,7 +1414,11 @@
                       "identity": {
                         "type": "SystemAssigned"
                       },
-                      "properties": "[shallowMerge(createArray(createObject('adminUserEnabled', false(), 'publicNetworkAccess', if(and(parameters('enableNetworkIsolation'), not(parameters('byoAks'))), 'Disabled', 'Enabled')), if(parameters('byoAks'), createObject('roleAssignmentMode', 'LegacyRegistryPermissions'), createObject()), createObject('zoneRedundancy', 'Disabled')))]"
+                      "properties": {
+                        "adminUserEnabled": false,
+                        "publicNetworkAccess": "[if(and(parameters('enableNetworkIsolation'), not(parameters('byoAks'))), 'Disabled', 'Enabled')]",
+                        "zoneRedundancy": "Disabled"
+                      }
                     },
                     {
                       "type": "Microsoft.Authorization/roleAssignments",
@@ -1449,7 +1453,7 @@
                   "outputs": {
                     "loginServer": {
                       "type": "string",
-                      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2025-03-01-preview').loginServer]"
+                      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), '2023-07-01').loginServer]"
                     },
                     "resourceId": {
                       "type": "string",

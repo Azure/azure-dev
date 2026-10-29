@@ -155,7 +155,7 @@ func (c *sdkResourceChecker) networkChecks(
 			resourceValue(subnet.Properties.ProvisioningState), "ready AKS node subnet"))
 		prefixes, err := subnetPrefixes(subnet)
 		if err != nil {
-			return append(report, readFailure("N02", id, "parseable AKS node subnet CIDRs", err))
+			return append(report, readFailure("N02", id, "valid AKS node subnet CIDRs", err))
 		}
 		nodes = append(nodes, prefixes...)
 	}

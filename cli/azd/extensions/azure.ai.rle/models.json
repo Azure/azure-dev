@@ -15,5 +15,14 @@
       "qwen3_8_medium_reasoning",
       "qwen3_8_disable_thinking"
     ]
+  },
+  {
+    "model": "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+    "renderers": [
+      "nemotron3_ultra",
+      "nemotron3_ultra_medium_thinking",
+      "nemotron3_ultra_disable_thinking",
+      "nemotron3_ultra_preserve_thinking"
+    ]
   }
 ]

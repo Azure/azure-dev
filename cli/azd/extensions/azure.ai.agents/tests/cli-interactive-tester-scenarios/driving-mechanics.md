@@ -75,6 +75,12 @@ For shared-agent `2.14`, arrange its external State Store seed after successful
 with the seed tooling before shared teardown. It is still opt-in; missing seed
 is a preparation failure, not a passing skip.
 
+For shared-agent `2.17b`, arrange its restricted-identity RBAC warning seed after
+successful `2.00` setup and verify readiness before dispatch. Run it before
+`2.18` deletes the shared agent. Missing seed is blocked coverage, not a passing
+skip. Do not change cloud permissions to manufacture a warning. Reuse `2.00` /
+`2.99` ownership and arrange teardown under the original authorized setup identity.
+
 For `2.19-invoke-session-bound-metadata`, verify the run-scoped project directory,
 `azure.yaml`, active `.azure` environment, and `invocation-seed.json`. The seed
 must identify the deployed Invocations agent, successful readiness, current-run
@@ -233,8 +239,10 @@ Concurrency primitive: **parallel background sub-agents, one scenario phase per 
   cleanup identity in `.reports/<run-id>/CLEANUP-STATUS.md`.
 - **Tier 2** (`serial-only`, ⚠️ Azure cost) uses an independent serial lane that may overlap the
   rolling pool after recipe validation. Run `2.00-setup-deploy-shared-agent` **first**, then
-  `2.01-`…`2.18-` **serially** (they share one deployed agent and mutate shared session/file/
-  endpoint state), `2.18-delete` before teardown, then `2.99-teardown-down` **last**. Never run
+  `2.01-`…`2.18-` **serially in filename order** (they share one deployed agent and mutate shared session/file/
+  endpoint state), then `2.99-teardown-down` **last**. Opted-in, seed-ready shared-agent
+  `manual-seed` scenarios in that range, including `2.14` and `2.17b`, run in this
+  shared lane before `2.18-delete`. Never run
   more than one Tier 2 worker. Shared setup must PASS before shared functional
   scenarios run; otherwise skip them and proceed to cleanup/recovery.
   Each functional completion makes only its successor

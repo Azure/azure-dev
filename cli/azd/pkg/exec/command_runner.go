@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 )
 
 // Settings to modify the way CmdTree is executed
@@ -23,7 +22,11 @@ type CmdTreeOptions struct {
 	Interactive bool
 }
 
-// CommandRunner exposes the contract for executing console/shell commands for the specified runArgs
+// CommandRunner executes console and shell commands.
+//
+// A canceled context prevents process startup. Cancellation after startup
+// terminates the root and owned descendants, then waits for process and I/O
+// shutdown. Cancellation errors remain discoverable with errors.Is.
 type CommandRunner interface {
 	Run(ctx context.Context, args RunArgs) (RunResult, error)
 	RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error)
@@ -152,7 +155,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		return RunResult{}, err
 	}
 
-	err = waitForProcess(ctx, cmd.Wait, cmd.Kill)
+	err = cmd.Wait()
 
 	var result RunResult
 
@@ -174,12 +177,14 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		outputAvailable := !args.Interactive
-		err = NewExitError(
+		err = newExitError(
 			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			outputAvailable)
+			outputAvailable,
+			err,
+		)
 	}
 
 	return result, err
@@ -223,9 +228,7 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		logMsg.err = err
 		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
 	}
-
-	err = waitForProcess(ctx, process.Wait, process.Kill)
-
+	err = process.Wait()
 	result := NewRunResult(
 		process.ProcessState.ExitCode(),
 		stdOutBuf.String(),
@@ -234,36 +237,17 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 	logMsg.result = &result
 
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-		err = NewExitError(
+		err = newExitError(
 			*exitErr,
 			args.Cmd,
 			result.Stdout,
 			result.Stderr,
-			true)
+			true,
+			err,
+		)
 	}
 
 	return result, err
-}
-
-func waitForProcess(ctx context.Context, wait func() error, kill func()) error {
-	stopWatcher := make(chan struct{})
-	watcherDone := make(chan struct{})
-	killOnce := sync.OnceFunc(kill)
-
-	go func() {
-		defer close(watcherDone)
-		select {
-		case <-ctx.Done():
-			killOnce()
-		case <-stopWatcher:
-		}
-	}()
-
-	err := wait()
-	close(stopWatcher)
-	killOnce()
-	<-watcherDone
-	return err
 }
 
 // ToolInPath checks to see if a program can be found on the PATH, as exec.LookPath
@@ -349,13 +333,11 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 	if !useShell {
 		if cmd == "" {
 			return CmdTree{}, errors.New("command must be provided if shell is not used")
-		} else {
-			return CmdTree{
-				CmdTreeOptions: options,
-				//nolint:gosec // G204: cmd/args are caller-controlled
-				Cmd: exec.CommandContext(ctx, cmd, args...),
-			}, nil
 		}
+
+		//nolint:gosec // G204: cmd/args are caller-controlled
+		command := exec.CommandContext(ctx, cmd, args...)
+		return newManagedCmdTree(ctx, command, options), nil
 	}
 
 	var shellName string
@@ -395,13 +377,13 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 		}
 	}
 
-	var allArgs []string
-	allArgs = append(allArgs, shellCommandPrefix)
-	allArgs = append(allArgs, args...)
+	allArgs := append([]string{shellCommandPrefix}, args...)
 
 	// #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive
-	return CmdTree{
-		CmdTreeOptions: options,
-		Cmd:            exec.Command(shellName, allArgs...), //nolint:gosec // G702: shellName is a known system shell path
-	}, nil
+	command := exec.CommandContext( //nolint:gosec // G702: shellName is a known system shell path
+		ctx,
+		shellName,
+		allArgs...,
+	)
+	return newManagedCmdTree(ctx, command, options), nil
 }

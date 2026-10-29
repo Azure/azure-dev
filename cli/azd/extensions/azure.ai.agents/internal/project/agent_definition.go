@@ -139,9 +139,11 @@ type AgentDefinitionInline struct {
 	Container            *ContainerSettings                `json:"container,omitempty"`
 	Policies             []agent_yaml.Policy               `json:"policies,omitempty"`
 	SessionConfiguration *agent_yaml.SessionConfiguration  `json:"sessionConfiguration,omitempty"`
+	EnableMemorySnapshot *bool                             `json:"enableMemorySnapshot,omitempty"`
 
 	// Voice-agent fields (kind: prompt-voice). All omitempty so container/
 	// workflow entries are byte-for-byte unchanged.
+	DefinitionOverlay  map[string]any                      `json:"definitionOverlay,omitempty"`
 	ModelType          agent_yaml.VoiceModelType           `json:"modelType,omitempty"`
 	Model              *agent_yaml.Model                   `json:"model,omitempty"`
 	TargetAgent        *agent_yaml.VoiceTargetAgent        `json:"targetAgent,omitempty"`
@@ -168,6 +170,7 @@ type AgentDefinitionInline struct {
 func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInline {
 	return AgentDefinitionInline{
 		AgentDefinition:    va.AgentDefinition,
+		DefinitionOverlay:  va.DefinitionOverlay,
 		ModelType:          va.ModelType,
 		Model:              va.Model,
 		TargetAgent:        va.TargetAgent,
@@ -194,6 +197,7 @@ func voiceAgentDefinitionToInline(va agent_yaml.VoiceAgent) AgentDefinitionInlin
 func (d AgentDefinitionInline) toVoiceAgent() agent_yaml.VoiceAgent {
 	return agent_yaml.VoiceAgent{
 		AgentDefinition:    d.AgentDefinition,
+		DefinitionOverlay:  d.DefinitionOverlay,
 		ModelType:          d.ModelType,
 		Model:              d.Model,
 		TargetAgent:        d.TargetAgent,
@@ -231,6 +235,7 @@ func agentDefinitionToInline(ca agent_yaml.ContainerAgent) (AgentDefinitionInlin
 		Policies:             ca.Policies,
 		RegistryConnectionID: ca.RegistryConnectionID,
 		SessionConfiguration: ca.SessionConfiguration,
+		EnableMemorySnapshot: ca.EnableMemorySnapshot,
 	}
 
 	var container *ContainerSettings
@@ -275,6 +280,7 @@ func (d AgentDefinitionInline) toContainerAgent(
 		CodeConfiguration:    d.CodeConfiguration,
 		Policies:             d.Policies,
 		SessionConfiguration: d.SessionConfiguration,
+		EnableMemorySnapshot: d.EnableMemorySnapshot,
 	}
 
 	if container != nil && container.Resources != nil {
@@ -517,7 +523,7 @@ func AgentDefinitionUsesFileRef(
 	refOnly := &structpb.Struct{Fields: map[string]*structpb.Value{
 		"$ref": props.GetFields()["$ref"],
 	}}
-	resolved, err := resolveServiceProps(
+	resolved, err := resolveRawServiceProps(
 		refOnly,
 		svc.GetName(),
 		projectRoot,
@@ -724,6 +730,21 @@ func resolveServiceProps(
 	serviceName string,
 	projectRoot string,
 ) (*structpb.Struct, error) {
+	resolved, err := resolveRawServiceProps(props, serviceName, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMemorySnapshotSetting(resolved); err != nil {
+		return nil, err
+	}
+	return resolved, nil
+}
+
+func resolveRawServiceProps(
+	props *structpb.Struct,
+	serviceName string,
+	projectRoot string,
+) (*structpb.Struct, error) {
 	if err := validateRootRefCoreFields(props, projectRoot); err != nil {
 		return nil, fmt.Errorf(
 			"validating service %q config: %w",
@@ -896,6 +917,26 @@ func SetAgentContainerSettings(
 	return nil
 }
 
+func validateMemorySnapshotSetting(props *structpb.Struct) error {
+	if setting, exists := props.GetFields()["enableMemorySnapshot"]; exists {
+		if structKind(props) != string(agent_yaml.AgentKindHosted) {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot is only supported on hosted agents",
+				"remove enableMemorySnapshot or configure it on a hosted agent service",
+			)
+		}
+		if _, isBoolean := setting.GetKind().(*structpb.Value_BoolValue); !isBoolean {
+			return exterrors.Validation(
+				exterrors.CodeInvalidAgentManifest,
+				"enableMemorySnapshot must be a boolean",
+				"set enableMemorySnapshot to true or false, or omit it to keep memory snapshots disabled",
+			)
+		}
+	}
+	return nil
+}
+
 // agentDefinitionFromStruct builds the ContainerAgent from an inline/config
 // struct that carries the agent definition as service-level properties. coreImage
 // is the value of the service's `image` field, which is carried on the core
@@ -905,6 +946,12 @@ func agentDefinitionFromStruct(
 	coreImage string,
 	environment map[string]string,
 ) (agent_yaml.ContainerAgent, bool, error) {
+	if err := validateMemorySnapshotSetting(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
+	}
+	if err := validateDefinitionOverlayKind(s); err != nil {
+		return agent_yaml.ContainerAgent{}, false, err
+	}
 	// The kind gate has to come before the decode, not after it. Every agent
 	// kind lands in the same property bag but they do not agree on types: a
 	// prompt agent's `model` is a deployment name, while the hosted and voice
@@ -927,6 +974,7 @@ func agentDefinitionFromStruct(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
+	copySnakeDefinitionOverlay(s, &inline)
 
 	if inline.Kind != agent_yaml.AgentKindHosted {
 		definition := any(s.AsMap())
@@ -1063,6 +1111,47 @@ func validateVoiceInlineAgent(inline AgentDefinitionInline, s *structpb.Struct) 
 		return err
 	}
 	return nil
+}
+
+func validateDefinitionOverlayKind(s *structpb.Struct) error {
+	fields := s.GetFields()
+	camel, hasCamel := fields["definitionOverlay"]
+	snake, hasSnake := fields["definition_overlay"]
+	if !hasCamel && !hasSnake {
+		return nil
+	}
+	if !agent_yaml.IsVoiceAgentKind(agent_yaml.AgentKind(structKind(s))) {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay is only supported on voice agents",
+			"remove definitionOverlay or change the service to kind: voice",
+		)
+	}
+	if hasCamel && hasSnake {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"cannot specify both definitionOverlay and definition_overlay",
+			"keep only one definition overlay spelling",
+		)
+	}
+	overlay := camel
+	if hasSnake {
+		overlay = snake
+	}
+	if overlay == nil || overlay.GetStructValue() == nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			"definitionOverlay must be an object and cannot be null",
+			"set definitionOverlay to an object or remove it",
+		)
+	}
+	return nil
+}
+
+func copySnakeDefinitionOverlay(s *structpb.Struct, inline *AgentDefinitionInline) {
+	if overlay := s.GetFields()["definition_overlay"]; overlay != nil {
+		inline.DefinitionOverlay = overlay.GetStructValue().AsMap()
+	}
 }
 
 func validateUnsupportedVoiceFields(s *structpb.Struct) error {
@@ -1274,6 +1363,9 @@ func VoiceAgentFromResolvedService(
 	if !structHasKind(resolved) {
 		return agent_yaml.VoiceAgent{}, false, nil
 	}
+	if err := validateDefinitionOverlayKind(resolved); err != nil {
+		return agent_yaml.VoiceAgent{}, false, err
+	}
 	kind := agent_yaml.AgentKind(resolved.GetFields()["kind"].GetStringValue())
 	if !agent_yaml.IsVoiceAgentKind(kind) {
 		return agent_yaml.VoiceAgent{}, false, nil
@@ -1290,6 +1382,7 @@ func VoiceAgentFromResolvedService(
 			"re-run `azd ai agent init` to regenerate the agent service entry",
 		)
 	}
+	copySnakeDefinitionOverlay(resolved, &inline)
 	if err := validateVoiceInlineAgent(inline, resolved); err != nil {
 		return agent_yaml.VoiceAgent{}, false, err
 	}

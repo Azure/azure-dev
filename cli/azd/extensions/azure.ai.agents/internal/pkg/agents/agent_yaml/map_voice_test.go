@@ -5,6 +5,7 @@ package agent_yaml
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,6 +216,148 @@ func TestCreateVoiceAgentAPIRequest_Defaults(t *testing.T) {
 	// Store defaults to nil (service defaults to false).
 	if def.Store != nil {
 		t.Errorf("Store = %v, want nil", def.Store)
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlay(t *testing.T) {
+	t.Parallel()
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+		Model:           &Model{Id: "gpt-realtime"},
+		DefinitionOverlay: map[string]any{
+			"audio":     map[string]any{"input": map[string]any{"new_setting": true}},
+			"new_array": []any{"one", map[string]any{"two": 2}},
+		},
+	}
+	req, err := CreateVoiceAgentAPIRequest(agent)
+	require.NoError(t, err)
+	definition, ok := req.Definition.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, definition["audio"].(map[string]any)["input"].(map[string]any)["new_setting"])
+	require.Equal(t, agent.DefinitionOverlay["new_array"], definition["new_array"])
+	definition["new_array"].([]any)[1].(map[string]any)["two"] = 3
+	require.Equal(t, 2, agent.DefinitionOverlay["new_array"].([]any)[1].(map[string]any)["two"])
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayModes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		agent VoiceAgent
+		build func(VoiceAgent) (*agent_api.CreateAgentRequest, error)
+	}{
+		{
+			name: "managed",
+			agent: VoiceAgent{AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model: &Model{Id: "gpt-realtime"}},
+			build: CreateVoiceAgentAPIRequest,
+		},
+		{
+			name: "byom",
+			agent: VoiceAgent{AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				ModelType: VoiceModelTypeSelfDeployed, Model: &Model{Id: "deployment"}},
+			build: CreateVoiceAgentAPIRequest,
+		},
+		{
+			name: "hosted",
+			agent: VoiceAgent{AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				ConversationEngine: &VoiceConversationEngine{Type: "hosted_agent", Name: "target"}},
+			build: func(agent VoiceAgent) (*agent_api.CreateAgentRequest, error) {
+				return CreateHostedVoiceAgentAPIRequest(agent,
+					agent_api.VoiceTargetAgentReference{Name: "target", Version: "1"})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.agent.DefinitionOverlay = map[string]any{"future": true}
+			req, err := tt.build(tt.agent)
+			require.NoError(t, err)
+			require.Equal(t, true, req.Definition.(map[string]any)["future"])
+		})
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_EmptyDefinitionOverlayPreservesTypedDefinition(t *testing.T) {
+	t.Parallel()
+	var baseline []byte
+	for _, overlay := range []map[string]any{nil, {}} {
+		req, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+			AgentDefinition:   AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+			Model:             &Model{Id: "gpt-realtime"},
+			DefinitionOverlay: overlay,
+		})
+		require.NoError(t, err)
+		require.IsType(t, agent_api.VoiceAgentDefinition{}, req.Definition)
+		encoded, err := json.Marshal(req.Definition)
+		require.NoError(t, err)
+		if baseline == nil {
+			baseline = encoded
+		} else {
+			require.JSONEq(t, string(baseline), string(encoded))
+		}
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]any
+		path    string
+	}{
+		{name: "equal scalar conflict", overlay: map[string]any{"instructions": defaultVoiceInstructions}, path: "$.instructions"},
+		{name: "array conflict", overlay: map[string]any{"output_modalities": []any{"audio"}}, path: "$.output_modalities"},
+		{name: "object scalar conflict", overlay: map[string]any{"audio": map[string]any{"input": "bad"}}, path: "$.audio.input"},
+		{name: "reserved", overlay: map[string]any{"kind": "voice"}, path: "$.kind"},
+		{name: "null", overlay: map[string]any{"future": map[string]any{"value": nil}}, path: "$.future.value"},
+		{name: "array null", overlay: map[string]any{"future": []any{"ok", nil}}, path: "$.future[1]"},
+		{name: "unsafe float", overlay: map[string]any{"future": float64(1 << 53)}, path: "$.future"},
+		{name: "unsafe int", overlay: map[string]any{"future": int64(1 << 53)}, path: "$.future"},
+		{name: "unsafe uint", overlay: map[string]any{"future": uint64(1 << 53)}, path: "$.future"},
+		{name: "nan", overlay: map[string]any{"future": math.NaN()}, path: "$.future"},
+		{name: "infinity", overlay: map[string]any{"future": math.Inf(1)}, path: "$.future"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition:   AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:             &Model{Id: "gpt-realtime"},
+				DefinitionOverlay: tt.overlay,
+			})
+			require.ErrorContains(t, err, tt.path)
+			require.ErrorContains(t, err, "definitionOverlay")
+		})
+	}
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCaseSafety(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"kind", "KIND", "model_type", "MODEL_TYPE", "model", "MODEL",
+		"conversation_engine", "CONVERSATION_ENGINE"} {
+		t.Run(key, func(t *testing.T) {
+			_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:           &Model{Id: "gpt-realtime"}, DefinitionOverlay: map[string]any{key: true},
+			})
+			require.ErrorContains(t, err, "reserved root key")
+		})
+	}
+	_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"}, Model: &Model{Id: "gpt-realtime"},
+		DefinitionOverlay: map[string]any{"audio": map[string]any{"INPUT": map[string]any{"future": true}}},
+	})
+	require.ErrorContains(t, err, "$.audio.INPUT")
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayDeterministicError(t *testing.T) {
+	t.Parallel()
+	for range 20 {
+		_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+			AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"}, Model: &Model{Id: "gpt-realtime"},
+			DefinitionOverlay: map[string]any{"z": nil, "a": nil},
+		})
+		require.ErrorContains(t, err, "$.a")
 	}
 }
 

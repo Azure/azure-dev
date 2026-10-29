@@ -596,7 +596,7 @@ func TestBYOAKSLifecycleRejectsBeforeHostCalls(t *testing.T) {
 			if event == "preprovision" {
 				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: config})
 			} else {
-				err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: config})
+				_, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: config})
 			}
 			local, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok, "%v", err)

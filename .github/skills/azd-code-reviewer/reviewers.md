@@ -25,6 +25,7 @@ findings:
   - severity: critical | suggestion | nit | praise
     file: path/to/file.go
     line: 42
+    side: RIGHT
     summary: One-line description of the finding
     detail: |
       Full explanation with rationale. Why does this matter?
@@ -33,6 +34,10 @@ findings:
 ```
 
 `file` and `line` are optional — some findings are PR-level, not line-level. When `line` is provided, it MUST be a line that appears in the diff (GitHub API rejects comments on lines outside the diff).
+
+Use `side: RIGHT` with new-file line numbers for additions and modifications, and `side: LEFT` with old-file line
+numbers for deletion-only findings. `side` defaults to `RIGHT` when omitted by existing lenses; extension contract
+findings must include it explicitly. Preserve both fields through triage and final output, including for deleted files.
 
 ## Fixed Lenses
 

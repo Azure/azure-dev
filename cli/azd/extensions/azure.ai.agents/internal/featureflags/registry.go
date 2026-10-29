@@ -33,6 +33,12 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
 		Description: "Long-running Responses invocations",
 	}
+	// MemorySnapshot controls hosted agent memory snapshot opt-in.
+	MemorySnapshot = Feature{
+		ID:          "agents.memory_snapshot",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT",
+		Description: "Hosted agent memory snapshots",
+	}
 	// BYOAKS controls existing-AKS onboarding and default supporting resources.
 	BYOAKS = Feature{
 		ID:          synthesis.BYOAKSFeatureID,
@@ -44,7 +50,7 @@ var (
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A, BYOAKS}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, BYOAKS}
 }
 
 // Lookup returns the declared feature with the given ID.

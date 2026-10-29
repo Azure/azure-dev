@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"mime"
@@ -781,13 +782,15 @@ func TestPatchAgent_OmitsNilFields(t *testing.T) {
 
 // capturingTransport captures the last HTTP request and returns a canned JSON response.
 type capturingTransport struct {
-	lastReq    *http.Request
-	lastBody   []byte
-	statusCode int
-	respBody   string
+	lastReq      *http.Request
+	lastBody     []byte
+	statusCode   int
+	respBody     string
+	requestCount int
 }
 
 func (c *capturingTransport) Do(req *http.Request) (*http.Response, error) {
+	c.requestCount++
 	c.lastReq = req
 	if req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
@@ -858,6 +861,78 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.Equal(t, "agent.zip", part2.FileName())
 	part2Data, _ := io.ReadAll(part2)
 	require.Equal(t, zipData, part2Data)
+}
+
+func TestDeployMemorySnapshotRequests(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"container", "code create", "code update"} {
+		for _, setting := range []struct {
+			name  string
+			value *bool
+		}{
+			{name: "absent"},
+			{name: "disabled", value: new(false)},
+			{name: "enabled", value: new(true)},
+		} {
+			for _, rejected := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/rejected=%v", mode, setting.name, rejected), func(t *testing.T) {
+					t.Parallel()
+					transport := &capturingTransport{
+						statusCode: http.StatusCreated,
+						respBody:   `{"name":"snapshot-agent","version":"1","versions":{"latest":{"version":"1"}}}`,
+					}
+					if rejected {
+						transport.statusCode = http.StatusBadRequest
+						transport.respBody = `{"error":{"code":"invalid_request_error","message":"definition.enable_memory_snapshot is not available for this subscription or region."}}`
+					}
+					client := newTestClient("https://test.example.com/api/projects/proj", transport)
+					request := &CreateAgentVersionRequest{Definition: HostedAgentDefinition{
+						AgentDefinition:      AgentDefinition{Kind: AgentKindHosted},
+						EnableMemorySnapshot: setting.value,
+					}}
+					var err error
+					switch mode {
+					case "container":
+						_, err = client.CreateAgentVersion(t.Context(), "snapshot-agent", request, "v1")
+					case "code create":
+						_, err = client.CreateAgentFromZip(t.Context(), "snapshot-agent", request, []byte("zip"), "hash", "v1")
+					case "code update":
+						_, err = client.UpdateAgentFromZip(t.Context(), "snapshot-agent", request, []byte("zip"), "hash", "v1")
+					}
+					if rejected {
+						responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+						require.True(t, ok)
+						require.Equal(t, http.StatusBadRequest, responseErr.StatusCode)
+						require.Contains(t, responseErr.Error(), "enable_memory_snapshot is not available")
+					} else {
+						require.NoError(t, err)
+					}
+					require.Equal(t, 1, transport.requestCount)
+					body := transport.lastBody
+					if mode != "container" {
+						_, params, err := mime.ParseMediaType(transport.lastReq.Header.Get("Content-Type"))
+						require.NoError(t, err)
+						part, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).NextPart()
+						require.NoError(t, err)
+						require.Equal(t, "metadata", part.FormName())
+						body, err = io.ReadAll(part)
+						require.NoError(t, err)
+					}
+					var payload struct {
+						Definition map[string]json.RawMessage `json:"definition"`
+					}
+					require.NoError(t, json.Unmarshal(body, &payload))
+					encoded, present := payload.Definition["enable_memory_snapshot"]
+					require.Equal(t, setting.value != nil, present)
+					if present {
+						var actual bool
+						require.NoError(t, json.Unmarshal(encoded, &actual))
+						require.Equal(t, *setting.value, actual)
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestCreateAgentVersion_DigitalWorkerContract(t *testing.T) {

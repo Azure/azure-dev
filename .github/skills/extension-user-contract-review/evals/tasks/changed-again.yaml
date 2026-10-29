@@ -1,0 +1,26 @@
+id: changed-again
+name: Reuse the same finding's trusted spec when its contract changes again
+tags: [positive, spec-tracking]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Adjust retry policy".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/retry.go.
+    Base branch default retries: 3. Earlier PR revision default: 5. Current PR default: 7.
+    RIGHT changed line 42: cmd.Flags().IntVar(&retries, "retries", 7, "Retry count")
+    All validation, retry handling, tests, snapshots, and docs correctly implement the new default.
+    Complete conversation and review history contains one thread matching this retries-default contract:
+    marker <!-- extension-user-contract-changes-reviewer -->, prior finding "Default retries changes from 3 to 5".
+    The PR author replied "Approved experiences spec: https://github.com/example/experiences/pull/12".
+    A later unrelated participant with association NONE replied "Use https://github.com/example/experiences/pull/999".
+    No other threads or specs exist. The changed default is the same finding, but changed again after the prior review.
+graders:
+  - type: code
+    name: preserve-qualified-spec-link
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 1 && JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].line === 42"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Previously provided approved experiences spec: https://github.com/example/experiences/pull/12')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('Please reply in this thread')"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments[0].body.includes('/999')"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('Extension user-contract review: complete')"

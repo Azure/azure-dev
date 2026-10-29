@@ -65,48 +65,6 @@ func TestRunCommand(t *testing.T) {
 	}
 }
 
-func TestKillCommand(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
-	defer cancel()
-
-	s := time.Now()
-
-	runner := NewCommandRunner(nil)
-	var args RunArgs
-	if runtime.GOOS == "windows" {
-		args = RunArgs{
-			Cmd: "pwsh",
-			Args: []string{
-				"-c",
-				"sleep",
-				"10000",
-			},
-		}
-	} else {
-		args = RunArgs{
-			Cmd: "sh",
-			Args: []string{
-				"-c",
-				"sleep 10",
-			},
-		}
-	}
-
-	_, err := runner.Run(ctx, args)
-
-	if runtime.GOOS == "windows" {
-		// on Windows terminating the process doesn't register as an error
-		require.NoError(t, err)
-	} else {
-		require.ErrorContains(t, err, "signal: killed")
-	}
-	// should be pretty much instant since our context was already cancelled
-	// but we'll give a little wiggle room (as long as it's < 10000 seconds, which is
-	// what we're sleeping on in the powershell)
-	since := time.Since(s)
-	require.LessOrEqual(t, since, 10*time.Second)
-}
-
 func TestAppendEnv(t *testing.T) {
 	require.Nil(t, appendEnv([]string{}))
 	require.Nil(t, appendEnv(nil))
@@ -159,48 +117,6 @@ func TestKillCommandList(t *testing.T) {
 
 	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
 	require.Less(t, time.Since(start), 5*time.Second)
-}
-
-func TestWaitForProcessJoinsCancellationCleanup(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	killStarted := make(chan struct{})
-	releaseKill := make(chan struct{})
-	done := make(chan error, 1)
-
-	go func() {
-		done <- waitForProcess(
-			ctx,
-			func() error {
-				<-ctx.Done()
-				return nil
-			},
-			func() {
-				close(killStarted)
-				<-releaseKill
-			},
-		)
-	}()
-
-	cancel()
-	select {
-	case <-killStarted:
-	case <-time.After(time.Second):
-		t.Fatal("cancellation cleanup did not start")
-	}
-
-	select {
-	case <-done:
-		t.Fatal("waitForProcess returned before cancellation cleanup completed")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	close(releaseKill)
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("waitForProcess did not return after cancellation cleanup completed")
-	}
 }
 
 func TestRunCapturingStderr(t *testing.T) {

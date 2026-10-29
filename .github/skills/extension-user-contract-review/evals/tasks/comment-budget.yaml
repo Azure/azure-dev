@@ -1,0 +1,27 @@
+id: comment-budget
+name: Independent contracts are not truncated by the general lens budget
+tags: [positive, triage]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Add four independent extension options".
+    Complete file list: cli/azd/extensions/example/internal/cmd/options.go.
+    Complete conversation and review history: empty, no specs.
+    Complete before behavior: the export, wait, logs, and download commands have none of the options below.
+    Complete after behavior: four separate commands each expose one independently validated and implemented option.
+    Tests, help, and documentation accurately cover them. The options have independent implementations and purposes.
+    Added RIGHT diff lines:
+    21: export.Flags().BoolVar(&overwrite, "overwrite", false, "Replace an existing export")
+    41: wait.Flags().DurationVar(&timeout, "timeout", time.Minute, "Maximum wait duration")
+    61: logs.Flags().BoolVar(&follow, "follow", false, "Stream new log entries")
+    81: download.Flags().StringVar(&outputDir, "output-dir", ".", "Download destination")
+    All option values are honored; validation runs before mutations and existing behavior remains unchanged by default.
+graders:
+  - type: code
+    name: all-independent-comments
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 4"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.map(c => c.line).sort((a,b) => a-b).join(',') === '21,41,61,81'"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
+        - "/complete.*1 files? inspected; 4 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

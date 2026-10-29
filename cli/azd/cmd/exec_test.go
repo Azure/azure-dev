@@ -12,14 +12,26 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	cmdmiddleware "github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec/scripting"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+const execInterruptedHelperEnv = "AZD_EXEC_INTERRUPTED_HELPER"
+
+func TestExecActionInterruptedHelperProcess(t *testing.T) {
+	if os.Getenv(execInterruptedHelperEnv) == "" {
+		return
+	}
+	os.Exit(130)
+}
 
 // envSliceToMap converts an env slice ([]string{"KEY=VALUE", ...}) to a map.
 // When duplicate keys exist, the last value wins (matching exec.Cmd behavior).
@@ -286,8 +298,7 @@ func TestExecAction_ExitCodePropagation(t *testing.T) {
 	execErr := executor.ExecuteDirect(t.Context(), exitBin, []string{})
 	require.Error(t, execErr)
 
-	var scriptExecErr *scripting.ExecutionError
-	if errors.As(execErr, &scriptExecErr) {
+	if scriptExecErr, ok := errors.AsType[*scripting.ExecutionError](execErr); ok {
 		assert.Equal(t, 42, scriptExecErr.ExitCode)
 	} else {
 		t.Fatalf("expected ExecutionError with exit code 42, got %T: %v", execErr, execErr)
@@ -760,4 +771,159 @@ func TestExecAction_ExecutionErrorDoesNotFallbackInline(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to execute script")
 	assert.NotContains(t, err.Error(), "inline script")
+}
+
+func TestExecAction_CancellationIsNotConvertedToExitCodeError(t *testing.T) {
+	customCause := errors.New("custom cancellation cause")
+	for _, test := range []struct {
+		name        string
+		ctx         func() context.Context
+		err         error
+		wantMessage string
+	}{
+		{
+			name: "canceled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(t.Context())
+				cancel()
+				return ctx
+			},
+			err:         context.Canceled,
+			wantMessage: "command execution was canceled by the user",
+		},
+		{
+			name: "deadline exceeded",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+				cancel()
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
+			name: "deadline cancellation cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(context.DeadlineExceeded)
+				return ctx
+			},
+			err: context.DeadlineExceeded,
+		},
+		{
+			name: "custom cause",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancelCause(t.Context())
+				cancel(customCause)
+				return ctx
+			},
+			err:         customCause,
+			wantMessage: "command execution was canceled by the user",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			action := &execAction{
+				env:             environment.NewWithValues("test", nil),
+				keyvaultService: &mockExecKeyVaultService{},
+				flags:           &execFlags{global: &internal.GlobalCommandOptions{}},
+				args:            []string{"go", "version"},
+			}
+
+			_, err := action.Run(test.ctx())
+
+			require.ErrorIs(t, err, test.err)
+			_, ok := errors.AsType[*internal.ExitCodeError](err)
+			require.False(t, ok)
+			_, userCancellation := errors.AsType[*execCancellationError](err)
+			require.Equal(t, test.wantMessage != "", userCancellation)
+			if test.wantMessage != "" {
+				require.Equal(t, test.wantMessage, err.Error())
+			}
+		})
+	}
+}
+
+func TestExecAction_InterruptedExitThroughCancellationMiddleware(t *testing.T) {
+	initialHandlers := len(input.SnapshotInterruptStack())
+	t.Cleanup(func() {
+		for len(input.SnapshotInterruptStack()) > initialHandlers {
+			handlers := input.SnapshotInterruptStack()
+			handlers[len(handlers)-1]()
+			if len(input.SnapshotInterruptStack()) >= len(handlers) {
+				return
+			}
+		}
+	})
+
+	executable, err := filepath.Abs(os.Args[0])
+	require.NoError(t, err)
+	t.Setenv(
+		"PATH",
+		filepath.Dir(executable)+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
+	action := &execAction{
+		env: environment.NewWithValues("test", map[string]string{
+			execInterruptedHelperEnv: "1",
+		}),
+		keyvaultService: &mockExecKeyVaultService{},
+		flags: &execFlags{
+			global:      &internal.GlobalCommandOptions{},
+			interactive: true,
+		},
+		args: []string{
+			filepath.Base(executable),
+			"-test.run=^TestExecActionInterruptedHelperProcess$",
+		},
+	}
+
+	t.Run("interrupted child uses cancellation message", func(t *testing.T) {
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(
+			t.Context(),
+			action.Run,
+		)
+
+		handlers := input.SnapshotInterruptStack()
+		if len(handlers) > initialHandlers {
+			assert.True(t, handlers[len(handlers)-1]())
+		}
+		require.Len(t, handlers, initialHandlers+1)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+
+		require.EqualError(t, err, "command execution was canceled by the user")
+		require.ErrorIs(t, err, context.Canceled)
+		_, hasExitCode := errors.AsType[*internal.ExitCodeError](err)
+		require.False(t, hasExitCode)
+		execErr, ok := errors.AsType[*scripting.ExecutionError](err)
+		require.True(t, ok)
+		require.True(t, execErr.Interrupted())
+	})
+
+	t.Run("deadline remains authoritative", func(t *testing.T) {
+		ctx, cancel := context.WithCancelCause(t.Context())
+		cancel(context.DeadlineExceeded)
+
+		_, err := cmdmiddleware.NewCancellationMiddleware().Run(ctx, action.Run)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.NotErrorIs(t, err, context.Canceled)
+		_, userCancellation := errors.AsType[*execCancellationError](err)
+		require.False(t, userCancellation)
+		require.Len(t, input.SnapshotInterruptStack(), initialHandlers)
+	})
+}
+
+func TestExecCancellationErrorPreservesExecutionDetails(t *testing.T) {
+	executionErr := &scripting.ExecutionError{
+		ExitCode: 1,
+		Shell:    "pwsh",
+		IsInline: true,
+	}
+	err := &execCancellationError{
+		err: errors.Join(executionErr, context.Canceled),
+	}
+
+	require.Equal(t, "command execution was canceled by the user", err.Error())
+	require.ErrorIs(t, err, context.Canceled)
+	typedErr, ok := errors.AsType[*scripting.ExecutionError](err)
+	require.True(t, ok)
+	require.Same(t, executionErr, typedErr)
 }

@@ -640,6 +640,16 @@ func validateTelephonyTransferTargets(
 		if !telephonyTargetNamePattern.MatchString(target.Name) {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid name", source, i)
 		}
+		if len(target.Destination.RawObject) > 0 {
+			if strictKinds {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: unsupported raw destination type",
+					source,
+					i,
+				)
+			}
+			continue
+		}
 		if _, exists := names[target.Name]; exists {
 			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name", source)
 		}

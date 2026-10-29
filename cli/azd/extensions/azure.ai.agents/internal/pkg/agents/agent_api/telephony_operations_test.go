@@ -737,14 +737,28 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 			return telephonyResponse(req, http.StatusOK, `{
 				"transfer_targets":[{
 					"name":"support","description":"Support desk",
-					"destination":{"kind":"pstn","value":"+14255550123"}
+					"destination":{"type":"phone_number","value":"+14255550123"}
 				}]}`,
 				http.Header{"ETag": {`"targets-1"`}}), nil
 		})
 		targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
 		require.NoError(t, err)
 		require.Equal(t, `"targets-1"`, targets.ETag)
+		require.Equal(t, TelephonyTransferDestinationPSTN, targets.TransferTargets[0].Destination.Kind)
 		require.Equal(t, "+14255550123", targets.TransferTargets[0].Destination.Value)
+	})
+
+	t.Run("get legacy kind", func(t *testing.T) {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, `{
+				"transfer_targets":[{
+					"name":"support","description":"Support desk",
+					"destination":{"kind":"pstn","value":"+14255550123"}
+				}]}`, http.Header{"ETag": {`"targets-legacy"`}}), nil
+		})
+		targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+		require.NoError(t, err)
+		require.Equal(t, TelephonyTransferDestinationPSTN, targets.TransferTargets[0].Destination.Kind)
 	})
 
 	t.Run("replace", func(t *testing.T) {
@@ -755,12 +769,12 @@ func TestTelephonyTransferTargets_GetAndReplaceContracts(t *testing.T) {
 			requireJSONBody(t, req, `{
 				"transfer_targets":[{
 					"name":"sales","description":"Sales desk",
-					"destination":{"kind":"sip","value":"sip:sales@example.test"}
+					"destination":{"type":"sip","value":"sip:sales@example.test"}
 				}]}`)
 			return telephonyResponse(req, http.StatusOK, `{
 				"transfer_targets":[{
 					"name":"sales","description":"Sales desk",
-					"destination":{"kind":"sip","value":"sip:sales@example.test"}
+					"destination":{"type":"sip","value":"sip:sales@example.test"}
 				}]}`,
 				http.Header{"ETag": {`"targets-2"`}}), nil
 		})
@@ -951,21 +965,158 @@ func TestGetTelephonyTransferTargets_PreservesUnknownStructuredValues(t *testing
 	}
 }
 
-func TestUnknownTransferDestination_PreservesCompleteObject(t *testing.T) {
-	original := `{
-		"kind":"future_kind",
-		"value":{"agent_name":"transfer-agent"},
-		"routing_hint":"warm-transfer",
-		"options":{"priority":2}
-	}`
-	var destination TelephonyTransferDestination
-	require.NoError(t, json.Unmarshal([]byte(original), &destination))
-	require.Equal(t, "future_kind", destination.Kind)
-	require.JSONEq(t, original, string(destination.RawObject))
+func TestGetTelephonyTransferTargets_PreservesUnknownCollidingDiscriminators(t *testing.T) {
+	for _, destination := range []string{
+		`{"type":"pstn","value":{"legacy":true}}`,
+		`{"type":"pstn"}`,
+		`{"kind":"phone_number","value":{"future":true}}`,
+	} {
+		t.Run(destination, func(t *testing.T) {
+			response := fmt.Sprintf(`{
+				"transfer_targets":[{
+					"name":"future","description":"Future destination","destination":%s
+				}]}`, destination)
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				return telephonyResponse(req, http.StatusOK, response,
+					http.Header{"ETag": {`"etag"`}}), nil
+			})
+			targets, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+			require.NoError(t, err)
+			require.NotEmpty(t, targets.TransferTargets[0].Destination.RawObject)
+			encoded, err := json.Marshal(targets.TransferTargets[0].Destination)
+			require.NoError(t, err)
+			require.JSONEq(t, destination, string(encoded))
+		})
+	}
+}
 
-	encoded, err := json.Marshal(destination)
-	require.NoError(t, err)
-	require.JSONEq(t, original, string(encoded))
+func TestReplaceTelephonyTransferTargets_RejectsRawDestinationBypass(t *testing.T) {
+	var destination TelephonyTransferDestination
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"type":"pstn","value":{"legacy":true}}`), &destination))
+	client, transport := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+		t.Fatal("unexpected request")
+		return nil, nil
+	})
+	_, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+		TransferTargets: []TelephonyTransferTarget{{
+			Name: "future", Description: "Future", Destination: destination,
+		}},
+	}, `"etag"`)
+	require.ErrorContains(t, err, "unsupported raw destination type")
+	require.Zero(t, transport.requests)
+}
+
+func TestUnknownTransferDestination_PreservesCompleteObject(t *testing.T) {
+	for _, discriminator := range []string{`"type":"future_type"`, `"kind":"future_kind"`} {
+		original := fmt.Sprintf(`{
+			%s,
+			"value":{"agent_name":"transfer-agent"},
+			"routing_hint":"warm-transfer",
+			"options":{"priority":2}
+		}`, discriminator)
+		var destination TelephonyTransferDestination
+		require.NoError(t, json.Unmarshal([]byte(original), &destination))
+		require.JSONEq(t, original, string(destination.RawObject))
+
+		encoded, err := json.Marshal(destination)
+		require.NoError(t, err)
+		require.JSONEq(t, original, string(encoded))
+	}
+}
+
+func TestTransferDestination_RejectsBothDiscriminators(t *testing.T) {
+	var destination TelephonyTransferDestination
+	err := json.Unmarshal([]byte(`{"type":"sip","kind":"sip","value":"sip:user@example.test"}`), &destination)
+	require.ErrorContains(t, err, "both type and kind")
+}
+
+func TestTransferDestination_ReadsKnownWireForms(t *testing.T) {
+	for _, test := range []struct {
+		body string
+		kind string
+	}{
+		{`{"type":"phone_number","value":"+14255550123"}`, TelephonyTransferDestinationPSTN},
+		{`{"type":"teams","value":"account"}`, TelephonyTransferDestinationTeams},
+		{`{"type":"sip","value":"sip:user@example.test"}`, TelephonyTransferDestinationSIP},
+		{`{"kind":"pstn","value":"+14255550123"}`, TelephonyTransferDestinationPSTN},
+		{`{"kind":"teams","value":"account"}`, TelephonyTransferDestinationTeams},
+		{`{"kind":"sip","value":"sip:user@example.test"}`, TelephonyTransferDestinationSIP},
+	} {
+		var destination TelephonyTransferDestination
+		require.NoError(t, json.Unmarshal([]byte(test.body), &destination))
+		require.Equal(t, test.kind, destination.Kind)
+		require.Empty(t, destination.RawObject)
+	}
+}
+
+func TestTransferDestination_PreservesUnknownDiscriminatorSemantics(t *testing.T) {
+	for _, body := range []string{
+		`{"type":"pstn","value":"+14255550123","extension":true}`,
+		`{"kind":"phone_number","value":"+14255550123","extension":true}`,
+	} {
+		var destination TelephonyTransferDestination
+		require.NoError(t, json.Unmarshal([]byte(body), &destination))
+		require.NotEmpty(t, destination.RawObject)
+		encoded, err := json.Marshal(destination)
+		require.NoError(t, err)
+		require.JSONEq(t, body, string(encoded))
+	}
+}
+
+func TestTransferDestination_RejectsDuplicateKeys(t *testing.T) {
+	for _, body := range []string{
+		`{"type":"sip","type":"sip","value":"value"}`,
+		`{"kind":"sip","kind":"sip","value":"value"}`,
+		`{"type":"sip","value":"one","value":"two"}`,
+	} {
+		var destination TelephonyTransferDestination
+		err := json.Unmarshal([]byte(body), &destination)
+		require.ErrorContains(t, err, "duplicate key")
+	}
+}
+
+func TestTransferDestination_WritesKnownWireTypes(t *testing.T) {
+	for kind, wireType := range map[string]string{
+		TelephonyTransferDestinationPSTN:  "phone_number",
+		TelephonyTransferDestinationTeams: "teams",
+		TelephonyTransferDestinationSIP:   "sip",
+	} {
+		encoded, err := json.Marshal(TelephonyTransferDestination{Kind: kind, Value: "value"})
+		require.NoError(t, err)
+		require.JSONEq(t, fmt.Sprintf(`{"type":%q,"value":"value"}`, wireType), string(encoded))
+		require.NotContains(t, string(encoded), `"kind"`)
+	}
+}
+
+func TestReplaceTelephonyTransferTargets_WritesKnownRequestBodies(t *testing.T) {
+	for kind, test := range map[string]struct {
+		wireType string
+		value    string
+	}{
+		TelephonyTransferDestinationPSTN:  {"phone_number", "+14255550123"},
+		TelephonyTransferDestinationTeams: {"teams", "resource-account"},
+		TelephonyTransferDestinationSIP:   {"sip", "sip:user@example.test"},
+	} {
+		t.Run(kind, func(t *testing.T) {
+			client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+				requireJSONBody(t, req, fmt.Sprintf(`{
+					"transfer_targets":[{"name":"target","description":"Target",
+					"destination":{"type":%q,"value":%q}}]}`, test.wireType, test.value))
+				return telephonyResponse(req, http.StatusOK, fmt.Sprintf(`{
+					"transfer_targets":[{"name":"target","description":"Target",
+					"destination":{"type":%q,"value":%q}}]}`, test.wireType, test.value),
+					http.Header{"ETag": {`"new"`}}), nil
+			})
+			_, err := client.ReplaceTelephonyTransferTargets(t.Context(), "agent", TelephonyTransferTargets{
+				TransferTargets: []TelephonyTransferTarget{{
+					Name: "target", Description: "Target",
+					Destination: TelephonyTransferDestination{Kind: kind, Value: test.value},
+				}},
+			}, `"old"`)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestUnknownTransferDestination_RejectsRawObjectKindMismatch(t *testing.T) {
@@ -1020,6 +1171,16 @@ func TestTransferDestinationRepeatedUnmarshalClearsPreviousValue(t *testing.T) {
 	require.JSONEq(t, `{"kind":"future_kind"}`, string(destination.RawObject))
 	require.Empty(t, destination.Value)
 	require.False(t, destination.HasValue)
+}
+
+func TestTransferDestinationRepeatedUnmarshalFailureClearsPreviousValue(t *testing.T) {
+	destination := TelephonyTransferDestination{
+		Kind: TelephonyTransferDestinationSIP, Value: "sip:old@example.test", HasValue: true,
+		RawValue: json.RawMessage(`"old"`), RawObject: json.RawMessage(`{"kind":"old"}`),
+	}
+	err := json.Unmarshal([]byte(`{"type":"sip","value":null}`), &destination)
+	require.Error(t, err)
+	require.Equal(t, TelephonyTransferDestination{}, destination)
 }
 
 func TestTelephonyTransferTargets_RequireDestinationKindInResponses(t *testing.T) {
@@ -1087,6 +1248,12 @@ func TestTelephonyTransferTargets_RejectNullDestinationKind(t *testing.T) {
 	})
 	_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
 	require.ErrorContains(t, err, "required fields")
+}
+
+func TestTelephonyTransferTargets_RejectNonStringDestinationDiscriminator(t *testing.T) {
+	var destination TelephonyTransferDestination
+	err := json.Unmarshal([]byte(`{"type":42,"value":"value"}`), &destination)
+	require.ErrorContains(t, err, "must be a string")
 }
 
 func TestTelephonyStringLimitsCountUnicodeCodePoints(t *testing.T) {

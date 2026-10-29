@@ -88,12 +88,16 @@ Overlay `$ref` values reuse the existing local Foundry `$ref` resolver:
 - remote URL references are rejected;
 - local references have the same trusted-input boundary as existing azd
   definition references, including parent and absolute paths;
-- inside a referenced overlay, relative string values named `project` are
-  rebased from the referenced file to the `azure.yaml` project root. An
+- when the Voice definition itself comes from a referenced file, path-key
+  rewriting applies to the entire resolved definition, including an overlay
+  authored inline inside that file. Relative string values named `project` are
+  rebased from the definition file to the `azure.yaml` project root; an
   `instructions` value is rebased the same way when it is a single-line `.md`
-  or `.txt` path. Inline overlay values are not rebased. These are existing
-  shared-resolver semantics, so authors should avoid those key names for
-  service fields that are not intended to carry local file paths.
+  or `.txt` path. A definition and overlay authored directly in `azure.yaml`
+  are not rebased. If the overlay uses its own nested `$ref`, values from that
+  nested file are rebased from that file. These are existing shared-resolver
+  semantics, so authors should avoid those key names for service fields that
+  are not intended to carry local file paths.
 
 Existing `$ref` sibling semantics apply before the definition overlay merge:
 sibling properties shallowly replace the referenced property's complete value.

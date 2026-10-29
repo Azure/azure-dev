@@ -2,9 +2,7 @@
 
 <!-- cspell:ignore Deeksharma JerryYangKai Yimin -->
 
-## 1.0.0 (2026-10-29)
-
-First stable release of the Foundry agents extension. Managed harness, voice, long-running invocation, A2A wire-version selection, hosted A2A initialization, and hosted-agent memory snapshots remain opt-in previews.
+## 1.0.0-beta.23 (2026-10-29)
 
 ### Bugs Fixed
 

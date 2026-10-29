@@ -1,9 +1,5 @@
 # Release History
 
-## 1.0.0 (2026-10-29)
-
-First stable release of the Microsoft Foundry meta-package, with all seven bundled extensions updated to `~1.0.0`.
-
 ## 1.0.0-beta.4 (2026-10-23)
 
 ### Features Added

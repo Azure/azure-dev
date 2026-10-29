@@ -2,10 +2,6 @@
 
 <!-- cspell:ignore herohua -->
 
-## 1.0.0 (2026-10-29)
-
-First stable release of the Foundry Agent Inspector extension.
-
 ## 1.0.0-beta.9 (2026-10-23)
 
 ### Other Changes

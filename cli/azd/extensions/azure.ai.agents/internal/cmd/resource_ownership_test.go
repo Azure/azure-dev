@@ -95,15 +95,15 @@ func TestFoundryResourceOwnershipMetadata(t *testing.T) {
 	connections := readResourceExtensionManifest(t, "../../../azure.ai.connections/extension.yaml")
 	toolboxes := readResourceExtensionManifest(t, "../../../azure.ai.toolboxes/extension.yaml")
 
-	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.0.0"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0"))
-	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.projects", "~1.0.0-beta.12"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.connections", "~1.0.0-beta.7"))
+	assert.True(t, hasResourceDependency(agents, "azure.ai.toolboxes", "~1.0.0-beta.6"))
 	assert.True(t, hasResourceProvider(agents, "azure.ai.agent", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.connection", "service-target"))
 	assert.False(t, hasResourceProvider(agents, "azure.ai.toolbox", "service-target"))
 	assert.True(t, hasResourceProvider(connections, "azure.ai.connection", "service-target"))
 	assert.True(t, hasResourceProvider(toolboxes, "azure.ai.toolbox", "service-target"))
-	assert.True(t, hasResourceDependency(toolboxes, "azure.ai.connections", "~1.0.0"))
+	assert.True(t, hasResourceDependency(toolboxes, "azure.ai.connections", "~1.0.0-beta.6"))
 }
 
 func readResourceExtensionManifest(t *testing.T, path string) resourceExtensionManifest {

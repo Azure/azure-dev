@@ -1,8 +1,6 @@
 # Release History
 
-## 1.0.0 (2026-10-29)
-
-First stable release of the Foundry Projects extension.
+## 1.0.0-beta.16 (2026-10-29)
 
 ### Bugs Fixed
 

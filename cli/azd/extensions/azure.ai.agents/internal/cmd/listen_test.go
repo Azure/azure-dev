@@ -1329,6 +1329,35 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 	}
 }
 
+func TestPredeployRejectsDisabledVoiceBeforeMutation(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "")
+	t.Setenv("AGENT_DEFINITION_PATH", "")
+	svc := &azdext.ServiceConfig{
+		Name: "voice-agent", Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "voice", "name": "voice-agent", "modelType": "managed",
+			"model": map[string]any{"id": "gpt-realtime"},
+		}),
+	}
+	proj := &azdext.ProjectConfig{
+		Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{"voice-agent": svc},
+	}
+	before := proto.Clone(proj)
+	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
+	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
+
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+		Project: proj, Service: svc,
+	})
+
+	require.Nil(t, response)
+	require.ErrorContains(t, err, featureflags.Voice.ID)
+	require.True(t, proto.Equal(before, proj))
+	require.Zero(t, envServer.getCurrentCalls)
+	require.Zero(t, envServer.getValuesCalls)
+	require.Empty(t, envServer.setKeys)
+}
+
 func TestPredownRejectsUnsupportedRuntimeSourcesBeforeCleanup(t *testing.T) {
 	tests := []struct {
 		name           string

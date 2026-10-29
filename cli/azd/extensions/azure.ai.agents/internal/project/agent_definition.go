@@ -1138,14 +1138,7 @@ func validateDefinitionOverlayKind(s *structpb.Struct) error {
 	if hasSnake {
 		overlay = snake
 	}
-	if overlay == nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidAgentManifest,
-			"definitionOverlay must be an object and cannot be null",
-			"set definitionOverlay to an object or remove it",
-		)
-	}
-	if _, isStruct := overlay.GetKind().(*structpb.Value_StructValue); !isStruct {
+	if overlay == nil || overlay.GetStructValue() == nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAgentManifest,
 			"definitionOverlay must be an object and cannot be null",

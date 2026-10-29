@@ -361,6 +361,25 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayDeterministicError(t *testi
 	}
 }
 
+func TestCreateVoiceAgentAPIRequest_GPTLiveDefinitionOverlay(t *testing.T) {
+	agent := VoiceAgent{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "live"},
+		SubProtocol:     VoiceSubProtocolLive,
+		ModelType:       VoiceModelTypeSelfDeployed,
+		Model:           &Model{Id: "gpt-live-1"},
+		DefinitionOverlay: map[string]any{
+			"future_live_setting": map[string]any{"enabled": true},
+		},
+	}
+	require.NoError(t, ValidateVoiceDefinitionOverlay(agent))
+	request, err := CreateVoiceAgentAPIRequest(agent)
+	require.NoError(t, err)
+	definition, ok := request.Definition.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, map[string]any{"enabled": true}, definition["future_live_setting"])
+	require.Equal(t, "live", definition["sub_protocol"])
+}
+
 // TestCreateVoiceAgentAPIRequest_Overrides verifies author-facing overrides
 // (instructions, voice, store) flow through.
 func TestCreateVoiceAgentAPIRequest_Overrides(t *testing.T) {

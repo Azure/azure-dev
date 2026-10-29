@@ -4,7 +4,6 @@
 
 ### Bugs Fixed
 
-- [[#10688]](https://github.com/Azure/azure-dev/issues/10688) Fix Bicep parameter files and Terraform tfvars files producing invalid JSON when an environment variable used inside a value contains quotes, backslashes, or newlines. Placeholders inside strings are now substituted as literal text. `azd pipeline config` no longer JSON-escapes the variables and secrets it stores in CI; rerun it on existing pipelines to store the plain values.
 - [[#10516]](https://github.com/Azure/azure-dev/pull/10516) Fix unresolved or empty environment variables in composite Deployment Stacks deny-list values being sent to Azure when the `deployment.stacks` alpha feature is enabled. Thanks @saikeerthan-14 for the contribution!
 - [[#10396]](https://github.com/Azure/azure-dev/pull/10396) Fix provisioning validation with clearer scope-aware warnings, default-No confirmation for critical warnings, errors for `--no-prompt` or unanswered critical confirmations, and cancellation that skips post-provision hooks without hiding parallel-layer failures. Thanks @hyoshis for the contribution!
 

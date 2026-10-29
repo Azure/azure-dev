@@ -910,11 +910,8 @@ func substituteParametersTemplate(template []byte, mapping func(string) string) 
 // value, is left as authored.
 func substituteTemplateText(template string, mapping func(string) string) (string, error) {
 	escaped := func(name string) string {
-		encoded, err := json.Marshal(mapping(name))
-		if err != nil {
-			// Marshaling a string can't fail; keep the raw value rather than dropping it.
-			return mapping(name)
-		}
+		// Marshaling a string never fails.
+		encoded, _ := json.Marshal(mapping(name))
 		return string(encoded[1 : len(encoded)-1])
 	}
 

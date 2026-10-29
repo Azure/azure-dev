@@ -4,6 +4,7 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestVoiceDefinitionOverlayServicePropertiesRoundTrip(t *testing.T) {
@@ -178,4 +180,94 @@ func TestVoiceDefinitionOverlaySchemaAllowsRootRefKind(t *testing.T) {
 	require.Error(t, schema.validate(map[string]any{
 		"definitionOverlay": map[string]any{"future": true},
 	}))
+}
+
+func TestVoiceDefinitionOverlayValidationMatchesDeployMergeRules(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]any
+	}{
+		{name: "reserved key", overlay: map[string]any{"kind": "voice"}},
+		{name: "nested null", overlay: map[string]any{"future": map[string]any{"value": nil}}},
+		{name: "existing array conflict", overlay: map[string]any{"output_modalities": []any{"audio"}}},
+		{name: "unsafe number", overlay: map[string]any{"future": float64(1 << 53)}},
+	}
+	for _, hosted := range []bool{false, true} {
+		for _, test := range tests {
+			mode := "managed"
+			definition := map[string]any{
+				"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+				"definitionOverlay": test.overlay,
+			}
+			if hosted {
+				mode = "hosted"
+				delete(definition, "model")
+				definition["conversationEngine"] = map[string]any{
+					"type": "hosted_agent", "name": "target",
+				}
+			}
+			t.Run(mode+"/"+test.name, func(t *testing.T) {
+				svc := &azdext.ServiceConfig{
+					Name: "voice", Host: "azure.ai.agent", AdditionalProperties: mustStruct(t, definition),
+				}
+				_, err := ValidateAgentServiceDefinitionContent(svc, t.TempDir())
+				require.ErrorContains(t, err, "definitionOverlay")
+
+				root := t.TempDir()
+				definitionBytes, marshalErr := yaml.Marshal(definition)
+				require.NoError(t, marshalErr)
+				path := filepath.Join(root, "voice.yaml")
+				require.NoError(t, os.WriteFile(path, definitionBytes, 0o600))
+				_, err = LoadAgentDefinitionFile(root, path, "voice")
+				require.ErrorContains(t, err, "definitionOverlay")
+				refService := &azdext.ServiceConfig{
+					Name: "voice", Host: "azure.ai.agent",
+					AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./voice.yaml"}),
+				}
+				_, err = ValidateAgentServiceDefinitionContent(refService, root)
+				require.ErrorContains(t, err, "definitionOverlay")
+			})
+		}
+	}
+}
+
+func TestVoiceDefinitionOverlaySharedValidationAcceptsValidAndOmitted(t *testing.T) {
+	t.Parallel()
+	for _, hosted := range []bool{false, true} {
+		for index, overlay := range []map[string]any{nil, {}, {"future": map[string]any{"enabled": true}}} {
+			mode := "managed"
+			definition := map[string]any{
+				"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"},
+			}
+			if overlay != nil {
+				definition["definitionOverlay"] = overlay
+			}
+			if hosted {
+				mode = "hosted"
+				delete(definition, "model")
+				definition["conversationEngine"] = map[string]any{
+					"type": "hosted_agent", "name": "target",
+				}
+			}
+			t.Run(fmt.Sprintf("%s/%d", mode, index), func(t *testing.T) {
+				svc := &azdext.ServiceConfig{
+					Name: "voice", Host: "azure.ai.agent", AdditionalProperties: mustStruct(t, definition),
+				}
+				_, err := ValidateAgentServiceDefinitionContent(svc, t.TempDir())
+				require.NoError(t, err)
+
+				root := t.TempDir()
+				definitionBytes, marshalErr := yaml.Marshal(definition)
+				require.NoError(t, marshalErr)
+				require.NoError(t, os.WriteFile(filepath.Join(root, "voice.yaml"), definitionBytes, 0o600))
+				refService := &azdext.ServiceConfig{
+					Name: "voice", Host: "azure.ai.agent",
+					AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./voice.yaml"}),
+				}
+				_, err = ValidateAgentServiceDefinitionContent(refService, root)
+				require.NoError(t, err)
+			})
+		}
+	}
 }

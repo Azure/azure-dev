@@ -900,6 +900,17 @@ func CreateHostedVoiceAgentAPIRequest(
 	return createVoiceAgentAPIRequest(voiceAgent, &target)
 }
 
+// ValidateVoiceDefinitionOverlay applies the same deterministic merge-safety
+// checks used by create/update request construction without requiring service access.
+func ValidateVoiceDefinitionOverlay(voiceAgent VoiceAgent) error {
+	var target *agent_api.VoiceTargetAgentReference
+	if isHostedConversationEngine(voiceAgent.ConversationEngine) {
+		target = &agent_api.VoiceTargetAgentReference{Name: "overlay-validation", Version: "validation"}
+	}
+	_, err := createVoiceAgentAPIRequest(voiceAgent, target)
+	return err
+}
+
 func createVoiceAgentAPIRequest(
 	voiceAgent VoiceAgent,
 	target *agent_api.VoiceTargetAgentReference,

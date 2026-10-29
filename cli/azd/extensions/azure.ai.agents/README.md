@@ -65,7 +65,7 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
 BYO AKS checks cover inline and referenced project configuration during init/adoption,
 preprovision/predeploy, and infrastructure eject. The Projects extension checks
 the same process opt-in before initializing the BYO AKS provider and before
-provision/preview AKS validation. Ordinary Foundry provisioning is unchanged.
+provision/preview authentication or AKS reads. Ordinary Foundry provisioning is unchanged.
 
 ### Enforcement limits
 

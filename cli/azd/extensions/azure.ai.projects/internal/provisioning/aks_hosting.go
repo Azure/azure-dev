@@ -13,11 +13,11 @@ import (
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v9"
 	"github.com/google/uuid"
 )
 
@@ -33,9 +33,7 @@ func requireBYOAKSFeature() error {
 	)
 }
 
-func (p *FoundryProvisioningProvider) prepareBYO(
-	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
-) error {
+func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
 	if err := requireBYOAKSFeature(); err != nil {
 		return err
 	}
@@ -67,7 +65,7 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err != nil {
 		return err
 	}
-	if err := network.Validate(); err != nil {
+	if err := network.validate(); err != nil {
 		return err
 	}
 	resourceGroup, ok := byoParameterValue(source, "resourceGroupName").(string)
@@ -77,31 +75,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	checker := p.byoChecker
-	if checker == nil {
-		checker = onboarding.NewResourceChecker(p.credential, p.armClientOptions)
-	}
-	facts, report, checkErr := checker.Check(ctx, onboarding.Input{
-		ClusterID: hosting.ClusterResourceID, SubscriptionID: p.subID, Network: network,
-	})
-	var formatted strings.Builder
-	if err := report.Write(&formatted); err != nil {
+	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(ctx, hosting.ClusterResourceID)
+	if err != nil {
 		return err
-	}
-	if formatted.Len() != 0 {
-		progress(formatted.String())
-	}
-	if checkErr != nil {
-		return checkErr
-	}
-	role, err := arm.ParseResourceID(facts.FederatedIdentityRoleDefinitionID)
-	if _, kubeletErr := uuid.Parse(facts.KubeletObjectID); kubeletErr != nil || err != nil ||
-		!strings.EqualFold(role.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") ||
-		!strings.EqualFold(role.SubscriptionID, p.subID) || role.ResourceGroupName != "" {
-		return fmt.Errorf("BYO AKS requires a kubelet principal and a built-in federation role")
-	}
-	if _, err := uuid.Parse(role.Name); err != nil {
-		return fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
 	}
 	_, resourceGroupExists, err := p.lookupResourceGroupState(ctx, resourceGroup)
 	if err != nil {
@@ -114,14 +90,82 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 				"if (createResourceGroup), or re-eject the infrastructure templates")
 	}
 	source.parameters = mergeParameters(source.parameters, parametersDeclaredByTemplate(map[string]any{
-		"kubeletObjectId":                   map[string]any{"value": facts.KubeletObjectID},
-		"federatedIdentityRoleDefinitionId": map[string]any{"value": facts.FederatedIdentityRoleDefinitionID},
+		"kubeletObjectId":                   map[string]any{"value": kubeletObjectID},
+		"federatedIdentityRoleDefinitionId": map[string]any{"value": federationRoleID},
 	}, source.armTemplate))
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
 	if _, declared := definitions["createResourceGroup"]; declared {
 		source.parameters["createResourceGroup"] = map[string]any{"value": !resourceGroupExists}
 	}
 	return nil
+}
+
+func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
+	var result arm.ClientOptions
+	if options != nil {
+		result = *options
+	}
+	result.DisableRPRegistration = true
+	return &result
+}
+
+func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
+	ctx context.Context, clusterID string,
+) (string, string, error) {
+	id, err := parseBYOResourceID(clusterID, "Microsoft.ContainerService/managedClusters")
+	if err != nil {
+		return "", "", err
+	}
+	options := byoARMOptions(p.armClientOptions)
+	clusters, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, p.credential, options)
+	if err != nil {
+		return "", "", fmt.Errorf("create AKS client: %w", err)
+	}
+	cluster, err := clusters.Get(ctx, id.ResourceGroupName, id.Name, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("read AKS kubelet identity: %w", err)
+	}
+	if cluster.Properties == nil || cluster.Properties.IdentityProfile["kubeletidentity"] == nil ||
+		cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID == nil {
+		return "", "", fmt.Errorf("BYO AKS requires a kubelet principal object ID for registry access")
+	}
+	kubeletObjectID := *cluster.Properties.IdentityProfile["kubeletidentity"].ObjectID
+	if _, err := uuid.Parse(kubeletObjectID); err != nil {
+		return "", "", fmt.Errorf("AKS kubelet principal object ID must be a GUID: %w", err)
+	}
+	const roleName = "Managed Identity Federated Identity Credential Contributor"
+	roles, err := armauthorization.NewRoleDefinitionsClient(p.credential, options)
+	if err != nil {
+		return "", "", fmt.Errorf("create role definitions client: %w", err)
+	}
+	pager := roles.NewListPager("/subscriptions/"+p.subID,
+		&armauthorization.RoleDefinitionsClientListOptions{Filter: new("roleName eq '" + roleName + "'")})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("resolve built-in federation role: %w", err)
+		}
+		for _, role := range page.Value {
+			if role == nil || role.Properties == nil || role.Properties.RoleName == nil ||
+				*role.Properties.RoleName != roleName || role.Properties.RoleType == nil ||
+				!strings.EqualFold(*role.Properties.RoleType, "BuiltInRole") {
+				continue
+			}
+			if role.ID == nil {
+				return "", "", fmt.Errorf("built-in federation role has an invalid ID")
+			}
+			roleID, err := arm.ParseResourceID(*role.ID)
+			if err != nil || !strings.EqualFold(roleID.ResourceType.String(), "Microsoft.Authorization/roleDefinitions") {
+				return "", "", fmt.Errorf("built-in federation role has an invalid ID")
+			}
+			if _, err := uuid.Parse(roleID.Name); err != nil {
+				return "", "", fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
+			}
+			return kubeletObjectID,
+				"/subscriptions/" + p.subID + "/providers/Microsoft.Authorization/roleDefinitions/" + roleID.Name, nil
+		}
+	}
+	return "", "", fmt.Errorf("required built-in role %q is unavailable", roleName)
 }
 
 func supportsBYOResourceGroupReuse(template map[string]any) bool {
@@ -166,8 +210,8 @@ func byoParameterValue(source *templateSource, key string) any {
 	return nil
 }
 
-func byoNetworkSelection(source *templateSource) (onboarding.Network, error) {
-	var network onboarding.Network
+func byoNetworkSelection(source *templateSource) (byoNetwork, error) {
+	var network byoNetwork
 	if enabled, ok := byoParameterValue(source, "enableNetworkIsolation").(bool); !ok || !enabled {
 		return network, fmt.Errorf("BYO AKS requires network.agentSubnet and network.peSubnet")
 	}

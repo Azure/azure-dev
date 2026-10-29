@@ -166,7 +166,7 @@ $env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 
 The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; missing, empty, false, and invalid values leave it off. `alpha.all`, other preview switches, and service `env:` entries do not enable BYO AKS. Values already injected into the process by the azd host count. No opt-in is required for Foundry projects without `agentHosting`.
 
-The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before AKS validation in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
+The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
 
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
@@ -189,7 +189,7 @@ services:
 
 Both named subnets must belong to the same existing VNet and have different names. Omit `prefix` to reference an existing subnet; an explicit `prefix` uses the standard network module to create that subnet. The agent subnet must be private IPv4, `/27` or larger, delegated to `Microsoft.App/environments`, and disjoint from the AKS node and private-endpoint subnets. The private-endpoint subnet must not be delegated.
 
-The cluster must use Base AKS (not Automatic), Kubernetes **1.31+** (the running version), Azure CNI overlay or a User-pool pod subnet, managed identity, OIDC, and Workload Identity. System pools require **4 vCPUs / 16 GiB** or more. One ready User pool must satisfy all sandbox requirements: AzureLinux, Kata, at least one node, **8 vCPUs / 32 GiB**, node image **202608.14.0+**, label `agents.ai.azure.com/sandbox-node=true`, and SSH disabled. The network policy must support the Azure, Calico, or Cilium configuration. These checks use Azure reads; they do not reconfigure the cluster.
+Use an existing AKS cluster and network configured for Foundry agent hosting. The provider reads the cluster's kubelet principal and resolves the built-in federation role for the required grants. It does not validate AKS or network readiness or reconfigure the cluster.
 
 The default resource graph creates:
 
@@ -198,11 +198,11 @@ The default resource graph creates:
 - One native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data plane remains private behind the standard account private endpoint. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the selected subscriptions, AKS pools, Compute SKUs and network resources, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data plane remains private behind the standard account private endpoint. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the existing AKS cluster, built-in role definitions, VNet and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes.
 
 Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting, and Microsoft-managed egress is not supported. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
 
-`azd provision --preview` validates the existing AKS and network prerequisites, then returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
+`azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
 
 **`azd down` is refused for BYO AKS**, including when hosting is present in the last ARM deployment's parameters but has been removed from YAML. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
 

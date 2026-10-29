@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package onboarding
+package provisioning
 
 import (
 	"fmt"
@@ -12,23 +12,15 @@ import (
 	"github.com/google/uuid"
 )
 
-// Input contains the existing resources to validate before provisioning.
-type Input struct {
-	ClusterID, SubscriptionID string
-	Network                   Network
-}
-
-// Network contains the standard Foundry network selections.
-type Network struct {
+type byoNetwork struct {
 	VNetID, AgentSubnetName, AgentSubnetPrefix string
 	PESubnetName, PESubnetPrefix               string
 	CreateAgentSubnet, CreatePESubnet          bool
 	DNSResourceGroup, DNSSubscription          string
 }
 
-// Validate rejects locally detectable network conflicts before credential or resource reads.
-func (n Network) Validate() error {
-	if _, err := ParseID(n.VNetID, "Microsoft.Network/virtualNetworks"); err != nil {
+func (n byoNetwork) validate() error {
+	if _, err := parseBYOResourceID(n.VNetID, "Microsoft.Network/virtualNetworks"); err != nil {
 		return err
 	}
 	for _, name := range []string{n.AgentSubnetName, n.PESubnetName} {
@@ -81,8 +73,7 @@ func (n Network) Validate() error {
 	return nil
 }
 
-// ParseID requires an exact ARM resource type and complete subscription/RG hierarchy.
-func ParseID(value, kind string) (*arm.ResourceID, error) {
+func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
 	if !strings.HasPrefix(strings.ToLower(value), "/subscriptions/") ||
 		strings.ContainsAny(value, "?#%\\@:\x00 \t\r\n") || strings.Contains(value, "//") {
 		return nil, fmt.Errorf("expected a complete %s resource ID without URL components", kind)
@@ -96,4 +87,16 @@ func ParseID(value, kind string) (*arm.ResourceID, error) {
 		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
 	}
 	return id, nil
+}
+
+func prefixLastAddress(prefix netip.Prefix) netip.Addr {
+	last := prefix.Addr().As16()
+	bits := prefix.Bits()
+	if prefix.Addr().Is4() {
+		bits += 96
+	}
+	for bit := bits; bit < 128; bit++ {
+		last[bit/8] |= 1 << (7 - bit%8)
+	}
+	return netip.AddrFrom16(last).Unmap()
 }

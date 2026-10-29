@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -107,7 +106,6 @@ type FoundryProvisioningProvider struct {
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 	armClientOptions *arm.ClientOptions
-	byoChecker       onboarding.ResourceChecker
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -1234,7 +1232,7 @@ func (p *FoundryProvisioningProvider) Deploy(
 		return nil, err
 	}
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if err := p.prepareBYO(ctx, src, progress); err != nil {
+		if err := p.prepareBYO(ctx, src); err != nil {
 			return nil, err
 		}
 	}
@@ -1529,7 +1527,7 @@ func (p *FoundryProvisioningProvider) Preview(
 		return nil, err
 	}
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if err := p.prepareBYO(ctx, src, progress); err != nil {
+		if err := p.prepareBYO(ctx, src); err != nil {
 			return nil, err
 		}
 	}
@@ -2210,7 +2208,7 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	}
 	options := p.armClientOptions
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		options = onboarding.ARMOptions(options)
+		options = byoARMOptions(options)
 	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, options)
 	if err != nil {

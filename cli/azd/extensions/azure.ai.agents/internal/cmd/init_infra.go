@@ -611,7 +611,7 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			return exterrors.Validation(
 				exterrors.CodeInvalidParameter,
 				"BYO AKS requires the microsoft.foundry provisioning provider",
-				"use embedded provisioning or Bicep eject to retain AKS validation and the write-ahead deployment intent",
+				"use embedded provisioning or Bicep eject to create the default AKS supporting resources and grants",
 			)
 		}
 		// Private networking is Bicep-only today: the Terraform module has no

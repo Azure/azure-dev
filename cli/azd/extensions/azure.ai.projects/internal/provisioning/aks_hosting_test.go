@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/onboarding"
 	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -51,22 +50,6 @@ func (byoTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (
 	return azcore.AccessToken{Token: "offline-only", ExpiresOn: time.Now().Add(time.Hour)}, nil
 }
 
-type byoTestChecker struct {
-	facts onboarding.Facts
-	err   error
-	calls int
-}
-
-func (c *byoTestChecker) Check(
-	_ context.Context, _ onboarding.Input,
-) (onboarding.Facts, onboarding.Report, error) {
-	c.calls++
-	if c.err != nil {
-		return c.facts, nil, c.err
-	}
-	return c.facts, onboarding.Report{{ID: "A01", Status: onboarding.Pass, Observed: "offline verified cluster"}}, nil
-}
-
 type byoARMFake struct {
 	t          *testing.T
 	provider   *FoundryProvisioningProvider
@@ -87,6 +70,22 @@ func (f *byoARMFake) response(request *http.Request, status int, body any) *http
 
 func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
+	if request.Method == http.MethodGet && request.URL.Path == offlineClusterID {
+		return f.response(request, 200, map[string]any{
+			"properties": map[string]any{"identityProfile": map[string]any{
+				"kubeletidentity": map[string]any{"objectId": "11111111-1111-4111-8111-111111111111"},
+			}},
+		}), nil
+	}
+	if request.Method == http.MethodGet &&
+		request.URL.Path == "/subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions" {
+		return f.response(request, 200, map[string]any{"value": []any{map[string]any{
+			"id": "/subscriptions/target-sub/providers/Microsoft.Authorization/" +
+				"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			"properties": map[string]any{"roleName": "Managed Identity Federated Identity Credential Contributor",
+				"type": "BuiltInRole"},
+		}}}), nil
+	}
 	if request.Method == http.MethodGet && request.URL.Path == "/subscriptions/target-sub/resourcegroups/target-rg" {
 		return f.response(request, 200, map[string]any{"location": "eastus"}), nil
 	}
@@ -151,11 +150,6 @@ func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake
 		projectPath: t.TempDir(), envName: "test", subID: "target-sub", rgName: "target-rg", location: "westus",
 		foundryName: "project", synthResult: result, armTemplate: template, credential: byoTestCredential{},
 		tenantID: "user-access-tenant", virtualEnv: map[string]string{},
-		byoChecker: &byoTestChecker{facts: onboarding.Facts{
-			KubeletObjectID: "11111111-1111-4111-8111-111111111111",
-			FederatedIdentityRoleDefinitionID: "/subscriptions/target-sub/providers/Microsoft.Authorization/" +
-				"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-		}},
 	}
 	fake := &byoARMFake{t: t, provider: p}
 	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
@@ -184,7 +178,12 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 		assert.Equal(t, value, result.Deployment.Outputs[name].Value)
 	}
 	assert.Equal(t, 1, fake.writes)
-	assert.Len(t, fake.requests, 2, "only resource-group existence and deployment requests are required")
+	assert.Equal(t, []string{
+		"GET " + offlineClusterID,
+		"GET /subscriptions/target-sub/providers/Microsoft.Authorization/roleDefinitions",
+		"GET /subscriptions/target-sub/resourcegroups/target-rg",
+		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
+	}, fake.requests)
 	assert.Empty(t, server.set, "provisioning returns standard outputs without an additional environment journal")
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
@@ -213,7 +212,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 4)
+	assert.Len(t, fake.requests, 8)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -238,7 +237,7 @@ func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
 	assert.Equal(t, 2, fake.writes)
 }
 
-func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSChecks(t *testing.T) {
+func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSReads(t *testing.T) {
 	p, fake := offlineBYOProvider(t)
 	t.Setenv(synthesis.BYOAKSEnvVar, "")
 	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
@@ -250,9 +249,7 @@ func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSChecks(t *testing.T) {
 	require.NotNil(t, deployed.Deployment)
 	require.Contains(t, deployed.Deployment.Outputs, "AZURE_AI_PROJECT_ID")
 	assert.Equal(t, offlineProjectID, deployed.Deployment.Outputs["AZURE_AI_PROJECT_ID"].Value)
-	checker, ok := p.byoChecker.(*byoTestChecker)
-	require.True(t, ok)
-	assert.Zero(t, checker.calls)
+	assert.Len(t, fake.requests, 1, "native Foundry only submits the ARM deployment")
 	assert.NotContains(t, fake.parameters, "agentHosting")
 	assert.NotContains(t, fake.parameters, "kubeletObjectId")
 	assert.Equal(t, 1, fake.writes)
@@ -266,10 +263,10 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	require.True(t, ok)
 	delete(definitions, "kubeletObjectId")
 	delete(definitions, "federatedIdentityRoleDefinitionId")
-	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	require.NoError(t, p.prepareBYO(t.Context(), source))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Len(t, fake.requests, 1, "preparation only reads the resource group")
+	assert.Len(t, fake.requests, 3, "preparation only reads host bindings and the resource group")
 }
 
 func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
@@ -294,24 +291,10 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 			source, err := p.resolveTemplate(t.Context(), func(string) {})
 			require.NoError(t, err)
 			source.parameters[test.key] = map[string]any{"value": test.value}
-			require.ErrorContains(t, p.prepareBYO(t.Context(), source, func(string) {}), test.expected)
+			require.ErrorContains(t, p.prepareBYO(t.Context(), source), test.expected)
 			assert.Empty(t, fake.requests)
-			checker, ok := p.byoChecker.(*byoTestChecker)
-			require.True(t, ok)
-			assert.Zero(t, checker.calls)
 		})
 	}
-}
-
-func TestBYOPrerequisiteFailurePreventsDeployment(t *testing.T) {
-	p, fake := offlineBYOProvider(t)
-	checker, ok := p.byoChecker.(*byoTestChecker)
-	require.True(t, ok)
-	checker.err = errors.New("AKS read denied")
-	_, err := p.Deploy(t.Context(), func(string) {})
-	require.ErrorContains(t, err, "AKS read denied")
-	assert.Empty(t, fake.requests)
-	assert.Empty(t, p.virtualEnv)
 }
 
 func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.T) {
@@ -439,9 +422,6 @@ func TestBYODeployAndPreviewRejectDisabledFeatureBeforeAuthentication(t *testing
 			assert.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
 			assert.Nil(t, p.credential)
 			assert.Empty(t, fake.requests)
-			checker, ok := p.byoChecker.(*byoTestChecker)
-			require.True(t, ok)
-			assert.Zero(t, checker.calls)
 			assert.Empty(t, p.virtualEnv)
 		})
 	}

@@ -204,7 +204,9 @@ Only the existing cluster is selectable: supplied Storage accounts, hosting/work
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
 
-**`azd down` is refused for BYO AKS**, including when hosting is present in the last ARM deployment's parameters but has been removed from YAML. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
+**`azd down` is refused for BYO AKS**. Before submitting a hosting deployment, the provider saves `AZD_FOUNDRY_BYO_AKS_RESOURCE_GROUP_IDS` in the azd environment as a JSON array of protected resource-group ARM IDs. This protection is independent of the project path, survives failed deployments and removal of hosting from YAML, and is not written by preview. Keep it with the environment when moving the project.
+
+For older environments without this protection, the provider also checks the ARM deployment's hosting parameters. If that deployment record is missing, an existing group can only be deleted when its saved azd ownership ID and environment tag match; a missing record alone does not authorize deletion. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
 
 Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 

@@ -183,6 +183,8 @@ Once a version is resolved, installation proceeds through these steps:
 
 Installation progress updates in place in an interactive terminal. In redirected or non-TTY output, each uninterrupted install emits at most one `Installing <id>` progress line rather than animation frames. Progress resumes after a source-selection or replacement prompt, or a compatibility warning. Final statuses and dependency results are reported separately.
 
+Already-installed dependencies are kept when they satisfy the declared constraint. Otherwise, installation upgrades them to the highest published version that satisfies both the dependency constraint and the running azd version. Dependency upgrades preserve whether each member was installed explicitly or as a dependency. If satisfying a constraint would require a downgrade, installation fails without downgrading that member. Completed dependency updates are kept if a later step fails.
+
 ### Recovery after a failed update
 
 An extension update preserves the target's previous files and installed record
@@ -241,6 +243,8 @@ Legacy records are never auto-removed and have no known dependencies. Update bac
 ## Update results
 
 Any extension or dependency failure returns a nonzero exit code, including with `--output json`. This includes metadata save failures. Completed updates are kept. The JSON summary counts top-level extensions; dependency outcomes appear in `dependencyUpgrades`. The same failure rule applies when installing over an existing extension.
+
+Dependency reconciliation never automatically downgrades a member. An installed version outside a pack's constraint that would need a downgrade is reported as a failed dependency, not a skipped update. This also applies to `azd extension update --all`, which can independently update a member beyond an installed pack's range. Align the member version explicitly or use a pack release with a compatible constraint.
 
 ## Self-Contained Bundles
 

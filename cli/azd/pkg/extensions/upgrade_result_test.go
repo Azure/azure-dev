@@ -4,13 +4,45 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDependencyUpgradeError(t *testing.T) {
+	t.Parallel()
+
+	childErr := &DependencyVersionNotFoundError{
+		DependencyId: "test.child", ParentId: "test.pack", Constraint: ">=2.0.0",
+	}
+	nestedErr := fmt.Errorf("saving dependency metadata: %w", context.Canceled)
+	results := []UpgradeResult{
+		{ExtensionId: "test.child", Status: UpgradeStatusFailed, Error: childErr},
+		{
+			ExtensionId: "test.parent", Status: UpgradeStatusUpgraded,
+			DependencyUpgrades: []UpgradeResult{{
+				ExtensionId: "test.nested", Status: UpgradeStatusFailed, Error: nestedErr,
+			}},
+		},
+	}
+
+	err := DependencyUpgradeError(results)
+	require.ErrorIs(t, err, childErr)
+	require.ErrorIs(t, err, nestedErr)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "dependency test.child:")
+	require.ErrorContains(t, err, "dependency test.nested:")
+	require.Nil(t, DependencyUpgradeError(nil))
+	require.Nil(t, DependencyUpgradeError([]UpgradeResult{
+		{Status: UpgradeStatusUpgraded},
+		{Status: UpgradeStatusSkipped},
+	}))
+}
 
 func TestUpgradeStatus_String(t *testing.T) {
 	t.Parallel()

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1206,6 +1207,123 @@ func TestUpgradeAction_AllWithSourceSkipsExtensionsOutsideSource(t *testing.T) {
 	require.Equal(t, "extension not available in source 'test'", report.Extensions[0].SkipReason)
 }
 
+func TestExtensionPack_DependencyReconciliation(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		install     bool
+		jsonOutput  bool
+		packVersion string
+		packFirst   bool
+	}{
+		{name: "install over beta member", install: true},
+		{name: "batch conflict", packVersion: "1.0.0"},
+		{name: "batch conflict JSON", packVersion: "1.0.0", jsonOutput: true},
+		{name: "batch upgraded pack conflict JSON", packVersion: "1.0.0-beta.1", jsonOutput: true},
+		{name: "batch pack processed before member", packVersion: "1.0.0", jsonOutput: true, packFirst: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("NO_COLOR", "1")
+			mockCtx := mocks.NewMockContext(t.Context())
+			child := testExtMeta("test.child", "1.0.0", "test")
+			child.Versions[0].Artifacts = map[string]extensions.ExtensionArtifact{
+				runtime.GOOS: {URL: "https://test.example.com/test.child"},
+			}
+			installed := map[string]*extensions.Extension{
+				child.Id: {Id: child.Id, Version: "1.0.0-beta.1", Source: "test"},
+			}
+			pack := testExtMeta("test.pack", "1.0.0", "test")
+			if test.packFirst {
+				pack.Id = "aaa.pack"
+			}
+			pack.Versions[0].Dependencies = []extensions.ExtensionDependency{
+				{Id: child.Id, Version: "~1.0.0"},
+			}
+			if !test.install {
+				release := child.Versions[0]
+				release.Version = "1.1.0"
+				child.Versions = append(child.Versions, release)
+				installed[child.Id].Version = "1.0.0"
+				installed[pack.Id] = &extensions.Extension{
+					Id: pack.Id, Version: test.packVersion, Source: "test",
+				}
+			}
+			mockCtx.HttpClient.When(func(request *http.Request) bool {
+				return request.URL.String() == "https://test.example.com/test.child"
+			}).RespondFn(func(request *http.Request) (*http.Response, error) {
+				return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+			})
+			manager, sources := createUpgradeTestManager(
+				t, mockCtx, installed, "https://test.example.com/registry.json", testRegistry(pack, child),
+			)
+			console := mockinput.NewMockConsole()
+			if test.install {
+				action := &extensionInstallAction{
+					args: []string{pack.Id},
+					flags: &extensionInstallFlags{
+						source: "test", global: &internal.GlobalCommandOptions{NoPrompt: true},
+					},
+					console: console, sourceManager: sources, extensionManager: manager,
+				}
+				_, err := action.Run(t.Context())
+				require.NoError(t, err)
+				rendered := strings.Join(console.Output(), "\n")
+				require.Contains(t, rendered, "Done: Updated test.child dependency")
+				require.NotContains(t, rendered, "Skipped: Installing test.child dependency")
+				record, err := manager.GetInstalled(extensions.FilterOptions{Id: child.Id})
+				require.NoError(t, err)
+				require.Equal(t, "1.0.0", record.Version)
+				return
+			}
+
+			var buf bytes.Buffer
+			var formatter output.Formatter = &output.NoneFormatter{}
+			if test.jsonOutput {
+				formatter = &output.JsonFormatter{}
+			}
+			action := &extensionUpgradeAction{
+				flags: &extensionUpgradeFlags{
+					all: true, global: &internal.GlobalCommandOptions{NoPrompt: true},
+				},
+				console: console, sourceManager: sources, extensionManager: manager,
+				formatter: formatter, writer: &buf,
+			}
+			result, err := action.Run(t.Context())
+			require.Nil(t, result)
+			require.ErrorContains(t, err, "1 extension dependency failed to update")
+			require.ErrorAs(t, err, new(*extensions.DependencyVersionConflictError))
+			require.ErrorContains(t, err, fmt.Sprintf(`version 1.1.0 does not satisfy %s's constraint "~1.0.0"`, pack.Id))
+			record, err := manager.GetInstalled(extensions.FilterOptions{Id: child.Id})
+			require.NoError(t, err)
+			require.Equal(t, "1.1.0", record.Version, "dependency reconciliation must not downgrade")
+			if test.jsonOutput {
+				var report struct {
+					Extensions []struct {
+						Name               string
+						DependencyUpgrades []struct{ Name, Status, Error string }
+					}
+				}
+				require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
+				require.Len(t, report.Extensions, 2)
+				packIndex := 1
+				if test.packFirst {
+					packIndex = 0
+				}
+				require.Equal(t, pack.Id, report.Extensions[packIndex].Name)
+				require.Len(t, report.Extensions[packIndex].DependencyUpgrades, 1)
+				dependency := report.Extensions[packIndex].DependencyUpgrades[0]
+				require.Equal(t, child.Id, dependency.Name)
+				require.Equal(t, "failed", dependency.Status)
+				require.Contains(t, dependency.Error, "does not satisfy")
+			} else {
+				rendered := strings.Join(console.Output(), "\n")
+				require.Contains(t, rendered, "(x) Failed: Updating test.child dependency")
+				require.Contains(t, rendered, "1 dependency failed")
+			}
+		})
+	}
+}
+
 func TestExtensionInstallAction_PromotesExistingDependency(t *testing.T) {
 	for _, id := range []string{"test.child", "Test.Child"} {
 		t.Run(id, func(t *testing.T) {
@@ -1348,36 +1466,6 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 			}
 		})
 	}
-}
-
-func TestDependencyUpgradeError(t *testing.T) {
-	t.Parallel()
-
-	childErr := &extensions.DependencyVersionNotFoundError{
-		DependencyId: "test.child", ParentId: "test.pack", Constraint: ">=2.0.0",
-	}
-	nestedErr := fmt.Errorf("saving dependency metadata: %w", context.Canceled)
-	results := []extensions.UpgradeResult{
-		{ExtensionId: "test.child", Status: extensions.UpgradeStatusFailed, Error: childErr},
-		{
-			ExtensionId: "test.parent", Status: extensions.UpgradeStatusUpgraded,
-			DependencyUpgrades: []extensions.UpgradeResult{{
-				ExtensionId: "test.nested", Status: extensions.UpgradeStatusFailed, Error: nestedErr,
-			}},
-		},
-	}
-
-	err := dependencyUpgradeError(results)
-	require.ErrorIs(t, err, childErr)
-	require.ErrorIs(t, err, nestedErr)
-	require.ErrorIs(t, err, context.Canceled)
-	require.ErrorContains(t, err, "dependency test.child:")
-	require.ErrorContains(t, err, "dependency test.nested:")
-	require.Nil(t, dependencyUpgradeError(nil))
-	require.Nil(t, dependencyUpgradeError([]extensions.UpgradeResult{
-		{Status: extensions.UpgradeStatusUpgraded},
-		{Status: extensions.UpgradeStatusSkipped},
-	}))
 }
 
 // ---------------------------------------------------------------------------

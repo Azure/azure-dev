@@ -477,9 +477,9 @@ func tryAutoInstallExtensionVersion(
 	if err != nil {
 		return false, fmt.Errorf("listing installed extensions: %w", err)
 	}
-	preInstalledIds := make(map[string]struct{}, len(installedBefore))
-	for id := range installedBefore {
-		preInstalledIds[id] = struct{}{}
+	preInstalledVersions := make(map[string]string, len(installedBefore))
+	for id, installed := range installedBefore {
+		preInstalledVersions[id] = installed.Version
 	}
 
 	stepMessage := extensionTaskMessage("Installing", extension.Id)
@@ -503,7 +503,7 @@ func tryAutoInstallExtensionVersion(
 			console,
 			extensionManager,
 			installedVersion.Dependencies,
-			preInstalledIds,
+			preInstalledVersions,
 			"  ",
 			map[string]struct{}{extension.Id: {}},
 			extension.SourceCategoryOrUnknown(),

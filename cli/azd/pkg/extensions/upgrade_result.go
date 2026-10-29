@@ -3,7 +3,11 @@
 
 package extensions
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+)
 
 // UpgradeStatus represents the outcome of a single extension upgrade attempt.
 // The String() values ("upgraded", "skipped", "promoted", "failed") are
@@ -67,6 +71,20 @@ type UpgradeResult struct {
 	// DependencyUpgrades captures dependency reconciliation results, including
 	// skipped upgrades and failed metadata writes when dependency updates are disabled.
 	DependencyUpgrades []UpgradeResult
+}
+
+// DependencyUpgradeError preserves causes from failed dependencies, including nested results.
+func DependencyUpgradeError(results []UpgradeResult) error {
+	var failures []error
+	for _, result := range results {
+		if result.Status == UpgradeStatusFailed && result.Error != nil {
+			failures = append(failures, fmt.Errorf("dependency %s: %w", result.ExtensionId, result.Error))
+		}
+		if err := DependencyUpgradeError(result.DependencyUpgrades); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
 }
 
 // upgradeResultJSON is the JSON serialization format for UpgradeResult.

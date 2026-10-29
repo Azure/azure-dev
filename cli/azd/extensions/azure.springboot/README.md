@@ -41,5 +41,5 @@ extension generate it. Reruns reuse it; lost state requires the original
 password, not automatic rotation. Changing database mode requires a new
 environment. No Key Vault, Gradle, project scanning, or Bicep generation.
 
-The [Petclinic testing template](https://github.com/XiaofeiCao/spring-petclinic/blob/azd-springboot-test/README.azd.md)
+The [Petclinic template](https://github.com/XiaofeiCao/azd-spring-petclinic/blob/main/README.md)
 owns setup, demo, recovery, cleanup, and opt-in E2E instructions.

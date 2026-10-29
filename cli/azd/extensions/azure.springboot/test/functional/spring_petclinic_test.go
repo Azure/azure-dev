@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	petclinicRepository      = "https://github.com/XiaofeiCao/spring-petclinic"
-	petclinicBranch          = "azd-springboot-test"
-	petclinicTemplateCommit  = "4616f974c1604d76b6d9d7e4b44ef58c008a7593"
+	petclinicRepository      = "https://github.com/XiaofeiCao/azd-spring-petclinic"
+	petclinicBranch          = "main"
+	petclinicTemplateCommit  = "215d42251c4960c67bd86167a0a67ef8a24cf3ff"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 
@@ -273,7 +273,7 @@ func initPetclinicTemplateWithArgs(
 	require.FileExists(t, filepath.Join(projectDir, "pom.xml"))
 	require.FileExists(t, filepath.Join(projectDir, "mvnw"))
 	require.FileExists(t, filepath.Join(projectDir, "LICENSE.txt"))
-	require.FileExists(t, filepath.Join(projectDir, "README.azd.md"))
+	require.FileExists(t, filepath.Join(projectDir, "README.md"))
 	require.FileExists(t, filepath.Join(projectDir, ".dockerignore"))
 	require.NoFileExists(t, filepath.Join(projectDir, "Dockerfile"))
 	require.DirExists(t, filepath.Join(projectDir, ".azure", envName))
@@ -346,10 +346,10 @@ func verifyPetclinicBranch(t *testing.T, ctx context.Context) {
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "reading the Petclinic testing branch: %s", output)
 	fields := strings.Fields(string(output))
-	require.Len(t, fields, 2, "expected exactly one Petclinic testing branch ref")
+	require.Len(t, fields, 2, "expected exactly one published Petclinic branch ref")
 	require.Equal(t, ref, fields[1])
 	require.Equal(t, petclinicTemplateCommit, fields[0],
-		"Petclinic testing branch drifted; review its changes before updating the template revision pin")
+		"published Petclinic branch drifted; review its changes before updating the template revision pin")
 }
 
 func environmentWithout(environment []string, keys ...string) []string {

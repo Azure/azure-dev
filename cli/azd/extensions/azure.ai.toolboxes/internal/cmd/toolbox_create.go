@@ -87,7 +87,11 @@ func runToolboxCreate(
 	}
 	logResolvedEndpoint("toolbox create", resolved)
 
-	client, err := newToolboxClient(resolved.Endpoint)
+	envName := parent.environment
+	if envName == "" {
+		envName = resolved.AzdEnvName
+	}
+	client, err := newPreparedToolboxClient(ctx, resolved.Endpoint, envName)
 	if err != nil {
 		return err
 	}

@@ -9,8 +9,10 @@ import (
 	"testing"
 
 	"azure.ai.toolboxes/internal/exterrors"
+	"azure.ai.toolboxes/internal/foundry"
 	"azure.ai.toolboxes/internal/foundry/projectctx"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -391,11 +393,19 @@ func TestDeployUsesSubscriptionUserTenantForCredential(t *testing.T) {
 			environment := &stubEnvironmentReader{name: "test", subscriptionID: subscriptionID}
 			client := newMockToolboxClient(endpoint)
 			var credentialTenantID string
+			prepared := false
 			target := &toolboxServiceTarget{
 				environmentClient: environment,
 				accountClient:     account,
 				resolver:          newStubConnectionResolver(),
+				prepareAccess: func(_ context.Context, opts foundry.PrepareDeveloperAccessOptions) (azcore.TokenCredential, error) {
+					prepared = true
+					assert.Equal(t, endpoint, opts.Endpoint)
+					assert.Equal(t, "test", opts.EnvironmentName)
+					return nil, nil
+				},
 				newClient: func(gotEndpoint, tenantID string) (toolboxClient, error) {
+					assert.True(t, prepared, "developer RBAC access must be prepared before toolbox API calls")
 					assert.Equal(t, endpoint, gotEndpoint)
 					credentialTenantID = tenantID
 					if tt.clientErr != nil {

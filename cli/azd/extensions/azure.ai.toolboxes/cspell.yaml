@@ -4,6 +4,7 @@ words:
     - connectionless
     - envkey
     - exterrors
+    - localfoundry
     - projectctx
     - retarget
     - retargets

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
@@ -28,6 +29,7 @@ type toolboxFlags struct {
 	projectEndpoint string
 	output          string
 	noPrompt        bool
+	environment     string
 }
 
 // toolboxNamePattern is the validation regex for toolbox and tool names.
@@ -43,11 +45,13 @@ func readToolboxFlags(cmd *cobra.Command, extCtx *azdext.ExtensionContext) toolb
 	pe, _ := cmd.Flags().GetString("project-endpoint")
 	out := ""
 	np := false
+	env := ""
 	if extCtx != nil {
 		out = strings.ToLower(extCtx.OutputFormat)
 		np = extCtx.NoPrompt
+		env = extCtx.Environment
 	}
-	return toolboxFlags{projectEndpoint: pe, output: out, noPrompt: np}
+	return toolboxFlags{projectEndpoint: pe, output: out, noPrompt: np, environment: env}
 }
 
 // validateOutputFormat returns a structured error when --output is not table/json.
@@ -120,6 +124,29 @@ func newToolboxClientForTenant(endpoint, tenantID string) (*azure.FoundryToolbox
 	return azure.NewFoundryToolboxClient(endpoint, cred), nil
 }
 
+var prepareDeveloperAccess = foundry.PrepareDeveloperAccess
+
+func newPreparedToolboxClient(
+	ctx context.Context,
+	endpoint string,
+	environmentName string,
+) (*azure.FoundryToolboxClient, error) {
+	cred, err := prepareDeveloperAccess(ctx, foundry.PrepareDeveloperAccessOptions{
+		Endpoint:        endpoint,
+		EnvironmentName: environmentName,
+		Warn: func(message string) {
+			fmt.Fprintln(os.Stderr, "Warning: "+message)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if cred != nil {
+		return azure.NewFoundryToolboxClient(endpoint, cred), nil
+	}
+	return newToolboxClient(endpoint)
+}
+
 // resolveToolboxAndClient walks the endpoint cascade, validates flags, and
 // returns a toolbox client bound to the resolved endpoint.
 func resolveToolboxAndClient(
@@ -132,7 +159,11 @@ func resolveToolboxAndClient(
 	if err != nil {
 		return nil, nil, err
 	}
-	client, err := newToolboxClient(resolved.Endpoint)
+	envName := flags.environment
+	if envName == "" {
+		envName = resolved.AzdEnvName
+	}
+	client, err := newPreparedToolboxClient(ctx, resolved.Endpoint, envName)
 	if err != nil {
 		return nil, nil, err
 	}

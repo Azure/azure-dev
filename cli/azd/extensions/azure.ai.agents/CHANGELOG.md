@@ -4,11 +4,14 @@
 
 ## 1.0.0-beta.23 (2026-10-29)
 
+### Features Added
+
+- [[#10182]](https://github.com/Azure/azure-dev/pull/10182) Expose `--harness` for `azd ai agent init`.
+
 ### Bugs Fixed
 
 - [[#10561]](https://github.com/Azure/azure-dev/pull/10561) Fix A2A 0.3 invocation output to show completed task answers instead of generic lifecycle messages.
 - [[#10715]](https://github.com/Azure/azure-dev/pull/10715) Fix prompt-agent deployment and invocation accepting invalid paths or modules in later infrastructure layers after an earlier layer matches.
-- [[#10182]](https://github.com/Azure/azure-dev/pull/10182) Fix `azd ai agent init --help` omitting the `--harness` option.
 - [[#10553]](https://github.com/Azure/azure-dev/pull/10553) Fix hosted-agent activation failure and timeout diagnostics to identify the attempted version and clarify that a timeout does not confirm deployment failure.
 - [[#10675]](https://github.com/Azure/azure-dev/pull/10675) Fix developer RBAC warnings disappearing from final deployment output, including JSON output and deployments that later fail.
 

@@ -458,6 +458,18 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			"Each execution should use a distinct command tree instance")
 	})
 
+	t.Run("ExtractGlobalArgsOmitsCwd", func(t *testing.T) {
+		originalArgs := os.Args
+		os.Args = []string{"azd", "--cwd", "/tmp/parent", "--debug", "ai", "agent", "init"}
+		t.Cleanup(func() {
+			os.Args = originalArgs
+		})
+
+		globalArgs := extractGlobalArgs()
+		require.Equal(t, []string{"--debug=true"}, globalArgs,
+			"parent --cwd must not be re-appended onto workflow steps")
+	})
+
 	t.Run("GlobalBoolFlagsRemainSingleTokenWhenMerged", func(t *testing.T) {
 		originalArgs := os.Args
 		os.Args = []string{"azd", "--debug", "up"}

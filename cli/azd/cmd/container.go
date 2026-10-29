@@ -1100,6 +1100,12 @@ func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context, args []string) 
 // -e/--environment (e.g. `azd: env set KEY VALUE -e env1`), and appending the parent's
 // --environment would override the step-level value. Environment propagation to workflow
 // steps is handled by the globalOptions DI fallback in the EnvFlag resolver instead.
+//
+// The "cwd" flag is also excluded: workflow steps that pass --cwd (for example agents
+// init authoring into a nested project folder) must win over the parent process -C/--cwd.
+// Appending the parent's cwd last would force every nested step back into the outer
+// directory. Steps that omit --cwd still inherit the parent's working directory through
+// the sticky GlobalCommandOptions value used by PersistentPreRunE.
 func extractGlobalArgs() []string {
 	globalFlagSet := CreateGlobalFlagSet()
 	globalFlagSet.SetOutput(io.Discard)
@@ -1108,7 +1114,7 @@ func extractGlobalArgs() []string {
 
 	var result []string
 	globalFlagSet.VisitAll(func(f *pflag.Flag) {
-		if f.Changed && f.Name != internal.EnvironmentNameFlagName {
+		if f.Changed && f.Name != internal.EnvironmentNameFlagName && f.Name != "cwd" {
 			// Use --flag=value syntax to avoid ambiguity. The two-arg form (--flag value)
 			// doesn't work for boolean flags, where the value is treated as a positional arg.
 			result = append(result, fmt.Sprintf("--%s=%s", f.Name, f.Value.String()))

@@ -61,6 +61,8 @@ func newRootCmd(
 	registerDependencies bool,
 ) *cobra.Command {
 	prevDir := ""
+	prevOptsCwd := ""
+	cwdStepOverride := false
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
@@ -90,6 +92,19 @@ func newRootCmd(
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
 			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
 				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
+			}
+
+			// Workflow steps rebuild the command tree with their own args. Honor an
+			// explicit step --cwd for this execution without permanently replacing the
+			// sticky parent GlobalCommandOptions value (restored in PersistentPostRunE).
+			prevOptsCwd = opts.Cwd
+			cwdStepOverride = false
+			if f := cmd.Root().PersistentFlags().Lookup("cwd"); f != nil && f.Changed {
+				flagCwd := f.Value.String()
+				if flagCwd != opts.Cwd {
+					cwdStepOverride = true
+				}
+				opts.Cwd = flagCwd
 			}
 
 			if opts.Cwd != "" {
@@ -169,6 +184,9 @@ func newRootCmd(
 				if err := os.Chdir(prevDir); err != nil {
 					return err
 				}
+			}
+			if cwdStepOverride {
+				opts.Cwd = prevOptsCwd
 			}
 
 			// Clear context from the executed command to prevent stale context issues.

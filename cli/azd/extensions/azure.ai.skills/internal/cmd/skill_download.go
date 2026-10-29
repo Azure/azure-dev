@@ -24,6 +24,7 @@ type downloadFlags struct {
 	outputDir       string
 	raw             bool
 	force           bool
+	noPrompt        bool
 	output          string
 	projectEndpoint string
 	environment     string
@@ -73,7 +74,12 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		)
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    a.flags.projectEndpoint,
+		environmentName: a.flags.environment,
+		outputFormat:    a.flags.output,
+		noPrompt:        a.flags.noPrompt,
+	})
 	if err != nil {
 		return err
 	}
@@ -242,6 +248,7 @@ total uncompressed size.`,
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
 			flags.environment = extCtx.Environment
+			flags.noPrompt = extCtx.NoPrompt
 			flags.outputDirSet = cmd.Flags().Changed("output-dir")
 			flags.versionSet = cmd.Flags().Changed("version")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")

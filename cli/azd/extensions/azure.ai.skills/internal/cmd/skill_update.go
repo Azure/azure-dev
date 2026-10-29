@@ -28,6 +28,7 @@ type updateFlags struct {
 	instructions    string
 	file            string
 	setDefault      string
+	noPrompt        bool
 	output          string
 	projectEndpoint string
 	environment     string
@@ -63,7 +64,12 @@ func (a *updateAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    a.flags.projectEndpoint,
+		environmentName: a.flags.environment,
+		outputFormat:    a.flags.output,
+		noPrompt:        a.flags.noPrompt,
+	})
 	if err != nil {
 		return err
 	}
@@ -374,6 +380,7 @@ content, pass --set-default-version <version>.`,
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
 			flags.environment = extCtx.Environment
+			flags.noPrompt = extCtx.NoPrompt
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")

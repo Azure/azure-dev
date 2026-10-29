@@ -14,6 +14,7 @@ import (
 
 type showFlags struct {
 	name            string
+	noPrompt        bool
 	output          string
 	projectEndpoint string
 	environment     string
@@ -25,7 +26,12 @@ func (a *showAction) Run(ctx context.Context) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
 	}
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    a.flags.projectEndpoint,
+		environmentName: a.flags.environment,
+		outputFormat:    a.flags.output,
+		noPrompt:        a.flags.noPrompt,
+	})
 	if err != nil {
 		return err
 	}
@@ -53,6 +59,7 @@ default_version and latest_version. To retrieve skill content, use
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
 			flags.environment = extCtx.Environment
+			flags.noPrompt = extCtx.NoPrompt
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},

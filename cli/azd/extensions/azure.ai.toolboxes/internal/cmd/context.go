@@ -129,14 +129,18 @@ var prepareDeveloperAccess = foundry.PrepareDeveloperAccess
 func newPreparedToolboxClient(
 	ctx context.Context,
 	endpoint string,
-	environmentName string,
+	flags toolboxFlags,
 ) (*azure.FoundryToolboxClient, error) {
+	var warn func(string)
+	if !flags.noPrompt && flags.output != "json" {
+		warn = func(message string) {
+			fmt.Fprintln(os.Stderr, "Warning: "+message)
+		}
+	}
 	cred, err := prepareDeveloperAccess(ctx, foundry.PrepareDeveloperAccessOptions{
 		Endpoint:        endpoint,
-		EnvironmentName: environmentName,
-		Warn: func(message string) {
-			fmt.Fprintln(os.Stderr, "Warning: "+message)
-		},
+		EnvironmentName: flags.environment,
+		Warn:            warn,
 	})
 	if err != nil {
 		return nil, err
@@ -159,11 +163,10 @@ func resolveToolboxAndClient(
 	if err != nil {
 		return nil, nil, err
 	}
-	envName := flags.environment
-	if envName == "" {
-		envName = resolved.AzdEnvName
+	if flags.environment == "" {
+		flags.environment = resolved.AzdEnvName
 	}
-	client, err := newPreparedToolboxClient(ctx, resolved.Endpoint, envName)
+	client, err := newPreparedToolboxClient(ctx, resolved.Endpoint, flags)
 	if err != nil {
 		return nil, nil, err
 	}

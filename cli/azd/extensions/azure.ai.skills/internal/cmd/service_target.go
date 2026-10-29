@@ -183,7 +183,10 @@ func (p *skillServiceTarget) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	skillCtx, err := resolveSkillContext(ctx, "", envName)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		environmentName:  envName,
+		progressReporter: progress,
+	})
 	if err != nil {
 		return nil, err
 	}

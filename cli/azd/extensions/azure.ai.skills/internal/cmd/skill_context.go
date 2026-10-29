@@ -23,23 +23,47 @@ type skillContext struct {
 	source   endpointSource
 }
 
+type skillContextOptions struct {
+	flagEndpoint     string
+	environmentName  string
+	outputFormat     string
+	noPrompt         bool
+	progressReporter func(string)
+}
+
 var prepareDeveloperAccess = foundry.PrepareDeveloperAccess
 
 func resolveSkillContext(ctx context.Context, flagEndpoint string, environmentName ...string) (*skillContext, error) {
-	endpoint, src, err := resolveProjectEndpoint(ctx, flagEndpoint)
-	if err != nil {
-		return nil, err
-	}
 	envName := ""
 	if len(environmentName) > 0 {
 		envName = environmentName[0]
 	}
+	return resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    flagEndpoint,
+		environmentName: envName,
+	})
+}
+
+func resolveSkillContextWithOptions(ctx context.Context, opts skillContextOptions) (*skillContext, error) {
+	endpoint, src, err := resolveProjectEndpoint(ctx, opts.flagEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	var warn func(string)
+	switch {
+	case opts.progressReporter != nil:
+		warn = func(message string) {
+			opts.progressReporter("Warning: " + message)
+		}
+	case !shouldSuppressWarning(opts.noPrompt, opts.outputFormat):
+		warn = func(message string) {
+			fmt.Fprintln(os.Stderr, "Warning: "+message)
+		}
+	}
 	cred, err := prepareDeveloperAccess(ctx, foundry.PrepareDeveloperAccessOptions{
 		Endpoint:        endpoint,
-		EnvironmentName: envName,
-		Warn: func(message string) {
-			fmt.Fprintln(os.Stderr, "Warning: "+message)
-		},
+		EnvironmentName: opts.environmentName,
+		Warn:            warn,
 	})
 	if err != nil {
 		return nil, err

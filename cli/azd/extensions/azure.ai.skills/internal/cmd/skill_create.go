@@ -61,7 +61,12 @@ func (a *createAction) Run(ctx context.Context) error {
 		mode = modeInline
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    a.flags.projectEndpoint,
+		environmentName: a.flags.environment,
+		outputFormat:    a.flags.output,
+		noPrompt:        a.flags.noPrompt,
+	})
 	if err != nil {
 		return err
 	}

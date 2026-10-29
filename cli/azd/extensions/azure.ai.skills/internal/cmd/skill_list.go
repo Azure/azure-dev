@@ -14,6 +14,7 @@ import (
 )
 
 type listFlags struct {
+	noPrompt        bool
 	output          string
 	projectEndpoint string
 	environment     string
@@ -22,7 +23,12 @@ type listFlags struct {
 type listAction struct{ flags *listFlags }
 
 func (a *listAction) Run(ctx context.Context) error {
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
+	skillCtx, err := resolveSkillContextWithOptions(ctx, skillContextOptions{
+		flagEndpoint:    a.flags.projectEndpoint,
+		environmentName: a.flags.environment,
+		outputFormat:    a.flags.output,
+		noPrompt:        a.flags.noPrompt,
+	})
 	if err != nil {
 		return err
 	}
@@ -50,6 +56,7 @@ func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
 			flags.environment = extCtx.Environment
+			flags.noPrompt = extCtx.NoPrompt
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},

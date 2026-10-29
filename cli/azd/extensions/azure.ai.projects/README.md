@@ -168,6 +168,8 @@ The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, 
 
 The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
 
+Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the opt-in and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before saving deletion protection or submitting ARM requests.
+
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
 ```yaml

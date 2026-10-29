@@ -6,6 +6,7 @@ tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
 env:
   AZURE_DEV_COLLECT_TELEMETRY: "no"
   AZD_CHECK_VERSION: "false"
+  AZD_ALPHA_ENABLE_AGENTS_BYO_AKS: "true"
 pre:
   - run: |
       set -eu

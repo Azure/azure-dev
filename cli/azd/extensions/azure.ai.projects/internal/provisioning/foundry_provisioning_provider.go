@@ -1232,10 +1232,8 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if err := p.prepareBYO(ctx, src); err != nil {
-			return nil, err
-		}
+	if err := p.prepareBYO(ctx, src); err != nil {
+		return nil, err
 	}
 	if err := p.persistBYODownProtection(ctx, src); err != nil {
 		return nil, err
@@ -1530,10 +1528,8 @@ func (p *FoundryProvisioningProvider) Preview(
 	if err != nil {
 		return nil, err
 	}
-	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if err := p.prepareBYO(ctx, src); err != nil {
-			return nil, err
-		}
+	if err := p.prepareBYO(ctx, src); err != nil {
+		return nil, err
 	}
 
 	client, err := p.deploymentsClient(ctx)

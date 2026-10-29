@@ -34,12 +34,15 @@ func requireBYOAKSFeature() error {
 }
 
 func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *templateSource) error {
-	if err := requireBYOAKSFeature(); err != nil {
-		return err
+	configured := p.synthResult != nil && p.synthResult.Hosting != nil
+	if configured {
+		if err := requireBYOAKSFeature(); err != nil {
+			return err
+		}
 	}
-	includeAcr, ok := byoParameterValue(source, "includeAcr").(bool)
-	if !ok || !includeAcr {
-		return fmt.Errorf("BYO AKS requires includeAcr=true for the native azd-created Container Registry")
+	value, err := byoHostingParameter(source)
+	if err != nil {
+		return err
 	}
 	var hosting struct {
 		Enabled           bool   `json:"enabled"`
@@ -47,14 +50,32 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		Name              string `json:"name"`
 		ClusterResourceID string `json:"clusterResourceId"`
 	}
-	raw, err := json.Marshal(byoParameterValue(source, "agentHosting"))
+	raw, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("encode agentHosting deployment parameters: %w", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&hosting); err != nil {
-		return fmt.Errorf("invalid agentHosting deployment parameters: %w", err)
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			fmt.Sprintf("invalid agentHosting deployment parameters: %s", err),
+			"supply agentHosting as a literal object matching azure.yaml, not an ARM expression")
+	}
+	if !configured {
+		if !hosting.Enabled {
+			return nil
+		}
+		if err := requireBYOAKSFeature(); err != nil {
+			return err
+		}
+		return exterrors.Validation(exterrors.CodeConflictingArguments,
+			"effective agentHosting deployment parameters enable BYO AKS without agentHosting in azure.yaml",
+			"set agentHosting.clusterResourceId on the azure.ai.project service in azure.yaml, "+
+				"or disable agentHosting in the parameters file and template defaults")
+	}
+	includeAcr, ok := byoParameterValue(source, "includeAcr").(bool)
+	if !ok || !includeAcr {
+		return fmt.Errorf("BYO AKS requires includeAcr=true for the native azd-created Container Registry")
 	}
 	if !hosting.Enabled || hosting.HostingType != "ManagedCluster" || hosting.Name != "default" ||
 		!strings.EqualFold(hosting.ClusterResourceID, p.synthResult.Hosting.ClusterResourceID) {
@@ -231,6 +252,39 @@ func supportsBYOResourceGroupReuse(template map[string]any) bool {
 	return true
 }
 
+func byoHostingParameter(source *templateSource) (any, error) {
+	var value any
+	definitions, _ := source.armTemplate["parameters"].(map[string]any)
+	for name, definition := range definitions {
+		if strings.EqualFold(name, "agentHosting") {
+			if definition, ok := definition.(map[string]any); ok {
+				value = definition["defaultValue"]
+			}
+		}
+	}
+	supplied := false
+	for name, parameter := range source.parameters {
+		if !strings.EqualFold(name, "agentHosting") {
+			continue
+		}
+		if supplied {
+			return nil, exterrors.Validation(exterrors.CodeConflictingArguments,
+				"multiple agentHosting deployment parameters differ only by case",
+				"supply agentHosting only once using the template's parameter name")
+		}
+		supplied = true
+		envelope, ok := parameter.(map[string]any)
+		literal, present := envelope["value"]
+		if !ok || !present || len(envelope) != 1 {
+			return nil, exterrors.Validation(exterrors.CodeInvalidParameter,
+				"agentHosting deployment parameter must use a value envelope",
+				"supply agentHosting as a literal object matching azure.yaml")
+		}
+		value = literal
+	}
+	return value, nil
+}
+
 func byoParameterValue(source *templateSource, key string) any {
 	if envelope, ok := source.parameters[key].(map[string]any); ok {
 		return envelope["value"]
@@ -315,7 +369,10 @@ func (p *FoundryProvisioningProvider) byoProtectedResourceGroups(ctx context.Con
 }
 
 func (p *FoundryProvisioningProvider) persistBYODownProtection(ctx context.Context, source *templateSource) error {
-	value := byoParameterValue(source, "agentHosting")
+	value, err := byoHostingParameter(source)
+	if err != nil {
+		return err
+	}
 	if value == nil {
 		return nil
 	}

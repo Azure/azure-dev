@@ -500,9 +500,28 @@ checks the original shared files' checksums; it never deploys the fixture.
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
 | `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
+| `tier2/2.17b-deploy-rbac-warnings.yaml` | Opt-in: final readable/JSON RBAC warning retention with a restricted identity and a declared deployment outcome |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+
+**Opt-in RBAC prerequisite:** After `2.00` deploys the shared agent, an operator
+must prepare a restricted azd test identity and write `rbac-warning-seed.json`
+in that shared project. Include `runId`, `agentName`, `service`, `principalId`,
+project/registry identities, current-run ownership and read-only role evidence,
+`expectedMessage`, `expectedSuggestion`, and `expectedExitCode`; for a later
+failure also include `expectedDeploymentError`. The identity must reliably
+produce that warning without successfully auto-assigning itself a role.
+Do not remove roles or modify cloud permissions to manufacture a warning.
+Missing prerequisites are blocked coverage, not a passing skip.
+
+Scenario `2.17b` is `manual-seed` and excluded from ordinary sweeps. When opted in,
+it runs in the shared-agent serial lane before `2.18` deletes the shared agent.
+It reuses `2.00` / `2.99` resource ownership and
+cleanup, rather than creating another infrastructure lifecycle. Arrange
+authorized teardown with the original setup identity even if restricted deploy
+fails. Each seed declares one exact success or later-failure outcome. Coverage
+of both outcomes needs separate prepared runs and explicit Azure cost consent.
 
 The shared Tier 2 agent supports the Responses protocol only. Scenario `2.19` tests successful
 Invocations and metadata-session routing against a separate externally prepared agent, not that

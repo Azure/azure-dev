@@ -967,7 +967,7 @@ func TestAgentListenersDoNotProjectSplitConnections(t *testing.T) {
 			if event == "preprovision" {
 				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: proj})
 			} else {
-				err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: agent})
+				_, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: agent})
 			}
 			require.NoError(t, err)
 			require.Equal(t, before, connection.GetConfig().AsMap())
@@ -1194,7 +1194,7 @@ func TestPredeployValidatesAllAgentServicesBeforeMutation(t *testing.T) {
 			}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-			err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+			_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 				Project: proj,
 				Service: current,
 			})
@@ -1257,7 +1257,7 @@ func TestPredeployAcceptsValidDirectAndRootRefServices(t *testing.T) {
 	}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-	err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+	_, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 		Project: proj,
 		Service: current,
 	})
@@ -1287,10 +1287,14 @@ func TestPredeployAgentRBACRunsPerService(t *testing.T) {
 	envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 	client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt}))
+	response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: prompt})
+	require.NoError(t, err)
+	require.Empty(t, response.Messages)
 	firstCalls := envServer.getCurrentCalls
 	require.GreaterOrEqual(t, firstCalls, 2)
-	require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted}))
+	response, err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: proj, Service: hosted})
+	require.NoError(t, err)
+	require.Empty(t, response.Messages)
 	require.GreaterOrEqual(t, envServer.getCurrentCalls, firstCalls+2)
 }
 
@@ -1315,9 +1319,11 @@ func TestPredeployVoiceRunsDeveloperRBAC(t *testing.T) {
 			envServer := &testEnvironmentServiceServer{current: &azdext.Environment{Name: "dev"}}
 			client := newTestAzdClient(t, envServer, &testWorkflowServiceServer{})
 
-			require.NoError(t, predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
+			response, err := predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{
 				Project: proj, Service: svc,
-			}))
+			})
+			require.NoError(t, err)
+			require.Empty(t, response.Messages)
 			require.GreaterOrEqual(t, envServer.getCurrentCalls, 2)
 		})
 	}

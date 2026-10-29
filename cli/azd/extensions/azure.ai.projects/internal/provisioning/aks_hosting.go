@@ -70,6 +70,10 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if err := network.Validate(); err != nil {
 		return err
 	}
+	resourceGroup, ok := byoParameterValue(source, "resourceGroupName").(string)
+	if !ok || strings.TrimSpace(resourceGroup) == "" {
+		return fmt.Errorf("effective resourceGroupName must be a nonempty string")
+	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
@@ -99,11 +103,55 @@ func (p *FoundryProvisioningProvider) prepareBYO(
 	if _, err := uuid.Parse(role.Name); err != nil {
 		return fmt.Errorf("BYO AKS federation role requires a role definition GUID: %w", err)
 	}
+	_, resourceGroupExists, err := p.lookupResourceGroupState(ctx, resourceGroup)
+	if err != nil {
+		return err
+	}
+	if resourceGroupExists && !supportsBYOResourceGroupReuse(source.armTemplate) {
+		return exterrors.Validation(exterrors.CodeInvalidParameter,
+			"the BYO AKS template cannot safely reuse the existing resource group",
+			"declare a createResourceGroup boolean parameter and guard the resource-group declaration with "+
+				"if (createResourceGroup), or re-eject the infrastructure templates")
+	}
 	source.parameters = mergeParameters(source.parameters, parametersDeclaredByTemplate(map[string]any{
 		"kubeletObjectId":                   map[string]any{"value": facts.KubeletObjectID},
 		"federatedIdentityRoleDefinitionId": map[string]any{"value": facts.FederatedIdentityRoleDefinitionID},
 	}, source.armTemplate))
+	definitions, _ := source.armTemplate["parameters"].(map[string]any)
+	if _, declared := definitions["createResourceGroup"]; declared {
+		source.parameters["createResourceGroup"] = map[string]any{"value": !resourceGroupExists}
+	}
 	return nil
+}
+
+func supportsBYOResourceGroupReuse(template map[string]any) bool {
+	definitions, _ := template["parameters"].(map[string]any)
+	parameter, _ := definitions["createResourceGroup"].(map[string]any)
+	if parameter["type"] != "bool" {
+		return false
+	}
+	safeResource := func(value any) bool {
+		resource, ok := value.(map[string]any)
+		return ok && (resource["type"] != "Microsoft.Resources/resourceGroups" ||
+			resource["condition"] == "[parameters('createResourceGroup')]")
+	}
+	switch resources := template["resources"].(type) {
+	case map[string]any:
+		for _, resource := range resources {
+			if !safeResource(resource) {
+				return false
+			}
+		}
+	case []any:
+		for _, resource := range resources {
+			if !safeResource(resource) {
+				return false
+			}
+		}
+	default:
+		return false
+	}
+	return true
 }
 
 func byoParameterValue(source *templateSource, key string) any {

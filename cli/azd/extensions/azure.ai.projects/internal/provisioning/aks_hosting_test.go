@@ -87,6 +87,9 @@ func (f *byoARMFake) response(request *http.Request, status int, body any) *http
 
 func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
+	if request.Method == http.MethodGet && request.URL.Path == "/subscriptions/target-sub/resourcegroups/target-rg" {
+		return f.response(request, 200, map[string]any{"location": "eastus"}), nil
+	}
 	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
 	if request.Method == http.MethodGet && request.URL.Path == path {
 		return f.response(request, 200, map[string]any{
@@ -181,7 +184,7 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 		assert.Equal(t, value, result.Deployment.Outputs[name].Value)
 	}
 	assert.Equal(t, 1, fake.writes)
-	assert.Len(t, fake.requests, 1, "no resource-origin or completed-deployment audit is required")
+	assert.Len(t, fake.requests, 2, "only resource-group existence and deployment requests are required")
 	assert.Empty(t, server.set, "provisioning returns standard outputs without an additional environment journal")
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
@@ -210,7 +213,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	_, err = p.Deploy(t.Context(), func(string) {})
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
-	assert.Len(t, fake.requests, 2)
+	assert.Len(t, fake.requests, 4)
 	assert.Empty(t, p.virtualEnv)
 }
 
@@ -266,7 +269,7 @@ func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
 	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
 	assert.NotContains(t, source.parameters, "kubeletObjectId")
 	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
-	assert.Empty(t, fake.requests)
+	assert.Len(t, fake.requests, 1, "preparation only reads the resource group")
 }
 
 func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {

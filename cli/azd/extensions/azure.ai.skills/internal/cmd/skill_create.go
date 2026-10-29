@@ -29,6 +29,7 @@ type createFlags struct {
 	noPrompt        bool
 	output          string
 	projectEndpoint string
+	environment     string
 
 	descriptionSet  bool
 	instructionsSet bool
@@ -60,7 +61,7 @@ func (a *createAction) Run(ctx context.Context) error {
 		mode = modeInline
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
@@ -516,6 +517,7 @@ skill of the same name before creating.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
+			flags.environment = extCtx.Environment
 			flags.noPrompt = extCtx.NoPrompt
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")

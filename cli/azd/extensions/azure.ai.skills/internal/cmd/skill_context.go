@@ -6,8 +6,10 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"azureaiskills/internal/exterrors"
+	"azureaiskills/internal/foundry"
 	"azureaiskills/internal/pkg/skill_api"
 	"azureaiskills/internal/version"
 
@@ -21,14 +23,32 @@ type skillContext struct {
 	source   endpointSource
 }
 
-func resolveSkillContext(ctx context.Context, flagEndpoint string) (*skillContext, error) {
+var prepareDeveloperAccess = foundry.PrepareDeveloperAccess
+
+func resolveSkillContext(ctx context.Context, flagEndpoint string, environmentName ...string) (*skillContext, error) {
 	endpoint, src, err := resolveProjectEndpoint(ctx, flagEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	cred, err := newCredential()
+	envName := ""
+	if len(environmentName) > 0 {
+		envName = environmentName[0]
+	}
+	cred, err := prepareDeveloperAccess(ctx, foundry.PrepareDeveloperAccessOptions{
+		Endpoint:        endpoint,
+		EnvironmentName: envName,
+		Warn: func(message string) {
+			fmt.Fprintln(os.Stderr, "Warning: "+message)
+		},
+	})
 	if err != nil {
 		return nil, err
+	}
+	if cred == nil {
+		cred, err = newCredential()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &skillContext{
 		client:   skill_api.NewClient(endpoint, cred, version.Version),

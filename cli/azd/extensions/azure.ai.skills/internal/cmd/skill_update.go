@@ -30,6 +30,7 @@ type updateFlags struct {
 	setDefault      string
 	output          string
 	projectEndpoint string
+	environment     string
 
 	descriptionSet  bool
 	instructionsSet bool
@@ -62,7 +63,7 @@ func (a *updateAction) Run(ctx context.Context) error {
 		return err
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
@@ -372,6 +373,7 @@ content, pass --set-default-version <version>.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
+			flags.environment = extCtx.Environment
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")

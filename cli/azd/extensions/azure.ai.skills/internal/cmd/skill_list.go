@@ -16,12 +16,13 @@ import (
 type listFlags struct {
 	output          string
 	projectEndpoint string
+	environment     string
 }
 
 type listAction struct{ flags *listFlags }
 
 func (a *listAction) Run(ctx context.Context) error {
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
@@ -48,6 +49,7 @@ func newListCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags.output = extCtx.OutputFormat
+			flags.environment = extCtx.Environment
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},

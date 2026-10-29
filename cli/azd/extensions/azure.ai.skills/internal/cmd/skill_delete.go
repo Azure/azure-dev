@@ -26,6 +26,7 @@ type deleteFlags struct {
 	noPrompt        bool
 	output          string
 	projectEndpoint string
+	environment     string
 }
 
 type deleteAction struct{ flags *deleteFlags }
@@ -65,7 +66,7 @@ func (a *deleteAction) Run(ctx context.Context) error {
 		}
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
@@ -234,6 +235,7 @@ In --no-prompt mode (set globally), --force is required.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
+			flags.environment = extCtx.Environment
 			flags.noPrompt = extCtx.NoPrompt
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
 			return action.Run(azdext.WithAccessToken(cmd.Context()))

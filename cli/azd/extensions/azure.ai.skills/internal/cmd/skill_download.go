@@ -26,6 +26,7 @@ type downloadFlags struct {
 	force           bool
 	output          string
 	projectEndpoint string
+	environment     string
 
 	outputDirSet bool
 	versionSet   bool
@@ -72,7 +73,7 @@ func (a *downloadAction) Run(ctx context.Context) error {
 		)
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
+	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint, a.flags.environment)
 	if err != nil {
 		return err
 	}
@@ -240,6 +241,7 @@ total uncompressed size.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			flags.name = args[0]
 			flags.output = extCtx.OutputFormat
+			flags.environment = extCtx.Environment
 			flags.outputDirSet = cmd.Flags().Changed("output-dir")
 			flags.versionSet = cmd.Flags().Changed("version")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")

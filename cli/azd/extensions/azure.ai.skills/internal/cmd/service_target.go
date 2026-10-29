@@ -179,7 +179,11 @@ func (p *skillServiceTarget) Deploy(
 		inlineContent = skillInlineContent(cfg, instructions)
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, "")
+	envName, err := p.currentEnv(ctx)
+	if err != nil {
+		return nil, err
+	}
+	skillCtx, err := resolveSkillContext(ctx, "", envName)
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +216,6 @@ func (p *skillServiceTarget) Deploy(
 	}
 	if version == nil {
 		return nil, fmt.Errorf("upserting skill %q returned no version", serviceConfig.GetName())
-	}
-	envName, err := p.currentEnv(ctx)
-	if err != nil {
-		return nil, err
 	}
 	if err := publishSkillMarkers(
 		ctx,

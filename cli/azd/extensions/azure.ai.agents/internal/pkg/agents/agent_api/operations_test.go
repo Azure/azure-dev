@@ -1354,6 +1354,34 @@ func TestVoiceAgentCreateUpdateBodiesHaveDefinitionParity(t *testing.T) {
 	require.NotContains(t, output, "rate")
 }
 
+func TestVoiceAgentCreateUpdateBodiesPreserveOverlayDefinitionParity(t *testing.T) {
+	t.Parallel()
+	definition := map[string]any{
+		"kind": "voice", "model_type": "managed", "model": "gpt-realtime",
+		"future_config": map[string]any{"enabled": true, "modes": []any{"one", "two"}},
+	}
+	client, transport := newCaptureClient(http.StatusOK,
+		`{"object":"agent","id":"va-1","name":"voice","versions":{"latest":{}}}`)
+	_, err := client.CreateVoiceAgent(t.Context(), &CreateAgentRequest{
+		Name: "voice", CreateAgentVersionRequest: CreateAgentVersionRequest{Definition: definition},
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	_, err = client.UpdateVoiceAgent(t.Context(), "voice", &UpdateAgentRequest{
+		Definition: definition,
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 2)
+
+	var bodies [2]map[string]any
+	for i, request := range transport.requests {
+		payload, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		require.NoError(t, json.Unmarshal(payload, &bodies[i]))
+	}
+	require.Equal(t, bodies[0]["definition"], bodies[1]["definition"])
+	require.Equal(t, definition["future_config"], bodies[0]["definition"].(map[string]any)["future_config"])
+}
+
 func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {
 	body := `{"id":"twilio:%2B14255550123","provider":"twilio","identifier":"+14255550123"}`
 	client, transport := newCaptureClient(http.StatusOK, body)

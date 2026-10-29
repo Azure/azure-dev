@@ -75,6 +75,19 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
 
 See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
 
+## Experimental Voice definition overlay
+
+Voice services may opt in to forward-compatible GA definition fields with
+`definition_overlay` (or inline `definitionOverlay`). The value is an object whose
+local `$ref` values resolve relative to the containing YAML or JSON document.
+Overlay references have the same trust boundary and relative-path behavior as
+existing `$ref` references; only reference files you trust.
+The overlay can only add missing keys; objects recurse, while existing scalar or
+array keys conflict even when values match. New arrays are allowed. Null values
+and the reserved root keys `kind`, `model_type`, `model`, and
+`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
+must use GA wire names. Prompt and hosted agents do not accept this property.
+
 ## Hosted agent deployment preview
 
 With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry

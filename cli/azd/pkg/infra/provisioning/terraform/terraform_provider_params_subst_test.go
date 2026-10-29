@@ -133,3 +133,22 @@ func TestCreateInputParametersFile_NonJSONTemplateFallsBackToText(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, `{"count": 5, "name": "app"}`, content)
 }
+
+// In the text fallback, values that land inside a JSON string literal are JSON-escaped so the file stays valid, while
+// unquoted placeholders are substituted as written.
+func TestCreateInputParametersFile_NonJSONTemplateEscapesStringValues(t *testing.T) {
+	const name = `say "hi" C:\path` + "\nnext"
+	got := substituteTemplateToMap(t,
+		`{"count": ${COUNT}, "name": "${NAME}", "mixed": "a-${NAME}-b", "esc": "x\"${NAME}", "list": ["${NAME}"], `+
+			`"fallback": "${MISSING=de\"fault}"}`,
+		map[string]string{"COUNT": "5", "NAME": name})
+
+	require.Equal(t, map[string]any{
+		"count":    float64(5),
+		"name":     name,
+		"mixed":    "a-" + name + "-b",
+		"esc":      `x"` + name,
+		"list":     []any{name},
+		"fallback": `de"fault`,
+	}, got)
+}

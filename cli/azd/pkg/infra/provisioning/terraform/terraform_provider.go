@@ -877,13 +877,14 @@ func (t *TerraformProvider) PlannedOutputs(ctx context.Context) ([]provisioning.
 // and a value that looks like JSON stays a string. Numbers, booleans and null are written back as authored.
 //
 // A template that is not valid JSON before substitution (for example one with an unquoted placeholder such as
-// "count": ${COUNT}) is substituted as plain text, as it always was.
+// "count": ${COUNT}) is substituted as text, as it always was. Because the output is still expected to be JSON, values
+// that land inside a JSON string literal are JSON-escaped so quotes, backslashes or newlines can't break the file.
 func substituteParametersTemplate(template []byte, mapping func(string) string) (string, error) {
 	var parsed any
 	decoder := json.NewDecoder(bytes.NewReader(template))
 	decoder.UseNumber()
 	if err := decoder.Decode(&parsed); err != nil || decoder.More() {
-		return envsubst.Eval(string(template), mapping)
+		return substituteTemplateText(string(template), mapping)
 	}
 
 	substituted, err := provisioning.SubstituteJSONStrings(parsed, func(value string) (string, error) {
@@ -898,6 +899,62 @@ func substituteParametersTemplate(template []byte, mapping func(string) string) 
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(substituted); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
+
+// substituteTemplateText substitutes environment variable references in a template that isn't valid JSON. Text outside
+// JSON string literals is substituted verbatim. Inside a string literal the replacement values are JSON-escaped, so
+// the result stays valid JSON whatever the values contain. Text written in the template itself, such as a default
+// value, is left as authored.
+func substituteTemplateText(template string, mapping func(string) string) (string, error) {
+	escaped := func(name string) string {
+		encoded, err := json.Marshal(mapping(name))
+		if err != nil {
+			// Marshaling a string can't fail; keep the raw value rather than dropping it.
+			return mapping(name)
+		}
+		return string(encoded[1 : len(encoded)-1])
+	}
+
+	var out strings.Builder
+	segmentStart := 0
+	inString := false
+	flush := func(end int) error {
+		segment := template[segmentStart:end]
+		segmentStart = end
+		m := mapping
+		if inString {
+			m = escaped
+		}
+		replaced, err := envsubst.Eval(segment, m)
+		if err != nil {
+			return err
+		}
+		out.WriteString(replaced)
+		return nil
+	}
+
+	for i := 0; i < len(template); i++ {
+		switch {
+		case inString && template[i] == '\\':
+			i++ // skip the escaped character
+		case template[i] == '"':
+			if inString {
+				// Keep the closing quote with the string segment.
+				if err := flush(i + 1); err != nil {
+					return "", err
+				}
+			} else {
+				if err := flush(i); err != nil {
+					return "", err
+				}
+			}
+			inString = !inString
+		}
+	}
+	if err := flush(len(template)); err != nil {
 		return "", err
 	}
 	return out.String(), nil

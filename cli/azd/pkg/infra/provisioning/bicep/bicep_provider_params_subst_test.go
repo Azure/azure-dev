@@ -4,6 +4,7 @@
 package bicep
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -230,4 +232,79 @@ func TestLoadParameters_PipelineValueMatchesLocalRun(t *testing.T) {
 	require.Equal(t, value, local["str"])
 	require.Equal(t, []any{value}, local["arr"])
 	require.Equal(t, local, ci)
+}
+
+// countingKeyVault records secret lookups so tests can assert whether a key vault was queried.
+type countingKeyVault struct {
+	keyvault.KeyVaultService
+	lookups int
+}
+
+func (c *countingKeyVault) GetKeyVaultSecret(
+	_ context.Context, _ string, _ string, _ string,
+) (*keyvault.Secret, error) {
+	c.lookups++
+	return nil, keyvault.ErrAzCliSecretNotFound
+}
+
+// A parameter that references a virtual env var anywhere is deferred as a whole. It must not run command
+// substitutions (a key vault lookup) for its other strings.
+func TestLoadParameters_VirtualEnvVarDefersCommandSubstitution(t *testing.T) {
+	const virtualKey = "AZD_TEST_VIRTUAL_LAYER_OUTPUT"
+	cmd := `$(secretOrRandomPassword kv-name secret-name)`
+
+	tests := []struct {
+		name        string
+		virtual     bool
+		wantLookups int
+	}{
+		{"virtual value defers the parameter", true, 0},
+		{"real value resolves the command", false, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+			armTemplate := azure.ArmTemplate{
+				// nolint: lll
+				Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+				ContentVersion: "1.0.0.0",
+				Parameters: azure.ArmTemplateParameterDefinitions{
+					"environmentName": {Type: "string", DefaultValue: "test-env"},
+					"location":        {Type: "string", DefaultValue: "westus2"},
+					"arr":             {Type: "array", DefaultValue: []any{}},
+				},
+				Outputs: azure.ArmTemplateOutputs{},
+			}
+			envVars := map[string]string{}
+			if !tt.virtual {
+				envVars[virtualKey] = "real-value"
+			}
+			provider := createBicepProviderWithEnvAndMode(t, mockContext, armTemplate, envVars, provisioning.ModeDeploy)
+			kv := &countingKeyVault{}
+			provider.keyvaultService = kv
+			if tt.virtual {
+				provider.options.VirtualEnv = map[string]string{virtualKey: "layer1--OUTPUT"}
+			}
+
+			dir := filepath.Join(t.TempDir(), "infra")
+			require.NoError(t, os.MkdirAll(dir, 0o755))
+			file := paramsFileWith(t, map[string]string{"arr": `["${` + virtualKey + `}", "` + cmd + `"]`})
+			require.NoError(t, os.WriteFile(filepath.Join(dir, "main.parameters.json"), []byte(file), 0o600))
+			provider.path = filepath.Join(dir, "main.bicep")
+
+			compileResult, err := provider.compileBicep(*mockContext.Context)
+			require.NoError(t, err)
+			result, err := provider.loadParameters(*mockContext.Context, &compileResult.Template)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.wantLookups, kv.lookups)
+			if tt.virtual {
+				require.Contains(t, result.virtualMapping, "arr")
+				require.NotContains(t, result.parameters, "arr")
+			} else {
+				require.NotContains(t, result.virtualMapping, "arr")
+				require.Contains(t, result.parameters, "arr")
+			}
+		})
+	}
 }

@@ -2374,17 +2374,24 @@ func (p *BicepProvider) loadParameters(ctx context.Context, template *azure.ArmT
 				return "", err
 			}
 			substResult.merge(strResult)
-			if strResult.hasVirtualEnvVar {
-				// virtual values are only known at runtime, no further processing
-				return replaced, nil
-			}
-			// resolve command substitutions like `secretOrRandomPassword`
-			return p.evalCommandSubstitution(ctx, replaced)
+			return replaced, nil
 		}
 
 		resolvedParam, err := substituteParameter(param, substituteString)
 		if err != nil {
 			return loadParametersResult{}, fmt.Errorf("substituting environment variables for %s: %w", paramName, err)
+		}
+
+		// Command substitutions like `secretOrRandomPassword` are resolved only when no string in the parameter
+		// references a virtual env var. A parameter with a virtual value is deferred to runtime as a whole, and must
+		// not trigger side effects such as a key vault lookup.
+		if !substResult.hasVirtualEnvVar {
+			resolvedParam, err = substituteParameter(resolvedParam, func(value string) (string, error) {
+				return p.evalCommandSubstitution(ctx, value)
+			})
+			if err != nil {
+				return loadParametersResult{}, err
+			}
 		}
 
 		envMapping[paramName] = substResult.mappedEnvVars

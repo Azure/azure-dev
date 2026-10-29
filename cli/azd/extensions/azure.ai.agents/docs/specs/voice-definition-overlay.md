@@ -20,11 +20,12 @@ validation, editor completion, or existing deploy flows.
 
 Inline Voice service:
 
-```yaml
+```text
 services:
   voice-agent:
     host: azure.ai.agent
     kind: voice
+    name: voice-agent
     modelType: managed
     model:
       id: gpt-realtime
@@ -34,10 +35,10 @@ services:
 
 Root Voice definition files may use the YAML alias:
 
-```yaml
+```text
 kind: voice
 name: voice-agent
-model_type: managed
+modelType: managed
 model:
   id: gpt-realtime
 definition_overlay:
@@ -61,9 +62,13 @@ overlay:
 - an existing scalar or array is a conflict, even when values are equal;
 - a new array is accepted as one complete value and is never concatenated;
 - `null` is rejected recursively, including inside arrays;
-- keys are compared case-insensitively to prevent duplicate wire spellings;
-- `kind`, `model_type`, `model`, and `conversation_engine` are reserved and
-  cannot be added by the overlay;
+- keys are compared case-insensitively when matching overlay keys against the
+  typed definition or an existing typed object, preventing casing variants from
+  bypassing conflict detection. Keys inside a wholly new overlay object are
+  preserved and receive final validation from the service;
+- at the overlay root only, `kind`, `model_type`, `model`, and
+  `conversation_engine` are reserved and cannot be added or extended by the
+  overlay. The same names may appear inside a newly added nested service object;
 - non-finite or integers outside the JSON-safe range are rejected;
 - errors identify the conflicting JSON path deterministically.
 
@@ -83,6 +88,13 @@ Overlay `$ref` values reuse the existing local Foundry `$ref` resolver:
 - remote URL references are rejected;
 - local references have the same trusted-input boundary as existing azd
   definition references, including parent and absolute paths.
+
+Existing `$ref` sibling semantics apply before the definition overlay merge:
+sibling properties shallowly replace the referenced property's complete value.
+For example, a sibling `future_config` object replaces the referenced file's
+entire `future_config`; it does not recursively merge with it. The recursive
+add-only rules above apply only when the resolved overlay is later merged into
+the typed Voice definition.
 
 ## Compatibility
 

@@ -1,0 +1,108 @@
+# Voice Agent definition overlay
+
+## Status
+
+- **Component:** `cli/azd/extensions/azure.ai.agents`
+- **Feature status:** Experimental
+- **Implementation:** Azure/azure-dev#10747
+
+## Goal
+
+Allow advanced Voice Agent GA definition fields that azd does not yet model to
+remain declarative and repeatable without expanding the shared typed
+`azure.yaml` schema for every low-frequency service field.
+
+Typed `azure.yaml` remains the primary authoring experience. The overlay is an
+explicit Voice-only escape hatch and does not replace typed fields, local
+validation, editor completion, or existing deploy flows.
+
+## Authoring contract
+
+Inline Voice service:
+
+```yaml
+services:
+  voice-agent:
+    host: azure.ai.agent
+    kind: voice
+    modelType: managed
+    model:
+      id: gpt-realtime
+    definitionOverlay:
+      $ref: ./voice-advanced.yaml
+```
+
+Root Voice definition files may use the YAML alias:
+
+```yaml
+kind: voice
+name: voice-agent
+model_type: managed
+model:
+  id: gpt-realtime
+definition_overlay:
+  $ref: ./voice-advanced.yaml
+```
+
+Both aliases are accepted, but they cannot be declared together. Prompt and
+Hosted Agents reject either property. A service-level root `$ref` may provide
+the final Voice `kind`; resolved validation still rejects overlays when the
+referenced definition is not Voice.
+
+## Merge semantics
+
+azd first builds the existing typed GA Voice definition, then applies the
+overlay:
+
+- the overlay root must be an object;
+- overlay keys use GA wire names;
+- an overlay may add a missing key;
+- when both sides contain objects, merging recurses;
+- an existing scalar or array is a conflict, even when values are equal;
+- a new array is accepted as one complete value and is never concatenated;
+- `null` is rejected recursively, including inside arrays;
+- keys are compared case-insensitively to prevent duplicate wire spellings;
+- `kind`, `model_type`, `model`, and `conversation_engine` are reserved and
+  cannot be added by the overlay;
+- non-finite or integers outside the JSON-safe range are rejected;
+- errors identify the conflicting JSON path deterministically.
+
+Create and update/version deployment use the same merged definition.
+
+## Validation boundary
+
+Typed fields keep their existing JSON-schema, Go type, and semantic validation.
+The overlay receives only structural and merge-safety validation from azd. The
+Foundry Voice Agent service performs final GA contract validation for advanced
+fields. Service failures retain normal azd error and request-ID handling.
+
+Overlay `$ref` values reuse the existing local Foundry `$ref` resolver:
+
+- paths resolve relative to the document that contains the `$ref`;
+- nested local references and cycle/depth checks are supported;
+- remote URL references are rejected;
+- local references have the same trusted-input boundary as existing azd
+  definition references, including parent and absolute paths.
+
+## Compatibility
+
+When the overlay is omitted or empty:
+
+- azd returns and serializes the existing typed Voice definition directly;
+- Managed, BYOM, and Hosted Voice Wrapper behavior is unchanged;
+- Prompt and ordinary Hosted Agent behavior is unchanged;
+- no extra file is read and no merge is performed.
+
+Existing six-scenario Voice regression coverage remains the compatibility gate.
+
+## Non-goals
+
+- overriding typed fields;
+- array concatenation;
+- `null`-based deletion;
+- local OpenAPI validation or overlay-specific editor completion;
+- changing service API routes, headers, versions, or deployment lifecycle;
+- guaranteeing long-term support for every advanced service field.
+
+Frequently used overlay fields can later graduate to first-class typed
+authoring based on service/product priority and observed usage.

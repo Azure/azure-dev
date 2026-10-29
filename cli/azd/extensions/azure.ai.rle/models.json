@@ -1,0 +1,28 @@
+[
+  {
+    "model": "MAI/MAI-Code-1.1-Flash",
+    "renderers": ["mai_harmony_internal"]
+  },
+  {
+    "model": "Qwen/Qwen3-32B",
+    "renderers": ["qwen3_ext", "qwen3", "qwen3_disable_thinking"]
+  },
+  {
+    "model": "Qwen/Qwen3.8-27B",
+    "renderers": [
+      "qwen3_8_low_reasoning",
+      "qwen3_8",
+      "qwen3_8_medium_reasoning",
+      "qwen3_8_disable_thinking"
+    ]
+  },
+  {
+    "model": "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16",
+    "renderers": [
+      "nemotron3_ultra",
+      "nemotron3_ultra_medium_thinking",
+      "nemotron3_ultra_disable_thinking",
+      "nemotron3_ultra_preserve_thinking"
+    ]
+  }
+]

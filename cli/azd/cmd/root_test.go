@@ -103,10 +103,12 @@ func TestRootCmd_WorkflowStepCwdOverridesStickyParent(t *testing.T) {
 	// when the parent process used -C/--cwd, a nested workflow step that
 	// passes a different --cwd must run in that step directory and then
 	// restore the sticky parent value for later steps.
-	tmpDir := t.TempDir()
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	parentDir := filepath.Join(tmpDir, "parent")
 	stepDir := filepath.Join(tmpDir, "parent", "nested")
 	require.NoError(t, os.MkdirAll(stepDir, 0o755))
+	t.Chdir(parentDir)
 
 	container := ioc.NewNestedContainer(nil)
 	opts := &internal.GlobalCommandOptions{

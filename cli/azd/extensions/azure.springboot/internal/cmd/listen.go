@@ -17,8 +17,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 	runtime := spring.NewRuntime(host.Client())
 
 	host.
+		WithFrameworkService("java", func() azdext.FrameworkServiceProvider {
+			return spring.NewJavaFrameworkService(host.Client())
+		}).
 		WithServiceTarget(springHost, func() azdext.ServiceTargetProvider {
-			return spring.NewServiceTarget(runtime)
+			return spring.NewServiceTarget(host.Client(), runtime)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return runtime.PreProvision(ctx, args)

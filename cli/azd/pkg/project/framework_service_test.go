@@ -12,22 +12,10 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
-
-type fakeServiceTargetProviderResolver struct {
-	providers map[string]*extensions.Provider
-	err       error
-}
-
-func (r *fakeServiceTargetProviderResolver) FindServiceTargetProvider(
-	name string,
-) (*extensions.Provider, error) {
-	return r.providers[name], r.err
-}
 
 func Test_NewExternalFrameworkService(t *testing.T) {
 	svc := NewExternalFrameworkService("test-lang", ServiceLanguageCustom, nil, nil, nil, nil)
@@ -430,78 +418,6 @@ func Test_GetFrameworkService(t *testing.T) {
 		result, err := sm.GetFrameworkService(t.Context(), svcConfig)
 		require.NoError(t, err)
 		require.NotNil(t, result)
-	})
-
-	t.Run("DelegatedContainerTarget_WrapsWithComposite", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguagePython), func() FrameworkService {
-			return &noOpProject{}
-		})
-		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguageDocker), func() CompositeFrameworkService {
-			return &fakeCompositeFramework{}
-		})
-		ioc.RegisterInstance[ServiceTargetProviderResolver](
-			mockContext.Container,
-			&fakeServiceTargetProviderResolver{
-				providers: map[string]*extensions.Provider{
-					"azure.springboot": {
-						Name:       "azure.springboot",
-						Type:       extensions.ServiceTargetProviderType,
-						BaseTarget: new("containerapp"),
-					},
-				},
-			},
-		)
-
-		env := environment.NewWithValues("test", map[string]string{})
-		sm := &serviceManager{
-			env:            env,
-			serviceLocator: mockContext.Container,
-			initialized:    map[*ServiceConfig]map[any]bool{},
-		}
-		svcConfig := &ServiceConfig{
-			Name:     "api",
-			Language: ServiceLanguagePython,
-			Host:     ServiceTargetKind("azure.springboot"),
-			Project:  &ProjectConfig{Path: t.TempDir()},
-		}
-
-		result, err := sm.GetFrameworkService(t.Context(), svcConfig)
-		require.NoError(t, err)
-		require.IsType(t, &fakeCompositeFramework{}, result)
-		require.Equal(t, ServiceTargetKind("azure.springboot"), svcConfig.Host)
-	})
-
-	t.Run("DelegatedTarget_InvalidBaseFailsBeforeFrameworkSelection", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(t.Context())
-		mockContext.Container.MustRegisterNamedTransient(string(ServiceLanguagePython), func() FrameworkService {
-			return &noOpProject{}
-		})
-		ioc.RegisterInstance[ServiceTargetProviderResolver](
-			mockContext.Container,
-			&fakeServiceTargetProviderResolver{
-				providers: map[string]*extensions.Provider{
-					"azure.springboot": {
-						Name:       "azure.springboot",
-						Type:       extensions.ServiceTargetProviderType,
-						BaseTarget: new("another-extension"),
-					},
-				},
-			},
-		)
-
-		sm := &serviceManager{
-			env:            environment.NewWithValues("test", map[string]string{}),
-			serviceLocator: mockContext.Container,
-			initialized:    map[*ServiceConfig]map[any]bool{},
-		}
-		_, err := sm.GetFrameworkService(t.Context(), &ServiceConfig{
-			Name:     "api",
-			Language: ServiceLanguagePython,
-			Host:     ServiceTargetKind("azure.springboot"),
-			Project:  &ProjectConfig{Path: t.TempDir()},
-		})
-		require.ErrorContains(t, err, "unsupported baseTarget")
 	})
 }
 

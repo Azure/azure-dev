@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -55,48 +54,6 @@ func builtInServiceTargetNames() []string {
 // BuiltInServiceTargetKinds returns the slice of built-in service target kinds
 func BuiltInServiceTargetKinds() []ServiceTargetKind {
 	return builtInServiceTargetKinds
-}
-
-// ServiceTargetProviderResolver resolves installed extension metadata for a service target provider.
-type ServiceTargetProviderResolver interface {
-	FindServiceTargetProvider(name string) (*extensions.Provider, error)
-}
-
-// ResolveProviderBaseTarget validates a provider's optional Container Apps delegation.
-func ResolveProviderBaseTarget(
-	host ServiceTargetKind,
-	provider *extensions.Provider,
-) (ServiceTargetKind, bool, error) {
-	if provider == nil || provider.BaseTarget == nil {
-		return "", false, nil
-	}
-
-	baseTarget := ServiceTargetKind(*provider.BaseTarget)
-	if strings.TrimSpace(string(baseTarget)) == "" {
-		return "", false, fmt.Errorf("service-target provider %q declares an empty baseTarget", host)
-	}
-	if string(baseTarget) != strings.TrimSpace(string(baseTarget)) {
-		return "", false, fmt.Errorf(
-			"service-target provider %q declares invalid baseTarget %q: whitespace is not allowed",
-			host,
-			baseTarget,
-		)
-	}
-	if baseTarget == host {
-		return "", false, fmt.Errorf(
-			"service-target provider %q cannot delegate to itself",
-			host,
-		)
-	}
-	if baseTarget != ContainerAppTarget {
-		return "", false, fmt.Errorf(
-			"service-target provider %q declares unsupported baseTarget %q; only containerapp is supported",
-			host,
-			baseTarget,
-		)
-	}
-
-	return baseTarget, true, nil
 }
 
 // RequiresContainer returns true if the service target runs a container image.

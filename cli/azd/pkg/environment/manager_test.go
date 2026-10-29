@@ -155,18 +155,6 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 	})
 }
 
-func Test_EnvManager_CreateCachesEnvironmentInstance(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-	envManager := createEnvManagerForManagerTest(t, mockContext)
-
-	created, err := envManager.Create(t.Context(), Spec{Name: "cached"})
-	require.NoError(t, err)
-	loaded, err := envManager.Get(t.Context(), "cached")
-	require.NoError(t, err)
-
-	require.Same(t, created, loaded)
-}
-
 func Test_EnvManager_RejectsInvalidNamesBeforeDataStoreAccess(t *testing.T) {
 	for _, name := range []string{"..", ".", "../../trusted-project/.azure/prod", `..\prod`} {
 		t.Run(name, func(t *testing.T) {

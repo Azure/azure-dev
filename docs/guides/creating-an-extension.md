@@ -45,10 +45,6 @@ capabilities:
   - lifecycle-events
 ```
 
-For an initialize-only host backed by native Container Apps, declare
-`baseTarget: containerapp` in the provider entry and register it at runtime.
-See the [service-target contract](../../cli/azd/docs/extensions/extension-framework.md#service-target-providers).
-
 ### 3. Implement the extension
 
 Implement the required interfaces for your declared capabilities. See the extension framework services documentation for interface details.

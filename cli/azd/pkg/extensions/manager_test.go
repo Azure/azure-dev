@@ -2089,45 +2089,6 @@ func newTestManager(t *testing.T) *Manager {
 	return newTestManagerWithOptions(t, ManagerOptions{})
 }
 
-func TestFindServiceTargetProvider(t *testing.T) {
-	t.Run("returns installed provider metadata", func(t *testing.T) {
-		manager := newTestManager(t)
-		base := "containerapp"
-		require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
-			"azure.springboot": {
-				Id: "azure.springboot",
-				Providers: []Provider{{
-					Name:       "azure.springboot",
-					Type:       ServiceTargetProviderType,
-					BaseTarget: &base,
-				}},
-			},
-		}))
-
-		provider, err := manager.FindServiceTargetProvider("azure.springboot")
-		require.NoError(t, err)
-		require.NotNil(t, provider)
-		require.Equal(t, base, *provider.BaseTarget)
-	})
-
-	t.Run("rejects duplicate installed providers", func(t *testing.T) {
-		manager := newTestManager(t)
-		require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
-			"one": {
-				Id:        "one",
-				Providers: []Provider{{Name: "duplicate", Type: ServiceTargetProviderType}},
-			},
-			"two": {
-				Id:        "two",
-				Providers: []Provider{{Name: "duplicate", Type: ServiceTargetProviderType}},
-			},
-		}))
-
-		_, err := manager.FindServiceTargetProvider("duplicate")
-		require.ErrorContains(t, err, "multiple installed extensions")
-	})
-}
-
 func newTestManagerWithOptions(t *testing.T, options ManagerOptions) *Manager {
 	t.Helper()
 

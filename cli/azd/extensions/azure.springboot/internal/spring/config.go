@@ -20,6 +20,7 @@ const (
 	databasePasswordEnv        = "SPRING_DATABASE_PASSWORD"
 	provisionedDatabaseTypeEnv = "SPRING_DATABASE_PROVISIONED_TYPE"
 	azureSubscriptionIDEnv     = "AZURE_SUBSCRIPTION_ID"
+	azureResourceGroupEnv      = "AZURE_RESOURCE_GROUP"
 	containerAppIDEnv          = "AZURE_CONTAINER_APP_ID"
 	postgresServerNameEnv      = "AZURE_POSTGRES_SERVER_NAME"
 	postgresServerIDEnv        = "AZURE_POSTGRES_SERVER_ID"

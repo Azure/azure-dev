@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,17 +31,35 @@ func azdSourcePath(t *testing.T) string {
 func newSpringCLI(t *testing.T) *azdcli.CLI {
 	t.Helper()
 	if os.Getenv("CLI_TEST_AZD_PATH") == "" {
-		t.Skip("set CLI_TEST_AZD_PATH to the current development azd binary to run Spring functional tests")
+		t.Skip("set CLI_TEST_AZD_PATH to an official azd 1.37.2 or newer binary to run Spring functional tests")
 	}
 	require.True(t, filepath.IsAbs(os.Getenv("CLI_TEST_AZD_PATH")), "CLI_TEST_AZD_PATH must be absolute")
 	cli := azdcli.NewCLI(t)
-	cli.Env = []string{
-		"DOCKER_CONFIG=" + tempDirWithDiagnostics(t),
+	cli.Env = isolatedEnvironment(
+		"DOCKER_CONFIG="+tempDirWithDiagnostics(t),
+		"AZD_CONFIG_DIR="+tempDirWithDiagnostics(t),
 		"AZURE_DEV_COLLECT_TELEMETRY=no",
 		"AZD_FORCE_TTY=false",
 		"NO_COLOR=1",
-	}
+		"PATH="+filepath.Dir(cli.AzdPath)+string(os.PathListSeparator)+os.Getenv("PATH"),
+	)
 	return cli
+}
+
+func isolatedEnvironment(overrides ...string) []string {
+	replaced := map[string]bool{}
+	for _, entry := range overrides {
+		key, _, _ := strings.Cut(entry, "=")
+		replaced[strings.ToUpper(key)] = true
+	}
+	environment := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !replaced[strings.ToUpper(key)] {
+			environment = append(environment, entry)
+		}
+	}
+	return append(environment, overrides...)
 }
 
 func tempDirWithDiagnostics(t *testing.T) string {

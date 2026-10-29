@@ -8,79 +8,122 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
-func TestDeploymentSafetyCheckerAllowsOnlyMissingDeployment(t *testing.T) {
-	resourceCheckCalls := 0
+func TestDeploymentSafetyCheckerAllowsOnlyAuthoritativeAbsence(t *testing.T) {
+	listCalls := 0
 	checker := &azureDeploymentSafetyChecker{
-		getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-			return nil, status.Error(codes.NotFound, "missing")
+		verifyOwnership: func(context.Context, string, map[string]string, string) error {
+			return errPostgreSQLResourceNotFound
 		},
 		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
-			resourceCheckCalls++
+			listCalls++
 			return nil
 		},
 	}
 
-	require.NoError(t, checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{}))
-	require.Equal(t, 1, resourceCheckCalls)
+	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{
+		azureSubscriptionIDEnv: "sub",
+		postgresServerIDEnv: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.DBforPostgreSQL/flexibleServers/pg",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, listCalls)
 }
 
-func TestDeploymentSafetyCheckerBlocksMissingDeploymentWhenOwnedResourceExists(t *testing.T) {
+func TestDeploymentSafetyCheckerBlocksExistingOwnedResource(t *testing.T) {
+	listCalls := 0
 	checker := &azureDeploymentSafetyChecker{
-		getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-			return nil, status.Error(codes.NotFound, "missing")
+		verifyOwnership: func(context.Context, string, map[string]string, string) error {
+			return nil
 		},
 		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
-			return missingExistingDatabasePasswordError()
+			listCalls++
+			return nil
 		},
 	}
 
-	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
+	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{
+		azureSubscriptionIDEnv: "sub",
+		postgresServerIDEnv: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.DBforPostgreSQL/flexibleServers/pg",
+	})
 	require.ErrorContains(t, err, "existing infrastructure")
+	require.Zero(t, listCalls)
 }
 
-func TestDeploymentSafetyCheckerFailsClosedWhenResourceReadFails(t *testing.T) {
+func TestDeploymentSafetyCheckerFailsClosedOnReadErrors(t *testing.T) {
 	checker := &azureDeploymentSafetyChecker{
-		getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-			return nil, status.Error(codes.NotFound, "missing")
+		verifyOwnership: func(context.Context, string, map[string]string, string) error {
+			return errors.New("authorization denied")
 		},
 		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
-			return errors.New("resource read denied")
+			return nil
 		},
 	}
 
-	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
-	require.ErrorContains(t, err, "resource read denied")
+	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{
+		azureSubscriptionIDEnv: "sub",
+		postgresServerIDEnv: "/subscriptions/sub/resourceGroups/rg/providers/" +
+			"Microsoft.DBforPostgreSQL/flexibleServers/pg",
+	})
+	require.ErrorContains(t, err, "authorization denied")
 }
 
-func TestDeploymentSafetyCheckerBlocksExistingPostgresWithMissingLocalOutputs(t *testing.T) {
-	postgresID := "/subscriptions/sub/resourceGroups/rg/providers/" +
-		"Microsoft.DBforPostgreSQL/flexibleServers/pg"
-	verified := false
+func TestDeploymentSafetyCheckerConstructsPersistedResourceIdentity(t *testing.T) {
+	var resourceID string
 	checker := &azureDeploymentSafetyChecker{
-		getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-			return &azdext.GetDeploymentResponse{Deployment: &azdext.Deployment{
-				Id:        "/subscriptions/sub/providers/Microsoft.Resources/deployments/dev-123",
-				Tags:      map[string]string{azdEnvironmentTag: "dev"},
-				Resources: []string{postgresID},
-			}}, nil
-		},
 		verifyOwnership: func(
 			_ context.Context,
-			envName string,
-			values map[string]string,
-			resourceID string,
+			_ string,
+			_ map[string]string,
+			id string,
 		) error {
-			verified = true
-			require.Equal(t, "dev", envName)
-			require.Equal(t, "sub", values[azureSubscriptionIDEnv])
-			require.Equal(t, postgresID, resourceID)
+			resourceID = id
+			return errPostgreSQLResourceNotFound
+		},
+		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
 			return nil
+		},
+	}
+
+	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{
+		azureSubscriptionIDEnv: "sub",
+		azureResourceGroupEnv:  "custom-rg",
+		postgresServerNameEnv:  "custom-postgres",
+	})
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		"/subscriptions/sub/resourceGroups/custom-rg/providers/"+
+			"Microsoft.DBforPostgreSQL/flexibleServers/custom-postgres",
+		resourceID,
+	)
+}
+
+func TestDeploymentSafetyCheckerRequiresSubscriptionBeforeReads(t *testing.T) {
+	called := false
+	checker := &azureDeploymentSafetyChecker{
+		verifyOwnership: func(context.Context, string, map[string]string, string) error {
+			called = true
+			return nil
+		},
+		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
+			called = true
+			return nil
+		},
+	}
+
+	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
+	require.ErrorContains(t, err, "subscription")
+	require.False(t, called)
+}
+
+func TestDeploymentSafetyCheckerBlocksOwnedResourceDiscoveredByList(t *testing.T) {
+	checker := &azureDeploymentSafetyChecker{
+		verifyNoOwnedResources: func(context.Context, string, map[string]string) error {
+			return missingExistingDatabasePasswordError()
 		},
 	}
 
@@ -88,68 +131,11 @@ func TestDeploymentSafetyCheckerBlocksExistingPostgresWithMissingLocalOutputs(t 
 		azureSubscriptionIDEnv: "sub",
 	})
 	require.ErrorContains(t, err, "existing infrastructure")
-	require.True(t, verified)
 }
 
-func TestDeploymentSafetyCheckerBlocksExistingDeploymentWithoutPostgresOutput(t *testing.T) {
-	checker := &azureDeploymentSafetyChecker{
-		getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-			return &azdext.GetDeploymentResponse{Deployment: &azdext.Deployment{
-				Id:   "/subscriptions/sub/providers/Microsoft.Resources/deployments/dev-123",
-				Tags: map[string]string{azdEnvironmentTag: "dev"},
-			}}, nil
-		},
-	}
-
-	err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
-	require.ErrorContains(t, err, "existing infrastructure")
-}
-
-func TestDeploymentSafetyCheckerFailsClosedOnReadAndOwnershipErrors(t *testing.T) {
-	t.Run("deployment read", func(t *testing.T) {
-		checker := &azureDeploymentSafetyChecker{
-			getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-				return nil, errors.New("access denied")
-			},
-		}
-
-		err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
-		require.ErrorContains(t, err, "could not establish")
-		require.NotContains(t, err.Error(), "access denied")
-	})
-
-	t.Run("deployment ownership", func(t *testing.T) {
-		checker := &azureDeploymentSafetyChecker{
-			getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-				return &azdext.GetDeploymentResponse{Deployment: &azdext.Deployment{
-					Id:   "/subscriptions/sub/providers/Microsoft.Resources/deployments/dev-123",
-					Tags: map[string]string{azdEnvironmentTag: "other"},
-				}}, nil
-			},
-		}
-
-		err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
-		require.ErrorContains(t, err, "not owned")
-	})
-
-	t.Run("resource ownership", func(t *testing.T) {
-		checker := &azureDeploymentSafetyChecker{
-			getDeployment: func(context.Context) (*azdext.GetDeploymentResponse, error) {
-				return &azdext.GetDeploymentResponse{Deployment: &azdext.Deployment{
-					Id:   "/subscriptions/sub/providers/Microsoft.Resources/deployments/dev-123",
-					Tags: map[string]string{azdEnvironmentTag: "dev"},
-					Resources: []string{
-						"/subscriptions/sub/resourceGroups/rg/providers/" +
-							"Microsoft.DBforPostgreSQL/flexibleServers/pg",
-					},
-				}}, nil
-			},
-			verifyOwnership: func(context.Context, string, map[string]string, string) error {
-				return errors.New("ownership denied")
-			},
-		}
-
-		err := checker.EnsureCanGenerate(t.Context(), "dev", map[string]string{})
-		require.ErrorContains(t, err, "ownership denied")
-	})
+func TestParsePostgreSQLResourceIDRejectsAnotherResourceType(t *testing.T) {
+	_, err := parsePostgreSQLResourceID(
+		"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.App/containerApps/pg",
+	)
+	require.ErrorContains(t, err, "invalid PostgreSQL resource ID")
 }

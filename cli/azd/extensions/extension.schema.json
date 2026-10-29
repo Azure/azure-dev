@@ -72,14 +72,6 @@
           "type": "string",
           "title": "Description",
           "description": "Description of what this provider does."
-        },
-        "baseTarget": {
-          "type": "string",
-          "title": "Base Service Target",
-          "description": "Optional Container Apps delegation for an initialize-only service-target provider.",
-          "enum": [
-            "containerapp"
-          ]
         }
       },
       "required": [

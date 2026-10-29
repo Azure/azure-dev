@@ -82,16 +82,6 @@ A named event an extension reports through `TelemetryService.ReportUsage`, carry
 
 An extension capability that lets an extension provide a custom infrastructure provisioning experience as an alternative to built-in providers such as Bicep and Terraform.
 
-### Native Target Delegation
-
-A provider's `baseTarget: containerapp` declaration reuses native Container Apps
-deployment after extension initialization, preserving the authored host.
-
-### Spring Boot Host
-
-The unpublished [`azure.springboot`](../../cli/azd/extensions/azure.springboot/README.md)
-host prepares Maven/Java 17 applications for native Container Apps deployment.
-
 ## Architecture
 
 ### ActionDescriptor

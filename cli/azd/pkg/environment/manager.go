@@ -205,10 +205,6 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 		return nil, err
 	}
 
-	m.cacheMu.Lock()
-	m.envCache[env.Name()] = env
-	m.cacheMu.Unlock()
-
 	return env, nil
 }
 

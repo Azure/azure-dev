@@ -86,13 +86,6 @@ Extensions declare their capabilities in `extension.yaml`:
 | `provisioning-provider` | Add custom infrastructure provisioning support |
 | `metadata` | Provide metadata about commands and capabilities |
 
-### Native service-target delegation
-
-An initialize-only provider may declare `baseTarget: containerapp` to retain
-native Container Apps deployment while contributing lifecycle preparation.
-Other bases and delegation chains are unsupported. See the
-[service-target contract](../../cli/azd/docs/extensions/extension-framework.md#service-target-providers).
-
 ## Available gRPC Services
 
 Extensions can access these azd services via gRPC:

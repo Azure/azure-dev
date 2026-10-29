@@ -164,7 +164,6 @@ func TestExtensionSchema_MarshalYAML_WithProviders(t *testing.T) {
 				Name:        "azure-container-apps",
 				Type:        extensions.ServiceTargetProviderType,
 				Description: "Deploys applications to Azure Container Apps",
-				BaseTarget:  new("containerapp"),
 			},
 			{
 				Name:        "kubernetes",
@@ -191,7 +190,6 @@ func TestExtensionSchema_MarshalYAML_WithProviders(t *testing.T) {
 	require.Equal(t, "azure-container-apps", unmarshalled.Providers[0].Name)
 	require.Equal(t, extensions.ServiceTargetProviderType, unmarshalled.Providers[0].Type)
 	require.Equal(t, "Deploys applications to Azure Container Apps", unmarshalled.Providers[0].Description)
-	require.Equal(t, "containerapp", *unmarshalled.Providers[0].BaseTarget)
 
 	require.Equal(t, "kubernetes", unmarshalled.Providers[1].Name)
 	require.Equal(t, extensions.ServiceTargetProviderType, unmarshalled.Providers[1].Type)

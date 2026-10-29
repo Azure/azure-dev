@@ -584,9 +584,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
 	container.MustRegisterScoped(project.NewServiceManager)
-	container.MustRegisterSingleton(func(manager *extensions.Manager) project.ServiceTargetProviderResolver {
-		return manager
-	})
 
 	// Unified up action: the exegraph-backed `azd up` entry point that
 	// collapses provision + package + publish + deploy (and project command
@@ -1035,16 +1032,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(grpcserver.NewComposeService)
 	container.MustRegisterSingleton(grpcserver.NewWorkflowService)
 	container.MustRegisterSingleton(grpcserver.NewExtensionService)
-	container.MustRegisterSingleton(func(
-		currentContainer *ioc.NestedContainer,
-		extensionManager *extensions.Manager,
-		lazyEnv *lazy.Lazy[*environment.Environment],
-	) azdext.ServiceTargetServiceServer {
-		// Service target providers register while the command middleware is running, but workflows
-		// build fresh command scopes for nested steps such as build -> restore. Register providers
-		// on both scopes so the active action and later workflow steps see the same target bindings.
-		return grpcserver.NewSharedServiceTargetService(currentContainer, container, extensionManager, lazyEnv)
-	})
+	container.MustRegisterSingleton(grpcserver.NewServiceTargetService)
 	container.MustRegisterSingleton(grpcserver.NewFrameworkService)
 	container.MustRegisterSingleton(grpcserver.NewProvisioningService)
 	container.MustRegisterSingleton(grpcserver.NewValidationService)

@@ -11,7 +11,7 @@ services:
   app:
     project: .
     language: java
-    host: azure.springboot
+    host: springbootapp
     module: app
     config:
       database:

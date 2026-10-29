@@ -76,11 +76,18 @@ func (r *Runtime) resolveService(
 	service *azdext.ServiceConfig,
 	values map[string]string,
 ) (*resolvedService, error) {
-	if service == nil || service.GetHost() != SpringHost {
+	if service == nil {
 		return nil, validationError(
-			"invalid_spring_service",
-			"the Spring service configuration is missing or has a different host",
-			"set the service host to azure.springboot",
+			"missing_spring_service",
+			"the Spring service configuration is missing",
+			"check the service configuration in azure.yaml",
+		)
+	}
+	if service.GetHost() != SpringHost {
+		return nil, validationError(
+			"unsupported_spring_host",
+			fmt.Sprintf("service %q uses unsupported Spring host %q", service.GetName(), service.GetHost()),
+			fmt.Sprintf("set the service host to %s", SpringHost),
 		)
 	}
 	mode, err := resolveDatabaseType(service, values, os.LookupEnv)
@@ -124,7 +131,7 @@ func (r *Runtime) resolveProject(
 			return nil, "", validationError(
 				"conflicting_service_database_types",
 				"Spring services in one project resolve to different database types",
-				"use one database type for all azure.springboot services in the project",
+				fmt.Sprintf("use one database type for all %s services in the project", SpringHost),
 			)
 		}
 		selected = item.mode

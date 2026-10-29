@@ -15,4 +15,10 @@ import (
 func TestConfigureExtensionHostMatchesManifest(t *testing.T) {
 	manifestPath := filepath.Join("..", "..", "extension.yaml")
 	require.NoError(t, azdext.VerifyProvidersMatchManifest(configureExtensionHost, manifestPath))
+
+	host := azdext.NewExtensionHost(nil)
+	configureExtensionHost(host)
+	require.Len(t, host.ServiceTargets(), 1)
+	require.Equal(t, "springbootapp", host.ServiceTargets()[0].Host)
+	require.NotEqual(t, "azure.springboot", host.ServiceTargets()[0].Host)
 }

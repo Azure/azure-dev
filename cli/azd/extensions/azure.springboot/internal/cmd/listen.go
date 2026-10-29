@@ -11,8 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-const springHost = "azure.springboot"
-
 func configureExtensionHost(host *azdext.ExtensionHost) {
 	runtime := spring.NewRuntime(host.Client())
 
@@ -20,7 +18,7 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		WithFrameworkService("java", func() azdext.FrameworkServiceProvider {
 			return spring.NewJavaFrameworkService(host.Client())
 		}).
-		WithServiceTarget(springHost, func() azdext.ServiceTargetProvider {
+		WithServiceTarget(spring.SpringHost, func() azdext.ServiceTargetProvider {
 			return spring.NewServiceTarget(host.Client(), runtime)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -31,11 +29,11 @@ func configureExtensionHost(host *azdext.ExtensionHost) {
 		}).
 		WithServiceEventHandler("prebuild", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PreBuild(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: springHost}).
+		}, &azdext.ServiceEventOptions{Host: spring.SpringHost}).
 		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PreDeploy(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: springHost}).
+		}, &azdext.ServiceEventOptions{Host: spring.SpringHost}).
 		WithServiceEventHandler("postdeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
 			return runtime.PostDeploy(ctx, args)
-		}, &azdext.ServiceEventOptions{Host: springHost})
+		}, &azdext.ServiceEventOptions{Host: spring.SpringHost})
 }

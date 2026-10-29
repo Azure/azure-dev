@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	springServiceHost          = "azure.springboot"
 	skipGitMetadataMavenOption = "-Dmaven.gitcommitid.skip=true"
 )
 
@@ -225,7 +224,7 @@ func (p *javaFrameworkService) nativeFrameworkWithProgress(
 ) project.FrameworkService {
 	runner := &mavenPackageCommandRunner{
 		base:     p.runner,
-		spring:   p.service != nil && p.service.Host == project.ServiceTargetKind(springServiceHost),
+		spring:   p.service != nil && p.service.Host == project.ServiceTargetKind(SpringHost),
 		progress: progress,
 	}
 	return project.NewMavenProject(env, maven.NewCli(runner), javac.NewCli(runner))

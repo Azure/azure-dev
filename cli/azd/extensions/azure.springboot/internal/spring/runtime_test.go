@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"testing"
@@ -202,4 +203,18 @@ type assertError string
 
 func (e assertError) Error() string {
 	return string(e)
+}
+
+func TestResolveServiceRejectsLegacyHost(t *testing.T) {
+	runtime := &Runtime{}
+
+	_, err := runtime.resolveService(&azdext.ServiceConfig{
+		Name: "petclinic",
+		Host: "azure.springboot",
+	}, nil)
+	require.ErrorContains(t, err, `service "petclinic" uses unsupported Spring host "azure.springboot"`)
+	localErr, ok := errors.AsType[*azdext.LocalError](err)
+	require.True(t, ok)
+	require.Equal(t, "unsupported_spring_host", localErr.Code)
+	require.Equal(t, "set the service host to springbootapp", localErr.Suggestion)
 }

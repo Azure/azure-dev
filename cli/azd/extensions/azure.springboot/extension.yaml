@@ -13,6 +13,6 @@ capabilities:
   - service-target-provider
   - metadata
 providers:
-  - name: azure.springboot
+  - name: springbootapp
     type: service-target
     description: Packages and deploys Spring Boot applications to Azure Container Apps.

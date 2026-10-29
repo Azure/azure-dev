@@ -103,3 +103,14 @@ func TestEnvironmentLookupPrefersPersistedValue(t *testing.T) {
 
 	require.NoError(t, os.Unsetenv("VALUE"))
 }
+
+func TestSpringServicesSelectCanonicalHostOnly(t *testing.T) {
+	canonical := &azdext.ServiceConfig{Name: "canonical", Host: SpringHost}
+	project := &azdext.ProjectConfig{Services: map[string]*azdext.ServiceConfig{
+		"canonical": canonical,
+		"legacy":    {Name: "legacy", Host: "azure.springboot"},
+		"native":    {Name: "native", Host: "containerapp"},
+	}}
+
+	require.Equal(t, []*azdext.ServiceConfig{canonical}, springServices(project))
+}

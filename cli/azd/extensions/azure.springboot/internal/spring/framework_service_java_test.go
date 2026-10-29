@@ -534,7 +534,7 @@ func TestJavaFrameworkDelegatesNativeMavenPackaging(t *testing.T) {
 	}{
 		{
 			name: "Spring service with unborn head",
-			host: springServiceHost,
+			host: SpringHost,
 			createPackageOutput: func(t *testing.T, serviceDir string) {
 				require.NoError(t, os.MkdirAll(filepath.Join(serviceDir, "target"), 0o700))
 				require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "target", "app.jar"), []byte("jar"), 0o600))
@@ -542,6 +542,15 @@ func TestJavaFrameworkDelegatesNativeMavenPackaging(t *testing.T) {
 			wantGitCheck:    true,
 			wantMavenOption: true,
 			wantMetadata:    map[string]string{"framework": "maven"},
+		},
+		{
+			name: "legacy host uses native Maven behavior",
+			host: "azure.springboot",
+			createPackageOutput: func(t *testing.T, serviceDir string) {
+				require.NoError(t, os.MkdirAll(filepath.Join(serviceDir, "target"), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "target", "app.jar"), []byte("jar"), 0o600))
+			},
+			wantMetadata: map[string]string{"framework": "maven"},
 		},
 		{
 			name: "non-Spring Azure Functions service",
@@ -569,7 +578,7 @@ func TestJavaFrameworkDelegatesNativeMavenPackaging(t *testing.T) {
 			serviceDir := filepath.Join(projectDir, "service")
 			require.NoError(t, os.MkdirAll(serviceDir, 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(serviceDir, "mvnw"), []byte("wrapper"), 0o700))
-			if tt.host == springServiceHost {
+			if tt.host == SpringHost {
 				require.NoError(t, os.Mkdir(filepath.Join(projectDir, ".git"), 0o700))
 			}
 			tt.createPackageOutput(t, serviceDir)
@@ -586,7 +595,7 @@ func TestJavaFrameworkDelegatesNativeMavenPackaging(t *testing.T) {
 			}
 			runner := &mavenPackageCommandRunner{
 				base:   base,
-				spring: tt.host == springServiceHost,
+				spring: tt.host == SpringHost,
 			}
 			service := &project.ServiceConfig{
 				Project:      &project.ProjectConfig{Path: projectDir},
@@ -674,7 +683,7 @@ func TestNativeServiceConfigPreservesMixedJavaHosts(t *testing.T) {
 	projectDir := t.TempDir()
 	t.Setenv("AZD_EXEC_PROJECT_DIR", projectDir)
 
-	for _, host := range []string{springServiceHost, string(project.AzureFunctionTarget), "containerapp"} {
+	for _, host := range []string{SpringHost, string(project.AzureFunctionTarget), "containerapp"} {
 		t.Run(host, func(t *testing.T) {
 			service, err := nativeServiceConfig(&azdext.ServiceConfig{
 				Name:              "service",
@@ -749,7 +758,7 @@ func TestJavaFrameworkInitializeAndRequirementsAreConcurrentSafe(t *testing.T) {
 	service := &azdext.ServiceConfig{
 		Name:         "service",
 		RelativePath: ".",
-		Host:         springServiceHost,
+		Host:         SpringHost,
 		Language:     "java",
 	}
 

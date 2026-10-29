@@ -44,7 +44,7 @@ func verifyPetclinicTemplate(t *testing.T, projectDir string) {
 	t.Helper()
 	finalYaml, err := os.ReadFile(filepath.Join(projectDir, "azure.yaml"))
 	require.NoError(t, err)
-	require.Contains(t, string(finalYaml), "host: azure.springboot")
+	require.Contains(t, string(finalYaml), "host: springbootapp")
 	require.Contains(t, string(finalYaml), "type: ${SPRING_DATABASE_TYPE:-h2}")
 	require.NotContains(t, string(finalYaml), "docker:")
 	require.NotContains(t, string(finalYaml), "hooks:")
@@ -421,7 +421,7 @@ func installSpringExtensionFixture(t *testing.T, ctx context.Context, configDir 
 	require.NotNil(t, installed)
 	require.Equal(t, "bundle", installed.Source)
 	require.Len(t, installed.Providers, 1)
-	require.Equal(t, "azure.springboot", installed.Providers[0].Name)
+	require.Equal(t, "springbootapp", installed.Providers[0].Name)
 	require.Equal(t, "service-target", installed.Providers[0].Type)
 	require.Nil(t, installed.Providers[0].BaseTarget)
 }

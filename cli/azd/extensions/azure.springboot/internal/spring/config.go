@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	SpringHost                 = "azure.springboot"
+	SpringHost                 = "springbootapp"
 	databaseTypeEnv            = "SPRING_DATABASE_TYPE"
 	databasePasswordEnv        = "SPRING_DATABASE_PASSWORD"
 	provisionedDatabaseTypeEnv = "SPRING_DATABASE_PROVISIONED_TYPE"

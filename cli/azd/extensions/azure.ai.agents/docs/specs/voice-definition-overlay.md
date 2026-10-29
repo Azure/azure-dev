@@ -87,7 +87,13 @@ Overlay `$ref` values reuse the existing local Foundry `$ref` resolver:
 - nested local references and cycle/depth checks are supported;
 - remote URL references are rejected;
 - local references have the same trusted-input boundary as existing azd
-  definition references, including parent and absolute paths.
+  definition references, including parent and absolute paths;
+- inside a referenced overlay, relative string values named `project` are
+  rebased from the referenced file to the `azure.yaml` project root. An
+  `instructions` value is rebased the same way when it is a single-line `.md`
+  or `.txt` path. Inline overlay values are not rebased. These are existing
+  shared-resolver semantics, so authors should avoid those key names for
+  service fields that are not intended to carry local file paths.
 
 Existing `$ref` sibling semantics apply before the definition overlay merge:
 sibling properties shallowly replace the referenced property's complete value.
@@ -98,12 +104,17 @@ the typed Voice definition.
 
 ## Compatibility
 
-When the overlay is omitted or empty:
+When the overlay is omitted on any agent, or is a literally empty object on a
+Voice Agent:
 
 - azd returns and serializes the existing typed Voice definition directly;
 - Managed, BYOM, and Hosted Voice Wrapper behavior is unchanged;
-- Prompt and ordinary Hosted Agent behavior is unchanged;
-- no extra file is read and no merge is performed.
+- Prompt and ordinary Hosted Agent behavior is unchanged when the property is
+  omitted; either overlay property is rejected when present on those kinds;
+- no extra file is read and no merge is performed for an omitted or literally
+  empty Voice overlay. An overlay expressed through `$ref` still reads and
+  resolves its file even when the resolved object is empty; only the later
+  merge is skipped.
 
 Existing six-scenario Voice regression coverage remains the compatibility gate.
 

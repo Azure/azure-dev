@@ -86,6 +86,27 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if !ok || strings.TrimSpace(resourceGroup) == "" {
 		return fmt.Errorf("effective resourceGroupName must be a nonempty string")
 	}
+	var requestedResourceGroupCreation *bool
+	var resourceGroupCreationParameter string
+	for name, parameter := range source.parameters {
+		if !strings.EqualFold(name, "createResourceGroup") {
+			continue
+		}
+		if requestedResourceGroupCreation != nil {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				"multiple createResourceGroup deployment parameters differ only by case",
+				"supply createResourceGroup only once using the template's parameter name")
+		}
+		envelope, _ := parameter.(map[string]any)
+		value, ok := envelope["value"].(bool)
+		if !ok {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				"createResourceGroup must be a boolean",
+				"set createResourceGroup to true or false in the parameters file, or omit it for automatic selection")
+		}
+		requestedResourceGroupCreation = new(value)
+		resourceGroupCreationParameter = name
+	}
 	suppliedBindings := map[string]string{}
 	for name, parameter := range source.parameters {
 		if !strings.EqualFold(name, "kubeletObjectId") && !strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
@@ -122,6 +143,11 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if err != nil {
 		return err
 	}
+	if !resourceGroupExists && requestedResourceGroupCreation != nil && !*requestedResourceGroupCreation {
+		return exterrors.Validation(exterrors.CodeConflictingArguments,
+			fmt.Sprintf("createResourceGroup=false conflicts with missing resource group %q", resourceGroup),
+			"select an existing resource group, create it separately, or allow creation with createResourceGroup=true")
+	}
 	if resourceGroupExists && !supportsBYOResourceGroupReuse(source.armTemplate) {
 		return exterrors.Validation(exterrors.CodeInvalidParameter,
 			"the BYO AKS template cannot safely reuse the existing resource group",
@@ -142,6 +168,9 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	source.parameters = mergeParameters(source.parameters, hostBindings)
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
 	if _, declared := definitions["createResourceGroup"]; declared {
+		if requestedResourceGroupCreation != nil {
+			delete(source.parameters, resourceGroupCreationParameter)
+		}
 		source.parameters["createResourceGroup"] = map[string]any{"value": !resourceGroupExists}
 	}
 	return nil

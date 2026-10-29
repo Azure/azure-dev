@@ -1,0 +1,19 @@
+[
+  {
+    "model": "MAI/MAI-Code-1.1-Flash",
+    "renderers": ["mai_harmony_internal"]
+  },
+  {
+    "model": "Qwen/Qwen3-32B",
+    "renderers": ["qwen3_ext", "qwen3", "qwen3_disable_thinking"]
+  },
+  {
+    "model": "Qwen/Qwen3.8-27B",
+    "renderers": [
+      "qwen3_8_low_reasoning",
+      "qwen3_8",
+      "qwen3_8_medium_reasoning",
+      "qwen3_8_disable_thinking"
+    ]
+  }
+]

@@ -4,13 +4,14 @@
 
 ## 1.0.0 (2026-10-29)
 
-First stable release of the Foundry agents extension. Managed harness, voice, long-running invocation, A2A wire-version selection, and hosted A2A initialization remain opt-in previews.
+First stable release of the Foundry agents extension. Managed harness, voice, long-running invocation, A2A wire-version selection, hosted A2A initialization, and hosted-agent memory snapshots remain opt-in previews.
 
 ### Bugs Fixed
 
 - [[#10561]](https://github.com/Azure/azure-dev/pull/10561) Fix A2A 0.3 invocation output to show completed task answers instead of generic lifecycle messages.
 - [[#10715]](https://github.com/Azure/azure-dev/pull/10715) Fix prompt-agent deployment and invocation accepting invalid paths or modules in later infrastructure layers after an earlier layer matches.
 - [[#10182]](https://github.com/Azure/azure-dev/pull/10182) Fix `azd ai agent init --help` omitting the `--harness` option.
+- [[#10553]](https://github.com/Azure/azure-dev/pull/10553) Fix hosted-agent activation failure and timeout diagnostics to identify the attempted version and clarify that a timeout does not confirm deployment failure.
 
 ## 1.0.0-beta.22 (2026-10-23)
 

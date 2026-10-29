@@ -640,6 +640,13 @@ func validateTelephonyTransferTargets(
 		if !telephonyTargetNamePattern.MatchString(target.Name) {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: invalid name", source, i)
 		}
+		if _, exists := names[target.Name]; exists {
+			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name", source)
+		}
+		names[target.Name] = struct{}{}
+		if utf8.RuneCountInString(target.Description) > 1024 {
+			return fmt.Errorf("invalid telephony %s transfer target at index %d: description is too long", source, i)
+		}
 		if len(target.Destination.RawObject) > 0 {
 			if strictKinds {
 				return fmt.Errorf(
@@ -649,13 +656,6 @@ func validateTelephonyTransferTargets(
 				)
 			}
 			continue
-		}
-		if _, exists := names[target.Name]; exists {
-			return fmt.Errorf("invalid telephony %s transfer targets: duplicate name", source)
-		}
-		names[target.Name] = struct{}{}
-		if utf8.RuneCountInString(target.Description) > 1024 {
-			return fmt.Errorf("invalid telephony %s transfer target at index %d: description is too long", source, i)
 		}
 		switch target.Destination.Kind {
 		case TelephonyTransferDestinationPSTN:

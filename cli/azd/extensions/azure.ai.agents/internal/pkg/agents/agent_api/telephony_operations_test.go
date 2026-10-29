@@ -1007,6 +1007,25 @@ func TestReplaceTelephonyTransferTargets_RejectsRawDestinationBypass(t *testing.
 	require.Zero(t, transport.requests)
 }
 
+func TestGetTelephonyTransferTargets_ValidatesRawTargetMetadata(t *testing.T) {
+	for _, response := range []string{
+		`{"transfer_targets":[
+			{"name":"future","description":"First","destination":{"type":"future"}},
+			{"name":"future","description":"Second","destination":{"type":"future"}}
+		]}`,
+		fmt.Sprintf(`{"transfer_targets":[
+			{"name":"future","description":%q,"destination":{"type":"future"}}
+		]}`, strings.Repeat("x", 1025)),
+	} {
+		client, _ := newTelephonyContractClient(t, func(req *http.Request) (*http.Response, error) {
+			return telephonyResponse(req, http.StatusOK, response,
+				http.Header{"ETag": {`"etag"`}}), nil
+		})
+		_, err := client.GetTelephonyTransferTargets(t.Context(), "agent")
+		require.Error(t, err)
+	}
+}
+
 func TestUnknownTransferDestination_PreservesCompleteObject(t *testing.T) {
 	for _, discriminator := range []string{`"type":"future_type"`, `"kind":"future_kind"`} {
 		original := fmt.Sprintf(`{

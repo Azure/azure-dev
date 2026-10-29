@@ -379,19 +379,30 @@
         "properties": {
           "kind": { "const": "voice" },
           "modelType": { "const": "self_deployed" },
-          "model": { "$ref": "#/definitions/VoiceModel" },
+          "model": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "minLength": 1, "pattern": "\\S" }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          },
           "audio": { "$ref": "#/definitions/LiveVoiceAudio" },
           "greeting": { "$ref": "#/definitions/LiveTemplateGreeting" },
           "structuredInputs": { "$ref": "#/definitions/LiveStructuredInputs" },
           "delegation": { "$ref": "#/definitions/LiveVoiceDelegation" },
           "policies": {
             "type": "array",
+            "minItems": 1,
             "maxItems": 1,
             "items": {
-              "allOf": [
-                { "$ref": "#/definitions/Policy" },
-                { "not": { "required": ["invocationsModeration"] } }
-              ]
+              "type": "object",
+              "properties": {
+                "type": { "const": "rai_policy" },
+                "raiPolicyName": { "type": "string", "minLength": 1, "pattern": "\\S" }
+              },
+              "required": ["type", "raiPolicyName"],
+              "additionalProperties": false
             }
           }
         },

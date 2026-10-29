@@ -71,6 +71,19 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 			"type": "rai_policy", "raiPolicyName": "policy", "invocationsModeration": map[string]any{},
 		}},
 	}))
+	for _, invalid := range []map[string]any{
+		{"policies": []any{}},
+		{"policies": []any{map[string]any{"type": "other", "raiPolicyName": "policy"}}},
+		{"policies": []any{map[string]any{"type": "rai_policy"}}},
+		{"model": map[string]any{"id": "gpt-live-1", "provider": "custom"}},
+	} {
+		live := map[string]any{
+			"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
+			"model": map[string]any{"id": "gpt-live-1"},
+		}
+		maps.Copy(live, invalid)
+		require.Error(t, schema.validate(live), "invalid GPT Live schema shape: %v", invalid)
+	}
 	require.NoError(t, schema.validate(map[string]any{
 		"kind": "voice", "subProtocol": "realtime", "model": map[string]any{"id": "gpt-realtime"},
 		"audio": map[string]any{},

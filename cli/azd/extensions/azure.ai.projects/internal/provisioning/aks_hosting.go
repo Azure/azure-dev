@@ -82,13 +82,6 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 		return fmt.Errorf("agentHosting deployment parameters conflict with azure.yaml; " +
 			"only clusterResourceId is configurable and azd creates its prerequisites")
 	}
-	network, err := byoNetworkSelection(source)
-	if err != nil {
-		return err
-	}
-	if err := network.validate(); err != nil {
-		return err
-	}
 	resourceGroup, ok := byoParameterValue(source, "resourceGroupName").(string)
 	if !ok || strings.TrimSpace(resourceGroup) == "" {
 		return fmt.Errorf("effective resourceGroupName must be a nonempty string")
@@ -161,6 +154,22 @@ func byoARMOptions(options *arm.ClientOptions) *arm.ClientOptions {
 	}
 	result.DisableRPRegistration = true
 	return &result
+}
+
+func parseBYOResourceID(value, kind string) (*arm.ResourceID, error) {
+	if !strings.HasPrefix(strings.ToLower(value), "/subscriptions/") ||
+		strings.ContainsAny(value, "?#%\\@:\x00 \t\r\n") || strings.Contains(value, "//") {
+		return nil, fmt.Errorf("expected a complete %s resource ID without URL components", kind)
+	}
+	id, err := arm.ParseResourceID(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s resource ID: %w", kind, err)
+	}
+	if id.SubscriptionID == "" || id.ResourceGroupName == "" || id.Name == "" ||
+		!strings.EqualFold(id.ResourceType.String(), kind) {
+		return nil, fmt.Errorf("expected a complete %s resource ID", kind)
+	}
+	return id, nil
 }
 
 func (p *FoundryProvisioningProvider) resolveBYOHostBindings(
@@ -295,41 +304,6 @@ func byoParameterValue(source *templateSource, key string) any {
 		}
 	}
 	return nil
-}
-
-func byoNetworkSelection(source *templateSource) (byoNetwork, error) {
-	var network byoNetwork
-	if enabled, ok := byoParameterValue(source, "enableNetworkIsolation").(bool); !ok || !enabled {
-		return network, fmt.Errorf("BYO AKS requires network.agentSubnet and network.peSubnet")
-	}
-	if managed, ok := byoParameterValue(source, "useManagedEgress").(bool); !ok || managed {
-		return network, fmt.Errorf("BYO AKS does not support Microsoft-managed egress; specify network.agentSubnet")
-	}
-	for key, target := range map[string]*string{
-		"vnetId": &network.VNetID, "agentSubnetName": &network.AgentSubnetName,
-		"agentSubnetPrefix": &network.AgentSubnetPrefix, "peSubnetName": &network.PESubnetName,
-		"peSubnetPrefix":        &network.PESubnetPrefix,
-		"dnsZonesResourceGroup": &network.DNSResourceGroup, "dnsZonesSubscription": &network.DNSSubscription,
-	} {
-		value, ok := byoParameterValue(source, key).(string)
-		if !ok {
-			return network, fmt.Errorf("effective %s must be a string", key)
-		}
-		*target = value
-	}
-	for key, target := range map[string]*bool{
-		"createAgentSubnet": &network.CreateAgentSubnet, "createPESubnet": &network.CreatePESubnet,
-	} {
-		value, ok := byoParameterValue(source, key).(bool)
-		if !ok {
-			return network, fmt.Errorf("effective %s must be a boolean", key)
-		}
-		*target = value
-	}
-	if mode, ok := byoParameterValue(source, "managedIsolationMode").(string); !ok || mode != "" {
-		return network, fmt.Errorf("managedIsolationMode cannot take effect with BYO AKS")
-	}
-	return network, nil
 }
 
 func byoDestroyError() error {

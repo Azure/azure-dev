@@ -28,7 +28,6 @@ import (
 
 const offlineClusterID = "/subscriptions/cluster-sub/resourceGroups/aks-rg/providers/" +
 	"Microsoft.ContainerService/managedClusters/aks"
-const offlineVNetID = "/subscriptions/network-sub/resourceGroups/net-rg/providers/Microsoft.Network/virtualNetworks/vnet"
 const offlineProjectID = "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
 	"Microsoft.CognitiveServices/accounts/cog-native/projects/project"
 const offlineProjectEndpoint = "https://cog-native.services.ai.azure.com/api/projects/project"
@@ -39,9 +38,6 @@ services:
   project:
     host: azure.ai.project
     agentHosting: {clusterResourceId: ` + offlineClusterID + `}
-    network:
-      agentSubnet: {vnet: ` + offlineVNetID + `, name: agents}
-      peSubnet: {vnet: ` + offlineVNetID + `, name: endpoints}
 `
 
 type byoTestCredential struct{}
@@ -286,9 +282,6 @@ func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
 			"enabled": true, "hostingType": "ManagedCluster", "name": "default",
 			"clusterResourceId": offlineClusterID + "-other",
 		}},
-		{"agentSubnetName", "must differ", "endpoints"},
-		{"vnetId", "expected a complete Microsoft.Network/virtualNetworks", "not-a-resource-id"},
-		{"useManagedEgress", "does not support Microsoft-managed egress", true},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			p, fake := offlineBYOProvider(t)

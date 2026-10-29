@@ -35,13 +35,14 @@ func hostingYAML() string {
 func TestHostingDefaultSynthesis(t *testing.T) {
 	for _, preserve := range []bool{false, true} {
 		result, err := Synthesize(Input{
-			RawAzureYAML: []byte(hostingYAML()), ServiceName: "project", PreserveVarRefs: preserve,
+			RawAzureYAML: []byte(strings.Split(hostingYAML(), "    network:")[0]),
+			ServiceName:  "project", PreserveVarRefs: preserve,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, result.Hosting)
 		assert.Equal(t, hostingClusterID, result.Hosting.ClusterResourceID)
 		assert.Equal(t, true, result.Parameters["includeAcr"], "project-only hosting still needs the native registry")
-		assert.Equal(t, NetworkModeByo, result.NetworkMode)
+		assert.Equal(t, NetworkModeNone, result.NetworkMode)
 		hosting, ok := result.Parameters["agentHosting"].(agentHostingParameter)
 		require.True(t, ok)
 		assert.Equal(t, "ManagedCluster", hosting.HostingType)
@@ -83,9 +84,6 @@ func TestHostingValidatesClusterAndNetwork(t *testing.T) {
 			"https://username:secret@host.test/cluster?sig=private#fragment", 1), "managedClusters resource ID"},
 		{"credential VNet URL", strings.ReplaceAll(hostingYAML(), hostingVNetID,
 			`"https://username:secret@host.test/vnet?sig=private#fragment"`), "virtualNetworks id"},
-		{"missing network", strings.Split(hostingYAML(), "    network:")[0], "requires network.agentSubnet"},
-		{"managed egress", strings.Replace(hostingYAML(),
-			"      agentSubnet: {vnet: "+hostingVNetID+", name: agents}\n", "", 1), "requires network.agentSubnet"},
 		{"same subnet", strings.Replace(hostingYAML(), "name: endpoints", "name: agents", 1), "must differ"},
 		{"different VNets", strings.Replace(hostingYAML(), "peSubnet: {vnet: "+hostingVNetID,
 			"peSubnet: {vnet: "+hostingVNetID+"-other", 1), "same virtual network"},
@@ -150,10 +148,7 @@ func TestHostingSchemaMatchesRuntimeSelections(t *testing.T) {
 	schema, err := compiler.Compile("hosting.json")
 	require.NoError(t, err)
 	hosting := map[string]any{"clusterResourceId": hostingClusterID}
-	service := map[string]any{"agentHosting": hosting, "network": map[string]any{
-		"agentSubnet": map[string]any{"vnet": hostingVNetID, "name": "agents"},
-		"peSubnet":    map[string]any{"vnet": hostingVNetID, "name": "endpoints"},
-	}}
+	service := map[string]any{"agentHosting": hosting}
 	require.NoError(t, schema.Validate(service))
 	hosting["storageAccountResourceId"] = ""
 	require.Error(t, schema.Validate(service))

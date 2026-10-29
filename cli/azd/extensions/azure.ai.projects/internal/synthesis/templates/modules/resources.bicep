@@ -231,7 +231,9 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
   // The account injects into the agent subnet via a deterministic id (above),
   // so Bicep cannot infer the dependency on the network module that creates
   // that subnet. Declare it explicitly so the subnet exists before injection.
-  dependsOn: agentHosting.enabled ? [network, prerequisites] : (useByoNetwork ? [network] : [])
+  dependsOn: agentHosting.enabled
+    ? (useByoNetwork ? [network, prerequisites] : [prerequisites])
+    : (useByoNetwork ? [network] : [])
 
   // Sequential model deployment creation; ARM throttles concurrent
   // deployments on the same account.

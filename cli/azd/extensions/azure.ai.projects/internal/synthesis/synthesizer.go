@@ -242,10 +242,6 @@ func Synthesize(in Input) (*Result, error) {
 		return nil, err
 	}
 	if hosting != nil {
-		if netMode != NetworkModeByo {
-			return nil, errors.New("agentHosting requires network.agentSubnet and network.peSubnet " +
-				"in the same existing VNet")
-		}
 		includeAcr = true
 	}
 	if includeAcr && netMode != NetworkModeNone && hosting == nil {

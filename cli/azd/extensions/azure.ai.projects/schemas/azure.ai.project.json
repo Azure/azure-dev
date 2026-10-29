@@ -22,7 +22,7 @@
     },
     "agentHosting": {
       "type": "object",
-      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. azd creates a storage account, separate hosting and workload managed identities, and its standard container registry. Requires network.agentSubnet and network.peSubnet in the same existing VNet.",
+      "description": "Host agents on an existing AKS cluster when azd creates a new Foundry account. azd creates a storage account, separate hosting and workload managed identities, and its standard container registry. Network configuration is optional and independent of agentHosting.",
       "additionalProperties": false,
       "required": ["clusterResourceId"],
       "properties": {
@@ -81,15 +81,10 @@
     {
       "if": { "required": ["agentHosting"] },
       "then": {
-        "required": ["network"],
         "properties": {
           "endpoint": {
             "pattern": "^(?:\\s|\\$\\{[A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?\\})*$",
             "description": "Must resolve to empty when agentHosting is set; an existing account cannot receive hosting."
-          },
-          "network": {
-            "required": ["agentSubnet"],
-            "not": { "required": ["isolationMode"] }
           }
         }
       }

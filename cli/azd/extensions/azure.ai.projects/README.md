@@ -180,18 +180,11 @@ services:
     host: azure.ai.project
     agentHosting:
       clusterResourceId: ${AKS_CLUSTER_ID}
-    network:
-      agentSubnet:
-        vnet: ${AZURE_VNET_ID}
-        name: agents
-      peSubnet:
-        vnet: ${AZURE_VNET_ID}
-        name: endpoints
 ```
 
-Both named subnets must belong to the same existing VNet and have different names. Omit `prefix` to reference an existing subnet; an explicit `prefix` uses the standard network module to create that subnet. The agent subnet must be private IPv4, `/27` or larger, delegated to `Microsoft.App/environments`, and disjoint from the AKS node and private-endpoint subnets. The private-endpoint subnet must not be delegated.
+`agentHosting` does not require a `network` block or additional subnets. Foundry account networking remains independently configurable: omit `network` for public networking, or supply it to use the standard account network injection and private-endpoint resources.
 
-Use an existing AKS cluster and network configured for Foundry agent hosting. The provider reads the cluster's kubelet principal and resolves the built-in federation role for the required grants. It does not validate AKS or network readiness or reconfigure the cluster.
+Use an existing AKS cluster configured for Foundry agent hosting. The provider reads the cluster's kubelet principal and resolves the built-in federation role for the required grants. It does not validate AKS or network readiness or reconfigure the cluster.
 
 The default resource graph creates:
 
@@ -200,9 +193,9 @@ The default resource graph creates:
 - One native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
 
-The account receives a `ManagedCluster` / `default` hosting configuration. Its data plane remains private behind the standard account private endpoint. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the existing AKS cluster, built-in role definitions, VNet and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes.
+The account receives a `ManagedCluster` / `default` hosting configuration. Its data-plane access follows the optional `network` configuration. **Storage and ACR use public authenticated endpoints**, so the cluster must be able to reach them. Registry creation uses API `2023-07-01` and relies on the default registry RBAC mode. The deploying principal needs read access to the existing AKS cluster, built-in role definitions and target resource group, creation rights for the new resources, and role-assignment write rights at the cluster, workload identity, Storage and registry scopes. Configuring private networking additionally requires the corresponding network permissions.
 
-Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting, and Microsoft-managed egress is not supported. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
+Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
 

@@ -15,6 +15,7 @@ In general, to make contributions a smooth and easy experience, we encourage the
 - Open an issue if things aren't working as expected, or if an enhancement is being proposed.
 - Start a conversation on the issue if you are thinking of submitting a pull request.
 - Pull requests must be **linked to an issue** (e.g., add `Fixes #123` to the PR description). PRs without a linked issue will be flagged by our automated checks. Issues in the current milestone get priority review; if yours isn't prioritized yet, tag **@RickWinter** or **@kristenwomack** and we'll help get it sorted.
+- Draft PRs, PRs authored by Dependabot, `azure-sdk`, or `azure-sdk-automation[bot]` (including post-release version increments), and PRs labeled `skip-governance` are exempt from the linked-issue and priority checks.
 - The `azd` team will work with you to review the changes and provide feedback. Once the pull request is accepted, a member will merge the changes. Thank you for taking time out of your day to help improve our community!
 
 ## Building `azd`

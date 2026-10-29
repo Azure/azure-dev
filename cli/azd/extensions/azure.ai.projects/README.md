@@ -210,6 +210,8 @@ For older environments without this protection, the provider also checks the ARM
 
 Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 
+The provider supplies `kubeletObjectId` and `federatedIdentityRoleDefinitionId` when the template declares them. If a parameters file explicitly supplies either binding, its value must match the provider-resolved value, ignoring case. Empty or non-string values and conflicting bindings are rejected before deployment or ARM what-if. Omit these parameters to let the provider resolve them automatically; other parameters retain their normal user-supplied precedence.
+
 ### Infrastructure layers
 
 For projects that use `infra.layers`, declare exactly one layer with

@@ -72,12 +72,37 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 	if !ok || strings.TrimSpace(resourceGroup) == "" {
 		return fmt.Errorf("effective resourceGroupName must be a nonempty string")
 	}
+	suppliedBindings := map[string]string{}
+	for name, parameter := range source.parameters {
+		if !strings.EqualFold(name, "kubeletObjectId") && !strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
+			continue
+		}
+		envelope, _ := parameter.(map[string]any)
+		value, ok := envelope["value"].(string)
+		if !ok || strings.TrimSpace(value) == "" {
+			return exterrors.Validation(exterrors.CodeInvalidParameter,
+				fmt.Sprintf("%s must be a nonempty string matching the provider-resolved BYO AKS binding", name),
+				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
+		}
+		suppliedBindings[name] = value
+	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
 	kubeletObjectID, federationRoleID, err := p.resolveBYOHostBindings(ctx, hosting.ClusterResourceID)
 	if err != nil {
 		return err
+	}
+	for name, value := range suppliedBindings {
+		expected := kubeletObjectID
+		if strings.EqualFold(name, "federatedIdentityRoleDefinitionId") {
+			expected = federationRoleID
+		}
+		if !strings.EqualFold(value, expected) {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				fmt.Sprintf("%s conflicts with the provider-resolved binding for agentHosting.clusterResourceId", name),
+				fmt.Sprintf("remove %s from the parameters file so microsoft.foundry can resolve it automatically", name))
+		}
 	}
 	_, resourceGroupExists, err := p.lookupResourceGroupState(ctx, resourceGroup)
 	if err != nil {
@@ -89,10 +114,18 @@ func (p *FoundryProvisioningProvider) prepareBYO(ctx context.Context, source *te
 			"declare a createResourceGroup boolean parameter and guard the resource-group declaration with "+
 				"if (createResourceGroup), or re-eject the infrastructure templates")
 	}
-	source.parameters = mergeParameters(source.parameters, parametersDeclaredByTemplate(map[string]any{
+	hostBindings := parametersDeclaredByTemplate(map[string]any{
 		"kubeletObjectId":                   map[string]any{"value": kubeletObjectID},
 		"federatedIdentityRoleDefinitionId": map[string]any{"value": federationRoleID},
-	}, source.armTemplate))
+	}, source.armTemplate)
+	for name := range suppliedBindings {
+		for binding := range hostBindings {
+			if strings.EqualFold(name, binding) {
+				delete(source.parameters, name)
+			}
+		}
+	}
+	source.parameters = mergeParameters(source.parameters, hostBindings)
 	definitions, _ := source.armTemplate["parameters"].(map[string]any)
 	if _, declared := definitions["createResourceGroup"]; declared {
 		source.parameters["createResourceGroup"] = map[string]any{"value": !resourceGroupExists}

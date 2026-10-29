@@ -156,6 +156,8 @@ func TestValidateGPTLiveAgent_RejectsInvalidNativeValues(t *testing.T) {
 		"greeting:\n  type: template\n  text: 123",
 		"greeting:\n  type: template\n  text: '   '",
 		"greeting:\n  type: 123\n  text: hello",
+		"greeting:\n  type: ' template '\n  text: hello",
+		"delegation:\n  type: ' client '",
 	} {
 		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) {
 			yaml := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel:\n  id: gpt-live-1\n" + suffix + "\n"
@@ -222,6 +224,10 @@ func TestValidateVoiceRawProperties_GPTLiveRawContracts(t *testing.T) {
 		"greeting empty":    {"greeting": map[string]any{}},
 		"greeting scalar":   {"greeting": "hello"},
 		"greeting type":     {"greeting": map[string]any{"type": "other", "text": "hello"}},
+		"greeting padded type": {"greeting": map[string]any{
+			"type": " template ", "text": "hello",
+		}},
+		"delegation padded type": {"delegation": map[string]any{"type": " client "}},
 		"greeting text type": {"greeting": map[string]any{
 			"type": "template", "text": 1,
 		}},
@@ -263,6 +269,26 @@ func TestValidateVoiceRawProperties_GPTLiveRawContracts(t *testing.T) {
 		require.Empty(t, ValidateVoiceRawProperties(values))
 	}
 	require.Empty(t, ValidateVoiceRawProperties(base), "omitting optional Live fields remains valid")
+}
+
+func TestValidateGPTLiveAgent_RejectsForbiddenRootFieldsByPresence(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{
+		"outputModalities: []", "output_modalities: []", "handoff: {}", "include: []",
+	} {
+		t.Run(field, func(t *testing.T) {
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+				"model: {id: gpt-live-1}\n" + field + "\n"
+			require.Error(t, ValidateAgentDefinition([]byte(definition)))
+		})
+	}
+}
+
+func TestValidateGPTLiveAgent_RequiresVoiceKind(t *testing.T) {
+	t.Parallel()
+	definition := "kind: prompt-voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+		"model: {id: gpt-live-1}\n"
+	require.ErrorContains(t, ValidateAgentDefinition([]byte(definition)), "GPT Live requires kind 'voice'")
 }
 
 func TestVoiceConfigGPTLiveCustomObjectMarshalUsesOnlyID(t *testing.T) {

@@ -338,7 +338,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 	for _, key := range []string{
 		"input", "client", "reasoning", "reasoningEffort", "reasoning_effort",
 		"soundscape", "subagentConfig", "subagent_config", "interimResponse", "interim_response",
-		"live_config", "tools", "avatar",
+		"live_config", "tools", "avatar", "outputModalities", "output_modalities", "handoff", "include",
 	} {
 		if _, found := values[key]; found {
 			errors = append(errors, fmt.Sprintf("%s is not supported for GPT Live", key))
@@ -379,7 +379,7 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 			validateRawObject("greeting", object, []string{"type", "text"})
 			typ, typeOK := object["type"].(string)
 			text, textOK := object["text"].(string)
-			if !typeOK || strings.TrimSpace(typ) != "template" || !textOK || strings.TrimSpace(text) == "" {
+			if !typeOK || typ != "template" || !textOK || strings.TrimSpace(text) == "" {
 				errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
 			}
 		}
@@ -413,6 +413,10 @@ func ValidateVoiceRawProperties(values map[string]any) []string {
 	if delegation, ok := values["delegation"].(map[string]any); ok {
 		validateRawObject("delegation", delegation,
 			[]string{"type", "responses", "agentName", "agent_name", "agentVersion", "agent_version"})
+		typ, typeOK := delegation["type"].(string)
+		if !typeOK || !slices.Contains([]string{"client", "responses", "foundry_managed_agent"}, typ) {
+			errors = append(errors, "delegation.type must be exactly client, responses, or foundry_managed_agent")
+		}
 		if responses, ok := delegation["responses"].(map[string]any); ok {
 			validateRawObject("delegation.responses", responses, []string{
 				"model", "instructions", "maxOutputTokens", "max_output_tokens",
@@ -472,6 +476,9 @@ func rawMap(values ...any) (map[string]any, bool) {
 
 func validateLiveVoiceAgent(agent VoiceAgent) []string {
 	var errors []string
+	if agent.Kind != AgentKindVoice {
+		errors = append(errors, "GPT Live requires kind 'voice'")
+	}
 	if agent.ModelType != VoiceModelTypeSelfDeployed {
 		errors = append(errors, "GPT Live requires modelType 'self_deployed'")
 	}
@@ -508,7 +515,7 @@ func validateLiveVoiceAgent(agent VoiceAgent) []string {
 	if len(agent.Greeting) > 0 {
 		typ, typeOK := agent.Greeting["type"].(string)
 		text, textOK := agent.Greeting["text"].(string)
-		if !typeOK || strings.TrimSpace(typ) != "template" || !textOK || strings.TrimSpace(text) == "" {
+		if !typeOK || typ != "template" || !textOK || strings.TrimSpace(text) == "" {
 			errors = append(errors, "GPT Live greeting requires type 'template' and nonblank text")
 		}
 		for key := range agent.Greeting {
@@ -591,7 +598,7 @@ func validateLiveDelegation(delegation *LiveVoiceDelegation) []string {
 	if delegation == nil {
 		return nil
 	}
-	switch strings.TrimSpace(delegation.Type) {
+	switch delegation.Type {
 	case "client":
 		if delegation.Responses != nil || delegation.AgentName != "" || delegation.AgentVersion != "" {
 			return []string{"client delegation supports only type"}

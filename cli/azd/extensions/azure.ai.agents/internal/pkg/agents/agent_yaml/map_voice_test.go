@@ -334,7 +334,7 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayRejectsInvalidValues(t *tes
 func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCaseSafety(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"kind", "KIND", "model_type", "MODEL_TYPE", "model", "MODEL",
-		"conversation_engine", "CONVERSATION_ENGINE"} {
+		"conversation_engine", "CONVERSATION_ENGINE", "sub_protocol", "SUB_PROTOCOL", "subProtocol", "SUBPROTOCOL"} {
 		t.Run(key, func(t *testing.T) {
 			_, err := CreateVoiceAgentAPIRequest(VoiceAgent{
 				AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
@@ -348,6 +348,28 @@ func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCaseSafety(t *testing.T) {
 		DefinitionOverlay: map[string]any{"audio": map[string]any{"INPUT": map[string]any{"future": true}}},
 	})
 	require.ErrorContains(t, err, "$.audio.INPUT")
+}
+
+func TestCreateVoiceAgentAPIRequest_DefinitionOverlayCannotSelectLiveRuntime(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"sub_protocol", "subProtocol"} {
+		t.Run(key, func(t *testing.T) {
+			req, err := CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition: AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:           &Model{Id: "gpt-realtime"},
+			})
+			require.NoError(t, err)
+			definition := req.Definition.(agent_api.VoiceAgentDefinition)
+			require.Empty(t, definition.SubProtocol)
+
+			_, err = CreateVoiceAgentAPIRequest(VoiceAgent{
+				AgentDefinition:   AgentDefinition{Kind: AgentKindVoice, Name: "voice"},
+				Model:             &Model{Id: "gpt-realtime"},
+				DefinitionOverlay: map[string]any{key: "live"},
+			})
+			require.ErrorContains(t, err, "reserved root key")
+		})
+	}
 }
 
 func TestCreateVoiceAgentAPIRequest_DefinitionOverlayDeterministicError(t *testing.T) {

@@ -1084,7 +1084,7 @@ func mergeVoiceDefinitionOverlay(target, overlay map[string]any, path string, ro
 		value := overlay[key]
 		fieldPath := path + "." + key
 		if root && slices.ContainsFunc(
-			[]string{"kind", "model_type", "model", "conversation_engine"},
+			[]string{"kind", "model_type", "model", "conversation_engine", "sub_protocol", "subProtocol"},
 			func(reserved string) bool { return strings.EqualFold(key, reserved) },
 		) {
 			return fmt.Errorf("definitionOverlay at %s uses reserved root key %q", fieldPath, key)

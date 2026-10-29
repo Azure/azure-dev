@@ -29,7 +29,7 @@ import (
 const (
 	petclinicRepository      = "https://github.com/XiaofeiCao/spring-petclinic"
 	petclinicBranch          = "azd-springboot-test"
-	petclinicTemplateCommit  = "95d2ec0b3cf1d5227ebe2c69305b5d9171a3017d"
+	petclinicTemplateCommit  = "d34e6a79e476c561713581b5452ddccb2424f23e"
 	gitMetadataAccommodation = "Packaging Maven project without Git commit metadata because the repository has no commits."
 )
 

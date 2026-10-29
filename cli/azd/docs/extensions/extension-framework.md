@@ -3032,6 +3032,14 @@ This service executes workflows defined within the project.
 
 Executes a workflow consisting of sequential steps.
 
+Command steps inherit the parent's working directory unless they explicitly
+provide `-C` or `--cwd`. A step-level directory overrides the parent's selection
+for both core and extension commands. Relative paths resolve from the workflow's
+current working directory. A step's directory override does not replace the
+parent selection. If a step fails, the workflow stops after restoring the previous
+directory and parent selection. Restoration errors are returned alongside the
+step error.
+
 - **Request:** _RunWorkflowRequest_
   - Contains:
     - `workflow`: _Workflow_ (with `name` and `steps`)

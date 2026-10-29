@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -340,7 +341,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		// Create the adapter with a factory
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		// Simulate this by using a non-cancellable context.
@@ -398,7 +402,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 
 		// In production, main.go wraps with context.WithoutCancel.
 		ctx := context.WithoutCancel(t.Context())
@@ -443,7 +450,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		ctx := context.WithoutCancel(t.Context())
 
 		err := adapter.ExecuteContext(ctx, []string{"test"})
@@ -509,8 +519,9 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		}
 
 		adapter := &workflowCmdAdapter{
-			newCommand: newCommand,
-			globalArgs: globalArgs,
+			newCommand:    newCommand,
+			globalArgs:    globalArgs,
+			globalOptions: &internal.GlobalCommandOptions{},
 		}
 
 		err := adapter.ExecuteContext(context.WithoutCancel(t.Context()), []string{"package", "--all"})
@@ -592,7 +603,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		ctx := context.WithoutCancel(t.Context())
 
 		// Execute "provision" through the adapter (simulates workflow step)
@@ -636,7 +650,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter := &workflowCmdAdapter{newCommand: newCommand}
+		adapter := &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		ctx := commandresult.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
 			commandresult.NewFollowUpCollector(),
@@ -722,7 +739,10 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 			return rootCmd
 		}
 
-		adapter = &workflowCmdAdapter{newCommand: newCommand}
+		adapter = &workflowCmdAdapter{
+			newCommand:    newCommand,
+			globalOptions: &internal.GlobalCommandOptions{},
+		}
 		collector := commandresult.NewFollowUpCollector()
 		ctx := commandresult.WithFollowUpCollector(
 			context.WithoutCancel(t.Context()),
@@ -736,6 +756,136 @@ func Test_workflowCmdAdapter_ContextPropagation(t *testing.T) {
 		require.Equal(t, []uint64{1, 1, 2}, commandOrders)
 		require.Equal(t, "deploy", collector.Text())
 	})
+}
+
+func Test_workflowCmdAdapter_CwdRestoredOnError(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		invalidCwd         bool
+		preRunError        bool
+		disableFlagParsing bool
+	}{
+		{name: "PersistentPreRunError", invalidCwd: true},
+		{name: "PreRunError", preRunError: true},
+		{name: "RunError"},
+		{name: "UnparsedRunError", disableFlagParsing: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+			require.NoError(t, err)
+			parentDir := filepath.Join(tmpDir, "parent")
+			stepDir := filepath.Join(parentDir, "nested")
+			require.NoError(t, os.MkdirAll(stepDir, 0o755))
+			t.Chdir(parentDir)
+			t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+
+			targetDir := stepDir
+			if tt.invalidCwd {
+				targetDir = filepath.Join(parentDir, "not-a-directory")
+				require.NoError(t, os.WriteFile(targetDir, nil, 0o600))
+			}
+
+			opts := &internal.GlobalCommandOptions{Cwd: parentDir, NoPrompt: true}
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, opts)
+			NewRootCmd(false, nil, container)
+
+			stepErr := errors.New("step failed")
+			shouldFail := true
+			var processCwd, optionCwd string
+			adapter := &workflowCmdAdapter{
+				globalOptions: opts,
+				newCommand: func() *cobra.Command {
+					root := newRootCmdWithoutRegistration(container)
+					root.AddCommand(&cobra.Command{
+						Use:                "probe",
+						DisableFlagParsing: tt.disableFlagParsing,
+						PreRunE: func(cmd *cobra.Command, args []string) error {
+							if shouldFail && tt.preRunError {
+								return stepErr
+							}
+							return nil
+						},
+						RunE: func(cmd *cobra.Command, args []string) error {
+							var err error
+							processCwd, err = os.Getwd()
+							if err != nil {
+								return err
+							}
+							optionCwd = opts.Cwd
+							if shouldFail {
+								return stepErr
+							}
+							return nil
+						},
+					})
+					return root
+				},
+			}
+
+			err = adapter.ExecuteContext(t.Context(), []string{"probe", "--cwd", targetDir})
+			if tt.invalidCwd {
+				require.ErrorContains(t, err, "failed to change directory")
+			} else {
+				require.ErrorIs(t, err, stepErr)
+			}
+			if !tt.invalidCwd && !tt.preRunError {
+				require.Equal(t, stepDir, processCwd)
+				require.Equal(t, stepDir, optionCwd)
+			}
+			assert.Equal(t, parentDir, opts.Cwd)
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			assert.Equal(t, parentDir, cwd)
+
+			shouldFail = false
+			require.NoError(t, adapter.ExecuteContext(t.Context(), []string{"probe"}))
+			require.Equal(t, parentDir, processCwd)
+			require.Equal(t, parentDir, optionCwd)
+			require.Equal(t, parentDir, opts.Cwd)
+		})
+	}
+}
+
+func Test_workflowCmdAdapter_CwdRestoreErrorPreservesStepError(t *testing.T) {
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	parentDir := filepath.Join(tmpDir, "parent")
+	stepDir := filepath.Join(tmpDir, "step")
+	require.NoError(t, os.Mkdir(parentDir, 0o755))
+	require.NoError(t, os.Mkdir(stepDir, 0o755))
+	t.Chdir(parentDir)
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+
+	opts := &internal.GlobalCommandOptions{Cwd: parentDir, NoPrompt: true}
+	container := ioc.NewNestedContainer(nil)
+	ioc.RegisterInstance(container, opts)
+	NewRootCmd(false, nil, container)
+
+	stepErr := errors.New("step failed")
+	adapter := &workflowCmdAdapter{
+		globalOptions: opts,
+		newCommand: func() *cobra.Command {
+			root := newRootCmdWithoutRegistration(container)
+			root.AddCommand(&cobra.Command{
+				Use: "probe",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					if err := os.Remove(parentDir); err != nil {
+						return err
+					}
+					return stepErr
+				},
+			})
+			return root
+		},
+	}
+
+	err = adapter.ExecuteContext(t.Context(), []string{"probe", "--cwd", stepDir})
+	require.ErrorIs(t, err, stepErr)
+	require.ErrorContains(t, err, "restoring workflow working directory")
+	require.Equal(t, parentDir, opts.Cwd)
 }
 
 func Test_NewRootCmd_ReregistrationReplacesProjectConfig(t *testing.T) {

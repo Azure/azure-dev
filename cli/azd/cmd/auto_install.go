@@ -996,35 +996,34 @@ func ParseGlobalFlags(args []string, opts *internal.GlobalCommandOptions) error 
 	return parseGlobalFlags(args, opts, terminal.IsAttached)
 }
 
+func parseGlobalFlagSet(args []string) (*pflag.FlagSet, error) {
+	globalFlagSet := CreateGlobalFlagSet()
+	globalFlagSet.SetOutput(io.Discard)
+
+	// Extension-specific flags are parsed by the extension.
+	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
+
+	// Keep output here to avoid shadowing command formatters.
+	// Recognizing -o prevents attached output values from being
+	// interpreted as unrelated global flags.
+	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
+
+	err := globalFlagSet.Parse(args)
+	if err != nil && !errors.Is(err, pflag.ErrHelp) {
+		return nil, fmt.Errorf("failed to parse global flags: %w", err)
+	}
+
+	return globalFlagSet, nil
+}
+
 func parseGlobalFlags(
 	args []string,
 	opts *internal.GlobalCommandOptions,
 	isTerminal func(stdoutFd uintptr, stdinFd uintptr) bool,
 ) error {
-	globalFlagSet := CreateGlobalFlagSet()
-
-	// Set output to io.Discard to suppress any error messages from pflag
-	// Cobra will handle all user-facing output
-	globalFlagSet.SetOutput(io.Discard)
-
-	// Configure the flag set to ignore unknown flags. This is critical for extension commands
-	// where extension-specific flags are not yet known and will be handled by the extension's
-	// command parser after the extension is loaded.
-	globalFlagSet.ParseErrorsAllowlist = pflag.ParseErrorsAllowlist{UnknownFlags: true}
-
-	// Register --output/-o on the pre-parse set only (not in CreateGlobalFlagSet, which
-	// would shadow per-command output.AddOutputParam and cause GetCommandFormatter to reject
-	// the empty default). Without this, pflag's UnknownFlags allowlist walks attached short
-	// values like "-o<value>" char-by-char and trips on "-e" (a known string flag), failing
-	// with `flag needs an argument: 'e' in -e`.
-	globalFlagSet.StringP("output", "o", "", "The output format (json, table, none).")
-
-	// Parse the arguments - unknown flags will be silently ignored
-	err := globalFlagSet.Parse(args)
-
-	// Ignore help errors - let Cobra handle help requests
-	if err != nil && !errors.Is(err, pflag.ErrHelp) {
-		return fmt.Errorf("failed to parse global flags: %w", err)
+	globalFlagSet, err := parseGlobalFlagSet(args)
+	if err != nil {
+		return err
 	}
 
 	// Bind parsed values to the options struct

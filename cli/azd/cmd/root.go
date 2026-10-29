@@ -94,13 +94,20 @@ func newRootCmd(
 				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
 			}
 
-			// Workflow steps rebuild the command tree with their own args. Honor an
-			// explicit step --cwd for this execution without permanently replacing the
-			// sticky parent GlobalCommandOptions value (restored in PersistentPostRunE).
+			// Workflow steps can override the sticky parent's CWD.
+			// Pre-parse flags for extensions that bypass Cobra.
 			prevOptsCwd = opts.Cwd
 			cwdStepOverride = false
-			if f := cmd.Root().PersistentFlags().Lookup("cwd"); f != nil && f.Changed {
-				flagCwd := f.Value.String()
+			cwdFlag := cmd.Root().PersistentFlags().Lookup("cwd")
+			if cmd.DisableFlagParsing {
+				globalFlags, err := parseGlobalFlagSet(args)
+				if err != nil {
+					return err
+				}
+				cwdFlag = globalFlags.Lookup("cwd")
+			}
+			if cwdFlag != nil && cwdFlag.Changed {
+				flagCwd := cwdFlag.Value.String()
 				if flagCwd != opts.Cwd {
 					cwdStepOverride = true
 				}

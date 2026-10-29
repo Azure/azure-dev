@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/extensions"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/spf13/cobra"
@@ -171,6 +172,129 @@ func TestExtensionAction_Run_PropagatesTraceContext(t *testing.T) {
 	require.Contains(t, captured.Env, "AZD_NO_PROMPT=true")
 	require.Contains(t, captured.Env, "AZD_CWD=work")
 	require.Contains(t, captured.Env, "AZD_ENVIRONMENT=test")
+}
+
+func TestExtensionAction_WorkflowStepCwdOverridesStickyParent(t *testing.T) {
+	originalArgs := os.Args
+	os.Args = []string{"azd", "--output=json"}
+	t.Cleanup(func() { os.Args = originalArgs })
+
+	tmpDir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	parentDir := filepath.Join(tmpDir, "parent")
+	stepDir := filepath.Join(parentDir, "nested with spaces")
+	require.NoError(t, os.MkdirAll(stepDir, 0o755))
+	t.Chdir(parentDir)
+
+	for _, tt := range []struct {
+		name     string
+		cwdArgs  []string
+		emptyCwd bool
+	}{
+		{name: "Absolute", cwdArgs: []string{"--cwd", stepDir}},
+		{name: "Relative", cwdArgs: []string{"--cwd", "nested with spaces"}},
+		{name: "ShortRelative", cwdArgs: []string{"-C", "nested with spaces"}},
+		{name: "Equals", cwdArgs: []string{"--cwd=nested with spaces"}},
+		{name: "AttachedShort", cwdArgs: []string{"-Cnested with spaces"}},
+		{name: "Empty", cwdArgs: []string{"--cwd="}, emptyCwd: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			t.Setenv("AZD_CONFIG_DIR", configDir)
+			t.Setenv("AZURE_DEV_COLLECT_TELEMETRY", "no")
+			t.Chdir(parentDir)
+
+			extensionPath := filepath.Join("extensions", "test-ext", "test-ext")
+			fullPath := filepath.Join(configDir, extensionPath)
+			require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+			require.NoError(t, os.WriteFile(fullPath, []byte("test"), 0o600))
+
+			opts := &internal.GlobalCommandOptions{
+				Cwd:             parentDir,
+				NoPrompt:        true,
+				EnvironmentName: "parent-env",
+			}
+			container := ioc.NewNestedContainer(nil)
+			ioc.RegisterInstance(container, opts)
+			NewRootCmd(false, nil, container)
+
+			mockCtx := mocks.NewMockContext(t.Context())
+			var captured exec.RunArgs
+			var processCwd, optionCwd string
+			var cwdErr error
+			mockCtx.CommandRunner.When(func(args exec.RunArgs, _ string) bool {
+				captured = args
+				processCwd, cwdErr = os.Getwd()
+				optionCwd = opts.Cwd
+				return true
+			}).Respond(exec.NewRunResult(0, "", ""))
+
+			extension := &extensions.Extension{
+				Id:      "test-ext",
+				Path:    extensionPath,
+				Version: "1.0.0",
+			}
+			manager := newExtensionActionTestManager(t, mockCtx, extension)
+			adapter := &workflowCmdAdapter{
+				globalArgs:    []string{"--no-prompt=true"},
+				globalOptions: opts,
+				newCommand: func() *cobra.Command {
+					root := newRootCmdWithoutRegistration(container)
+					root.AddCommand(&cobra.Command{
+						Use:                "probe",
+						DisableFlagParsing: true,
+						Annotations: map[string]string{
+							"extension.id": extension.Id,
+						},
+						RunE: func(cmd *cobra.Command, args []string) error {
+							action := &extensionAction{
+								console:          mockCtx.Console,
+								extensionRunner:  extensions.NewRunner(mockCtx.CommandRunner),
+								lazyEnv:          lazy.From[*environment.Environment](nil),
+								extensionManager: manager,
+								azdServer:        newExtensionActionTestServer(),
+								globalOptions:    opts,
+								cmd:              cmd,
+								args:             args,
+							}
+							_, err := action.Run(cmd.Context())
+							return err
+						},
+					})
+					return root
+				},
+			}
+
+			probeArgs := []string{"probe", "sub", "--custom", "value", "-onone"}
+			args := append(slices.Clone(probeArgs), tt.cwdArgs...)
+			require.NoError(t, adapter.ExecuteContext(t.Context(), args))
+			require.NoError(t, cwdErr)
+			require.Equal(t, fullPath, captured.Cmd)
+			require.Equal(t, append(slices.Clone(probeArgs[1:]), "--no-prompt=true"), captured.Args)
+			if tt.emptyCwd {
+				require.Empty(t, optionCwd)
+				require.Equal(t, parentDir, processCwd)
+				require.NotContains(t, captured.Env, "AZD_CWD="+parentDir)
+			} else {
+				require.Equal(t, stepDir, optionCwd)
+				require.Equal(t, stepDir, processCwd)
+				require.Contains(t, captured.Env, "AZD_CWD="+stepDir)
+			}
+			require.Equal(t, parentDir, opts.Cwd)
+			require.Equal(t, "parent-env", opts.EnvironmentName)
+			require.True(t, opts.NoPrompt)
+			cwd, err := os.Getwd()
+			require.NoError(t, err)
+			require.Equal(t, parentDir, cwd)
+
+			require.NoError(t, adapter.ExecuteContext(t.Context(), probeArgs))
+			require.NoError(t, cwdErr)
+			require.Equal(t, parentDir, optionCwd)
+			require.Equal(t, parentDir, processCwd)
+			require.Contains(t, captured.Env, "AZD_CWD="+parentDir)
+			require.Equal(t, parentDir, opts.Cwd)
+		})
+	}
 }
 
 func TestExtensionAction_Run_InterruptUnwindsAsCancellation(t *testing.T) {

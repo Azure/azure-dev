@@ -109,9 +109,9 @@ func (c *sdkResourceChecker) selectedSubnet(
 }
 
 func (c *sdkResourceChecker) networkChecks(
-	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster, pool *armcontainerservice.AgentPool,
+	ctx context.Context, input Input, cluster *armcontainerservice.ManagedCluster, pool *armcontainerservice.AgentPool,
 ) Report {
-	network := plan.Network
+	network := input.Network
 	vnetID, err := ParseID(network.VNetID, "Microsoft.Network/virtualNetworks")
 	if err != nil {
 		return Report{readFailure("N02", network.VNetID, "complete VNet ID", err)}
@@ -137,7 +137,7 @@ func (c *sdkResourceChecker) networkChecks(
 		}
 		parents = append(parents, prefix)
 	}
-	nodeIDs, checks := c.nodeSubnetIDs(ctx, plan, cluster, pool)
+	nodeIDs, checks := c.nodeSubnetIDs(ctx, input, cluster, pool)
 	report = append(report, checks...)
 	if len(nodeIDs) == 0 {
 		return report
@@ -229,21 +229,21 @@ func (c *sdkResourceChecker) networkChecks(
 }
 
 func (c *sdkResourceChecker) nodeSubnetIDs(
-	ctx context.Context, plan Plan, cluster *armcontainerservice.ManagedCluster, pool *armcontainerservice.AgentPool,
+	ctx context.Context, input Input, cluster *armcontainerservice.ManagedCluster, pool *armcontainerservice.AgentPool,
 ) ([]string, Report) {
 	if pool != nil && pool.Properties != nil && resourceValue(pool.Properties.VnetSubnetID) != "" {
 		return []string{resourceValue(pool.Properties.VnetSubnetID)}, nil
 	}
-	check := resourceCheck("N02", plan.Cluster.ID,
+	check := resourceCheck("N02", input.ClusterID,
 		"selected pool Node subnet from the cluster-owned node resource group and actual VMSS network profiles")
-	clusterID, err := ParseID(plan.Cluster.ID, "Microsoft.ContainerService/managedClusters")
+	clusterID, err := ParseID(input.ClusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil || cluster == nil || cluster.Properties == nil ||
-		!strings.EqualFold(resourceValue(cluster.ID), plan.Cluster.ID) || pool == nil || pool.Properties == nil {
+		!strings.EqualFold(resourceValue(cluster.ID), input.ClusterID) || pool == nil || pool.Properties == nil {
 		return nil, Report{check}
 	}
 	poolName, nodeRG := resourceValue(pool.Name), resourceValue(cluster.Properties.NodeResourceGroup)
 	if poolName == "" || strings.ContainsAny(poolName, "/\\?#%{} \t\r\n") ||
-		!strings.EqualFold(resourceValue(pool.ID), plan.Cluster.ID+"/agentPools/"+poolName) ||
+		!strings.EqualFold(resourceValue(pool.ID), input.ClusterID+"/agentPools/"+poolName) ||
 		nodeRG == "" || strings.ContainsAny(nodeRG, "/\\?#%{} \t\r\n") {
 		check.Observed = "selected pool resource ID or cluster nodeResourceGroup is absent or invalid"
 		return nil, Report{check}
@@ -258,7 +258,7 @@ func (c *sdkResourceChecker) nodeSubnetIDs(
 		return nil, Report{readFailure("N02", scope, "resourceGroups/read", err)}
 	}
 	if !strings.EqualFold(resourceValue(group.ID), scope) ||
-		!strings.EqualFold(resourceValue(group.ManagedBy), plan.Cluster.ID) {
+		!strings.EqualFold(resourceValue(group.ManagedBy), input.ClusterID) {
 		check.Observed = "node resource group ID/managedBy does not prove association with the selected AKS cluster"
 		return nil, Report{check}
 	}

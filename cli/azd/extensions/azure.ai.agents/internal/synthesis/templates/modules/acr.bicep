@@ -34,7 +34,6 @@ param enableNetworkIsolation bool = false
 @description('Enable the standard registry for an existing AKS cluster with managed-identity image pulls.')
 param byoAks bool = false
 param kubeletObjectId string = ''
-param deploymentId string = ''
 
 // Variables
 
@@ -75,7 +74,6 @@ resource foundryAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     principalId: foundryProjectPrincipalId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
-    ...(!empty(deploymentId) ? { description: deploymentId } : {})
   }
 }
 
@@ -86,7 +84,6 @@ resource kubeletAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = i
     principalId: kubeletObjectId
     principalType: 'ServicePrincipal'
     roleDefinitionId: acrPullRoleId
-    description: deploymentId
   }
 }
 
@@ -129,14 +126,3 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-04-01-preview
 output loginServer string = registry.properties.loginServer
 output resourceId string = registry.id
 output connectionName string = foundryAccount::project::acrConnection.name
-output roleAssignments array = concat([{
-  id: foundryAcrPull.id
-  scope: registry.id
-  principalId: foundryProjectPrincipalId
-  roleDefinitionId: acrPullRoleId
-}], byoAks ? [{
-  id: kubeletAcrPull!.id
-  scope: registry.id
-  principalId: kubeletObjectId
-  roleDefinitionId: acrPullRoleId
-}] : [])

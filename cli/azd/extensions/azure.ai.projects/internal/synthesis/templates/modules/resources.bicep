@@ -32,9 +32,6 @@ type agentHostingType = {
   hostingType: 'ManagedCluster' | ''
   name: string
   clusterResourceId: string
-  hostingManagementIdentityResourceId: string
-  storageAccountResourceId: string
-  workloadIdentityResourceId: string
 }
 
 // Parameters
@@ -64,13 +61,10 @@ param agentHosting agentHostingType = {
   hostingType: ''
   name: ''
   clusterResourceId: ''
-  hostingManagementIdentityResourceId: ''
-  storageAccountResourceId: ''
-  workloadIdentityResourceId: ''
 }
 
-param byoDeploymentId string = ''
 param kubeletObjectId string = ''
+param federatedIdentityRoleDefinitionId string = ''
 
 // Network isolation parameters. All default off so an absent network: block in
 // azure.yaml yields a public account identical to the pre-network template.
@@ -120,6 +114,9 @@ var resourceToken = empty(resourceTokenSalt)
 var abbrs = loadJsonContent('../abbreviations.json')
 
 var foundryAccountName = '${abbrs.cognitiveServicesAccounts}${resourceToken}'
+var storageAccountName = 'st${resourceToken}'
+var hostingIdentityName = '${foundryAccountName}-hosting-mi'
+var workloadIdentityName = '${foundryAccountName}-workload-mi'
 
 // Egress: byo injects the agent into a customer subnet; managed uses the
 // Microsoft-managed network. Ingress: an account private endpoint is always
@@ -129,6 +126,19 @@ var useManagedNetwork = enableNetworkIsolation && useManagedEgress
 var disablePublicDataPlaneAccess = enableNetworkIsolation
 
 // Resources
+
+module prerequisites 'byo-prerequisites.bicep' = if (agentHosting.enabled) {
+  name: 'byo-prerequisites'
+  params: {
+    location: location
+    tags: tags
+    clusterResourceId: agentHosting.clusterResourceId
+    storageAccountName: storageAccountName
+    hostingIdentityName: hostingIdentityName
+    workloadIdentityName: workloadIdentityName
+    federatedIdentityRoleDefinitionId: federatedIdentityRoleDefinitionId
+  }
+}
 
 // Customer VNet wiring: reference the VNet and create or reference the agent
 // (byo egress only) + private-endpoint subnets. Runs whenever isolation is on
@@ -186,7 +196,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
     ? {
         type: 'SystemAssigned, UserAssigned'
         userAssignedIdentities: {
-          '${agentHosting.hostingManagementIdentityResourceId}': {}
+          '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)}': {}
         }
       }
     : {
@@ -210,9 +220,9 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
           hostingType: 'ManagedCluster'
           name: 'default'
           clusterResourceId: agentHosting.clusterResourceId
-          hostingManagementIdentityResourceId: agentHosting.hostingManagementIdentityResourceId
-          storageAccountResourceId: agentHosting.storageAccountResourceId
-          workloadIdentityResourceId: agentHosting.workloadIdentityResourceId
+          hostingManagementIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
+          storageAccountResourceId: resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
+          workloadIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
         }
       ]
     } : {})
@@ -221,7 +231,7 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
   // The account injects into the agent subnet via a deterministic id (above),
   // so Bicep cannot infer the dependency on the network module that creates
   // that subnet. Declare it explicitly so the subnet exists before injection.
-  dependsOn: useByoNetwork ? [network] : []
+  dependsOn: agentHosting.enabled ? [network, prerequisites] : (useByoNetwork ? [network] : [])
 
   // Sequential model deployment creation; ARM throttles concurrent
   // deployments on the same account.
@@ -284,7 +294,6 @@ module acr 'acr.bicep' = if (includeAcr) {
     enableNetworkIsolation: enableNetworkIsolation
     byoAks: agentHosting.enabled
     kubeletObjectId: kubeletObjectId
-    deploymentId: byoDeploymentId
   }
 }
 
@@ -314,7 +323,5 @@ output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.service
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''
-output projectPrincipalId string = foundryAccount::project.identity.principalId
-output registryRoleAssignments array = includeAcr ? acr!.outputs.roleAssignments : []
 output AZURE_FOUNDRY_NETWORK_MODE string = !enableNetworkIsolation ? 'none' : (useManagedEgress ? 'managed' : 'byo')
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = useManagedNetwork ? managedIsolationMode : ''

@@ -107,9 +107,7 @@ type FoundryProvisioningProvider struct {
 	// Lazily constructed on first compile. nil until needed.
 	bicepCliInstance bicepCompiler
 	armClientOptions *arm.ClientOptions
-	byoNames         func(context.Context, *templateSource) (byoResolvedNames, error)
 	byoChecker       onboarding.ResourceChecker
-	byoJournal       byoJournal
 }
 
 func readProjectFile(projectRoot string) ([]byte, string, error) {
@@ -1203,9 +1201,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDeployResult, error) {
-	if err := p.guardBYOMode(ctx); err != nil {
-		return nil, err
-	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1233,10 +1228,8 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
-	var byoIntent *byoState
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		byoIntent, err = p.prepareBYO(ctx, src, progress)
-		if err != nil {
+		if err := p.prepareBYO(ctx, src, progress); err != nil {
 			return nil, err
 		}
 	}
@@ -1253,10 +1246,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 			"azd-provision-template-source": new(src.mode.String()),
 		},
 	}
-	if byoIntent != nil {
-		return p.deployBYO(ctx, src, dep, *byoIntent, progress)
-	}
-
 	client, err := p.deploymentsClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1519,9 +1508,6 @@ func (p *FoundryProvisioningProvider) Preview(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningPreviewResult, error) {
-	if err := p.guardBYOMode(ctx); err != nil {
-		return nil, err
-	}
 	if err := p.refreshReuseOnlyDeployments(ctx); err != nil {
 		return nil, err
 	}
@@ -1538,15 +1524,9 @@ func (p *FoundryProvisioningProvider) Preview(
 		return nil, err
 	}
 	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		if _, err := p.prepareBYO(ctx, src, progress); err != nil {
+		if err := p.prepareBYO(ctx, src, progress); err != nil {
 			return nil, err
 		}
-		summary := "BYO AKS read-only plan: default Storage account, separate hosting/workload identities, " +
-			"native Container Registry, Foundry account/project and their required grants. No resources are written."
-		progress(summary)
-		return &azdext.ProvisioningPreviewResult{
-			Preview: &azdext.ProvisioningDeploymentPreview{Summary: summary},
-		}, nil
 	}
 
 	client, err := p.deploymentsClient(ctx)
@@ -1620,8 +1600,8 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
-	if err := p.refuseBYODestroy(ctx); err != nil {
-		return nil, err
+	if p.synthResult != nil && p.synthResult.Hosting != nil {
+		return nil, byoDestroyError()
 	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
@@ -1683,6 +1663,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
+	}
+	if p.brownfieldEndpoint == "" {
+		if err := p.refuseBYODeploymentDestroy(ctx); err != nil {
+			return nil, err
+		}
 	}
 	if p.brownfieldEndpoint != "" {
 		if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {

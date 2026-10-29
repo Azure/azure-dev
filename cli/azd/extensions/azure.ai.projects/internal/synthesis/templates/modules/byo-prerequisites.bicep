@@ -3,32 +3,58 @@ targetScope = 'resourceGroup'
 param location string
 param tags object
 param clusterResourceId string
-param plan object
+param storageAccountName string
+param hostingIdentityName string
+param workloadIdentityName string
+param federatedIdentityRoleDefinitionId string
 
 var clusterParts = split(clusterResourceId, '/')
+var storageZrsUnsupportedRegions = [
+  'australiacentral'
+  'australiacentral2'
+  'australiasoutheast'
+  'brazilsoutheast'
+  'canadaeast'
+  'francesouth'
+  'germanynorth'
+  'koreasouth'
+  'northcentralus'
+  'norwaywest'
+  'southafricawest'
+  'southindia'
+  'swedensouth'
+  'switzerlandwest'
+  'taiwannorth'
+  'taiwannorthwest'
+  'uaecentral'
+  'ukwest'
+  'westcentralus'
+  'westindia'
+  'westus'
+]
 var blobContributorRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 )
 
 resource hosting 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: plan.hostingIdentityName
+  name: hostingIdentityName
   location: location
   tags: tags
 }
 
 resource workload 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: plan.workloadIdentityName
+  name: workloadIdentityName
   location: location
   tags: tags
 }
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: plan.storageName
+  name: storageAccountName
   location: location
   tags: tags
   kind: 'StorageV2'
-  sku: { name: plan.storageSku }
+  sku: { name: contains(storageZrsUnsupportedRegions, toLower(location)) ? 'Standard_LRS' : 'Standard_ZRS' }
   properties: {
     accessTier: 'Hot'
     isHnsEnabled: false
@@ -52,7 +78,6 @@ module clusterGrants 'byo-role-assignment.bicep' = [
       resourceName: last(clusterParts)
       principalId: hosting.properties.principalId
       roleDefinitionId: subscriptionResourceId(clusterParts[2], 'Microsoft.Authorization/roleDefinitions', role)
-      deploymentId: plan.deploymentId
     }
   }
 ]
@@ -62,8 +87,7 @@ module federationGrant 'byo-identity-role-assignment.bicep' = {
   params: {
     resourceName: workload.name
     principalId: hosting.properties.principalId
-    roleDefinitionId: plan.federatedIdentityRoleDefinitionId
-    deploymentId: plan.deploymentId
+    roleDefinitionId: federatedIdentityRoleDefinitionId
   }
 }
 
@@ -73,24 +97,5 @@ module storageGrant 'byo-storage-role-assignment.bicep' = {
     resourceName: storage.name
     principalId: workload.properties.principalId
     roleDefinitionId: blobContributorRoleId
-    deploymentId: plan.deploymentId
   }
-}
-
-output ownership object = {
-  hostingIdentityResourceId: hosting.id
-  workloadIdentityResourceId: workload.id
-  storageAccountResourceId: storage.id
-  ownedStorage: true
-  ownedRegistry: true
-  ownedHostingIdentity: true
-  ownedWorkloadIdentity: true
-  hostingPrincipalId: hosting.properties.principalId
-  workloadPrincipalId: workload.properties.principalId
-  roleAssignments: [
-    clusterGrants[0].outputs.grant
-    clusterGrants[1].outputs.grant
-    federationGrant.outputs.grant
-    storageGrant.outputs.grant
-  ]
 }

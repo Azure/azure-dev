@@ -1,0 +1,360 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package provisioning
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"azure.ai.projects/internal/onboarding"
+	"azure.ai.projects/internal/synthesis"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+const offlineClusterID = "/subscriptions/cluster-sub/resourceGroups/aks-rg/providers/" +
+	"Microsoft.ContainerService/managedClusters/aks"
+const offlineVNetID = "/subscriptions/network-sub/resourceGroups/net-rg/providers/Microsoft.Network/virtualNetworks/vnet"
+const offlineProjectID = "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
+	"Microsoft.CognitiveServices/accounts/cog-native/projects/project"
+const offlineProjectEndpoint = "https://cog-native.services.ai.azure.com/api/projects/project"
+const offlineRegistryID = "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
+	"Microsoft.ContainerRegistry/registries/crnative"
+
+type byoTestCredential struct{}
+
+func (byoTestCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "offline-only", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+type byoTestChecker struct {
+	facts onboarding.Facts
+	err   error
+	calls int
+}
+
+func (c *byoTestChecker) Check(
+	_ context.Context, _ onboarding.Input,
+) (onboarding.Facts, onboarding.Report, error) {
+	c.calls++
+	if c.err != nil {
+		return c.facts, nil, c.err
+	}
+	return c.facts, onboarding.Report{{ID: "A01", Status: onboarding.Pass, Observed: "offline verified cluster"}}, nil
+}
+
+type byoARMFake struct {
+	t          *testing.T
+	provider   *FoundryProvisioningProvider
+	requests   []string
+	parameters map[string]any
+	template   map[string]any
+	writes     int
+	previews   int
+	failWrite  bool
+}
+
+func (f *byoARMFake) response(request *http.Request, status int, body any) *http.Response {
+	raw, err := json.Marshal(body)
+	require.NoError(f.t, err)
+	return &http.Response{StatusCode: status, Request: request, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(strings.NewReader(string(raw)))}
+}
+
+func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
+	f.requests = append(f.requests, request.Method+" "+request.URL.Path)
+	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
+	if request.Method == http.MethodGet && request.URL.Path == path {
+		return f.response(request, 200, map[string]any{
+			"properties": map[string]any{"parameters": f.parameters},
+		}), nil
+	}
+	require.NotNil(f.t, request.Body, "unexpected ARM request: %s %s", request.Method, request.URL.Path)
+	var submitted struct {
+		Properties struct {
+			Template   map[string]any `json:"template"`
+			Parameters map[string]any `json:"parameters"`
+		} `json:"properties"`
+	}
+	require.NoError(f.t, json.NewDecoder(request.Body).Decode(&submitted))
+	f.template, f.parameters = submitted.Properties.Template, submitted.Properties.Parameters
+	if request.Method == http.MethodPost && request.URL.Path == path+"/whatIf" {
+		f.previews++
+		return f.response(request, 200, map[string]any{
+			"status": "Succeeded",
+			"properties": map[string]any{"changes": []any{map[string]any{
+				"resourceId": offlineRegistryID, "changeType": "Create",
+			}}},
+		}), nil
+	}
+	require.Equal(f.t, http.MethodPut, request.Method)
+	require.Equal(f.t, path, request.URL.Path, "only the subscription deployment may be written")
+	f.writes++
+	if f.failWrite {
+		return f.response(request, 400, map[string]any{
+			"error": map[string]string{"code": "DeploymentFailed", "message": "offline deployment failure"},
+		}), nil
+	}
+	output := func(value string) map[string]any { return map[string]any{"type": "String", "value": value} }
+	return f.response(request, 200, map[string]any{"id": path, "properties": map[string]any{
+		"provisioningState": "Succeeded",
+		"outputs": map[string]any{
+			"azurE_AI_PROJECT_ID":                  output(offlineProjectID),
+			"azurE_AI_PROJECT_NAME":                output("project"),
+			"foundrY_PROJECT_ENDPOINT":             output(offlineProjectEndpoint),
+			"azurE_CONTAINER_REGISTRY_RESOURCE_ID": output(offlineRegistryID),
+			"azurE_CONTAINER_REGISTRY_ENDPOINT":    output("crnative.azurecr.io"),
+			"azurE_AI_PROJECT_ACR_CONNECTION_NAME": output("crnative-conn"),
+			"azurE_RESOURCE_GROUP":                 output("target-rg"),
+			"azurE_FOUNDRY_RESOURCE_GROUP":         output("target-rg"),
+		},
+	}}), nil
+}
+
+func offlineBYOProvider(t *testing.T) (*FoundryProvisioningProvider, *byoARMFake) {
+	t.Helper()
+	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project", RawAzureYAML: []byte(`
+services:
+  project:
+    host: azure.ai.project
+    agentHosting: {clusterResourceId: ` + offlineClusterID + `}
+    network:
+      agentSubnet: {vnet: ` + offlineVNetID + `, name: agents}
+      peSubnet: {vnet: ` + offlineVNetID + `, name: endpoints}
+`)})
+	require.NoError(t, err)
+	raw, err := synthesis.ARMTemplate()
+	require.NoError(t, err)
+	var template map[string]any
+	require.NoError(t, json.Unmarshal(raw, &template))
+	p := &FoundryProvisioningProvider{
+		projectPath: t.TempDir(), envName: "test", subID: "target-sub", rgName: "target-rg", location: "westus",
+		foundryName: "project", synthResult: result, armTemplate: template, credential: byoTestCredential{},
+		tenantID: "user-access-tenant", virtualEnv: map[string]string{},
+		byoChecker: &byoTestChecker{facts: onboarding.Facts{
+			KubeletObjectID: "11111111-1111-4111-8111-111111111111",
+			FederatedIdentityRoleDefinitionID: "/subscriptions/target-sub/providers/Microsoft.Authorization/" +
+				"roleDefinitions/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+		}},
+	}
+	fake := &byoARMFake{t: t, provider: p}
+	p.armClientOptions = &arm.ClientOptions{ClientOptions: policy.ClientOptions{
+		Transport: fake, Retry: policy.RetryOptions{MaxRetries: -1},
+	}}
+	return p, fake
+}
+
+func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	server := &resolveEnvStubEnvServer{get: map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": offlineRegistryID}}
+	p.azdClient = newResolveEnvTestClient(t, server, &resolveEnvStubPromptServer{})
+	compiler := &stubCompiler{}
+	p.bicepCliInstance = compiler
+	result, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result.Deployment)
+	for name, value := range map[string]string{
+		"AZURE_AI_PROJECT_ID": offlineProjectID, "FOUNDRY_PROJECT_ENDPOINT": offlineProjectEndpoint,
+		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": offlineRegistryID,
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "crnative.azurecr.io",
+		"AZURE_AI_PROJECT_ACR_CONNECTION_NAME": "crnative-conn",
+		"AZURE_TENANT_ID":                      "user-access-tenant",
+	} {
+		require.Contains(t, result.Deployment.Outputs, name)
+		assert.Equal(t, value, result.Deployment.Outputs[name].Value)
+	}
+	assert.Equal(t, 1, fake.writes)
+	assert.Len(t, fake.requests, 1, "no resource-origin or completed-deployment audit is required")
+	assert.Empty(t, server.set, "provisioning returns standard outputs without an additional environment journal")
+	assert.Empty(t, compiler.buildCalls)
+	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
+	assert.Contains(t, fake.parameters, "kubeletObjectId")
+	assert.Contains(t, fake.parameters, "federatedIdentityRoleDefinitionId")
+}
+
+func TestBYOPreviewReturnsARMWhatIfChangesWithoutResourceWrites(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	result, err := p.Preview(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, result.Preview)
+	require.Len(t, result.Preview.Changes, 1)
+	assert.Equal(t, offlineRegistryID, result.Preview.Changes[0].ResourceId)
+	assert.Equal(t, 1, fake.previews)
+	assert.Zero(t, fake.writes)
+	assert.Empty(t, p.virtualEnv)
+}
+
+func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	fake.failWrite = true
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "offline deployment failure")
+	fake.failWrite = false
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, 2, fake.writes)
+	assert.Len(t, fake.requests, 2)
+	assert.Empty(t, p.virtualEnv)
+}
+
+func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	p.armTemplate["contentVersion"] = "2.0.0.0"
+	p.onDiskSource = &templateSource{
+		mode: templateModeBicep, armTemplate: p.armTemplate,
+		parameters: map[string]any{
+			"resourceTokenSalt": map[string]any{"value": "custom"},
+			"tags":              map[string]any{"value": map[string]string{"team": "test"}},
+		},
+	}
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0.0", fake.template["contentVersion"])
+	assert.Equal(t, map[string]any{"value": "custom"}, fake.parameters["resourceTokenSalt"])
+	p.onDiskSource.parameters["resourceTokenSalt"] = map[string]any{"value": "updated"}
+	_, err = p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"value": "updated"}, fake.parameters["resourceTokenSalt"])
+	assert.Equal(t, 2, fake.writes)
+}
+
+func TestNativeFoundryDeployKeepsStandardOutputsWithoutAKSChecks(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	result, err := synthesis.Synthesize(synthesis.Input{ServiceName: "project",
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n")})
+	require.NoError(t, err)
+	p.synthResult = result
+	deployed, err := p.Deploy(t.Context(), func(string) {})
+	require.NoError(t, err)
+	require.NotNil(t, deployed.Deployment)
+	require.Contains(t, deployed.Deployment.Outputs, "AZURE_AI_PROJECT_ID")
+	assert.Equal(t, offlineProjectID, deployed.Deployment.Outputs["AZURE_AI_PROJECT_ID"].Value)
+	checker, ok := p.byoChecker.(*byoTestChecker)
+	require.True(t, ok)
+	assert.Zero(t, checker.calls)
+	assert.NotContains(t, fake.parameters, "agentHosting")
+	assert.NotContains(t, fake.parameters, "kubeletObjectId")
+	assert.Equal(t, 1, fake.writes)
+}
+
+func TestBYOPrepareOnlySuppliesDeclaredHostBindings(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	source, err := p.resolveTemplate(t.Context(), func(string) {})
+	require.NoError(t, err)
+	definitions, ok := source.armTemplate["parameters"].(map[string]any)
+	require.True(t, ok)
+	delete(definitions, "kubeletObjectId")
+	delete(definitions, "federatedIdentityRoleDefinitionId")
+	require.NoError(t, p.prepareBYO(t.Context(), source, func(string) {}))
+	assert.NotContains(t, source.parameters, "kubeletObjectId")
+	assert.NotContains(t, source.parameters, "federatedIdentityRoleDefinitionId")
+	assert.Empty(t, fake.requests)
+}
+
+func TestBYORejectsLocalConflictsBeforeAuthentication(t *testing.T) {
+	for _, test := range []struct {
+		key, expected string
+		value         any
+	}{
+		{"includeAcr", "requires includeAcr=true", false},
+		{"agentHosting", `unknown field "storageAccountResourceId"`,
+			map[string]any{"enabled": true, "storageAccountResourceId": "supplied"}},
+		{"agentHosting", "conflict with azure.yaml", map[string]any{
+			"enabled": true, "hostingType": "ManagedCluster", "name": "default",
+			"clusterResourceId": offlineClusterID + "-other",
+		}},
+		{"agentSubnetName", "must differ", "endpoints"},
+		{"vnetId", "expected a complete Microsoft.Network/virtualNetworks", "not-a-resource-id"},
+		{"useManagedEgress", "does not support Microsoft-managed egress", true},
+	} {
+		t.Run(test.key, func(t *testing.T) {
+			p, fake := offlineBYOProvider(t)
+			p.credential = nil
+			source, err := p.resolveTemplate(t.Context(), func(string) {})
+			require.NoError(t, err)
+			source.parameters[test.key] = map[string]any{"value": test.value}
+			require.ErrorContains(t, p.prepareBYO(t.Context(), source, func(string) {}), test.expected)
+			assert.Empty(t, fake.requests)
+			checker, ok := p.byoChecker.(*byoTestChecker)
+			require.True(t, ok)
+			assert.Zero(t, checker.calls)
+		})
+	}
+}
+
+func TestBYOPrerequisiteFailurePreventsDeployment(t *testing.T) {
+	p, fake := offlineBYOProvider(t)
+	checker, ok := p.byoChecker.(*byoTestChecker)
+	require.True(t, ok)
+	checker.err = errors.New("AKS read denied")
+	_, err := p.Deploy(t.Context(), func(string) {})
+	require.ErrorContains(t, err, "AKS read denied")
+	assert.Empty(t, fake.requests)
+	assert.Empty(t, p.virtualEnv)
+}
+
+func TestBYOInitializeRejectsInvalidInputsBeforePromptsOrPersistence(t *testing.T) {
+	for _, onDisk := range []bool{false, true} {
+		root := t.TempDir()
+		config := "services:\n  project:\n    host: azure.ai.project\n" +
+			"    agentHosting: {clusterResourceId: " + offlineClusterID + ", storageAccountResourceId: ''}\n"
+		path := filepath.Join(root, "azure.yaml")
+		require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
+		if onDisk {
+			require.NoError(t, os.Mkdir(filepath.Join(root, "infra"), 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "infra", "main.bicep"), []byte("// generated"), 0o600))
+		}
+		env := &resolveEnvStubEnvServer{envName: "test"}
+		prompt := &resolveEnvStubPromptServer{}
+		p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+		err := p.Initialize(t.Context(), root, &azdext.ProvisioningOptions{Provider: FoundryProviderName})
+		require.ErrorContains(t, err, "storageAccountResourceId: unsupported property")
+		assert.Empty(t, env.set)
+		assert.Zero(t, prompt.subscriptionN)
+		assert.Zero(t, prompt.locationN)
+		assert.Nil(t, p.credential)
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, config, string(raw))
+	}
+}
+
+func TestBYODownPreservesExistingClusterAndNetwork(t *testing.T) {
+	for _, removedHosting := range []bool{false, true} {
+		t.Run(map[bool]string{false: "configured hosting", true: "hosting removed from YAML"}[removedHosting],
+			func(t *testing.T) {
+				p, fake := offlineBYOProvider(t)
+				if removedHosting {
+					fake.parameters = map[string]any{
+						"agentHosting": map[string]any{"value": map[string]any{"enabled": true}},
+					}
+					p.synthResult.Hosting = nil
+				}
+				p.rgExplicit = true
+				result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+				require.ErrorContains(t, err, "azd down is not supported")
+				assert.Nil(t, result)
+				assert.Zero(t, fake.writes)
+				if removedHosting {
+					require.Len(t, fake.requests, 1)
+					assert.True(t, strings.HasPrefix(fake.requests[0], "GET "))
+				} else {
+					assert.Empty(t, fake.requests)
+				}
+			})
+	}
+}

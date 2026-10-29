@@ -46,10 +46,7 @@ func TestHostingDefaultSynthesis(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "ManagedCluster", hosting.HostingType)
 		assert.Equal(t, "default", hosting.Name)
-		assert.Empty(t, hosting.StorageAccountResourceID)
-		assert.Empty(t, hosting.HostingManagementIdentityResourceID)
-		assert.Empty(t, hosting.WorkloadIdentityResourceID)
-		assert.NotContains(t, result.Parameters, "byoOnboarding", "planning must not perform I/O during synthesis")
+		assert.Equal(t, hostingClusterID, hosting.ClusterResourceID)
 		assert.NotContains(t, result.Parameters, "containerRegistryResourceId")
 	}
 }
@@ -177,7 +174,7 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	require.NoError(t, err)
 	var template any
 	require.NoError(t, json.Unmarshal(raw, &template))
-	var registries, identities, storages int
+	var registries, identities, storages, connections, roleTemplates int
 	var visit func(any)
 	visit = func(value any) {
 		switch value := value.(type) {
@@ -193,6 +190,19 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 				identities++
 			case "Microsoft.Storage/storageAccounts":
 				storages++
+				properties, ok := value["properties"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, false, properties["allowSharedKeyAccess"])
+				assert.Equal(t, false, properties["allowBlobPublicAccess"])
+				assert.Equal(t, true, properties["supportsHttpsTrafficOnly"])
+			case "Microsoft.CognitiveServices/accounts/projects/connections":
+				connections++
+				properties, ok := value["properties"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "ContainerRegistry", properties["category"])
+				assert.Equal(t, "ManagedIdentity", properties["authType"])
+			case "Microsoft.Authorization/roleAssignments":
+				roleTemplates++
 			}
 			for _, child := range value {
 				visit(child)
@@ -207,14 +217,78 @@ func TestHostingGraphUsesOneNativeRegistry(t *testing.T) {
 	assert.Equal(t, 1, registries, "prerequisites must not pre-create a second/custom registry")
 	assert.Equal(t, 2, identities)
 	assert.Equal(t, 1, storages)
+	assert.Equal(t, 1, connections)
+	assert.Equal(t, 5, roleTemplates, "the cluster role template is instantiated for both AKS roles")
 	text := string(raw)
 	for _, required := range []string{
 		"agentHostingConfigurations", "ManagedCluster", "hostingManagementIdentityResourceId", "workloadIdentityResourceId",
-		"LegacyRegistryPermissions", "kubeletObjectId", "ContainerRegistry", "AZD_BYO_AKS_OWNERSHIP",
+		"LegacyRegistryPermissions", "kubeletObjectId", "ContainerRegistry",
 		"allowSharedKeyAccess", "allowBlobPublicAccess", "federatedIdentityRoleDefinitionId",
+		"acdd72a7-3385-48ef-bd42-f606fba81ae7", "85cb6faf-e071-4c9b-8136-154b5a04f717",
+		"ba92f5b4-2d11-453d-a403-e96b0029c9fe", "7f951dda-4ed3-4680-a7ca-43fe172d538d",
 	} {
 		assert.Contains(t, text, required)
 	}
+}
+
+func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
+	raw, err := ARMTemplate()
+	require.NoError(t, err)
+	var graph struct {
+		Parameters map[string]json.RawMessage
+		Outputs    map[string]json.RawMessage
+		Resources  map[string]struct {
+			Properties struct {
+				Template struct {
+					Variables map[string]json.RawMessage
+					Resources map[string]struct {
+						Condition  string
+						DependsOn  []string
+						Properties json.RawMessage
+					}
+				}
+			}
+		}
+	}
+	require.NoError(t, json.Unmarshal(raw, &graph))
+	require.Contains(t, graph.Resources, "resources")
+	foundry := graph.Resources["resources"].Properties.Template
+	require.Contains(t, foundry.Resources, "prerequisites")
+	assert.Equal(t, "[parameters('agentHosting').enabled]", foundry.Resources["prerequisites"].Condition)
+	for name, expected := range map[string]string{
+		"storageAccountName":   "[format('st{0}', variables('resourceToken'))]",
+		"hostingIdentityName":  "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
+		"workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
+	} {
+		require.Contains(t, foundry.Variables, name)
+		var actual string
+		require.NoError(t, json.Unmarshal(foundry.Variables[name], &actual))
+		assert.Equal(t, expected, actual)
+	}
+	require.Contains(t, foundry.Resources, "foundryAccount")
+	account := foundry.Resources["foundryAccount"]
+	assert.Contains(t, account.DependsOn, "prerequisites")
+	assert.Contains(t, account.DependsOn, "network")
+	var properties string
+	require.NoError(t, json.Unmarshal(account.Properties, &properties))
+	for _, binding := range []string{
+		"resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName'))",
+		"resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName'))",
+		"resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))",
+	} {
+		assert.Contains(t, properties, binding, "account preflight must receive concrete IDs, not module output references")
+	}
+	assert.Contains(t, properties, "if(parameters('agentHosting').enabled, createObject('agentHostingConfigurations'")
+	assert.True(t, strings.HasSuffix(properties, "createObject())))]"),
+		"native accounts must omit disabled agent hosting rather than send an empty configuration")
+	for _, output := range []string{
+		"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ENDPOINT", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
+		"AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
+	} {
+		assert.Contains(t, graph.Outputs, output)
+	}
+	assert.Contains(t, graph.Parameters, "kubeletObjectId")
+	assert.Contains(t, graph.Parameters, "federatedIdentityRoleDefinitionId")
 }
 
 func TestBicepToolVersionAndExplicitOverride(t *testing.T) {

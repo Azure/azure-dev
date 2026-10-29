@@ -17,13 +17,10 @@ type AgentHostingInput struct {
 }
 
 type agentHostingParameter struct {
-	Enabled                             bool   `json:"enabled"`
-	HostingType                         string `json:"hostingType"`
-	Name                                string `json:"name"`
-	ClusterResourceID                   string `json:"clusterResourceId"`
-	HostingManagementIdentityResourceID string `json:"hostingManagementIdentityResourceId"`
-	StorageAccountResourceID            string `json:"storageAccountResourceId"`
-	WorkloadIdentityResourceID          string `json:"workloadIdentityResourceId"`
+	Enabled           bool   `json:"enabled"`
+	HostingType       string `json:"hostingType"`
+	Name              string `json:"name"`
+	ClusterResourceID string `json:"clusterResourceId"`
 }
 
 func validateAgentHostingInputs(node yaml.Node, service string) error {
@@ -82,47 +79,4 @@ func synthesizeAgentHosting(
 		}
 	}
 	return &AgentHostingInput{ClusterResourceID: value}, nil
-}
-
-// BYOOnboardingParameters binds automatically created prerequisites to the standard deployment graph.
-type BYOOnboardingParameters struct {
-	DeploymentID                      string `json:"deploymentId"`
-	ResourceGroupSupplied             bool   `json:"resourceGroupSupplied"`
-	StorageName                       string `json:"storageName"`
-	StorageSKU                        string `json:"storageSku"`
-	StorageAccountResourceID          string `json:"storageAccountResourceId"`
-	HostingIdentityName               string `json:"hostingIdentityName"`
-	HostingIdentityResourceID         string `json:"hostingIdentityResourceId"`
-	WorkloadIdentityName              string `json:"workloadIdentityName"`
-	WorkloadIdentityResourceID        string `json:"workloadIdentityResourceId"`
-	KubeletObjectID                   string `json:"kubeletObjectId"`
-	FederatedIdentityRoleDefinitionID string `json:"federatedIdentityRoleDefinitionId"`
-}
-
-// ApplyBYOOnboarding binds a validated default-resource plan without performing I/O.
-func ApplyBYOOnboarding(result *Result, plan BYOOnboardingParameters) error {
-	if result == nil || result.Hosting == nil || plan.DeploymentID == "" || plan.KubeletObjectID == "" ||
-		plan.FederatedIdentityRoleDefinitionID == "" || plan.StorageName == "" ||
-		plan.HostingIdentityName == "" || plan.WorkloadIdentityName == "" ||
-		strings.EqualFold(plan.HostingIdentityResourceID, plan.WorkloadIdentityResourceID) {
-		return fmt.Errorf("BYO AKS requires a complete plan with separate hosting and workload identities")
-	}
-	for _, resource := range []struct{ id, kind, name string }{
-		{plan.StorageAccountResourceID, "Microsoft.Storage/storageAccounts", plan.StorageName},
-		{plan.HostingIdentityResourceID, "Microsoft.ManagedIdentity/userAssignedIdentities", plan.HostingIdentityName},
-		{plan.WorkloadIdentityResourceID, "Microsoft.ManagedIdentity/userAssignedIdentities", plan.WorkloadIdentityName},
-	} {
-		id, err := arm.ParseResourceID(resource.id)
-		if err != nil || id.SubscriptionID == "" || id.ResourceGroupName == "" ||
-			id.Name != resource.name || !strings.EqualFold(id.ResourceType.String(), resource.kind) ||
-			strings.ContainsAny(resource.id, "?#%\\@:\x00 \t\r\n") {
-			return fmt.Errorf("BYO AKS plan requires complete, matching resource IDs")
-		}
-	}
-	if plan.StorageSKU != "Standard_ZRS" && plan.StorageSKU != "Standard_LRS" {
-		return fmt.Errorf("BYO AKS storage SKU must be Standard_ZRS or Standard_LRS")
-	}
-	result.Parameters["byoOnboarding"] = plan
-	result.Parameters["includeAcr"] = true
-	return nil
 }

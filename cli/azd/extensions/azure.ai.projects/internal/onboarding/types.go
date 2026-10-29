@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package onboarding validates existing AKS hosting and plans its default supporting resources.
+// Package onboarding validates existing AKS hosting prerequisites.
 package onboarding
 
 import (
@@ -101,7 +101,7 @@ type Facts struct {
 	FederatedIdentityRoleDefinitionID string `json:"federatedIdentityRoleDefinitionId"`
 }
 
-// ResourceChecker performs only read operations before the deployment intent is saved.
+// ResourceChecker performs only read operations before provisioning.
 type ResourceChecker interface {
-	Check(context.Context, Plan) (Facts, Report, error)
+	Check(context.Context, Input) (Facts, Report, error)
 }

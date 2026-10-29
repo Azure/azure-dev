@@ -86,33 +86,12 @@ func fixture(t *testing.T) clusterFixture {
 	return f
 }
 
-func testPlan(t *testing.T) Plan {
+func testInput(t *testing.T) Input {
 	t.Helper()
-	plan, err := BuildPlan(Input{
-		ClusterID: testClusterID, SubscriptionID: "target-sub", ResourceGroup: "target-rg",
-		Location: "westus", Environment: "test",
-		AccountID: "/subscriptions/target-sub/resourceGroups/target-rg/providers/" +
-			"Microsoft.CognitiveServices/accounts/cog-token",
-		ProjectName: "project", RegistryName: "crtesttoken",
-		DeploymentID: "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/test",
-		Network:      Network{VNetID: testVNetID, AgentSubnetName: "agents", PESubnetName: "endpoints"},
-	})
-	require.NoError(t, err)
-	return plan
-}
-
-func TestPlanKeepsDefaultResourcesSeparateAndDeterministic(t *testing.T) {
-	plan := testPlan(t)
-	assert.True(t, plan.Cluster.Supplied)
-	for _, resource := range []Resource{plan.Storage, plan.Hosting, plan.Workload, plan.Registry, plan.Account} {
-		assert.False(t, resource.Supplied)
-		assert.Contains(t, resource.ID, "/subscriptions/target-sub/resourceGroups/target-rg/")
+	return Input{
+		ClusterID: testClusterID, SubscriptionID: "target-sub",
+		Network: Network{VNetID: testVNetID, AgentSubnetName: "agents", PESubnetName: "endpoints"},
 	}
-	assert.NotEqual(t, plan.Hosting.ID, plan.Workload.ID)
-	assert.LessOrEqual(t, len(plan.Storage.Name), 24)
-	assert.Equal(t, plan, testPlan(t))
-	assert.Equal(t, "Standard_LRS", StorageSKU("westus"))
-	assert.Equal(t, "Standard_ZRS", StorageSKU("eastus2"))
 }
 
 func TestNetworkRejectsLocalConflicts(t *testing.T) {
@@ -124,27 +103,16 @@ func TestNetworkRejectsLocalConflicts(t *testing.T) {
 		func(n *Network) { n.CreateAgentSubnet, n.AgentSubnetPrefix = true, "8.0.0.0/8" },
 		func(n *Network) { n.DNSSubscription = "11111111-1111-4111-8111-111111111111" },
 	} {
-		network := testPlan(t).Network
+		network := testInput(t).Network
 		change(&network)
 		require.Error(t, network.Validate())
 	}
-	network := testPlan(t).Network
+	network := testInput(t).Network
 	network.CreateAgentSubnet, network.AgentSubnetPrefix = true, "10.0.1.0/24"
 	network.CreatePESubnet, network.PESubnetPrefix = true, "10.0.1.128/25"
 	require.ErrorContains(t, network.Validate(), "must not overlap")
 	network.PESubnetPrefix = "10.0.2.0/24"
 	require.NoError(t, network.Validate())
-}
-
-func TestDigestIsIndependentOfTypedAndDecodedJSONOrder(t *testing.T) {
-	value := struct{ Z, A string }{Z: "last", A: "first"}
-	typed, err := Digest(value)
-	require.NoError(t, err)
-	decoded, err := Digest(map[string]any{"A": "first", "Z": "last"})
-	require.NoError(t, err)
-	assert.Equal(t, typed, decoded)
-	_, err = Digest(make(chan int))
-	require.Error(t, err)
 }
 
 func TestAKSPrerequisiteRules(t *testing.T) {
@@ -283,7 +251,7 @@ func TestResourceCheckerReadOnly(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			checker := NewResourceChecker(testCredential{}, checkerOptions(t, fixture(t), test.prefix, test.failCluster))
-			facts, report, err := checker.Check(t.Context(), testPlan(t))
+			facts, report, err := checker.Check(t.Context(), testInput(t))
 			if test.wantError {
 				require.Error(t, err)
 				require.Error(t, report.Err())
@@ -295,10 +263,10 @@ func TestResourceCheckerReadOnly(t *testing.T) {
 		})
 	}
 	t.Run("explicit available prefix uses standard subnet creation selection without writing", func(t *testing.T) {
-		plan := testPlan(t)
-		plan.Network.CreateAgentSubnet, plan.Network.AgentSubnetPrefix = true, "10.0.3.0/24"
+		input := testInput(t)
+		input.Network.CreateAgentSubnet, input.Network.AgentSubnetPrefix = true, "10.0.3.0/24"
 		checker := NewResourceChecker(testCredential{}, checkerOptions(t, fixture(t), "", false))
-		_, _, err := checker.Check(t.Context(), plan)
+		_, _, err := checker.Check(t.Context(), input)
 		require.NoError(t, err)
 	})
 }
@@ -356,7 +324,7 @@ func TestManagedNodeSubnetRequiresActualClusterOwnershipAndPoolEvidence(t *testi
 					}),
 				},
 			})}
-			ids, report := c.nodeSubnetIDs(t.Context(), testPlan(t), &f.Cluster, f.Pools[1])
+			ids, report := c.nodeSubnetIDs(t.Context(), testInput(t), &f.Cluster, f.Pools[1])
 			if test.wantError {
 				require.Error(t, report.Err())
 				assert.Empty(t, ids)

@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "7965474468700349784"
+      "templateHash": "1213631071598182819"
     }
   },
   "definitions": {
@@ -73,15 +73,6 @@
         },
         "clusterResourceId": {
           "type": "string"
-        },
-        "hostingManagementIdentityResourceId": {
-          "type": "string"
-        },
-        "storageAccountResourceId": {
-          "type": "string"
-        },
-        "workloadIdentityResourceId": {
-          "type": "string"
         }
       }
     }
@@ -143,20 +134,24 @@
         "enabled": false,
         "hostingType": "",
         "name": "",
-        "clusterResourceId": "",
-        "hostingManagementIdentityResourceId": "",
-        "storageAccountResourceId": "",
-        "workloadIdentityResourceId": ""
+        "clusterResourceId": ""
       },
       "metadata": {
-        "description": "Existing AKS cluster hosting. Supporting resource IDs are bound by microsoft.foundry."
+        "description": "Existing AKS cluster hosting. Supporting resources are created automatically."
       }
     },
-    "byoOnboarding": {
-      "type": "object",
-      "defaultValue": {},
+    "kubeletObjectId": {
+      "type": "string",
+      "defaultValue": "",
       "metadata": {
-        "description": "Internal default-resource deployment plan, managed by microsoft.foundry."
+        "description": "AKS kubelet principal ID, resolved by microsoft.foundry for registry access."
+      }
+    },
+    "federatedIdentityRoleDefinitionId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Built-in federation-management role, resolved by microsoft.foundry."
       }
     },
     "enableNetworkIsolation": {
@@ -244,381 +239,13 @@
       }
     }
   },
-  "variables": {
-    "hasOnboardingPlan": "[and(parameters('agentHosting').enabled, not(empty(parameters('byoOnboarding'))))]",
-    "suppliedResourceGroup": "[if(variables('hasOnboardingPlan'), parameters('byoOnboarding').resourceGroupSupplied, false())]",
-    "effectiveHosting": "[if(variables('hasOnboardingPlan'), union(parameters('agentHosting'), createObject('hostingManagementIdentityResourceId', parameters('byoOnboarding').hostingIdentityResourceId, 'workloadIdentityResourceId', parameters('byoOnboarding').workloadIdentityResourceId, 'storageAccountResourceId', parameters('byoOnboarding').storageAccountResourceId)), parameters('agentHosting'))]"
-  },
   "resources": {
     "resourceGroup": {
-      "condition": "[not(variables('suppliedResourceGroup'))]",
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2021-04-01",
       "name": "[parameters('resourceGroupName')]",
       "location": "[parameters('location')]",
       "tags": "[parameters('tags')]"
-    },
-    "prerequisites": {
-      "condition": "[variables('hasOnboardingPlan')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "byo-prerequisites",
-      "resourceGroup": "[parameters('resourceGroupName')]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "location": {
-            "value": "[parameters('location')]"
-          },
-          "tags": {
-            "value": "[parameters('tags')]"
-          },
-          "clusterResourceId": {
-            "value": "[parameters('agentHosting').clusterResourceId]"
-          },
-          "plan": {
-            "value": "[parameters('byoOnboarding')]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.48.1.52935",
-              "templateHash": "11983817402828462392"
-            }
-          },
-          "parameters": {
-            "location": {
-              "type": "string"
-            },
-            "tags": {
-              "type": "object"
-            },
-            "clusterResourceId": {
-              "type": "string"
-            },
-            "plan": {
-              "type": "object"
-            }
-          },
-          "variables": {
-            "clusterParts": "[split(parameters('clusterResourceId'), '/')]",
-            "blobContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
-              "apiVersion": "2023-01-31",
-              "name": "[parameters('plan').hostingIdentityName]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]"
-            },
-            {
-              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
-              "apiVersion": "2023-01-31",
-              "name": "[parameters('plan').workloadIdentityName]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]"
-            },
-            {
-              "type": "Microsoft.Storage/storageAccounts",
-              "apiVersion": "2023-05-01",
-              "name": "[parameters('plan').storageName]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
-              "kind": "StorageV2",
-              "sku": {
-                "name": "[parameters('plan').storageSku]"
-              },
-              "properties": {
-                "accessTier": "Hot",
-                "isHnsEnabled": false,
-                "publicNetworkAccess": "Enabled",
-                "networkAcls": {
-                  "defaultAction": "Allow"
-                },
-                "minimumTlsVersion": "TLS1_2",
-                "supportsHttpsTrafficOnly": true,
-                "allowBlobPublicAccess": false,
-                "allowSharedKeyAccess": false
-              }
-            },
-            {
-              "copy": {
-                "name": "clusterGrants",
-                "count": "[length(createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717'))]"
-              },
-              "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2025-04-01",
-              "name": "[format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
-              "subscriptionId": "[variables('clusterParts')[2]]",
-              "resourceGroup": "[variables('clusterParts')[4]]",
-              "properties": {
-                "expressionEvaluationOptions": {
-                  "scope": "inner"
-                },
-                "mode": "Incremental",
-                "parameters": {
-                  "resourceName": {
-                    "value": "[last(variables('clusterParts'))]"
-                  },
-                  "principalId": {
-                    "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName), '2023-01-31').principalId]"
-                  },
-                  "roleDefinitionId": {
-                    "value": "[subscriptionResourceId(variables('clusterParts')[2], 'Microsoft.Authorization/roleDefinitions', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]"
-                  },
-                  "deploymentId": {
-                    "value": "[parameters('plan').deploymentId]"
-                  }
-                },
-                "template": {
-                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                  "contentVersion": "1.0.0.0",
-                  "metadata": {
-                    "_generator": {
-                      "name": "bicep",
-                      "version": "0.48.1.52935",
-                      "templateHash": "288131888084645111"
-                    }
-                  },
-                  "parameters": {
-                    "resourceName": {
-                      "type": "string"
-                    },
-                    "principalId": {
-                      "type": "string"
-                    },
-                    "roleDefinitionId": {
-                      "type": "string"
-                    },
-                    "deploymentId": {
-                      "type": "string"
-                    }
-                  },
-                  "resources": [
-                    {
-                      "type": "Microsoft.Authorization/roleAssignments",
-                      "apiVersion": "2022-04-01",
-                      "scope": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName'))]",
-                      "name": "[guid(resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
-                      "properties": {
-                        "principalId": "[parameters('principalId')]",
-                        "principalType": "ServicePrincipal",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]",
-                        "description": "[parameters('deploymentId')]"
-                      }
-                    }
-                  ],
-                  "outputs": {
-                    "grant": {
-                      "type": "object",
-                      "value": {
-                        "id": "[extensionResourceId(resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId')))]",
-                        "scope": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName'))]",
-                        "principalId": "[parameters('principalId')]",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]"
-                      }
-                    }
-                  }
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName)]"
-              ]
-            },
-            {
-              "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2025-04-01",
-              "name": "byo-federation-access",
-              "properties": {
-                "expressionEvaluationOptions": {
-                  "scope": "inner"
-                },
-                "mode": "Incremental",
-                "parameters": {
-                  "resourceName": {
-                    "value": "[parameters('plan').workloadIdentityName]"
-                  },
-                  "principalId": {
-                    "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName), '2023-01-31').principalId]"
-                  },
-                  "roleDefinitionId": {
-                    "value": "[parameters('plan').federatedIdentityRoleDefinitionId]"
-                  },
-                  "deploymentId": {
-                    "value": "[parameters('plan').deploymentId]"
-                  }
-                },
-                "template": {
-                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                  "contentVersion": "1.0.0.0",
-                  "metadata": {
-                    "_generator": {
-                      "name": "bicep",
-                      "version": "0.48.1.52935",
-                      "templateHash": "2271355949592698592"
-                    }
-                  },
-                  "parameters": {
-                    "resourceName": {
-                      "type": "string"
-                    },
-                    "principalId": {
-                      "type": "string"
-                    },
-                    "roleDefinitionId": {
-                      "type": "string"
-                    },
-                    "deploymentId": {
-                      "type": "string"
-                    }
-                  },
-                  "resources": [
-                    {
-                      "type": "Microsoft.Authorization/roleAssignments",
-                      "apiVersion": "2022-04-01",
-                      "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName'))]",
-                      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
-                      "properties": {
-                        "principalId": "[parameters('principalId')]",
-                        "principalType": "ServicePrincipal",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]",
-                        "description": "[parameters('deploymentId')]"
-                      }
-                    }
-                  ],
-                  "outputs": {
-                    "grant": {
-                      "type": "object",
-                      "value": {
-                        "id": "[extensionResourceId(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId')))]",
-                        "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName'))]",
-                        "principalId": "[parameters('principalId')]",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]"
-                      }
-                    }
-                  }
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName)]",
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName)]"
-              ]
-            },
-            {
-              "type": "Microsoft.Resources/deployments",
-              "apiVersion": "2025-04-01",
-              "name": "byo-storage-access",
-              "properties": {
-                "expressionEvaluationOptions": {
-                  "scope": "inner"
-                },
-                "mode": "Incremental",
-                "parameters": {
-                  "resourceName": {
-                    "value": "[parameters('plan').storageName]"
-                  },
-                  "principalId": {
-                    "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName), '2023-01-31').principalId]"
-                  },
-                  "roleDefinitionId": {
-                    "value": "[variables('blobContributorRoleId')]"
-                  },
-                  "deploymentId": {
-                    "value": "[parameters('plan').deploymentId]"
-                  }
-                },
-                "template": {
-                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-                  "contentVersion": "1.0.0.0",
-                  "metadata": {
-                    "_generator": {
-                      "name": "bicep",
-                      "version": "0.48.1.52935",
-                      "templateHash": "17743615941757546953"
-                    }
-                  },
-                  "parameters": {
-                    "resourceName": {
-                      "type": "string"
-                    },
-                    "principalId": {
-                      "type": "string"
-                    },
-                    "roleDefinitionId": {
-                      "type": "string"
-                    },
-                    "deploymentId": {
-                      "type": "string"
-                    }
-                  },
-                  "resources": [
-                    {
-                      "type": "Microsoft.Authorization/roleAssignments",
-                      "apiVersion": "2022-04-01",
-                      "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName'))]",
-                      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
-                      "properties": {
-                        "principalId": "[parameters('principalId')]",
-                        "principalType": "ServicePrincipal",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]",
-                        "description": "[parameters('deploymentId')]"
-                      }
-                    }
-                  ],
-                  "outputs": {
-                    "grant": {
-                      "type": "object",
-                      "value": {
-                        "id": "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId')))]",
-                        "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName'))]",
-                        "principalId": "[parameters('principalId')]",
-                        "roleDefinitionId": "[parameters('roleDefinitionId')]"
-                      }
-                    }
-                  }
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Storage/storageAccounts', parameters('plan').storageName)]",
-                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName)]"
-              ]
-            }
-          ],
-          "outputs": {
-            "ownership": {
-              "type": "object",
-              "value": {
-                "hostingIdentityResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName)]",
-                "workloadIdentityResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName)]",
-                "storageAccountResourceId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('plan').storageName)]",
-                "ownedStorage": true,
-                "ownedRegistry": true,
-                "ownedHostingIdentity": true,
-                "ownedWorkloadIdentity": true,
-                "hostingPrincipalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').hostingIdentityName), '2023-01-31').principalId]",
-                "workloadPrincipalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('plan').workloadIdentityName), '2023-01-31').principalId]",
-                "roleAssignments": [
-                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[0])), '2025-04-01').outputs.grant.value]",
-                  "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('clusterParts')[2], variables('clusterParts')[4]), 'Microsoft.Resources/deployments', format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[1])), '2025-04-01').outputs.grant.value]",
-                  "[reference(resourceId('Microsoft.Resources/deployments', 'byo-federation-access'), '2025-04-01').outputs.grant.value]",
-                  "[reference(resourceId('Microsoft.Resources/deployments', 'byo-storage-access'), '2025-04-01').outputs.grant.value]"
-                ]
-              }
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "resourceGroup"
-      ]
     },
     "resources": {
       "type": "Microsoft.Resources/deployments",
@@ -650,10 +277,14 @@
             "value": "[parameters('includeAcr')]"
           },
           "agentHosting": {
-            "value": "[variables('effectiveHosting')]"
+            "value": "[parameters('agentHosting')]"
           },
-          "byoDeploymentId": "[if(variables('hasOnboardingPlan'), createObject('value', parameters('byoOnboarding').deploymentId), createObject('value', ''))]",
-          "kubeletObjectId": "[if(variables('hasOnboardingPlan'), createObject('value', parameters('byoOnboarding').kubeletObjectId), createObject('value', ''))]",
+          "kubeletObjectId": {
+            "value": "[parameters('kubeletObjectId')]"
+          },
+          "federatedIdentityRoleDefinitionId": {
+            "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+          },
           "enableNetworkIsolation": {
             "value": "[parameters('enableNetworkIsolation')]"
           },
@@ -699,7 +330,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "13707103365846220802"
+              "templateHash": "11013888326270098768"
             }
           },
           "definitions": {
@@ -766,15 +397,6 @@
                 },
                 "clusterResourceId": {
                   "type": "string"
-                },
-                "hostingManagementIdentityResourceId": {
-                  "type": "string"
-                },
-                "storageAccountResourceId": {
-                  "type": "string"
-                },
-                "workloadIdentityResourceId": {
-                  "type": "string"
                 }
               }
             }
@@ -829,17 +451,14 @@
                 "enabled": false,
                 "hostingType": "",
                 "name": "",
-                "clusterResourceId": "",
-                "hostingManagementIdentityResourceId": "",
-                "storageAccountResourceId": "",
-                "workloadIdentityResourceId": ""
+                "clusterResourceId": ""
               }
             },
-            "byoDeploymentId": {
+            "kubeletObjectId": {
               "type": "string",
               "defaultValue": ""
             },
-            "kubeletObjectId": {
+            "federatedIdentityRoleDefinitionId": {
               "type": "string",
               "defaultValue": ""
             },
@@ -936,6 +555,9 @@
             "resourceToken": "[if(empty(parameters('resourceTokenSalt')), uniqueString(subscription().id, resourceGroup().id, parameters('location')), uniqueString(subscription().id, resourceGroup().id, parameters('location'), parameters('resourceTokenSalt')))]",
             "abbrs": "[variables('$fxv#0')]",
             "foundryAccountName": "[format('{0}{1}', variables('abbrs').cognitiveServicesAccounts, variables('resourceToken'))]",
+            "storageAccountName": "[format('st{0}', variables('resourceToken'))]",
+            "hostingIdentityName": "[format('{0}-hosting-mi', variables('foundryAccountName'))]",
+            "workloadIdentityName": "[format('{0}-workload-mi', variables('foundryAccountName'))]",
             "useByoNetwork": "[and(parameters('enableNetworkIsolation'), not(parameters('useManagedEgress')))]",
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
@@ -988,10 +610,11 @@
                 "name": "S0"
               },
               "kind": "AIServices",
-              "identity": "[if(parameters('agentHosting').enabled, createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', parameters('agentHosting').hostingManagementIdentityResourceId), createObject())), createObject('type', 'SystemAssigned'))]",
-              "properties": "[shallowMerge(createArray(createObject('allowProjectManagement', true(), 'customSubDomainName', variables('foundryAccountName'), 'publicNetworkAccess', if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled'), 'disableLocalAuth', true(), 'networkAcls', createObject('defaultAction', if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow'), 'bypass', if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null()), 'virtualNetworkRules', createArray(), 'ipRules', createArray()), 'networkInjections', variables('agentNetworkInjections')), if(parameters('agentHosting').enabled, createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', parameters('agentHosting').hostingManagementIdentityResourceId, 'storageAccountResourceId', parameters('agentHosting').storageAccountResourceId, 'workloadIdentityResourceId', parameters('agentHosting').workloadIdentityResourceId))), createObject())))]",
+              "identity": "[if(parameters('agentHosting').enabled, createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName'))), createObject())), createObject('type', 'SystemAssigned'))]",
+              "properties": "[shallowMerge(createArray(createObject('allowProjectManagement', true(), 'customSubDomainName', variables('foundryAccountName'), 'publicNetworkAccess', if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled'), 'disableLocalAuth', true(), 'networkAcls', createObject('defaultAction', if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow'), 'bypass', if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null()), 'virtualNetworkRules', createArray(), 'ipRules', createArray()), 'networkInjections', variables('agentNetworkInjections')), if(parameters('agentHosting').enabled, createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), 'storageAccountResourceId', resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'workloadIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName'))))), createObject())))]",
               "dependsOn": [
-                "network"
+                "network",
+                "prerequisites"
               ]
             },
             "foundryManagedNetwork": {
@@ -1007,6 +630,329 @@
               "dependsOn": [
                 "foundryAccount"
               ]
+            },
+            "prerequisites": {
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "byo-prerequisites",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  },
+                  "clusterResourceId": {
+                    "value": "[parameters('agentHosting').clusterResourceId]"
+                  },
+                  "storageAccountName": {
+                    "value": "[variables('storageAccountName')]"
+                  },
+                  "hostingIdentityName": {
+                    "value": "[variables('hostingIdentityName')]"
+                  },
+                  "workloadIdentityName": {
+                    "value": "[variables('workloadIdentityName')]"
+                  },
+                  "federatedIdentityRoleDefinitionId": {
+                    "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "7229290977011601062"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "tags": {
+                      "type": "object"
+                    },
+                    "clusterResourceId": {
+                      "type": "string"
+                    },
+                    "storageAccountName": {
+                      "type": "string"
+                    },
+                    "hostingIdentityName": {
+                      "type": "string"
+                    },
+                    "workloadIdentityName": {
+                      "type": "string"
+                    },
+                    "federatedIdentityRoleDefinitionId": {
+                      "type": "string"
+                    }
+                  },
+                  "variables": {
+                    "clusterParts": "[split(parameters('clusterResourceId'), '/')]",
+                    "storageZrsUnsupportedRegions": [
+                      "australiacentral",
+                      "australiacentral2",
+                      "australiasoutheast",
+                      "brazilsoutheast",
+                      "canadaeast",
+                      "francesouth",
+                      "germanynorth",
+                      "koreasouth",
+                      "northcentralus",
+                      "norwaywest",
+                      "southafricawest",
+                      "southindia",
+                      "swedensouth",
+                      "switzerlandwest",
+                      "taiwannorth",
+                      "taiwannorthwest",
+                      "uaecentral",
+                      "ukwest",
+                      "westcentralus",
+                      "westindia",
+                      "westus"
+                    ],
+                    "blobContributorRoleId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                      "apiVersion": "2023-01-31",
+                      "name": "[parameters('hostingIdentityName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]"
+                    },
+                    {
+                      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+                      "apiVersion": "2023-01-31",
+                      "name": "[parameters('workloadIdentityName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]"
+                    },
+                    {
+                      "type": "Microsoft.Storage/storageAccounts",
+                      "apiVersion": "2023-05-01",
+                      "name": "[parameters('storageAccountName')]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "kind": "StorageV2",
+                      "sku": {
+                        "name": "[if(contains(variables('storageZrsUnsupportedRegions'), toLower(parameters('location'))), 'Standard_LRS', 'Standard_ZRS')]"
+                      },
+                      "properties": {
+                        "accessTier": "Hot",
+                        "isHnsEnabled": false,
+                        "publicNetworkAccess": "Enabled",
+                        "networkAcls": {
+                          "defaultAction": "Allow"
+                        },
+                        "minimumTlsVersion": "TLS1_2",
+                        "supportsHttpsTrafficOnly": true,
+                        "allowBlobPublicAccess": false,
+                        "allowSharedKeyAccess": false
+                      }
+                    },
+                    {
+                      "copy": {
+                        "name": "clusterGrants",
+                        "count": "[length(createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717'))]"
+                      },
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "[format('byo-cluster-{0}', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]",
+                      "subscriptionId": "[variables('clusterParts')[2]]",
+                      "resourceGroup": "[variables('clusterParts')[4]]",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[last(variables('clusterParts'))]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[subscriptionResourceId(variables('clusterParts')[2], 'Microsoft.Authorization/roleDefinitions', createArray('acdd72a7-3385-48ef-bd42-f606fba81ae7', '85cb6faf-e071-4c9b-8136-154b5a04f717')[copyIndex()])]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "9565368374017416886"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.ContainerService/managedClusters', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "byo-federation-access",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[parameters('workloadIdentityName')]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[parameters('federatedIdentityRoleDefinitionId')]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "1047566723091155563"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('hostingIdentityName'))]",
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                      ]
+                    },
+                    {
+                      "type": "Microsoft.Resources/deployments",
+                      "apiVersion": "2025-04-01",
+                      "name": "byo-storage-access",
+                      "properties": {
+                        "expressionEvaluationOptions": {
+                          "scope": "inner"
+                        },
+                        "mode": "Incremental",
+                        "parameters": {
+                          "resourceName": {
+                            "value": "[parameters('storageAccountName')]"
+                          },
+                          "principalId": {
+                            "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName')), '2023-01-31').principalId]"
+                          },
+                          "roleDefinitionId": {
+                            "value": "[variables('blobContributorRoleId')]"
+                          }
+                        },
+                        "template": {
+                          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                          "contentVersion": "1.0.0.0",
+                          "metadata": {
+                            "_generator": {
+                              "name": "bicep",
+                              "version": "0.48.1.52935",
+                              "templateHash": "8476384347606291870"
+                            }
+                          },
+                          "parameters": {
+                            "resourceName": {
+                              "type": "string"
+                            },
+                            "principalId": {
+                              "type": "string"
+                            },
+                            "roleDefinitionId": {
+                              "type": "string"
+                            }
+                          },
+                          "resources": [
+                            {
+                              "type": "Microsoft.Authorization/roleAssignments",
+                              "apiVersion": "2022-04-01",
+                              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName'))]",
+                              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('resourceName')), parameters('principalId'), parameters('roleDefinitionId'))]",
+                              "properties": {
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal",
+                                "roleDefinitionId": "[parameters('roleDefinitionId')]"
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "dependsOn": [
+                        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+                        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]"
+                      ]
+                    }
+                  ]
+                }
+              }
             },
             "network": {
               "condition": "[parameters('enableNetworkIsolation')]",
@@ -1359,9 +1305,6 @@
                   },
                   "kubeletObjectId": {
                     "value": "[parameters('kubeletObjectId')]"
-                  },
-                  "deploymentId": {
-                    "value": "[parameters('byoDeploymentId')]"
                   }
                 },
                 "template": {
@@ -1371,7 +1314,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.48.1.52935",
-                      "templateHash": "12742365331519941578"
+                      "templateHash": "294987716441140155"
                     }
                   },
                   "parameters": {
@@ -1431,10 +1374,6 @@
                     "kubeletObjectId": {
                       "type": "string",
                       "defaultValue": ""
-                    },
-                    "deploymentId": {
-                      "type": "string",
-                      "defaultValue": ""
                     }
                   },
                   "variables": {
@@ -1482,7 +1421,11 @@
                       "apiVersion": "2022-04-01",
                       "scope": "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]",
                       "name": "[guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId'))]",
-                      "properties": "[shallowMerge(createArray(createObject('principalId', parameters('foundryProjectPrincipalId'), 'principalType', 'ServicePrincipal', 'roleDefinitionId', variables('acrPullRoleId')), if(not(empty(parameters('deploymentId'))), createObject('description', parameters('deploymentId')), createObject())))]",
+                      "properties": {
+                        "principalId": "[parameters('foundryProjectPrincipalId')]",
+                        "principalType": "ServicePrincipal",
+                        "roleDefinitionId": "[variables('acrPullRoleId')]"
+                      },
                       "dependsOn": [
                         "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
                       ]
@@ -1496,8 +1439,7 @@
                       "properties": {
                         "principalId": "[parameters('kubeletObjectId')]",
                         "principalType": "ServicePrincipal",
-                        "roleDefinitionId": "[variables('acrPullRoleId')]",
-                        "description": "[parameters('deploymentId')]"
+                        "roleDefinitionId": "[variables('acrPullRoleId')]"
                       },
                       "dependsOn": [
                         "[resourceId('Microsoft.ContainerRegistry/registries', parameters('name'))]"
@@ -1516,10 +1458,6 @@
                     "connectionName": {
                       "type": "string",
                       "value": "[format('{0}-conn', parameters('name'))]"
-                    },
-                    "roleAssignments": {
-                      "type": "array",
-                      "value": "[concat(createArray(createObject('id', extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('foundryProjectPrincipalId'), variables('acrPullRoleId'))), 'scope', resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'principalId', parameters('foundryProjectPrincipalId'), 'roleDefinitionId', variables('acrPullRoleId'))), if(parameters('byoAks'), createArray(createObject('id', extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), parameters('kubeletObjectId'), variables('acrPullRoleId'))), 'scope', resourceId('Microsoft.ContainerRegistry/registries', parameters('name')), 'principalId', parameters('kubeletObjectId'), 'roleDefinitionId', variables('acrPullRoleId'))), createArray()))]"
                     }
                   }
                 }
@@ -1798,14 +1736,6 @@
               "type": "string",
               "value": "[if(parameters('includeAcr'), reference('acr').outputs.connectionName.value, '')]"
             },
-            "projectPrincipalId": {
-              "type": "string",
-              "value": "[reference('foundryAccount::project', '2026-07-15-preview', 'full').identity.principalId]"
-            },
-            "registryRoleAssignments": {
-              "type": "array",
-              "value": "[if(parameters('includeAcr'), reference('acr').outputs.roleAssignments.value, createArray())]"
-            },
             "AZURE_FOUNDRY_NETWORK_MODE": {
               "type": "string",
               "value": "[if(not(parameters('enableNetworkIsolation')), 'none', if(parameters('useManagedEgress'), 'managed', 'byo'))]"
@@ -1818,7 +1748,6 @@
         }
       },
       "dependsOn": [
-        "prerequisites",
         "resourceGroup"
       ]
     }
@@ -1871,10 +1800,6 @@
     "AZURE_FOUNDRY_MANAGED_ISOLATION_MODE": {
       "type": "string",
       "value": "[reference('resources').outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE.value]"
-    },
-    "AZD_BYO_AKS_OWNERSHIP": {
-      "type": "object",
-      "value": "[if(variables('hasOnboardingPlan'), union(reference('prerequisites').outputs.ownership.value, createObject('deploymentId', parameters('byoOnboarding').deploymentId, 'registryResourceId', reference('resources').outputs.AZURE_CONTAINER_REGISTRY_RESOURCE_ID.value, 'projectPrincipalId', reference('resources').outputs.projectPrincipalId.value, 'kubeletPrincipalId', parameters('byoOnboarding').kubeletObjectId, 'roleAssignments', concat(reference('prerequisites').outputs.ownership.value.roleAssignments, reference('resources').outputs.registryRoleAssignments.value))), createObject())]"
     }
   }
 }

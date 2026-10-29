@@ -177,7 +177,7 @@ The cluster must use Base AKS (not Automatic), Kubernetes **1.31+** (the running
 
 The default resource graph creates:
 
-- One StorageV2 account, with shared keys, anonymous blobs, and insecure transport disabled.
+- One StorageV2 account (`st<resourceToken>`), with shared keys, anonymous blobs, and insecure transport disabled.
 - Separate hosting-management and workload user-assigned managed identities.
 - One native azd Container Registry (`cr<resourceToken>`), its Project connection, and `AcrPull` for the Project and AKS kubelet identities.
 - Hosting-management Reader and Kubernetes Extension Contributor roles on the existing cluster, federation-management permission on the workload identity, and workload Storage Blob Data Contributor permission on the storage account.
@@ -186,11 +186,11 @@ The account receives a `ManagedCluster` / `default` hosting configuration. Its d
 
 Only the existing cluster is selectable: supplied Storage accounts, hosting/workload identities, and registries are not supported. An existing `endpoint:` cannot receive hosting, and Microsoft-managed egress is not supported. `${VAR}` inputs resolve from the active azd environment; a cluster ID is not a Kubernetes context name.
 
-`azd provision --preview` produces a **read-only validation and resource-plan summary**, not ARM what-if changes. Before the first Azure write, the provider saves `AZD_FOUNDRY_BYO_AKS_PREPARATION` as extension-managed JSON in the azd environment, recording exact targets, their original create/reference sources, initial absence, and deployment bindings. It is not read directly from the process environment and must not be edited or cleared to bypass safety checks. Existing names without this original intent are rejected. A completed deployment can be reprovisioned with the same targets, graph and bindings; model deployment and ordinary tag updates remain supported.
+`azd provision --preview` validates the existing AKS and network prerequisites, then returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
 
-Unresolved attempts, including a cloud success whose local completion could not be saved, require manual recovery; automatic adoption/retry is not supported. **`azd down` is refused for BYO AKS**, including when the YAML hosting block has been removed but its deployment intent remains. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
+**`azd down` is refused for BYO AKS**, including when hosting is present in the last ARM deployment's parameters but has been removed from YAML. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
 
-Embedded provisioning and standard Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. BYO AKS requires the standard generated graph and provider-managed bindings, rather than a customized resource graph.
+Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 
 ### Infrastructure layers
 

@@ -58,10 +58,10 @@ func resourceReadiness(scope, id, state, action string) Check {
 		"matching resource ID="+fmt.Sprint(strings.EqualFold(scope, id))+"; provisioningState="+state)
 }
 
-func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Report, error) {
+func (c *sdkResourceChecker) Check(ctx context.Context, input Input) (Facts, Report, error) {
 	var facts Facts
-	report := c.subscriptionTenants(ctx, plan)
-	cluster, pools, skus, checks := c.readCluster(ctx, plan.Cluster)
+	report := c.subscriptionTenants(ctx, input)
+	cluster, pools, skus, checks := c.readCluster(ctx, input.ClusterID)
 	report = append(report, checks...)
 	if cluster == nil {
 		return facts, report, report.Err()
@@ -72,13 +72,13 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	if err := report.Err(); err != nil {
 		return facts, report, err
 	}
-	report = append(report, c.networkChecks(ctx, plan, cluster, selected)...)
+	report = append(report, c.networkChecks(ctx, input, cluster, selected)...)
 	if err := report.Err(); err != nil {
 		return facts, report, err
 	}
-	role, err := c.federationRole(ctx, plan.SubscriptionID)
+	role, err := c.federationRole(ctx, input.SubscriptionID)
 	if err != nil {
-		report = append(report, readFailure("G02", plan.Workload.ID,
+		report = append(report, readFailure("G02", "/subscriptions/"+input.SubscriptionID,
 			"Managed Identity Federated Identity Credential Contributor built-in role", err))
 	}
 	facts.FederatedIdentityRoleDefinitionID = role
@@ -88,11 +88,11 @@ func (c *sdkResourceChecker) Check(ctx context.Context, plan Plan) (Facts, Repor
 	return facts, report, report.Err()
 }
 
-func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan) Report {
-	subscriptions := []string{plan.SubscriptionID}
+func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, input Input) Report {
+	subscriptions := []string{input.SubscriptionID}
 	for _, resource := range []struct{ id, kind string }{
-		{plan.Cluster.ID, "Microsoft.ContainerService/managedClusters"},
-		{plan.Network.VNetID, "Microsoft.Network/virtualNetworks"},
+		{input.ClusterID, "Microsoft.ContainerService/managedClusters"},
+		{input.Network.VNetID, "Microsoft.Network/virtualNetworks"},
 	} {
 		id, err := ParseID(resource.id, resource.kind)
 		if err != nil {
@@ -100,14 +100,14 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 		}
 		subscriptions = append(subscriptions, id.SubscriptionID)
 	}
-	if plan.Network.DNSResourceGroup != "" && plan.Network.DNSSubscription != "" {
-		subscriptions = append(subscriptions, plan.Network.DNSSubscription)
+	if input.Network.DNSResourceGroup != "" && input.Network.DNSSubscription != "" {
+		subscriptions = append(subscriptions, input.Network.DNSSubscription)
 	}
 	slices.Sort(subscriptions)
 	subscriptions = slices.Compact(subscriptions)
 	client, err := armsubscriptions.NewClient(c.credential, c.options)
 	if err != nil {
-		return Report{readFailure("I02", plan.SubscriptionID, "subscriptions/read", err)}
+		return Report{readFailure("I02", input.SubscriptionID, "subscriptions/read", err)}
 	}
 	var tenant string
 	var report Report
@@ -132,25 +132,25 @@ func (c *sdkResourceChecker) subscriptionTenants(ctx context.Context, plan Plan)
 }
 
 func (c *sdkResourceChecker) readCluster(
-	ctx context.Context, resource Resource,
+	ctx context.Context, clusterID string,
 ) (*armcontainerservice.ManagedCluster, []*armcontainerservice.AgentPool, []*armcompute.ResourceSKU, Report) {
-	id, err := ParseID(resource.ID, "Microsoft.ContainerService/managedClusters")
+	id, err := ParseID(clusterID, "Microsoft.ContainerService/managedClusters")
 	if err != nil {
-		return nil, nil, nil, Report{readFailure("I01", resource.ID, "complete managed cluster ID", err)}
+		return nil, nil, nil, Report{readFailure("I01", clusterID, "complete managed cluster ID", err)}
 	}
 	client, err := armcontainerservice.NewManagedClustersClient(id.SubscriptionID, c.credential, c.options)
 	if err != nil {
-		return nil, nil, nil, Report{readFailure("I02", resource.ID, "managedClusters/read", err)}
+		return nil, nil, nil, Report{readFailure("I02", clusterID, "managedClusters/read", err)}
 	}
 	cluster, err := client.Get(ctx, id.ResourceGroupName, id.Name, nil)
 	if err != nil {
-		return nil, nil, nil, Report{readFailure("I02", resource.ID, "managedClusters/read", err)}
+		return nil, nil, nil, Report{readFailure("I02", clusterID, "managedClusters/read", err)}
 	}
 	state := ""
 	if cluster.Properties != nil {
 		state = resourceValue(cluster.Properties.ProvisioningState)
 	}
-	report := Report{resourceReadiness(resource.ID, resourceValue(cluster.ID), state, "managedClusters/read")}
+	report := Report{resourceReadiness(clusterID, resourceValue(cluster.ID), state, "managedClusters/read")}
 	poolClient, err := armcontainerservice.NewAgentPoolsClient(id.SubscriptionID, c.credential, c.options)
 	var pools []*armcontainerservice.AgentPool
 	if err == nil {
@@ -165,12 +165,12 @@ func (c *sdkResourceChecker) readCluster(
 		}
 	}
 	if err != nil {
-		report = append(report, readFailure("A10", resource.ID, "managedClusters/agentPools/read", err))
+		report = append(report, readFailure("A10", clusterID, "managedClusters/agentPools/read", err))
 		pools = nil
 	}
 	skus, err := c.readSKUs(ctx, id.SubscriptionID, resourceValue(cluster.Location))
 	if err != nil {
-		report = append(report, readFailure("A05", resource.ID, "Microsoft.Compute/skus/read", err))
+		report = append(report, readFailure("A05", clusterID, "Microsoft.Compute/skus/read", err))
 	}
 	return &cluster.ManagedCluster, pools, skus, report
 }

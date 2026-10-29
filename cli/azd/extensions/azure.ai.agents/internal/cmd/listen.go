@@ -353,7 +353,7 @@ func predeployHandler(
 	}
 
 	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent

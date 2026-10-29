@@ -152,3 +152,15 @@ func TestCreateInputParametersFile_NonJSONTemplateEscapesStringValues(t *testing
 		"fallback": `de"fault`,
 	}, got)
 }
+
+func TestCreateInputParametersFile_NonJSONTemplateEnvsubstOperators(t *testing.T) {
+	got := substituteTemplateToMap(t,
+		`{"count": ${UNSET_TEST_COUNT=5}, "name": ${UNSET_TEST_NAME="app"}, "part": "${QUOTED:1:3}"}`,
+		map[string]string{"QUOTED": `"abc`})
+
+	require.Equal(t, map[string]any{
+		"count": float64(5),
+		"name":  "app",
+		"part":  "abc",
+	}, got)
+}

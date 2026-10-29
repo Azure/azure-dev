@@ -877,8 +877,8 @@ func (t *TerraformProvider) PlannedOutputs(ctx context.Context) ([]provisioning.
 // and a value that looks like JSON stays a string. Numbers, booleans and null are written back as authored.
 //
 // A template that is not valid JSON before substitution (for example one with an unquoted placeholder such as
-// "count": ${COUNT}) is substituted as text, as it always was. Because the output is still expected to be JSON, values
-// that land inside a JSON string literal are JSON-escaped so quotes, backslashes or newlines can't break the file.
+// "count": ${COUNT}) is substituted as text, as it always was, except that string literals are substituted on their
+// decoded content and encoded again, so quotes, backslashes or newlines in a value can't break the file.
 func substituteParametersTemplate(template []byte, mapping func(string) string) (string, error) {
 	var parsed any
 	decoder := json.NewDecoder(bytes.NewReader(template))
@@ -905,54 +905,94 @@ func substituteParametersTemplate(template []byte, mapping func(string) string) 
 }
 
 // substituteTemplateText substitutes environment variable references in a template that isn't valid JSON. Text outside
-// JSON string literals is substituted verbatim. Inside a string literal the replacement values are JSON-escaped, so
-// the result stays valid JSON whatever the values contain. Text written in the template itself, such as a default
-// value, is left as authored.
+// JSON string literals, including unquoted ${...} expressions, is substituted as is. Each string literal is decoded,
+// substituted on its raw content and encoded again, so the replacement values can't break the file and operators
+// such as ${NAME:1:3} work on the real value. A literal that can't be decoded is substituted as text, as before.
 func substituteTemplateText(template string, mapping func(string) string) (string, error) {
-	escaped := func(name string) string {
-		// Marshaling a string never fails.
-		encoded, _ := json.Marshal(mapping(name))
-		return string(encoded[1 : len(encoded)-1])
-	}
-
 	var out strings.Builder
 	segmentStart := 0
-	inString := false
 	flush := func(end int) error {
-		segment := template[segmentStart:end]
-		segmentStart = end
-		m := mapping
-		if inString {
-			m = escaped
-		}
-		replaced, err := envsubst.Eval(segment, m)
+		replaced, err := envsubst.Eval(template[segmentStart:end], mapping)
 		if err != nil {
 			return err
 		}
 		out.WriteString(replaced)
+		segmentStart = end
 		return nil
 	}
 
 	for i := 0; i < len(template); i++ {
 		switch {
-		case inString && template[i] == '\\':
-			i++ // skip the escaped character
+		case strings.HasPrefix(template[i:], "${"):
+			// Quotes inside an expression, as in ${NAME="app"}, are part of it and don't start a string literal.
+			i = expressionEnd(template, i) - 1
 		case template[i] == '"':
-			if inString {
-				// Keep the closing quote with the string segment.
-				if err := flush(i + 1); err != nil {
-					return "", err
-				}
-			} else {
-				if err := flush(i); err != nil {
-					return "", err
-				}
+			if err := flush(i); err != nil {
+				return "", err
 			}
-			inString = !inString
+			end := stringLiteralEnd(template, i)
+			literal, err := substituteStringLiteral(template[i:end], mapping)
+			if err != nil {
+				return "", err
+			}
+			out.WriteString(literal)
+			segmentStart = end
+			i = end - 1
 		}
 	}
 	if err := flush(len(template)); err != nil {
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// expressionEnd returns the index just past the ${...} expression starting at start, counting nested braces, or the
+// template length when the expression isn't closed.
+func expressionEnd(template string, start int) int {
+	depth := 0
+	for i := start + 1; i < len(template); i++ {
+		switch template[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(template)
+}
+
+// stringLiteralEnd returns the index just past the JSON string literal starting with the quote at start, or the
+// template length when the literal isn't closed.
+func stringLiteralEnd(template string, start int) int {
+	for i := start + 1; i < len(template); i++ {
+		switch template[i] {
+		case '\\':
+			i++
+		case '"':
+			return i + 1
+		}
+	}
+	return len(template)
+}
+
+// substituteStringLiteral substitutes the raw content of a quoted JSON string literal and encodes the result again.
+func substituteStringLiteral(literal string, mapping func(string) string) (string, error) {
+	var raw string
+	if err := json.Unmarshal([]byte(literal), &raw); err != nil {
+		return envsubst.Eval(literal, mapping)
+	}
+	replaced, err := envsubst.Eval(raw, mapping)
+	if err != nil {
+		return "", err
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(replaced); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(encoded.String(), "\n"), nil
 }

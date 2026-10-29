@@ -27,8 +27,11 @@ func TestSubstituteJSONStrings(t *testing.T) {
 }
 
 func TestSubstituteJSONStrings_KeyCollisionIsAnError(t *testing.T) {
-	lower := func(s string) (string, error) { return strings.ToLower(s), nil }
+	const secret = "s3cr3t-value"
+	toSecret := func(s string) (string, error) { return secret, nil }
 
-	_, err := SubstituteJSONStrings(map[string]any{"Key": "1", "key": "2"}, lower)
-	require.ErrorContains(t, err, `"Key" and "key" both resolve to "key"`)
+	_, err := SubstituteJSONStrings(map[string]any{"${A}": "1", "${B}": "2"}, toSecret)
+	require.ErrorContains(t, err, "two object keys resolve to the same key")
+	require.NotContains(t, err.Error(), secret)
+	require.NotContains(t, err.Error(), "${A}")
 }

@@ -3,14 +3,12 @@
 
 package provisioning
 
-import (
-	"fmt"
-	"slices"
-)
+import "errors"
 
 // SubstituteJSONStrings walks a decoded JSON value and applies fn to each string and object key. Numbers, booleans and
 // null are returned as authored. The input is not modified. An error is returned when two distinct object keys resolve
-// to the same string, because one value would otherwise silently replace the other.
+// to the same string, because one value would otherwise silently replace the other. The error names no keys, since
+// resolved keys can hold secrets.
 func SubstituteJSONStrings(value any, fn func(string) (string, error)) (any, error) {
 	switch v := value.(type) {
 	case string:
@@ -27,24 +25,15 @@ func SubstituteJSONStrings(value any, fn func(string) (string, error)) (any, err
 		return out, nil
 	case map[string]any:
 		out := make(map[string]any, len(v))
-		sources := make(map[string]string, len(v))
-		// Iterate in sorted order so collision errors are deterministic.
-		keys := make([]string, 0, len(v))
-		for key := range v {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		for _, key := range keys {
+		for key, item := range v {
 			resolvedKey, err := fn(key)
 			if err != nil {
 				return nil, err
 			}
-			if previous, exists := sources[resolvedKey]; exists {
-				return nil, fmt.Errorf(
-					"object keys %q and %q both resolve to %q after substitution", previous, key, resolvedKey)
+			if _, exists := out[resolvedKey]; exists {
+				return nil, errors.New("two object keys resolve to the same key after environment variable substitution")
 			}
-			sources[resolvedKey] = key
-			resolved, err := SubstituteJSONStrings(v[key], fn)
+			resolved, err := SubstituteJSONStrings(item, fn)
 			if err != nil {
 				return nil, err
 			}

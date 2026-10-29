@@ -466,6 +466,7 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+	EnableMemorySnapshot *bool                   `json:"enableMemorySnapshot,omitempty" yaml:"enableMemorySnapshot,omitempty"`
 }
 
 // HarnessSkillRef references a prompt agent's skill by name and optional version.

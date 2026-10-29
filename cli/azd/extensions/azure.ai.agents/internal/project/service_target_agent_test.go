@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"azureaiagent/internal/cmd/nextstep"
 	"azureaiagent/internal/exterrors"
@@ -1287,6 +1289,243 @@ func TestAgentDeploymentFailedErrorPreservesServiceDetails(t *testing.T) {
 	require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
 }
 
+type fakeAgentVersionStatusReader struct {
+	statuses []string
+	calls    int
+}
+
+func (reader *fakeAgentVersionStatusReader) GetAgentVersion(
+	context.Context, string, string, string, bool,
+) (*agent_api.AgentVersionObject, error) {
+	status := reader.statuses[min(reader.calls, len(reader.statuses)-1)]
+	reader.calls++
+	if status == "error" {
+		return nil, errors.New("temporary poll failure")
+	}
+	version := &agent_api.AgentVersionObject{Status: status}
+	if status == "failed" {
+		version.Error = &agent_api.AgentVersionError{
+			Code: "SnapshotCreationError", Target: "HooksNotImplemented",
+			Message: "The agent server does not implement the before-snapshot hook.",
+		}
+	}
+	return version, nil
+}
+
+func TestAgentDeploymentSnapshotActivationPolling(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name     string
+		statuses []string
+		want     string
+		calls    int
+	}{
+		{name: "capture pending then active", statuses: []string{"creating", "active", "active"}, want: "active", calls: 3},
+		{name: "capture failed", statuses: []string{"creating", "failed", "failed"}, want: "failed", calls: 3},
+		{name: "transient poll resets confirmation", statuses: []string{"active", "error", "active", "active"}, want: "active", calls: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			reader := &fakeAgentVersionStatusReader{statuses: test.statuses}
+			provider := &AgentServiceTargetProvider{}
+			version, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Nanosecond,
+				time.Second, new(true), func(string) {},
+			)
+			if test.want == "failed" {
+				require.ErrorContains(t, err, "HooksNotImplemented")
+				require.Nil(t, version)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "active", version.Status)
+			}
+			require.Equal(t, test.calls, reader.calls)
+		})
+	}
+}
+
+func TestAgentDeploymentSnapshotActivationCancellationAndTimeout(t *testing.T) {
+	t.Parallel()
+	provider := &AgentServiceTargetProvider{}
+	reader := &fakeAgentVersionStatusReader{statuses: []string{"creating"}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := provider.waitForAgentActive(
+		ctx, reader, "test.example.com", "snapshot-agent", "1", time.Second, time.Minute, new(true), func(string) {},
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Zero(t, reader.calls)
+	_, err = provider.waitForAgentActive(
+		t.Context(), reader, "test.example.com", "snapshot-agent", "1", time.Second, -time.Nanosecond, new(true), func(string) {},
+	)
+	require.ErrorContains(t, err, "final deployment outcome is unknown")
+	require.Zero(t, reader.calls)
+}
+
+func TestAgentDeploymentSnapshotPollingErrorsTimeout(t *testing.T) {
+	t.Parallel()
+	for _, statuses := range [][]string{{"error"}, {"creating", "error"}} {
+		t.Run(strings.Join(statuses, " then "), func(t *testing.T) {
+			t.Parallel()
+			reader := &fakeAgentVersionStatusReader{statuses: statuses}
+			provider := &AgentServiceTargetProvider{}
+			_, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "snapshot-agent", "1",
+				10*time.Millisecond, 100*time.Millisecond, new(true), func(string) {},
+			)
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
+			require.Contains(t, serviceErr.Message, "outcome is unknown")
+			require.Contains(t, serviceErr.Message, "temporary poll failure")
+			if statuses[0] == "creating" {
+				require.Contains(t, serviceErr.Message, "creating")
+			}
+		})
+	}
+}
+
+func TestAgentDeploymentPollTimeout(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, 8*time.Minute, agentDeploymentPollTimeout)
+}
+
+func TestAgentDeploymentNonSnapshotPollingErrorPreservesClassification(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		enabled *bool
+	}{
+		{name: "absent"},
+		{name: "disabled", enabled: new(false)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &AgentServiceTargetProvider{}
+			reader := &fakeAgentVersionStatusReader{statuses: []string{"error"}}
+			_, err := provider.waitForAgentActive(
+				t.Context(), reader, "test.example.com", "ordinary-agent", "1",
+				10*time.Millisecond, 100*time.Millisecond, test.enabled, func(string) {},
+			)
+			expected := exterrors.ServiceFromAzure(errors.New("temporary poll failure"), exterrors.OpCreateAgent)
+			require.Equal(t, expected, err)
+		})
+	}
+}
+
+func TestAgentDeploymentFailedErrorMemorySnapshot(t *testing.T) {
+	t.Parallel()
+	var version agent_api.AgentVersionObject
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"status":"failed",
+		"error":{
+			"code":"SnapshotCreationError",
+			"target":"BeforeSnapshotHookFailed",
+			"message":"The agent's before-snapshot hook failed. The hook returned HTTP status 500."
+		}
+	}`), &version))
+	version.RequestID = "snapshot-request"
+	err := agentDeploymentFailedError(&version, "test.example.com")
+	serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+	require.True(t, ok)
+	require.Equal(t, "create_agent.SnapshotCreationError", serviceErr.ErrorCode)
+	require.Contains(t, serviceErr.Message, "BeforeSnapshotHookFailed")
+	require.Contains(t, serviceErr.Message, "HTTP status 500")
+	require.Contains(t, serviceErr.Message, "snapshot-request")
+	require.Contains(t, serviceErr.Suggestion, "agent logs")
+	require.Contains(t, serviceErr.Suggestion, "hosting library")
+}
+
+func TestAgentDeploymentErrorWithVersion(t *testing.T) {
+	t.Parallel()
+	const projectID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/rg-test/" +
+		"providers/Microsoft.CognitiveServices/accounts/test-account/projects/test-project"
+	for _, test := range []struct {
+		name      string
+		projectID string
+		err       error
+	}{
+		{
+			name: "first deployment capture failure", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "SnapshotCreationError", Message: "hook failed"},
+			}, "test.example.com"),
+		},
+		{
+			name: "redeployment polling failure", projectID: projectID,
+			err: agentDeploymentTimeoutError(
+				&agent_api.AgentVersionObject{Name: "old-agent", Version: "1", Status: "creating"},
+				"test.example.com", errors.New("temporary poll failure"),
+			),
+		},
+		{
+			name: "project identity unavailable",
+			err:  agentDeploymentTimeoutError(nil, "test.example.com", nil),
+		},
+		{
+			name: "image failure remediation", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "ImageError", Message: "image failed"},
+			}, "test.example.com"),
+		},
+		{
+			name: "code failure remediation", projectID: projectID,
+			err: agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{Code: "CodeError", Message: "build failed"},
+			}, "test.example.com"),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := agentDeploymentErrorWithVersion(test.err, test.projectID, "attempted-agent", "7")
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.Contains(t, serviceErr.Suggestion, `agent "attempted-agent" version "7"`)
+			require.NotContains(t, serviceErr.Suggestion, "azd ai agent show")
+			require.NotContains(t, serviceErr.Suggestion, "old-agent")
+			if serviceErr.ErrorCode == "create_agent.timeout" {
+				require.Contains(t, serviceErr.Message, `agent "attempted-agent" version "7"`)
+				require.NotContains(t, serviceErr.Message, "old-agent")
+			}
+			if test.projectID != "" {
+				require.Contains(t, serviceErr.Suggestion, "/build/agents/attempted-agent/build?version=7")
+			}
+			if test.name == "first deployment capture failure" {
+				require.Contains(t, serviceErr.Suggestion, "snapshot hook diagnostics")
+			} else if test.name == "redeployment polling failure" {
+				require.Contains(t, serviceErr.Message, "outcome is unknown")
+				require.Contains(t, serviceErr.Message, "temporary poll failure")
+			} else if test.name == "image failure remediation" || test.name == "code failure remediation" {
+				require.Contains(t, serviceErr.Suggestion, "azd ai agent monitor --type system --follow")
+			}
+		})
+	}
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		err := fmt.Errorf("deployment cancelled: %w", cause)
+		wrapped := agentDeploymentErrorWithVersion(err, projectID, "attempted-agent", "7")
+		require.ErrorIs(t, wrapped, cause)
+		require.ErrorContains(t, wrapped, `agent "attempted-agent" version "7"`)
+		require.ErrorContains(t, wrapped, "/build/agents/attempted-agent/build?version=7")
+	}
+}
+
+func TestAgentDeploymentTimeoutError(t *testing.T) {
+	t.Parallel()
+	for _, version := range []*agent_api.AgentVersionObject{nil, {Status: "creating"}} {
+		err := agentDeploymentTimeoutError(version, "test.example.com", nil)
+		serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+		require.True(t, ok)
+		require.Equal(t, "create_agent.timeout", serviceErr.ErrorCode)
+		require.Contains(t, serviceErr.Message, "outcome is unknown")
+		require.Contains(t, serviceErr.Message, "may still be running")
+		require.Contains(t, serviceErr.Message, "does not mean the deployment failed")
+		require.Contains(t, serviceErr.Message, "before deploying again")
+		require.Contains(t, serviceErr.Message, "another deploy creates a new version")
+		require.Contains(t, serviceErr.Suggestion, "Foundry portal")
+		if version != nil {
+			require.Contains(t, serviceErr.Message, version.Status)
+		}
+	}
+}
+
 func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 	t.Parallel()
 
@@ -1297,9 +1536,26 @@ func TestAgentDeploymentFailedErrorUsesFallbackCode(t *testing.T) {
 	require.Equal(t, "create_agent.failed", serviceErr.ErrorCode)
 	require.Equal(
 		t,
-		"run `azd ai agent show` to inspect the latest deployment status",
+		"inspect the attempted agent version in the Foundry portal",
 		serviceErr.Suggestion,
 	)
+}
+
+func TestAgentDeploymentFailedErrorOmitsNonSnapshotTarget(t *testing.T) {
+	t.Parallel()
+	for _, code := range []string{"ImageError", "CodeError", "failed"} {
+		t.Run(code, func(t *testing.T) {
+			err := agentDeploymentFailedError(&agent_api.AgentVersionObject{
+				Error: &agent_api.AgentVersionError{
+					Code: code, Message: "deployment failed", Target: "non-snapshot-target",
+				},
+			}, "test.example.com")
+			serviceErr, ok := errors.AsType[*azdext.ServiceError](err)
+			require.True(t, ok)
+			require.NotContains(t, serviceErr.Message, "non-snapshot-target")
+			require.NotContains(t, serviceErr.Message, "(stage:")
+		})
+	}
 }
 
 func TestClassifyActivityBotErrorUsesMsaAppIDConflictCode(t *testing.T) {

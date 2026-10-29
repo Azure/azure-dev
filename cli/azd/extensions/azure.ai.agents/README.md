@@ -2,7 +2,7 @@
 
 ## Preview feature opt-ins
 
-Four capabilities are off by default. Each one is turned on separately.
+Five capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -18,6 +19,7 @@ export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 ```
 
 In PowerShell, for example:
@@ -1465,6 +1467,52 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
+
+## Memory snapshots
+
+Use an `azure.ai.agents` extension build or release that includes this setting.
+The feature flag is off by default. Enable it explicitly before deploying:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT="true"`.
+Opt in on a hosted agent service in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    enableMemorySnapshot: true
+```
+
+Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
+this boolean setting, including referenced definitions. Omission preserves
+existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
+The feature flag is required only for `true`. Missing or disabled flags reject the
+deployment rather than silently ignoring the setting.
+Unset `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` or set it to `false` to disable the feature.
+
+The subscription and region must be enabled for the preview, and the hosting SDK
+must support snapshot hooks. Python code deployment and invocation were verified
+with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
+Update dependencies and lock files yourself; rebuild container images when applicable.
+azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
+After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
+Snapshot opt-in does not add a separate activation wait budget. On activation
+failure, timeout, or cancellation, use the attempted-version link in the error;
+the environment may still refer to the previous successful deployment. Stopping
+the client wait does not cancel provisioning in Azure, and an activation timeout
+does not confirm that the version failed. Inspect that version's status before
+deploying again, since another deploy creates a new version.
+
+Snapshots reuse version initialization; they are not conversation or session-state
+backups. Snapshot capture, restore, and persistence guarantees belong to the hosting
+SDK and service.
 
 ## State Stores
 

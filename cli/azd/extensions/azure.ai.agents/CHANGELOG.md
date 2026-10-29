@@ -10,6 +10,7 @@
 - [[#10715]](https://github.com/Azure/azure-dev/pull/10715) Fix prompt-agent deployment and invocation accepting invalid paths or modules in later infrastructure layers after an earlier layer matches.
 - [[#10182]](https://github.com/Azure/azure-dev/pull/10182) Fix `azd ai agent init --help` omitting the `--harness` option.
 - [[#10553]](https://github.com/Azure/azure-dev/pull/10553) Fix hosted-agent activation failure and timeout diagnostics to identify the attempted version and clarify that a timeout does not confirm deployment failure.
+- [[#10675]](https://github.com/Azure/azure-dev/pull/10675) Fix developer RBAC warnings disappearing from final deployment output, including JSON output and deployments that later fail.
 
 ## 1.0.0-beta.22 (2026-10-23)
 

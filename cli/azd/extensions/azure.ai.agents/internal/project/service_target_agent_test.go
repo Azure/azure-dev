@@ -384,14 +384,17 @@ func TestVoiceAgentFromResolvedService_RejectsLivePolicyModerationAcrossSources(
 
 func TestVoiceAgentFromResolvedService_RejectsLivePresenceAndStructuredTypesAcrossSources(t *testing.T) {
 	tests := map[string]map[string]any{
-		"live config empty": {"live_config": map[string]any{}},
-		"tools empty":       {"tools": []any{}},
-		"avatar empty":      {"avatar": map[string]any{}},
-		"greeting empty":    {"greeting": map[string]any{}},
-		"structured entry":  {"structuredInputs": map[string]any{"item": "bad"}},
-		"description type":  {"structuredInputs": map[string]any{"item": map[string]any{"description": 1}}},
-		"schema type":       {"structuredInputs": map[string]any{"item": map[string]any{"schema": []any{}}}},
-		"required type":     {"structuredInputs": map[string]any{"item": map[string]any{"required": "yes"}}},
+		"live config empty":       {"live_config": map[string]any{}},
+		"tools empty":             {"tools": []any{}},
+		"avatar empty":            {"avatar": map[string]any{}},
+		"output modalities empty": {"outputModalities": []any{}},
+		"handoff empty":           {"handoff": map[string]any{}},
+		"include empty":           {"include": []any{}},
+		"greeting empty":          {"greeting": map[string]any{}},
+		"structured entry":        {"structuredInputs": map[string]any{"item": "bad"}},
+		"description type":        {"structuredInputs": map[string]any{"item": map[string]any{"description": 1}}},
+		"schema type":             {"structuredInputs": map[string]any{"item": map[string]any{"schema": []any{}}}},
+		"required type":           {"structuredInputs": map[string]any{"item": map[string]any{"required": "yes"}}},
 	}
 	for name, invalid := range tests {
 		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
@@ -410,6 +413,10 @@ func TestVoiceAgentFromResolvedService_RejectsLivePresenceAndStructuredTypesAcro
 						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
 					if source == "root-ref" {
 						rootValues := maps.Clone(invalid)
+						if value, found := rootValues["outputModalities"]; found {
+							rootValues["output_modalities"] = value
+							delete(rootValues, "outputModalities")
+						}
 						if value, found := rootValues["structuredInputs"]; found {
 							rootValues["structured_inputs"] = value
 							delete(rootValues, "structuredInputs")

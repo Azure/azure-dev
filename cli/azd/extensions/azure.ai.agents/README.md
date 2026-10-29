@@ -84,9 +84,11 @@ Overlay references have the same trust boundary and relative-path behavior as
 existing `$ref` references; only reference files you trust.
 The overlay can only add missing keys; objects recurse, while existing scalar or
 array keys conflict even when values match. New arrays are allowed. Null values
-and the reserved root keys `kind`, `model_type`, `model`, and
-`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
-must use GA wire names. Prompt and hosted agents do not accept this property.
+and the reserved root keys `kind`, `model_type`, `model`,
+`conversation_engine`, and `sub_protocol` (`subProtocol`, case-insensitively)
+are rejected. Protocol selection must use the typed `subProtocol` field. The
+overlay is not OpenAPI-validated and must use GA wire names. Prompt and hosted
+agents do not accept this property.
 
 ## Hosted agent deployment preview
 

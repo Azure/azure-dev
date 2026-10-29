@@ -1,3 +1,14 @@
 bin/
-artifacts/
 registry-artifacts/
+
+# Customer release archives are checked in; other generated output stays ignored.
+!artifacts/
+artifacts/*
+!artifacts/[0-9]*.[0-9]*.[0-9]*/
+artifacts/[0-9]*.[0-9]*.[0-9]*/*
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-windows-amd64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-windows-arm64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-darwin-amd64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-darwin-arm64.zip
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-linux-amd64.tar.gz
+!artifacts/[0-9]*.[0-9]*.[0-9]*/azure-ai-rle-linux-arm64.tar.gz

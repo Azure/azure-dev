@@ -8,19 +8,37 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"azure.ai.projects/internal/exterrors"
 	"azure.ai.projects/internal/onboarding"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 	"github.com/google/uuid"
 )
 
+func requireBYOAKSFeature() error {
+	enabled, err := strconv.ParseBool(os.Getenv(synthesis.BYOAKSEnvVar))
+	if err == nil && enabled {
+		return nil
+	}
+	return exterrors.Compatibility(
+		exterrors.CodeFeatureNotEnabled,
+		fmt.Sprintf("preview feature %q is disabled", synthesis.BYOAKSFeatureID),
+		fmt.Sprintf("enable by setting %s=true in your shell or CI before running azd", synthesis.BYOAKSEnvVar),
+	)
+}
+
 func (p *FoundryProvisioningProvider) prepareBYO(
 	ctx context.Context, source *templateSource, progress grpcbroker.ProgressFunc,
 ) error {
+	if err := requireBYOAKSFeature(); err != nil {
+		return err
+	}
 	includeAcr, ok := byoParameterValue(source, "includeAcr").(bool)
 	if !ok || !includeAcr {
 		return fmt.Errorf("BYO AKS requires includeAcr=true for the native azd-created Container Registry")

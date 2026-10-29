@@ -152,6 +152,22 @@ User-authored on-disk Bicep templates can still declare their own role assignmen
 
 ### Existing AKS hosting
 
+This preview is **off by default**. Enable it in your shell or CI before using BYO AKS:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
+```
+
+In PowerShell:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
+```
+
+The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; missing, empty, false, and invalid values leave it off. `alpha.all`, other preview switches, and service `env:` entries do not enable BYO AKS. Values already injected into the process by the azd host count. No opt-in is required for Foundry projects without `agentHosting`.
+
+The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before AKS validation in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
+
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
 ```yaml

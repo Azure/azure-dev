@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
 	"azureaiagent/internal/synthesis"
@@ -2238,6 +2239,7 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 }
 
 func TestEjectInfra_BYOAKS(t *testing.T) {
+	t.Setenv(featureflags.BYOAKS.EnvVar, "true")
 	const config = `name: byo-aks
 infra:
   provider: microsoft.foundry
@@ -2250,6 +2252,38 @@ services:
       agentSubnet: {vnet: "${VNET_ID}", name: agents}
       peSubnet: {vnet: "${VNET_ID}", name: endpoints}
 `
+	for _, provider := range []string{"bicep", "terraform"} {
+		t.Run(provider+" refuses without opt-in before changing files", func(t *testing.T) {
+			for _, value := range []string{"", "false", "invalid"} {
+				t.Run(value, func(t *testing.T) {
+					t.Setenv(featureflags.BYOAKS.EnvVar, value)
+					dir := t.TempDir()
+					path := filepath.Join(dir, "azure.yaml")
+					mustWriteFile(t, path, config)
+					err := ejectInfra(dir, provider)
+					local, ok := errors.AsType[*azdext.LocalError](err)
+					require.True(t, ok, "%v", err)
+					assert.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
+					assert.Contains(t, local.Suggestion, featureflags.BYOAKS.EnvVar+"=true")
+					raw, err := os.ReadFile(path)
+					require.NoError(t, err)
+					assert.Equal(t, config, string(raw))
+					entries, err := os.ReadDir(dir)
+					require.NoError(t, err)
+					require.Len(t, entries, 1)
+				})
+			}
+		})
+	}
+	t.Run("native Foundry requires no opt-in", func(t *testing.T) {
+		t.Setenv(featureflags.BYOAKS.EnvVar, "")
+		dir := t.TempDir()
+		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
+		withCapturedStdout(t, func() {
+			require.NoError(t, ejectInfra(dir, "bicep"))
+		})
+		require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	})
 	t.Run("Bicep preserves the provider and unresolved inputs", func(t *testing.T) {
 		dir := t.TempDir()
 		mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)

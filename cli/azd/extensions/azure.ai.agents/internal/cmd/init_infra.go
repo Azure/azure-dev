@@ -18,6 +18,7 @@ import (
 	"text/template"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/inittelemetry"
 	projectPaths "azureaiagent/internal/pkg/paths"
 	"azureaiagent/internal/project"
@@ -573,6 +574,11 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 			fmt.Sprintf("synthesize foundry project service %q: %s", svcName, err),
 			"check the endpoint, deployments, and network fields under your azure.ai.project service",
 		)
+	}
+	if res.Hosting != nil {
+		if err := featureflags.Require(featureflags.BYOAKS); err != nil {
+			return err
+		}
 	}
 	deployments, present, err := project.DecodeProjectDeploymentsEnv(environment[projectDeploymentsEnvKey])
 	if err != nil {

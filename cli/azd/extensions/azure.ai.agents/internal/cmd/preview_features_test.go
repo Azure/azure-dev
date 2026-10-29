@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 	"azureaiagent/internal/project"
@@ -525,6 +526,84 @@ func TestPreviewStagedManifestUsesProcessSwitch(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 	require.NoError(t, err)
 	require.Equal(t, content, got)
+}
+
+func TestBYOAKSManifestFeatureGate(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		hosting    bool
+	}{
+		{"native", "    deployments: []\n", false},
+		{"null hosting", "    agentHosting: null\n", false},
+		{"native reference", "    $ref: native.yaml\n", false},
+		{"inline", "    agentHosting: {clusterResourceId: aks}\n", true},
+		{"root reference", "    $ref: project.yaml\n", true},
+		{"field reference", "    agentHosting: {$ref: hosting.yaml}\n", true},
+		{"service env cannot opt in", "    agentHosting: {clusterResourceId: aks}\n" +
+			"    env: {AZD_ALPHA_ENABLE_AGENTS_BYO_AKS: 'true'}\n", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			setPreviewProcess(t, "true")
+			root := t.TempDir()
+			for name, body := range map[string]string{
+				"native.yaml":  "deployments: []\n",
+				"project.yaml": "agentHosting: {clusterResourceId: aks}\n",
+				"hosting.yaml": "clusterResourceId: aks\n",
+			} {
+				require.NoError(t, os.WriteFile(filepath.Join(root, name), []byte(body), 0o600))
+			}
+			content := []byte("name: byo-test\nservices:\n  project:\n    host: azure.ai.project\n" + test.body)
+			path := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(path, content, 0o600))
+			for _, value := range []string{"", "false", "invalid", "true"} {
+				t.Run(value, func(t *testing.T) {
+					t.Setenv(featureflags.BYOAKS.EnvVar, value)
+					for _, err := range []error{
+						requireManifestPreviewFeatures(content, root),
+						requireStagedPreviewFeatures(root),
+					} {
+						if !test.hosting || value == "true" {
+							require.NoError(t, err)
+						} else {
+							local, ok := errors.AsType[*azdext.LocalError](err)
+							require.True(t, ok, "%v", err)
+							require.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
+							require.Contains(t, local.Message, featureflags.BYOAKS.ID)
+							require.Contains(t, local.Suggestion, featureflags.BYOAKS.EnvVar+"=true")
+						}
+					}
+				})
+			}
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, content, raw)
+		})
+	}
+}
+
+func TestBYOAKSLifecycleRejectsBeforeHostCalls(t *testing.T) {
+	for _, event := range []string{"preprovision", "predeploy"} {
+		t.Run(event, func(t *testing.T) {
+			clearPreviewProcess(t)
+			props, err := structpb.NewStruct(map[string]any{
+				"agentHosting": map[string]any{"clusterResourceId": "aks"},
+			})
+			require.NoError(t, err)
+			config := &azdext.ProjectConfig{Path: t.TempDir(), Services: map[string]*azdext.ServiceConfig{
+				"project": {Name: "project", Host: AiProjectHost, AdditionalProperties: props},
+			}}
+			client, env := startPreviewCommandServer(t, nil, config, nil)
+			if event == "preprovision" {
+				err = preprovisionHandler(t.Context(), client, &azdext.ProjectEventArgs{Project: config})
+			} else {
+				err = predeployHandler(t.Context(), client, &azdext.ServiceEventArgs{Project: config})
+			}
+			local, ok := errors.AsType[*azdext.LocalError](err)
+			require.True(t, ok, "%v", err)
+			require.Equal(t, exterrors.CodeFeatureNotEnabled, local.Code)
+			require.Zero(t, env.reads.Load())
+		})
+	}
 }
 
 func TestPreviewDefinitionGateNeedsNoHost(t *testing.T) {

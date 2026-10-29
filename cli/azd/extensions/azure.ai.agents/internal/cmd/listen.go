@@ -348,6 +348,10 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		return err
 	}
 
+	if err := requireBYOAKSProjectFeature(args.Project); err != nil {
+		return err
+	}
+
 	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
 		return err
 	}

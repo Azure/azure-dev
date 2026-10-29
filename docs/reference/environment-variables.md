@@ -7,6 +7,7 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | Variable | Description |
 |---|---|
 | `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature |
+| `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Independent, default-off BYO AKS extension preview. Set to `true` in the shell or CI; global alpha switches do not enable it. See the [canonical reference](../../cli/azd/docs/environment-variables.md#azureaiagents). |
 
 ## Configuration
 

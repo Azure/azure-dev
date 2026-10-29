@@ -2,7 +2,7 @@
 
 ## Preview feature opt-ins
 
-Four capabilities are off by default. Each one is turned on separately.
+Five capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.byo_aks` | [Existing AKS hosting with default supporting resources](../azure.ai.projects/README.md#existing-aks-hosting) | `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -18,6 +19,7 @@ export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
+export AZD_ALPHA_ENABLE_AGENTS_BYO_AKS=true
 ```
 
 In PowerShell, for example:
@@ -34,7 +36,7 @@ can override the same key from the shell or CI.
 
 User config keys such as `alpha.agents.voice` and `alpha.all`, and the former
 `AZD_FOUNDRY_EXT_ENABLE_*` variables, do not enable these previews. Ordinary
-hosted and plain prompt agents need no opt-in.
+hosted and plain prompt agents without BYO AKS hosting need no opt-in.
 
 Root help always lists the canonical switches and their scopes. While a
 feature is off, its command-specific flags and help sections are hidden.
@@ -60,14 +62,21 @@ capabilities, so templates are checked after staging and before adoption.
 Explicit remote `--template` inputs are staged and checked before Azure
 authentication, including `$ref` definitions. Adoption reuses that directory.
 
+BYO AKS checks cover inline and referenced project configuration during init/adoption,
+preprovision/predeploy, and infrastructure eject. The Projects extension checks
+the same process opt-in before initializing the BYO AKS provider and before
+provision/preview AKS validation. Ordinary Foundry provisioning is unchanged.
+
 ### Enforcement limits
 
 - An explicit HTTP `--agent-endpoint` stays unclassified. The extension does
   not query its remote definition, so the managed harness check does not cover
   that route. The long-running check still applies. Text invoke does not
   accept voice WebSocket endpoints.
-- Read and cleanup commands stay available with features off. This includes
+- Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
+  BYO AKS provider initialization, including infrastructure state queries, requires
+  its opt-in, and `azd down` remains unsupported for BYO AKS infrastructure.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 

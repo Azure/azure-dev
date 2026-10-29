@@ -161,6 +161,8 @@ and the azd extension framework. They are not intended to be configured as gener
 | `AZD_ALPHA_ENABLE_ALL` | Enables all alpha features at once. |
 | `AZD_ALPHA_ENABLE_<name>` | Enables or disables an alpha feature. `<name>` is the upper-cased name of the feature, with dot `.` characters replaced by underscore `_` characters. |
 
+Independent extension previews, including BYO AKS below, are not enabled by `AZD_ALPHA_ENABLE_ALL`.
+
 ## External Authentication
 
 Variables for [External Authentication](./external-authentication.md) integration.
@@ -214,6 +216,7 @@ Metadata requests are unauthenticated when no matching token is set.
 
 | Variable | Description |
 | --- | --- |
+| `AZD_ALPHA_ENABLE_AGENTS_BYO_AKS` | Independent, default-off BYO AKS opt-in used by `azure.ai.projects` provisioning/preview and `azure.ai.agents` init/adoption, preprovision/predeploy, and infrastructure eject. Read directly from the extension process environment, including values already injected by the azd host; not read from service `env:` or azd config. Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it. Missing, empty, false, or invalid values leave it off. Does not gate ordinary Foundry projects without `agentHosting`. See [existing AKS hosting](../extensions/azure.ai.projects/README.md#existing-aks-hosting). |
 | `AZURE_AI_PROJECT_ID` | The Microsoft Foundry project resource ID used by the `azure.ai.agents` extension. |
 | `FOUNDRY_PROJECT_ENDPOINT` | The Microsoft Foundry project endpoint used by the `azure.ai.agents` extension. Read first from the active azd environment and, if not present, from the host shell environment as an endpoint-resolution fallback. |
 | `AZURE_AI_PROJECT_PRINCIPAL_ID` | The principal ID associated with the Microsoft Foundry project identity. |

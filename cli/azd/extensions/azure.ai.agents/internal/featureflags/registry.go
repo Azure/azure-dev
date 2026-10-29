@@ -5,6 +5,8 @@
 
 package featureflags
 
+import "azureaiagent/internal/synthesis"
+
 // Every agents preview feature is declared here and listed by All.
 var (
 	// ManagedHarness controls prompt agents using a Copilot harness.
@@ -31,12 +33,18 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
 		Description: "Long-running Responses invocations",
 	}
+	// BYOAKS controls existing-AKS onboarding and default supporting resources.
+	BYOAKS = Feature{
+		ID:          synthesis.BYOAKSFeatureID,
+		EnvVar:      synthesis.BYOAKSEnvVar,
+		Description: "Existing AKS hosting with default supporting resources",
+	}
 )
 
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, BYOAKS}
 }
 
 // Lookup returns the declared feature with the given ID.

@@ -155,28 +155,35 @@ func currentMSIInstallation() (*msiInstallation, error) {
 	if err != nil {
 		return nil, newUpdateError(CodeNonStandardInstall, err)
 	}
+	var machineDirErr error
 	if machineDir != "" {
-		machineDir, err = filepath.EvalSymlinks(machineDir)
+		resolvedDir, err := filepath.EvalSymlinks(machineDir)
 		if os.IsNotExist(err) {
 			machineDir = ""
 		} else if err != nil {
-			return nil, newUpdateError(CodeNonStandardInstall,
-				fmt.Errorf("resolving machine MSI installation directory: %w", err))
+			// Keep the registered path for scope matching without blocking an unrelated per-user install.
+			machineDirErr = fmt.Errorf("resolving machine MSI installation directory: %w", err)
+			log.Printf("%v", machineDirErr)
+		} else {
+			machineDir = resolvedDir
 		}
 	}
 	userDir := expectedPerUserInstallDir()
 	log.Printf("MSI installation: executable %s, registered machine directory %q, per-user directory %q",
 		exePath, machineDir, userDir)
-	return resolveMSIInstallation(exePath, machineDir, userDir)
+	return resolveMSIInstallation(exePath, machineDir, userDir, machineDirErr)
 }
 
-func resolveMSIInstallation(exePath, machineDir, userDir string) (*msiInstallation, error) {
+func resolveMSIInstallation(exePath, machineDir, userDir string, machineDirErr error) (*msiInstallation, error) {
 	actualDir := filepath.Dir(exePath)
 	if machineDir != "" && strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(machineDir)) {
 		return &msiInstallation{exePath: exePath, perMachine: true}, nil
 	}
 	if userDir != "" && strings.EqualFold(filepath.Clean(actualDir), filepath.Clean(userDir)) {
 		return &msiInstallation{exePath: exePath}, nil
+	}
+	if machineDirErr != nil {
+		return nil, newUpdateError(CodeNonStandardInstall, machineDirErr)
 	}
 
 	return nil, &UpdateError{Code: CodeNonStandardInstall, Err: &internal.ErrorWithSuggestion{

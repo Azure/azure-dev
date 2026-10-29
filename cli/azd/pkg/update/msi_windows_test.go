@@ -295,7 +295,7 @@ func TestResolveMSIInstallation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			install, err := resolveMSIInstallation(tt.exePath, tt.machineDir, tt.userDir)
+			install, err := resolveMSIInstallation(tt.exePath, tt.machineDir, tt.userDir, nil)
 			if tt.wantErr {
 				require.Error(t, err)
 				var updateErr *UpdateError
@@ -306,6 +306,40 @@ func TestResolveMSIInstallation(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.exePath, install.exePath)
+			require.Equal(t, tt.perMachine, install.perMachine)
+		})
+	}
+}
+
+func TestResolveMSIInstallationMachinePathError(t *testing.T) {
+	userDir := `C:\Users\test\AppData\Local\Programs\Azure Dev CLI`
+	machineDir := `D:\Restricted\Azure Dev CLI`
+	tests := []struct {
+		name       string
+		exeDir     string
+		machineDir string
+		perMachine bool
+		wantErr    bool
+	}{
+		{"unrelated machine path", userDir, machineDir, false, false},
+		{"machine takes precedence over user path", userDir, userDir, true, false},
+		{"matching machine path", machineDir, machineDir, true, false},
+		{"unknown custom path", `D:\Other`, machineDir, false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pathErr := &os.PathError{Op: "readlink", Path: tt.machineDir, Err: os.ErrPermission}
+			install, err := resolveMSIInstallation(
+				filepath.Join(tt.exeDir, "azd.exe"), tt.machineDir, userDir, pathErr)
+			if tt.wantErr {
+				require.ErrorIs(t, err, os.ErrPermission)
+				var updateErr *UpdateError
+				require.ErrorAs(t, err, &updateErr)
+				require.Equal(t, CodeNonStandardInstall, updateErr.Code)
+				require.Nil(t, install)
+				return
+			}
+			require.NoError(t, err)
 			require.Equal(t, tt.perMachine, install.perMachine)
 		})
 	}

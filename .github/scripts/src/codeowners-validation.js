@@ -43,7 +43,8 @@ async function run({ github, context, core }) {
   }
   for (const error of data.errors) {
     const message = error.kind === 'Unknown owner'
-      ? `${error.message}\n\nOwners who need write access should request membership in @Azure/azure-dev-write.`
+      ? `${error.message}\n\nOwners who need write access should request membership in @Azure/azure-dev-write:\n` +
+        'https://repos.opensource.microsoft.com/orgs/Azure/teams/azure-dev-write'
       : error.message;
     core.error(message, {
       file: error.path,

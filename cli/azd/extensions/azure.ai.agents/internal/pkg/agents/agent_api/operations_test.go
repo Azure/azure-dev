@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"mime"
@@ -781,13 +782,15 @@ func TestPatchAgent_OmitsNilFields(t *testing.T) {
 
 // capturingTransport captures the last HTTP request and returns a canned JSON response.
 type capturingTransport struct {
-	lastReq    *http.Request
-	lastBody   []byte
-	statusCode int
-	respBody   string
+	lastReq      *http.Request
+	lastBody     []byte
+	statusCode   int
+	respBody     string
+	requestCount int
 }
 
 func (c *capturingTransport) Do(req *http.Request) (*http.Response, error) {
+	c.requestCount++
 	c.lastReq = req
 	if req.Body != nil {
 		body, _ := io.ReadAll(req.Body)
@@ -858,6 +861,78 @@ func TestZipDeployRequest_MultipartFormat(t *testing.T) {
 	require.Equal(t, "agent.zip", part2.FileName())
 	part2Data, _ := io.ReadAll(part2)
 	require.Equal(t, zipData, part2Data)
+}
+
+func TestDeployMemorySnapshotRequests(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"container", "code create", "code update"} {
+		for _, setting := range []struct {
+			name  string
+			value *bool
+		}{
+			{name: "absent"},
+			{name: "disabled", value: new(false)},
+			{name: "enabled", value: new(true)},
+		} {
+			for _, rejected := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/rejected=%v", mode, setting.name, rejected), func(t *testing.T) {
+					t.Parallel()
+					transport := &capturingTransport{
+						statusCode: http.StatusCreated,
+						respBody:   `{"name":"snapshot-agent","version":"1","versions":{"latest":{"version":"1"}}}`,
+					}
+					if rejected {
+						transport.statusCode = http.StatusBadRequest
+						transport.respBody = `{"error":{"code":"invalid_request_error","message":"definition.enable_memory_snapshot is not available for this subscription or region."}}`
+					}
+					client := newTestClient("https://test.example.com/api/projects/proj", transport)
+					request := &CreateAgentVersionRequest{Definition: HostedAgentDefinition{
+						AgentDefinition:      AgentDefinition{Kind: AgentKindHosted},
+						EnableMemorySnapshot: setting.value,
+					}}
+					var err error
+					switch mode {
+					case "container":
+						_, err = client.CreateAgentVersion(t.Context(), "snapshot-agent", request, "v1")
+					case "code create":
+						_, err = client.CreateAgentFromZip(t.Context(), "snapshot-agent", request, []byte("zip"), "hash", "v1")
+					case "code update":
+						_, err = client.UpdateAgentFromZip(t.Context(), "snapshot-agent", request, []byte("zip"), "hash", "v1")
+					}
+					if rejected {
+						responseErr, ok := errors.AsType[*azcore.ResponseError](err)
+						require.True(t, ok)
+						require.Equal(t, http.StatusBadRequest, responseErr.StatusCode)
+						require.Contains(t, responseErr.Error(), "enable_memory_snapshot is not available")
+					} else {
+						require.NoError(t, err)
+					}
+					require.Equal(t, 1, transport.requestCount)
+					body := transport.lastBody
+					if mode != "container" {
+						_, params, err := mime.ParseMediaType(transport.lastReq.Header.Get("Content-Type"))
+						require.NoError(t, err)
+						part, err := multipart.NewReader(bytes.NewReader(body), params["boundary"]).NextPart()
+						require.NoError(t, err)
+						require.Equal(t, "metadata", part.FormName())
+						body, err = io.ReadAll(part)
+						require.NoError(t, err)
+					}
+					var payload struct {
+						Definition map[string]json.RawMessage `json:"definition"`
+					}
+					require.NoError(t, json.Unmarshal(body, &payload))
+					encoded, present := payload.Definition["enable_memory_snapshot"]
+					require.Equal(t, setting.value != nil, present)
+					if present {
+						var actual bool
+						require.NoError(t, json.Unmarshal(encoded, &actual))
+						require.Equal(t, *setting.value, actual)
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestCreateAgentVersion_DigitalWorkerContract(t *testing.T) {
@@ -1235,6 +1310,76 @@ func TestUpdateVoiceAgent_PostsToNamedAgentWithPreviewHeader(t *testing.T) {
 	require.Equal(t, AgentEndpointAPIVersion, req.URL.Query().Get("api-version"))
 	require.Equal(t, voiceAgentsPreviewFeature, req.Header.Get("Foundry-Features"))
 	require.Equal(t, "regional.hyena.example.com", req.Header.Get("x-ms-overridden-host"))
+}
+
+func TestVoiceAgentCreateUpdateBodiesHaveDefinitionParity(t *testing.T) {
+	t.Parallel()
+	definition := VoiceAgentDefinition{
+		AgentDefinition: AgentDefinition{Kind: AgentKindVoice},
+		ModelType:       VoiceModelTypeManaged,
+		Model:           "gpt-realtime",
+		Audio: &VoiceAudioConfig{
+			Input: &VoiceInputConfig{Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}},
+			Output: &VoiceOutputConfig{
+				Format: &VoiceAudioFormat{Type: "audio/pcm", Rate: new(24000)}, Speed: new(1.1),
+			},
+		},
+	}
+	client, transport := newCaptureClient(http.StatusOK,
+		`{"object":"agent","id":"va-1","name":"voice","versions":{"latest":{}}}`)
+	_, err := client.CreateVoiceAgent(t.Context(), &CreateAgentRequest{
+		Name: "voice", CreateAgentVersionRequest: CreateAgentVersionRequest{Definition: definition},
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	_, err = client.UpdateVoiceAgent(t.Context(), "voice", &UpdateAgentRequest{
+		Definition: definition,
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 2)
+
+	definitions := make([]any, 2)
+	for i, request := range transport.requests {
+		body, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		var wire map[string]any
+		require.NoError(t, json.Unmarshal(body, &wire))
+		definitions[i] = wire["definition"]
+	}
+	require.Equal(t, definitions[0], definitions[1])
+	definitionWire := definitions[0].(map[string]any)
+	require.NotContains(t, definitionWire, "target_agent")
+	require.NotContains(t, definitionWire, "handoff")
+	output := definitionWire["audio"].(map[string]any)["output"].(map[string]any)
+	require.Equal(t, 1.1, output["speed"])
+	require.NotContains(t, output, "rate")
+}
+
+func TestVoiceAgentCreateUpdateBodiesPreserveOverlayDefinitionParity(t *testing.T) {
+	t.Parallel()
+	definition := map[string]any{
+		"kind": "voice", "model_type": "managed", "model": "gpt-realtime",
+		"future_config": map[string]any{"enabled": true, "modes": []any{"one", "two"}},
+	}
+	client, transport := newCaptureClient(http.StatusOK,
+		`{"object":"agent","id":"va-1","name":"voice","versions":{"latest":{}}}`)
+	_, err := client.CreateVoiceAgent(t.Context(), &CreateAgentRequest{
+		Name: "voice", CreateAgentVersionRequest: CreateAgentVersionRequest{Definition: definition},
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	_, err = client.UpdateVoiceAgent(t.Context(), "voice", &UpdateAgentRequest{
+		Definition: definition,
+	}, AgentEndpointAPIVersion, "")
+	require.NoError(t, err)
+	require.Len(t, transport.requests, 2)
+
+	var bodies [2]map[string]any
+	for i, request := range transport.requests {
+		payload, readErr := io.ReadAll(request.Body)
+		require.NoError(t, readErr)
+		require.NoError(t, json.Unmarshal(payload, &bodies[i]))
+	}
+	require.Equal(t, bodies[0]["definition"], bodies[1]["definition"])
+	require.Equal(t, definition["future_config"], bodies[0]["definition"].(map[string]any)["future_config"])
 }
 
 func TestGetTelephonyBinding_GetsAgentScopedBinding(t *testing.T) {

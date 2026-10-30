@@ -3,16 +3,17 @@
 
 //go:build linux
 
-package exec
+package process
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
 )
 
-func processIDsWithEnvironment(marker string) []int {
-	if marker == "" {
+func processIDsWithTreeID(ctx context.Context, processTreeID string) []int {
+	if processTreeID == "" || ctx.Err() != nil {
 		return nil
 	}
 
@@ -23,6 +24,10 @@ func processIDsWithEnvironment(marker string) []int {
 
 	processIDs := []int{}
 	for _, entry := range entries {
+		if ctx.Err() != nil {
+			break
+		}
+
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil || pid <= 0 {
 			continue
@@ -30,7 +35,7 @@ func processIDsWithEnvironment(marker string) []int {
 
 		path := filepath.Join("/proc", entry.Name(), "environ")
 		environ, err := os.ReadFile(path) //nolint:gosec // entry is a numeric process ID from /proc
-		if err == nil && containsEnvironmentEntry(environ, marker) {
+		if err == nil && containsProcessTreeID(environ, processTreeID) {
 			processIDs = append(processIDs, pid)
 		}
 	}

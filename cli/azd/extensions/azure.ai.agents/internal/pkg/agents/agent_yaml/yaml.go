@@ -145,10 +145,11 @@ type Workflow struct {
 //
 // Simple authoring can rely on defaults for omitted audio/runtime settings.
 // Advanced projects can override the audio pipeline, structured inputs, tools,
-// greeting, avatar, handoff, and response options supported by the service.
+// greeting, avatar, and response options supported by the service.
 // ModelType defaults to "managed" when omitted; BYOM uses "self_deployed".
 type VoiceAgent struct {
-	AgentDefinition `json:",inline" yaml:",inline"`
+	AgentDefinition   `json:",inline" yaml:",inline"`
+	DefinitionOverlay map[string]any `json:"definitionOverlay,omitempty" yaml:"definition_overlay,omitempty"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
@@ -179,7 +180,8 @@ type VoiceAgent struct {
 	Avatar map[string]any `json:"avatar,omitempty" yaml:"avatar,omitempty"`
 	// Greeting configures initial greeting behavior for services that support it.
 	Greeting map[string]any `json:"greeting,omitempty" yaml:"greeting,omitempty"`
-	// Handoff configures voice handoff behavior for services that support it.
+	// Handoff is a legacy field retained for parsing. Non-empty values are not
+	// supported by the GA API; use telephony transfer targets where applicable.
 	Handoff map[string]any `json:"handoff,omitempty" yaml:"handoff,omitempty"`
 	// ToolChoice configures service tool choice behavior, such as auto/none/required.
 	ToolChoice any `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
@@ -311,10 +313,12 @@ type VoiceTranscription struct {
 
 // VoiceConfig selects the output voice.
 type VoiceConfig struct {
-	Type   string  `json:"type" yaml:"type"`
-	Name   string  `json:"name" yaml:"name"`
-	Style  *string `json:"style,omitempty" yaml:"style,omitempty"`
-	Pitch  *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	Type  string  `json:"type" yaml:"type"`
+	Name  string  `json:"name" yaml:"name"`
+	Style *string `json:"style,omitempty" yaml:"style,omitempty"`
+	Pitch *string `json:"pitch,omitempty" yaml:"pitch,omitempty"`
+	// Rate is a legacy field retained for parsing. Non-blank values are not
+	// supported by the GA API; use audio.output.speed instead.
 	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
@@ -463,6 +467,7 @@ type ContainerAgent struct {
 	CodeConfiguration    *CodeConfiguration      `json:"codeConfiguration,omitempty" yaml:"code_configuration,omitempty"`
 	Policies             []Policy                `json:"policies,omitempty" yaml:"policies,omitempty"`
 	SessionConfiguration *SessionConfiguration   `json:"sessionConfiguration,omitempty" yaml:"session_configuration,omitempty"`
+	EnableMemorySnapshot *bool                   `json:"enableMemorySnapshot,omitempty" yaml:"enableMemorySnapshot,omitempty"`
 }
 
 // HarnessSkillRef references a prompt agent's skill by name and optional version.

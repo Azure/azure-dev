@@ -11,8 +11,8 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// monitoringSettings is the parsed, unvalidated monitoring block of an
-// azure.ai.project service.
+// monitoringSettings is the parsed monitoring block of an azure.ai.project
+// service, before validation.
 type monitoringSettings struct {
 	declared bool
 	enabled  bool

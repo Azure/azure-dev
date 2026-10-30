@@ -22,7 +22,7 @@
     },
     "monitoring": {
       "type": "object",
-      "description": "Application Insights tracing. Enabled automatically for newly created projects; existing projects require explicit configuration. Referenced components and existing compatible connections are preserved.",
+      "description": "Application Insights tracing. Enabled automatically for newly created projects; existing projects require applicationInsightsResourceId, and creating a component for an existing project is not supported. Referenced components and existing compatible connections are preserved.",
       "additionalProperties": false,
       "properties": {
         "enabled": {

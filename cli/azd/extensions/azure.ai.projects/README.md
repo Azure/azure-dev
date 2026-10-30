@@ -162,7 +162,9 @@ stored in generated parameter files or azd environment outputs. A compatible
 existing project or shared account connection is preserved, including
 Managed Identity or Microsoft Entra authentication.
 
-Set `monitoring: { enabled: true }` to opt an existing project into creation.
+Creating a new Application Insights component for an existing project is not
+supported; an existing project must set `applicationInsightsResourceId` to
+enable monitoring.
 To skip new monitoring setup, use:
 
 ```yaml

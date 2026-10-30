@@ -121,12 +121,14 @@ func ValidateACRBinding(binding *ACRBinding, mode, registryID string) error {
 	if binding == nil {
 		return nil
 	}
+	if _, err := ParseACRBinding(binding); err != nil {
+		return err
+	}
 	if mode == "" {
 		mode = binding.Mode
 	}
 	if mode != binding.Mode ||
-		(mode == "reuse-connect" && !strings.EqualFold(binding.RegistryResourceID, registryID)) ||
-		(mode == "create" && registryID != "" && !strings.EqualFold(binding.RegistryResourceID, registryID)) {
+		(registryID != "" && !strings.EqualFold(binding.RegistryResourceID, registryID)) {
 		return fmt.Errorf("registry migration is not supported for an already provisioned Foundry project; "+
 			"retain the deployed %s registry %q or use a new azd environment", binding.Mode, binding.RegistryResourceID)
 	}

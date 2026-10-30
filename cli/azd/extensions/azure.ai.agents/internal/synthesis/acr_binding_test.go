@@ -4,6 +4,7 @@
 package synthesis
 
 import (
+	"encoding/json"
 	"maps"
 	"os"
 	"path/filepath"
@@ -26,6 +27,8 @@ func TestACRBindingSelection(t *testing.T) {
 		parsed, err := ParseACRBinding(binding)
 		require.NoError(t, err)
 		assert.Equal(t, binding, parsed)
+		require.NoError(t, ValidateACRBinding(parsed, "", ""))
+		require.NoError(t, ValidateACRBinding(parsed, mode, ""))
 		require.NoError(t, ValidateACRBinding(parsed, mode, strings.ToUpper(id)))
 		require.ErrorContains(t, ValidateACRBinding(parsed, mode, id+"other"), "migration is not supported")
 		opposite := "create"
@@ -38,6 +41,109 @@ func TestACRBindingSelection(t *testing.T) {
 	for _, raw := range []string{"null", "{}", `{"version":2}`, `{"extra":true}`, "{} {}"} {
 		_, err := ParseACRBinding(raw)
 		require.Error(t, err, raw)
+	}
+}
+
+func TestResolveGreenfieldACRSelectionUsesBinding(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, mode := range []string{"create", "reuse-connect"} {
+		binding := &ACRBinding{
+			Version: 1, Mode: mode, RegistryResourceID: id,
+			ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+				"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+			PrincipalID: "principal",
+		}
+		raw, err := json.Marshal(binding)
+		require.NoError(t, err)
+		for _, source := range []string{"input", "environment"} {
+			for _, alias := range []struct {
+				name, mode, id string
+			}{
+				{name: "absent"},
+				{name: "mode only", mode: mode},
+				{name: "id only", id: id},
+				{name: "matching", mode: mode, id: strings.ToUpper(id)},
+			} {
+				t.Run(mode+"/"+source+"/"+alias.name, func(t *testing.T) {
+					in := Input{
+						ResourceGroupName: "foundry",
+						Env: map[string]string{
+							"AZURE_SUBSCRIPTION_ID":                "sub",
+							"AZD_FOUNDRY_ACR_MODE":                 alias.mode,
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": alias.id,
+						},
+					}
+					if source == "input" {
+						in.ACRBinding = binding
+					} else {
+						in.Env[ACRBindingEnvKey] = string(raw)
+					}
+					before := maps.Clone(in.Env)
+					selectedMode, selectedID, err := ResolveGreenfieldACRSelection(in)
+					require.NoError(t, err)
+					assert.Equal(t, mode, selectedMode)
+					assert.Equal(t, id, selectedID)
+					require.NoError(t, ValidateACRSelector(selectedID, "sub", "foundry"))
+					err = ValidateGreenfieldACRSelectionForInput(in, selectedID)
+					if mode == "reuse-connect" {
+						require.NoError(t, err)
+					} else {
+						require.ErrorContains(t, err, "migration is not supported")
+					}
+					require.ErrorContains(t, ValidateGreenfieldACRSelectionForInput(in, ""), "full ARM ID")
+					require.ErrorContains(t, ValidateGreenfieldACRSelection(in.Env, ""), "full ARM ID")
+					assert.Equal(t, before, in.Env)
+					after, err := json.Marshal(binding)
+					require.NoError(t, err)
+					assert.Equal(t, raw, after)
+				})
+			}
+		}
+	}
+}
+
+func TestResolveGreenfieldACRSelectionRejectsConflictsAndInvalidBindings(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	binding := &ACRBinding{
+		Version: 1, Mode: "reuse-connect", RegistryResourceID: id,
+		ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+			"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+		PrincipalID: "principal",
+	}
+	for _, tt := range []struct {
+		name, mode, id string
+	}{
+		{name: "create mode", mode: "create"},
+		{name: "none mode", mode: "none"},
+		{name: "unknown mode", mode: "unknown"},
+		{name: "different registry", id: id + "other"},
+		{name: "malformed registry", id: "invalid"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, selectedID, err := ResolveGreenfieldACRSelection(Input{
+				ACRBinding: binding,
+				Env: map[string]string{
+					"AZD_FOUNDRY_ACR_MODE":                 tt.mode,
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": tt.id,
+				},
+			})
+			require.ErrorContains(t, err, "migration is not supported")
+			assert.Empty(t, mode)
+			assert.Empty(t, selectedID)
+		})
+	}
+	t.Run("invalid input binding", func(t *testing.T) {
+		invalid := *binding
+		invalid.Version = 2
+		_, _, err := ResolveGreenfieldACRSelection(Input{ACRBinding: &invalid})
+		require.ErrorContains(t, err, "invalid deployed ACR binding")
+		require.ErrorContains(t, ValidateACRBinding(&invalid, "", ""), "invalid deployed ACR binding")
+	})
+	for _, raw := range []string{"null", "{}", `{"version":2}`, `{"extra":true}`, "{} {}"} {
+		t.Run("invalid environment binding/"+raw, func(t *testing.T) {
+			_, _, err := ResolveGreenfieldACRSelection(Input{Env: map[string]string{ACRBindingEnvKey: raw}})
+			require.ErrorContains(t, err, "invalid deployed ACR binding")
+		})
 	}
 }
 

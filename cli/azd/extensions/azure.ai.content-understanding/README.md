@@ -2,7 +2,7 @@
 
 This preview extension adds Azure Content Understanding commands under
 `azd ai cu`. Analyze documents and media, manage analyzers, and configure model
-defaults using Azure Developer CLI authentication and environments.
+defaults for Microsoft Foundry resources.
 
 ## Content Understanding concepts
 

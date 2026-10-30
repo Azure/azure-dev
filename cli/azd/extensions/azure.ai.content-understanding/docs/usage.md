@@ -121,8 +121,7 @@ A readiness warning (`ready: false` in JSON) with missing model requirements can
 successfully: non-generative analyzers may remain usable. Authentication,
 configuration, and service failures return nonzero. Inspect the report rather
 than using the exit code alone as a generative-readiness gate.
-Scripts that previously parsed default `doctor` output should explicitly pass
-`--output json`.
+For scripts that parse `doctor` output, pass `--output json`.
 
 ## Analyze content
 
@@ -582,7 +581,7 @@ The extension uses a [Content Understanding client](https://github.com/Azure/azu
 maintained for this extension. It is an extension-internal dependency, not a
 separately published package.
 CI tests and lints both modules. Ordinary tests use fakes, local
-servers, and strict recordings; they do not call Azure or require Python.
+servers, and strict recordings; they do not call Azure.
 Reused assets retain their [fixture provenance](../testdata/parity/fixtures.yaml).
 Extension-local LF rules keep byte-level fixture and embedded-asset hashes stable
 across platforms.

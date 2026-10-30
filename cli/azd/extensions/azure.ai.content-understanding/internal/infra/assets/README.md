@@ -8,7 +8,7 @@ deployments enable prebuilt analyzers such as `prebuilt-invoice` and custom
 analyzers. The template also configures Content Understanding defaults that map
 model names to deployment names. It is purpose-built as a launchpad for
 **Azure Content Understanding in Foundry Tools** workflows and the
-native Go `azd ai cu` extension.
+`azd ai cu` extension.
 
 ```sh
 azd auth login
@@ -35,9 +35,10 @@ also assign the generated data-plane role, the identity additionally needs
 **Owner** on the subscription. If you have Contributor only, set
 `AZD_ASSIGN_ROLES` to `false`; the post-provision hook then requires an existing
 data-plane role assignment. It never retrieves or persists a resource key.
-The native extension is Entra-only, including projectless commands. Role assignment defaults to
-`false`; pass `--assign-roles`
-when generating the project.
+Provisioning and postprovision setup use azd / Entra ID authentication.
+`CU_API_KEY` applies only to separate CU data-plane commands, not to `azd up`.
+Role assignment defaults to `false`; pass `--assign-roles` when generating the
+project.
 
 With Entra authentication, `azd ai cu` also requires **Cognitive Services User** on
 the Microsoft Foundry resource to configure defaults and create, manage, and run
@@ -94,17 +95,17 @@ with an empty `infra/models.json`. The post-provision hook then:
 5. Deploys the selection and writes it to `infra/models.json`, making subsequent
    Bicep runs repeatable.
 
-Decline every model confirmation to deploy no models. In that mode, `prebuilt-digitalParse`,
+For setup without model deployments, generate the project with `--models none`.
+In that mode, `prebuilt-digitalParse`,
 `prebuilt-read`, and `prebuilt-layout` are available without language or
 embeddings model deployments.
-Set `CU_MODEL_SELECTION=recommended` for noninteractive selection or
-`CU_MODEL_SELECTION=none` for deterministic setup without model deployments.
 
 The generated hook runs a versioned internal postprovision contract through
 `azd ai cu`, so keep azd and the Azure Content Understanding extension installed
-when running `azd up`. A saved `prompt` selection
-requires an interactive terminal; set `CU_MODEL_SELECTION=recommended`, `none`,
-or explicit `model@version` selectors for unattended runs. Model setup failures
+when running `azd up`. The default `prompt` selection requires an interactive
+terminal. For unattended runs, save `recommended`, `none`, or comma-separated
+`model@version` selectors with `azd env set CU_MODEL_SELECTION <selection>`.
+Model setup failures
 are reported without blocking azd environment configuration. Resolve the model
 deployment issue and rerun `azd up`; `prebuilt-digitalParse`, `prebuilt-read`,
 and `prebuilt-layout` remain available without language or embeddings models.
@@ -116,7 +117,7 @@ by this extension.
 
 Generated projects use the `_postprovision-v1` contract. Check extension release
 notes before upgrading and regenerate the project if a later release does not
-retain that contract. The hook does not require Python or the standalone `cu` CLI.
+retain that contract.
 
 ## Auto-configuring the azd environment
 

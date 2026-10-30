@@ -49,7 +49,12 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 	}
 	body, err := os.ReadFile(filepath.Join(directory, "README.md")) // #nosec G304 -- Private test project.
 	require.NoError(t, err)
-	assert.Contains(t, string(body), "native Go")
+	assert.Contains(t, string(body), "`azd ai cu` extension")
+	assert.Contains(t, string(body), "Provisioning and postprovision setup use azd / Entra ID authentication.")
+	assert.Contains(t, string(body), "`CU_API_KEY` applies only to separate CU data-plane commands")
+	assert.Contains(t, string(body), "azd env set CU_MODEL_SELECTION <selection>")
+	assert.NotContains(t, string(body), "The native extension is Entra-only")
+	assert.NotContains(t, string(body), "Decline every model confirmation")
 	assert.NotContains(t, string(body), "Runtime key injection")
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(directory, "hooks", "postprovision.sh"))

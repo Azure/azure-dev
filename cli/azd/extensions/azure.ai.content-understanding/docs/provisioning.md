@@ -37,7 +37,6 @@ Infrastructure commands, postprovision setup, and `azd up` use azd / Entra ID
 authentication. They do not use `CU_API_KEY`. Separate CU data-plane commands
 can optionally use a process-only resource key as described in the
 [usage guide](usage.md#connect-to-microsoft-foundry-and-check-setup).
-Python and a CU profile are not required.
 
 ## Azure permissions
 
@@ -64,8 +63,6 @@ identity access through the resource's **Access control (IAM)** page.
 `--assign-roles` is supported only for new resources and cannot be combined with
 `--foundry-endpoint`, including when explicitly set to `--assign-roles=false`.
 Omit that flag when targeting an existing resource.
-Provisioning and postprovision setup have no API-key fallback. Optional
-`CU_API_KEY` authentication applies only to separate CU data-plane commands.
 
 See [Azure built-in privileged roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged)
 and [Cognitive Services User](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-user)
@@ -109,7 +106,6 @@ setup, after the resource exists; generation itself never deploys models.
 The new-resource path creates a resource group, a Microsoft Foundry resource,
 a Foundry project, and selected model deployments. The azd environment identifies
 the deployment stack; its state is stored under `provision/.azure/<environment>/`.
-It is not a CU CLI profile.
 
 For explicit choices with recommended models:
 
@@ -231,8 +227,7 @@ azd ai cu doctor --environment dev
 azd ai cu defaults show --environment dev
 ```
 
-Replace `dev` if you generated a different environment. No separate CU profile
-is created.
+Replace `dev` if you generated a different environment.
 
 ## Configure an existing ready resource
 

@@ -23,6 +23,13 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func stringFromPointer(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 func renderTableOrNoResults(output *azdext.Output, headers []string, rows [][]string, emptyMessage string) {
 	output.Message("")
 	if len(rows) == 0 {

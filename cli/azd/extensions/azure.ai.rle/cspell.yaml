@@ -2,3 +2,62 @@ import: ../../.vscode/cspell.yaml
 words:
   - RLE
   - azdai
+  # Target kinds and the identifiers that name them.
+  - BYOH
+  - byoh
+  - openenv
+  - hostedagent
+  - mycoderle
+  # Training and fine-tuning vocabulary.
+  - finetuning
+  - finetunesapi
+  - GRPO
+  - grpo
+  - optim
+  - hyperparameters
+  - rollouts
+  # Container tooling.
+  - Buildx
+  # Capture Proxy graph field names, carried verbatim from the Execute Rollout response.
+  - logprob
+  - logprobs
+  # Model families referenced by the samples and defaults.
+  - Qwen
+  # Go and Python identifiers appearing in code and payloads.
+  - cctx
+  - cerr
+  - browsable
+  - ftjob
+  - nosniff
+  - kwargs
+  - noninteractive
+  - idxprobe
+overrides:
+  - filename: docs/harbor-artifacts.md
+    words:
+      - myregistry
+      - slurpfile
+      - taskset
+  - filename:
+      - internal/cmd/publish.go
+      - internal/project/rle_config.go
+      - internal/project/task_artifacts.go
+    words:
+      - taskset
+  - filename: internal/cmd/rollout.go
+    words:
+      - errp
+  - filename: internal/cmd/run.go
+    words:
+      - Winsock
+  - filename: internal/project/harbor.go
+    words:
+      - Gname
+  - filename:
+      - internal/project/rle_config.go
+      - README.md
+    words:
+      - targetable
+  - filename: README.md
+    words:
+      - userinfo

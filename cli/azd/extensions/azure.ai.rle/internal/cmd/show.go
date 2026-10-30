@@ -5,7 +5,10 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"strings"
+
+	"azure.ai.rle/internal/project"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/cobra"
@@ -24,8 +27,8 @@ func newShowCommand(outputFormat *string) *cobra.Command {
 		Long: `Show RLE environment details.
 
 The command resolves the environment from the Foundry project and includes its
-full version history. With no environment name, it uses the name saved in
-.azd-rle.json.`,
+full version history. With no environment name, it uses rle.name from the
+current folder's rle.toml.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			environmentName := ""
@@ -70,60 +73,93 @@ func (a *showAction) Run() error {
 	for _, version := range versions {
 		rows = append(rows, []string{
 			version.Version,
-			version.DiskImageConversionStatus,
-			version.Id,
+			firstNonEmpty(version.Harness.Type, "-"),
+			firstNonEmpty(version.Harness.Protocol, "-"),
+			firstNonEmpty(version.DiskImageConversionStatus, "-"),
 			version.UpdatedAt,
 		})
 	}
 	renderTableOrNoResults(output,
-		[]string{"VERSION", "DISK IMAGE", "ENVIRONMENT ID", "UPDATED"},
+		[]string{"VERSION", "TYPE", "PROTOCOL", "DISK IMAGE", "UPDATED"},
 		rows,
 		noEnvironmentVersionsMessage,
 	)
+	for _, version := range versions {
+		if len(version.Tasks) == 0 {
+			continue
+		}
+		taskRows := make([][]string, 0, len(version.Tasks))
+		for _, task := range version.Tasks {
+			taskRows = append(taskRows, []string{
+				task.Name,
+				firstNonEmpty(task.DiskImageConversionStatus, "-"),
+				sanitizeTerminalText(task.DiskImageConversionError),
+			})
+		}
+		fmt.Fprintf(a.cmd.OutOrStdout(), "\nTasks in version %s:\n", version.Version)
+		renderTableOrNoResults(output, []string{"TASK", "DISK IMAGE", "ERROR"}, taskRows, "")
+	}
 	return nil
 }
 
 func (a *showAction) resolveTarget() ([]environmentResource, error) {
 	environmentName := strings.TrimSpace(a.environmentName)
-	projectEndpoint := ""
 	if environmentName == "" {
-		state, err := loadRleState()
+		config, err := project.LoadRleConfig(".")
 		if err != nil {
 			return nil, err
 		}
-		environmentName = strings.TrimSpace(state.EnvironmentName)
-		if environmentName == "" {
-			return nil, &azdext.LocalError{
-				Message:    "The saved RLE environment does not include a name.",
-				Code:       "rle_environment_name_missing",
-				Category:   azdext.LocalErrorCategoryUser,
-				Suggestion: "Provide an environment name: azd ai rle show <environment-name>.",
-			}
-		}
-		projectEndpoint = strings.TrimSpace(state.ProjectEndpoint)
-		if projectEndpoint == "" {
-			return nil, &azdext.LocalError{
-				Message:  "The saved RLE environment does not include a Foundry project endpoint.",
-				Code:     "rle_project_required",
-				Category: azdext.LocalErrorCategoryUser,
-				Suggestion: "Run azd ai rle publish first, or provide an environment name " +
-					"with FOUNDRY_PROJECT_ENDPOINT set.",
-			}
-		}
+		environmentName = config.Rle.Name
 	}
-
-	if projectEndpoint == "" {
-		var err error
-		projectEndpoint, err = resolveEnvironmentListProjectEndpoint()
-		if err != nil {
-			return nil, err
-		}
+	projectEndpoint, err := resolveEnvironmentListProjectEndpoint()
+	if err != nil {
+		return nil, err
 	}
 	client, err := createRleClient(projectEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	return listAllEnvironmentVersions(a.cmd.Context(), client, environmentName)
+	versions, err := listAllEnvironmentVersions(a.cmd.Context(), client, environmentName)
+	if err != nil {
+		return nil, err
+	}
+	for i := range versions {
+		// Task environments have no top-level image or environment-level status; status is per task.
+		if versions[i].DiskImageConversionStatus != "" || versions[i].AcrImagePath != "" {
+			continue
+		}
+		tasks, err := listAllVersionTasks(a.cmd.Context(), client, environmentName, versions[i].Version)
+		if err != nil {
+			return nil, serviceError(err)
+		}
+		versions[i].Tasks = tasks
+	}
+	return versions, nil
+}
+
+func listAllVersionTasks(
+	ctx context.Context,
+	client *rleClient,
+	environmentName string,
+	version string,
+) ([]harborTaskStatus, error) {
+	var tasks []harborTaskStatus
+	token := ""
+	for range environmentListMaxPages {
+		page, err := client.listEnvironmentVersionTasks(ctx, environmentName, version, token, environmentListPageSize)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, page.Data...)
+		if strings.TrimSpace(page.NextContinuationToken) == "" {
+			return tasks, nil
+		}
+		token = page.NextContinuationToken
+	}
+	return nil, paginationSafetyLimitError(
+		"Environment task list",
+		"rle_environment_task_list_safety_limit",
+	)
 }
 
 func listAllEnvironmentVersions(

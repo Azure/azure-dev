@@ -26,6 +26,8 @@ type callOptions struct {
 
 type AuthorizationProvider func(context.Context) (string, error)
 
+type runtimeCaller func(context.Context, string, string, *callOptions, AuthorizationProvider) (string, error)
+
 func RunShellWithContext(
 	ctx context.Context,
 	input io.Reader,
@@ -81,6 +83,18 @@ func runShell(
 	timeout int,
 	authorizationProvider AuthorizationProvider,
 ) error {
+	return runShellWithCaller(ctx, input, output, baseUrl, timeout, authorizationProvider, call)
+}
+
+func runShellWithCaller(
+	ctx context.Context,
+	input io.Reader,
+	output io.Writer,
+	baseUrl string,
+	timeout int,
+	authorizationProvider AuthorizationProvider,
+	caller runtimeCaller,
+) error {
 	fmt.Fprintln(output, "Environment runtime shell. Type help for commands, exit to quit.")
 	scanner := bufio.NewScanner(input)
 	for {
@@ -125,7 +139,7 @@ func runShell(
 			}
 		}
 
-		response, err := call(ctx, baseUrl, operation, flags, authorizationProvider)
+		response, err := caller(ctx, baseUrl, operation, flags, authorizationProvider)
 		if err != nil {
 			fmt.Fprintf(output, "error: %v\n", err)
 			continue

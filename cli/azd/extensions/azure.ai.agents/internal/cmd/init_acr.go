@@ -46,6 +46,12 @@ func readInitACREnvironment(
 }
 
 func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
+	if flags.acrResourceIDSet {
+		if err := synthesis.ValidateACRSelector(flags.acrResourceID, "", ""); err != nil {
+			return exterrors.Validation(exterrors.CodeConflictingArguments,
+				"--acr-resource-id: "+err.Error(), "provide an external registry ARM resource ID")
+		}
+	}
 	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || flags.templatePointer != "") {
 		return nil
 	}
@@ -83,8 +89,7 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}
 	if !flags.acrResourceIDSet {
 		selectedID = values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
-		if strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true") ||
-			(selectedID == "" && values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect") {
+		if strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true") {
 			return nil
 		}
 		if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, selectedID); errors.Is(
@@ -105,7 +110,11 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 		}
 	}
 	if !flags.acrResourceIDSet {
-		mode, err := synthesis.GreenfieldACRMode(input)
+		if selectedID == "" && values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect" &&
+			values[synthesis.ACRBindingEnvKey] == "" {
+			return nil
+		}
+		mode, id, err := synthesis.ResolveGreenfieldACRSelection(input)
 		if err != nil {
 			return exterrors.Validation(exterrors.CodeConflictingArguments, err.Error(),
 				"restore the deployed registry selection or use a new azd environment")
@@ -113,6 +122,7 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 		if mode != "reuse-connect" {
 			return nil
 		}
+		selectedID = id
 	}
 	if flags.templatePointer != "" {
 		// A template can replace the manifest and teardown scope.

@@ -426,6 +426,8 @@ func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {
 		{name: "external same group", pending: true, wantError: "no successful creation operation"},
 		{name: "missing evidence", pending: true, wantError: "cannot establish ownership"},
 		{name: "missing history", wantError: "cannot establish ownership"},
+		{name: "missing evidence page", wantError: "verify partially deployed registry ownership"},
+		{name: "repeated evidence page", wantError: "pagination repeated a page"},
 		{name: "missing operation kind", wantError: "no successful creation operation"},
 		{name: "failed creation", wantError: "no successful creation operation"},
 		{name: "different registry", wantError: "cannot establish ownership"},
@@ -518,11 +520,18 @@ func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {
 							state = "Failed"
 						case "different registry":
 							registryID += "other"
-						case "paginated evidence":
+						case "paginated evidence", "missing evidence page", "repeated evidence page":
 							if !strings.Contains(path, "?") {
+								next := acrID + "/operations?after=first"
+								if tt.name == "repeated evidence page" {
+									next = path
+								}
 								return acrTestReply(out, map[string]any{
-									"value": []any{}, "nextLink": acrID + "/operations?after=first",
+									"value": []any{}, "nextLink": next,
 								})
+							}
+							if tt.name == "missing evidence page" {
+								return &azcore.ResponseError{StatusCode: http.StatusNotFound}
 							}
 						}
 						created := operation(registryID, "Microsoft.ContainerRegistry/registries", kind, state)

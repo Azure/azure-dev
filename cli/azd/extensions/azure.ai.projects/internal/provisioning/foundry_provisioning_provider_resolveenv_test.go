@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -209,61 +210,79 @@ func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {
 func TestInitializeValidatesPromptedRegistrySubscriptionBeforeWrites(t *testing.T) {
 	for _, layer := range []bool{false, true} {
 		for _, onDisk := range []bool{false, true} {
-			for _, subscription := range []string{"sub", "other"} {
-				t.Run(fmt.Sprintf("layer=%t/onDisk=%t/%s", layer, onDisk, subscription), func(t *testing.T) {
-					root := t.TempDir()
-					raw := "services:\n  project:\n    host: azure.ai.project\n" +
-						"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
-					options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
-					if layer {
-						raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
-							"      path: infra/foundry\n"
-						options.Name, options.Path = "foundry", filepath.Join("infra", "foundry")
-					}
-					path := filepath.Join(root, "azure.yaml")
-					require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
-					if onDisk {
-						infraPath := options.Path
-						if infraPath == "" {
-							infraPath = onDiskInfraDir
+			for _, canonical := range []bool{false, true} {
+				for _, subscription := range []string{"sub", "other"} {
+					t.Run(fmt.Sprintf("layer=%t/onDisk=%t/canonical=%t/%s", layer, onDisk, canonical, subscription), func(t *testing.T) {
+						root := t.TempDir()
+						raw := "services:\n  project:\n    host: azure.ai.project\n" +
+							"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+						options := &azdext.ProvisioningOptions{Provider: FoundryProviderName}
+						if layer {
+							raw += "infra:\n  layers:\n    - name: foundry\n      provider: microsoft.foundry\n" +
+								"      path: infra/foundry\n"
+							options.Name, options.Path = "foundry", filepath.Join("infra", "foundry")
 						}
-						require.NoError(t, os.MkdirAll(filepath.Join(root, infraPath), 0o750))
-						require.NoError(t, os.WriteFile(filepath.Join(root, infraPath, onDiskBicepFile),
-							[]byte("// ejected Bicep"), 0o600))
-					}
-					env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
-						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
-					}}
-					prompt := &resolveEnvStubPromptServer{subscriptionID: subscription, location: "eastus2"}
-					p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
-					p.acrRequest = func(context.Context, string, string, string, any) error {
-						t.Fatal("initialization must not deploy or read Azure resources")
-						return nil
-					}
-					err := p.Initialize(t.Context(), root, options)
-					assert.Equal(t, 1, prompt.subscriptionN)
-					if subscription == "sub" {
-						require.NoError(t, err)
-						assert.Equal(t, subscription, env.set[envKeySubscriptionID])
-						assert.Equal(t, "eastus2", env.set[envKeyLocation])
-						assert.Equal(t, 1, prompt.locationN)
-						assert.Equal(t, "reuse-connect", p.greenfieldAcrMode)
-						require.NotNil(t, p.synthResult)
-						assert.Equal(t, testACRID, p.synthResult.Parameters["existingAcrResourceId"])
-					} else {
-						require.ErrorContains(t, err, "same subscription")
-						assert.Empty(t, p.subID)
-						assert.Empty(t, env.set)
-						assert.Empty(t, env.config)
-						assert.Zero(t, prompt.locationN)
-						assert.Nil(t, p.synthResult)
-						assert.Nil(t, p.armTemplate)
-					}
-					assert.Empty(t, p.synthesisEnv[envKeySubscriptionID])
-					persisted, readErr := os.ReadFile(path)
-					require.NoError(t, readErr)
-					assert.Equal(t, raw, string(persisted))
-				})
+						path := filepath.Join(root, "azure.yaml")
+						require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
+						if onDisk {
+							infraPath := options.Path
+							if infraPath == "" {
+								infraPath = onDiskInfraDir
+							}
+							require.NoError(t, os.MkdirAll(filepath.Join(root, infraPath), 0o750))
+							require.NoError(t, os.WriteFile(filepath.Join(root, infraPath, onDiskBicepFile),
+								[]byte("// ejected Bicep"), 0o600))
+						}
+						env := &resolveEnvStubEnvServer{envName: "test", get: map[string]string{
+							"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testACRID,
+						}}
+						if canonical {
+							group := "rg-test"
+							if layer {
+								group += "-foundry"
+							}
+							binding, err := json.Marshal(synthesis.ACRBinding{
+								Version: 1, Mode: "reuse-connect", RegistryResourceID: testACRID, PrincipalID: "principal",
+								ProjectResourceID: "/subscriptions/sub/resourceGroups/" + group +
+									"/providers/Microsoft.CognitiveServices/accounts/account/projects/test",
+							})
+							require.NoError(t, err)
+							env.get = map[string]string{}
+							env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
+						}
+						beforeConfig := maps.Clone(env.config)
+						prompt := &resolveEnvStubPromptServer{subscriptionID: subscription, location: "eastus2"}
+						p := &FoundryProvisioningProvider{azdClient: newResolveEnvTestClient(t, env, prompt)}
+						p.acrRequest = func(context.Context, string, string, string, any) error {
+							t.Fatal("initialization must not deploy or read Azure resources")
+							return nil
+						}
+						err := p.Initialize(t.Context(), root, options)
+						assert.Equal(t, 1, prompt.subscriptionN)
+						if subscription == "sub" {
+							require.NoError(t, err)
+							assert.Equal(t, subscription, env.set[envKeySubscriptionID])
+							assert.Equal(t, "eastus2", env.set[envKeyLocation])
+							assert.Equal(t, 1, prompt.locationN)
+							assert.Equal(t, "reuse-connect", p.greenfieldAcrMode)
+							require.NotNil(t, p.synthResult)
+							assert.Equal(t, testACRID, p.synthResult.Parameters["existingAcrResourceId"])
+						} else {
+							require.ErrorContains(t, err, "same subscription")
+							assert.Empty(t, p.subID)
+							assert.Empty(t, env.set)
+							assert.Zero(t, prompt.locationN)
+							assert.Nil(t, p.synthResult)
+							assert.Nil(t, p.armTemplate)
+						}
+						assert.Equal(t, beforeConfig, env.config)
+						assert.Empty(t, p.synthesisEnv[envKeySubscriptionID])
+						//nolint:gosec // Test-owned path.
+						persisted, readErr := os.ReadFile(path)
+						require.NoError(t, readErr)
+						assert.Equal(t, raw, string(persisted))
+					})
+				}
 			}
 		}
 	}

@@ -255,8 +255,11 @@ or environment values.
 
 Once a project has a deployed registry binding, registry migration is not
 supported. Repeating setup with the same selection preserves the deployed
-project identity and ownership. Use a new azd environment to choose a different
-registry; do not clear internal mode or ownership state to bypass this check.
+project identity and ownership even if legacy project and registry ID outputs
+are absent. Bicep eject uses the binding's recorded registry ID when no registry
+environment-variable reference is available. Use a new azd environment to choose
+a different registry; do not clear internal mode or ownership state to bypass
+this check.
 
 Provisioning preview checks existing pull access using the same read-only access
 plan as deployment. It does not create access grants or persist pending access

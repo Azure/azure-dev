@@ -270,7 +270,7 @@ func Synthesize(in Input) (*Result, error) {
 	}
 	if existingAcrResourceID != "" {
 		params["existingAcrResourceId"] = existingAcrResourceID
-		if in.PreserveVarRefs {
+		if in.PreserveVarRefs && in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" {
 			params["existingAcrResourceId"] = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
 		}
 	}
@@ -362,7 +362,10 @@ var containerRegistryIDPattern = regexp.MustCompile(
 )
 
 func existingContainerRegistry(in Input) (string, error) {
-	id := in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	_, id, err := ResolveGreenfieldACRSelection(in)
+	if err != nil {
+		return "", err
+	}
 	if id == "" {
 		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")

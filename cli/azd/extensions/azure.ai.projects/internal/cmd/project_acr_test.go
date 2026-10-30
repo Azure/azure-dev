@@ -423,6 +423,7 @@ func TestProjectACRPreflightCurrentEnvironment(t *testing.T) {
 			assert.Equal(t, before, env.values)
 			assert.NoDirExists(t, filepath.Join(root, ".azure"))
 			if tt.project {
+				//nolint:gosec // Test-owned path.
 				persisted, readErr := os.ReadFile(filepath.Join(root, "azure.yaml"))
 				require.NoError(t, readErr)
 				assert.Equal(t, raw, persisted)
@@ -645,6 +646,63 @@ func TestProjectAddACRDeployedIdentity(t *testing.T) {
 	}
 }
 
+func TestProjectAddCanonicalBindingWithoutLegacyAliases(t *testing.T) {
+	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	for _, explicitNew := range []bool{false, true} {
+		t.Run(strconv.FormatBool(explicitNew), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			raw := []byte("name: test\ninfra:\n  provider: microsoft.foundry\nservices:\n" +
+				"  project:\n    host: azure.ai.project\n")
+			path := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(path, raw, 0o600))
+			client, project, env, _, _ := newSelfInitializingDeploymentClient(t, root)
+			project.project.Infra = &azdext.InfraOptions{Provider: "microsoft.foundry"}
+			project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+			project.services["project"] = map[string]any{"host": aiProjectHost}
+			maps.Copy(env.values, map[string]string{
+				"AZURE_RESOURCE_GROUP": "project", "AZURE_AI_ACCOUNT_NAME": "account",
+				"AZURE_AI_PROJECT_NAME": "project", "USE_EXISTING_AI_PROJECT": "false",
+				"AZURE_CONTAINER_REGISTRY_ENDPOINT": "shared.azurecr.io",
+			})
+			binding, err := json.Marshal(synthesis.ACRBinding{
+				Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+				ProjectResourceID: projectID, PrincipalID: "principal",
+			})
+			require.NoError(t, err)
+			env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
+			before := maps.Clone(env.values)
+			var output bytes.Buffer
+			flags := &projectAddFlags{newProject: explicitNew, noPrompt: true, output: "json"}
+			action := &ProjectAddAction{
+				client: client, flags: flags, stdout: &output,
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			require.NoError(t, action.Run(t.Context()))
+			require.NotNil(t, flags.deployedBinding)
+			assert.Equal(t, projectID, flags.preserveProjectID)
+			for key, value := range before {
+				assert.Equal(t, value, env.values[key], key)
+			}
+			assert.Equal(t, testExternalRegistryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+			assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+			assert.Equal(t, binding, env.config[synthesis.ACRBindingConfigKey])
+			assert.False(t, project.providerSet)
+			var result projectAddOutput
+			require.NoError(t, json.Unmarshal(output.Bytes(), &result))
+			assert.Equal(t, projectID, result.ResourceID)
+			require.NotNil(t, result.ContainerRegistry)
+			assert.Equal(t, testExternalRegistryID, result.ContainerRegistry.ResourceID)
+			assert.True(t, result.ContainerRegistry.ExternallyOwned)
+			//nolint:gosec // Test-owned path.
+			persisted, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			assert.Equal(t, raw, persisted)
+		})
+	}
+}
+
 type acrPreflightEnvironmentServer struct {
 	transactionEnvironmentServer
 	binding []byte
@@ -678,6 +736,7 @@ func TestProjectACRBindingPreflight(t *testing.T) {
 	}{
 		{"same registry", strings.ToUpper(testExternalRegistryID), binding, nil, "", ""},
 		{"same registry repairs selector", testExternalRegistryID, binding, nil, "", "manual-change"},
+		{"explicit empty selector", "", binding, nil, "full ARM ID", ""},
 		{"different registry", testExternalRegistryID + "other", binding, nil, "migration", ""},
 		{"invalid binding", testExternalRegistryID, []byte(`{"version":3}`), nil, "binding", ""},
 		{"unreadable binding", testExternalRegistryID, nil, errors.New("config unavailable"), "config unavailable", ""},

@@ -1095,7 +1095,7 @@ func (p *FoundryProvisioningProvider) acrDeploymentOperations(
 			NextLink string                              `json:"nextLink"`
 		}
 		err := p.acrARM(ctx, http.MethodGet, path, "2022-09-01", &operations)
-		if isNotFound(err) {
+		if isNotFound(err) && path == deploymentID+"/operations" {
 			return nil, nil
 		}
 		if err != nil {

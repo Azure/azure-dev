@@ -348,12 +348,12 @@ func (p *FoundryProvisioningProvider) Initialize(
 		}
 		if validationErr == nil {
 			p.greenfieldAcrMode = validationResult.ACRMode
-			mode, err := synthesis.GreenfieldACRMode(validationInput)
+			mode, id, err := synthesis.ResolveGreenfieldACRSelection(validationInput)
 			if err != nil {
 				return foundrySynthesisError(svcName, err)
 			}
 			if mode == "reuse-connect" {
-				p.greenfieldAcrResourceID = env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+				p.greenfieldAcrResourceID = id
 			}
 		}
 	}

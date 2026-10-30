@@ -2603,9 +2603,12 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 	for _, tt := range []struct {
 		name, mode, invalid, wantError string
 		readErr                        error
+		missingAliases                 bool
 	}{
 		{name: "created binding", mode: "create"},
 		{name: "external binding", mode: "reuse-connect"},
+		{name: "created binding without aliases", mode: "create", missingAliases: true},
+		{name: "external binding without aliases", mode: "reuse-connect", missingAliases: true},
 		{name: "invalid binding", invalid: `{"version":2}`, wantError: "invalid deployed ACR binding"},
 		{name: "unreadable binding", readErr: errors.New("binding read failed"), wantError: "binding read failed"},
 	} {
@@ -2637,6 +2640,9 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 				config:    map[string][]byte{synthesis.ACRBindingConfigKey: binding},
 				configErr: tt.readErr,
 			}
+			if tt.missingAliases {
+				delete(env.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
 			client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
 			withCapturedStdout(t, func() {
 				err = ejectInfraAfterInit(t.Context(), "bicep", client)
@@ -2657,11 +2663,18 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 				if tt.mode == "create" {
 					assert.NotContains(t, document.Parameters, "existingAcrResourceId")
 				} else {
-					assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
-						document.Parameters["existingAcrResourceId"].Value)
+					expected := "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+					if tt.missingAliases {
+						expected = id
+					}
+					assert.Equal(t, expected, document.Parameters["existingAcrResourceId"].Value)
 				}
 			}
 			assert.Empty(t, env.setKeys)
+			if tt.missingAliases {
+				assert.NotContains(t, env.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				assert.NotContains(t, env.values["test"], "AZURE_AI_PROJECT_ID")
+			}
 		})
 	}
 }

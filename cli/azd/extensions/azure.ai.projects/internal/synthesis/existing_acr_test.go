@@ -152,6 +152,52 @@ func TestSynthesizeRegistryUsesOnlySnapshotAndMode(t *testing.T) {
 	require.ErrorContains(t, err, "requires AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
 }
 
+func TestSynthesizeCanonicalReuseBinding(t *testing.T) {
+	const registryID = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	for _, alias := range []string{"", registryID, strings.ToUpper(registryID)} {
+		for _, preserve := range []bool{false, true} {
+			for _, configSnapshot := range []bool{false, true} {
+				t.Run(alias+"/"+map[bool]string{false: "resolved", true: "eject"}[preserve]+
+					"/"+map[bool]string{false: "input binding", true: "config snapshot"}[configSnapshot], func(t *testing.T) {
+					binding := &ACRBinding{
+						Version: 1, Mode: "reuse-connect", RegistryResourceID: registryID,
+						ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry/" +
+							"providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+						PrincipalID: "principal",
+					}
+					input := Input{
+						RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
+							"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+						ServiceName: "project", PreserveVarRefs: preserve, ACRBinding: binding,
+						Env: map[string]string{
+							"AZURE_SUBSCRIPTION_ID": "sub", "AZURE_RESOURCE_GROUP": "foundry",
+						},
+					}
+					if alias != "" {
+						input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = alias
+					}
+					if configSnapshot {
+						raw, err := json.Marshal(binding)
+						require.NoError(t, err)
+						input.Env[ACRBindingEnvKey], input.ACRBinding = string(raw), nil
+					}
+					result, err := Synthesize(input)
+					require.NoError(t, err)
+					assert.Equal(t, "reuse-connect", result.ACRMode)
+					assert.Equal(t, true, result.Parameters["includeAcr"])
+					expected := registryID
+					if preserve && alias != "" {
+						expected = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+					}
+					assert.Equal(t, expected, result.Parameters["existingAcrResourceId"])
+					assert.NotContains(t, input.Env, "AZURE_AI_PROJECT_ID")
+					assert.Equal(t, alias, input.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+				})
+			}
+		}
+	}
+}
+
 func TestGreenfieldACRMode(t *testing.T) {
 	const id = "/subscriptions/sub/resourceGroups/foundry/providers/Microsoft.ContainerRegistry/registries/registry"
 	const projectID = "/subscriptions/sub/resourceGroups/foundry/" +

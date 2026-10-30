@@ -1129,3 +1129,114 @@ func Test_CleanName_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestEnvManagerExistingLocalSaveKeepsLoadedETag covers two machines that each
+// loaded the same remote baseline into a local environment. The second save must
+// use that baseline ETag, not an ETag downloaded while saving.
+func TestEnvManagerExistingLocalSaveKeepsLoadedETag(t *testing.T) {
+	client := newMemoryBlobClient()
+	_, err := client.Upload(t.Context(), "env1/config.json", strings.NewReader("{}"), "")
+	require.NoError(t, err)
+	_, err = client.Upload(
+		t.Context(), "env1/.env", strings.NewReader(EnvNameEnvVarName+"=env1\nKEY=baseline\n"), "",
+	)
+	require.NoError(t, err)
+
+	console := mocks.NewMockContext(t.Context()).Console
+	dirA := t.TempDir()
+	managerA, azdA := newBlobEnvManager(t, dirA, client, console)
+	envA, err := managerA.Get(t.Context(), "env1")
+	require.NoError(t, err)
+	require.Equal(t, "baseline", envA.Getenv("KEY"))
+	envMatch, envKnown := envA.remoteBlobMatch("env1/.env")
+	cfgMatch, cfgKnown := envA.remoteBlobMatch("env1/config.json")
+	require.True(t, envKnown)
+	require.True(t, cfgKnown)
+	etagPath, err := azdA.EnvironmentFilePath("env1", remoteBlobETagFileName)
+	require.NoError(t, err)
+	etagFile, err := os.ReadFile(etagPath)
+	require.NoError(t, err)
+	require.Contains(t, string(etagFile), envMatch)
+	require.Contains(t, string(etagFile), cfgMatch)
+	downloadsAfterLoad := client.downloadCount()
+
+	dirB := t.TempDir()
+	require.NoError(t, os.CopyFS(dirB, os.DirFS(dirA)))
+	managerB, _ := newBlobEnvManager(t, dirB, client, console)
+	envB, err := managerB.Get(t.Context(), "env1")
+	require.NoError(t, err)
+	require.Equal(t, "baseline", envB.Getenv("KEY"))
+	bEnvMatch, bEnvKnown := envB.remoteBlobMatch("env1/.env")
+	bCfgMatch, bCfgKnown := envB.remoteBlobMatch("env1/config.json")
+	require.True(t, bEnvKnown)
+	require.True(t, bCfgKnown)
+	require.Equal(t, envMatch, bEnvMatch)
+	require.Equal(t, cfgMatch, bCfgMatch)
+	require.Equal(t, downloadsAfterLoad, client.downloadCount())
+
+	envA.DotenvSet("KEY", "from-a")
+	require.NoError(t, managerA.Save(t.Context(), envA))
+	uploadsBeforeB := client.uploadCount()
+
+	envB.DotenvSet("KEY", "from-b")
+	err = managerB.Save(t.Context(), envB)
+	require.ErrorIs(t, err, ErrRemoteStateConflict)
+	require.ErrorIs(t, err, storage.ErrConcurrencyConflict)
+	require.Greater(t, client.uploadCount(), uploadsBeforeB)
+	require.Equal(t, azcore.ETag(cfgMatch), client.matchFor("env1/config.json"))
+	dotenv := readBlobData(t, client, "env1/.env")
+	require.Contains(t, dotenv, "from-a")
+	require.NotContains(t, dotenv, "from-b")
+}
+
+// TestEnvManagerExistingLocalWithoutETagDoesNotOverwrite is the local-only load
+// path: manager.Get does not reload remote state, and Save must not adopt the
+// current remote ETag to authorize an overwrite.
+func TestEnvManagerExistingLocalWithoutETagDoesNotOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	local := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	env := NewWithValues("env1", map[string]string{
+		EnvNameEnvVarName: "env1",
+		"KEY":             "local-stale",
+	})
+	require.NoError(t, local.Save(t.Context(), env, nil))
+
+	client := newMemoryBlobClient()
+	_, err := client.Upload(t.Context(), "env1/config.json", strings.NewReader(`{"remote":true}`), "")
+	require.NoError(t, err)
+	_, err = client.Upload(
+		t.Context(), "env1/.env", strings.NewReader(EnvNameEnvVarName+"=env1\nKEY=remote-current\n"), "",
+	)
+	require.NoError(t, err)
+	uploads := client.uploadCount()
+
+	console := mocks.NewMockContext(t.Context()).Console
+	manager := newManagerForTest(
+		azdCtx, console, local, NewStorageBlobDataStore(config.NewManager(), client),
+	)
+	loaded, err := manager.Get(t.Context(), "env1")
+	require.NoError(t, err)
+	require.Equal(t, "local-stale", loaded.Getenv("KEY"))
+	require.Equal(t, uploads, client.uploadCount())
+
+	loaded.DotenvSet("KEY", "local-write")
+	err = manager.Save(t.Context(), loaded)
+	require.ErrorIs(t, err, ErrRemoteStateConflict)
+	require.ErrorIs(t, err, storage.ErrConcurrencyConflict)
+	require.Equal(t, uploads, client.uploadCount())
+	dotenv := readBlobData(t, client, "env1/.env")
+	require.Contains(t, dotenv, "remote-current")
+	require.NotContains(t, dotenv, "local-write")
+	require.NotContains(t, dotenv, "local-stale")
+}
+
+func newBlobEnvManager(
+	t *testing.T, dir string, client *memoryBlobClient, console input.Console,
+) (Manager, *azdcontext.AzdContext) {
+	t.Helper()
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	local := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	remote := NewStorageBlobDataStore(config.NewManager(), client)
+	return newManagerForTest(azdCtx, console, local, remote), azdCtx
+}

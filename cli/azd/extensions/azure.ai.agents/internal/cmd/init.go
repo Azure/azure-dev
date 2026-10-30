@@ -865,6 +865,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				} else {
+					endLoading := inittelemetry.Start(ctx, inittelemetry.TemplateLoading)
+					defer endLoading()
+
 					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
@@ -889,6 +892,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 						return err
 					}
+					endLoading()
 				}
 				cachedExplicitAzureYaml = content
 			}

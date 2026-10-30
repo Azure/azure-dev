@@ -49,6 +49,43 @@ func TestPreviewNestedHarnessReference(t *testing.T) {
 	require.True(t, proto.Equal(before, service))
 }
 
+func TestMemorySnapshotFeatureSwitch(t *testing.T) {
+	for _, value := range []string{"", "false", "0", "on", "invalid", "true", "1", "T", "TRUE"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv(featureflags.MemorySnapshot.EnvVar, value)
+			for _, field := range []string{"enableMemorySnapshot", "enable_memory_snapshot"} {
+				t.Run(field, func(t *testing.T) {
+					for _, enabled := range []bool{false, true} {
+						err := RequireDefinitionFeatures(map[string]any{"kind": "hosted", field: enabled})
+						if !enabled || value == "true" || value == "1" || value == "T" || value == "TRUE" {
+							require.NoError(t, err)
+						} else {
+							require.ErrorContains(t, err, featureflags.MemorySnapshot.ID)
+							require.ErrorContains(t, err, "disabled")
+						}
+					}
+				})
+			}
+		})
+	}
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "false")
+	for _, definition := range []map[string]any{
+		{"kind": "hosted", "enableMemorySnapshot": false, "enable_memory_snapshot": true},
+		{"kind": "hosted", "enableMemorySnapshot": true, "enable_memory_snapshot": false},
+	} {
+		require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.MemorySnapshot.ID)
+	}
+	t.Setenv(featureflags.MemorySnapshot.EnvVar, "true")
+	t.Setenv(featureflags.Voice.EnvVar, "false")
+	definition := map[string]any{
+		"kind": "hosted", "enableMemorySnapshot": true,
+		"protocols": []any{map[string]any{"protocol": "invocations_ws"}},
+	}
+	require.ErrorContains(t, RequireDefinitionFeatures(definition), featureflags.Voice.ID)
+	t.Setenv(featureflags.Voice.EnvVar, "true")
+	require.NoError(t, RequireDefinitionFeatures(definition))
+}
+
 func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 	for _, feature := range featureflags.All() {
 		t.Setenv(feature.EnvVar, "")
@@ -75,6 +112,8 @@ func TestPreviewFeatureRuntimeBoundaries(t *testing.T) {
 		feature    featureflags.Feature
 	}{
 		{"ordinary hosted", map[string]any{"kind": "hosted"}, featureflags.Feature{}},
+		{"snapshot disabled", map[string]any{"kind": "hosted", "enableMemorySnapshot": false}, featureflags.Feature{}},
+		{"snapshot enabled", map[string]any{"kind": "hosted", "enableMemorySnapshot": true}, featureflags.MemorySnapshot},
 		{"ordinary prompt", map[string]any{"kind": "prompt"}, featureflags.Feature{}},
 		{"managed harness", map[string]any{"kind": "prompt",
 			"harness": map[string]any{"type": "microsoft_copilot_preview"}}, featureflags.ManagedHarness},

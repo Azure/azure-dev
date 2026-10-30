@@ -330,7 +330,8 @@ type HostedAgentDefinition struct {
 	ContainerConfiguration *ContainerConfigurationAPI `json:"container_configuration,omitempty"` // container deploy only
 	CodeConfiguration      *CodeConfigurationAPI      `json:"code_configuration,omitempty"`      // code deploy only
 	SessionConfiguration   *SessionConfigurationAPI   `json:"session_configuration,omitempty"`   // optional session tuning
-	Image                  string                     `json:"image,omitempty"`                   // deprecated: for backward compat deserialization only
+	EnableMemorySnapshot   *bool                      `json:"enable_memory_snapshot,omitempty"`
+	Image                  string                     `json:"image,omitempty"` // deprecated: for backward compat deserialization only
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling for HostedAgentDefinition.
@@ -860,6 +861,7 @@ type AgentVersionObject struct {
 type AgentVersionError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Target  string `json:"target,omitempty"`
 }
 
 // AgentObject represents an agent

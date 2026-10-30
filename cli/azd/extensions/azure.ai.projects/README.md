@@ -166,6 +166,8 @@ $env:AZD_ALPHA_ENABLE_AGENTS_BYO_AKS = 'true'
 
 The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, `t`, `T`, `true`, `TRUE`, or `True` enable it; missing, empty, false, and invalid values leave it off. `alpha.all`, other preview switches, and service `env:` entries do not enable BYO AKS. Values already injected into the process by the azd host count. No opt-in is required for Foundry projects without `agentHosting`.
 
+The generated account, project and model deployment resources use API `2025-06-01` without AKS hosting. Only the BYO AKS path uses `2026-07-15-preview`; both paths return the same standard project, endpoint and registry outputs.
+
 The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
 
 Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the opt-in and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.

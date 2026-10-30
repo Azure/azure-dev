@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "5284212102478420531"
+      "templateHash": "255577105106112435"
     }
   },
   "definitions": {
@@ -338,7 +338,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "15014802732520055281"
+              "templateHash": "13208361558288315596"
             }
           },
           "definitions": {
@@ -570,7 +570,20 @@
             "useManagedNetwork": "[and(parameters('enableNetworkIsolation'), parameters('useManagedEgress'))]",
             "disablePublicDataPlaneAccess": "[parameters('enableNetworkIsolation')]",
             "agentSubnetArmId": "[format('{0}/subnets/{1}', parameters('vnetId'), parameters('agentSubnetName'))]",
-            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]"
+            "agentNetworkInjections": "[if(variables('useByoNetwork'), createArray(createObject('scenario', 'agent', 'subnetArmId', variables('agentSubnetArmId'), 'useMicrosoftManagedNetwork', false())), if(variables('useManagedNetwork'), createArray(createObject('scenario', 'agent', 'useMicrosoftManagedNetwork', true())), null()))]",
+            "foundryAccountProperties": {
+              "allowProjectManagement": true,
+              "customSubDomainName": "[variables('foundryAccountName')]",
+              "publicNetworkAccess": "[if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled')]",
+              "disableLocalAuth": true,
+              "networkAcls": {
+                "defaultAction": "[if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow')]",
+                "bypass": "[if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null())]",
+                "virtualNetworkRules": [],
+                "ipRules": []
+              },
+              "networkInjections": "[variables('agentNetworkInjections')]"
+            }
           },
           "resources": {
             "foundryAccount::modelDeployments": {
@@ -580,8 +593,9 @@
                 "mode": "serial",
                 "batchSize": 1
               },
+              "condition": "[not(parameters('agentHosting').enabled)]",
               "type": "Microsoft.CognitiveServices/accounts/deployments",
-              "apiVersion": "2026-07-15-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
               "properties": {
                 "model": "[parameters('deployments')[copyIndex()].model]"
@@ -592,8 +606,9 @@
               ]
             },
             "foundryAccount::project": {
+              "condition": "[not(parameters('agentHosting').enabled)]",
               "type": "Microsoft.CognitiveServices/accounts/projects",
-              "apiVersion": "2026-07-15-preview",
+              "apiVersion": "2025-06-01",
               "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
               "location": "[parameters('location')]",
               "identity": {
@@ -608,7 +623,64 @@
                 "foundryAccount::modelDeployments"
               ]
             },
+            "byoFoundryAccount::modelDeployments": {
+              "copy": {
+                "name": "byoFoundryAccount::modelDeployments",
+                "count": "[length(parameters('deployments'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2026-07-15-preview",
+              "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('deployments')[copyIndex()].name)]",
+              "properties": {
+                "model": "[parameters('deployments')[copyIndex()].model]"
+              },
+              "sku": "[parameters('deployments')[copyIndex()].sku]",
+              "dependsOn": [
+                "byoFoundryAccount"
+              ]
+            },
+            "byoFoundryAccount::project": {
+              "condition": "[parameters('agentHosting').enabled]",
+              "type": "Microsoft.CognitiveServices/accounts/projects",
+              "apiVersion": "2026-07-15-preview",
+              "name": "[format('{0}/{1}', variables('foundryAccountName'), parameters('foundryProjectName'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "description": "[format('{0} Project', parameters('foundryProjectName'))]",
+                "displayName": "[parameters('foundryProjectName')]"
+              },
+              "dependsOn": [
+                "byoFoundryAccount",
+                "byoFoundryAccount::modelDeployments"
+              ]
+            },
             "foundryAccount": {
+              "condition": "[not(parameters('agentHosting').enabled)]",
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-06-01",
+              "name": "[variables('foundryAccountName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "S0"
+              },
+              "kind": "AIServices",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": "[variables('foundryAccountProperties')]",
+              "dependsOn": [
+                "network"
+              ]
+            },
+            "byoFoundryAccount": {
+              "condition": "[parameters('agentHosting').enabled]",
               "type": "Microsoft.CognitiveServices/accounts",
               "apiVersion": "2026-07-15-preview",
               "name": "[variables('foundryAccountName')]",
@@ -618,12 +690,23 @@
                 "name": "S0"
               },
               "kind": "AIServices",
-              "identity": "[if(parameters('agentHosting').enabled, createObject('type', 'SystemAssigned, UserAssigned', 'userAssignedIdentities', createObject(format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName'))), createObject())), createObject('type', 'SystemAssigned'))]",
-              "properties": "[shallowMerge(createArray(createObject('allowProjectManagement', true(), 'customSubDomainName', variables('foundryAccountName'), 'publicNetworkAccess', if(variables('disablePublicDataPlaneAccess'), 'Disabled', 'Enabled'), 'disableLocalAuth', true(), 'networkAcls', createObject('defaultAction', if(variables('disablePublicDataPlaneAccess'), 'Deny', 'Allow'), 'bypass', if(variables('disablePublicDataPlaneAccess'), 'AzureServices', null()), 'virtualNetworkRules', createArray(), 'ipRules', createArray()), 'networkInjections', variables('agentNetworkInjections')), if(parameters('agentHosting').enabled, createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), 'storageAccountResourceId', resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'workloadIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName'))))), createObject())))]",
+              "identity": {
+                "type": "SystemAssigned, UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')))]": {}
+                }
+              },
+              "properties": "[shallowMerge(createArray(variables('foundryAccountProperties'), createObject('agentHostingConfigurations', createArray(createObject('hostingType', 'ManagedCluster', 'name', 'default', 'clusterResourceId', parameters('agentHosting').clusterResourceId, 'hostingManagementIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('hostingIdentityName')), 'storageAccountResourceId', resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), 'workloadIdentityResourceId', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('workloadIdentityName')))))))]",
               "dependsOn": [
                 "network",
                 "prerequisites"
               ]
+            },
+            "foundryAccountReference": {
+              "existing": true,
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2025-06-01",
+              "name": "[variables('foundryAccountName')]"
             },
             "foundryManagedNetwork": {
               "condition": "[and(variables('useManagedNetwork'), not(empty(parameters('managedIsolationMode'))))]",
@@ -636,6 +719,7 @@
                 }
               },
               "dependsOn": [
+                "byoFoundryAccount",
                 "foundryAccount"
               ]
             },
@@ -1302,9 +1386,7 @@
                   "foundryProjectName": {
                     "value": "[parameters('foundryProjectName')]"
                   },
-                  "foundryProjectPrincipalId": {
-                    "value": "[reference('foundryAccount::project', '2026-07-15-preview', 'full').identity.principalId]"
-                  },
+                  "foundryProjectPrincipalId": "[if(parameters('agentHosting').enabled, createObject('value', reference('byoFoundryAccount::project', '2026-07-15-preview', 'full').identity.principalId), createObject('value', reference('foundryAccount::project', '2025-06-01', 'full').identity.principalId))]",
                   "enableNetworkIsolation": {
                     "value": "[parameters('enableNetworkIsolation')]"
                   },
@@ -1475,7 +1557,7 @@
                 }
               },
               "dependsOn": [
-                "foundryAccount",
+                "byoFoundryAccount::project",
                 "foundryAccount::project"
               ]
             },
@@ -1710,6 +1792,7 @@
                 }
               },
               "dependsOn": [
+                "byoFoundryAccount",
                 "foundryAccount",
                 "network"
               ]

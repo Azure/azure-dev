@@ -184,7 +184,21 @@ var agentNetworkInjections = useByoNetwork
         ]
       : null)
 
-resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = {
+var foundryAccountProperties = {
+  allowProjectManagement: true
+  customSubDomainName: foundryAccountName
+  publicNetworkAccess: disablePublicDataPlaneAccess ? 'Disabled' : 'Enabled'
+  disableLocalAuth: true
+  networkAcls: {
+    defaultAction: disablePublicDataPlaneAccess ? 'Deny' : 'Allow'
+    bypass: disablePublicDataPlaneAccess ? 'AzureServices' : null
+    virtualNetworkRules: []
+    ipRules: []
+  }
+  networkInjections: agentNetworkInjections
+}
+
+resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-06-01' = if (!agentHosting.enabled) {
   name: foundryAccountName
   location: location
   tags: tags
@@ -192,48 +206,71 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
     name: 'S0'
   }
   kind: 'AIServices'
-  identity: agentHosting.enabled
-    ? {
-        type: 'SystemAssigned, UserAssigned'
-        userAssignedIdentities: {
-          '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)}': {}
-        }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: foundryAccountProperties
+  dependsOn: useByoNetwork ? [network] : []
+
+  @batchSize(1)
+  resource modelDeployments 'deployments' = [
+    for d in deployments: {
+      name: d.name
+      properties: {
+        model: d.model
       }
-    : {
-        type: 'SystemAssigned'
-      }
-  properties: {
-    allowProjectManagement: true
-    customSubDomainName: foundryAccountName
-    publicNetworkAccess: disablePublicDataPlaneAccess ? 'Disabled' : 'Enabled'
-    disableLocalAuth: true
-    networkAcls: {
-      defaultAction: disablePublicDataPlaneAccess ? 'Deny' : 'Allow'
-      bypass: disablePublicDataPlaneAccess ? 'AzureServices' : null
-      virtualNetworkRules: []
-      ipRules: []
+      sku: d.sku
     }
-    networkInjections: agentNetworkInjections
-    ...(agentHosting.enabled ? {
-      agentHostingConfigurations: [
-        {
-          hostingType: 'ManagedCluster'
-          name: 'default'
-          clusterResourceId: agentHosting.clusterResourceId
-          hostingManagementIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
-          storageAccountResourceId: resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
-          workloadIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
-        }
-      ]
-    } : {})
+  ]
+
+  resource project 'projects' = {
+    name: foundryProjectName
+    location: location
+    identity: {
+      type: 'SystemAssigned'
+    }
+    properties: {
+      description: '${foundryProjectName} Project'
+      displayName: foundryProjectName
+    }
+    dependsOn: [
+      modelDeployments
+    ]
+  }
+}
+
+resource byoFoundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview' = if (agentHosting.enabled) {
+  name: foundryAccountName
+  location: location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
+  kind: 'AIServices'
+  identity: {
+    type: 'SystemAssigned, UserAssigned'
+    userAssignedIdentities: {
+      '${resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)}': {}
+    }
+  }
+  properties: {
+    ...foundryAccountProperties
+    agentHostingConfigurations: [
+      {
+        hostingType: 'ManagedCluster'
+        name: 'default'
+        clusterResourceId: agentHosting.clusterResourceId
+        hostingManagementIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', hostingIdentityName)
+        storageAccountResourceId: resourceId('Microsoft.Storage/storageAccounts', storageAccountName)
+        workloadIdentityResourceId: resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', workloadIdentityName)
+      }
+    ]
   }
 
   // The account injects into the agent subnet via a deterministic id (above),
   // so Bicep cannot infer the dependency on the network module that creates
   // that subnet. Declare it explicitly so the subnet exists before injection.
-  dependsOn: agentHosting.enabled
-    ? (useByoNetwork ? [network, prerequisites] : [prerequisites])
-    : (useByoNetwork ? [network] : [])
+  dependsOn: useByoNetwork ? [network, prerequisites] : [prerequisites]
 
   // Sequential model deployment creation; ARM throttles concurrent
   // deployments on the same account.
@@ -267,6 +304,10 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
   }
 }
 
+resource foundryAccountReference 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = {
+  name: foundryAccountName
+}
+
 // Managed-network isolation (managed egress only). Applies the chosen outbound
 // isolation mode to the Microsoft-managed VNet that hosts the agent runtime.
 // Only deployed when an explicit isolationMode is requested; otherwise the
@@ -275,13 +316,17 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2026-07-15-preview
 // for the platform-managed stores used here those are managed by the platform.
 resource foundryManagedNetwork 'Microsoft.CognitiveServices/accounts/managednetworks@2025-10-01-preview' =
   if (useManagedNetwork && !empty(managedIsolationMode)) {
-    parent: foundryAccount
+    parent: foundryAccountReference
     name: 'default'
     properties: {
       managedNetwork: {
         isolationMode: managedIsolationMode
       }
     }
+    dependsOn: [
+      foundryAccount
+      byoFoundryAccount
+    ]
   }
 
 module acr 'acr.bicep' = if (includeAcr) {
@@ -290,9 +335,11 @@ module acr 'acr.bicep' = if (includeAcr) {
     location: location
     tags: tags
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
-    foundryAccountName: foundryAccount.name
-    foundryProjectName: foundryAccount::project.name
-    foundryProjectPrincipalId: foundryAccount::project.identity.principalId
+    foundryAccountName: foundryAccountName
+    foundryProjectName: foundryProjectName
+    foundryProjectPrincipalId: agentHosting.enabled
+      ? byoFoundryAccount::project!.identity.principalId
+      : foundryAccount::project!.identity.principalId
     enableNetworkIsolation: enableNetworkIsolation
     byoAks: agentHosting.enabled
     kubeletObjectId: kubeletObjectId
@@ -305,7 +352,7 @@ module acr 'acr.bicep' = if (includeAcr) {
 module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolation) {
   name: 'foundry-private-endpoint-dns'
   params: {
-    aiAccountName: foundryAccount.name
+    aiAccountName: foundryAccountName
     location: network!.outputs.vnetLocation
     vnetId: network!.outputs.vnetId
     peSubnetId: network!.outputs.peSubnetId
@@ -313,15 +360,19 @@ module privateEndpointDns 'private-endpoint-dns.bicep' = if (enableNetworkIsolat
     dnsZonesResourceGroup: dnsZonesResourceGroup
     dnsZonesSubscription: dnsZonesSubscription
   }
+  dependsOn: [
+    foundryAccount
+    byoFoundryAccount
+  ]
 }
 
 // Outputs
 
-output AZURE_AI_PROJECT_ID string = foundryAccount::project.id
-output AZURE_AI_ACCOUNT_NAME string = foundryAccount.name
-output AZURE_AI_PROJECT_NAME string = foundryAccount::project.name
-output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccount.name}.openai.azure.com/'
-output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccount.name}.services.ai.azure.com/api/projects/${foundryAccount::project.name}'
+output AZURE_AI_PROJECT_ID string = resourceId('Microsoft.CognitiveServices/accounts/projects', foundryAccountName, foundryProjectName)
+output AZURE_AI_ACCOUNT_NAME string = foundryAccountName
+output AZURE_AI_PROJECT_NAME string = foundryProjectName
+output AZURE_OPENAI_ENDPOINT string = 'https://${foundryAccountName}.openai.azure.com/'
+output FOUNDRY_PROJECT_ENDPOINT string = 'https://${foundryAccountName}.services.ai.azure.com/api/projects/${foundryProjectName}'
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = includeAcr ? acr!.outputs.loginServer : ''
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = includeAcr ? acr!.outputs.resourceId : ''
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = includeAcr ? acr!.outputs.connectionName : ''

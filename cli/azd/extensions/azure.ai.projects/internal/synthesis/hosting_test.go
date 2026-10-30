@@ -252,6 +252,7 @@ func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
 				Template struct {
 					Variables map[string]json.RawMessage
 					Resources map[string]struct {
+						APIVersion string
 						Condition  string
 						DependsOn  []string
 						Properties json.RawMessage
@@ -276,7 +277,38 @@ func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
 		assert.Equal(t, expected, actual)
 	}
 	require.Contains(t, foundry.Resources, "foundryAccount")
-	account := foundry.Resources["foundryAccount"]
+	nativeAccount := foundry.Resources["foundryAccount"]
+	assert.NotContains(t, nativeAccount.DependsOn, "prerequisites")
+	assert.Contains(t, nativeAccount.DependsOn, "network")
+	var nativeProperties string
+	require.NoError(t, json.Unmarshal(nativeAccount.Properties, &nativeProperties))
+	assert.Equal(t, "[variables('foundryAccountProperties')]", nativeProperties)
+	require.Contains(t, foundry.Variables, "foundryAccountProperties")
+	var commonProperties map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(foundry.Variables["foundryAccountProperties"], &commonProperties))
+	assert.NotContains(t, commonProperties, "agentHostingConfigurations")
+	for _, branch := range []struct {
+		name       string
+		apiVersion string
+		condition  string
+	}{
+		{"foundryAccount", "2025-06-01", "[not(parameters('agentHosting').enabled)]"},
+		{"byoFoundryAccount", "2026-07-15-preview", "[parameters('agentHosting').enabled]"},
+	} {
+		for _, suffix := range []string{"", "::project", "::modelDeployments"} {
+			name := branch.name + suffix
+			require.Contains(t, foundry.Resources, name)
+			resource := foundry.Resources[name]
+			assert.Equal(t, branch.apiVersion, resource.APIVersion, name)
+			assert.Equal(t, branch.condition, resource.Condition, name)
+		}
+		assert.Contains(t, foundry.Resources[branch.name+"::project"].DependsOn, branch.name+"::modelDeployments")
+		for _, dependent := range []string{"foundryManagedNetwork", "privateEndpointDns"} {
+			assert.Contains(t, foundry.Resources[dependent].DependsOn, branch.name)
+		}
+		assert.Contains(t, foundry.Resources["acr"].DependsOn, branch.name+"::project")
+	}
+	account := foundry.Resources["byoFoundryAccount"]
 	assert.Contains(t, account.DependsOn, "prerequisites")
 	assert.Contains(t, account.DependsOn, "network")
 	var properties string
@@ -288,9 +320,8 @@ func TestHostingGraphBindsDefaultsBeforeAccountCreation(t *testing.T) {
 	} {
 		assert.Contains(t, properties, binding, "account preflight must receive concrete IDs, not module output references")
 	}
-	assert.Contains(t, properties, "if(parameters('agentHosting').enabled, createObject('agentHostingConfigurations'")
-	assert.True(t, strings.HasSuffix(properties, "createObject())))]"),
-		"native accounts must omit disabled agent hosting rather than send an empty configuration")
+	assert.Contains(t, properties, "variables('foundryAccountProperties')")
+	assert.Contains(t, properties, "createObject('agentHostingConfigurations'")
 	for _, output := range []string{
 		"AZURE_AI_PROJECT_ID", "FOUNDRY_PROJECT_ENDPOINT", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 		"AZURE_CONTAINER_REGISTRY_ENDPOINT", "AZURE_AI_PROJECT_ACR_CONNECTION_NAME",

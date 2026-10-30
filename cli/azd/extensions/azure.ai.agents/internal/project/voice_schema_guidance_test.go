@@ -64,6 +64,15 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		},
 		"delegation": map[string]any{"type": "client"},
 	}))
+	require.NoError(t, schema.validate(map[string]any{
+		"$ref": "live.yaml", "delegation": map[string]any{"type": "client"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"$ref": "live.yaml", "subProtocol": "realtime", "delegation": map[string]any{"type": "client"},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind": "voice", "delegation": map[string]any{"type": "client"},
+	}))
 	require.Error(t, schema.validate(map[string]any{
 		"kind": "voice", "subProtocol": "live", "modelType": "self_deployed",
 		"model": map[string]any{"id": "gpt-live-1"},

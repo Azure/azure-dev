@@ -430,7 +430,15 @@
         }
       },
       "else": {
-        "not": { "required": ["delegation"] }
+        "if": {
+          "properties": { "subProtocol": { "const": "realtime" } },
+          "required": ["subProtocol"]
+        },
+        "then": { "not": { "required": ["delegation"] } },
+        "else": {
+          "if": { "required": ["$ref"] },
+          "else": { "not": { "required": ["delegation"] } }
+        }
       }
     },
     {

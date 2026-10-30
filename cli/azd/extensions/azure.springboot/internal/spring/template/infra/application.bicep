@@ -18,6 +18,17 @@ param driver string = ''
 param embeddedUrl string = ''
 param embeddedUrlConfigured bool
 param embeddedDriver string = ''
+param foundryEnabled bool = false
+@allowed(['apiKey', 'managedIdentity'])
+param foundryAuthentication string = 'apiKey'
+param foundryAccountName string = ''
+param foundryChatEnabled bool = false
+param foundryChatDeploymentName string = ''
+param foundryEmbeddingEnabled bool = false
+param foundryEmbeddingDeploymentName string = ''
+param applicationValues object = {}
+@secure()
+param applicationSecrets object = {}
 
 var prefix = engine == 'mysql' ? 'MYSQL' : 'POSTGRES'
 var usesPassword = engine != 'none' && authentication == 'password'
@@ -59,6 +70,75 @@ var embeddedSpringEnv = concat(
   empty(embeddedDriver) ? [] : [{ name: 'SPRING_DATASOURCE_DRIVER_CLASS_NAME', value: embeddedDriver }]
 )
 var deploymentSpringEnv = engine != 'none' ? externalSpringEnv : embeddedSpringEnv
+var foundryUsesApiKey = foundryEnabled && foundryAuthentication == 'apiKey'
+resource foundry 'Microsoft.CognitiveServices/accounts@2025-06-01' existing = if (foundryUsesApiKey) {
+  name: foundryAccountName
+}
+var foundryEndpoint = foundryEnabled ? 'https://${foundryAccountName}.openai.azure.com/' : ''
+var foundryApiKey = foundryUsesApiKey ? foundry!.listKeys().key1 : ''
+var foundrySecret = foundryUsesApiKey ? [{ name: 'foundry-api-key', value: foundryApiKey }] : []
+var foundrySpringModelEnvironment = concat(
+  foundryChatEnabled
+    ? [
+        {
+          name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME'
+          value: foundryChatDeploymentName
+        }
+      ]
+    : [],
+  foundryEmbeddingEnabled
+    ? [
+        {
+          name: 'SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME'
+          value: foundryEmbeddingDeploymentName
+        }
+      ]
+    : []
+)
+var foundryGeneratedModelEnvironment = concat(
+  foundryChatEnabled
+    ? [{ name: 'AZURE_OPENAI_CHAT_DEPLOYMENT_NAME', value: foundryChatDeploymentName }]
+    : [],
+  foundryEmbeddingEnabled
+    ? [{ name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME', value: foundryEmbeddingDeploymentName }]
+    : []
+)
+var foundryEnvironment = foundryEnabled
+  ? environmentBindings
+      ? concat(
+          [
+            { name: 'SPRING_AI_AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+            { name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }
+          ],
+          foundrySpringModelEnvironment,
+          foundryUsesApiKey ? [{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }] : []
+        )
+      : concat(
+          [
+            { name: 'AZURE_OPENAI_ENDPOINT', value: foundryEndpoint }
+          ],
+          foundryGeneratedModelEnvironment,
+          foundryUsesApiKey ? [{ name: 'AZURE_OPENAI_API_KEY', secretRef: 'foundry-api-key' }] : []
+        )
+  : []
+var applicationValueEnvironment = [
+  for input in items(applicationValues): {
+    name: input.key
+    value: string(input.value)
+  }
+]
+var applicationSecretEntries = [
+  for input in items(applicationSecrets): {
+    name: input.key
+    value: input.value.value
+  }
+]
+var applicationSecretEnvironment = [
+  for input in items(applicationSecrets): {
+    name: input.value.name
+    secretRef: input.key
+  }
+]
 var placeholder = appImage == 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
@@ -72,7 +152,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       activeRevisionsMode: 'Single'
       ingress: { external: true, targetPort: placeholder ? 80 : port, transport: 'auto' }
       registries: [{ server: registryEndpoint, identity: 'system' }]
-      secrets: usesPassword ? [{ name: 'database-password', value: password }] : []
+      secrets: concat(
+        usesPassword ? [{ name: 'database-password', value: password }] : [],
+        foundrySecret,
+        applicationSecretEntries
+      )
     }
     template: {
       containers: [
@@ -95,7 +179,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
                     { name: 'SPRING_CONFIG_ADDITIONAL_LOCATION', value: 'file:/app/.azd-spring/application.properties' }
                   ],
                   databaseEnv
-                )
+                ),
+            foundryEnvironment,
+            applicationValueEnvironment,
+            applicationSecretEnvironment
           )
           probes: placeholder
             ? []

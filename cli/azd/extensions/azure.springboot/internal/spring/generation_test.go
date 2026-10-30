@@ -34,6 +34,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 				Profiles:       []string{"release"}, MavenWrapper: true,
 				ExternalConfigurations: []string{"config/application-release.properties"},
 			}
+
 			if tt.kind != "" {
 				a.Requirements = []Requirement{{
 					Kind: tt.kind, Name: "inventory", Authentication: "password",
@@ -125,6 +126,62 @@ func TestGenerateInfrastructure(t *testing.T) {
 	}
 }
 
+func TestGenerateApplicationInputs(t *testing.T) {
+	application := &Application{
+		Name: "inventory", JavaVersion: 21, JarName: "inventory-1.0.jar", Port: 8080,
+		BuildDirectory: "target",
+		ApplicationInputs: []ApplicationInput{
+			{Name: "FRONTEND_URL", Kind: ApplicationInputValue},
+			{Name: "JWT_SECRET", Kind: ApplicationInputSecret},
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	var values map[string]string
+	require.NoError(t, json.Unmarshal(parameters.Parameters["applicationValues"].Value, &values))
+	require.Equal(t, map[string]string{
+		"FRONTEND_URL": "${FRONTEND_URL}",
+	}, values)
+	var secrets map[string]struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	require.NoError(t, json.Unmarshal(parameters.Parameters["applicationSecrets"].Value, &secrets))
+	require.Len(t, secrets, 1)
+	for name, secret := range secrets {
+		require.Regexp(t, `^app-[0-9a-f]{12}$`, name)
+		require.Equal(t, "JWT_SECRET", secret.Name)
+		require.Equal(t, "${JWT_SECRET}", secret.Value)
+	}
+
+	var applicationParameters struct {
+		Parameters map[string]struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(
+		plan.Files["infra/application.parameters.json"], &applicationParameters))
+	require.JSONEq(t, string(parameters.Parameters["applicationValues"].Value),
+		string(applicationParameters.Parameters["applicationValues"].Value))
+	require.JSONEq(t, string(parameters.Parameters["applicationSecrets"].Value),
+		string(applicationParameters.Parameters["applicationSecrets"].Value))
+
+	main := string(plan.Files["infra/main.bicep"])
+	require.Contains(t, main, "@secure()\nparam applicationSecrets object = {}")
+	applicationBicep := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, applicationBicep, "var applicationSecretEntries")
+	require.Contains(t, applicationBicep, "secretRef: input.key")
+	require.Contains(t, applicationBicep, "applicationValueEnvironment")
+	require.NotContains(t, string(plan.Files["azure.yaml"]), "JWT_SECRET")
+}
+
 func TestGeneratedDockerIgnoreAllowsCredentialNamedConfiguration(t *testing.T) {
 	directory := t.TempDir()
 	writeFixture(t, directory, "pom.xml", "<project/>")
@@ -172,6 +229,172 @@ func TestMemoryDatabaseParametersAreOptional(t *testing.T) {
 			require.Empty(t, parameters.Parameters["databaseName"].Value)
 		})
 	}
+}
+
+func TestGenerateFoundryInfrastructure(t *testing.T) {
+	application := &Application{
+		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
+		BuildDirectory: "target",
+		Foundry: &FoundryRequirement{
+			ChatDeploymentName: "gpt-5.6-sol", Authentication: "apiKey",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	require.Equal(t, true, parameters.Parameters["foundryEnabled"].Value)
+	require.Equal(t, "apiKey", parameters.Parameters["foundryAuthentication"].Value)
+	require.Equal(t, true, parameters.Parameters["foundryChatEnabled"].Value)
+	require.Equal(t, "gpt-5.6-sol", parameters.Parameters["foundryChatDeploymentName"].Value)
+	require.Equal(t, "gpt-5.6-sol", parameters.Parameters["foundryChatModelName"].Value)
+	require.Equal(t, "2026-07-09", parameters.Parameters["foundryChatModelVersion"].Value)
+	require.Equal(t, "GlobalStandard", parameters.Parameters["foundryChatModelSku"].Value)
+	require.Equal(t, float64(1), parameters.Parameters["foundryChatModelCapacity"].Value)
+	require.Equal(t, false, parameters.Parameters["foundryEmbeddingEnabled"].Value)
+
+	foundry := string(plan.Files["infra/foundry.bicep"])
+	require.Contains(t, foundry, "Microsoft.CognitiveServices/accounts@2025-06-01")
+	require.Contains(t, foundry, "kind: 'AIServices'")
+	require.Contains(t, foundry, "identity: { type: 'SystemAssigned' }")
+	require.Contains(t, foundry, "allowProjectManagement: true")
+	require.Contains(t, foundry, "disableLocalAuth: authentication == 'managedIdentity'")
+	require.Contains(t, foundry, "defaultAction: 'Deny'")
+	require.Contains(t, foundry, "for ip in union(outboundIps, [])")
+	require.Contains(t, foundry, "Microsoft.CognitiveServices/accounts/deployments@2025-06-01")
+	require.Contains(t, foundry, "@batchSize(1)")
+	require.Contains(t, foundry, "resource modelDeployments")
+	require.Contains(t, foundry, "for deployment in deployments")
+	require.Contains(t, foundry, "Microsoft.Authorization/roleAssignments@2022-04-01")
+	require.Contains(t, foundry, "5e0bd9bd-7b93-4f28-af87-19fc36ad61bd")
+	require.NotContains(t, foundry, "accounts/projects")
+
+	main := string(plan.Files["infra/main.bicep"])
+	require.Contains(t, main, "outboundIps: bootstrap.outputs.outboundIps")
+	require.Contains(t, main, "applicationPrincipalId: bootstrap.outputs.principalId")
+	require.Contains(t, main, "output SPRING_FOUNDRY_ACCOUNT_NAME")
+	applicationTemplate := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, applicationTemplate, "foundry!.listKeys().key1")
+	require.Contains(t, applicationTemplate, "secretRef: 'foundry-api-key'")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_ENDPOINT")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_APIKEY")
+	require.Contains(t, applicationTemplate, "SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME")
+	require.Contains(t, applicationTemplate, "AZURE_OPENAI_ENDPOINT")
+	require.NotContains(t, string(plan.Files["infra/main.parameters.json"]), "foundry-api-key")
+	require.NotContains(t, string(plan.Files["infra/application.parameters.json"]), "AZURE_OPENAI_API_KEY")
+	binding := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
+	require.Contains(t, binding, "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}")
+	require.Contains(t, binding, "spring.ai.azure.openai.openai-api-key=\n")
+	require.Contains(t, binding,
+		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}")
+}
+
+func TestGenerateFoundryManagedIdentityInfrastructure(t *testing.T) {
+	application := &Application{
+		Name: "foundry-chat", JavaVersion: 21, JarName: "foundry-chat.jar", Port: 8080,
+		BuildDirectory: "target",
+		Foundry: &FoundryRequirement{
+			ChatDeploymentName: "gpt-5.6-sol", Authentication: "managedIdentity",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	require.Equal(t, "managedIdentity", parameters.Parameters["foundryAuthentication"].Value)
+
+	foundry := string(plan.Files["infra/foundry.bicep"])
+	require.Contains(t, foundry, "disableLocalAuth: authentication == 'managedIdentity'")
+	require.Contains(t, foundry, "principalId: applicationPrincipalId")
+	require.Contains(t, foundry, "roleDefinitionId: openAIUserRoleId")
+	applicationTemplate := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, applicationTemplate,
+		"var foundryUsesApiKey = foundryEnabled && foundryAuthentication == 'apiKey'")
+	require.Contains(t, applicationTemplate, "foundryUsesApiKey ? foundry!.listKeys().key1 : ''")
+	binding := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.Contains(t, binding, "spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}")
+	require.NotContains(t, binding, "spring.ai.azure.openai.api-key")
+	require.Contains(t, binding, "spring.ai.azure.openai.openai-api-key=\n")
+	require.Contains(t, binding,
+		"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}")
+}
+
+func TestGenerateFoundryEmbeddingInfrastructure(t *testing.T) {
+	application := &Application{
+		Name: "foundry-embedding", JavaVersion: 21, JarName: "foundry-embedding.jar", Port: 8080,
+		BuildDirectory: "target",
+		Foundry: &FoundryRequirement{
+			EmbeddingDeploymentName: "text-embedding-3-small", Authentication: "apiKey",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	require.Equal(t, true, parameters.Parameters["foundryEnabled"].Value)
+	require.Equal(t, false, parameters.Parameters["foundryChatEnabled"].Value)
+	require.Equal(t, true, parameters.Parameters["foundryEmbeddingEnabled"].Value)
+	require.Equal(t, "text-embedding-3-small",
+		parameters.Parameters["foundryEmbeddingDeploymentName"].Value)
+	require.Equal(t, "text-embedding-3-small", parameters.Parameters["foundryEmbeddingModelName"].Value)
+	require.Equal(t, "1", parameters.Parameters["foundryEmbeddingModelVersion"].Value)
+	require.Equal(t, "GlobalStandard", parameters.Parameters["foundryEmbeddingModelSku"].Value)
+	require.Equal(t, float64(1), parameters.Parameters["foundryEmbeddingModelCapacity"].Value)
+
+	binding := string(plan.Files[".azd-spring/application-azd.properties"])
+	require.NotContains(t, binding, "spring.ai.azure.openai.chat.options.deployment-name")
+	require.Contains(t, binding,
+		"spring.ai.azure.openai.embedding.options.deployment-name="+
+			"${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME}")
+	template := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, template, "SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME")
+}
+
+func TestGenerateFoundryUsesSpringEnvironmentNamesWithExistingDockerfile(t *testing.T) {
+	application := &Application{
+		Name: "foundry-chat", JavaVersion: 21, Port: 8080, Dockerfile: "Dockerfile",
+		Foundry: &FoundryRequirement{
+			ChatDeploymentName: "chat", EmbeddingDeploymentName: "embeddings", Authentication: "apiKey",
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+	require.NotContains(t, plan.Files, ".azd-spring/application-azd.properties")
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value any `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/application.parameters.json"], &parameters))
+	require.Equal(t, true, parameters.Parameters["environmentBindings"].Value)
+
+	template := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, template, "{ name: 'SPRING_AI_AZURE_OPENAI_APIKEY', secretRef: 'foundry-api-key' }")
+	require.Contains(t, template, "{ name: 'SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY', value: '' }")
+	require.Contains(t, template,
+		"name: 'SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME'")
+	require.Contains(t, template, "value: foundryChatDeploymentName")
+	require.Contains(t, template,
+		"name: 'SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME'")
+	require.Contains(t, template, "value: foundryEmbeddingDeploymentName")
 }
 
 func TestGenerateRejectsInvalidExternalDrivers(t *testing.T) {

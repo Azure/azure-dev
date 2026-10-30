@@ -1,15 +1,20 @@
 import: ../../.vscode/cspell.yaml
 words:
+  - aifoundry
+  - apikey
   - azdadmin
   - azuredocs
   - dbcp
+  - deploymentname
   - Dmaven
   - Hikari
   - hsqldb
   - jndi
   - magiconair
+  - openaiapikey
   - passwordless
   - Petclinic
+  - reprovisioning
   - springboot
   - sslmode
   - sslrootcert

@@ -35,13 +35,15 @@ type property struct {
 }
 
 type configuration struct {
-	values        map[string]property
-	profileGroups map[string]property
-	profiles      []string
-	lookup        LookupEnv
-	externalFiles []string
-	traces        map[string][]Evidence
-	trace         []Evidence
+	values           map[string]property
+	profileGroups    map[string]property
+	profiles         []string
+	lookup           LookupEnv
+	externalFiles    []string
+	traces           map[string][]Evidence
+	trace            []Evidence
+	references       map[string][]Evidence
+	profileGroupKeys []string
 }
 
 type document struct {
@@ -66,8 +68,31 @@ var configurationLocations = [][]string{
 	{".", "config"},
 }
 
+const profileIncludeProperty = "spring.profiles.include"
+
+var configurationLocationSettings = []string{
+	"spring.config.import",
+	"spring.config.location",
+	"spring.config.additional-location",
+	"spring.config.name",
+}
+
+var deploymentOwnedConfigurationSettings = append([]string{
+	"spring.profiles.active",
+	"spring.profiles.default",
+	profileIncludeProperty,
+}, configurationLocationSettings...)
+
 func canonical(key string) string {
 	return strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(key))
+}
+
+func environmentPropertyNames(key string) []string {
+	return []string{
+		key,
+		strings.ToUpper(strings.NewReplacer(".", "_", "-", "").Replace(key)),
+		strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(key)),
+	}
 }
 
 func profileGroupName(key string) (string, bool) {
@@ -163,12 +188,11 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		}
 		return nil, err
 	}
-	includeKey := "spring.profiles.include"
 	var includeSources []property
-	if p, ok := jsonProperties[canonical(includeKey)]; ok {
+	if p, ok := jsonProperties[canonical(profileIncludeProperty)]; ok {
 		includeSources = append(includeSources, p)
 	}
-	if p, ok := lookupEnvProperty(lookup, includeKey); ok {
+	if p, ok := lookupEnvProperty(lookup, profileIncludeProperty); ok {
 		includeSources = append(includeSources, p)
 	}
 	for _, doc := range slices.Backward(base) {
@@ -178,19 +202,24 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 		if _, activated := doc.values[canonical("spring.config.activate.on-profile")]; activated {
 			continue
 		}
-		if p, ok := doc.values[canonical(includeKey)]; ok {
+		if p, ok := doc.values[canonical(profileIncludeProperty)]; ok {
 			includeSources = append(includeSources, p)
 		}
 	}
 	var included strings.Builder
+	var includeEvidence []Evidence
 	for _, p := range includeSources {
-		text, err := c.expandProperty(includeKey, p, map[string]bool{})
+		p.key = profileIncludeProperty
+		c.trace = nil
+		text, err := c.expandProperty(profileIncludeProperty, p, map[string]bool{})
 		if err != nil {
 			return nil, fmt.Errorf("resolving profile includes in %s: %w", p.source, err)
 		}
+		includeEvidence = append(includeEvidence, c.trace...)
 		included.WriteString(text)
 		included.WriteByte(',')
 	}
+	c.traces[profileIncludeProperty] = includeEvidence
 	names := splitList(included.String() + active)
 	if len(names) == 0 {
 		defaults, err := c.resolve("spring.profiles.default")
@@ -265,8 +294,7 @@ func readConfiguration(ctx context.Context, root *os.Root, lookup LookupEnv) (*c
 				"indexed profile properties require list-binding analysis not yet supported")
 		}
 	}
-	for _, key := range []string{"spring.config.import", "spring.config.location",
-		"spring.config.additional-location", "spring.config.name"} {
+	for _, key := range configurationLocationSettings {
 		value, err := c.resolve(key)
 		if err != nil {
 			return nil, err
@@ -409,11 +437,21 @@ func validateDuplicateCredentialProperties(data, file string) error {
 			continue
 		}
 		key := canonical(keys[0])
-		if key != canonical("spring.datasource.password") && key != canonical("spring.datasource.url") {
+		if !slices.Contains([]string{
+			canonical("spring.datasource.password"),
+			canonical("spring.datasource.url"),
+			canonical("spring.ai.azure.openai.api-key"),
+		}, key) {
 			continue
 		}
 		counts[key]++
 		if counts[key] > 1 {
+			if key == canonical("spring.ai.azure.openai.api-key") {
+				return unsupportedConfiguration(
+					"duplicate Azure OpenAI credential property %s in %s is not supported; "+
+						"keep one runtime-safe value",
+					keys[0], file)
+			}
 			return unsupportedConfiguration(
 				"duplicate datasource credential property %s in %s is not supported; keep one runtime-safe value",
 				keys[0], file)
@@ -537,7 +575,7 @@ func applicationConfigurationExtension(name string) (string, bool) {
 func validateKnownCredentialDocument(doc document) error {
 	if password, ok := doc.values[canonical("spring.datasource.password")]; ok &&
 		hasLiteralCredential(password.text) {
-		repair, repairable := datasourcePasswordRepair(password)
+		repair, repairable := credentialPropertyRepair(password, "${SPRING_DATASOURCE_PASSWORD}")
 		if !repairable {
 			return unsupportedConfiguration(
 				"literal datasource credentials in %s are not supported; "+
@@ -550,6 +588,24 @@ func validateKnownCredentialDocument(doc document) error {
 				"literal datasource credentials in %s are not supported; "+
 					"replace %s with a runtime placeholder without a default",
 				password.source, password.key),
+			Repairs: []CredentialRepair{repair},
+		}
+	}
+	if apiKey, ok := doc.values[canonical("spring.ai.azure.openai.api-key")]; ok &&
+		hasLiteralCredential(apiKey.text) {
+		repair, repairable := credentialPropertyRepair(apiKey, "${AZURE_OPENAI_API_KEY}")
+		if !repairable {
+			return unsupportedConfiguration(
+				"literal Azure OpenAI API keys in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				apiKey.source, apiKey.key)
+		}
+		return &Diagnostic{
+			Kind: "unsupported",
+			Message: fmt.Sprintf(
+				"literal Azure OpenAI API keys in %s are not supported; "+
+					"replace %s with a runtime placeholder without a default",
+				apiKey.source, apiKey.key),
 			Repairs: []CredentialRepair{repair},
 		}
 	}
@@ -571,19 +627,19 @@ func validateKnownCredentialDocument(doc document) error {
 	return nil
 }
 
-func datasourcePasswordRepair(password property) (CredentialRepair, bool) {
-	if path.Ext(password.source) != ".properties" {
+func credentialPropertyRepair(value property, defaultReplacement string) (CredentialRepair, bool) {
+	if path.Ext(value.source) != ".properties" {
 		return CredentialRepair{}, false
 	}
-	replacement := "${SPRING_DATASOURCE_PASSWORD}"
-	if name, fallback, ok := runtimePlaceholder(password.text); ok {
+	replacement := defaultReplacement
+	if name, fallback, ok := runtimePlaceholder(value.text); ok {
 		if fallback == "" {
 			return CredentialRepair{}, false
 		}
 		replacement = "${" + name + "}"
 	}
 	return CredentialRepair{
-		File: password.source, Property: password.key, Replacement: replacement, original: password.text,
+		File: value.source, Property: value.key, Replacement: replacement, original: value.text,
 	}, true
 }
 
@@ -596,14 +652,14 @@ func credentialRepairDiagnostic(repairs []CredentialRepair) error {
 	return &Diagnostic{
 		Kind: "unsupported",
 		Message: fmt.Sprintf(
-			"literal datasource credentials in %s are not supported; "+
+			"literal credentials in %s are not supported; "+
 				"replace each with a runtime placeholder without a default",
 			strings.Join(targets, ", ")),
 		Repairs: repairs,
 	}
 }
 
-// ApplyCredentialRepairs removes confirmed literal datasource password values from properties files.
+// ApplyCredentialRepairs replaces confirmed literal credential values in properties files.
 func ApplyCredentialRepairs(ctx context.Context, directory string, repairs []CredentialRepair) error {
 	return applyCredentialRepairs(ctx, directory, repairs, defaultCredentialRepairFileOps())
 }
@@ -975,11 +1031,9 @@ func flatten(values map[string]any, prefix, source string, result map[string]pro
 }
 
 func lookupEnvProperty(lookup LookupEnv, key string) (property, bool) {
-	for _, name := range []string{key,
-		strings.ToUpper(strings.NewReplacer(".", "_", "-", "").Replace(key)),
-		strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(key))} {
+	for _, name := range environmentPropertyNames(key) {
 		if text, ok := lookup(name); ok {
-			return property{text: text, source: "environment"}, true
+			return property{text: text, source: "environment", key: key}, true
 		}
 	}
 	return property{}, false
@@ -1005,15 +1059,28 @@ func (c *configuration) resolve(key string) (string, error) {
 
 func (c *configuration) resolveProfileGroup(name string) (string, error) {
 	key := "spring.profiles.group." + name
+	if !slices.Contains(c.profileGroupKeys, key) {
+		c.profileGroupKeys = append(c.profileGroupKeys, key)
+	}
+	c.trace = nil
+	var p property
+	var ok bool
 	if p, ok := c.profileGroups[name]; ok && p.source == "SPRING_APPLICATION_JSON" {
-		return c.expandProperty(key, p, map[string]bool{})
+		p.key = key
+		value, err := c.expandProperty(key, p, map[string]bool{})
+		c.traces[key] = slices.Clone(c.trace)
+		return value, err
 	}
-	if p, ok := lookupEnvProperty(c.lookup, key); ok {
-		return c.expandProperty(key, p, map[string]bool{})
+	if p, ok = lookupEnvProperty(c.lookup, key); !ok {
+		p, ok = c.profileGroups[name]
 	}
-	if p, ok := c.profileGroups[name]; ok {
-		return c.expandProperty(key, p, map[string]bool{})
+	if ok {
+		p.key = key
+		value, err := c.expandProperty(key, p, map[string]bool{})
+		c.traces[key] = slices.Clone(c.trace)
+		return value, err
 	}
+	c.traces[key] = []Evidence{{Property: key, Source: "profile selection"}}
 	return "", nil
 }
 
@@ -1035,14 +1102,14 @@ func (c *configuration) expandProperty(key string, p property, visiting map[stri
 	if !slices.Contains(c.trace, evidence) {
 		c.trace = append(c.trace, evidence)
 	}
-	value, err := c.expandText(p.text, visiting)
+	value, err := c.expandText(p.text, visiting, evidence)
 	if missing, ok := errors.AsType[*missingInput](err); ok {
 		missing.evidence = append([]Evidence{evidence}, missing.evidence...)
 	}
 	return value, err
 }
 
-func (c *configuration) expandText(text string, visiting map[string]bool) (string, error) {
+func (c *configuration) expandText(text string, visiting map[string]bool, evidence Evidence) (string, error) {
 	for depth := 0; depth < 32 && strings.Contains(text, "${"); depth++ {
 		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
 		if len(matches) == 0 {
@@ -1055,6 +1122,7 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 			if !propertyName.MatchString(name) {
 				return "", invalidConfiguration("Spring configuration has an invalid property placeholder name")
 			}
+			c.recordReference(name, evidence)
 			value := fallback
 			if _, exists := c.raw(name); exists {
 				var err error
@@ -1074,14 +1142,43 @@ func (c *configuration) expandText(text string, visiting map[string]bool) (strin
 	return text, nil
 }
 
+func (c *configuration) recordReference(name string, evidence Evidence) {
+	if c.references == nil {
+		c.references = map[string][]Evidence{}
+	}
+	for _, alias := range environmentPropertyNames(name) {
+		key := canonical(alias)
+		if !slices.Contains(c.references[key], evidence) {
+			c.references[key] = append(c.references[key], evidence)
+		}
+	}
+}
+
 func (c *configuration) placeholderReferences() map[string][]Evidence {
-	result := map[string][]Evidence{}
+	result := make(map[string][]Evidence, len(c.references))
+	for key, evidence := range c.references {
+		result[key] = slices.Clone(evidence)
+	}
 	for _, p := range c.values {
 		references := map[string]bool{}
 		c.collectPlaceholderReferences(p.text, references, map[string]bool{})
 		evidence := Evidence{Property: p.key, Source: p.source}
 		for name := range references {
-			result[name] = append(result[name], evidence)
+			for _, alias := range environmentPropertyNames(name) {
+				key := canonical(alias)
+				if !slices.Contains(result[key], evidence) {
+					result[key] = append(result[key], evidence)
+				}
+			}
+		}
+	}
+	for _, setting := range c.profileGroupKeys {
+		evidence := c.traces[setting][0]
+		for _, alias := range environmentPropertyNames(setting)[1:] {
+			key := canonical(alias)
+			if !slices.Contains(result[key], evidence) {
+				result[key] = append(result[key], evidence)
+			}
 		}
 	}
 	return result
@@ -1090,13 +1187,9 @@ func (c *configuration) placeholderReferences() map[string][]Evidence {
 func (c *configuration) collectPlaceholderReferences(
 	text string, references map[string]bool, visiting map[string]bool,
 ) {
-	for _, match := range placeholder.FindAllStringSubmatch(text, -1) {
-		name, _, _ := strings.Cut(match[1], ":")
-		if !propertyName.MatchString(name) {
-			continue
-		}
+	for _, name := range placeholderNames(text) {
 		key := canonical(name)
-		references[key] = true
+		references[name] = true
 		if visiting[key] {
 			continue
 		}
@@ -1106,6 +1199,26 @@ func (c *configuration) collectPlaceholderReferences(
 			delete(visiting, key)
 		}
 	}
+}
+
+func placeholderNames(text string) []string {
+	var result []string
+	for range 32 {
+		matches := placeholder.FindAllStringSubmatchIndex(text, -1)
+		if len(matches) == 0 {
+			break
+		}
+		for i := len(matches) - 1; i >= 0; i-- {
+			match := matches[i]
+			inner := text[match[2]:match[3]]
+			name, fallback, _ := strings.Cut(inner, ":")
+			if propertyName.MatchString(name) && !slices.Contains(result, name) {
+				result = append(result, name)
+			}
+			text = text[:match[0]] + fallback + text[match[1]:]
+		}
+	}
+	return result
 }
 
 func splitList(text string) []string {

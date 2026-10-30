@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -88,14 +89,44 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"environmentBindings": application.Dockerfile != "",
 		"jdbcOptions":         "", "driver": "",
 		"embeddedUrl": "", "embeddedUrlConfigured": false, "embeddedDriver": "",
-		"databasePassword":      "${SPRING_DATABASE_PASSWORD=}",
-		"administratorObjectId": "${SPRING_DATABASE_ADMIN_OID=}",
-		"administratorName":     "${SPRING_DATABASE_ADMIN_NAME=}",
+		"foundryEnabled":                 false,
+		"foundryAuthentication":          "apiKey",
+		"foundryChatEnabled":             false,
+		"foundryChatDeploymentName":      "",
+		"foundryChatModelName":           defaultFoundryChatModelName,
+		"foundryChatModelVersion":        defaultFoundryChatModelVersion,
+		"foundryChatModelSku":            "GlobalStandard",
+		"foundryChatModelCapacity":       1,
+		"foundryEmbeddingEnabled":        false,
+		"foundryEmbeddingDeploymentName": "",
+		"foundryEmbeddingModelName":      defaultFoundryEmbeddingModelName,
+		"foundryEmbeddingModelVersion":   defaultFoundryEmbeddingModelVersion,
+		"foundryEmbeddingModelSku":       "GlobalStandard",
+		"foundryEmbeddingModelCapacity":  1,
+		"databasePassword":               "${SPRING_DATABASE_PASSWORD=}",
+		"administratorObjectId":          "${SPRING_DATABASE_ADMIN_OID=}",
+		"administratorName":              "${SPRING_DATABASE_ADMIN_NAME=}",
 		"appImage": "${SERVICE_" + strings.ToUpper(strings.ReplaceAll(serviceName, "-", "_")) +
 			"_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}",
 	} {
 		parameters[key] = map[string]any{"value": value}
 	}
+	applicationValues := map[string]string{}
+	applicationSecrets := map[string]any{}
+	for _, input := range application.ApplicationInputs {
+		switch input.Kind {
+		case ApplicationInputValue:
+			applicationValues[input.Name] = applicationInputReference(input.Name)
+		case ApplicationInputSecret:
+			applicationSecrets[applicationInputSecretName(input.Name)] = map[string]string{
+				"name": input.Name, "value": applicationInputReference(input.Name),
+			}
+		default:
+			return nil, fmt.Errorf("application input %s has unsupported kind %q", input.Name, input.Kind)
+		}
+	}
+	parameters["applicationValues"] = map[string]any{"value": applicationValues}
+	parameters["applicationSecrets"] = map[string]any{"value": applicationSecrets}
 	settings := map[string]string{"engine": "none", "auth": "password", "database": "", "role": "azd_app"}
 	var binding strings.Builder
 	binding.WriteString("# Deployment-only overrides; application source is unchanged.\n")
@@ -182,6 +213,41 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 			fmt.Fprintf(&binding, "spring.datasource.password=${%s_PASSWORD}\n", p)
 		}
 	}
+	if application.Foundry != nil {
+		if !validFoundryDeploymentNames(application.Foundry) {
+			return nil, errors.New("Foundry deployment names are invalid")
+		}
+		if application.Foundry.Authentication != "apiKey" &&
+			application.Foundry.Authentication != "managedIdentity" {
+			return nil, errors.New("Foundry authentication must be apiKey or managedIdentity")
+		}
+		parameters["foundryEnabled"] = map[string]any{"value": true}
+		parameters["foundryAuthentication"] = map[string]any{"value": application.Foundry.Authentication}
+		if application.Foundry.ChatDeploymentName != "" {
+			parameters["foundryChatEnabled"] = map[string]any{"value": true}
+			parameters["foundryChatDeploymentName"] =
+				map[string]any{"value": application.Foundry.ChatDeploymentName}
+		}
+		if application.Foundry.EmbeddingDeploymentName != "" {
+			parameters["foundryEmbeddingEnabled"] = map[string]any{"value": true}
+			parameters["foundryEmbeddingDeploymentName"] =
+				map[string]any{"value": application.Foundry.EmbeddingDeploymentName}
+		}
+		binding.WriteString("spring.ai.azure.openai.endpoint=${AZURE_OPENAI_ENDPOINT}\n")
+		if application.Foundry.Authentication == "apiKey" {
+			binding.WriteString("spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n")
+		}
+		binding.WriteString("spring.ai.azure.openai.openai-api-key=\n")
+		if application.Foundry.ChatDeploymentName != "" {
+			binding.WriteString(
+				"spring.ai.azure.openai.chat.options.deployment-name=${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}\n")
+		}
+		if application.Foundry.EmbeddingDeploymentName != "" {
+			binding.WriteString(
+				"spring.ai.azure.openai.embedding.options.deployment-name=" +
+					"${AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME}\n")
+		}
+	}
 	if len(hooks) > 0 {
 		config["hooks"] = hooks
 	}
@@ -200,6 +266,8 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	for _, key := range []string{
 		"location", "serviceName", "port", "profiles", "appImage", "databaseName",
 		"environmentBindings", "jdbcOptions", "driver", "embeddedUrl", "embeddedUrlConfigured", "embeddedDriver",
+		"foundryEnabled", "foundryAuthentication", "foundryChatEnabled", "foundryChatDeploymentName",
+		"foundryEmbeddingEnabled", "foundryEmbeddingDeploymentName", "applicationValues", "applicationSecrets",
 	} {
 		applicationParameters[key] = parameters[key]
 	}
@@ -214,6 +282,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"environmentId":    "${SPRING_CONTAINER_APP_ENVIRONMENT_ID}",
 		"registryEndpoint": "${AZURE_CONTAINER_REGISTRY_ENDPOINT}",
 		"host":             "${SPRING_DATABASE_HOST=}", "username": username,
+		"foundryAccountName": "${SPRING_FOUNDRY_ACCOUNT_NAME=}",
 	} {
 		applicationParameters[key] = map[string]any{"value": value}
 	}
@@ -278,6 +347,15 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		return nil, fmt.Errorf("reading deployment template: %w", err)
 	}
 	return &Plan{Application: application, Files: files}, nil
+}
+
+func applicationInputSecretName(name string) string {
+	hash := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("app-%x", hash[:6])
+}
+
+func applicationInputReference(name string) string {
+	return "${" + name + "}"
 }
 
 func validateOutputDirectory(directory, setting string, externalConfigurations []string) error {

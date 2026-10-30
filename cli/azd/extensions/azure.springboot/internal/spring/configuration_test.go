@@ -145,6 +145,34 @@ func TestKnownDatasourceCredentialReferences(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRejectsKnownAzureOpenAIKeys(t *testing.T) {
+	const secret = "foundry-key-must-not-be-disclosed"
+	for _, file := range []string{
+		"src/main/resources/application.properties",
+		"src/main/resources/application-unused.properties",
+		"config/application.properties",
+	} {
+		t.Run(file, func(t *testing.T) {
+			directory := t.TempDir()
+			writeFixture(t, directory, "pom.xml", "<project/>")
+			writeFixture(t, directory, file, "spring.ai.azure.openai.api-key="+secret+"\n")
+
+			application, err := Analyze(t.Context(), directory,
+				staticResolver{model: effectiveModel(t, directory, "")}, envLookup(nil))
+			require.ErrorContains(t, err, file)
+			require.ErrorContains(t, err, "runtime placeholder without a default")
+			require.NotContains(t, err.Error(), secret)
+			require.Nil(t, application)
+		})
+	}
+}
+
+func TestAzureOpenAIKeyCredentialReferences(t *testing.T) {
+	for _, value := range []string{"", "${AZURE_OPENAI_API_KEY}", "${AZURE_OPENAI_API_KEY:}"} {
+		require.False(t, hasLiteralCredential(value))
+	}
+}
+
 func TestAnalyzeRejectsUninspectableJDBCCredentials(t *testing.T) {
 	const testValue = "jdbc-fixture-value"
 	for _, engine := range []string{"mysql", "postgresql"} {
@@ -283,6 +311,20 @@ func TestApplyCredentialRepairs(t *testing.T) {
 				"# keep this comment\r\nspring.datasource.password = "+tt.replacement+"\r\n", string(data))
 		})
 	}
+}
+
+func TestApplyAzureOpenAIKeyRepair(t *testing.T) {
+	directory := t.TempDir()
+	file := "src/main/resources/application.properties"
+	writeFixture(t, directory, file, "spring.ai.azure.openai.api-key=local-default\n")
+	err := ApplyCredentialRepairs(t.Context(), directory, []CredentialRepair{{
+		File: file, Property: "spring.ai.azure.openai.api-key",
+		Replacement: "${AZURE_OPENAI_API_KEY}", original: "local-default",
+	}})
+	require.NoError(t, err)
+	data, err := fs.ReadFile(os.DirFS(directory), file)
+	require.NoError(t, err)
+	require.Equal(t, "spring.ai.azure.openai.api-key=${AZURE_OPENAI_API_KEY}\n", string(data))
 }
 
 func TestApplyCredentialRepairsRejectsChangedSource(t *testing.T) {

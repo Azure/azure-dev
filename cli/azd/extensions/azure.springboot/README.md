@@ -1,7 +1,8 @@
 # Spring Boot (Beta)
 
 Beta extension for `azd spring init`. It infers a Spring Boot application's
-active database and generates an azd project without requiring an existing `azure.yaml`.
+active database and supported Spring AI Azure OpenAI chat or embedding binding, then generates
+an azd project without requiring an existing `azure.yaml`.
 It is not yet published to the extension registry.
 
 See [DESIGN.md](DESIGN.md) for the resource model and configuration-resolution contract.
@@ -40,6 +41,32 @@ and their sources; there is no generic property-override option.
 Other unresolved configuration requires application changes. `--yes` accepts
 confirmations, not missing choices. Interactive prompts use the azd host channel.
 
+Declare application-owned runtime inputs explicitly:
+
+```sh
+azd spring init \
+  --application-input FRONTEND_URL=value \
+  --application-input JWT_SECRET=secret
+azd env set FRONTEND_URL "https://example.com"
+azd env set-secret JWT_SECRET
+azd up
+```
+
+The flag classifies an environment variable; it never accepts its value.
+`value` inputs become ordinary Container Apps environment variables. `secret`
+inputs use secure Bicep parameters, Container Apps secrets, and `secretRef`
+bindings. Required values must exist in the selected azd environment before
+provisioning. Input names are shown during initialization, but values are not.
+Deployment-owned Spring, datasource, and Foundry variable names are rejected.
+Global Spring and JVM configuration override channels are also rejected; the
+complete ownership contract is in [DESIGN.md](DESIGN.md#appendix-application-input-ownership-and-conflicts).
+Application inputs do not modify source or infer additional Azure resources.
+This unpublished feature currently depends on unresolved core azd support
+tracked in [#10688](https://github.com/Azure/azure-dev/issues/10688),
+[#10691](https://github.com/Azure/azure-dev/issues/10691), and
+[#10692](https://github.com/Azure/azure-dev/issues/10692). See
+[DESIGN.md](DESIGN.md) for the release boundary.
+
 PostgreSQL managed identity is inferred from supported passwordless Spring
 properties or the Azure PostgreSQL JDBC authentication plugin. MySQL managed
 identity is deferred.
@@ -55,6 +82,13 @@ Inactive database alternatives are not provisioned.
 Includes accumulate across property sources; profile groups expand depth-first
 in activation order, preserving Spring precedence.
 JDBC dependencies establish available drivers, not active database requirements.
+The Spring AI Azure OpenAI starter plus active standard endpoint, API-key, and
+modality configuration establishes a Foundry binding. Chat remains the legacy
+default when only shared Azure OpenAI properties are configured. Embeddings require
+an explicit Azure OpenAI embedding selector or deployment-name property.
+An active non-empty API-key property selects API-key authentication. If the
+property is absent or empty, Spring AI uses `DefaultAzureCredential`, and the
+extension selects managed identity.
 Resolved explicit JDBC driver classes are pinned with deployment URLs; omitted
 drivers retain Spring's automatic selection. Driver availability uses Maven's
 resolved runtime dependency graph, including transitive dependencies.
@@ -77,6 +111,19 @@ hyphens, and be at most 28 characters so the derived `<name>-app` fits Azure nam
 | MySQL JDBC URL | Azure Database for MySQL server and the inferred database |
 | PostgreSQL JDBC URL | Azure Database for PostgreSQL server and the inferred database |
 
+A Foundry binding provisions one `AIServices` account and an account-level model
+deployment for each detected modality. It does not require a Foundry project,
+Search, or Storage. Chat defaults to `gpt-5.6-sol` version `2026-07-09`.
+Embeddings default to `text-embedding-3-small` version `1`. Both use
+`GlobalStandard`, and Azure upgrades them when the current version expires.
+
+Foundry modality detection honors `spring.ai.model.chat` and
+`spring.ai.model.embedding`. An explicitly configured Azure OpenAI deployment is
+rejected when its corresponding selector chooses another provider.
+`spring.ai.azure.openai.openai-api-key` must resolve empty because a non-empty
+value selects public OpenAI instead of the provisioned Azure account. Generated
+runtime bindings keep this property empty.
+
 Hosting uses Azure Container Apps, a container registry, and Log Analytics.
 The current deployment supports HTTP web applications. Explicit non-web mode and
 HTTPS-only application servers require different hosting contracts and are rejected.
@@ -90,14 +137,16 @@ File-based embedded databases require a persistence policy and are not adopted.
 
 - `azure.yaml`, with one explicitly authored service and database hooks only when needed.
 - `infra/`, copied from one extension-owned, parameterized Bicep template for
-  embedded, MySQL/password, PostgreSQL/password, and PostgreSQL/managed identity.
+  embedded, MySQL/password, PostgreSQL/password, PostgreSQL/managed identity,
+  and optional Foundry chat or embedding resources.
 - `.azd-spring/`, containing database hooks when needed and, without an
   application-owned Dockerfile, generated container assets and Spring overrides.
 
 When the application has a root `Dockerfile`, initialization preserves and uses
 it instead of generating Docker assets. Deployment-owned Spring profiles, port,
-and datasource bindings are supplied through Container Apps environment variables,
-including a secret reference for password authentication. The extension does not
+datasource, and Foundry bindings are supplied through Container Apps environment
+variables, including explicit application inputs and secret references for
+password, API-key, or application-secret authentication. The extension does not
 validate or rewrite the Dockerfile; it remains responsible for producing a runnable
 HTTP image and including any application-owned external configuration it needs.
 Without a root Dockerfile, the container builds through Maven
@@ -128,6 +177,10 @@ credential values are never displayed. This source repair is unavailable with
 remain explicit application fixes.
 This targeted validation does not scan arbitrary properties, application code, or
 other packaged resources; review those before building or publishing an image.
+Initialization also rejects literal `spring.ai.azure.openai.api-key` values in
+the same packaged and retained external configuration scope. Interactive Java
+properties repair follows the datasource-password confirmation and non-disclosure
+rules.
 Existing `azure.yaml`, `azure.yml`, `infra/`, or `.azd-spring/` files are not
 adopted or overwritten. Root Dockerfiles and `.dockerignore` files are preserved.
 Generated Dockerfile-specific ignore rules exclude exact development artifacts
@@ -145,6 +198,12 @@ ACA addresses can change; run `azd provision` to refresh the allowlist. Incremen
 deployment does not remove obsolete rules, including any legacy
 `development-public-access` rule from an older template; remove those explicitly.
 There is no VNet integration, private endpoint, or fixed-egress configuration.
+Foundry keeps public network access enabled with a default-deny network ACL that
+allows only the same ACA-reported outbound addresses. API-key mode resolves the
+account key inside Bicep and injects it directly into a Container Apps secret;
+the key is not stored in generated files or azd environment values. Managed
+identity mode disables local authentication, grants the Container App identity
+`Cognitive Services OpenAI User`, and creates no Foundry secret.
 Stronger JDBC certificate-verification modes are preserved, using the image's
 system CA bundle for PostgreSQL and Java trust store for MySQL.
 Embedded databases are not a durable Azure storage solution.
@@ -267,6 +326,10 @@ connections to verify rejected changes were not committed, then remove their fix
 
 Documented decision fixtures are in
 [`internal/spring/testdata/resolution`](internal/spring/testdata/resolution/README.md).
+Foundry chat acceptance applications and reviewed generated output live in the
+independent
+[`azure-dev-spring-extension-tests`](https://github.com/weidongxu-microsoft/azure-dev-spring-extension-tests)
+repository.
 
 The extension imports a published azd Go module for the SDK/Maven tooling, but
 does not call core project serialization or infrastructure composition APIs.

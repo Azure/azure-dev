@@ -25,6 +25,8 @@ const (
 	MySQL ResourceKind = "mysql"
 	// PostgreSQL identifies a PostgreSQL database.
 	PostgreSQL ResourceKind = "postgresql"
+	// Foundry identifies a Microsoft Foundry model endpoint.
+	Foundry ResourceKind = "foundry"
 )
 
 // Evidence identifies the property and source establishing a requirement, without its value.
@@ -44,6 +46,30 @@ type Requirement struct {
 	Trace          []Evidence
 }
 
+// FoundryRequirement describes an Azure OpenAI-compatible model deployment.
+type FoundryRequirement struct {
+	ChatDeploymentName      string
+	EmbeddingDeploymentName string
+	Authentication          string
+	Evidence                []Evidence
+}
+
+// ApplicationInputKind identifies how a user-declared runtime input is exposed to the application.
+type ApplicationInputKind string
+
+const (
+	// ApplicationInputValue exposes a nonsecret Container App environment value.
+	ApplicationInputValue ApplicationInputKind = "value"
+	// ApplicationInputSecret exposes a Container App secret reference.
+	ApplicationInputSecret ApplicationInputKind = "secret"
+)
+
+// ApplicationInput declares one explicit runtime environment binding.
+type ApplicationInput struct {
+	Name string
+	Kind ApplicationInputKind
+}
+
 // Application is the resolved, credential-free input to deployment planning.
 type Application struct {
 	ID                     string
@@ -56,15 +82,54 @@ type Application struct {
 	Profiles               []string
 	Embedded               *EmbeddedBinding
 	Requirements           []Requirement
+	Foundry                *FoundryRequirement
 	MavenWrapper           bool
 	ExternalConfigurations []string
 	IdentityExtensions     bool
 	Dockerfile             string
+	ApplicationInputs      []ApplicationInput
 	InputEvidence          []Evidence
+	InputOwnershipEvidence []Evidence
 	InputReferences        map[string][]Evidence
 }
 
+const (
+	webApplicationTypeProperty = "spring.main.web-application-type"
+	serverSSLEnabledProperty   = "server.ssl.enabled"
+	chatModelProperty          = "spring.ai.model.chat"
+	embeddingModelProperty     = "spring.ai.model.embedding"
+)
+
+var deploymentOwnedHostingSettings = []string{
+	"server.address",
+	"server.port",
+	webApplicationTypeProperty,
+	serverSSLEnabledProperty,
+}
+
+var deploymentOwnedFoundrySelectors = []string{
+	chatModelProperty,
+	embeddingModelProperty,
+}
+
+var deploymentOwnedDatasourceSelectors = []string{
+	"spring.autoconfigure.exclude",
+	"spring.cloud.azure.jdbc.passwordless-enabled",
+	"spring.datasource.azure.passwordless-enabled",
+	"spring.datasource.embedded-database-connection",
+	"spring.datasource.jndi-name",
+}
+
 var databaseName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,62}$`)
+var modelDeploymentName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
+
+const (
+	defaultFoundryChatModelName         = "gpt-5.6-sol"
+	defaultFoundryChatModelVersion      = "2026-07-09"
+	defaultFoundryEmbeddingModelName    = "text-embedding-3-small"
+	defaultFoundryEmbeddingModelVersion = "1"
+)
+
 var customDatasource = regexp.MustCompile(
 	`(?s)@(?:org\.springframework\.context\.annotation\.)?Bean\b(?:\s*\([^()]*\))?` +
 		`(?:[^{};@]|@[\w.$]+(?:\s*\([^()]*\))?)*?\b(?:DataSource|ConnectionFactory|HikariDataSource|` +
@@ -139,7 +204,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if err != nil {
 		return nil, err
 	}
-	webApplicationType, err := c.resolve("spring.main.web-application-type")
+	webApplicationType, err := c.resolve(webApplicationTypeProperty)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +212,7 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, unsupportedConfiguration(
 			"spring.main.web-application-type=none is not supported; current deployment requires an HTTP web application")
 	}
-	serverSSL, err := c.resolve("server.ssl.enabled")
+	serverSSL, err := c.resolve(serverSSLEnabledProperty)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +227,16 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 	if port < 1 || port > 65535 {
 		return nil, invalidConfiguration("server.port must be between 1 and 65535")
 	}
+	inputEvidence := slices.Clone(c.traces["server.port"])
+	ownershipEvidence := slices.Clone(inputEvidence)
+	ownershipEvidence = append(ownershipEvidence, c.traces[webApplicationTypeProperty]...)
+	ownershipEvidence = append(ownershipEvidence, c.traces[serverSSLEnabledProperty]...)
+	for _, setting := range deploymentOwnedConfigurationSettings {
+		ownershipEvidence = append(ownershipEvidence, c.traces[setting]...)
+	}
+	for _, setting := range c.profileGroupKeys {
+		ownershipEvidence = append(ownershipEvidence, c.traces[setting]...)
+	}
 	a := &Application{
 		ID:   "app",
 		Name: projectName(m.Artifact), JavaVersion: java, JarName: m.Build.FinalName + ".jar",
@@ -170,8 +245,8 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		Port:           port, Profiles: c.profiles,
 		ExternalConfigurations: c.externalFiles,
 		IdentityExtensions:     m.hasPackagedIdentityExtensions(),
-		InputEvidence:          slices.Clone(c.traces["server.port"]),
-		InputReferences:        c.placeholderReferences(),
+		InputEvidence:          inputEvidence,
+		InputOwnershipEvidence: ownershipEvidence,
 	}
 	if info, err := root.Lstat("Dockerfile"); err == nil {
 		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
@@ -214,16 +289,193 @@ func Analyze(ctx context.Context, directory string, resolver ModelResolver, look
 		return nil, err
 	}
 	a.InputEvidence = append(a.InputEvidence, c.traces["spring.datasource.url"]...)
+	a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces["spring.datasource.url"]...)
 	if embedded {
 		a.Embedded, err = resolveEmbedded(m, c)
 		if err != nil {
 			return nil, err
 		}
 	}
+	for _, setting := range deploymentOwnedDatasourceSelectors {
+		a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces[setting]...)
+	}
 	if requirement != nil {
 		a.Requirements = []Requirement{*requirement}
 	}
+	a.Foundry, err = detectFoundry(m, c)
+	if err != nil {
+		return nil, err
+	}
+	for _, setting := range deploymentOwnedFoundrySelectors {
+		a.InputOwnershipEvidence = append(a.InputOwnershipEvidence, c.traces[setting]...)
+	}
+	a.InputReferences = c.placeholderReferences()
 	return a, nil
+}
+
+func detectFoundry(m *model, c *configuration) (*FoundryRequirement, error) {
+	const (
+		endpointProperty            = "spring.ai.azure.openai.endpoint"
+		apiKeyProperty              = "spring.ai.azure.openai.api-key"
+		publicKeyProperty           = "spring.ai.azure.openai.openai-api-key"
+		chatDeploymentProperty      = "spring.ai.azure.openai.chat.options.deployment-name"
+		embeddingDeploymentProperty = "spring.ai.azure.openai.embedding.options.deployment-name"
+		azureOpenAIProvider         = "azure-openai"
+	)
+	properties := []string{
+		endpointProperty,
+		apiKeyProperty,
+		chatDeploymentProperty,
+		embeddingDeploymentProperty,
+	}
+	sharedConfigured := configuredProperty(c, endpointProperty) || configuredProperty(c, apiKeyProperty)
+	chatConfigured := configuredProperty(c, chatDeploymentProperty)
+	embeddingConfigured := configuredProperty(c, embeddingDeploymentProperty)
+	chatModel, chatModelPresent, err := resolvedProvider(
+		c, chatModelProperty, sharedConfigured || chatConfigured)
+	if err != nil {
+		return nil, err
+	}
+	embeddingModel, embeddingModelPresent, err := resolvedProvider(
+		c, embeddingModelProperty, embeddingConfigured)
+	if err != nil {
+		return nil, err
+	}
+	active := sharedConfigured || chatConfigured || embeddingConfigured ||
+		chatModelPresent && strings.EqualFold(chatModel, azureOpenAIProvider) ||
+		embeddingModelPresent && strings.EqualFold(embeddingModel, azureOpenAIProvider)
+	if !active {
+		return nil, nil
+	}
+	if !m.hasDependency("org.springframework.ai", "spring-ai-starter-model-azure-openai") {
+		return nil, unsupportedConfiguration(
+			"Azure OpenAI configuration requires org.springframework.ai:spring-ai-starter-model-azure-openai")
+	}
+	if chatConfigured && chatModelPresent && !strings.EqualFold(chatModel, azureOpenAIProvider) {
+		return nil, unsupportedConfiguration(
+			"%s cannot configure Azure OpenAI while %s selects %s",
+			chatDeploymentProperty, chatModelProperty, chatModel)
+	}
+	if embeddingConfigured && embeddingModelPresent && !strings.EqualFold(embeddingModel, azureOpenAIProvider) {
+		return nil, unsupportedConfiguration(
+			"%s cannot configure Azure OpenAI while %s selects %s",
+			embeddingDeploymentProperty, embeddingModelProperty, embeddingModel)
+	}
+	chatEnabled := chatConfigured || chatModelPresent && strings.EqualFold(chatModel, azureOpenAIProvider)
+	embeddingEnabled := embeddingConfigured ||
+		embeddingModelPresent && strings.EqualFold(embeddingModel, azureOpenAIProvider)
+	if !chatEnabled && !embeddingEnabled && !chatModelPresent {
+		// Preserve chat as the legacy default when only shared Azure OpenAI properties are configured.
+		chatEnabled = true
+	}
+	if !chatEnabled && !embeddingEnabled {
+		return nil, nil
+	}
+	if _, present := c.raw(publicKeyProperty); present {
+		value, err := c.resolve(publicKeyProperty)
+		if err != nil {
+			if _, missing := errors.AsType[*missingInput](err); missing {
+				return nil, unsupportedConfiguration(
+					"%s cannot be unresolved because a non-empty value selects public OpenAI instead of Azure OpenAI",
+					publicKeyProperty)
+			}
+			return nil, err
+		}
+		if strings.TrimSpace(value) != "" {
+			return nil, unsupportedConfiguration(
+				"%s selects public OpenAI instead of the provisioned Azure OpenAI account",
+				publicKeyProperty)
+		}
+	}
+	if endpoint, present := c.raw(endpointProperty); present {
+		value := strings.TrimSpace(endpoint.text)
+		if value != "" {
+			_, fallback, placeholderOnly := runtimePlaceholder(value)
+			if !placeholderOnly || fallback != "" {
+				return nil, unsupportedConfiguration(
+					"%s in %s must be empty or a runtime placeholder without a default; "+
+						"deployment provisions the Foundry endpoint",
+					endpoint.key, endpoint.source)
+			}
+		}
+	}
+	chatDeploymentName, err := foundryDeploymentName(c, chatDeploymentProperty, defaultFoundryChatModelName, chatEnabled)
+	if err != nil {
+		return nil, err
+	}
+	embeddingDeploymentName, err := foundryDeploymentName(
+		c, embeddingDeploymentProperty, defaultFoundryEmbeddingModelName, embeddingEnabled)
+	if err != nil {
+		return nil, err
+	}
+	if chatDeploymentName != "" && chatDeploymentName == embeddingDeploymentName {
+		return nil, invalidConfiguration(
+			"%s and %s must use different deployment names",
+			chatDeploymentProperty, embeddingDeploymentProperty)
+	}
+	authentication := "managedIdentity"
+	if apiKey, present := c.raw(apiKeyProperty); present && strings.TrimSpace(apiKey.text) != "" {
+		authentication = "apiKey"
+	}
+	var evidence []Evidence
+	for _, key := range append(properties, chatModelProperty, embeddingModelProperty) {
+		if value, present := c.raw(key); present {
+			item := Evidence{Property: value.key, Source: value.source}
+			if !slices.Contains(evidence, item) {
+				evidence = append(evidence, item)
+			}
+		}
+	}
+	return &FoundryRequirement{
+		ChatDeploymentName:      chatDeploymentName,
+		EmbeddingDeploymentName: embeddingDeploymentName,
+		Authentication:          authentication,
+		Evidence:                evidence,
+	}, nil
+}
+
+func resolvedProvider(c *configuration, property string, required bool) (string, bool, error) {
+	if _, present := c.raw(property); !present {
+		return "", false, nil
+	}
+	value, err := c.resolve(property)
+	if err != nil {
+		if _, missing := errors.AsType[*missingInput](err); missing && !required {
+			return "", false, nil
+		}
+		return "", true, err
+	}
+	return strings.TrimSpace(value), true, nil
+}
+
+func configuredProperty(c *configuration, property string) bool {
+	value, present := c.raw(property)
+	return present && strings.TrimSpace(value.text) != ""
+}
+
+func foundryDeploymentName(
+	c *configuration, property string, defaultName string, enabled bool,
+) (string, error) {
+	if !enabled {
+		return "", nil
+	}
+	deploymentName := defaultName
+	if deployment, present := c.raw(property); present {
+		value := strings.TrimSpace(deployment.text)
+		if _, fallback, placeholderOnly := runtimePlaceholder(value); placeholderOnly {
+			if strings.TrimSpace(fallback) != "" {
+				deploymentName = strings.TrimSpace(fallback)
+			}
+		} else if value != "" {
+			deploymentName = value
+		}
+	}
+	if !modelDeploymentName.MatchString(deploymentName) {
+		return "", invalidConfiguration(
+			"%s must contain 2-64 letters, numbers, periods, underscores, or hyphens",
+			property)
+	}
+	return deploymentName, nil
 }
 
 func validateResourceLayout(m *model, projectDirectory string) error {
@@ -312,25 +564,29 @@ func inspectCode(ctx context.Context, root *os.Root) error {
 	})
 }
 
+type unsupportedDatasourceSetting struct {
+	key         string
+	replacement string
+}
+
+var unsupportedDatasourceSettings = []unsupportedDatasourceSetting{
+	{"spring.datasource.hikari.username", "spring.datasource.username/password"},
+	{"spring.datasource.hikari.password", "spring.datasource.username/password"},
+	{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
+	{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.hikari.driver-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.tomcat.url", "spring.datasource.url"},
+	{"spring.datasource.tomcat.username", "spring.datasource.username"},
+	{"spring.datasource.tomcat.password", "spring.datasource.password"},
+	{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
+	{"spring.datasource.dbcp2.url", "spring.datasource.url"},
+	{"spring.datasource.dbcp2.username", "spring.datasource.username"},
+	{"spring.datasource.dbcp2.password", "spring.datasource.password"},
+	{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
+}
+
 func detectDatasource(m *model, c *configuration) (*Requirement, bool, error) {
-	for _, setting := range []struct {
-		key         string
-		replacement string
-	}{
-		{"spring.datasource.hikari.username", "spring.datasource.username/password"},
-		{"spring.datasource.hikari.password", "spring.datasource.username/password"},
-		{"spring.datasource.hikari.jdbc-url", "spring.datasource.url"},
-		{"spring.datasource.hikari.data-source-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.hikari.driver-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.tomcat.url", "spring.datasource.url"},
-		{"spring.datasource.tomcat.username", "spring.datasource.username"},
-		{"spring.datasource.tomcat.password", "spring.datasource.password"},
-		{"spring.datasource.tomcat.driver-class-name", "spring.datasource.driver-class-name"},
-		{"spring.datasource.dbcp2.url", "spring.datasource.url"},
-		{"spring.datasource.dbcp2.username", "spring.datasource.username"},
-		{"spring.datasource.dbcp2.password", "spring.datasource.password"},
-		{"spring.datasource.dbcp2.driver-class-name", "spring.datasource.driver-class-name"},
-	} {
+	for _, setting := range unsupportedDatasourceSettings {
 		if _, present := c.raw(setting.key); present {
 			return nil, false, unsupportedConfiguration(
 				"%s is not supported; use %s instead", setting.key, setting.replacement)

@@ -20,11 +20,25 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
+// The tracing package caches the first global provider, so repeated runs must share it.
+var workflowTracerProvider = tracesdk.NewTracerProvider()
+
 func TestTelemetryMiddleware_WorkflowStepsExcludeExtensionDrops(t *testing.T) {
+	for _, run := range []string{"first", "second"} {
+		t.Run(run, assertTelemetryMiddlewareWorkflowStepsExcludeExtensionDrops)
+	}
+}
+
+func assertTelemetryMiddlewareWorkflowStepsExcludeExtensionDrops(t *testing.T) {
+	t.Helper()
 	// Not parallel: installs the process-wide tracer provider and mutates the
 	// process-global usage attributes.
 	recorder := tracetest.NewSpanRecorder()
-	otel.SetTracerProvider(tracesdk.NewTracerProvider(tracesdk.WithSpanProcessor(recorder)))
+	workflowTracerProvider.RegisterSpanProcessor(recorder)
+	t.Cleanup(func() {
+		workflowTracerProvider.UnregisterSpanProcessor(recorder)
+	})
+	otel.SetTracerProvider(workflowTracerProvider)
 	tracing.ResetUsageAttributesForTest()
 	t.Cleanup(tracing.ResetUsageAttributesForTest)
 

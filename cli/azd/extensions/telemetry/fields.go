@@ -11,6 +11,13 @@
 // executes extension code), finds those payload literals, and collects their
 // attribute keys; validateExtensionTelemetryUsages then checks each key against
 // the declarations in this file.
+//
+// Keys share one schema across extensions. Core adds only "ext."; neither
+// extension.id nor extension.event namespaces declarations. Use feature-scoped
+// names such as "ext.agent.invoke.protocol". Reuse a key only when its meaning,
+// allowed values, classification, and purpose match. Existing generic keys such
+// as "ext.source" and "ext.operation" are compatibility exceptions, not naming
+// examples for new fields.
 package telemetry
 
 import (

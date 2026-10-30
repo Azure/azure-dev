@@ -1372,11 +1372,16 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 		)
 	}
 
-	var startupCmd string
-	if agentConfig, cfgErr := projectpkg.LoadServiceTargetAgentConfig(
+	agentConfig, err := projectpkg.LoadServiceTargetAgentConfig(
 		svc,
-	); cfgErr == nil {
-		startupCmd = agentConfig.StartupCommand
+	)
+	if err != nil {
+		return nil, exterrors.ValidationFromError(
+			err,
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("failed to load local run configuration for service %s", svc.Name),
+			"fix the agent service configuration in azure.yaml",
+		)
 	}
 	projectpkg.WarnOrphanedConfigEnv(svc)
 
@@ -1413,7 +1418,7 @@ func resolveServiceRunContext(ctx context.Context, azdClient *azdext.AzdClient, 
 	return &ServiceRunContext{
 		ServiceName:           svc.Name,
 		ProjectDir:            projectDir,
-		StartupCommand:        startupCmd,
+		StartupCommand:        agentConfig.StartupCommand,
 		ServiceEnvironment:    svc.GetEnvironment(),
 		HasServiceEnvironment: hasServiceEnvironment,
 		Definition:            definition,

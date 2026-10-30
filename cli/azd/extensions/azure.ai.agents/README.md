@@ -90,6 +90,13 @@ must use GA wire names. Prompt and hosted agents do not accept this property.
 
 ## Hosted agent deployment preview
 
+Hosted-agent `container.resources` settings are checked locally against the schema before
+defaults are applied. Unknown fields, wrong types, empty/null values, and malformed CPU/memory
+strings are rejected; omitted fields retain their independent defaults. Valid resource strings
+are passed to Foundry for SKU, pairing, and regional availability validation.
+Invalid service settings also stop `azd ai agent run` before command selection, rather than
+discarding an authored `startupCommand` and falling back to auto-detection.
+
 With azd 1.37.0 or later and an existing environment bound to a Microsoft Foundry
 project, use the core deployment command:
 

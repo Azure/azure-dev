@@ -76,6 +76,9 @@ func resolvePreviewSource(service *azdext.ServiceConfig, projectRoot string) (*a
 				return nil, exterrors.Validation(exterrors.CodeUnsupportedAgentKind,
 					"deployment preview supports kind: hosted only", "select a hosted agent service")
 			}
+			if err := validateHostedAgentContainerSettings(service.GetName(), resolved); err != nil {
+				return nil, previewConfigurationError()
+			}
 			return service, nil
 		}
 	}

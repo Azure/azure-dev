@@ -566,6 +566,9 @@ func AgentDefinitionFromService(
 // they are not decoded as generic Connection resources here.
 func LoadServiceTargetAgentConfig(svc *azdext.ServiceConfig) (*ServiceTargetAgentConfig, error) {
 	s := ServiceConfigProps(svc)
+	if err := validateHostedAgentContainerSettings(svc.GetName(), s); err != nil {
+		return nil, err
+	}
 	cfg := &ServiceTargetAgentConfig{}
 	if s == nil {
 		return cfg, nil
@@ -699,6 +702,37 @@ func ResolveServiceConfigInPlace(
 			svc.Config = resolved
 		}
 	}
+	return nil
+}
+
+// ResolveAgentContainerSettings resolves and validates only the hosted container subtree before defaults.
+func ResolveAgentContainerSettings(svc *azdext.ServiceConfig, projectRoot string) error {
+	props := ServiceConfigProps(svc)
+	if structKind(props) != string(agent_yaml.AgentKindHosted) {
+		return nil
+	}
+	container, declared := props.GetFields()["container"]
+	if !declared {
+		return nil
+	}
+	resolved, err := foundry.ResolveFileRefs(
+		map[string]any{"kind": "hosted", "container": container.AsInterface()}, projectRoot,
+	)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidServiceConfig,
+			fmt.Sprintf("service %q has invalid container references", svc.GetName()),
+			"check that file references in container.resources are readable local files with valid YAML or JSON",
+		)
+	}
+	candidate, err := structpb.NewStruct(resolved)
+	if err != nil {
+		return fmt.Errorf("encode resolved container settings: %w", err)
+	}
+	if err := validateHostedAgentContainerSettings(svc.GetName(), candidate); err != nil {
+		return err
+	}
+	props.Fields["container"] = candidate.Fields["container"]
 	return nil
 }
 

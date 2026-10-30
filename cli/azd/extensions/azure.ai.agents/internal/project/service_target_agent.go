@@ -301,6 +301,24 @@ func (p *AgentServiceTargetProvider) adoptAndResolveServiceConfig(
 	return p.resolveServiceConfig()
 }
 
+func (p *AgentServiceTargetProvider) validateDeploymentServiceConfig(
+	ctx context.Context, serviceConfig *azdext.ServiceConfig,
+) error {
+	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+		return err
+	}
+	if container := ServiceConfigProps(p.serviceConfig).GetFields()["container"]; container != nil &&
+		containsFileRef(container.AsInterface()) {
+		if err := p.loadProjectPath(ctx); err != nil {
+			return err
+		}
+		if err := ResolveAgentContainerSettings(p.serviceConfig, p.projectPath); err != nil {
+			return err
+		}
+	}
+	return validateHostedAgentContainerSettings(p.serviceConfig.GetName(), ServiceConfigProps(p.serviceConfig))
+}
+
 func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error {
 	if p.projectPath != "" {
 		return nil
@@ -846,7 +864,7 @@ func (p *AgentServiceTargetProvider) GetTargetResource(
 	serviceConfig *azdext.ServiceConfig,
 	defaultResolver func() (*azdext.TargetResource, error),
 ) (*azdext.TargetResource, error) {
-	if err := p.adoptAndResolveServiceConfig(ctx, serviceConfig); err != nil {
+	if err := p.validateDeploymentServiceConfig(ctx, serviceConfig); err != nil {
 		return nil, err
 	}
 	if p.isPromptAgentService() {

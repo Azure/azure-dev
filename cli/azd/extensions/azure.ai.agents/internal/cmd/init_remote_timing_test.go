@@ -85,7 +85,10 @@ func TestInitExplicitRemoteTemplateLoadingTiming(t *testing.T) {
 				body, code := test.content, http.StatusOK
 				switch request.URL.Path {
 				case apiDir:
-					downloadContext <- request.Context()
+					select {
+					case downloadContext <- request.Context():
+					default:
+					}
 					body = `[{"name":"azure.yaml","type":"file"}]`
 				case apiDir + "/azure.yaml":
 					if test.downloadErr {

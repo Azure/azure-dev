@@ -266,14 +266,14 @@ func (c *infraCapabilities) ConfigureDefaults(ctx context.Context, mappings map[
 func (c *infraCapabilities) PromptModels(ctx context.Context, models []infra.Model) ([]infra.Model, error) {
 	if c.host.noPrompt {
 		return nil, commandError("model_selection_required", "Model selection requires an interactive decision.",
-			"Set CU_MODEL_SELECTION to none, recommended, or explicit model@version selectors.")
+			"Use azd env config set cu.modelSelection with none, recommended, or explicit model@version selectors.")
 	}
 	return c.host.promptModels(ctx, models)
 }
 func (c *infraCapabilities) SetupModels(ctx context.Context) error {
 	if c.host.noPrompt && c.request.Selection == "prompt" {
 		return commandError("model_selection_required", "Optional model setup requires a noninteractive selection.",
-			"Set CU_MODEL_SELECTION to none, recommended, or explicit model@version selectors.")
+			"Use azd env config set cu.modelSelection with none, recommended, or explicit model@version selectors.")
 	}
 	_, err := infra.SetupModels(ctx, c, c.request.Selection, "infra/models.json", true, false)
 	return err

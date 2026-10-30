@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"azure.ai.content-understanding/internal/cuclient"
@@ -134,17 +135,8 @@ func (c Choices) Normalize() (Choices, error) {
 
 func environmentAssignments(c Choices) ([]string, map[string]string) {
 	keys := []string{"AZURE_ENV_NAME", "AZURE_LOCATION", "AZURE_SUBSCRIPTION_ID", "AZURE_TENANT_ID",
-		"CU_API_VERSION", "CU_MODEL_SELECTION", "CU_MODEL_SETUP_COMPLETE", "FOUNDRY_RESOURCE_PREFIX",
-		"FOUNDRY_EXISTING_ENDPOINT", "FOUNDRY_EXISTING_RESOURCE_GROUP", "AZD_ASSIGN_ROLES", "CU_CONFIG_SETUP_FORCE"}
-	boolean := func(value bool) string {
-		if value {
-			return "true"
-		}
-		return "false"
-	}
-	values := []string{c.Environment, c.Location, c.SubscriptionID, c.TenantID, c.APIVersion, c.ModelSelection, "false",
-		c.FoundryPrefix, c.FoundryEndpoint, c.FoundryResourceGroup,
-		boolean(c.AssignRoles), boolean(c.ForceConfigurationSetup)}
+		"CU_API_VERSION"}
+	values := []string{c.Environment, c.Location, c.SubscriptionID, c.TenantID, c.APIVersion}
 	result := make(map[string]string, len(keys))
 	for index, key := range keys {
 		result[key] = key + "=\"" + values[index] + "\""
@@ -152,7 +144,7 @@ func environmentAssignments(c Choices) ([]string, map[string]string) {
 	return keys, result
 }
 
-// MergeEnvironment preserves unknown lines, completed model state, and newline style.
+// MergeEnvironment preserves unmanaged lines, including legacy settings, and newline style.
 func MergeEnvironment(existing string, c Choices) string {
 	keys, assignments := environmentAssignments(c)
 	newline := "\n"
@@ -172,17 +164,13 @@ func MergeEnvironment(existing string, c Choices) string {
 			continue
 		}
 		seen[key] = true
-		if key == "CU_MODEL_SETUP_COMPLETE" {
-			output.WriteString(line)
-		} else {
-			ending := newline
-			if strings.HasSuffix(line, "\r\n") {
-				ending = "\r\n"
-			} else if strings.HasSuffix(line, "\n") {
-				ending = "\n"
-			}
-			output.WriteString(assignments[key] + ending)
+		ending := newline
+		if strings.HasSuffix(line, "\r\n") {
+			ending = "\r\n"
+		} else if strings.HasSuffix(line, "\n") {
+			ending = "\n"
 		}
+		output.WriteString(assignments[key] + ending)
 	}
 	for _, key := range keys {
 		if seen[key] {
@@ -194,6 +182,74 @@ func MergeEnvironment(existing string, c Choices) string {
 		output.WriteString(assignments[key] + newline)
 	}
 	return output.String()
+}
+
+func jsonObject(body []byte) (map[string]json.RawMessage, error) {
+	value := map[string]json.RawMessage{}
+	if json.Unmarshal(body, &value) != nil || value == nil {
+		return nil, invalid("invalid_project_config", "Generated project configuration must be a JSON object.")
+	}
+	return value, nil
+}
+
+func renderParameters(body []byte, c Choices) ([]byte, error) {
+	document, err := jsonObject(body)
+	if err != nil {
+		return nil, err
+	}
+	parameters, err := jsonObject(document["parameters"])
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range map[string]any{
+		"foundryResourcePrefix": c.FoundryPrefix, "existingFoundryEndpoint": c.FoundryEndpoint,
+		"existingFoundryResourceGroup": c.FoundryResourceGroup, "assignRolesToPrincipal": strconv.FormatBool(c.AssignRoles),
+	} {
+		parameter, err := jsonObject(parameters[name])
+		if err != nil {
+			return nil, err
+		}
+		parameter["value"], err = json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		parameters[name], err = json.Marshal(parameter)
+		if err != nil {
+			return nil, err
+		}
+	}
+	document["parameters"], err = json.Marshal(parameters)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(document, "", "  ")
+}
+
+func renderEnvironmentConfig(body []byte, c Choices) ([]byte, error) {
+	document, err := jsonObject(body)
+	if err != nil {
+		return nil, err
+	}
+	section := map[string]json.RawMessage{}
+	if raw, present := document["cu"]; present {
+		section, err = jsonObject(raw)
+		if err != nil {
+			return nil, err
+		}
+	}
+	section["modelSelection"], err = json.Marshal(c.ModelSelection)
+	if err != nil {
+		return nil, err
+	}
+	section["forceConfigurationSetup"], err = json.Marshal(c.ForceConfigurationSetup)
+	if err != nil {
+		return nil, err
+	}
+	document["cu"], err = json.Marshal(section)
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(document, "", "  ")
 }
 
 // Materialize checks every output before writing and never follows output symlinks.
@@ -228,8 +284,10 @@ func Materialize(ctx context.Context, target string, choices Choices, force bool
 			"The target is not an existing generated project; choose an empty directory or explicitly use --force.")
 	}
 	envPath := filepath.Join(".azure", choices.Environment, ".env")
+	envConfigPath := filepath.Join(".azure", choices.Environment, "config.json")
+	const parameterPath = "infra/main.parameters.json"
 	writes := map[string][]byte{}
-	replaces := map[string]bool{envPath: true, ".azure/config.json": true}
+	replaces := map[string]bool{envPath: true, envConfigPath: true, parameterPath: true, ".azure/config.json": true}
 	if !reuse {
 		err := fs.WalkDir(assets, "assets", func(path string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil || entry.IsDir() {
@@ -248,14 +306,13 @@ func Materialize(ctx context.Context, target string, choices Choices, force bool
 		}
 	}
 	config := map[string]json.RawMessage{}
-	existingEnv := ""
+	body, err := localio.Read(filepath.Join(target, envPath))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Generation{}, err
+	}
+	existingEnv := string(body)
 	if reuse {
-		body, err := localio.Read(filepath.Join(target, envPath))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return Generation{}, err
-		}
-		existingEnv = string(body)
-		body, err = localio.Read(filepath.Join(target, ".azure/config.json"))
+		body, err := localio.Read(filepath.Join(target, ".azure/config.json"))
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return Generation{}, err
 		}
@@ -267,6 +324,30 @@ func Materialize(ctx context.Context, target string, choices Choices, force bool
 		writes["infra/models.json"] = []byte("[]\n")
 		replaces["infra/models.json"] = force
 	}
+	parameterBody := writes[parameterPath]
+	if reuse {
+		parameterBody, err = localio.Read(filepath.Join(target, parameterPath))
+		if err != nil {
+			return Generation{}, err
+		}
+	}
+	writes[parameterPath], err = renderParameters(parameterBody, choices)
+	if err != nil {
+		return Generation{}, err
+	}
+	writes[parameterPath] = append(writes[parameterPath], '\n')
+	envConfigBody, err := localio.Read(filepath.Join(target, envConfigPath))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Generation{}, err
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		envConfigBody = []byte("{}")
+	}
+	writes[envConfigPath], err = renderEnvironmentConfig(envConfigBody, choices)
+	if err != nil {
+		return Generation{}, err
+	}
+	writes[envConfigPath] = append(writes[envConfigPath], '\n')
 	config["version"] = json.RawMessage("1")
 	config["defaultEnvironment"], err = json.Marshal(choices.Environment)
 	if err != nil {

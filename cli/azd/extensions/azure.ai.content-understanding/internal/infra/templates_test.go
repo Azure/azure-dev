@@ -6,10 +6,13 @@ package infra
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -30,15 +33,14 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 		"azure.yaml":                  "1d88ddc6e2fecf9e4ac03e277c401a7db6417c43dee3b4fc2d7b3a4a719f73d8",
 		"hooks/postprovision.ps1":     "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
 		"hooks/postprovision.sh":      "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8",
-		"infra/main.bicep":            "b0482c22955e88706f9c4c5f709d553507627d7c8d39a94655c68bb3b66ade86",
-		"infra/main.parameters.json":  "c6a46f4caa1468b7c04a14f4ad15fabeda362dc16043be9f94a4b4e7b91bcf79",
+		"infra/main.bicep":            "1c720ef1f8e9ef5c5b85a7a4e85cadd6598bc60336b6241ed3a5e6a213ad4c9f",
 		"infra/models.json":           "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
 		"infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212",
 	}
 	directory := filepath.Join(testutil.TempDir(t), "project with spaces")
 	result, err := Materialize(t.Context(), directory, choices(), false)
 	require.NoError(t, err)
-	assert.Len(t, result.Files, 10)
+	assert.Len(t, result.Files, 11)
 	assert.False(t, result.ReusedExistingTemplate)
 	assert.Equal(t, []string{"cd '" + directory + "'", "azd auth login", "azd up"}, result.NextSteps)
 	for relative, expected := range golden {
@@ -52,7 +54,7 @@ func TestCanonicalInfrastructureAssets(t *testing.T) {
 	assert.Contains(t, string(body), "`azd ai cu` extension")
 	assert.Contains(t, string(body), "Provisioning and postprovision setup use azd / Entra ID authentication.")
 	assert.Contains(t, string(body), "`CU_API_KEY` applies only to separate CU data-plane commands")
-	assert.Contains(t, string(body), "azd env set CU_MODEL_SELECTION <selection>")
+	assert.Contains(t, string(body), "azd env config set cu.modelSelection <selection>")
 	assert.NotContains(t, string(body), "The native extension is Entra-only")
 	assert.NotContains(t, string(body), "Decline every model confirmation")
 	assert.NotContains(t, string(body), "Runtime key injection")
@@ -79,7 +81,8 @@ func TestGenerationReuseForceAndPreflight(t *testing.T) {
 	result, err := Materialize(t.Context(), directory, choices(), false)
 	require.NoError(t, err)
 	assert.True(t, result.ReusedExistingTemplate)
-	assert.Equal(t, []string{".azure/config.json", ".azure/dev/.env"}, result.Files)
+	assert.Equal(t, []string{".azure/config.json", ".azure/dev/.env", ".azure/dev/config.json",
+		"infra/main.parameters.json"}, result.Files)
 	body, err := os.ReadFile(filepath.Join(directory, ".azure/config.json")) // #nosec G304 -- Private test state.
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"unknown":{"number":9007199254740993},"version":1,"defaultEnvironment":"dev"}`, string(body))
@@ -104,6 +107,10 @@ func TestGenerationReuseForceAndPreflight(t *testing.T) {
 	body, err = os.ReadFile(filepath.Join(directory, "infra/models.json")) // #nosec G304 -- Private test state.
 	require.NoError(t, err)
 	assert.Equal(t, "[]\n", string(body))
+	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test state.
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "CUSTOM=\"retained\"\r\n")
+	assert.Contains(t, string(body), "CU_MODEL_SETUP_COMPLETE=\"true\"\r\n")
 }
 
 func TestGenerationInputAndPathSafety(t *testing.T) {
@@ -172,11 +179,167 @@ func TestEnvironmentMergeDuplicateManagedValues(t *testing.T) {
 		"CU_MODEL_SETUP_COMPLETE=false\nUNKNOWN=unchanged"
 	result := MergeEnvironment(value, choices())
 	assert.Equal(t, 1, strings.Count(result, "AZURE_LOCATION="))
-	assert.Equal(t, 1, strings.Count(result, "CU_MODEL_SETUP_COMPLETE="))
+	assert.Equal(t, 2, strings.Count(result, "CU_MODEL_SETUP_COMPLETE="))
 	assert.Contains(t, result, "CU_MODEL_SETUP_COMPLETE=true\n")
 	assert.Contains(t, result, "UNKNOWN=unchanged\n")
-	assert.Contains(t, result, `AZD_ASSIGN_ROLES="false"`)
+	assert.NotContains(t, result, "AZD_ASSIGN_ROLES")
 	assert.Equal(t, "'a'\"'\"'b'", shellQuote("a'b"))
+}
+
+func TestGenerationPersistsChoicesWithoutInfraEnvironmentVariables(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprint(existing), func(t *testing.T) {
+			directory := testutil.TempDir(t)
+			c := choices()
+			c.FoundryPrefix, c.AssignRoles, c.ModelSelection = "custom", true, "recommended"
+			if existing {
+				c.FoundryPrefix, c.AssignRoles = "", false
+				c.FoundryEndpoint = "https://adopted.services.ai.azure.com"
+				c.FoundryResourceGroup = "adopted-group"
+			}
+			_, err := Materialize(t.Context(), directory, c, false)
+			require.NoError(t, err)
+			read := func(path string) []byte {
+				t.Helper()
+				body, err := os.ReadFile(filepath.Join(directory, path)) // #nosec G304 -- Private test project.
+				require.NoError(t, err)
+				return body
+			}
+			env := string(read(".azure/dev/.env"))
+			for _, name := range []string{"FOUNDRY_", "AZD_ASSIGN_ROLES", "CU_MODEL_SELECTION",
+				"CU_CONFIG_SETUP_FORCE", "CU_MODEL_SETUP_COMPLETE"} {
+				assert.NotContains(t, env, name)
+			}
+			var parameters struct {
+				Parameters map[string]struct {
+					Value json.RawMessage `json:"value"`
+				} `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(read("infra/main.parameters.json"), &parameters))
+			for name, value := range map[string]any{
+				"foundryResourcePrefix": c.FoundryPrefix, "existingFoundryEndpoint": c.FoundryEndpoint,
+				"existingFoundryResourceGroup": c.FoundryResourceGroup,
+				"assignRolesToPrincipal":       strconv.FormatBool(c.AssignRoles),
+			} {
+				expected, err := json.Marshal(value)
+				require.NoError(t, err)
+				assert.JSONEq(t, string(expected), string(parameters.Parameters[name].Value))
+			}
+			assert.JSONEq(t, `{"cu":{"modelSelection":"recommended","forceConfigurationSetup":false}}`,
+				string(read(".azure/dev/config.json")))
+		})
+	}
+}
+
+func TestGenerationPreservesEnvironmentConfigAndRejectsInvalidConfigBeforeWrites(t *testing.T) {
+	directory := testutil.TempDir(t)
+	_, err := Materialize(t.Context(), directory, choices(), false)
+	require.NoError(t, err)
+	configPath := filepath.Join(directory, ".azure/dev/config.json")
+	const saved = `{"unknown":9007199254740993,"cu":{"modelSetupComplete":true,"modelDeployments":{"gpt":"saved"}}}`
+	require.NoError(t, os.WriteFile(configPath, []byte(saved), 0o600))
+	c := choices()
+	c.ModelSelection = "recommended"
+	_, err = Materialize(t.Context(), directory, c, false)
+	require.NoError(t, err)
+	body, err := os.ReadFile(configPath) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"unknown":9007199254740993,"cu":{"modelSetupComplete":true,
+		"modelDeployments":{"gpt":"saved"},"modelSelection":"recommended","forceConfigurationSetup":false}}`, string(body))
+	_, err = Materialize(t.Context(), directory, c, true)
+	require.NoError(t, err)
+	body, err = os.ReadFile(configPath) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"modelSetupComplete": true`)
+	assert.Contains(t, string(body), `"forceConfigurationSetup": false`)
+	for _, bad := range []string{`[]`, `null`, `{"cu":[]}`, `{"cu":null}`, `{"cu":false}`} {
+		require.NoError(t, os.WriteFile(configPath, []byte(bad), 0o600))
+		parameterPath := filepath.Join(directory, "infra/main.parameters.json")
+		before, err := os.ReadFile(parameterPath) // #nosec G304 -- Private test project.
+		require.NoError(t, err)
+		c.FoundryPrefix = "different"
+		_, err = Materialize(t.Context(), directory, c, false)
+		require.Error(t, err)
+		after, err := os.ReadFile(parameterPath) // #nosec G304 -- Private test project.
+		require.NoError(t, err)
+		assert.Equal(t, before, after)
+	}
+}
+
+func TestGenerationMigratesLegacyParametersAndPreservesCustomState(t *testing.T) {
+	directory := testutil.TempDir(t)
+	_, err := Materialize(t.Context(), directory, choices(), false)
+	require.NoError(t, err)
+	write := func(path, body string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(filepath.Join(directory, path), []byte(body), 0o600))
+	}
+	const legacy = `{"parameters":{
+		"foundryResourcePrefix":{"value":"${FOUNDRY_RESOURCE_PREFIX=}","custom":"kept"},
+		"existingFoundryEndpoint":{"value":"${FOUNDRY_EXISTING_ENDPOINT=}"},
+		"existingFoundryResourceGroup":{"value":"${FOUNDRY_EXISTING_RESOURCE_GROUP=}"},
+		"assignRolesToPrincipal":{"value":"${AZD_ASSIGN_ROLES=false}"},
+		"location":{"value":"${AZURE_LOCATION}"},"custom":{"value":9007199254740993}},
+		"metadata":{"custom":"kept"}}`
+	write("infra/main.parameters.json", legacy)
+	write("azure.yaml", "customized")
+	write("infra/models.json", `[{"name":"saved"}]`)
+	write(".azure/dev/.env", "FOUNDRY_RESOURCE_PREFIX=\"old\"\nCU_MODEL_SELECTION=\"prompt\"\nCUSTOM=\"kept\"\n")
+	write(".azure/dev/config.json", `{"cu":{"modelSetupComplete":true},"custom":"kept"}`)
+	c := choices()
+	c.FoundryPrefix, c.ModelSelection = "new-prefix", "recommended"
+	_, err = Materialize(t.Context(), directory, c, false)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(directory, "infra/main.parameters.json")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"parameters":{
+		"foundryResourcePrefix":{"value":"new-prefix","custom":"kept"},
+		"existingFoundryEndpoint":{"value":""},"existingFoundryResourceGroup":{"value":""},
+		"assignRolesToPrincipal":{"value":"false"},"location":{"value":"${AZURE_LOCATION}"},
+		"custom":{"value":9007199254740993}},"metadata":{"custom":"kept"}}`, string(body))
+	for path, expected := range map[string]string{
+		"azure.yaml": "customized", "infra/models.json": `[{"name":"saved"}]`,
+	} {
+		body, err := os.ReadFile(filepath.Join(directory, path)) // #nosec G304 -- Private test project.
+		require.NoError(t, err)
+		assert.Equal(t, expected, string(body))
+	}
+	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	assert.Contains(t, string(body), "FOUNDRY_RESOURCE_PREFIX=\"old\"\n")
+	assert.Contains(t, string(body), "CU_MODEL_SELECTION=\"prompt\"\n")
+	assert.Contains(t, string(body), "CUSTOM=\"kept\"\n")
+	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/config.json")) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"cu":{"modelSetupComplete":true,"modelSelection":"recommended",
+		"forceConfigurationSetup":false},"custom":"kept"}`, string(body))
+	write("infra/main.parameters.json", `{"parameters":null}`)
+	before, err := os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	c.Location = "westus3"
+	_, err = Materialize(t.Context(), directory, c, false)
+	require.Error(t, err)
+	after, err := os.ReadFile(filepath.Join(directory, ".azure/dev/.env")) // #nosec G304 -- Private test project.
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+func TestGenerationConfigRemainsScopedToSelectedEnvironment(t *testing.T) {
+	directory := testutil.TempDir(t)
+	c := choices()
+	_, err := Materialize(t.Context(), directory, c, false)
+	require.NoError(t, err)
+	first, err := os.ReadFile(filepath.Join(directory, ".azure/dev/config.json")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	c.Environment, c.ModelSelection, c.ForceConfigurationSetup = "other", "recommended", true
+	_, err = Materialize(t.Context(), directory, c, false)
+	require.NoError(t, err)
+	body, err := os.ReadFile(filepath.Join(directory, ".azure/other/config.json")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"cu":{"modelSelection":"recommended","forceConfigurationSetup":true}}`, string(body))
+	body, err = os.ReadFile(filepath.Join(directory, ".azure/dev/config.json")) // #nosec G304 -- Test project.
+	require.NoError(t, err)
+	assert.Equal(t, first, body)
 }
 
 func TestGeneratedShellLaunchers(t *testing.T) {

@@ -138,9 +138,15 @@ configured default, it uses a host-marked default or the sole accessible
 subscription; ambiguous choices require configuration or interactive generation.
 This command writes project files only; it does not provision resources.
 
-Recognized generated projects preserve editable assets and environment settings
-unless `--force` is supplied. Force replaces known generated assets and resets
-model/configuration setup; unrelated files are not deleted.
+Generation writes resource choices directly into
+`infra/main.parameters.json` under `parameters.<name>.value`; it does not
+introduce environment-variable inputs for prefix, resource selectors, or role
+assignment. Recognized projects retain editable templates and model files
+unless `--force` is supplied. Regeneration updates the four managed resource
+parameters and selected environment settings, preserving other parameter fields.
+Force replaces known generated assets, including `infra/models.json`, and
+allows CU configuration replacement; unrelated files are not deleted.
+The existing model-setup completion marker is preserved.
 
 ## Deploy models and configure defaults
 
@@ -205,20 +211,29 @@ Existing CU environment configuration is preserved unless generation used
 `--force`. `CU_DISABLE_AUTO_CONFIG=true` skips automatic CU configuration,
 not model setup.
 
-The hook reads `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE` from the
-explicitly selected azd environment, not from arbitrary shell overrides:
+Generation saves postprovision choices in the selected environment's
+`cu` configuration, not in dedicated environment variables:
 
 | Saved environment setting | Purpose |
 | --- | --- |
-| `CU_MODEL_SELECTION` | `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Use `azd env set CU_MODEL_SELECTION recommended` for unattended selection, or `none` to skip model deployment. |
-| `CU_CONFIG_SETUP_FORCE` | Allows the hook to replace existing CU environment configuration. Generation saves `true` when `--force` is supplied, otherwise `false`. Accepted enabling values are `1`, `true`, `yes`, and `on`, case-insensitively; other values disable it. Setting this value alone does not reset completed model setup. |
+| `cu.modelSelection` | Generated from `--models`: `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Use `azd env config set cu.modelSelection recommended` for unattended selection, or `none` to skip model deployment. |
+| `cu.forceConfigurationSetup` | Boolean allowing the hook to replace existing CU environment configuration. Generation saves `true` with `--force`, otherwise `false`. Does not reset completed model setup. |
 
 Successful model setup records the boolean `cu.modelSetupComplete` in azd
-environment configuration. The generated legacy `CU_MODEL_SETUP_COMPLETE`
-environment value is preserved but is not used as the completion marker.
+environment configuration. Generation no longer writes `CU_MODEL_SETUP_COMPLETE`;
+any existing legacy value is preserved but is not used as the completion marker.
 Inspect the active marker and model mappings with `azd env config get cu`.
-Generated resource selectors and deployment outputs are listed in the
+Deployment outputs are listed in the
 [central environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding).
+
+Existing generated projects remain supported: when the new config fields are
+absent, the hook reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE`.
+New fields take precedence, including explicit `false` values; malformed new
+fields fail rather than falling back. The hook accepts legacy
+`FOUNDRY_RESOURCE_NAME` only when `CU_RESOURCE_NAME` is absent.
+Regeneration updates legacy parameter substitutions to literal values while
+preserving old environment entries and editable templates. Use `--force` only
+when you also intend to replace those templates with the new CU-prefixed outputs.
 
 Verify the selected environment from the generated directory:
 

@@ -239,18 +239,12 @@ Metadata requests are unauthenticated when no matching token is set.
 | `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
 | `CU_ON_EXISTS` | Process-only policy for existing analysis result files: `error` (default), `skip`, or `reanalyze`. `--on-existing` takes precedence. |
 | `CU_DISABLE_AUTO_CONFIG` | Process-only switch to skip automatic CU configuration during postprovision, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Disabled by default. |
-| `CU_MODEL_SELECTION` | Saved-environment input for postprovision model selection: `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Generated from `--models`; `prompt` requires an interactive terminal. See [postprovision settings](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior). |
-| `CU_CONFIG_SETUP_FORCE` | Saved-environment input allowing postprovision to replace existing CU configuration. Generated from `--force`; disabled by default. `1`, `true`, `yes`, or `on` enable it, case-insensitively. It does not reset the model-setup completion marker. |
-| `FOUNDRY_RESOURCE_PREFIX` | Saved template input for naming a new resource, generated from `--foundry-prefix`. Empty by default; cannot be combined with an existing-resource endpoint. |
-| `FOUNDRY_EXISTING_ENDPOINT` | Saved template input selecting an existing Foundry resource, generated from `--foundry-endpoint`. Empty means create a new resource; this is not an alias for service-command `CU_ENDPOINT`. |
-| `FOUNDRY_EXISTING_RESOURCE_GROUP` | Saved template input identifying the resource group of the existing Foundry resource resolved during generation. Empty for a new-resource deployment. |
-| `AZD_ASSIGN_ROLES` | Saved template input controlling new-resource role assignment. The string `true`, case-insensitively, enables assignment; default `false`. Generated from the role-assignment choice and not supported for existing-resource generation. |
-| `FOUNDRY_ENDPOINT` | Bicep output containing the resource endpoint. CU service commands require `CU_ENDPOINT` instead; they do not fall back to this output. |
-| `FOUNDRY_RESOURCE_NAME` | Bicep output containing the created or adopted account name, used by postprovision model setup. |
-| `FOUNDRY_PROJECT_NAME` | Bicep output containing the project name when available; may be empty when using an existing resource. |
-| `FOUNDRY_PROJECT_ENDPOINT` | Bicep output containing the project-scoped endpoint when available. It is not the resource endpoint required by CU commands. |
-| `MODEL_DEPLOYMENTS` | Bicep output listing declared model deployments, not the CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
-| `CU_MODEL_SETUP_COMPLETE` | Generated legacy value, preserved but not used as a completion marker. The active marker is `cu.modelSetupComplete` in azd environment configuration; inspect it with `azd env config get cu`. |
+| `CU_RESOURCE_NAME` | Bicep output containing the created or adopted account name, used by postprovision model setup. Existing projects' `FOUNDRY_RESOURCE_NAME` is read only when this output is absent. |
+| `CU_PROJECT_NAME` | Bicep output containing the project name when available; may be empty when using an existing resource. |
+| `CU_PROJECT_ENDPOINT` | Bicep output containing the project-scoped endpoint when available. It is not the resource endpoint required by CU commands. |
+| `CU_MODEL_DEPLOYMENTS` | Bicep output listing declared model deployments, not the CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
+| `CU_MODEL_SELECTION` | Legacy saved-environment input, read only when `cu.modelSelection` is absent. New projects save `--models` in azd environment config instead. See [postprovision settings and compatibility](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior). |
+| `CU_CONFIG_SETUP_FORCE` | Legacy saved-environment input, read only when `cu.forceConfigurationSetup` is absent. New projects save the boolean `--force` choice in azd environment config instead. |
 
 ### azure.ai.routines
 

@@ -471,8 +471,10 @@ or prints credential values.
 Use `azd ai cu env-var list` to inspect currently set supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated
 variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
-`--on-existing` is absent. `FOUNDRY_ENDPOINT` remains an infrastructure output,
-not an alias for `CU_ENDPOINT` in service-command configuration.
+`--on-existing` is absent. Legacy `FOUNDRY_ENDPOINT` values are not an alias for
+`CU_ENDPOINT` in service-command configuration. Infrastructure choices are
+generated from flags into Bicep parameters and azd environment config; see
+[provisioning settings](provisioning.md#generated-post-provision-behavior).
 
 | Variable | Purpose and default |
 | --- | --- |

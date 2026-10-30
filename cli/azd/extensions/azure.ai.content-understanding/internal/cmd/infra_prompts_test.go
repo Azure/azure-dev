@@ -137,7 +137,7 @@ func TestInfraGenerateOutputModes(t *testing.T) {
 				assert.Equal(t, "eastus2", generation.Location)
 				assert.Equal(t, "none", generation.ModelSelection)
 				assert.False(t, generation.AssignRoles)
-				assert.Len(t, generation.Files, 10)
+				assert.Len(t, generation.Files, 11)
 				assert.Len(t, generation.NextSteps, 3)
 			case "none":
 				assert.Empty(t, stdout)
@@ -509,10 +509,14 @@ func TestInfraGenerationThroughHostRPC(t *testing.T) {
 				require.NoError(t, err)
 				assert.Contains(t, stdout, "Environment: chosen")
 				// #nosec G304 -- Reads a generated test-owned environment.
-				body, err := os.ReadFile(filepath.Join(target, ".azure", "chosen", ".env"))
+				body, err := os.ReadFile(filepath.Join(target, "infra", "main.parameters.json"))
 				require.NoError(t, err)
-				assert.Contains(t, string(body), `FOUNDRY_RESOURCE_PREFIX="app"`)
-				assert.Contains(t, string(body), `AZD_ASSIGN_ROLES="true"`)
+				var document struct {
+					Parameters map[string]json.RawMessage `json:"parameters"`
+				}
+				require.NoError(t, json.Unmarshal(body, &document))
+				assert.JSONEq(t, `{"value":"app"}`, string(document.Parameters["foundryResourcePrefix"]))
+				assert.JSONEq(t, `{"value":"true"}`, string(document.Parameters["assignRolesToPrincipal"]))
 				assert.NoDirExists(t, filepath.Join(target, ".azure", "unrelated"))
 			} else {
 				require.Error(t, err)

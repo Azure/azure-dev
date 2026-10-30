@@ -107,9 +107,8 @@ output AZURE_RESOURCE_GROUP        string = useExistingFoundry ? existingRg.name
 output AZURE_TENANT_ID             string = tenant().tenantId
 output AZURE_SUBSCRIPTION_ID       string = subscription().subscriptionId
 
-output FOUNDRY_RESOURCE_NAME       string = useExistingFoundry ? foundryExisting!.outputs.accountName : foundryNew!.outputs.accountName
-output FOUNDRY_PROJECT_NAME        string = useExistingFoundry ? foundryExisting!.outputs.projectName : foundryNew!.outputs.projectName
-output FOUNDRY_ENDPOINT            string = useExistingFoundry ? existingFoundryEndpoint : foundryNew!.outputs.accountEndpoint
-output FOUNDRY_PROJECT_ENDPOINT    string = useExistingFoundry ? foundryExisting!.outputs.projectEndpoint : foundryNew!.outputs.projectEndpoint
+output CU_RESOURCE_NAME            string = useExistingFoundry ? foundryExisting!.outputs.accountName : foundryNew!.outputs.accountName
+output CU_PROJECT_NAME             string = useExistingFoundry ? foundryExisting!.outputs.projectName : foundryNew!.outputs.projectName
+output CU_PROJECT_ENDPOINT         string = useExistingFoundry ? foundryExisting!.outputs.projectEndpoint : foundryNew!.outputs.projectEndpoint
 output CU_ENDPOINT                 string = useExistingFoundry ? existingFoundryEndpoint : foundryNew!.outputs.accountEndpoint
-output MODEL_DEPLOYMENTS           array  = useExistingFoundry ? foundryExisting!.outputs.modelDeployments : foundryNew!.outputs.modelDeployments
+output CU_MODEL_DEPLOYMENTS         array  = useExistingFoundry ? foundryExisting!.outputs.modelDeployments : foundryNew!.outputs.modelDeployments

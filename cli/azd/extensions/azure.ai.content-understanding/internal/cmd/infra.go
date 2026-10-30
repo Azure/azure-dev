@@ -29,6 +29,7 @@ func newInfraCommand(extCtx *azdext.ExtensionContext, open infraHostFactory) *co
 	generate.Long = "Generate an azd/Bicep project without deploying Azure resources.\n" +
 		"Prompt for omitted environment, region, optional new-resource prefix, and role assignment.\n" +
 		"Explicit inputs take precedence. --no-prompt and --output json use context/defaults without the wizard.\n" +
+		"Save resource choices in Bicep parameters and postprovision choices in azd environment config.\n" +
 		"Show a readable summary by default; use --output json for the complete structured result."
 	generate.Example = `  azd ai cu infra generate
     Interactively generate an azd/Bicep project without deploying resources.
@@ -273,7 +274,8 @@ func runInfraPost(cmd *cobra.Command, extCtx *azdext.ExtensionContext, open infr
 	if request.Selection == "prompt" && extCtx.NoPrompt && !request.SetupComplete {
 		// Model setup is optional in postprovision; expose the actionable failure and continue basic configuration.
 		_, err := fmt.Fprintln(cmd.ErrOrStderr(),
-			"Warning: CU_MODEL_SELECTION=prompt cannot run without prompts; set none, recommended, or model@version.")
+			"Warning: cu.modelSelection=prompt cannot run without prompts; "+
+				"use azd env config set cu.modelSelection with none, recommended, or model@version.")
 		if err != nil {
 			return err
 		}
@@ -309,6 +311,25 @@ func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 		ForceConfiguration:   truthyInfra(snapshot.values["CU_CONFIG_SETUP_FORCE"]),
 		DisableConfiguration: truthyInfra(os.Getenv("CU_DISABLE_AUTO_CONFIG")),
 	}
+	if account, present := snapshot.values["CU_RESOURCE_NAME"]; present {
+		request.Account = account
+	}
+	if raw, present := snapshot.section["modelSelection"]; present {
+		var selection *string
+		if err := json.Unmarshal(raw, &selection); err != nil || selection == nil || *selection == "" {
+			return request, commandError("invalid_environment_config", "cu.modelSelection must be a nonempty string.",
+				"Use azd env config set cu.modelSelection with prompt, none, recommended, or model@version.")
+		}
+		request.Selection = *selection
+	}
+	if raw, present := snapshot.section["forceConfigurationSetup"]; present {
+		var force *bool
+		if err := json.Unmarshal(raw, &force); err != nil || force == nil {
+			return request, commandError("invalid_environment_config", "cu.forceConfigurationSetup must be a boolean.",
+				"Repair the selected environment configuration.")
+		}
+		request.ForceConfiguration = *force
+	}
 	if raw, exists := snapshot.section["modelSetupComplete"]; exists {
 		if err := json.Unmarshal(raw, &request.SetupComplete); err != nil {
 			return request, commandError("invalid_environment_config", "cu.modelSetupComplete must be a boolean.",
@@ -327,6 +348,10 @@ func postRequest(snapshot infraSnapshot) (infra.PostRequest, error) {
 	}
 	request.Endpoint = strings.TrimSuffix(request.Endpoint, "/contentunderstanding")
 	request.APIVersion, err = cuclient.NormalizeAPIVersion(request.APIVersion)
+	if err != nil {
+		return request, err
+	}
+	request.Selection, err = infra.NormalizeSelection(request.Selection)
 	return request, err
 }
 

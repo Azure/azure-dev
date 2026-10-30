@@ -165,16 +165,22 @@ func testGeneratedProjectPostprovision(t *testing.T, selection string) {
 	_, err := execute("infra", "generate", "-d", directory, "-e", "dev", "--models", selection, "--no-prompt")
 	require.NoError(t, err)
 	assert.Empty(t, calls)
-	env, err := localio.Read(filepath.Join(directory, ".azure/dev/.env"))
+	env, err := localio.Read(filepath.Join(directory, ".azure/dev/config.json"))
 	require.NoError(t, err)
-	assert.Contains(t, string(env), `CU_MODEL_SELECTION="`+selection+`"`)
+	var generatedConfig struct {
+		CU map[string]json.RawMessage `json:"cu"`
+	}
+	require.NoError(t, json.Unmarshal(env, &generatedConfig))
+	assert.JSONEq(t, `"`+selection+`"`, string(generatedConfig.CU["modelSelection"]))
+	configWire, err := json.Marshal(generatedConfig.CU)
+	require.NoError(t, err)
 	rpc.mu.Lock()
+	rpc.section = &azdext.GetConfigSectionResponse{Found: true, Section: configWire}
 	rpc.values = []*azdext.KeyValue{
-		{Key: "FOUNDRY_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
-		{Key: "FOUNDRY_RESOURCE_NAME", Value: "foundry"},
+		{Key: "CU_RESOURCE_NAME", Value: "foundry"},
 		{Key: "CU_ENDPOINT", Value: "https://foundry.services.ai.azure.com"},
 		{Key: "AZURE_RESOURCE_GROUP", Value: "group"}, {Key: "AZURE_SUBSCRIPTION_ID", Value: "sub"},
-		{Key: "AZURE_TENANT_ID", Value: "tenant"}, {Key: "CU_MODEL_SELECTION", Value: selection},
+		{Key: "AZURE_TENANT_ID", Value: "tenant"},
 	}
 	rpc.mu.Unlock()
 	t.Chdir(directory)

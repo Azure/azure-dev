@@ -2,6 +2,10 @@
 
 ## 0.1.1-preview (Unreleased)
 
+- Generate one-time infrastructure choices directly into Bicep parameters and
+  persist postprovision choices in azd environment config instead of dedicated
+  environment variables. Use `CU_`-prefixed deployment outputs and retain
+  postprovision compatibility with existing generated projects.
 - Support optional CU data-plane API-key authentication through process
   `CU_API_KEY` only, without saving keys in azd configuration or requiring
   azd sign-in. Keep Entra ID as the default and for provisioning and

@@ -18,7 +18,7 @@ normalized:
   sha256: 3721730c9eb34c079b88ae6ff5877e47931816cee16e4c0176b66aa3fcdd795f
 generated_projects:
   file: testdata/parity/generated_projects.json
-  sha256: 1fe13c6879b5da62da478eec168fd0a82c27d1358e25a4f441daae1c8df606dd
+  sha256: 9bfb91d0b8c021a60cb42a1c8e38c03c78bd9cec50db224f70885330c48ea261
 core_show_bindings:
   file: testdata/parity/core_show_bindings.json
   sha256: 1331dd95dc8a06d0b4b114a9945d41e7ad717a9eba5cf5a25d8d323fb1b17153

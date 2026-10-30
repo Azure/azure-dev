@@ -155,7 +155,7 @@ func TestInfraCommandsGenerationReuseAndNoEndpointDependency(t *testing.T) {
 	assert.Equal(t, "eastus2", result.Location)
 	assert.Equal(t, "sub", result.SubscriptionID)
 	assert.Equal(t, []string{"open", "subscription", "close"}, f.calls)
-	assert.Len(t, result.Files, 10)
+	assert.Len(t, result.Files, 11)
 	f.calls = nil
 	stdout, _, err = executeInfra(t, f, "infra", "generate", "-d", target, "-e", "new-env", "--models", "none",
 		"--foundry-endpoint", "foundry", "-o", "json")
@@ -246,9 +246,14 @@ func TestInfraNewResourceRoleAssignmentOptions(t *testing.T) {
 			assert.Equal(t, test.want, result.AssignRoles)
 			assert.Equal(t, []string{"open", "subscription", "close"}, host.calls)
 			// #nosec G304 -- Reads only the generated test environment.
-			body, err := os.ReadFile(filepath.Join(target, ".azure", "dev", ".env"))
+			body, err := os.ReadFile(filepath.Join(target, "infra", "main.parameters.json"))
 			require.NoError(t, err)
-			assert.Contains(t, string(body), fmt.Sprintf("AZD_ASSIGN_ROLES=\"%t\"", test.want))
+			var parameters struct {
+				Parameters map[string]json.RawMessage `json:"parameters"`
+			}
+			require.NoError(t, json.Unmarshal(body, &parameters))
+			assert.JSONEq(t, fmt.Sprintf(`{"value":"%t"}`, test.want),
+				string(parameters.Parameters["assignRolesToPrincipal"]))
 		})
 	}
 }
@@ -334,6 +339,38 @@ func TestInfraMetadataAndPostEnvironmentPrecedence(t *testing.T) {
 	f.snapshot.section["modelSetupComplete"] = json.RawMessage(`"true"`)
 	_, err = postRequest(f.snapshot)
 	require.Error(t, err)
+}
+
+func TestInfraPostConfigPrecedesLegacyValues(t *testing.T) {
+	f := infraCommandFixture(t)
+	f.snapshot.values["CU_MODEL_SELECTION"] = "recommended"
+	f.snapshot.values["CU_CONFIG_SETUP_FORCE"] = "true"
+	f.snapshot.values["CU_RESOURCE_NAME"] = "new-account"
+	f.snapshot.section["modelSelection"] = json.RawMessage(`"none"`)
+	f.snapshot.section["forceConfigurationSetup"] = json.RawMessage(`false`)
+	f.snapshot.section["modelSetupComplete"] = json.RawMessage(`true`)
+	request, err := postRequest(f.snapshot)
+	require.NoError(t, err)
+	assert.Equal(t, "none", request.Selection)
+	assert.Equal(t, "new-account", request.Account)
+	assert.False(t, request.ForceConfiguration)
+	assert.True(t, request.SetupComplete)
+	for _, field := range []string{"modelSelection", "forceConfigurationSetup"} {
+		for _, raw := range []string{`null`, `{}`, `[]`, `""`, `1`} {
+			original := f.snapshot.section[field]
+			f.snapshot.section[field] = json.RawMessage(raw)
+			_, err := postRequest(f.snapshot)
+			require.Error(t, err, "%s=%s", field, raw)
+			f.snapshot.section[field] = original
+		}
+	}
+	f.snapshot.section["modelSelection"] = json.RawMessage(`"none,recommended"`)
+	_, err = postRequest(f.snapshot)
+	require.Error(t, err)
+	f.snapshot.section["modelSelection"] = json.RawMessage(`"none"`)
+	f.snapshot.values["CU_RESOURCE_NAME"] = ""
+	_, err = postRequest(f.snapshot)
+	require.Error(t, err, "an empty new output must not fall back to a stale legacy resource")
 }
 
 type infraRPC struct {

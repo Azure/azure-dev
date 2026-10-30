@@ -1260,6 +1260,10 @@ dependencies:
 
 Pack manifests must include at least one dependency. They may omit `capabilities`, `namespace`, `entryPoint`, `usage`, and `examples` when the pack has no commands of its own. Installing a pack installs its dependencies recursively from the same extension source as the pack. Dependency versions in the manifest support semver constraints, but command-line `--version` values for `azd extension install` and `azd extension update` are exact versions.
 
+When adding a pack, azd keeps installed members that satisfy its constraints and upgrades incompatible older members when a compatible release is available. It does not automatically downgrade members. An unresolved dependency conflict fails the install or update with a nonzero exit code. See [dependency installation and update results](./extension-resolution-and-versioning.md#install-flow) for details.
+
+Installed packs also hold back their members. `azd extension update` and `azd extension install` keep a member at the newest release that every installed pack accepts, unless `--version` requests a specific release. See [constraints from installed extensions](./extension-resolution-and-versioning.md#constraints-from-installed-extensions).
+
 Updating a pack updates the pack and, by default, reconciles installed dependencies to the highest published versions that satisfy the pack's declared dependency constraints. This dependency reconciliation still runs when the pack itself is already current, because an unchanged pack can point to a dependency range with newer matching versions. Users can disable automatic dependency updates with `azd extension update <pack-id> --no-dependency-updates`.
 
 Uninstalling a pack also removes its unused dependency installs after confirmation. Explicit and shared installations stay. See [uninstall flow](./extension-resolution-and-versioning.md#uninstall-flow) for ownership, confirmation, and protection rules.

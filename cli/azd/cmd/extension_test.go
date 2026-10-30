@@ -335,9 +335,10 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name     string
-		results  []extensions.UpgradeResult
-		wantMsgs []string
+		name       string
+		results    []extensions.UpgradeResult
+		wantMsgs   []string
+		unwantMsgs []string
 	}{
 		{
 			name: "all_upgraded",
@@ -388,11 +389,26 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 			results: []extensions.UpgradeResult{{
 				Status: extensions.UpgradeStatusUpgraded,
 				DependencyUpgrades: []extensions.UpgradeResult{
-					{Status: extensions.UpgradeStatusFailed},
-					{Status: extensions.UpgradeStatusFailed},
+					{ExtensionId: "test.a", Status: extensions.UpgradeStatusFailed},
+					{ExtensionId: "test.b", Status: extensions.UpgradeStatusFailed},
 				},
 			}},
 			wantMsgs: []string{"1 updated", "2 dependencies failed", "azd extension update <name>"},
+		},
+		{
+			name: "conflicts_count_once_without_retry",
+			results: []extensions.UpgradeResult{
+				{Status: extensions.UpgradeStatusSkipped, DependencyUpgrades: []extensions.UpgradeResult{{
+					ExtensionId: "test.child", Status: extensions.UpgradeStatusFailed,
+					Error: &extensions.DependencyVersionConflictError{DependencyId: "test.child"},
+				}}},
+				{Status: extensions.UpgradeStatusSkipped, DependencyUpgrades: []extensions.UpgradeResult{{
+					ExtensionId: "Test.Child", Status: extensions.UpgradeStatusFailed,
+					Error: &extensions.DependencyConstraintsConflictError{DependencyId: "test.child"},
+				}}},
+			},
+			wantMsgs:   []string{"2 skipped", "1 dependency failed"},
+			unwantMsgs: []string{"retry"},
 		},
 	}
 
@@ -412,6 +428,9 @@ func TestDisplayUpgradeSummary(t *testing.T) {
 			}
 			for _, want := range tt.wantMsgs {
 				assert.Contains(t, joined.String(), want)
+			}
+			for _, unwanted := range tt.unwantMsgs {
+				assert.NotContains(t, joined.String(), unwanted)
 			}
 		})
 	}

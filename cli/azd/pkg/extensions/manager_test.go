@@ -1172,8 +1172,6 @@ func Test_Install_PackDependency_FallsBackWhenParentSourceRequiresNewerAzd(t *te
 }
 
 func Test_Install_PackDependency_BundleDoesNotFallback(t *testing.T) {
-	t.Parallel()
-
 	parent := &ExtensionMetadata{
 		Id:     "test.pack",
 		Source: "test-bundle",
@@ -1191,73 +1189,106 @@ func Test_Install_PackDependency_BundleDoesNotFallback(t *testing.T) {
 		}},
 	}
 
-	manager := newTestManager(t)
-	manager.sources = []Source{
-		&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent}},
-		&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{child}},
-	}
+	for _, installed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("installed=%t", installed), func(t *testing.T) {
+			manager := newInstallTestManager(t,
+				&mockSource{name: parent.Source, extensions: []*ExtensionMetadata{parent}},
+				&mockSource{name: MainRegistryName, extensions: []*ExtensionMetadata{child}},
+			)
+			if installed {
+				require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+					child.Id: installedRecord(child.Id, "1.0.0-beta.1", false),
+				}))
+			}
 
-	_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{
-		SkipMainRegistryDependencyFallback: true,
-	})
-	require.ErrorAs(t, err, new(*DependencyNotFoundError))
+			_, err := manager.InstallWithOptions(t.Context(), parent, InstallOptions{
+				SkipMainRegistryDependencyFallback: true,
+			})
+			dependencyErr, ok := errors.AsType[*DependencyNotFoundError](err)
+			require.True(t, ok)
+			require.Equal(t, child.Id, dependencyErr.DependencyId)
+		})
+	}
 }
 
-func Test_Install_PackDependency_InstalledDependencyMustSatisfyConstraint(t *testing.T) {
-	mockContext := mocks.NewMockContext(t.Context())
-
-	registry := Registry{
-		Extensions: []*ExtensionMetadata{
-			{
-				Id: "test.pack",
-				Versions: []ExtensionVersion{
-					{
-						Version: "1.0.0",
-						Dependencies: []ExtensionDependency{
-							{Id: "test.child", Version: ">=2.0.0"},
-						},
-					},
-				},
-			},
-			{
-				Id: "test.child",
-				Versions: []ExtensionVersion{
-					{Version: "1.0.0", Artifacts: sampleArtifacts},
-					{Version: "2.0.0", Artifacts: sampleArtifacts},
-				},
-			},
+func Test_Install_PackDependency_ReconcilesInstalledVersion(t *testing.T) {
+	tests := []struct {
+		name         string
+		installed    string
+		published    []string
+		asDependency bool
+		wantVersion  string
+		wantError    string
+	}{
+		{
+			name: "beta to stable", installed: "1.0.0-beta.1", published: []string{"1.0.0-beta.1", "1.0.0"},
+			wantVersion: "1.0.0",
+		},
+		{
+			name: "dependency ownership preserved", installed: "1.0.0-beta.1",
+			published: []string{"1.0.0-beta.1", "1.0.0"}, asDependency: true, wantVersion: "1.0.0",
+		},
+		{
+			name: "compatible install kept", installed: "1.0.0", published: []string{"1.0.0", "1.0.1"},
+			wantVersion: "1.0.0",
+		},
+		{
+			name: "downgrade refused", installed: "1.1.0", published: []string{"1.0.0", "1.1.0"},
+			wantVersion: "1.1.0", wantError: `test.leaf 1.1.0 is installed, but test.pack requires "~1.0.0"`,
+		},
+		{
+			name: "no compatible release", installed: "1.0.0-beta.1", published: []string{"1.0.0-beta.1"},
+			wantVersion: "1.0.0-beta.1", wantError: "no version satisfies constraint",
 		},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pack, child := packWithLeaf("1.0.0", test.published...)
+			pack.Versions[0].Dependencies[0].Version = "~1.0.0"
+			manager := newInstallTestManager(t, &mockSource{
+				name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child},
+			})
+			require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+				child.Id: installedRecord(child.Id, test.installed, test.asDependency),
+			}))
 
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.URL.String() == extensionRegistryUrl
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, registry)
+			_, err := manager.Install(t.Context(), pack, "")
+			if test.wantError == "" {
+				require.NoError(t, err)
+				_, err = manager.GetInstalled(FilterOptions{Id: pack.Id})
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantError)
+				_, err = manager.GetInstalled(FilterOptions{Id: pack.Id})
+				require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+			}
+			installed, err := manager.GetInstalled(FilterOptions{Id: child.Id})
+			require.NoError(t, err)
+			require.Equal(t, test.wantVersion, installed.Version)
+			require.Equal(t, test.asDependency, installed.InstalledAsDependency)
+		})
+	}
+}
+
+func Test_Install_PackDependency_NestedUpgradeFailure(t *testing.T) {
+	pack, child := packWithLeaf("1.0.0", "1.0.0-beta.1", "1.0.0")
+	pack.Versions[0].Dependencies[0].Version = "~1.0.0"
+	leaf := constraintTestExtension("test.nested", ExtensionVersion{Version: "1.0.0"}, ExtensionVersion{Version: "1.1.0"})
+	child.Versions[1].Dependencies = []ExtensionDependency{{Id: leaf.Id, Version: "~1.0.0"}}
+	manager := newInstallTestManager(t, &mockSource{
+		name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child, leaf},
 	})
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return strings.HasPrefix(request.URL.String(), "https://aka.ms/azd/extensions/registry/")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
-	})
+	require.NoError(t, manager.userConfig.Set(installedConfigKey, map[string]*Extension{
+		child.Id: installedRecord(child.Id, "1.0.0-beta.1", false),
+		leaf.Id:  installedRecord(leaf.Id, "1.1.0", false),
+	}))
 
-	userConfigManager := config.NewUserConfigManager(mockContext.ConfigManager)
-	sourceManager := NewSourceManager(mockContext.Container, userConfigManager, mockContext.HttpClient)
-	lazyRunner := lazy.NewLazy(func() (*Runner, error) {
-		return NewRunner(mockContext.CommandRunner), nil
-	})
-	manager, err := NewManager(userConfigManager, sourceManager, lazyRunner, mockContext.HttpClient)
-	require.NoError(t, err)
-
-	children, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.child"})
-	require.NoError(t, err)
-	_, err = manager.Install(*mockContext.Context, children[0], "1.0.0")
-	require.NoError(t, err)
-
-	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
-	require.NoError(t, err)
-	_, err = manager.Install(*mockContext.Context, packs[0], "")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "installed dependency test.child version 1.0.0 does not satisfy constraint")
+	_, err := manager.Install(t.Context(), pack, "")
+	require.ErrorContains(t, err, "dependency test.nested:")
+	require.ErrorContains(t, err, `test.nested 1.1.0 is installed, but test.leaf requires "~1.0.0"`)
+	_, err = manager.GetInstalled(FilterOptions{Id: pack.Id})
+	require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
+	requireInstalledVersion(t, manager, leaf.Id, "1.1.0")
 }
 
 func Test_Install_PackDependency_UsesCompatibleDependencyVersion(t *testing.T) {
@@ -1384,9 +1415,7 @@ func Test_Install_SkipDependencies(t *testing.T) {
 
 // Test_Install_SkipDependencies_BypassesConstraintCheck verifies that
 // SkipDependencies installs the parent even when an already-installed dependency
-// does not satisfy the parent's constraint. This is the scenario that breaks a
-// coordinated multi-extension bump: a meta-package still pins an old constraint
-// against a newer, already-installed child.
+// does not satisfy the parent's constraint and no compatible release is available.
 func Test_Install_SkipDependencies_BypassesConstraintCheck(t *testing.T) {
 	mockContext := mocks.NewMockContext(t.Context())
 
@@ -1406,7 +1435,6 @@ func Test_Install_SkipDependencies_BypassesConstraintCheck(t *testing.T) {
 				Id: "test.child",
 				Versions: []ExtensionVersion{
 					{Version: "1.0.0", Artifacts: sampleArtifacts},
-					{Version: "2.0.0", Artifacts: sampleArtifacts},
 				},
 			},
 		},
@@ -1440,7 +1468,7 @@ func Test_Install_SkipDependencies_BypassesConstraintCheck(t *testing.T) {
 	packs, err := manager.FindExtensions(*mockContext.Context, &FilterOptions{Id: "test.pack"})
 	require.NoError(t, err)
 
-	// Without SkipDependencies this fails the installed-dependency constraint check.
+	// Without SkipDependencies this fails because no compatible release is available.
 	_, err = manager.Install(*mockContext.Context, packs[0], "")
 	require.Error(t, err)
 
@@ -3226,6 +3254,7 @@ func Test_Upgrade_DependencyUpgrade_BundleIsolationPropagatesToNestedDependencie
 }
 
 func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testing.T) {
+	recorder := recordExtensionTelemetry(t)
 	mockContext := mocks.NewMockContext(t.Context())
 
 	registry := Registry{
@@ -3292,11 +3321,12 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	require.NoError(t, err)
 	require.Len(t, depUpgrades, 1)
 	require.Equal(t, "test.child", depUpgrades[0].ExtensionId)
-	require.Equal(t, UpgradeStatusSkipped, depUpgrades[0].Status)
+	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].Status)
 	require.Equal(t, "2.0.0", depUpgrades[0].FromVersion)
-	require.Contains(t, depUpgrades[0].SkipReason, "current 2.0.0")
-	require.Contains(t, depUpgrades[0].SkipReason, "outside")
-	require.Contains(t, depUpgrades[0].Suggestion, "azd ext install test.child --version 1.0.0")
+	require.ErrorAs(t, depUpgrades[0].Error, new(*DependencyVersionConflictError))
+	require.ErrorContains(t, depUpgrades[0].Error, `test.child 2.0.0 is installed, but test.pack requires "~1.0.0"`)
+	require.Contains(t, depUpgrades[0].Suggestion, "azd extension install test.child --source azd --version 1.0.0 --force")
+	requireDependencyUpdateSpan(t, recorder, "test.child", "test.pack", codes.Error)
 
 	// Installed version should still be 2.0.0 — no downgrade happened.
 	installed, err := manager.GetInstalled(FilterOptions{Id: "test.child"})
@@ -4135,9 +4165,17 @@ func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
 	require.Equal(t, "2.0.0", bEntry.ToVersion)
 
 	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
-	require.Error(t, cEntry.Error)
-	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
-	require.Contains(t, cEntry.Error.Error(), "leaf.c")
+	conflictErr, ok := errors.AsType[*DependencyConstraintsConflictError](cEntry.Error)
+	require.True(t, ok)
+	require.Equal(t, "leaf.c", conflictErr.DependencyId)
+	require.Equal(t, []DependencyConstraint{
+		{ParentId: "pack.a", Constraint: ">=2.0.0"},
+		{ParentId: "pack.b", Constraint: "~1.0.0"},
+	}, conflictErr.Constraints)
+	// leaf.c moves to satisfy pack.b because its installed version satisfied neither constraint.
+	require.Len(t, bEntry.DependencyUpgrades, 1)
+	require.Equal(t, UpgradeStatusUpgraded, bEntry.DependencyUpgrades[0].Status)
+	require.Equal(t, "1.0.0", bEntry.DependencyUpgrades[0].ToVersion)
 	requireDependencyUpdateSpan(t, recorder, "pack.b", "pack.a", codes.Ok)
 	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.b", codes.Ok)
 	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.a", codes.Error)
@@ -4260,8 +4298,8 @@ func Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings(t *testing.T) {
 
 	require.NotNil(t, cEntry, "leaf.c dependency-upgrade entry expected")
 	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
-	require.Error(t, cEntry.Error)
-	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
+	require.ErrorAs(t, cEntry.Error, new(*DependencyConstraintsConflictError))
+	require.ErrorContains(t, cEntry.Error, `pack.a requires "~1.0.0", pack.b requires ">=2.0.0"`)
 
 	// leaf.c must remain at 1.0.0 — pack.a's earlier no-op visit pinned it.
 	cFinal, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})

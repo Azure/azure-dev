@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1206,6 +1207,495 @@ func TestUpgradeAction_AllWithSourceSkipsExtensionsOutsideSource(t *testing.T) {
 	require.Equal(t, "extension not available in source 'test'", report.Extensions[0].SkipReason)
 }
 
+// packTestExtension returns a binary extension published at versions.
+func packTestExtension(id string, versions ...string) *extensions.ExtensionMetadata {
+	metadata := &extensions.ExtensionMetadata{Id: id, Source: "test"}
+	for _, version := range versions {
+		metadata.Versions = append(metadata.Versions, extensions.ExtensionVersion{
+			Version: version,
+			// The artifact is saved under its URL's file name, which has no .exe suffix on Windows.
+			EntryPoint: id,
+			Artifacts: map[string]extensions.ExtensionArtifact{
+				runtime.GOOS: {URL: "https://test.example.com/" + id},
+			},
+		})
+	}
+	return metadata
+}
+
+// packTestPack returns a pack published at version with dependencies.
+func packTestPack(id, version string, dependencies ...extensions.ExtensionDependency) *extensions.ExtensionMetadata {
+	return &extensions.ExtensionMetadata{Id: id, Source: "test", Versions: []extensions.ExtensionVersion{
+		{Version: version, Dependencies: dependencies},
+	}}
+}
+
+// packTestRecord returns an installed record from the test source.
+func packTestRecord(id, version string, dependencies ...extensions.ExtensionDependency) *extensions.Extension {
+	return &extensions.Extension{Id: id, Version: version, Source: "test", Dependencies: dependencies}
+}
+
+func newPackTestManager(
+	t *testing.T,
+	installed map[string]*extensions.Extension,
+	metadata ...*extensions.ExtensionMetadata,
+) (*extensions.Manager, *extensions.SourceManager) {
+	t.Helper()
+	return newPackTestManagerWithSources(t, installed, map[string][]*extensions.ExtensionMetadata{"test": metadata})
+}
+
+// newPackTestManagerWithSources serves each source's metadata from its own registry. Artifacts under
+// a /missing/ path fail to download.
+func newPackTestManagerWithSources(
+	t *testing.T,
+	installed map[string]*extensions.Extension,
+	sources map[string][]*extensions.ExtensionMetadata,
+) (*extensions.Manager, *extensions.SourceManager) {
+	t.Helper()
+	t.Setenv("AZD_CONFIG_DIR", t.TempDir())
+	t.Setenv("NO_COLOR", "1")
+	mockCtx := mocks.NewMockContext(t.Context())
+	mockCtx.HttpClient.When(func(request *http.Request) bool {
+		return strings.HasSuffix(request.URL.Host, ".example.com") && request.URL.Path != "/registry.json"
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		if strings.HasPrefix(request.URL.Path, "/missing/") {
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
+		}
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, []byte("test data"))
+	})
+	configs := map[string]upgradeTestSource{}
+	for name, metadata := range sources {
+		url := fmt.Sprintf("https://%s.example.com/registry.json", name)
+		if name == extensions.MainRegistryName {
+			// The main registry name is reserved for the official registry location.
+			url = "https://aka.ms/azd/extensions/registry"
+		}
+		configs[name] = upgradeTestSource{url: url, registry: testRegistry(metadata...)}
+	}
+	return createUpgradeTestManagerWithSources(t, mockCtx, installed, configs, extensions.ManagerOptions{})
+}
+
+func requireInstalledVersions(t *testing.T, manager *extensions.Manager, want map[string]string) {
+	t.Helper()
+	for id, version := range want {
+		record, err := manager.GetInstalled(extensions.FilterOptions{Id: id})
+		require.NoError(t, err)
+		require.Equal(t, version, record.Version, id)
+	}
+}
+
+func TestExtensionUpdate_PackDependencyConstraints(t *testing.T) {
+	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
+	leafRange := extensions.ExtensionDependency{Id: "test.leaf", Version: "~1.0.0"}
+	innerRange := extensions.ExtensionDependency{Id: "test.inner", Version: "~1.0.0"}
+	pack := packTestPack("test.pack", "1.0.0", childRange)
+	child := packTestExtension("test.child", "1.0.0", "1.1.0")
+	heldReason := `1.1.0 is available, but test.pack requires "~1.0.0"`
+	tests := []struct {
+		name         string
+		installed    map[string]*extensions.Extension
+		metadata     []*extensions.ExtensionMetadata
+		args         []string
+		flags        extensionUpgradeFlags
+		terminal     bool
+		wantErr      string
+		wantVersions map[string]string
+		wantSkip     map[string]string
+		wantWarnings []string
+		wantOutput   []string
+	}{
+		{
+			name: "member held by pack",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			flags:        extensionUpgradeFlags{all: true},
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+			wantSkip:     map[string]string{"test.child": heldReason},
+		},
+		{
+			name: "member held by pack processed first",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"aaa.pack":   packTestRecord("aaa.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{packTestPack("aaa.pack", "1.0.0", childRange), child},
+			flags:        extensionUpgradeFlags{all: true},
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+			wantSkip:     map[string]string{"test.child": `1.1.0 is available, but aaa.pack requires "~1.0.0"`},
+		},
+		{
+			name: "member held by pack without recorded dependencies",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0"),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			flags:        extensionUpgradeFlags{all: true},
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+			wantSkip:     map[string]string{"test.child": heldReason},
+		},
+		{
+			name: "member held by pack without recorded dependencies in single update",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0"),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			args:         []string{"test.child"},
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+			wantSkip:     map[string]string{"test.child": heldReason},
+		},
+		{
+			name: "member held with dependency updates disabled",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"aaa.pack":   packTestRecord("aaa.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{packTestPack("aaa.pack", "1.0.0", childRange), child},
+			flags:        extensionUpgradeFlags{all: true, noDependencyUpdates: true},
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+		},
+		{
+			name: "member updated within pack range",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, packTestExtension("test.child", "1.0.0", "1.0.1", "1.1.0")},
+			args:         []string{"Test.Child"},
+			wantVersions: map[string]string{"test.child": "1.0.1"},
+		},
+		{
+			name: "member held by nested pack",
+			installed: map[string]*extensions.Extension{
+				"test.leaf":  packTestRecord("test.leaf", "1.0.0"),
+				"test.inner": packTestRecord("test.inner", "1.0.0", leafRange),
+				"test.outer": packTestRecord("test.outer", "1.0.0", innerRange),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.outer", "1.0.0", innerRange),
+				packTestPack("test.inner", "1.0.0", leafRange),
+				packTestExtension("test.leaf", "1.0.0", "1.1.0"),
+			},
+			args:         []string{"test.outer", "test.leaf"},
+			wantVersions: map[string]string{"test.leaf": "1.0.0"},
+			wantSkip:     map[string]string{"test.leaf": `1.1.0 is available, but test.inner requires "~1.0.0"`},
+		},
+		{
+			name: "explicit version warns",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			args:         []string{"test.child"},
+			flags:        extensionUpgradeFlags{version: "1.1.0"},
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantWarnings: []string{`test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`},
+		},
+		{
+			name: "explicit version warns in terminal",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			args:         []string{"test.child"},
+			flags:        extensionUpgradeFlags{version: "1.1.0"},
+			terminal:     true,
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantOutput:   []string{`(!) Warning: test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`},
+		},
+		{
+			name: "member update reports existing conflict",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.1.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			args:         []string{"test.child"},
+			wantErr:      `test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`,
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantSkip:     map[string]string{"test.child": "already up to date"},
+		},
+		{
+			name: "existing conflict fails without downgrade",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.1.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata:     []*extensions.ExtensionMetadata{pack, child},
+			flags:        extensionUpgradeFlags{all: true},
+			terminal:     true,
+			wantErr:      `test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`,
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantOutput: []string{
+				"(x) Failed: Checking test.child dependency",
+				"azd extension install test.child --source test --version 1.0.0 --force",
+				"1 dependency failed",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, sources := newPackTestManager(t, test.installed, test.metadata...)
+			console := mockinput.NewMockConsole()
+			var buf bytes.Buffer
+			var formatter output.Formatter = &output.JsonFormatter{}
+			if test.terminal {
+				formatter = &output.NoneFormatter{}
+			}
+			flags := test.flags
+			flags.global = &internal.GlobalCommandOptions{NoPrompt: true}
+			action := &extensionUpgradeAction{
+				args: test.args, flags: &flags, console: console, sourceManager: sources,
+				extensionManager: manager, formatter: formatter, writer: &buf,
+			}
+
+			_, err := action.Run(t.Context())
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+				require.ErrorAs(t, err, new(*extensions.DependencyVersionConflictError))
+			}
+			requireInstalledVersions(t, manager, test.wantVersions)
+
+			if test.terminal {
+				rendered := strings.Join(console.Output(), "\n")
+				for _, want := range test.wantOutput {
+					require.Contains(t, rendered, want)
+				}
+				require.NotContains(t, rendered, "retry")
+				return
+			}
+			var report struct {
+				Extensions []struct {
+					Name       string
+					SkipReason string
+					Warnings   []string
+				}
+			}
+			require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
+			for _, extension := range report.Extensions {
+				if reason, ok := test.wantSkip[extension.Name]; ok {
+					require.Equal(t, reason, extension.SkipReason, extension.Name)
+				}
+			}
+			if test.wantWarnings != nil {
+				require.Len(t, report.Extensions, 1)
+				require.Equal(t, test.wantWarnings, report.Extensions[0].Warnings)
+			}
+		})
+	}
+}
+
+func TestExtensionUpdate_HeldPromotionKeepsInstalledSource(t *testing.T) {
+	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
+	installed := map[string]*extensions.Extension{
+		"test.child": {Id: "test.child", Version: "1.0.5", Source: "dev"},
+		"test.pack": {
+			Id: "test.pack", Version: "1.0.0", Source: extensions.MainRegistryName,
+			Dependencies: []extensions.ExtensionDependency{childRange},
+		},
+	}
+	manager, sources := newPackTestManagerWithSources(t, installed, map[string][]*extensions.ExtensionMetadata{
+		extensions.MainRegistryName: {
+			packTestPack("test.pack", "1.0.0", childRange), packTestExtension("test.child", "1.0.0", "1.1.0"),
+		},
+		"dev": {packTestExtension("test.child", "1.0.5")},
+	})
+	var buf bytes.Buffer
+	action := &extensionUpgradeAction{
+		args:    []string{"test.child"},
+		flags:   &extensionUpgradeFlags{global: &internal.GlobalCommandOptions{NoPrompt: true}},
+		console: mockinput.NewMockConsole(), sourceManager: sources, extensionManager: manager,
+		formatter: &output.JsonFormatter{}, writer: &buf,
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	record, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.5", record.Version)
+	require.Equal(t, "dev", record.Source)
+	var report struct {
+		Extensions []struct{ Status, SkipReason string }
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
+	require.Len(t, report.Extensions, 1)
+	require.Equal(t, "skipped", report.Extensions[0].Status)
+	require.Equal(t, `1.1.0 is available, but test.pack requires "~1.0.0"`, report.Extensions[0].SkipReason)
+}
+
+func TestExtensionUpdate_FailureReportsCompletedDependencyUpdates(t *testing.T) {
+	leafRange := extensions.ExtensionDependency{Id: "test.leaf", Version: "~1.1.0"}
+	member := packTestExtension("test.member", "1.0.0")
+	member.Versions[0].Dependencies = []extensions.ExtensionDependency{leafRange}
+	member.Versions[0].Artifacts[runtime.GOOS] = extensions.ExtensionArtifact{
+		URL: "https://test.example.com/missing/test.member",
+	}
+	pack := packTestPack("test.pack", "1.0.0", extensions.ExtensionDependency{Id: "test.leaf"})
+	pack.Versions = append(pack.Versions, extensions.ExtensionVersion{
+		Version:      "2.0.0",
+		Dependencies: []extensions.ExtensionDependency{{Id: "test.leaf"}, {Id: "test.member"}},
+	})
+	manager, sources := newPackTestManager(t, map[string]*extensions.Extension{
+		"test.pack": packTestRecord("test.pack", "1.0.0", extensions.ExtensionDependency{Id: "test.leaf"}),
+		"test.leaf": packTestRecord("test.leaf", "1.0.0"),
+	}, pack, member, packTestExtension("test.leaf", "1.0.0", "1.1.0"))
+	var buf bytes.Buffer
+	action := &extensionUpgradeAction{
+		args:    []string{"test.pack"},
+		flags:   &extensionUpgradeFlags{global: &internal.GlobalCommandOptions{NoPrompt: true}},
+		console: mockinput.NewMockConsole(), sourceManager: sources, extensionManager: manager,
+		formatter: &output.JsonFormatter{}, writer: &buf,
+	}
+
+	_, err := action.Run(t.Context())
+	require.ErrorContains(t, err, "1 of 1 extensions failed to update")
+	requireInstalledVersions(t, manager, map[string]string{"test.pack": "1.0.0", "test.leaf": "1.1.0"})
+	var report struct {
+		Extensions []struct {
+			Status             string
+			DependencyUpgrades []struct{ Name, Status, FromVersion, ToVersion string }
+		}
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &report))
+	require.Len(t, report.Extensions, 1)
+	require.Equal(t, "failed", report.Extensions[0].Status)
+	require.Equal(t, []struct{ Name, Status, FromVersion, ToVersion string }{
+		{Name: "test.leaf", Status: "upgraded", FromVersion: "1.0.0", ToVersion: "1.1.0"},
+	}, report.Extensions[0].DependencyUpgrades)
+}
+
+func TestExtensionInstall_HeldSourceChangeUsesSelectedSource(t *testing.T) {
+	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
+	manager, sources := newPackTestManagerWithSources(t, map[string]*extensions.Extension{
+		"test.child": packTestRecord("test.child", "1.0.5"),
+		"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+	}, map[string][]*extensions.ExtensionMetadata{
+		"test":  {packTestPack("test.pack", "1.0.0", childRange), packTestExtension("test.child", "1.0.5")},
+		"other": {packTestExtension("test.child", "1.0.0", "1.1.0")},
+	})
+	action := &extensionInstallAction{
+		args: []string{"test.child"},
+		flags: &extensionInstallFlags{
+			source: "other", force: true, global: &internal.GlobalCommandOptions{NoPrompt: true},
+		},
+		console: mockinput.NewMockConsole(), sourceManager: sources, extensionManager: manager,
+	}
+
+	_, err := action.Run(t.Context())
+	require.NoError(t, err)
+	record, err := manager.GetInstalled(extensions.FilterOptions{Id: "test.child"})
+	require.NoError(t, err)
+	require.Equal(t, "1.0.0", record.Version)
+	require.Equal(t, "other", record.Source)
+}
+
+func TestExtensionInstall_PackDependencyConstraints(t *testing.T) {
+	childRange := extensions.ExtensionDependency{Id: "test.child", Version: "~1.0.0"}
+	otherRange := extensions.ExtensionDependency{Id: "test.other", Version: "~1.0.0"}
+	tests := []struct {
+		name         string
+		installed    map[string]*extensions.Extension
+		metadata     []*extensions.ExtensionMetadata
+		target       string
+		version      string
+		wantErr      string
+		wantVersions map[string]string
+		wantOutput   []string
+	}{
+		{
+			name: "pack updates beta member",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0-beta.1"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", childRange),
+				packTestExtension("test.child", "1.0.0-beta.1", "1.0.0"),
+			},
+			target:       "test.pack",
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+			wantOutput:   []string{"Done: Updated test.child dependency (1.0.0-beta.1 → 1.0.0)"},
+		},
+		{
+			name: "member held by installed pack",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", childRange),
+				packTestExtension("test.child", "1.0.0", "1.1.0"),
+			},
+			target:       "test.child",
+			wantVersions: map[string]string{"test.child": "1.0.0"},
+		},
+		{
+			name: "explicit member version warns",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0"),
+				"test.pack":  packTestRecord("test.pack", "1.0.0", childRange),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", childRange),
+				packTestExtension("test.child", "1.0.0", "1.1.0"),
+			},
+			target:       "test.child",
+			version:      "1.1.0",
+			wantVersions: map[string]string{"test.child": "1.1.0"},
+			wantOutput:   []string{`(!) Warning: test.child 1.1.0 is installed, but test.pack requires "~1.0.0"`},
+		},
+		{
+			name: "failed pack install reports completed updates",
+			installed: map[string]*extensions.Extension{
+				"test.child": packTestRecord("test.child", "1.0.0-beta.1"),
+				"test.other": packTestRecord("test.other", "2.0.0"),
+			},
+			metadata: []*extensions.ExtensionMetadata{
+				packTestPack("test.pack", "1.0.0", childRange, otherRange),
+				packTestExtension("test.child", "1.0.0-beta.1", "1.0.0"),
+				packTestExtension("test.other", "1.0.0", "2.0.0"),
+			},
+			target:       "test.pack",
+			wantErr:      `test.other 2.0.0 is installed, but test.pack requires "~1.0.0"`,
+			wantVersions: map[string]string{"test.child": "1.0.0", "test.other": "2.0.0"},
+			wantOutput:   []string{"Done: Updated test.child dependency (1.0.0-beta.1 → 1.0.0)"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manager, sources := newPackTestManager(t, test.installed, test.metadata...)
+			console := mockinput.NewMockConsole()
+			action := &extensionInstallAction{
+				args: []string{test.target},
+				flags: &extensionInstallFlags{
+					source: "test", version: test.version, versionSet: test.version != "",
+					global: &internal.GlobalCommandOptions{NoPrompt: true},
+				},
+				console: console, sourceManager: sources, extensionManager: manager,
+			}
+
+			_, err := action.Run(t.Context())
+			if test.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, test.wantErr)
+			}
+			requireInstalledVersions(t, manager, test.wantVersions)
+			rendered := strings.Join(console.Output(), "\n")
+			for _, want := range test.wantOutput {
+				require.Contains(t, rendered, want)
+			}
+		})
+	}
+}
+
 func TestExtensionInstallAction_PromotesExistingDependency(t *testing.T) {
 	for _, id := range []string{"test.child", "Test.Child"} {
 		t.Run(id, func(t *testing.T) {
@@ -1348,36 +1838,6 @@ func TestExtensionCommands_ReportDependencyFailuresAfterParentUpdate(t *testing.
 			}
 		})
 	}
-}
-
-func TestDependencyUpgradeError(t *testing.T) {
-	t.Parallel()
-
-	childErr := &extensions.DependencyVersionNotFoundError{
-		DependencyId: "test.child", ParentId: "test.pack", Constraint: ">=2.0.0",
-	}
-	nestedErr := fmt.Errorf("saving dependency metadata: %w", context.Canceled)
-	results := []extensions.UpgradeResult{
-		{ExtensionId: "test.child", Status: extensions.UpgradeStatusFailed, Error: childErr},
-		{
-			ExtensionId: "test.parent", Status: extensions.UpgradeStatusUpgraded,
-			DependencyUpgrades: []extensions.UpgradeResult{{
-				ExtensionId: "test.nested", Status: extensions.UpgradeStatusFailed, Error: nestedErr,
-			}},
-		},
-	}
-
-	err := dependencyUpgradeError(results)
-	require.ErrorIs(t, err, childErr)
-	require.ErrorIs(t, err, nestedErr)
-	require.ErrorIs(t, err, context.Canceled)
-	require.ErrorContains(t, err, "dependency test.child:")
-	require.ErrorContains(t, err, "dependency test.nested:")
-	require.Nil(t, dependencyUpgradeError(nil))
-	require.Nil(t, dependencyUpgradeError([]extensions.UpgradeResult{
-		{Status: extensions.UpgradeStatusUpgraded},
-		{Status: extensions.UpgradeStatusSkipped},
-	}))
 }
 
 // ---------------------------------------------------------------------------

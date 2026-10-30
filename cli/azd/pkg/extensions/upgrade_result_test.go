@@ -4,13 +4,45 @@
 package extensions
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDependencyUpgradeError(t *testing.T) {
+	t.Parallel()
+
+	childErr := &DependencyVersionNotFoundError{
+		DependencyId: "test.child", ParentId: "test.pack", Constraint: ">=2.0.0",
+	}
+	nestedErr := fmt.Errorf("saving dependency metadata: %w", context.Canceled)
+	results := []UpgradeResult{
+		{ExtensionId: "test.child", Status: UpgradeStatusFailed, Error: childErr},
+		{
+			ExtensionId: "test.parent", Status: UpgradeStatusUpgraded,
+			DependencyUpgrades: []UpgradeResult{{
+				ExtensionId: "test.nested", Status: UpgradeStatusFailed, Error: nestedErr,
+			}},
+		},
+	}
+
+	err := DependencyUpgradeError(results)
+	require.ErrorIs(t, err, childErr)
+	require.ErrorIs(t, err, nestedErr)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorContains(t, err, "dependency test.child:")
+	require.ErrorContains(t, err, "dependency test.nested:")
+	require.Nil(t, DependencyUpgradeError(nil))
+	require.Nil(t, DependencyUpgradeError([]UpgradeResult{
+		{Status: UpgradeStatusUpgraded},
+		{Status: UpgradeStatusSkipped},
+	}))
+}
 
 func TestUpgradeStatus_String(t *testing.T) {
 	t.Parallel()
@@ -260,8 +292,9 @@ func TestNewUpgradeSummary(t *testing.T) {
 
 	t.Run("dependencyUpgrades_counted_recursively", func(t *testing.T) {
 		t.Parallel()
-		grandchild := UpgradeResult{Status: UpgradeStatusUpgraded}
+		grandchild := UpgradeResult{ExtensionId: "test.grandchild", Status: UpgradeStatusUpgraded}
 		child := UpgradeResult{
+			ExtensionId:        "test.child",
 			Status:             UpgradeStatusUpgraded,
 			DependencyUpgrades: []UpgradeResult{grandchild},
 		}
@@ -276,6 +309,20 @@ func TestNewUpgradeSummary(t *testing.T) {
 		assert.Equal(t, 2, s.Total)
 		assert.Equal(t, 2, s.Upgraded)
 		assert.Equal(t, 2, s.DependencyUpgrades, "dependency-upgrade count must include grandchildren")
+	})
+
+	t.Run("dependency_reported_by_two_parents_counted_once", func(t *testing.T) {
+		t.Parallel()
+		failed := UpgradeResult{ExtensionId: "test.child", Status: UpgradeStatusFailed}
+		results := []UpgradeResult{
+			{Status: UpgradeStatusSkipped, DependencyUpgrades: []UpgradeResult{failed}},
+			{Status: UpgradeStatusSkipped, DependencyUpgrades: []UpgradeResult{{
+				ExtensionId: "Test.Child", Status: UpgradeStatusFailed,
+			}}},
+		}
+		s := NewUpgradeSummary(results)
+		assert.Equal(t, 1, s.DependencyUpgrades)
+		assert.Equal(t, 1, s.DependencyUpgradesByStatus[UpgradeStatusFailed])
 	})
 }
 

@@ -231,42 +231,17 @@ Metadata requests are unauthenticated when no matching token is set.
 
 ### azure.ai.content-understanding
 
-The CU extension defaults to azd / Microsoft Entra ID authentication. Its
-process/configuration inputs and generated-project environment values are
-listed separately below. Use `azd ai cu env-var --help` for supported process
-inputs, including inherited azd inputs, and `azd ai cu env-var list` to inspect
-set process values with secrets redacted. Neither command lists saved
-project-environment values.
-
-#### CU command inputs
-
-Endpoint, API version, and default analyzer use explicit flags, then process
-values, applicable saved azd environment values, CU user defaults, and finally
-built-in defaults. The remaining variables have the narrower scope stated in
-their descriptions.
-
 | Variable | Description |
 | --- | --- |
-| `CU_ENDPOINT` | CU resource HTTPS endpoint under `services.ai.azure.com` or `cognitiveservices.azure.com`, on port 443. `--endpoint` takes precedence. Required when no other endpoint source is configured; `FOUNDRY_ENDPOINT` and project endpoints are not substitutes. |
-| `CU_API_VERSION` | CU service API version: `2025-11-01` (default) or a valid `YYYY-MM-DD-preview`. `--api-version` takes precedence. Offline schema commands read only the flag and process variable, not saved environment values or user defaults. |
-| `CU_DEFAULT_ANALYZER` | Default analyzer for analysis; defaults to `prebuilt-layout`. `--analyzer` takes precedence. |
+| `CU_ENDPOINT` | Process/config input for the CU resource HTTPS endpoint under `services.ai.azure.com` or `cognitiveservices.azure.com`, on port 443. `--endpoint` takes precedence; `FOUNDRY_ENDPOINT` and project endpoints are not substitutes. See [CU configuration precedence](../extensions/azure.ai.content-understanding/docs/usage.md#configuration-and-api-versions). |
+| `CU_API_VERSION` | Process/config input for the CU API version: `2025-11-01` (default) or `YYYY-MM-DD-preview`. `--api-version` takes precedence. Offline schema commands read only the flag and process variable. |
+| `CU_DEFAULT_ANALYZER` | Process/config input for the default analysis analyzer; defaults to `prebuilt-layout`. `--analyzer` takes precedence. |
 | `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Conflicts with process `CU_AUTH_MODE=login`. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
 | `CU_AUTH_MODE` | Optional process or saved-environment selector accepting only `login`. Process `login` conflicts with process `CU_API_KEY`; saved `login` does not override a process key. Without a process key, Entra ID is used. |
 | `CU_ON_EXISTS` | Process-only policy for existing analysis result files: `error` (default), `skip`, or `reanalyze`. `--on-existing` takes precedence. |
 | `CU_DISABLE_AUTO_CONFIG` | Process-only switch to skip automatic CU configuration during postprovision, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Disabled by default. |
-
-#### Generated-project settings and outputs
-
-These values are saved in the selected azd project environment or populated by
-its Bicep deployment. The postprovision settings in this table are read from
-the selected environment snapshot, not arbitrary process overrides. Values referenced
-by the Bicep parameter file are template substitutions, not direct CU command
-configuration. Inspect saved values with `azd env get-values`.
-
-| Variable | Description |
-| --- | --- |
-| `CU_MODEL_SELECTION` | Saved postprovision model-selection input: `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Generated from `--models`; set with `azd env set` for subsequent runs. `prompt` requires an interactive terminal. |
-| `CU_CONFIG_SETUP_FORCE` | Saved postprovision input allowing existing CU environment configuration to be replaced. Generated from `--force`; disabled by default. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. This setting alone does not reset the model-setup completion marker. |
+| `CU_MODEL_SELECTION` | Saved-environment input for postprovision model selection: `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Generated from `--models`; `prompt` requires an interactive terminal. See [postprovision settings](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior). |
+| `CU_CONFIG_SETUP_FORCE` | Saved-environment input allowing postprovision to replace existing CU configuration. Generated from `--force`; disabled by default. `1`, `true`, `yes`, or `on` enable it, case-insensitively. It does not reset the model-setup completion marker. |
 | `FOUNDRY_RESOURCE_PREFIX` | Saved template input for naming a new resource, generated from `--foundry-prefix`. Empty by default; cannot be combined with an existing-resource endpoint. |
 | `FOUNDRY_EXISTING_ENDPOINT` | Saved template input selecting an existing Foundry resource, generated from `--foundry-endpoint`. Empty means create a new resource; this is not an alias for service-command `CU_ENDPOINT`. |
 | `FOUNDRY_EXISTING_RESOURCE_GROUP` | Saved template input identifying the resource group of the existing Foundry resource resolved during generation. Empty for a new-resource deployment. |
@@ -276,18 +251,7 @@ configuration. Inspect saved values with `azd env get-values`.
 | `FOUNDRY_PROJECT_NAME` | Bicep output containing the project name when available; may be empty when using an existing resource. |
 | `FOUNDRY_PROJECT_ENDPOINT` | Bicep output containing the project-scoped endpoint when available. It is not the resource endpoint required by CU commands. |
 | `MODEL_DEPLOYMENTS` | Bicep output listing declared model deployments, not the CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
-
-The generated legacy `CU_MODEL_SETUP_COMPLETE` value is preserved but does not
-control model-setup completion. The active marker is the boolean
-`cu.modelSetupComplete` in azd environment configuration, not a process
-variable. Inspect it and model mappings with `azd env config get cu`.
-
-Common deployment scope and principal variables are documented under
-[Core Azure Variables](#core-azure-variables), and inherited host inputs under
-[Extension Variables](#extension-variables).
-See the [CU environment-variable reference](../extensions/azure.ai.content-understanding/docs/usage.md#environment-variable-reference)
-for command precedence and the [provisioning guide](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior)
-for generated-project workflows.
+| `CU_MODEL_SETUP_COMPLETE` | Generated legacy value, preserved but not used as a completion marker. The active marker is `cu.modelSetupComplete` in azd environment configuration; inspect it with `azd env config get cu`. |
 
 ### azure.ai.routines
 

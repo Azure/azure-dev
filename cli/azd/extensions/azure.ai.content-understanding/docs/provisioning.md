@@ -222,7 +222,7 @@ environment configuration. The generated legacy `CU_MODEL_SETUP_COMPLETE`
 environment value is preserved but is not used as the completion marker.
 Inspect the active marker and model mappings with `azd env config get cu`.
 Generated resource selectors and deployment outputs are listed in the
-[central environment-variable reference](../../../docs/environment-variables.md#generated-project-settings-and-outputs).
+[central environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding).
 
 Verify the selected environment from the generated directory:
 

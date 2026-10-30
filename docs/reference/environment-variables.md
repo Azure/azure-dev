@@ -7,7 +7,6 @@ Environment variables that configure Azure Developer CLI behavior. These can be 
 | Variable | Description |
 |---|---|
 | `AZD_ALPHA_ENABLE_<NAME>` | Enable a specific alpha feature |
-| `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` | Independent, default-off AI-extension switch for existing ACR reuse, including preview/down/recovery/eject of reuse-bound environments. Read from the current process (including host injection); core alpha config and `AZD_ALPHA_ENABLE_ALL` do not enable it. See the [canonical shared Foundry reference](../../cli/azd/docs/environment-variables.md#shared-foundry-previews). |
 
 ## Configuration
 

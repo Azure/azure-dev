@@ -79,13 +79,6 @@ Current maturity status of Azure Developer CLI features. See [Feature Stages](..
 | Deployment Preview (`deploy --preview`) | Beta |
 | Deployment Stacks | Alpha |
 | Extensions | Stable |
-| Existing ACR reuse for new Foundry projects (AI extensions) | Alpha, default off |
-
-Foundry ACR reuse requires `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true` in the
-azd process, including for preview, down, recovery, and eject of an existing
-reuse-bound environment. Supported generated Bicep retains the
-`microsoft.foundry` provider; manually switching to core Bicep is unsupported.
-See the [shared rollout and non-interactive contract](../../cli/azd/extensions/ai-non-interactive.md#shared-existing-acr-preview-switch).
 
 ## Extension gRPC Contracts
 

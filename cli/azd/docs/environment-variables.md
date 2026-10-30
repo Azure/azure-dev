@@ -218,16 +218,6 @@ Metadata requests are unauthenticated when no matching token is set.
 > **Note**: These variables are defined and consumed by individual azd extensions. As the extension
 > ecosystem grows, extension-specific variables may move to each extension's own documentation.
 
-### Shared Foundry previews
-
-| Variable | Description |
-|----------|-------------|
-| `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE` | Default-off opt-in shared by `azure.ai.projects` and `azure.ai.agents` for existing ACR reuse in new projects. Requires a `strconv.ParseBool` true value in the current process, including host injection. Also required for preview, down, recovery, and eject of reuse-bound environments. Core alpha configuration and `AZD_ALPHA_ENABLE_ALL` do not enable it. The evaluator does not open dotenv files. |
-
-Keep generated Bicep on `microsoft.foundry`. Manually changing the Foundry
-layer to core `bicep`, and arbitrary direct external IaC execution, are outside
-the enforcement contract. See the [shared ACR rollout reference](../extensions/ai-non-interactive.md#shared-existing-acr-preview-switch).
-
 ### azure.ai.agents
 
 | Variable | Description |

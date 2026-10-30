@@ -11,7 +11,7 @@
       "tests/parity/generated_projects/canonical.json": "96164cb2d82fff0deb60db1e6d6c785b85757a6df7c3c5fa0068c38860e5b99f"
     },
     "adaptations": [
-      "Native README documents Go/Entra-only operation rather than Python/key setup. This complete-tree content replacement remains unapproved; retain the source README hash.",
+      "Native README documents azd provisioning, authentication boundaries, and saved model selection. Retain the source README hash alongside the native expectation.",
       "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys.",
       "Native hooks pass AZURE_ENV_NAME explicitly as --environment and reject missing names. Retain the source hook hashes and arguments alongside native expectations."
     ]
@@ -44,6 +44,7 @@
       "infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212"
     },
     "native_hashes": {
+      "README.md": "f954afa3b0388197d461c6d768f8dd81a1fb956db19e09118a906448b0bbf2ed",
       "hooks/postprovision.ps1": "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
       "hooks/postprovision.sh": "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8"
     },

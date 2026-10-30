@@ -67,8 +67,8 @@ For testing or automation with a resource API key, set `CU_API_KEY` in the
 current process environment, for example through a CI secret. CU data-plane
 commands then use that key without requiring `azd auth login`. The key is never
 saved by `azd ai cu config`; saved API-key entries in azd configuration or
-environments are rejected. Unset `CU_AUTH_MODE` when using a key, and unset
-`CU_API_KEY` to return to Entra ID. Provisioning and resource discovery for
+environments are rejected. Unset `CU_API_KEY` to return to Entra ID.
+Provisioning and resource discovery for
 cross-resource copy still require Entra ID; a key is never reused for another
 endpoint or used as an automatic fallback after an Entra failure.
 

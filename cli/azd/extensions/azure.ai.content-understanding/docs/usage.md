@@ -82,7 +82,6 @@ secret, or enter it without putting its value in shell history:
 
 ```bash
 export CU_ENDPOINT="https://<resource-name>.services.ai.azure.com/"
-unset CU_AUTH_MODE
 read -r -s -p "CU resource API key: " CU_API_KEY
 printf '\n'
 export CU_API_KEY
@@ -97,11 +96,9 @@ a tenant. It does not require azd sign-in, but commands still run through the
 azd extension host. `doctor` reports the selected authentication method without
 printing the key.
 
-An explicitly present empty or whitespace-containing `CU_API_KEY` is an error,
-not a request to fall back to Entra ID. Process `CU_AUTH_MODE=login` conflicts
-with a process key; unset one. `CU_AUTH_MODE`, if set, still accepts only
-`login`; no `key` mode value is needed. A saved environment's `login` value does
-not override a process key. A failed key request does not retry through Entra.
+An explicitly present empty `CU_API_KEY`, or one containing whitespace or
+control characters, is an error, not a request to fall back to Entra ID.
+A failed key request does not retry through Entra.
 
 Do not save keys with `azd env set`, `azd config`, or `azd ai cu config`.
 Persisted `CU_API_KEY` and API-key configuration entries are rejected, including
@@ -483,7 +480,6 @@ not an alias for `CU_ENDPOINT` in service-command configuration.
 | `CU_API_VERSION` | Service API version; defaults to `2025-11-01`. |
 | `CU_DEFAULT_ANALYZER` | Analysis default; `prebuilt-layout` when no override is configured. |
 | `CU_API_KEY` | Optional process-only resource key for CU data-plane requests; unset means Entra ID. Always redacted. |
-| `CU_AUTH_MODE` | Optional `login` selector; process `login` conflicts with process `CU_API_KEY`. |
 | `CU_ON_EXISTS` | Existing-result policy: `error` (default), `skip`, or `reanalyze`; `--on-existing` takes precedence. |
 | `CU_DISABLE_AUTO_CONFIG` | Skip automatic postprovision CU configuration, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Default: disabled. |
 | `AZD_ENVIRONMENT` | Project-environment selection; `--environment` takes precedence. |

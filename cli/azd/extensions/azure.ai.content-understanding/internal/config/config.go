@@ -40,7 +40,7 @@ type Resolved struct {
 func ProcessValues() map[string]string {
 	values := make(map[string]string)
 	for _, key := range []string{
-		"CU_ENDPOINT", "CU_API_VERSION", "CU_DEFAULT_ANALYZER", "CU_AUTH_MODE", "CU_API_KEY",
+		"CU_ENDPOINT", "CU_API_VERSION", "CU_DEFAULT_ANALYZER", "CU_API_KEY",
 		"AZD_ENVIRONMENT", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_RESOURCE_GROUP",
 	} {
 		if value, present := os.LookupEnv(key); present {
@@ -70,9 +70,6 @@ func resolve(
 	}
 	if _, present := values["CU_API_KEY"]; present {
 		return result, persistedKey()
-	}
-	if mode := values["CU_AUTH_MODE"]; mode != "" && mode != "login" {
-		return result, unsupportedKey()
 	}
 	result.APIKey = process["CU_API_KEY"]
 	var err error
@@ -166,14 +163,6 @@ func validateRuntime(process map[string]string) error {
 		}) {
 			return invalid("invalid_api_key", "Process CU_API_KEY must be nonempty and contain no whitespace or controls.")
 		}
-		if process["CU_AUTH_MODE"] == "login" {
-			return invalid("conflicting_arguments",
-				"CU_API_KEY conflicts with CU_AUTH_MODE=login. Unset CU_API_KEY to use Entra ID, "+
-					"or unset CU_AUTH_MODE to use the process API key.")
-		}
-	}
-	if mode := process["CU_AUTH_MODE"]; mode != "" && mode != "login" {
-		return unsupportedKey()
 	}
 	return nil
 }
@@ -200,9 +189,4 @@ func persistedKey() error {
 func isAPIKeySetting(name string) bool {
 	normalized := strings.TrimPrefix(strings.ToLower(name), "cu_")
 	return strings.EqualFold(strings.ReplaceAll(normalized, "_", ""), "apiKey")
-}
-
-func unsupportedKey() error {
-	return invalid("unsupported_authentication",
-		"CU_AUTH_MODE, if set, must be login. To use an API key, unset CU_AUTH_MODE and set process CU_API_KEY.")
 }

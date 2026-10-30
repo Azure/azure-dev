@@ -43,6 +43,7 @@ func TestServiceKeyAuthenticationWithoutAzureLogin(t *testing.T) {
 	})
 	argsPath := installAuthenticationCLI(t, false)
 	t.Setenv("CU_API_KEY", "private-resource-key")
+	t.Setenv("CU_AUTH_MODE", "login")
 	t.Setenv("CU_ENDPOINT", "https://configured.services.ai.azure.com")
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "unavailable-subscription")
 	calls := 0

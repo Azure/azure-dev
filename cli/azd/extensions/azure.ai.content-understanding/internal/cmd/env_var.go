@@ -46,13 +46,8 @@ var environmentVariables = []environmentVariableSpec{
 	{
 		Name: "CU_API_KEY", Description: "Optional resource API key; never persisted and always redacted.",
 		Values: "nonempty key without whitespace or controls", Default: "unset; use Microsoft Entra ID",
-		Scope: "CU data-plane authentication", Precedence: "process only; conflicts with process CU_AUTH_MODE=login",
+		Scope: "CU data-plane authentication", Precedence: "process only; unset to use Microsoft Entra ID",
 		Sensitive: true,
-	},
-	{
-		Name: "CU_AUTH_MODE", Description: "Explicitly require azd Microsoft Entra ID authentication.",
-		Values: "login", Default: "process CU_API_KEY if set, otherwise azd Microsoft Entra ID",
-		Scope: "authentication", Precedence: "process or azd environment; process login conflicts with process CU_API_KEY",
 	},
 	{
 		Name: "CU_ON_EXISTS", Description: "Policy for analysis output files that already exist.",

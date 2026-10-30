@@ -6,6 +6,9 @@
   `CU_API_KEY` only, without saving keys in azd configuration or requiring
   azd sign-in. Keep Entra ID as the default and for provisioning and
   cross-resource copy.
+- Remove `CU_AUTH_MODE`; existing process or saved-environment values are ignored.
+  Use process `CU_API_KEY` to opt into key authentication, or unset it to use
+  Entra ID.
 - List all supported process environment variables, accepted values, defaults,
   scopes, and precedence in `azd ai cu env-var` / `env-var --help`.
   Keep `env-var list` for inspecting set values with secrets redacted.

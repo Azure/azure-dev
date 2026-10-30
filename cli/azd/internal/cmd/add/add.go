@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/azure/azure-dev/cli/azd/pkg/yamlnode"
 	"github.com/braydonk/yaml"
@@ -59,6 +60,7 @@ type AddAction struct {
 	accountManager   account.Manager
 	azureClient      *azapi.AzureClient
 	importManager    *project.ImportManager
+	dotnetCli        *dotnet.Cli
 }
 
 func (a *AddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -485,7 +487,8 @@ func NewAddAction(
 	accountManager account.Manager,
 	console input.Console,
 	azureClient *azapi.AzureClient,
-	importManager *project.ImportManager) actions.Action {
+	importManager *project.ImportManager,
+	dotnetCli *dotnet.Cli) actions.Action {
 	return &AddAction{
 		azdCtx:           azdCtx,
 		console:          console,
@@ -502,5 +505,6 @@ func NewAddAction(
 		accountManager:   accountManager,
 		azureClient:      azureClient,
 		importManager:    importManager,
+		dotnetCli:        dotnetCli,
 	}
 }

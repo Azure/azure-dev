@@ -1494,6 +1494,10 @@ func Test_createTypedResourceProps(t *testing.T) {
 		{"ContainerApp_empty", ResourceTypeHostContainerApp, nil, false, "ContainerAppProps"},
 		{"ContainerApp_json", ResourceTypeHostContainerApp,
 			mustJSON(t, ContainerAppProps{Port: 3000}), false, "ContainerAppProps"},
+		{"FunctionApp_empty", ResourceTypeHostFunctionApp, nil, false, "FunctionAppProps"},
+		{"FunctionApp_json", ResourceTypeHostFunctionApp,
+			mustJSON(t, FunctionAppProps{Runtime: FunctionAppRuntime{Stack: "python", Version: "3.12"}}),
+			false, "FunctionAppProps"},
 		{"Cosmos_empty", ResourceTypeDbCosmos, nil, false, "CosmosDBProps"},
 		{"Cosmos_json", ResourceTypeDbCosmos,
 			mustJSON(t, CosmosDBProps{Containers: []CosmosDBContainerProps{{Name: "c1"}}}), false, "CosmosDBProps"},
@@ -1534,6 +1538,7 @@ func Test_createTypedResourceProps_InvalidJSON(t *testing.T) {
 	types := []ResourceType{
 		ResourceTypeHostAppService,
 		ResourceTypeHostContainerApp,
+		ResourceTypeHostFunctionApp,
 		ResourceTypeDbCosmos,
 		ResourceTypeStorage,
 		ResourceTypeAiProject,
@@ -1568,6 +1573,7 @@ func Test_getResourceTypeKinds(t *testing.T) {
 		{"Cosmos", ResourceTypeDbCosmos, []string{"GlobalDocumentDB"}},
 		{"Mongo", ResourceTypeDbMongo, []string{"MongoDB"}},
 		{"AppService", ResourceTypeHostAppService, []string{"app", "app,linux"}},
+		{"FunctionApp", ResourceTypeHostFunctionApp, []string{"functionapp", "functionapp,linux"}},
 		{"Unknown", ResourceType("unknown"), []string{}},
 	}
 

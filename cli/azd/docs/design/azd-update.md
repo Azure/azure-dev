@@ -178,7 +178,8 @@ All flags persist their values to config, which can also be set directly via `az
 | `brew` | Homebrew cask: trust azd's source (`brew trust azure/azd`), then `brew install/upgrade --cask azure/azd/azd` (stable) or `azure/azd/azd@daily` (daily). Handles channel switching by uninstalling the current formula or cask and installing the target. |
 | `winget` | Shell out: `winget upgrade Microsoft.Azd` |
 | `choco` | Shell out: `choco upgrade azd` |
-| `install-azd.ps1`, `msi` (Windows) | Shell out: `install-azd.ps1` with backup/restore of running executable, pinned to the resolved version on stable |
+| `install-azd.ps1`, `msi` (Windows per-user) | Shell out: `install-azd.ps1` with backup/restore of running executable, pinned to the resolved version on stable |
+| MSI registered for all users, including script installs | Require an elevated terminal and a stable x64 installation. Download and verify the pinned stable MSI, then run it with `ALLUSERS=1` and the existing installation directory. |
 | `install-azd.sh` (Linux/macOS) | Shell out: `install-azd.sh` with version (pinned on stable) and install folder arguments |
 | `deb`, `rpm` | Direct binary download + replace, pinned to the resolved version on stable |
 
@@ -237,24 +238,42 @@ version, and any target whose channel is neither `stable` nor `daily`: falling b
 rolling `release/stable/` folder would silently reintroduce the drift pinning exists to
 prevent, so the update fails instead of installing a version other than the one reported.
 
-#### Windows Update Flow (MSI via `install-azd.ps1`)
+#### Windows update flow
 
-Windows updates (for `install-azd.ps1`, `msi`, and other Windows install types) use the official PowerShell install script:
+Windows updates preserve MSI ownership. The default per-user installation continues to use the official PowerShell install script. Machine-wide installations use the signed MSI directly.
 
 ```
-1. Verify standard per-user MSI install location
-   - install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI
-   - If non-standard install detected → abort with guidance to reinstall
-2. Backup running executable (rename + safety copy)
-   - Rename running azd.exe to a temp backup location (frees the path; process continues via OS handle)
+1. Resolve installation scope
+   - Match the running executable directory against the MSI-written HKLM\SOFTWARE\Microsoft\Azure Dev CLI\InstallDir value in the executable architecture's registry view.
+   - Otherwise accept the default per-user location, %LOCALAPPDATA%\Programs\Azure Dev CLI.
+   - Reject other locations with guidance to use the original installer.
+2. For a machine installation, require an elevated terminal and stable-to-stable updates
+   - No automatic UAC prompt; x64 is the only published release MSI architecture.
+   - Preserve custom machine installation directories.
+3. Lock the installation against concurrent azd updates
+   - Machine updates download the pinned MSI into the installation directory and verify its Authenticode signature before modifying azd.exe.
+   - Installer inputs inherit the installation directory's ACL rather than using a user-writable temporary directory.
+4. Backup running executable (rename + safety copy)
+   - Machine backups stay on the install volume and inherit the installation directory's ACL.
+   - Per-user backups use the user's temporary directory.
    - Copy the backup back as an unlocked safety net at the original path
-   - If update fails at any point → restore original from backup automatically
-3. Run install-azd.ps1 with channel-specific arguments
+   - Restore the original executable if the installer fails. Existing release MSIs can remove the old product before the new installation's rollback transaction, so restoring the executable alone does not restore machine registration or PATH.
+   - Machine installer failures include guidance to reinstall the stable MSI with ALLUSERS=1 and the existing INSTALLDIR.
+5. Run the installer
+   - Machine: msiexec /i <pinned-MSI> /qn /norestart ALLUSERS=1 INSTALLDIR=<existing-directory>, with verbose logging and automatic application shutdown disabled.
+   - The native Windows command line quotes the INSTALLDIR value, rather than the entire property assignment, because msiexec does not use Go's default argument parsing.
+   - Per-user: install-azd.ps1 with channel-specific arguments.
    - Stable: `-Version '<resolved-version>'` (pinned, see Version Pinning); daily: `-Version 'daily'`
    - Script handles MSI download, verification, and installation
-4. Verify the binary was actually replaced (SHA-256 hash comparison pre vs post)
-   - If hashes match → MSI failed silently → abort and restore backup
-5. Clean up backup on success
+6. Verify the binary was actually replaced (SHA-256 hash comparison pre vs post)
+   - If verification fails after a machine MSI transaction succeeds, retain the installed state, original backup, and MSI log. Report repair guidance instead of restoring only the binary.
+   - Per-user script failures retain their existing executable restore behavior.
+   - Machine MSI exit code 3010 is a successful installation requiring a Windows restart. Do not restore the old binary or claim that the new version is already active.
+7. Clean up backups without scheduling reboot-time file operations
+   - A separate system PowerShell process retries locked backup cleanup for up to one minute, so it can finish after azd exits.
+   - Cleanup deletes only the backup executable and its empty directory. If retries are exhausted, retain the backup directory and write cleanup.log there.
+   - If policy prevents starting the cleanup process, print manual cleanup guidance.
+   - Retain and report MSI logs on failures or when a restart is required.
 ```
 
 #### Linux/macOS Update Flow (via `install-azd.sh`)
@@ -296,9 +315,10 @@ Homebrew updates use cask operations for both stable and daily channels:
 |----------|----------------|---------------|
 | `/opt/microsoft/azd/` (Linux script) | Yes — handled by `install-azd.sh` via `sudo` | Install script |
 | `%LOCALAPPDATA%\Programs\Azure Dev CLI\` (Windows MSI) | No — per-user install | `install-azd.ps1` |
+| MSI-registered machine directory, including custom paths | Already elevated terminal required | Signed stable x64 MSI, preserving `ALLUSERS=1` and `INSTALLDIR` |
 | Homebrew prefix | No — user-writable | `brew install/upgrade --cask` |
 
-**Windows**: The default per-user MSI install (`install-azd.ps1`) writes to `%LOCALAPPDATA%\Programs\Azure Dev CLI\` which does not require elevation. Non-standard installs (e.g., `C:\Program Files\`) are detected and rejected with guidance to reinstall using the standard method.
+**Windows**: The default per-user MSI install does not require elevation. Stable x64 machine installations can update from an already elevated terminal. Machine scope is determined from the MSI-written HKLM registration, not from a `Program Files` path heuristic. The updater does not request UAC elevation or switch machine installations between channels. Unregistered custom locations still require their original installer.
 
 **macOS/Linux (brew)**: Homebrew manages its own assets. Channel switching is fully supported via cask uninstall/install operations.
 
@@ -316,7 +336,7 @@ Skip update check when:
 
 #### Same Install Method (Script/MSI)
 
-Switching channels is just changing the download source:
+For per-user MSI installations and script installations on Linux/macOS, switching channels changes the download source. Machine-wide Windows installations support only stable-to-stable updates and require the MSI installer for channel changes.
 
 ```bash
 azd update --channel daily

@@ -43,6 +43,7 @@ func (c *CmdTree) Start() error {
 	if c.Cmd == nil {
 		return errors.New("command is nil")
 	}
+	c.setCommandLine()
 	if c.tree == nil {
 		c.tree = process.New(c.ctx, c.Cmd, process.Options{
 			Interactive:              c.Interactive,

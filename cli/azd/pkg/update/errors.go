@@ -3,7 +3,13 @@
 
 package update
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrRestartRequired indicates that MSI installed the update but Windows must restart to finish applying it.
+var ErrRestartRequired = errors.New("restart Windows to complete the azd update")
 
 // UpdateError represents a typed update error with a result code for telemetry.
 type UpdateError struct {

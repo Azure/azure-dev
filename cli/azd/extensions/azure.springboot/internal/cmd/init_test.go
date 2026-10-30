@@ -52,6 +52,31 @@ func TestInitPreflight(t *testing.T) {
 			require.Empty(t, entries)
 		})
 	}
+
+}
+
+func TestParseApplicationInputs(t *testing.T) {
+	inputs, err := parseApplicationInputs([]string{"FRONTEND_URL=value", "JWT_SECRET=secret"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]spring.ApplicationInputKind{
+		"FRONTEND_URL": spring.ApplicationInputValue,
+		"JWT_SECRET":   spring.ApplicationInputSecret,
+	}, inputs)
+
+	for _, tt := range []struct {
+		name, value, errorText string
+	}{
+		{"missing classification", "JWT_SECRET", "requires NAME=value or NAME=secret"},
+		{"empty name", "=secret", "requires NAME=value or NAME=secret"},
+		{"invalid classification", "JWT_SECRET=generated", "must use value or secret"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := parseApplicationInputs([]string{tt.value})
+			require.ErrorContains(t, err, tt.errorText)
+		})
+	}
+	_, err = parseApplicationInputs([]string{"JWT_SECRET=secret", "jwt_secret=value"})
+	require.ErrorContains(t, err, "more than once")
 }
 
 type fixtureResolver struct {
@@ -182,6 +207,7 @@ func TestInitResolutionFixtures(t *testing.T) {
 					require.Contains(t, err.Error(), "application.properties")
 					require.NotContains(t, err.Error(), "--property")
 				}
+
 				_, statErr := os.Stat("azure.yaml")
 				require.ErrorIs(t, statErr, fs.ErrNotExist)
 				return
@@ -193,6 +219,27 @@ func TestInitResolutionFixtures(t *testing.T) {
 			require.NotContains(t, output.String(), "jdbc:")
 		})
 	}
+}
+
+func TestInitApplicationInputs(t *testing.T) {
+	command, _, output := fixtureCommand(t, "three-engines", func() (initPrompter, error) {
+		t.Fatal("resolved --yes invocation must not open a prompt channel")
+		return nil, errors.New("unavailable")
+	})
+	command.SetArgs([]string{
+		"init", "--yes", "--no-prompt",
+		"--application-input", "FRONTEND_URL=value",
+		"--application-input", "JWT_SECRET=secret",
+	})
+	require.NoError(t, command.ExecuteContext(t.Context()))
+	require.Contains(t, output.String(), "Application input: FRONTEND_URL (value).")
+	require.Contains(t, output.String(), "Application input: JWT_SECRET (secret).")
+
+	data, err := os.ReadFile(filepath.Join("infra", "main.parameters.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"FRONTEND_URL": "${FRONTEND_URL}"`)
+	require.Contains(t, string(data), `"name": "JWT_SECRET"`)
+	require.Contains(t, string(data), `"value": "${JWT_SECRET}"`)
 }
 
 func TestInitNoPromptChannelRequiredForResolvedConfiguration(t *testing.T) {

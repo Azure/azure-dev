@@ -29,6 +29,7 @@ func newInitCommandWithServices(
 ) *cobra.Command {
 	var yes bool
 	var profiles []string
+	var applicationInputs []string
 	command := &cobra.Command{
 		Use:   "init",
 		Short: "Infer active Spring dependencies and generate an azd project",
@@ -68,6 +69,13 @@ Existing deployment files are not overwritten.`,
 					return errors.New("--profiles requires at least one profile name")
 				}
 				inputs.Profiles = profiles
+			}
+			if cmd.Flags().Changed("application-input") {
+				parsedInputs, err := parseApplicationInputs(applicationInputs)
+				if err != nil {
+					return err
+				}
+				inputs.ApplicationInputs = parsedInputs
 			}
 			directory, err := os.Getwd()
 			if err != nil {
@@ -149,6 +157,9 @@ Existing deployment files are not overwritten.`,
 				fmt.Fprintln(cmd.OutOrStdout(),
 					"Foundry network: public endpoint restricted to reported Container Apps outbound IPs.")
 			}
+			for _, input := range application.ApplicationInputs {
+				fmt.Fprintf(cmd.OutOrStdout(), "Application input: %s (%s).\n", input.Name, input.Kind)
+			}
 			fmt.Fprintln(cmd.OutOrStdout(), "Files:")
 			for _, name := range sortedFiles(plan) {
 				fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", name)
@@ -168,7 +179,33 @@ Existing deployment files are not overwritten.`,
 	command.Flags().BoolVar(&yes, "yes", false, "Trust Maven inspection and accept generation without prompting")
 	command.Flags().StringSliceVar(&profiles, "profiles", nil,
 		"Spring deployment profiles (comma-separated); otherwise use application defaults")
+	command.Flags().StringArrayVar(&applicationInputs, "application-input", nil,
+		"Runtime environment binding NAME=value|secret; repeat for multiple inputs")
 	return command
+}
+
+func parseApplicationInputs(values []string) (map[string]spring.ApplicationInputKind, error) {
+	result := make(map[string]spring.ApplicationInputKind, len(values))
+	seen := map[string]string{}
+	for _, value := range values {
+		name, classification, present := strings.Cut(value, "=")
+		name, classification = strings.TrimSpace(name), strings.TrimSpace(classification)
+		if !present || name == "" || classification == "" {
+			return nil, fmt.Errorf("--application-input requires NAME=value or NAME=secret, got %q", value)
+		}
+		normalized := strings.ToUpper(name)
+		if previous, exists := seen[normalized]; exists {
+			return nil, fmt.Errorf("--application-input declares %s more than once as %s and %s",
+				name, previous, classification)
+		}
+		kind := spring.ApplicationInputKind(classification)
+		if kind != spring.ApplicationInputValue && kind != spring.ApplicationInputSecret {
+			return nil, fmt.Errorf("--application-input %s must use value or secret", name)
+		}
+		seen[normalized] = classification
+		result[name] = kind
+	}
+	return result, nil
 }
 
 func sortedFiles(plan *spring.Plan) []string {

@@ -34,6 +34,7 @@ func TestGenerateInfrastructure(t *testing.T) {
 				Profiles:       []string{"release"}, MavenWrapper: true,
 				ExternalConfigurations: []string{"config/application-release.properties"},
 			}
+
 			if tt.kind != "" {
 				a.Requirements = []Requirement{{
 					Kind: tt.kind, Name: "inventory", Authentication: "password",
@@ -123,6 +124,62 @@ func TestGenerateInfrastructure(t *testing.T) {
 			require.ErrorContains(t, plan.Write(t.Context(), directory), "already exists")
 		})
 	}
+}
+
+func TestGenerateApplicationInputs(t *testing.T) {
+	application := &Application{
+		Name: "inventory", JavaVersion: 21, JarName: "inventory-1.0.jar", Port: 8080,
+		BuildDirectory: "target",
+		ApplicationInputs: []ApplicationInput{
+			{Name: "FRONTEND_URL", Kind: ApplicationInputValue},
+			{Name: "JWT_SECRET", Kind: ApplicationInputSecret},
+		},
+	}
+	plan, err := Generate(t.Context(), application)
+	require.NoError(t, err)
+
+	var parameters struct {
+		Parameters map[string]struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+	var values map[string]string
+	require.NoError(t, json.Unmarshal(parameters.Parameters["applicationValues"].Value, &values))
+	require.Equal(t, map[string]string{
+		"FRONTEND_URL": "${FRONTEND_URL}",
+	}, values)
+	var secrets map[string]struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	require.NoError(t, json.Unmarshal(parameters.Parameters["applicationSecrets"].Value, &secrets))
+	require.Len(t, secrets, 1)
+	for name, secret := range secrets {
+		require.Regexp(t, `^app-[0-9a-f]{12}$`, name)
+		require.Equal(t, "JWT_SECRET", secret.Name)
+		require.Equal(t, "${JWT_SECRET}", secret.Value)
+	}
+
+	var applicationParameters struct {
+		Parameters map[string]struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"parameters"`
+	}
+	require.NoError(t, json.Unmarshal(
+		plan.Files["infra/application.parameters.json"], &applicationParameters))
+	require.JSONEq(t, string(parameters.Parameters["applicationValues"].Value),
+		string(applicationParameters.Parameters["applicationValues"].Value))
+	require.JSONEq(t, string(parameters.Parameters["applicationSecrets"].Value),
+		string(applicationParameters.Parameters["applicationSecrets"].Value))
+
+	main := string(plan.Files["infra/main.bicep"])
+	require.Contains(t, main, "@secure()\nparam applicationSecrets object = {}")
+	applicationBicep := string(plan.Files["infra/application.bicep"])
+	require.Contains(t, applicationBicep, "var applicationSecretEntries")
+	require.Contains(t, applicationBicep, "secretRef: input.key")
+	require.Contains(t, applicationBicep, "applicationValueEnvironment")
+	require.NotContains(t, string(plan.Files["azure.yaml"]), "JWT_SECRET")
 }
 
 func TestGeneratedDockerIgnoreAllowsCredentialNamedConfiguration(t *testing.T) {

@@ -8,15 +8,101 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
 
 // DeploymentInputs contains deliberate deployment choices, never an ambient environment.
 type DeploymentInputs struct {
-	Profiles   []string
-	Properties map[string]string
+	Profiles          []string
+	Properties        map[string]string
+	ApplicationInputs map[string]ApplicationInputKind
 }
+
+var applicationInputName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+var deploymentOwnedIndexedSettings = []string{
+	"spring.autoconfigure.exclude",
+	"spring.config.additional-location",
+	"spring.config.import",
+	"spring.config.location",
+	"spring.profiles.active",
+	"spring.profiles.default",
+	"spring.profiles.include",
+}
+
+var deploymentOwnedRuntimeSettings = func() []string {
+	result := []string{
+		"spring.ai.azure.openai.api-key",
+		"spring.ai.azure.openai.chat.options.deployment-name",
+		"spring.ai.azure.openai.embedding.options.deployment-name",
+		"spring.ai.azure.openai.endpoint",
+		"spring.ai.azure.openai.openai-api-key",
+		"spring.datasource.driver-class-name",
+		"spring.datasource.password",
+		"spring.datasource.url",
+		"spring.datasource.username",
+		"spring.jpa.hibernate.ddl-auto",
+		"spring.sql.init.mode",
+	}
+	result = append(result, deploymentOwnedFoundrySelectors...)
+	return append(result, deploymentOwnedDatasourceSelectors...)
+}()
+
+var reservedApplicationInputs = func() map[string]bool {
+	result := map[string]bool{
+		"_JAVA_OPTIONS":                          true,
+		"AZURE_OPENAI_API_KEY":                   true,
+		"AZURE_OPENAI_CHAT_DEPLOYMENT_NAME":      true,
+		"AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME": true,
+		"AZURE_OPENAI_ENDPOINT":                  true,
+		"JAVA_TOOL_OPTIONS":                      true,
+		"JDK_JAVA_OPTIONS":                       true,
+		"MYSQL_DATABASE":                         true,
+		"MYSQL_HOST":                             true,
+		"MYSQL_PASSWORD":                         true,
+		"MYSQL_PORT":                             true,
+		"MYSQL_USERNAME":                         true,
+		"POSTGRES_DATABASE":                      true,
+		"POSTGRES_HOST":                          true,
+		"POSTGRES_PASSWORD":                      true,
+		"POSTGRES_PORT":                          true,
+		"POSTGRES_USERNAME":                      true,
+		"SPRING_APPLICATION_JSON":                true,
+	}
+	for _, setting := range deploymentOwnedHostingSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	for _, setting := range deploymentOwnedConfigurationSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	for _, setting := range deploymentOwnedRuntimeSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	for _, setting := range unsupportedDatasourceSettings {
+		for _, name := range environmentPropertyNames(setting.key)[1:] {
+			result[name] = true
+		}
+	}
+	return result
+}()
+
+var reservedIndexedApplicationInputs = func() map[string]bool {
+	result := map[string]bool{}
+	for _, setting := range deploymentOwnedIndexedSettings {
+		for _, name := range environmentPropertyNames(setting)[1:] {
+			result[name] = true
+		}
+	}
+	return result
+}()
 
 // Resource describes a logical dependency independently of Azure server placement.
 type Resource struct {
@@ -114,6 +200,10 @@ func AnalyzeProject(
 	ctx context.Context, directory string, resolver ModelResolver, inputs DeploymentInputs,
 ) (*Analysis, error) {
 	result := &Analysis{Applications: []Application{{ID: "app"}}}
+	applicationInputs, err := resolveApplicationInputs(inputs.ApplicationInputs)
+	if err != nil {
+		return nil, err
+	}
 	properties := make(map[string]string, len(inputs.Properties)+1)
 	for key, value := range inputs.Properties {
 		if !propertyName.MatchString(key) {
@@ -195,21 +285,42 @@ func AnalyzeProject(
 			return nil, fmt.Errorf("deployment input %s cannot affect the selected configuration", key)
 		}
 	}
-	supportedEvidence := slices.Clone(application.InputEvidence)
+	generatedEvidence := slices.Clone(application.InputEvidence)
+	ownershipEvidence := slices.Clone(application.InputOwnershipEvidence)
 	for _, requirement := range application.Requirements {
-		supportedEvidence = append(supportedEvidence, requirement.Trace...)
+		generatedEvidence = append(generatedEvidence, requirement.Trace...)
+		ownershipEvidence = append(ownershipEvidence, requirement.Trace...)
 	}
 	if application.Embedded != nil {
-		supportedEvidence = append(supportedEvidence, application.Embedded.Evidence...)
+		generatedEvidence = append(generatedEvidence, application.Embedded.Evidence...)
+		ownershipEvidence = append(ownershipEvidence, application.Embedded.Evidence...)
 	}
 	if application.Foundry != nil {
-		supportedEvidence = append(supportedEvidence, application.Foundry.Evidence...)
+		ownershipEvidence = append(ownershipEvidence, application.Foundry.Evidence...)
+	}
+	for _, input := range applicationInputs {
+		keys := []string{canonical(input.Name)}
+		if base, indexed := indexedApplicationInputBase(input.Name); indexed {
+			keys = append(keys, canonical(base))
+		}
+		for _, key := range keys {
+			for _, reference := range application.InputReferences[key] {
+				if containsEvidence(ownershipEvidence, reference) {
+					reference = outermostSupportedReference(
+						reference,
+						application.InputReferences,
+						ownershipEvidence,
+					)
+					return nil, fmt.Errorf(
+						"application input %s affects deployment-owned property %s in %s",
+						input.Name, reference.Property, reference.Source)
+				}
+			}
+		}
 	}
 	for _, key := range slices.Sorted(maps.Keys(inputs.Properties)) {
 		for _, reference := range application.InputReferences[canonical(key)] {
-			if slices.ContainsFunc(supportedEvidence, func(e Evidence) bool {
-				return canonical(e.Property) == canonical(reference.Property) && e.Source == reference.Source
-			}) {
+			if containsEvidence(generatedEvidence, reference) {
 				continue
 			}
 			return nil, fmt.Errorf(
@@ -231,7 +342,8 @@ func AnalyzeProject(
 	}
 	requirements, embedded, foundry := application.Requirements, application.Embedded, application.Foundry
 	application.Requirements, application.Embedded, application.Foundry = nil, nil, nil
-	application.InputEvidence, application.InputReferences = nil, nil
+	application.ApplicationInputs = applicationInputs
+	application.InputEvidence, application.InputOwnershipEvidence, application.InputReferences = nil, nil, nil
 	result.Applications = []Application{*application}
 	for _, requirement := range requirements {
 		result.Resources = append(result.Resources, Resource{
@@ -264,6 +376,72 @@ func AnalyzeProject(
 		})
 	}
 	return result, nil
+}
+
+func resolveApplicationInputs(inputs map[string]ApplicationInputKind) ([]ApplicationInput, error) {
+	result := make([]ApplicationInput, 0, len(inputs))
+	seen := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(inputs)) {
+		kind := inputs[name]
+		if !applicationInputName.MatchString(name) {
+			return nil, fmt.Errorf("application input %q must be a valid environment variable name", name)
+		}
+		normalized := strings.ToUpper(name)
+		if previous, exists := seen[normalized]; exists {
+			return nil, fmt.Errorf("application inputs %s and %s differ only by case", previous, name)
+		}
+		seen[normalized] = name
+		base, indexed := indexedApplicationInputBase(normalized)
+		if reservedApplicationInputs[normalized] || indexed && reservedIndexedApplicationInputs[base] {
+			return nil, fmt.Errorf("application input %s conflicts with a deployment-owned binding", name)
+		}
+		if kind != ApplicationInputValue && kind != ApplicationInputSecret {
+			return nil, fmt.Errorf("application input %s must be classified as value or secret", name)
+		}
+		result = append(result, ApplicationInput{Name: name, Kind: kind})
+	}
+	return result, nil
+}
+
+func indexedApplicationInputBase(name string) (string, bool) {
+	name = strings.TrimSuffix(name, "_")
+	separator := strings.LastIndexByte(name, '_')
+	if separator <= 0 || separator == len(name)-1 {
+		return "", false
+	}
+	for _, char := range name[separator+1:] {
+		if char < '0' || char > '9' {
+			return "", false
+		}
+	}
+	return name[:separator], true
+}
+
+func containsEvidence(evidence []Evidence, reference Evidence) bool {
+	return slices.ContainsFunc(evidence, func(candidate Evidence) bool {
+		return canonical(candidate.Property) == canonical(reference.Property) &&
+			candidate.Source == reference.Source
+	})
+}
+
+func outermostSupportedReference(
+	reference Evidence,
+	references map[string][]Evidence,
+	supportedEvidence []Evidence,
+) Evidence {
+	visited := map[string]bool{}
+	for !visited[canonical(reference.Property)] {
+		visited[canonical(reference.Property)] = true
+		parents := references[canonical(reference.Property)]
+		index := slices.IndexFunc(parents, func(candidate Evidence) bool {
+			return containsEvidence(supportedEvidence, candidate)
+		})
+		if index < 0 {
+			break
+		}
+		reference = parents[index]
+	}
+	return reference
 }
 
 func deploymentEvidence(evidence []Evidence) []Evidence {

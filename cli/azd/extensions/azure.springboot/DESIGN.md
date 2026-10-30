@@ -59,6 +59,9 @@ flowchart TD
   unspecified profiles from explicit selection; never silently capture local secrets.
   Expose profile selection, not a generic property-override flag; other answers
   come from targeted prompts or application configuration.
+- Explicit application inputs classify named runtime environment variables as
+  values or secrets. They do not carry values during initialization or imply
+  Azure resources. Reject names owned by generated deployment bindings.
 - Answers re-run analysis: a profile choice may affect several resources together.
   Explicit inputs win. Non-interactive execution reports unresolved decisions;
   `--yes` accepts confirmations, not missing configuration choices.
@@ -107,6 +110,9 @@ flowchart TD
   The application remains responsible for its image contents and external configuration files.
   Reject a root `.dockerignore` without a root Dockerfile before Maven inspection
   and again before writing; generated ignore rules must not bypass application exclusions.
+- **Application inputs:** bind explicit values directly and secrets through secure
+  parameters plus Container Apps `secretRef`. Require selected-environment values
+  before provisioning and never print them.
 - **Preservation:** do not rewrite application source/configuration except for an
   explicitly confirmed credential repair, and do not overwrite existing deployment files.
 
@@ -123,6 +129,17 @@ Chat defaults to `gpt-5.6-sol` version `2026-07-09`; embeddings default to
 accounts, shared-resource deployment, MySQL managed identity, custom model selection,
 Gradle, and non-web/HTTPS-only hosting remain unsupported. These limits do not
 restrict the intended model above.
+
+Application inputs intentionally use static, data-driven `object` and
+`secureObject` Bicep parameters. Release depends on core azd support for
+JSON-safe nested environment substitution ([#10688](https://github.com/Azure/azure-dev/issues/10688)),
+nested Key Vault reference resolution ([#10691](https://github.com/Azure/azure-dev/issues/10691)),
+and single environment mappings in `azd pipeline config`
+([#10692](https://github.com/Azure/azure-dev/issues/10692)). Until those fixes
+ship, tests use JSON-safe plain values and do not establish that
+`azd env set-secret` or pipeline configuration works for application inputs.
+Before release, require an azd version containing all three fixes or replace the
+object representation with generated scalar parameters.
 
 ## Tests
 
@@ -155,6 +172,33 @@ flowchart TD
 as the database administrator; the deployed application uses its non-admin managed
 identity. This example shows lifecycle dependencies, not every parallel operation
 within `azd up`; other database modes omit or replace the bootstrap steps.
+
+## Appendix: Application input ownership and conflicts
+
+<!-- cspell:ignore ADDITIONALLOCATION APIKEY DATASOURCECLASSNAME DDLAUTO DEPLOYMENTNAME DRIVERCLASSNAME JDBCURL OPENAIAPIKEY WEBAPPLICATIONTYPE -->
+
+Application inputs cannot use names that override deployment-owned runtime
+configuration. The current reserved contract is:
+
+| Category | Reserved environment variables |
+| --- | --- |
+| Global override channels | `_JAVA_OPTIONS`, `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `SPRING_APPLICATION_JSON` |
+| Hosting and configuration | `SERVER_ADDRESS`, `SERVER_PORT`, `SERVER_SSL_ENABLED`, `SPRING_MAIN_WEBAPPLICATIONTYPE`, `SPRING_MAIN_WEB_APPLICATION_TYPE`, `SPRING_CONFIG_IMPORT`, `SPRING_CONFIG_LOCATION`, `SPRING_CONFIG_NAME`, `SPRING_CONFIG_ADDITIONALLOCATION`, `SPRING_CONFIG_ADDITIONAL_LOCATION`, `SPRING_PROFILES_ACTIVE`, `SPRING_PROFILES_DEFAULT`, `SPRING_PROFILES_INCLUDE`, and `SPRING_PROFILES_GROUP_<PROFILE>` for every selected profile |
+| Indexed hosting and configuration | `<NAME>_<INDEX>[_]` for `SPRING_CONFIG_IMPORT`, `SPRING_CONFIG_LOCATION`, both additional-location spellings, `SPRING_PROFILES_ACTIVE`, `SPRING_PROFILES_DEFAULT`, `SPRING_PROFILES_INCLUDE`, and `SPRING_PROFILES_GROUP_<PROFILE>` |
+| Datasource | `SPRING_AUTOCONFIGURE_EXCLUDE`, `SPRING_CLOUD_AZURE_JDBC_PASSWORDLESSENABLED`, `SPRING_CLOUD_AZURE_JDBC_PASSWORDLESS_ENABLED`, `SPRING_DATASOURCE_AZURE_PASSWORDLESSENABLED`, `SPRING_DATASOURCE_AZURE_PASSWORDLESS_ENABLED`, `SPRING_DATASOURCE_EMBEDDEDDATABASECONNECTION`, `SPRING_DATASOURCE_EMBEDDED_DATABASE_CONNECTION`, `SPRING_DATASOURCE_JNDINAME`, `SPRING_DATASOURCE_JNDI_NAME`, `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, `SPRING_DATASOURCE_PASSWORD`, `SPRING_DATASOURCE_DRIVERCLASSNAME`, `SPRING_DATASOURCE_DRIVER_CLASS_NAME`, `SPRING_JPA_HIBERNATE_DDLAUTO`, `SPRING_JPA_HIBERNATE_DDL_AUTO`, `SPRING_SQL_INIT_MODE`; indexed `SPRING_AUTOCONFIGURE_EXCLUDE_<INDEX>` is also reserved |
+| Hikari overrides | `SPRING_DATASOURCE_HIKARI_USERNAME`, `SPRING_DATASOURCE_HIKARI_PASSWORD`, `SPRING_DATASOURCE_HIKARI_JDBCURL`, `SPRING_DATASOURCE_HIKARI_JDBC_URL`, `SPRING_DATASOURCE_HIKARI_DATASOURCECLASSNAME`, `SPRING_DATASOURCE_HIKARI_DATA_SOURCE_CLASS_NAME`, `SPRING_DATASOURCE_HIKARI_DRIVERCLASSNAME`, `SPRING_DATASOURCE_HIKARI_DRIVER_CLASS_NAME` |
+| Tomcat overrides | `SPRING_DATASOURCE_TOMCAT_URL`, `SPRING_DATASOURCE_TOMCAT_USERNAME`, `SPRING_DATASOURCE_TOMCAT_PASSWORD`, `SPRING_DATASOURCE_TOMCAT_DRIVERCLASSNAME`, `SPRING_DATASOURCE_TOMCAT_DRIVER_CLASS_NAME` |
+| DBCP2 overrides | `SPRING_DATASOURCE_DBCP2_URL`, `SPRING_DATASOURCE_DBCP2_USERNAME`, `SPRING_DATASOURCE_DBCP2_PASSWORD`, `SPRING_DATASOURCE_DBCP2_DRIVERCLASSNAME`, `SPRING_DATASOURCE_DBCP2_DRIVER_CLASS_NAME` |
+| Foundry and Spring AI | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME`, `AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME`, `SPRING_AI_MODEL_CHAT`, `SPRING_AI_MODEL_EMBEDDING`, `SPRING_AI_AZURE_OPENAI_APIKEY`, `SPRING_AI_AZURE_OPENAI_API_KEY`, `SPRING_AI_AZURE_OPENAI_OPENAIAPIKEY`, `SPRING_AI_AZURE_OPENAI_OPENAI_API_KEY`, `SPRING_AI_AZURE_OPENAI_ENDPOINT`, `SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENTNAME`, `SPRING_AI_AZURE_OPENAI_CHAT_OPTIONS_DEPLOYMENT_NAME`, `SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENTNAME`, `SPRING_AI_AZURE_OPENAI_EMBEDDING_OPTIONS_DEPLOYMENT_NAME` |
+| Generated database bindings | `MYSQL_DATABASE`, `MYSQL_HOST`, `MYSQL_PASSWORD`, `MYSQL_PORT`, `MYSQL_USERNAME`, `POSTGRES_DATABASE`, `POSTGRES_HOST`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_USERNAME` |
+
+When the extension generates or relies on a runtime property, every
+higher-precedence environment spelling capable of overriding that property must
+be added to this contract and its conflict tests. Inputs referenced directly or
+indirectly by deployment-owned properties are also rejected, including references
+from every profile-include source, selected profile groups, nested or interpolated
+placeholders, and dotted names resolved through relaxed environment aliases.
+Application-specific names outside this ownership boundary remain valid.
 
 ## Appendix: Foundry model bindings
 

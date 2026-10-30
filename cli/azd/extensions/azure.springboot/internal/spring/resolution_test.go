@@ -76,6 +76,7 @@ func TestResolutionFixtures(t *testing.T) {
 					} else {
 						require.Equal(t, []string{"h2", "postgres"}, decision.Choices)
 					}
+
 					require.True(t, decision.Profiles)
 					require.Empty(t, decision.BindingIDs)
 				} else if tt.fixture == "missing-url" || tt.fixture == "prompt-driver" {
@@ -119,6 +120,375 @@ func TestResolutionFixtures(t *testing.T) {
 				require.Len(t, application.Requirements, 1)
 			}
 		})
+	}
+}
+
+func TestApplicationInputs(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	result, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		ApplicationInputs: map[string]ApplicationInputKind{
+			"FRONTEND_URL": ApplicationInputValue,
+			"JWT_SECRET":   ApplicationInputSecret,
+		},
+	})
+	require.NoError(t, err)
+	application, err := result.ResolvedApplication()
+	require.NoError(t, err)
+	require.Equal(t, []ApplicationInput{
+		{Name: "FRONTEND_URL", Kind: ApplicationInputValue},
+		{Name: "JWT_SECRET", Kind: ApplicationInputSecret},
+	}, application.ApplicationInputs)
+}
+
+func TestApplicationInputValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		inputs    map[string]ApplicationInputKind
+		errorText string
+	}{
+		{
+			name:      "invalid name",
+			inputs:    map[string]ApplicationInputKind{"JWT-SECRET": ApplicationInputSecret},
+			errorText: "valid environment variable name",
+		},
+		{
+			name: "case conflict",
+			inputs: map[string]ApplicationInputKind{
+				"JWT_SECRET": ApplicationInputSecret,
+				"jwt_secret": ApplicationInputSecret,
+			},
+			errorText: "differ only by case",
+		},
+		{
+			name:      "deployment binding conflict",
+			inputs:    map[string]ApplicationInputKind{"spring_datasource_url": ApplicationInputValue},
+			errorText: "deployment-owned binding",
+		},
+		{
+			name:      "invalid classification",
+			inputs:    map[string]ApplicationInputKind{"JWT_SECRET": "generated"},
+			errorText: "value or secret",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			directory, resolver := resolutionFixture(t, "three-engines")
+			_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+				ApplicationInputs: tt.inputs,
+			})
+			require.ErrorContains(t, err, tt.errorText)
+		})
+	}
+}
+
+func TestApplicationInputReservedConfigurationSources(t *testing.T) {
+	names := []string{
+		"SPRING_APPLICATION_JSON",
+		"JAVA_TOOL_OPTIONS",
+		"JDK_JAVA_OPTIONS",
+		"_JAVA_OPTIONS",
+	}
+	for _, setting := range deploymentOwnedHostingSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
+	for _, setting := range deploymentOwnedConfigurationSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
+	for _, setting := range deploymentOwnedRuntimeSettings {
+		names = append(names, environmentPropertyNames(setting)[1:]...)
+	}
+	for _, setting := range unsupportedDatasourceSettings {
+		names = append(names, environmentPropertyNames(setting.key)[1:]...)
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(name+"/"+string(kind), func(t *testing.T) {
+				_, err := resolveApplicationInputs(map[string]ApplicationInputKind{name: kind})
+				require.ErrorContains(t, err, "conflicts with a deployment-owned binding")
+			})
+		}
+	}
+}
+
+func TestApplicationInputReservedIndexedConfigurationSources(t *testing.T) {
+	for _, name := range []string{
+		"SPRING_AUTOCONFIGURE_EXCLUDE_12",
+		"SPRING_CONFIG_IMPORT_0",
+		"SPRING_PROFILES_ACTIVE_0",
+		"SPRING_PROFILES_INCLUDE_0",
+		"SPRING_PROFILES_INCLUDE_0_",
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(name+"/"+string(kind), func(t *testing.T) {
+				_, err := resolveApplicationInputs(map[string]ApplicationInputKind{name: kind})
+				require.ErrorContains(t, err, "conflicts with a deployment-owned binding")
+			})
+		}
+	}
+}
+
+func TestApplicationInputPlaceholderConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		configuration string
+		input         string
+		property      string
+	}{
+		{
+			name:          "direct web application type",
+			configuration: "spring.main.web-application-type=${APP_MODE:servlet}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name: "indirect web application type",
+			configuration: "spring.main.web-application-type=${WEB_MODE:servlet}\n" +
+				"WEB_MODE=${APP_MODE:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
+		{
+			name:          "direct server SSL",
+			configuration: "server.ssl.enabled=${ENABLE_SSL:false}\n",
+			input:         "ENABLE_SSL",
+			property:      "server.ssl.enabled",
+		},
+		{
+			name: "indirect server SSL",
+			configuration: "server.ssl.enabled=${SSL_MODE:false}\n" +
+				"SSL_MODE=${ENABLE_SSL:false}\n",
+			input:    "ENABLE_SSL",
+			property: "server.ssl.enabled",
+		},
+		{
+			name:          "direct profile include",
+			configuration: "spring.profiles.include=${EXTRA_PROFILES:}\n",
+			input:         "EXTRA_PROFILES",
+			property:      "spring.profiles.include",
+		},
+		{
+			name: "indirect profile include",
+			configuration: "spring.profiles.include=${INCLUDE_ALIAS:}\n" +
+				"INCLUDE_ALIAS=${EXTRA_PROFILES:}\n",
+			input:    "EXTRA_PROFILES",
+			property: "spring.profiles.include",
+		},
+		{
+			name:          "nested placeholder outer name",
+			configuration: "spring.main.web-application-type=${APP_MODE:${DEFAULT_MODE:servlet}}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name:          "nested placeholder fallback dependency",
+			configuration: "spring.main.web-application-type=${APP_MODE:${DEFAULT_MODE:servlet}}\n",
+			input:         "DEFAULT_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name:          "dotted placeholder environment alias",
+			configuration: "spring.main.web-application-type=${app.mode:servlet}\n",
+			input:         "APP_MODE",
+			property:      "spring.main.web-application-type",
+		},
+		{
+			name: "indirect dotted placeholder environment alias",
+			configuration: "spring.main.web-application-type=${web.mode:servlet}\n" +
+				"web.mode=${app.mode:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
+		{
+			name: "interpolated placeholder name",
+			configuration: "MODE_KEY=app.mode\n" +
+				"spring.main.web-application-type=${${MODE_KEY}:servlet}\n",
+			input:    "APP_MODE",
+			property: "spring.main.web-application-type",
+		},
+		{
+			name:          "datasource JNDI selector",
+			configuration: "spring.datasource.jndi-name=${APP_JNDI:}\n",
+			input:         "APP_JNDI",
+			property:      "spring.datasource.jndi-name",
+		},
+		{
+			name:          "datasource passwordless selector",
+			configuration: "spring.datasource.azure.passwordless-enabled=${PASSWORDLESS:false}\n",
+			input:         "PASSWORDLESS",
+			property:      "spring.datasource.azure.passwordless-enabled",
+		},
+		{
+			name:          "cloud JDBC passwordless selector",
+			configuration: "spring.cloud.azure.jdbc.passwordless-enabled=${PASSWORDLESS:false}\n",
+			input:         "PASSWORDLESS",
+			property:      "spring.cloud.azure.jdbc.passwordless-enabled",
+		},
+		{
+			name:          "datasource auto-configuration selector",
+			configuration: "spring.autoconfigure.exclude=${AUTO_CONFIG_EXCLUDES:}\n",
+			input:         "AUTO_CONFIG_EXCLUDES",
+			property:      "spring.autoconfigure.exclude",
+		},
+		{
+			name:          "embedded database selector",
+			configuration: "spring.datasource.embedded-database-connection=${DB_CONNECTION:}\n",
+			input:         "DB_CONNECTION",
+			property:      "spring.datasource.embedded-database-connection",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					"spring.datasource.url=jdbc:h2:mem:catalog\n"+tt.configuration)
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{tt.input: kind},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property "+tt.property)
+			})
+		}
+	}
+}
+
+func TestApplicationInputProfileGroupConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		configuration string
+		profiles      []string
+		input         string
+	}{
+		{
+			name: "profile group placeholder",
+			configuration: "spring.profiles.active=release\n" +
+				"spring.profiles.group.release=${EXTRA_PROFILES:}\n",
+			input: "EXTRA_PROFILES",
+		},
+		{
+			name: "profile group environment binding",
+			configuration: "spring.profiles.active=release\n" +
+				"spring.profiles.group.release=worker\n",
+			input: "SPRING_PROFILES_GROUP_RELEASE",
+		},
+		{
+			name:     "selected profile group environment binding",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE",
+		},
+		{
+			name:     "selected profile group indexed environment binding",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE_0",
+		},
+		{
+			name:     "selected profile group indexed trailing delimiter",
+			profiles: []string{"release"},
+			input:    "SPRING_PROFILES_GROUP_RELEASE_0_",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					"spring.datasource.url=jdbc:h2:mem:catalog\n"+tt.configuration)
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					Profiles: tt.profiles,
+					ApplicationInputs: map[string]ApplicationInputKind{
+						tt.input: kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property spring.profiles.group.release")
+			})
+		}
+	}
+}
+
+func TestApplicationInputProfileIncludeSourceConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "packaged include overridden externally",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.include=${EXTRA_PROFILES:}\n",
+				"config/application.properties":             "spring.profiles.include=\n",
+			},
+		},
+		{
+			name: "earlier YAML document include",
+			files: map[string]string{
+				"src/main/resources/application.yaml": "spring:\n  profiles:\n    include: ${EXTRA_PROFILES:}\n---\n" +
+					"spring:\n  profiles:\n    include:\n",
+			},
+		},
+		{
+			name: "include alias overridden by selected profile",
+			files: map[string]string{
+				"src/main/resources/application.properties": "spring.profiles.active=release\n" +
+					"spring.profiles.include=${INCLUDE_ALIAS:}\n" +
+					"INCLUDE_ALIAS=${EXTRA_PROFILES:}\n",
+				"src/main/resources/application-release.properties": "INCLUDE_ALIAS=\n",
+			},
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.name+"/"+string(kind), func(t *testing.T) {
+				directory, resolver := resolutionFixture(t, "three-engines")
+				for file, content := range tt.files {
+					writeFixture(t, directory, file, content)
+				}
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{
+						"EXTRA_PROFILES": kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input EXTRA_PROFILES"+
+					" affects deployment-owned property spring.profiles.include")
+			})
+		}
+	}
+}
+
+func TestApplicationInputFoundrySelectorPlaceholderConflicts(t *testing.T) {
+	for _, tt := range []struct {
+		property string
+		input    string
+		extra    string
+	}{
+		{
+			property: "spring.ai.model.chat",
+			input:    "CHAT_MODEL",
+			extra:    "spring.ai.azure.openai.chat.options.deployment-name=chat\n",
+		},
+		{
+			property: "spring.ai.model.embedding",
+			input:    "EMBEDDING_MODEL",
+			extra:    "spring.ai.azure.openai.embedding.options.deployment-name=embeddings\n",
+		},
+	} {
+		for _, kind := range []ApplicationInputKind{ApplicationInputValue, ApplicationInputSecret} {
+			t.Run(tt.property+"/"+string(kind), func(t *testing.T) {
+				directory := t.TempDir()
+				writeFixture(t, directory, "pom.xml", "<project/>")
+				writeFixture(t, directory, "src/main/resources/application.properties",
+					tt.property+"=${"+tt.input+":azure-openai}\n"+tt.extra)
+				resolver := staticResolver{model: effectiveModel(t, directory,
+					dependency("org.springframework.ai", "spring-ai-starter-model-azure-openai", "compile"))}
+				_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+					ApplicationInputs: map[string]ApplicationInputKind{
+						tt.input: kind,
+					},
+				})
+				require.ErrorContains(t, err, "application input "+tt.input+
+					" affects deployment-owned property "+tt.property)
+			})
+		}
 	}
 }
 
@@ -400,6 +770,17 @@ func TestResolutionAllowsPromptInputAliasChain(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 9090, result.Applications[0].Port)
+}
+
+func TestResolutionRejectsPromptInputSharedWithProfileInclude(t *testing.T) {
+	directory, resolver := resolutionFixture(t, "three-engines")
+	writeFixture(t, directory, "src/main/resources/application.properties",
+		"spring.profiles.include=${DB_NAME:local}\n"+
+			"spring.datasource.url=jdbc:postgresql://localhost/${DB_NAME}\n")
+	_, err := AnalyzeProject(t.Context(), directory, resolver, DeploymentInputs{
+		Properties: map[string]string{"DB_NAME": "catalog"},
+	})
+	require.ErrorContains(t, err, "deployment input DB_NAME also affects unsupported property spring.profiles.include")
 }
 
 func TestResolutionRejectsUnusedOrUnreproducibleInputs(t *testing.T) {

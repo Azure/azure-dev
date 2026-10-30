@@ -5,6 +5,7 @@ package spring
 
 import (
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -110,6 +111,22 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 	} {
 		parameters[key] = map[string]any{"value": value}
 	}
+	applicationValues := map[string]string{}
+	applicationSecrets := map[string]any{}
+	for _, input := range application.ApplicationInputs {
+		switch input.Kind {
+		case ApplicationInputValue:
+			applicationValues[input.Name] = applicationInputReference(input.Name)
+		case ApplicationInputSecret:
+			applicationSecrets[applicationInputSecretName(input.Name)] = map[string]string{
+				"name": input.Name, "value": applicationInputReference(input.Name),
+			}
+		default:
+			return nil, fmt.Errorf("application input %s has unsupported kind %q", input.Name, input.Kind)
+		}
+	}
+	parameters["applicationValues"] = map[string]any{"value": applicationValues}
+	parameters["applicationSecrets"] = map[string]any{"value": applicationSecrets}
 	settings := map[string]string{"engine": "none", "auth": "password", "database": "", "role": "azd_app"}
 	var binding strings.Builder
 	binding.WriteString("# Deployment-only overrides; application source is unchanged.\n")
@@ -250,7 +267,7 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		"location", "serviceName", "port", "profiles", "appImage", "databaseName",
 		"environmentBindings", "jdbcOptions", "driver", "embeddedUrl", "embeddedUrlConfigured", "embeddedDriver",
 		"foundryEnabled", "foundryAuthentication", "foundryChatEnabled", "foundryChatDeploymentName",
-		"foundryEmbeddingEnabled", "foundryEmbeddingDeploymentName",
+		"foundryEmbeddingEnabled", "foundryEmbeddingDeploymentName", "applicationValues", "applicationSecrets",
 	} {
 		applicationParameters[key] = parameters[key]
 	}
@@ -330,6 +347,15 @@ func Generate(ctx context.Context, application *Application) (*Plan, error) {
 		return nil, fmt.Errorf("reading deployment template: %w", err)
 	}
 	return &Plan{Application: application, Files: files}, nil
+}
+
+func applicationInputSecretName(name string) string {
+	hash := sha256.Sum256([]byte(name))
+	return fmt.Sprintf("app-%x", hash[:6])
+}
+
+func applicationInputReference(name string) string {
+	return "${" + name + "}"
 }
 
 func validateOutputDirectory(directory, setting string, externalConfigurations []string) error {

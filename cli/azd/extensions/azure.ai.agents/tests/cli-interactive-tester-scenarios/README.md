@@ -348,6 +348,13 @@ in any order, any time.
 | `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
+| `tier0/0.34-optimize-skills-help.yaml` | Offline skill optimization guidance and report download discovery |
+| `tier0/0.35-optimize-candidate-watch-conflict.yaml` | Candidate inspection and job watch conflict rejected before authentication |
+| `tier0/0.36-optimize-download-input-validation.yaml` | Empty download candidate rejected before authentication or file creation |
+
+The skill optimization scenarios are offline help and invalid-input checks.
+The Go tests cover submission, polling, candidate details, and file downloads
+against synthetic local HTTP servers; these scenarios do not submit Foundry jobs.
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP

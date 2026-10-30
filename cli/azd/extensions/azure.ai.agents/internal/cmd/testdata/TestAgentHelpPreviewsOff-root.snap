@@ -25,7 +25,7 @@ Available Commands
   init         : Initialize a new agent project. (Preview)
   invoke       : Send a message to your prompt or hosted agent.
   monitor      : Monitor logs from a hosted agent.
-  optimize     : Evaluate and optimize AI agents.
+  optimize     : Optimize AI agents, prompts, and skills.
   pack         : Build a ready-to-sideload Teams app package for an activity agent.
   publish      : Publish an activity agent as a Teams app to the Microsoft 365 store.
   run          : Run your agent locally for development.

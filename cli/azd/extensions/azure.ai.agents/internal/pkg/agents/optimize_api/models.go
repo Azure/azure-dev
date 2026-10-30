@@ -49,7 +49,7 @@ type ModelConfiguration struct {
 	Model string `json:"model"`
 }
 
-// OptimizationConfiguration controls agent or prompt optimization.
+// OptimizationConfiguration controls agent, prompt, or skill optimization.
 type OptimizationConfiguration struct {
 	Type                         string                        `json:"type"`
 	Goal                         string                        `json:"goal,omitempty"`
@@ -58,12 +58,16 @@ type OptimizationConfiguration struct {
 	BaselineAgentConfiguration   *BaselineAgentConfiguration   `json:"baseline_agent_configuration,omitempty"`
 	AgentOptimizationSpace       *OptimizationSpace            `json:"agent_optimization_space,omitempty"`
 	Context                      []OptimizationContext         `json:"context,omitempty"`
+	AdditionalSkills             []FoundrySkillReference       `json:"additional_skills,omitzero"`
 }
 
-// OptimizationContext supplies steering instructions for prompt optimization.
+// OptimizationContext supplies steering, trace selection, or exact skill baselines.
 type OptimizationContext struct {
-	Type   string `json:"type"`
-	Prompt string `json:"prompt,omitempty"`
+	Type                         string                             `json:"type"`
+	Prompt                       *string                            `json:"prompt,omitempty"`
+	TraceConnectionConfiguration *SkillTraceConnectionConfiguration `json:"trace_connection_configuration,omitempty"`
+	TraceWindow                  *SkillTraceWindow                  `json:"trace_window,omitempty"`
+	SkillReferences              []FoundrySkillReference            `json:"skill_references,omitzero"`
 }
 
 // CandidateSearchConfiguration controls candidate search limits.
@@ -89,11 +93,18 @@ type OptimizationSpace struct {
 
 // EvaluationConfiguration defines the evaluation used during optimization.
 type EvaluationConfiguration struct {
-	TrainingSet            SetInput                     `json:"training_set"`
-	ValidationSet          *SetInput                    `json:"validation_set,omitempty"`
-	Evaluators             []EvaluatorRef               `json:"evaluators"`
-	EvaluationModel        EvaluationModelConfiguration `json:"evaluation_model"`
-	MaxConcurrentAgentRuns *int                         `json:"max_concurrent_agent_runs,omitempty"`
+	TrainingSet                      *SetInput                         `json:"training_set,omitempty"`
+	ValidationSet                    *SetInput                         `json:"validation_set,omitempty"`
+	Evaluators                       []EvaluatorRef                    `json:"evaluators"`
+	EvaluatorGenerationConfiguration *EvaluatorGenerationConfiguration `json:"evaluator_generation_configuration,omitempty"`
+	EvaluationModel                  EvaluationModelConfiguration      `json:"evaluation_model"`
+	MaxConcurrentAgentRuns           *int                              `json:"max_concurrent_agent_runs,omitempty"`
+}
+
+// EvaluatorGenerationConfiguration requests service-generated evaluators from traces.
+type EvaluatorGenerationConfiguration struct {
+	Type   string  `json:"type"`
+	Prompt *string `json:"prompt,omitempty"`
 }
 
 // EvaluationModelConfiguration selects the judge and its sampling settings.
@@ -320,24 +331,37 @@ type JobError struct {
 
 // CandidateResult is a GA candidate, including nested output and evaluation.
 type CandidateResult struct {
-	CandidateID  string                  `json:"candidate_id"`
-	JobID        string                  `json:"job_id"`
-	Name         string                  `json:"name"`
-	Status       string                  `json:"status"`
-	Error        *JobError               `json:"error,omitempty"`
-	StartedAt    int64                   `json:"started_at"`
-	Output       *CandidateOutput        `json:"output,omitempty"`
-	Rationale    string                  `json:"rationale,omitempty"`
-	Files        []CandidateFile         `json:"files,omitempty"`
-	AgentVersion string                  `json:"agent_version,omitempty"`
-	Evaluation   *CandidateEvaluation    `json:"evaluation,omitempty"`
-	Promotion    *CandidatePromotionInfo `json:"promotion,omitempty"`
+	CandidateID      string                  `json:"candidate_id"`
+	JobID            string                  `json:"job_id"`
+	Name             string                  `json:"name"`
+	Status           string                  `json:"status"`
+	Error            *JobError               `json:"error,omitempty"`
+	StartedAt        int64                   `json:"started_at"`
+	Output           *CandidateOutput        `json:"output,omitempty"`
+	Rationale        string                  `json:"rationale,omitempty"`
+	Files            []CandidateFile         `json:"files,omitempty"`
+	AgentVersion     string                  `json:"agent_version,omitempty"`
+	Evaluation       *CandidateEvaluation    `json:"evaluation,omitempty"`
+	Promotion        *CandidatePromotionInfo `json:"promotion,omitempty"`
+	ExecutionSummary *SkillExecutionSummary  `json:"execution_summary,omitempty"`
+	ResolvedContext  *SkillResolvedContext   `json:"resolved_context,omitempty"`
+	raw              json.RawMessage
 }
 
-// CandidateOutput contains the typed agent mutations.
+// MarshalJSON preserves candidate details, including fields added by the service.
+func (c CandidateResult) MarshalJSON() ([]byte, error) {
+	if len(c.raw) != 0 {
+		return c.raw, nil
+	}
+	type candidate CandidateResult
+	return json.Marshal(candidate(c))
+}
+
+// CandidateOutput contains typed agent mutations or independent skill outcomes.
 type CandidateOutput struct {
-	Type      string              `json:"type"`
-	Mutations []CandidateMutation `json:"mutations,omitempty"`
+	Type         string              `json:"type"`
+	Mutations    []CandidateMutation `json:"mutations,omitempty"`
+	SkillResults []SkillResult       `json:"skill_results,omitzero"`
 }
 
 // CandidateMutation carries a value whose shape is selected by Type.

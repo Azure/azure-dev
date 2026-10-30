@@ -3676,14 +3676,12 @@ func (p *BicepProvider) ensureParameters(
 			paramValue := armParameterFileValue(parameterType, v.Value, param.DefaultValue)
 			if paramValue != nil {
 
-				if stringValue, isString := paramValue.(string); isString && param.Secure() {
-					// For secure parameters using a string value, azd checks if the string is an Azure Key Vault Secret
-					// and if yes, it fetches the secret value from the Key Vault.
-					if keyvault.IsAzureKeyVaultSecret(stringValue) {
-						paramValue, err = p.keyvaultService.SecretFromAkvs(ctx, stringValue)
-						if err != nil {
-							return nil, err
-						}
+				if param.Secure() {
+					// For secure parameters, azd checks if any string (including strings nested in objects and arrays)
+					// is an Azure Key Vault Secret and if yes, it fetches the secret value from the Key Vault.
+					paramValue, err = p.resolveKeyVaultSecrets(ctx, paramValue)
+					if err != nil {
+						return nil, err
 					}
 				}
 
@@ -3832,6 +3830,43 @@ func mustSetParamAsConfig(key string, value any, config config.Config, isSecured
 	if err := config.SetSecret(configKey, secretString); err != nil {
 		log.Panicf("failed setting a secret in config: %v", err)
 	}
+}
+
+// resolveKeyVaultSecrets replaces every akvs:// string in value, recursing into objects and arrays, with the secret
+// value fetched from Key Vault. Other values are returned unchanged.
+func (p *BicepProvider) resolveKeyVaultSecrets(ctx context.Context, value any) (any, error) {
+	switch v := value.(type) {
+	case string:
+		if keyvault.IsAzureKeyVaultSecret(v) {
+			// Validate first: the parser's error includes the full reference, which must not reach diagnostics.
+			if _, err := keyvault.ParseAzureKeyVaultSecret(v); err != nil {
+				return nil, errors.New("invalid Azure Key Vault secret reference in secure parameter. " +
+					"Expected format: akvs://<subscription-id>/<vault-name>/<secret-name>")
+			}
+			return p.keyvaultService.SecretFromAkvs(ctx, v)
+		}
+	case map[string]any:
+		resolved := make(map[string]any, len(v))
+		for key, item := range v {
+			r, err := p.resolveKeyVaultSecrets(ctx, item)
+			if err != nil {
+				return nil, err
+			}
+			resolved[key] = r
+		}
+		return resolved, nil
+	case []any:
+		resolved := make([]any, len(v))
+		for i, item := range v {
+			r, err := p.resolveKeyVaultSecrets(ctx, item)
+			if err != nil {
+				return nil, err
+			}
+			resolved[i] = r
+		}
+		return resolved, nil
+	}
+	return value, nil
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment

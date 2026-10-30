@@ -3579,3 +3579,138 @@ func TestPurgeCognitiveAccountsValidationErrors(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+// fakeAkvsKeyVaultService resolves akvs:// references from a fixed map of secrets.
+type fakeAkvsKeyVaultService struct {
+	keyvault.KeyVaultService
+	secrets map[string]string
+}
+
+func (f *fakeAkvsKeyVaultService) SecretFromAkvs(_ context.Context, akvs string) (string, error) {
+	// Use the real parser so its errors surface exactly as in the production service.
+	if _, err := keyvault.ParseAzureKeyVaultSecret(akvs); err != nil {
+		return "", err
+	}
+	if secret, has := f.secrets[akvs]; has {
+		return secret, nil
+	}
+	return "", errors.New("secret not found")
+}
+
+func TestEnsureParametersResolvesNestedKeyVaultSecrets(t *testing.T) {
+	const (
+		passwordRef = "akvs://sub-id/vault-a/password"
+		tokenRef    = "akvs://sub-id/vault-b/token"
+		schema      = "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
+	)
+
+	tests := []struct {
+		name      string
+		paramType string
+		value     string
+		expected  any
+		wantErr   bool
+		// errNotContains is a substring that must not appear in the returned error.
+		errNotContains string
+	}{
+		{
+			name:      "SecureObjectNestedValues",
+			paramType: "secureObject",
+			value: `{
+				"password": "${PASSWORD_REF}",
+				"plain": "not-a-reference",
+				"port": 8080,
+				"enabled": true,
+				"nested": {"tokens": ["${TOKEN_REF}", {"deep": "${PASSWORD_REF}"}, 1]}
+			}`,
+			expected: map[string]any{
+				"password": "password-secret",
+				"plain":    "not-a-reference",
+				"port":     float64(8080),
+				"enabled":  true,
+				"nested": map[string]any{
+					"tokens": []any{"token-secret", map[string]any{"deep": "password-secret"}, float64(1)},
+				},
+			},
+		},
+		{
+			name:      "SecureString",
+			paramType: "secureString",
+			value:     `"${TOKEN_REF}"`,
+			expected:  "token-secret",
+		},
+		{
+			name:      "NonSecureObjectUnchanged",
+			paramType: "object",
+			value:     `{"password": "${PASSWORD_REF}"}`,
+			expected:  map[string]any{"password": passwordRef},
+		},
+		{
+			name:      "ResolutionFailure",
+			paramType: "secureObject",
+			value:     `{"missing": ["akvs://sub-id/vault-c/missing"]}`,
+			wantErr:   true,
+		},
+		{
+			name:           "MalformedReferenceNotLeaked",
+			paramType:      "secureObject",
+			value:          `{"nested": {"password": "akvs://sub-id/vault-a/password/extra"}}`,
+			wantErr:        true,
+			errNotContains: "vault-a",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(t.Context())
+
+			armTemplate := azure.ArmTemplate{
+				Schema:         schema,
+				ContentVersion: "1.0.0.0",
+				Parameters: azure.ArmTemplateParameterDefinitions{
+					"environmentName": {Type: "string", DefaultValue: "test-env"},
+					"location":        {Type: "string", DefaultValue: "westus2"},
+					// A default avoids prompting during provider initialization; the parameters file overrides it.
+					"credentials": {Type: tt.paramType, DefaultValue: "default"},
+				},
+				Outputs: azure.ArmTemplateOutputs{},
+			}
+
+			infraProvider := createBicepProviderWithEnvAndMode(
+				t,
+				mockContext,
+				armTemplate,
+				map[string]string{"PASSWORD_REF": passwordRef, "TOKEN_REF": tokenRef},
+				provisioning.ModeDeploy,
+			)
+			infraProvider.keyvaultService = &fakeAkvsKeyVaultService{
+				secrets: map[string]string{passwordRef: "password-secret", tokenRef: "token-secret"},
+			}
+
+			tmpInfraDir := filepath.Join(t.TempDir(), "infra")
+			require.NoError(t, os.MkdirAll(tmpInfraDir, 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(tmpInfraDir, "main.parameters.json"), []byte(`{
+				"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+				"contentVersion": "1.0.0.0",
+				"parameters": {
+					"credentials": {"value": `+tt.value+`}
+				}
+			}`), 0o600))
+			infraProvider.path = filepath.Join(tmpInfraDir, "main.bicep")
+
+			compileResult, err := infraProvider.compileBicep(*mockContext.Context)
+			require.NoError(t, err)
+
+			configuredParameters, err := infraProvider.ensureParameters(*mockContext.Context, compileResult.Template)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errNotContains != "" {
+					require.NotContains(t, err.Error(), tt.errNotContains)
+				}
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, configuredParameters["credentials"].Value)
+		})
+	}
+}

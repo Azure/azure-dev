@@ -20,6 +20,22 @@
         ]
       }
     },
+    "monitoring": {
+      "type": "object",
+      "description": "Application Insights tracing. Enabled automatically for newly created projects; existing projects require applicationInsightsResourceId, and creating a component for an existing project is not supported. Referenced components and existing compatible connections are preserved.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable monitoring setup. False skips setup without deleting or disabling existing monitoring."
+        },
+        "applicationInsightsResourceId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "ARM resource ID of an existing workspace-backed Application Insights component. Enables monitoring and connects the project without creating or managing the component or its workspace. Supports ${VAR}."
+        }
+      }
+    },
     "network": {
       "type": "object",
       "description": "Private networking for the Foundry account that backs this project. When omitted, the account uses public networking. When present, azd provisions an account private endpoint and disables public data-plane access.",

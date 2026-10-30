@@ -940,12 +940,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 					endValidation()
-					env, err := readInfraEjectEnvironment(ctx, azdClient)
-					if err != nil {
-						return err
-					}
-					defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
-					return ejectInfra(gate.projectRoot, infraProvider, env)
+					return ejectInfraAfterInit(ctx, infraProvider, azdClient)
 				}
 			}
 			endValidation()

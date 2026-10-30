@@ -10,6 +10,7 @@ require (
 	github.com/azure/azure-dev/cli/azd v1.37.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.19.0
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
@@ -61,7 +62,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golobby/container/v3 v3.3.2 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
@@ -110,3 +110,7 @@ require (
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+require azure.ai.projects/synthesis v0.0.0
+
+replace azure.ai.projects/synthesis => ./synthesis

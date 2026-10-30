@@ -1,5 +1,19 @@
 # Azure Developer CLI (azd) Agents Extension
 
+## Project monitoring
+
+New Foundry projects created for agents automatically provision and connect
+Application Insights through the normal Project infrastructure graph.
+Existing projects are not opted in automatically. Optional BYO and opt-out
+settings belong to the `host: azure.ai.project` service, not the agent
+definition or a separate Connection service. Provisioning outputs are
+configuration, not a trace-ingestion readiness guarantee; deploying an agent
+does not repair monitoring.
+
+See [Project Application Insights configuration](../azure.ai.projects/README.md#application-insights)
+for costs and data handling, existing-connection preservation, policy
+requirements, and Bicep/Terraform ejection and cleanup semantics.
+
 ## Preview feature opt-ins
 
 Five capabilities are off by default. Each one is turned on separately.

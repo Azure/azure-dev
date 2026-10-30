@@ -17,10 +17,10 @@ import (
 	"strings"
 	"testing"
 
+	"azure.ai.projects/synthesis"
 	"azureaiagent/internal/exterrors"
 	"azureaiagent/internal/inittelemetry"
 	"azureaiagent/internal/project"
-	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/spf13/pflag"
@@ -1430,6 +1430,40 @@ services:
 	assert.Contains(t, string(provider), "subscription_id = local.project_subscription_id")
 	assert.Contains(t, string(provider), "tenant_id       = var.tenant_id")
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)
+}
+
+func TestWriteExistingProjectTerraformTemplatesSeparatesAdjunctResourceGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []infraEjectAcrMode{
+		infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "infra")
+			artifacts, err := writeExistingProjectTerraformTemplates(dir, "infra", mode, false)
+			require.NoError(t, err)
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if mode == infraEjectAcrCreate {
+				adjunct, err := os.ReadFile(adjunctPath) //nolint:gosec // test-owned path
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				registry, err := os.ReadFile(filepath.Join(dir, "container-registry.tf")) //nolint:gosec
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+				assert.Contains(t, artifacts, ejectArtifact{
+					relPath: "infra/adjunct-resource-group.tf",
+					bytes:   len(adjunct),
+				})
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+				for _, artifact := range artifacts {
+					assert.NotEqual(t, "infra/adjunct-resource-group.tf", artifact.relPath)
+				}
+			}
+		})
+	}
 }
 
 func TestEjectInfra_ExistingProjectTerraformWithoutDockerOmitsAcr(t *testing.T) {

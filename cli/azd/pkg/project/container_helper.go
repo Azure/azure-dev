@@ -1407,19 +1407,6 @@ func (ch *ContainerHelper) packBuild(
 		events.PackBuildEvent,
 		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
 
-	img, tag := docker.SplitDockerImage(builder)
-	if userDefinedImage {
-		span.SetAttributes(
-			fields.StringHashed(fields.PackBuilderImage, img),
-			fields.StringHashed(fields.PackBuilderTag, tag),
-		)
-	} else {
-		span.SetAttributes(
-			fields.PackBuilderImage.String(img),
-			fields.PackBuilderTag.String(tag),
-		)
-	}
-
 	err = packCli.Build(
 		ctx,
 		buildContext,

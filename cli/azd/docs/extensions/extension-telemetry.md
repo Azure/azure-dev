@@ -2,15 +2,19 @@
 
 <!-- cspell:ignore tostring -->
 
-This guide is for extension authors whose telemetry has passed privacy review
-and whose extension is published to the official `azd` registry. It explains
+This guide is for extension authors whose telemetry is covered by the service's
+approved collection and handling scope and whose extension is published to the
+official `azd` registry. It explains
 how to ask `azd` to record a usage signal on the extension's behalf — for
 example, which deployment mode a user picked.
 
 > [!IMPORTANT]
-> Any telemetry must go through a privacy review to ensure that it respects
-> user privacy before you start collecting it. See [Your responsibility for
-> content](#your-responsibility-for-content) below.
+> Have an azd maintainer assess telemetry changes against the approved collection
+> and handling scope using the
+> [privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
+> A new event or field does not automatically require a separate formal review.
+> Collection outside the approved scope waits for the required approval.
+> See [Your responsibility for content](#your-responsibility-for-content) below.
 
 Telemetry is a stable gRPC service since azd 1.36.0, offered to eligible extensions installed
 from the official `azd` registry. Import
@@ -147,12 +151,22 @@ var DeployMode = fields.AttributeKey{
 }
 ```
 
-Declarations form a shared first-party field schema and are not exclusive to
-the extension that introduced them. Another first-party extension may reuse an
-existing key when its meaning, allowed values, classification, and purpose are
-identical. If any of those differ, declare a distinct key. Prefer feature-scoped
-key suffixes (for example, `agent.invoke.protocol`) over generic ones like
-`protocol`, since a different extension may use the latter for unrelated values.
+### Name attributes for their scope
+
+Declarations share one first-party schema keyed by the final `ext.*` name.
+Core prepends only `ext.`; `extension.id` and `extension.event` do not namespace
+declarations.
+
+Name new fields for their feature. For example, use
+`agent.init.step.duration_ms`, not `duration_ms`, for an agent Init step.
+Reuse an existing key only when its meaning, allowed values, classification,
+and purpose are identical; otherwise declare a distinct, scoped key.
+
+Existing generic keys such as `ext.source` and `ext.operation` are legacy
+exceptions, not precedent for new fields. Preserve them for compatibility;
+renaming them requires a separate downstream migration.
+
+### Validate declarations and usage
 
 The extension still sends the suffix:
 
@@ -197,7 +211,8 @@ go test ./extensions/telemetry
 The test scans production Go source under `extensions/`, verifies every final
 `ext.*` key has one valid declaration, and fails with the extension, file, and
 line for an undeclared key. It analyzes repository source only and does not run
-extensions. The extension CI workflow runs the same test.
+extensions. The extension CI workflow runs the same test. Naming scope and
+semantic compatibility still require review; this check does not enforce them.
 
 The inventory is not a runtime allowlist. Metadata changes do not require a new
 `azd` release, while released extensions continue to use the existing
@@ -220,12 +235,16 @@ complete-looking one. The per-invocation budget behaves differently: see
 
 ## Your responsibility for content
 
-`azd` does not inspect your values at runtime. Privacy review and the content
-rules below remain your responsibility as the extension author:
+`azd` does not inspect your values at runtime. As the extension author, describe
+the values you send and enforce their allowed range in your code. Use the
+[privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md)
+to confirm classification and approval coverage with a maintainer.
 
-- **Never send customer content.** No file paths, resource names, connection
-  strings, prompts, URLs, or anything a user typed. If you are unsure whether a
-  value qualifies as customer content, always assume that it does to be safe.
+- **Never send customer content or secrets, even as hashes.** Do not report
+  prompts, file contents, connection strings, raw error text, or free-form input.
+  Prefer fixed categories or counts to names, paths, and URLs. If an identifier
+  is needed, ask a maintainer to confirm its classification and handling before
+  collecting it.
 - **Keep values low cardinality.** Prefer a small enum such as
   `code | container | unknown`. Unbounded values make the data expensive and
   unusable for aggregation.
@@ -233,8 +252,6 @@ rules below remain your responsibility as the extension author:
   each event and attribute means and why you need it.
 - **Declare every attribute** in `extensions/telemetry/fields.go` with the
   classification, purpose, and endpoint that match its actual semantics.
-- **Get a privacy review** as part of reviewing your extension, following the
-  [telemetry privacy review checklist](../../../../docs/specs/metrics-audit/privacy-review-checklist.md).
 
 ## When the call returns an error
 

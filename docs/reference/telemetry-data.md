@@ -8,6 +8,8 @@
 > (data pipeline, Kusto/Power BI reporting, runnable queries) is maintained separately for
 > internal maintainers.
 
+Changing collection? Start with the [privacy review checklist](../specs/metrics-audit/privacy-review-checklist.md).
+
 ## Data Shape
 
 Microsoft-bound azd telemetry is emitted as Application Insights `RequestData` envelopes. Each command execution
@@ -364,7 +366,7 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `hooks.name` | string | Hook name (e.g., `preprovision`, `postdeploy`). Custom hooks are SHA-256 hashed. |
+| `hooks.name` | string | Matched built-in lifecycle name, including infra command aliases. Unknown names and their hashes are not recorded; `hooks run` also omits names with no matching hook. |
 | `hooks.type` | string | Scope: `project`, `service`, or `layer` |
 | `hooks.kind` | string | Executor: `sh`, `pwsh`, `python`, `js`, `ts`, `dotnet` |
 </details>
@@ -558,8 +560,9 @@ native telemetry measurements. These declarations describe the individual fields
 not defaults for the whole `ext.*` class.
 Repository validation blocks undeclared or dynamically keyed
 attributes before release. Extension authors remain responsible for keeping
-values low cardinality and free of customer content, and for having them
-privacy reviewed with their extension.
+values low cardinality and free of customer content, and within their approved
+collection and handling scope. Use the [privacy checklist](../specs/metrics-audit/privacy-review-checklist.md)
+to assess payload changes.
 
 Only eligible official-registry installations produce these spans. Other
 installations receive a normal response without recording an event, as does
@@ -649,8 +652,8 @@ The first-run middleware is not currently registered, so these fields are not em
 | `exegraph.provision_concurrency` | measurement | Resolved provision phase concurrency limit for `up` and `provision`; `0` means no dedicated phase limit |
 | `exegraph.deploy_concurrency` | measurement | Resolved combined publish/deploy phase concurrency limit for `up` and `deploy`; `0` means no dedicated phase limit |
 | `exegraph.error_policy` | string | `fail_fast` or `continue_on_error` |
-| `exegraph.step.name` | string | Step name. **SHA-256 hashed** — embeds user-defined service/layer names from `azure.yaml` |
-| `exegraph.step.deps` | string[] | Step dependencies (other step names). **SHA-256 hashed** for the same reason |
+| `exegraph.step.name` | string | Structured service/layer step identifier from `azure.yaml`, **SHA-256 hashed**, classified OII |
+| `exegraph.step.deps` | string[] | References to other service/layer steps, **SHA-256 hashed**, classified OII |
 | `exegraph.step.tags` | string[] | Step tags (fixed internal vocabulary; emitted raw) |
 | `exegraph.step.timeout_s` | measurement | Per-step timeout in seconds, if set |
 </details>
@@ -658,10 +661,8 @@ The first-run middleware is not currently registered, so these fields are not em
 <details>
 <summary><strong>Pack (Buildpacks)</strong></summary>
 
-| Field Key | Type | Description |
-|-----------|------|-------------|
-| `pack.builder.image` | string | Builder image name |
-| `pack.builder.tag` | string | Builder image tag |
+`tools.pack.build` records service language, duration and status, but no builder
+image/tag values. This applies to both built-in and custom builders.
 </details>
 
 <details>
@@ -864,7 +865,11 @@ Many failed commands produce the catch-all result code `internal.errors_errorStr
 
 ### Hashed Fields and Template Joins
 
-Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission to protect privacy. You cannot reverse them. (`hooks.name` is also hashed except for built-in lifecycle hook names.)
+Fields like `project.template.id`, `project.name`, `env.name`, `exegraph.step.name`, and `exegraph.step.deps` are **SHA-256 hashed** before emission. Hashing does not change CustomerContent into SystemMetadata and does not prevent matching known candidate values. Only recognized, matched lifecycle names are recorded in `hooks.name`; unknown inputs are omitted rather than hashed.
+
+`ad.tenant.id`, `project.name`, `env.name`, `exegraph.step.name` and `exegraph.step.deps` are classified OrganizationalIdentifiableInformation. Graph names and dependency references identify structured service/layer objects, not script or configuration contents. Effective downstream handling requires the corresponding metadata deployment.
+
+Builder image/tag values are omitted from telemetry, including their hashes. `AZD_BUILDER_IMAGE` still selects the builder used for a build. Older clients and historical copies require separate ingestion and retention handling. Extension cause-type labels remain bounded hashes and are classified SystemMetadata, not end-user identifiers.
 
 To resolve template IDs to human-readable names, join with a template lookup table using the hashed ID.
 
@@ -911,7 +916,7 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Execution Environment** | All events | `execution.environment` | Usage by environment, CI vs local |
 | **Self-Update** | `cmd.update` | `update.installMethod`, `update.fromVersion` | Update adoption |
 | **Hooks** | `hooks.exec` | `hooks.name`, `hooks.type`, `hooks.kind` | Hook usage by type |
-| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `pack.builder.image`, `container.remotebuild` | Build method usage (local vs. remote ACR build), success rates |
+| **Container Build** | `container.publish`, `container.remotebuild`, `tools.pack.build` | `project.service.language`, `container.remotebuild` | Build method usage (local vs. remote ACR build), language, duration and success rates; no builder image/tag values |
 | **App Detection (Aspire polyglot)** | `aspire.apphost.unsupported` | `aspire.apphost.language` (`typescript`/`python`/`go`/`java`/`rust`) | How often an unsupported Aspire polyglot (non-C#) AppHost is encountered, by language. **Emitted only during app detection for `init` and fresh `up` (no existing `azure.yaml`)** — not for already-initialized projects, so absence does not mean zero unsupported AppHosts. |
 | **Tool Management (`azd tool`)** | `cmd.tool.install`, `cmd.tool.update`, `cmd.tool.uninstall`, `cmd.tool.check` | `tool.id`, `tool.install.strategy` | Install/update/uninstall success, update availability |
 

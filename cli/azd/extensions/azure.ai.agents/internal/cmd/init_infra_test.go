@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2654,6 +2655,49 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 				}
 			}
 			assert.Empty(t, env.setKeys)
+		})
+	}
+}
+
+func TestEjectInfraAfterInit_RegistryDefaultGroupWithoutDotenvName(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		t.Run(strconv.FormatBool(layer), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			group := "rg-dev"
+			if layer {
+				raw += "infra:\n  layers:\n    - name: app\n      provider: bicep\n      path: infra/app\n" +
+					"    - name: foundry\n" +
+					"      provider: microsoft.foundry\n      path: infra/foundry\n"
+				group += "-foundry"
+			}
+			path := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values: map[string]map[string]string{"dev": {
+					"AZURE_SUBSCRIPTION_ID": "sub",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/" + group +
+						"/providers/Microsoft.ContainerRegistry/registries/shared",
+				}},
+			}
+			client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
+			values, err := readInfraEjectEnvironment(t.Context(), client)
+			require.NoError(t, err)
+			assert.Equal(t, "dev", values["AZURE_ENV_NAME"])
+			withCapturedStdout(t, func() {
+				err = ejectInfraAfterInit(t.Context(), "bicep", client)
+			})
+			require.ErrorContains(t, err, "azd down deletes")
+			assert.NoDirExists(t, filepath.Join(root, "infra"))
+			assert.NoDirExists(t, filepath.Join(root, ".azure"))
+			assert.Empty(t, env.setKeys)
+			assert.NotContains(t, env.values["dev"], "AZURE_ENV_NAME")
+			persisted, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			assert.Equal(t, raw, string(persisted))
 		})
 	}
 }

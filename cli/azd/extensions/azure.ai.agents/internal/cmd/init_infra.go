@@ -2209,6 +2209,7 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 	for _, item := range values.KeyValues {
 		result[item.Key] = item.Value
 	}
+	result["AZURE_ENV_NAME"] = current.Environment.Name
 	binding, err := azdClient.Environment().GetConfig(ctx, &azdext.GetConfigRequest{
 		EnvName: current.Environment.Name, Path: synthesis.ACRBindingConfigKey,
 	})

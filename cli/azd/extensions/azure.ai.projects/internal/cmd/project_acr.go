@@ -62,6 +62,8 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 		current, err := a.client.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
 		if err == nil {
 			envName = current.GetEnvironment().GetName()
+		} else if !projectACREnvironmentMissing(root, "", err) {
+			return fmt.Errorf("read current environment before registry selection: %w", err)
 		}
 	}
 	plannedEnvName := envName
@@ -209,10 +211,18 @@ func projectACREnvironmentMissing(root, name string, err error) bool {
 	if status.Code(err) == codes.NotFound {
 		return true
 	}
-	if status.Code(err) != codes.Unknown || filepath.Base(name) != name {
+	if status.Code(err) != codes.Unknown || (name != "" && filepath.Base(name) != name) {
 		return false
 	}
 	message := status.Convert(err).Message()
+	if name == "" {
+		if message == "default environment not found" {
+			return true
+		}
+		if !strings.HasPrefix(message, "no project exists;") {
+			return false
+		}
+	}
 	if strings.HasPrefix(message, "no project exists;") {
 		exists, inspectErr := projectFileExists(root)
 		if inspectErr != nil || exists {

@@ -99,6 +99,7 @@ type FoundryProvisioningProvider struct {
 	existingProjectID         string
 	existingAcrMode           string
 	greenfieldAcrMode         string
+	greenfieldAcrResourceID   string
 	existingAcrEndpoint       string
 	existingAcrResourceID     string
 	existingAcrConnectionName string
@@ -323,6 +324,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 	}
 
 	onDisk := p.onDiskTemplatePresent()
+	p.greenfieldAcrResourceID = ""
 	if endpoint == "" {
 		if p.azdClient != nil {
 			if err := p.loadACRLifecycle(ctx); err != nil {
@@ -330,7 +332,7 @@ func (p *FoundryProvisioningProvider) Initialize(
 			}
 		}
 		// Validate greenfield config before any interactive prompts.
-		validationResult, validationErr := synthesis.Synthesize(synthesis.Input{
+		validationInput := synthesis.Input{
 			RawAzureYAML:    rawYAML,
 			ServiceName:     svcName,
 			AcceptedHosts:   FoundryProvisioningServiceHosts,
@@ -338,13 +340,21 @@ func (p *FoundryProvisioningProvider) Initialize(
 			PreserveVarRefs: true,
 			ProjectRoot:     projectRoot,
 			ACRBinding:      p.acrBinding,
-		})
+		}
+		validationResult, validationErr := synthesis.Synthesize(validationInput)
 		if validationErr != nil &&
 			!errors.Is(validationErr, synthesis.ErrEndpointBrownfield) {
 			return foundrySynthesisError(svcName, validationErr)
 		}
 		if validationErr == nil {
 			p.greenfieldAcrMode = validationResult.ACRMode
+			mode, err := synthesis.GreenfieldACRMode(validationInput)
+			if err != nil {
+				return foundrySynthesisError(svcName, err)
+			}
+			if mode == "reuse-connect" {
+				p.greenfieldAcrResourceID = env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+			}
 		}
 	}
 
@@ -935,6 +945,8 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 		if err := p.promptSubscription(ctx); err != nil {
 			return err
 		}
+	} else if err := p.validateACRSubscription(p.subID); err != nil {
+		return err
 	}
 
 	if p.location, err = get(envKeyLocation); err != nil {
@@ -1054,8 +1066,23 @@ func (p *FoundryProvisioningProvider) promptSubscription(ctx context.Context) er
 			fmt.Sprintf("retry, or run `azd env set %s <subscription-id>`", envKeySubscriptionID),
 		)
 	}
+	if err := p.validateACRSubscription(subID); err != nil {
+		return err
+	}
 	p.subID = subID
 	return p.setEnv(ctx, envKeySubscriptionID, p.subID)
+}
+
+func (p *FoundryProvisioningProvider) validateACRSubscription(subID string) error {
+	if p.greenfieldAcrResourceID != "" {
+		if err := synthesis.ValidateACRSelector(p.greenfieldAcrResourceID, subID, ""); err != nil {
+			return exterrors.Validation(
+				exterrors.CodeInvalidParameter, err.Error(),
+				"select the external registry's subscription, or use a registry in the selected subscription",
+			)
+		}
+	}
+	return nil
 }
 
 // promptLocation asks the user to select an Azure location when AZURE_LOCATION
@@ -1719,6 +1746,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 		}
 	}
 	if err := p.ensureCredential(ctx); err != nil {
+		return nil, err
+	}
+	if err := p.recoverACRBinding(ctx, false); err != nil {
 		return nil, err
 	}
 	if err := p.cleanupACRAccess(ctx); err != nil {

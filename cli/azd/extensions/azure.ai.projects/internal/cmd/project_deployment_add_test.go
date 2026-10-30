@@ -160,6 +160,7 @@ type selfInitializingEnvironmentServer struct {
 	setLog      []string
 	projectRoot string
 	readErr     error
+	currentErr  error
 }
 
 func (s *selfInitializingEnvironmentServer) GetConfig(
@@ -173,6 +174,9 @@ func (s *selfInitializingEnvironmentServer) GetCurrent(
 	context.Context,
 	*azdext.EmptyRequest,
 ) (*azdext.EnvironmentResponse, error) {
+	if s.currentErr != nil {
+		return nil, s.currentErr
+	}
 	return &azdext.EnvironmentResponse{
 		Environment: &azdext.Environment{Name: s.current},
 	}, nil

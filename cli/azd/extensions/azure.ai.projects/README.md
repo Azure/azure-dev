@@ -224,6 +224,15 @@ The registry and its images remain externally owned and are retained by
 `azd down`. Default and JSON output identify the selected registry and its
 external ownership.
 
+`project add --output json` includes an optional `containerRegistry` object
+when a registry resource ID is available. Its `resourceId` is the registry ARM
+ID. Its `externallyOwned` boolean is `true` for a reused registry or an
+already-connected registry on an existing project, and `false` for a registry
+managed by azd. Externally owned registries are retained by `azd down`.
+The object is omitted when no registry is known. This is an additive change:
+`schemaVersion` remains `1`, and existing fields retain their names and meanings.
+JSON consumers should tolerate unknown optional fields.
+
 Setting `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` selects the
 same external-registry workflow and reports the same ownership. A registry
 is not considered azd-managed merely because it is in the deployment resource
@@ -232,6 +241,10 @@ legacy outputs; legacy ownership is verified against the previous Azure
 deployment before provisioning or deleting the group. Unreadable environment
 state or unverified ownership stops the operation instead of creating a
 replacement registry.
+For a partial deployment, a project connection alone does not establish registry
+ownership: recovery requires a successful registry creation operation in that
+environment's deployment history. Missing or ambiguous evidence stops teardown
+before any resources or access grants are deleted.
 
 You can select a registry before adding agents; the selection remains pending
 until a source-built agent requires it, including across project-only provisioning

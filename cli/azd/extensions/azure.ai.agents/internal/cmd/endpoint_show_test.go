@@ -330,6 +330,26 @@ func TestRunVoiceEndpointShowUsesDeployedVoiceEndpoint(t *testing.T) {
 	assert.NotContains(t, output, "Version Selector")
 }
 
+func TestRunVoiceEndpointShowUsesDeployedGPTLiveEndpoint(t *testing.T) {
+	const endpoint = "wss://acct.example/api/projects/project/agents/deployed-live/" +
+		"endpoint/protocols/voice/live/sessions?api-version=v1"
+	env := &testEnvironmentServiceServer{
+		current: &azdext.Environment{Name: "dev"},
+		values: map[string]map[string]string{"dev": {
+			"AGENT_LIVE_NAME":     "deployed-live",
+			"AGENT_LIVE_ENDPOINT": endpoint,
+		}},
+	}
+	client := newHelpersTestAzdClient(t, &helpersProjectServer{}, &helpersPromptServer{}, env)
+	output := captureEndpointOutput(t, func() error {
+		return runVoiceEndpointShow(
+			t.Context(), client, &azdext.ServiceConfig{Name: "live", Host: AiAgentHost},
+			project.AgentDefinitionValidation{Kind: agent_yaml.AgentKindVoice, Name: "authored-live"}, "", "table")
+	})
+	assert.Contains(t, output, "deployed-live")
+	assert.Contains(t, output, endpoint)
+}
+
 func TestRunVoiceEndpointShowRejectsCrossKindEndpoint(t *testing.T) {
 	env := &testEnvironmentServiceServer{
 		current: &azdext.Environment{Name: "dev"},

@@ -87,3 +87,30 @@ func TestProbeAgentDefinitionForInitIgnoresRuntimeDefinitionPath(t *testing.T) {
 		})
 	}
 }
+
+func TestProbeAgentDefinitionForInitGPTLiveRootRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model:
+  id: gpt-live-1
+audio:
+  format: {type: audio/pcm, rate: 24000}
+  output: {voice: marin}
+delegation:
+  type: responses
+  responses:
+    model: gpt-5.6-terra
+`), 0o600))
+	svc := &azdext.ServiceConfig{
+		Name: "live", Host: AiAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{"$ref": "./live.yaml"}),
+	}
+	probe, err := probeAgentDefinitionForInit(svc, root)
+	require.NoError(t, err)
+	require.True(t, probe.found)
+	require.False(t, probe.isHosted)
+	require.Equal(t, "voice", string(probe.kind))
+}

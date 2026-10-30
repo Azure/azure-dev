@@ -40,11 +40,47 @@ const (
 // VoiceModelType selects the model-inference mode for a voice agent.
 type VoiceModelType string
 
+// VoiceSubProtocol selects the persisted wire protocol for a voice agent.
+// Omission preserves the existing Voice Live realtime behavior.
+type VoiceSubProtocol string
+
 const (
 	VoiceModelTypeManaged      VoiceModelType = "managed"
 	VoiceModelTypeSelfDeployed VoiceModelType = "self_deployed"
 	VoiceModelTypeHostedAgent  VoiceModelType = "hosted_agent"
+
+	VoiceSubProtocolLive     VoiceSubProtocol = "live"
+	VoiceSubProtocolRealtime VoiceSubProtocol = "realtime"
 )
+
+// LiveVoiceDelegation selects the native GPT Live delegation owner/backend.
+type LiveVoiceDelegation struct {
+	Type         string                   `json:"type" yaml:"type"`
+	Responses    *LiveResponsesDelegation `json:"responses,omitempty" yaml:"responses,omitempty"`
+	AgentName    string                   `json:"agentName,omitempty" yaml:"agent_name,omitempty"`
+	AgentVersion string                   `json:"agentVersion,omitempty" yaml:"agent_version,omitempty"`
+}
+
+type LiveResponsesDelegation struct {
+	Model             string                  `json:"model" yaml:"model"`
+	Instructions      *string                 `json:"instructions,omitempty" yaml:"instructions,omitempty"`
+	MaxOutputTokens   *int                    `json:"maxOutputTokens,omitempty" yaml:"max_output_tokens,omitempty"`
+	ParallelToolCalls *bool                   `json:"parallelToolCalls,omitempty" yaml:"parallel_tool_calls,omitempty"`
+	ServiceTier       *string                 `json:"serviceTier,omitempty" yaml:"service_tier,omitempty"`
+	Reasoning         *LiveResponsesReasoning `json:"reasoning,omitempty" yaml:"reasoning,omitempty"`
+	Text              *LiveResponsesText      `json:"text,omitempty" yaml:"text,omitempty"`
+	ToolChoice        any                     `json:"toolChoice,omitempty" yaml:"tool_choice,omitempty"`
+	Tools             []map[string]any        `json:"tools,omitempty" yaml:"tools,omitempty"`
+}
+
+type LiveResponsesReasoning struct {
+	Effort  *string `json:"effort,omitempty" yaml:"effort,omitempty"`
+	Summary *string `json:"summary,omitempty" yaml:"summary,omitempty"`
+}
+
+type LiveResponsesText struct {
+	Verbosity *string `json:"verbosity,omitempty" yaml:"verbosity,omitempty"`
+}
 
 // VoiceTargetAgent identifies the hosted agent service that supplies the
 // conversation logic for a hosted voice wrapper. Service is an azure.yaml
@@ -150,6 +186,9 @@ type Workflow struct {
 type VoiceAgent struct {
 	AgentDefinition   `json:",inline" yaml:",inline"`
 	DefinitionOverlay map[string]any `json:"definitionOverlay,omitempty" yaml:"definition_overlay,omitempty"`
+	// SubProtocol selects the native GPT Live path when set to live. Omission
+	// preserves the existing Voice Live realtime path.
+	SubProtocol VoiceSubProtocol `json:"subProtocol,omitempty" yaml:"sub_protocol,omitempty"`
 	// ModelType selects managed vs self_deployed (BYOM). Optional; defaults to managed.
 	ModelType VoiceModelType `json:"modelType,omitempty" yaml:"model_type,omitempty"`
 	// Model names the speech-to-speech model (e.g. "gpt-realtime"). Reuses the
@@ -193,6 +232,10 @@ type VoiceAgent struct {
 	Include []string `json:"include,omitempty" yaml:"include,omitempty"`
 	// Telephony configures phone-number bindings for prompt voice agents.
 	Telephony *VoiceTelephony `json:"telephony,omitempty" yaml:"telephony,omitempty"`
+	// Delegation is valid only when sub_protocol is live.
+	Delegation *LiveVoiceDelegation `json:"delegation,omitempty" yaml:"delegation,omitempty"`
+	// Policies maps the first RAI policy to rai_config for GPT Live.
+	Policies []Policy `json:"-" yaml:"-"`
 }
 
 // VoiceTelephony declares telephony bindings for a prompt voice agent.
@@ -256,8 +299,10 @@ func (b *VoiceTelephonyBinding) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// VoiceAudio bundles optional prompt voice input/output audio overrides.
+// VoiceAudio is selected by subProtocol. Realtime voice uses input/output;
+// GPT Live uses format/output and must omit input.
 type VoiceAudio struct {
+	Format *VoiceAudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
 	Input  *VoiceAudioInput  `json:"input,omitempty" yaml:"input,omitempty"`
 	Output *VoiceAudioOutput `json:"output,omitempty" yaml:"output,omitempty"`
 }
@@ -322,6 +367,93 @@ type VoiceConfig struct {
 	Rate   *string `json:"rate,omitempty" yaml:"rate,omitempty"`
 	Locale *string `json:"locale,omitempty" yaml:"locale,omitempty"`
 	Volume *string `json:"volume,omitempty" yaml:"volume,omitempty"`
+	// ID is the GPT Live custom voice identifier. LiveName stores the native
+	// built-in voice when the authoring value is a scalar string.
+	ID       string `json:"id,omitempty" yaml:"id,omitempty"`
+	LiveName string `json:"-" yaml:"-"`
+}
+
+func (v *VoiceConfig) UnmarshalJSON(data []byte) error {
+	var liveName string
+	if err := json.Unmarshal(data, &liveName); err == nil {
+		v.LiveName = liveName
+		return nil
+	}
+	type alias VoiceConfig
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key := range fields {
+		if !slices.Contains([]string{"type", "name", "style", "pitch", "rate", "locale", "volume", "id"}, key) {
+			return fmt.Errorf("unsupported voice property %q", key)
+		}
+	}
+	var object alias
+	if err := json.Unmarshal(data, &object); err != nil {
+		return err
+	}
+	*v = VoiceConfig(object)
+	return nil
+}
+
+func (v VoiceConfig) MarshalJSON() ([]byte, error) {
+	if v.LiveName != "" {
+		return json.Marshal(v.LiveName)
+	}
+	if v.ID != "" && v.Type == "" && v.Name == "" && v.Style == nil && v.Pitch == nil &&
+		v.Rate == nil && v.Locale == nil && v.Volume == nil {
+		return json.Marshal(map[string]any{"id": v.ID})
+	}
+	type alias VoiceConfig
+	return json.Marshal(alias(v))
+}
+
+func (v *VoiceConfig) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&v.LiveName)
+	}
+	type alias VoiceConfig
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !slices.Contains([]string{"type", "name", "style", "pitch", "rate", "locale", "volume", "id"}, key) {
+			return fmt.Errorf("unsupported voice property %q", key)
+		}
+		if node.Content[i+1].Tag != "!!str" && node.Content[i+1].Tag != "!!null" {
+			return fmt.Errorf("voice property %q must be a string", key)
+		}
+	}
+	var object alias
+	if err := node.Decode(&object); err != nil {
+		return err
+	}
+	*v = VoiceConfig(object)
+	return nil
+}
+
+func (v VoiceConfig) MarshalYAML() (any, error) {
+	if v.LiveName != "" {
+		return v.LiveName, nil
+	}
+	if v.ID != "" && v.Type == "" && v.Name == "" && v.Style == nil && v.Pitch == nil &&
+		v.Rate == nil && v.Locale == nil && v.Volume == nil {
+		return map[string]any{"id": v.ID}, nil
+	}
+	type alias VoiceConfig
+	return alias(v), nil
+}
+
+func (v *VoiceConfig) LiveValue() any {
+	if v == nil {
+		return nil
+	}
+	if v.LiveName != "" {
+		return v.LiveName
+	}
+	if v.ID != "" {
+		return map[string]any{"id": v.ID}
+	}
+	return v
 }
 
 // ContainerResources represents the resource allocation for a containerized agent.

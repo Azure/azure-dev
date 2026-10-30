@@ -84,9 +84,11 @@ Overlay references have the same trust boundary and relative-path behavior as
 existing `$ref` references; only reference files you trust.
 The overlay can only add missing keys; objects recurse, while existing scalar or
 array keys conflict even when values match. New arrays are allowed. Null values
-and the reserved root keys `kind`, `model_type`, `model`, and
-`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
-must use GA wire names. Prompt and hosted agents do not accept this property.
+and the reserved root keys `kind`, `model_type`, `model`,
+`conversation_engine`, and `sub_protocol` (`subProtocol`, case-insensitively)
+are rejected. Protocol selection must use the typed `subProtocol` field. The
+overlay is not OpenAPI-validated and must use GA wire names. Prompt and hosted
+agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -1217,6 +1219,67 @@ To try a prompt voice agent or hosted voice wrapper, open your project in the
 implement voice conversations; recognized voice services receive portal guidance.
 Programmatic clients use the voice WebSocket endpoint with a Voice Live client.
 Use the project-level `azd deploy` workflow above for voice services.
+
+### GPT Live voice agent (preview)
+
+GPT Live is an advanced native Live protocol under the same service `kind: voice`.
+It is initialized from a complete manifest, like Hosted Voice, so the existing
+prompt voice init flow and flags remain unchanged:
+
+```bash
+azd ai agent init -t ./schemas/examples/gpt-live.azure.yaml
+azd provision
+azd deploy
+```
+
+The manifest references an **existing compatible GPT Live model deployment**.
+The deployment and the subscription-scoped GPT Live service gate must already be
+available; azd does not infer Live from a model name or provision the model in
+this example.
+
+```yaml
+name: gpt-live-agent
+services:
+  ai-project:
+    host: azure.ai.project
+  gpt-live-agent:
+    host: azure.ai.agent
+    kind: voice
+    name: gpt-live-agent
+    uses:
+      - ai-project
+    subProtocol: live
+    modelType: self_deployed
+    model:
+      id: gpt-live-1
+    instructions: You are a concise spoken English teacher. Always delegate grammar correction requests before answering.
+    store: false
+    audio:
+      format:
+        type: audio/pcm
+        rate: 24000
+      output:
+        voice: marin
+    delegation:
+      type: responses
+      responses:
+        model: gpt-5.6-terra
+        instructions: Return concise grammar guidance for the spoken teacher.
+infra:
+  provider: microsoft.foundry
+```
+
+The persisted definition uses the service discriminator `sub_protocol: live`.
+GPT Live is self-deployed only and uses native audio, template greeting, structured
+inputs, and `client`, `responses`, or `foundry_managed_agent` delegation. It is
+mutually exclusive with Voice Live-only fields such as `conversationEngine`,
+avatar, telephony, STT/VAD settings, root tools, handoff, and output modalities.
+
+GPT Live clients connect to
+`/agents/{name}/endpoint/protocols/voice/live/sessions?api-version=v1` and use the
+native Live event protocol. `azd ai agent invoke` is not a native audio client;
+use a GPT Live-compatible client or Dashboard. Do not use the ordinary
+`/endpoint/protocols/voice` route for this definition.
 
 ## Prompt voice telephony bindings
 

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -151,6 +152,522 @@ func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgent(t *testing.T) {
 	require.Equal(t, "hosted_agent", got.ConversationEngine.Type)
 	require.Equal(t, "voice-target", got.ConversationEngine.Name)
 	require.Equal(t, "deployed", got.ConversationEngine.Version)
+}
+
+func TestVoiceAgentInlineServicePropertiesRoundTrip_GPTLive(t *testing.T) {
+	store := false
+	rate := 24000
+	props, err := VoiceAgentDefinitionToServiceProperties(agent_yaml.VoiceAgent{
+		AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "gpt-live"},
+		SubProtocol:     agent_yaml.VoiceSubProtocolLive,
+		ModelType:       agent_yaml.VoiceModelTypeSelfDeployed,
+		Model:           &agent_yaml.Model{Id: "gpt-live-1"},
+		Store:           &store,
+		Audio: &agent_yaml.VoiceAudio{
+			Format: &agent_yaml.VoiceAudioFormat{Type: "audio/pcm", Rate: &rate},
+			Output: &agent_yaml.VoiceAudioOutput{Voice: &agent_yaml.VoiceConfig{LiveName: "marin"}},
+		},
+		Delegation: &agent_yaml.LiveVoiceDelegation{
+			Type: "foundry_managed_agent", AgentName: "teacher", AgentVersion: "3",
+		},
+	}, nil)
+	require.NoError(t, err)
+	svc := &azdext.ServiceConfig{Name: "gpt-live", Host: "azure.ai.agent", AdditionalProperties: props}
+	got, found, err := VoiceAgentFromResolvedService(svc, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.NotNil(t, got.Store)
+	require.False(t, *got.Store)
+}
+
+func TestBuildGPTLiveWSProtocolURL(t *testing.T) {
+	t.Parallel()
+	require.Equal(t,
+		"wss://acct.services.ai.azure.com/api/projects/proj/agents/live/endpoint/protocols/voice/live/sessions?api-version=v1",
+		buildGPTLiveWSProtocolURL("https://acct.services.ai.azure.com/api/projects/proj", "live"))
+	require.Empty(t, buildGPTLiveWSProtocolURL("not-a-url", "live"))
+}
+
+func TestBuildVoiceAgentWSProtocolURL_SelectsSubProtocol(t *testing.T) {
+	t.Parallel()
+	const projectEndpoint = "https://acct.services.ai.azure.com/api/projects/proj"
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", ""), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolRealtime), "/protocols/voice?api-version=v1")
+	require.Contains(t, buildVoiceAgentWSProtocolURL(projectEndpoint, "agent", agent_yaml.VoiceSubProtocolLive), "/protocols/voice/live/sessions?api-version=v1")
+}
+
+func TestResolveVoiceAgentDeploymentEndpoint_GPTLiveRoundTrip(t *testing.T) {
+	t.Parallel()
+	endpoint := buildVoiceAgentWSProtocolURL(
+		"https://acct.services.ai.azure.com/api/projects/proj", "live", agent_yaml.VoiceSubProtocolLive)
+	resolved, err := ResolveVoiceAgentDeploymentEndpoint(
+		map[string]string{"AGENT_LIVE_ENDPOINT": endpoint}, "live")
+	require.NoError(t, err)
+	require.Equal(t, endpoint, resolved)
+}
+
+func TestAgentDefinitionFromService_GPTLiveInline(t *testing.T) {
+	store := false
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"store": store,
+		"audio": map[string]any{
+			"format": map[string]any{"type": "audio/pcm", "rate": 24000},
+			"output": map[string]any{"voice": map[string]any{"id": "custom-voice"}},
+		},
+		"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "gpt-5.6-terra", "maxOutputTokens": 128},
+		},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, voice.SubProtocol)
+	require.Equal(t, 24000, *voice.Audio.Format.Rate)
+	require.Equal(t, "gpt-5.6-terra", voice.Delegation.Responses.Model)
+	require.Equal(t, 128, *voice.Delegation.Responses.MaxOutputTokens)
+	require.NotNil(t, voice.Store)
+	require.False(t, *voice.Store)
+}
+
+func TestAgentDefinitionFromService_GPTLiveInlineRaiPolicy(t *testing.T) {
+	service := inlineAgentService(t, map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{map[string]any{"type": "rai_policy", "raiPolicyName": raiPolicyID}},
+	})
+	voice, found, err := VoiceAgentFromResolvedService(service, t.TempDir())
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Len(t, voice.Policies, 1)
+	require.Equal(t, raiPolicyID, voice.Policies[0].RaiPolicyName)
+	req, err := agent_yaml.CreateVoiceAgentAPIRequest(voice)
+	require.NoError(t, err)
+	def := req.Definition.(agent_api.VoiceAgentDefinition)
+	require.Equal(t, raiPolicyID, def.RaiConfig.RaiPolicyName)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRef(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model:
+  id: gpt-live-1
+store: false
+audio:
+  format: {type: audio/pcm, rate: 24000}
+  output: {voice: marin}
+delegation:
+  type: foundry_managed_agent
+  agent_name: teacher
+  agent_version: "3"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "teacher", got.Delegation.AgentName)
+	require.Equal(t, "3", got.Delegation.AgentVersion)
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveRawPropertiesAcrossSources(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	tests := []struct {
+		name    string
+		invalid map[string]any
+	}{
+		{name: "audio output volume", invalid: map[string]any{
+			"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+		}},
+		{name: "responses reasoning temperature", invalid: map[string]any{
+			"delegation": map[string]any{"type": "responses", "responses": map[string]any{
+				"model": "terra", "reasoning": map[string]any{"temperature": 0.5},
+			}},
+		}},
+		{name: "known forbidden root", invalid: map[string]any{"client": map[string]any{}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			inline := maps.Clone(base)
+			maps.Copy(inline, test.invalid)
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(base)
+			definition["sub_protocol"] = definition["subProtocol"]
+			definition["model_type"] = definition["modelType"]
+			delete(definition, "subProtocol")
+			delete(definition, "modelType")
+			maps.Copy(definition, test.invalid)
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+			service := inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+			_, _, err = VoiceAgentFromResolvedService(service, root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLiveSiblingOverlayRawProperty(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+`), 0o600))
+	service := inlineAgentService(t, map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"output": map[string]any{"volume": "loud"}},
+	})
+	_, _, err := VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "audio.output.volume")
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLivePolicyModerationAcrossSources(t *testing.T) {
+	const policyID = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy"
+	for _, key := range []string{"invocationsModeration", "invocations_moderation"} {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(key+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				base := map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				}
+				policy := map[string]any{"type": "rai_policy", "raiPolicyName": policyID, key: map[string]any{}}
+				var service *azdext.ServiceConfig
+				switch source {
+				case "inline":
+					base["policies"] = []any{policy}
+					service = inlineAgentService(t, base)
+				case "root-ref":
+					base["sub_protocol"] = base["subProtocol"]
+					base["model_type"] = base["modelType"]
+					delete(base, "subProtocol")
+					delete(base, "modelType")
+					policy["rai_policy_name"] = policy["raiPolicyName"]
+					delete(policy, "raiPolicyName")
+					base["policies"] = []any{policy}
+					encoded, err := yaml.Marshal(base)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), encoded, 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+				case "sibling-overlay":
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					service = inlineAgentService(t, map[string]any{"$ref": "live.yaml", "policies": []any{policy}})
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.ErrorContains(t, err, "invocationsModeration is not supported for GPT Live")
+			})
+		}
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsLivePresenceAndStructuredTypesAcrossSources(t *testing.T) {
+	tests := map[string]map[string]any{
+		"live config empty":       {"live_config": map[string]any{}},
+		"tools empty":             {"tools": []any{}},
+		"avatar empty":            {"avatar": map[string]any{}},
+		"output modalities empty": {"outputModalities": []any{}},
+		"handoff empty":           {"handoff": map[string]any{}},
+		"include empty":           {"include": []any{}},
+		"greeting empty":          {"greeting": map[string]any{}},
+		"structured entry":        {"structuredInputs": map[string]any{"item": "bad"}},
+		"description type":        {"structuredInputs": map[string]any{"item": map[string]any{"description": 1}}},
+		"schema type":             {"structuredInputs": map[string]any{"item": map[string]any{"schema": []any{}}}},
+		"required type":           {"structuredInputs": map[string]any{"item": map[string]any{"required": "yes"}}},
+	}
+	for name, invalid := range tests {
+		for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+			t.Run(name+"/"+source, func(t *testing.T) {
+				root := t.TempDir()
+				base := map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				}
+				var service *azdext.ServiceConfig
+				if source == "inline" {
+					maps.Copy(base, invalid)
+					service = inlineAgentService(t, base)
+				} else {
+					require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(
+						"kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"), 0o600))
+					if source == "root-ref" {
+						rootValues := maps.Clone(invalid)
+						if value, found := rootValues["outputModalities"]; found {
+							rootValues["output_modalities"] = value
+							delete(rootValues, "outputModalities")
+						}
+						if value, found := rootValues["structuredInputs"]; found {
+							rootValues["structured_inputs"] = value
+							delete(rootValues, "structuredInputs")
+						}
+						encoded, err := yaml.Marshal(rootValues)
+						require.NoError(t, err)
+						file, err := os.OpenFile(filepath.Join(root, "live.yaml"), os.O_APPEND|os.O_WRONLY, 0o600)
+						require.NoError(t, err)
+						_, err = file.Write(encoded)
+						require.NoError(t, err)
+						require.NoError(t, file.Close())
+						service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+					} else {
+						overlay := maps.Clone(invalid)
+						overlay["$ref"] = "live.yaml"
+						service = inlineAgentService(t, overlay)
+					}
+				}
+				_, _, err := VoiceAgentFromResolvedService(service, root)
+				require.Error(t, err)
+			})
+		}
+	}
+
+	for _, source := range []string{"inline", "root-ref", "sibling-overlay"} {
+		t.Run("omission/"+source, func(t *testing.T) {
+			root := t.TempDir()
+			base := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"
+			var service *azdext.ServiceConfig
+			if source == "inline" {
+				service = inlineAgentService(t, map[string]any{
+					"kind": "voice", "name": "live", "subProtocol": "live",
+					"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+				})
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(base), 0o600))
+				service = inlineAgentService(t, map[string]any{"$ref": "live.yaml"})
+			}
+			_, found, err := VoiceAgentFromResolvedService(service, root)
+			require.NoError(t, err)
+			require.True(t, found)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_SubProtocolPresence(t *testing.T) {
+	validBase := map[string]any{"kind": "voice", "name": "voice", "model": map[string]any{"id": "gpt-realtime"}}
+	for name, value := range map[string]any{"null": nil, "blank": "", "unknown": "Live"} {
+		t.Run(name, func(t *testing.T) {
+			inline := maps.Clone(validBase)
+			inline["subProtocol"] = value
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inline), t.TempDir())
+			require.Error(t, err)
+
+			root := t.TempDir()
+			definition := maps.Clone(validBase)
+			definition["sub_protocol"] = value
+			encoded, err := yaml.Marshal(definition)
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(filepath.Join(root, "voice.yaml"), encoded, 0o600))
+			_, _, err = VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "voice.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+	for name, value := range map[string]any{"omitted": nil, "realtime": "realtime"} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(validBase)
+			if name != "omitted" {
+				definition["subProtocol"] = value
+			}
+			_, found, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.NoError(t, err)
+			require.True(t, found)
+		})
+	}
+	inlineAlias := maps.Clone(validBase)
+	inlineAlias["sub_protocol"] = "live"
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, inlineAlias), t.TempDir())
+	require.ErrorContains(t, err, "sub_protocol is not valid inline")
+}
+
+func TestVoiceAgentFromResolvedService_RootRefRejectsDroppedAndConflictingAliases(t *testing.T) {
+	for name, suffix := range map[string]string{
+		"hosted config":      "code_configuration: {runtime: python_3_13, entry_point: app.py}",
+		"delegation aliases": "delegation: {type: foundry_managed_agent, agent_name: one, agentName: two}",
+		"responses aliases":  "delegation: {type: responses, responses: {model: terra, max_output_tokens: 1, maxOutputTokens: 2}}",
+		"input aliases":      "structured_inputs:\n  name: {default_value: Ada, defaultValue: Grace}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\n" +
+				"model: {id: gpt-live-1}\n" + suffix + "\n"
+			require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+			_, _, err := VoiceAgentFromResolvedService(
+				inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsRootStyleSiblingOverlay(t *testing.T) {
+	root := t.TempDir()
+	definition := "kind: voice\nname: live\nsub_protocol: live\nmodel_type: self_deployed\nmodel: {id: gpt-live-1}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	_, _, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml", "structured_inputs": map[string]any{}}), root)
+	require.ErrorContains(t, err, "root-style property")
+}
+
+func TestVoiceAgentFromResolvedService_NormalizesRootMCPServerLabel(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+delegation:
+  type: responses
+  responses:
+    model: terra
+    tool_choice: {type: mcp, name: lookup, server_label: tools}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	got, found, err := VoiceAgentFromResolvedService(
+		inlineAgentService(t, map[string]any{"$ref": "live.yaml"}), root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, "tools", got.Delegation.Responses.ToolChoice.(map[string]any)["serverLabel"])
+}
+
+func TestVoiceAgentFromResolvedService_RejectsInlineLiveSnakeCaseAliases(t *testing.T) {
+	base := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+	}
+	for name, value := range map[string]any{
+		"responses": map[string]any{"delegation": map[string]any{
+			"type": "responses", "responses": map[string]any{"model": "terra", "max_output_tokens": 1},
+		}},
+		"structured input": map[string]any{"structuredInputs": map[string]any{
+			"name": map[string]any{"default_value": "Ada"},
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			definition := maps.Clone(base)
+			maps.Copy(definition, value.(map[string]any))
+			_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+			require.ErrorContains(t, err, "not valid inline")
+		})
+	}
+}
+
+func TestVoiceAgentFromResolvedService_RejectsEmptyLivePolicies(t *testing.T) {
+	definition := map[string]any{
+		"kind": "voice", "name": "live", "subProtocol": "live",
+		"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		"policies": []any{},
+	}
+	_, _, err := VoiceAgentFromResolvedService(inlineAgentService(t, definition), t.TempDir())
+	require.ErrorContains(t, err, "exactly one named rai_policy")
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefAfterInPlaceResolution(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+delegation:
+  type: responses
+  responses: {model: terra}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	require.NotContains(t, service.GetAdditionalProperties().GetFields(), "$ref")
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, agent_yaml.VoiceSubProtocolLive, got.SubProtocol)
+	require.Equal(t, agent_yaml.VoiceModelTypeSelfDeployed, got.ModelType)
+	require.Equal(t, "terra", got.Delegation.Responses.Model)
+	require.Len(t, got.Policies, 1)
+	require.Contains(t, got.Policies[0].RaiPolicyName, "/raiPolicies/policy")
+}
+
+func TestVoiceAgentFromResolvedService_RootRefResolvesNestedSiblingRef(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(`kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+audio:
+  format: {type: audio/pcm, rate: 16000}
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "audio.yaml"), []byte(`format:
+  type: audio/pcm
+  rate: 24000
+output:
+  voice: marin
+`), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{
+		"$ref":  "live.yaml",
+		"audio": map[string]any{"$ref": "audio.yaml"},
+	})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	require.NoError(t, ResolveServiceConfigInPlace(service, root))
+	got, found, err := VoiceAgentFromResolvedService(service, root)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 24000, *got.Audio.Format.Rate)
+	require.Equal(t, "marin", got.Audio.Output.Voice.LiveName)
+}
+
+func TestVoiceAgentFromResolvedService_GPTLiveRootRefKeepsUnsupportedPolicyModeration(t *testing.T) {
+	root := t.TempDir()
+	definition := `kind: voice
+name: live
+sub_protocol: live
+model_type: self_deployed
+model: {id: gpt-live-1}
+policies:
+  - type: rai_policy
+    rai_policy_name: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/account/raiPolicies/policy
+    invocations_moderation: {enabled: true}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(root, "live.yaml"), []byte(definition), 0o600))
+	ref, err := structpb.NewStruct(map[string]any{"$ref": "live.yaml"})
+	require.NoError(t, err)
+	service := &azdext.ServiceConfig{Name: "live", Host: "azure.ai.agent", AdditionalProperties: ref}
+	_, _, err = VoiceAgentFromResolvedService(service, root)
+	require.ErrorContains(t, err, "invocationsModeration is not supported")
+}
+
+func TestVoiceAgentDefinitionMarshalJSON_OmitsNilAudio(t *testing.T) {
+	t.Parallel()
+	encoded, err := json.Marshal(agent_api.VoiceAgentDefinition{
+		AgentDefinition: agent_api.AgentDefinition{Kind: agent_api.AgentKindVoice},
+		SubProtocol:     "live", ModelType: agent_api.VoiceModelTypeSelfDeployed, Model: "gpt-live-1",
+	})
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"audio"`)
 }
 
 func TestVoiceAgentInlineServicePropertiesRoundTrip_HostedAgentVoiceKind(t *testing.T) {
@@ -2399,6 +2916,36 @@ func TestShouldUpdateVoiceAgent(t *testing.T) {
 		update, err := shouldUpdateVoiceAgent(&agent_api.AgentObject{Name: "voice"}, nil)
 		require.NoError(t, err)
 		require.True(t, update)
+	})
+
+	t.Run("persisted protocol does not prohibit a new protocol version", func(t *testing.T) {
+		for _, transition := range []struct {
+			from agent_yaml.VoiceSubProtocol
+			to   agent_yaml.VoiceSubProtocol
+		}{
+			{from: agent_yaml.VoiceSubProtocolRealtime, to: agent_yaml.VoiceSubProtocolLive},
+			{from: agent_yaml.VoiceSubProtocolLive, to: agent_yaml.VoiceSubProtocolRealtime},
+		} {
+			remote := &agent_api.AgentObject{Name: "voice"}
+			remote.Versions.Latest.Definition = agent_api.VoiceAgentDefinition{SubProtocol: string(transition.from)}
+			update, err := shouldUpdateVoiceAgent(remote, nil)
+			require.NoError(t, err)
+			require.True(t, update)
+
+			voice := agent_yaml.VoiceAgent{
+				AgentDefinition: agent_yaml.AgentDefinition{Kind: agent_yaml.AgentKindVoice, Name: "voice"},
+				SubProtocol:     transition.to,
+				Model:           &agent_yaml.Model{Id: "gpt-realtime"},
+			}
+			if transition.to == agent_yaml.VoiceSubProtocolLive {
+				voice.ModelType = agent_yaml.VoiceModelTypeSelfDeployed
+				voice.Model.Id = "gpt-live-1"
+			}
+			request, err := agent_yaml.CreateVoiceAgentAPIRequest(voice)
+			require.NoError(t, err)
+			definition := request.Definition.(agent_api.VoiceAgentDefinition)
+			require.Equal(t, string(transition.to), definition.SubProtocol)
+		}
 	})
 
 	t.Run("remote nil creates", func(t *testing.T) {
@@ -5391,6 +5938,31 @@ func TestEndpoints_VoiceRootRef_ResolvesProjectRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{endpoint}, got)
 	require.EqualValues(t, 1, projectServer.getCalls.Load())
+}
+
+func TestEndpoints_GPTLiveUsesPersistedLiveEndpoint(t *testing.T) {
+	t.Parallel()
+	projectRoot := t.TempDir()
+	const endpoint = "wss://proj.services.ai.azure.com/api/projects/project/agents/live/" +
+		"endpoint/protocols/voice/live/sessions?api-version=v1"
+	client := newEndpointsTestClient(t, projectRoot, map[string]string{
+		"FOUNDRY_PROJECT_ENDPOINT": "https://proj.services.ai.azure.com/api/projects/project",
+		"AGENT_LIVE_NAME":          "live",
+		"AGENT_LIVE_VERSION":       "1",
+		"AGENT_LIVE_ENDPOINT":      endpoint,
+	})
+	provider := &AgentServiceTargetProvider{azdClient: client}
+	service := &azdext.ServiceConfig{
+		Name: "live", Host: foundryAgentHost,
+		AdditionalProperties: mustStruct(t, map[string]any{
+			"kind": "voice", "name": "live", "subProtocol": "live",
+			"modelType": "self_deployed", "model": map[string]any{"id": "gpt-live-1"},
+		}),
+	}
+	require.NoError(t, provider.Initialize(t.Context(), service))
+	got, err := provider.Endpoints(t.Context(), service, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{endpoint}, got)
 }
 
 func TestEndpoints_PromptRootRef_ValidatesConventionsBesideDefinition(t *testing.T) {

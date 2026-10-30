@@ -153,6 +153,25 @@ func buildVoiceWSProtocolURL(projectEndpoint, agentName string) string {
 	)
 }
 
+func buildGPTLiveWSProtocolURL(projectEndpoint, agentName string) string {
+	projectEndpoint = strings.TrimSpace(projectEndpoint)
+	u, err := url.Parse(projectEndpoint)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"wss://%s%s/agents/%s/endpoint/protocols/voice/live/sessions?api-version=%s",
+		u.Host, strings.TrimRight(u.Path, "/"), agentName, agent_api.AgentEndpointAPIVersion,
+	)
+}
+
+func buildVoiceAgentWSProtocolURL(projectEndpoint, agentName string, subProtocol agent_yaml.VoiceSubProtocol) string {
+	if subProtocol == agent_yaml.VoiceSubProtocolLive {
+		return buildGPTLiveWSProtocolURL(projectEndpoint, agentName)
+	}
+	return buildVoiceWSProtocolURL(projectEndpoint, agentName)
+}
+
 // ProtocolEnvSuffix pairs a user-facing label with the env var suffix
 // used in AGENT_{KEY}_{SUFFIX}_ENDPOINT variables.
 type ProtocolEnvSuffix struct {
@@ -807,10 +826,17 @@ func ResolveVoiceAgentDeploymentEndpoint(envValues map[string]string, serviceNam
 	}
 
 	parsed, err := url.Parse(endpoint)
-	if err != nil ||
-		!strings.EqualFold(parsed.Scheme, "wss") ||
-		parsed.Hostname() == "" ||
-		!strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/endpoint/protocols/voice") {
+	if err != nil || parsed == nil ||
+		!strings.EqualFold(parsed.Scheme, "wss") || parsed.Hostname() == "" {
+		return "", invalidAgentEndpointState(
+			serviceName,
+			"voice",
+			"run `azd deploy` to deploy the voice agent and refresh its callable endpoint",
+		)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(path, "/endpoint/protocols/voice") &&
+		!strings.HasSuffix(path, "/endpoint/protocols/voice/live/sessions") {
 		return "", invalidAgentEndpointState(
 			serviceName,
 			"voice",
@@ -2608,6 +2634,22 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 			Name: hostedTarget.AgentName, Version: hostedTarget.AgentVersion,
 		})
 	} else {
+		if va.SubProtocol == agent_yaml.VoiceSubProtocolLive {
+			managed := agent_yaml.PromptAgent{Policies: append([]agent_yaml.Policy(nil), va.Policies...)}
+			if err := expandPromptAgentPolicies(&managed, azdEnv); err != nil {
+				return nil, err
+			}
+			for i, policy := range managed.Policies {
+				if err := agent_yaml.ValidateRaiPolicyName(policy.RaiPolicyName); err != nil {
+					return nil, exterrors.Validation(
+						exterrors.CodeInvalidAgentManifest,
+						fmt.Sprintf("invalid GPT Live policies[%d].raiPolicyName after expansion: %s", i, err),
+						"set the referenced value to a valid RAI policy name or ARM ID",
+					)
+				}
+			}
+			va.Policies = managed.Policies
+		}
 		request, err = agent_yaml.CreateVoiceAgentAPIRequest(va)
 	}
 	if err != nil {
@@ -2673,7 +2715,7 @@ func (p *AgentServiceTargetProvider) deployVoiceAgent(
 
 	// Persist NAME first and ENDPOINT last. ENDPOINT is used as the voice deploy
 	// completion marker by other commands, so avoid writing it before NAME.
-	baseEndpoint := buildVoiceWSProtocolURL(projectEndpoint, agentObject.Name)
+	baseEndpoint := buildVoiceAgentWSProtocolURL(projectEndpoint, agentObject.Name, va.SubProtocol)
 	if err := p.registerVoiceAgentEnvironmentVariables(
 		ctx,
 		serviceConfig,

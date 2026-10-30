@@ -5,9 +5,9 @@ inputs:
   prompt: |
     Review this synthetic PR. Complete metadata: title "Rename logs command".
     Complete changed-file list: cli/azd/extensions/example/internal/cmd/logs.go.
-    Base branch has no logs command. An earlier PR revision added a logs command. The current revision replaces it
-    with a stream-logs command as one command rename with a shared root cause.
-    Deleted LEFT line 35: cmd := &cobra.Command{Use: "logs", Short: "Show logs"}
+    Base branch has no logs command. An earlier PR revision added a logs command, but that declaration is revision
+    history and is not a current diff anchor. The current revision replaces that earlier addition with a stream-logs
+    command as the same evolving command contract.
     Added RIGHT line 42: cmd := &cobra.Command{Use: "stream-logs", Short: "Stream logs"}
     All registration, handlers, tests, snapshots, and docs correctly implement the rename.
     Complete conversation and review history contains one thread matching this command contract:

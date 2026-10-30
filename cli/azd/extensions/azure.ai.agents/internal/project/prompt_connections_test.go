@@ -302,12 +302,12 @@ func TestConnectionsNodeRequiresLocalConnectionService(t *testing.T) {
 	}
 }
 
-func TestConnectionsNodeIgnoresToolboxProjectConnectionID(t *testing.T) {
-	agent := &agent_yaml.PromptAgent{Toolbox: &agent_yaml.ToolboxReference{
-		Name: "tools", ProjectConnectionID: "external-connection-id",
+func TestConnectionsNodeIgnoresToolboxes(t *testing.T) {
+	agent := &agent_yaml.PromptAgent{Toolboxes: []agent_yaml.ToolboxReference{
+		{Name: "tools"},
 	}}
 	if node := connectionsNode(&promptGraph{managed: agent}); node != nil {
-		t.Fatal("toolbox projectConnectionId should not create a sibling service dependency")
+		t.Fatal("toolboxes references should not create a connection service dependency")
 	}
 }
 

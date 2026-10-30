@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"azureaiagent/internal/exterrors"
+	"azureaiagent/internal/featureflags"
 	"azureaiagent/internal/pkg/agents/agent_yaml"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -86,6 +87,7 @@ func TestVoiceAgentAddedMessageUsesServiceKey(t *testing.T) {
 }
 
 func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	for _, nonempty := range []bool{false, true} {
 		for _, specified := range []bool{false, true} {
 			count := int32(2)
@@ -99,7 +101,7 @@ func TestInitVoiceFlagInteractiveSelection(t *testing.T) {
 						require.NoError(t, os.WriteFile("main.py", []byte("# sample"), 0600))
 					}
 					prompts := &helpersPromptServer{selectIndex: index}
-					client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+					client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 					mode, err := promptInitModeForVoice(t.Context(), client, false, specified, nil)
 					if specified && index != count-1 {
 						require.ErrorContains(t, err, "--voice is only supported")
@@ -167,6 +169,7 @@ func TestNewVoiceRejectsExplicitCodeInputsBeforeHostAccess(t *testing.T) {
 }
 
 func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
+	t.Setenv(featureflags.Voice.EnvVar, "true")
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile("app.py", []byte("# existing code"), 0600))
 	command := newInitCommand(nil)
@@ -180,7 +183,7 @@ func TestInteractiveVoiceRejectsCodeInputsOnlyOnVoiceSelection(t *testing.T) {
 		{0, initModeFromCode}, {1, initModeTemplate}, {2, initModeVoice},
 	} {
 		prompts := &helpersPromptServer{selectIndex: choice.index}
-		client := newHelpersTestAzdClient(t, &helpersProjectServer{}, prompts)
+		client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{}}, prompts)
 		mode, err := promptInitModeForVoice(t.Context(), client, false, false, inputErr)
 		if choice.want == initModeVoice {
 			require.ErrorIs(t, err, inputErr)

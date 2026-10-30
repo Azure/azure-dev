@@ -22,21 +22,37 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 )
 
-// promptHarnessRegionsForInit is the temporary harness region policy shared by
-// generated and adopted agents. Return nil here when the service restriction lifts.
-func promptHarnessRegionsForInit(harness string) []string {
+// promptHarnessRegionsForInit loads the Copilot harness region policy shared by
+// generated and adopted agents. Other prompt agents remain unrestricted.
+func promptHarnessRegionsForInit(ctx context.Context, harness string) ([]string, error) {
 	if !agent_api.IsCopilotHarness(harness) {
-		return nil
+		return nil, nil
 	}
-	return []string{
-		"eastus2",
-		"japaneast", "swedencentral", "uksouth", "australiaeast",
-		"westeurope", "germanywestcentral", "canadacentral", "westus2",
-	}
+	return harnessRegionsCache.load(ctx, harnessAgentRegionsURL, embeddedHarnessAgentRegionsJSON)
 }
 
-func validateInitLocation(location string, allowedLocations []string) error {
+type harnessRegionPolicyKey struct{}
+
+func withHarnessRegionPolicy(ctx context.Context, harness string) context.Context {
+	return context.WithValue(ctx, harnessRegionPolicyKey{}, agent_api.IsCopilotHarness(harness))
+}
+
+func initLocationAllowed(ctx context.Context, location string, allowedLocations []string) bool {
+	harness, _ := ctx.Value(harnessRegionPolicyKey{}).(bool)
 	if locationAllowed(location, allowedLocations) {
+		return true
+	}
+	if !harness || strings.TrimSpace(location) == "" {
+		return false
+	}
+	// Accept configured locations and existing projects in internal regions.
+	// Never merge them into the public allowlist used by region pickers and guidance.
+	internal, err := internalHarnessRegionsCache.load(ctx, internalHarnessAgentRegionsURL, embeddedInternalHarnessRegionsJSON)
+	return err == nil && len(internal) > 0 && locationAllowed(location, internal)
+}
+
+func validateInitLocation(ctx context.Context, location string, allowedLocations []string) error {
+	if initLocationAllowed(ctx, location, allowedLocations) {
 		return nil
 	}
 	return exterrors.Validation(
@@ -50,11 +66,24 @@ func validateInitLocation(location string, allowedLocations []string) error {
 // It is a var so tests can override it.
 var hostedAgentRegionsURL = "https://aka.ms/azd-ai-agents/regions"
 
+// harnessAgentRegionsURL points at the live public harness regions manifest.
+// Updating the manifest does not require an extension release.
+var harnessAgentRegionsURL = "https://aka.ms/azd-ai-agents/harness-region"
+
+// internalHarnessAgentRegionsURL points at the independently updated internal policy.
+var internalHarnessAgentRegionsURL = "https://aka.ms/azd-ai-agents/harness-internal-region"
+
 // embeddedHostedAgentRegionsJSON is the build-time fallback used when the live
 // manifest fetch fails (e.g. transient network issues, restrictive proxies).
 //
 //go:embed hosted-agent-regions.json
 var embeddedHostedAgentRegionsJSON []byte
+
+//go:embed harness-agent-regions.json
+var embeddedHarnessAgentRegionsJSON []byte
+
+//go:embed harness-agent-internal-regions.json
+var embeddedInternalHarnessRegionsJSON []byte
 
 const (
 	hostedAgentRegionsFetchTimeout = 5 * time.Second
@@ -63,14 +92,20 @@ const (
 	hostedAgentRegionsManifestMaxBytes = 1 << 20 // 1 MiB
 )
 
-type hostedAgentRegionsManifest struct {
+type agentRegionsManifest struct {
 	Regions []string `json:"regions"`
 }
 
-var regionsCache struct {
-	mu       sync.Mutex
-	regions  []string
-	inflight *regionsFetch
+var regionsCache agentRegionsCache
+var harnessRegionsCache agentRegionsCache
+var internalHarnessRegionsCache = agentRegionsCache{allowEmpty: true}
+
+type agentRegionsCache struct {
+	// An empty internal manifest disables internal regions; public policies must be nonempty.
+	allowEmpty bool
+	mu         sync.Mutex
+	regions    []string
+	inflight   *regionsFetch
 }
 
 // regionsFetch coordinates concurrent callers waiting on the same in-flight fetch
@@ -87,23 +122,28 @@ type regionsFetch struct {
 // The fetch itself is performed without holding regionsCache.mu so callers whose
 // context is canceled can return promptly even if another goroutine is mid-fetch.
 func supportedRegionsForInit(ctx context.Context) ([]string, error) {
-	regionsCache.mu.Lock()
-	if regionsCache.regions != nil {
-		regions := slices.Clone(regionsCache.regions)
-		regionsCache.mu.Unlock()
+	return regionsCache.load(ctx, hostedAgentRegionsURL, embeddedHostedAgentRegionsJSON)
+}
+
+// load shares one fetch across callers and caches the remote or embedded result for the process.
+func (cache *agentRegionsCache) load(ctx context.Context, url string, embedded []byte) ([]string, error) {
+	cache.mu.Lock()
+	if cache.regions != nil {
+		regions := slices.Clone(cache.regions)
+		cache.mu.Unlock()
 		return regions, nil
 	}
 
-	fetch := regionsCache.inflight
+	fetch := cache.inflight
 	if fetch == nil {
 		fetch = &regionsFetch{done: make(chan struct{})}
-		regionsCache.inflight = fetch
+		cache.inflight = fetch
 		// context.WithoutCancel keeps any context values but drops cancellation,
 		// because the fetch result is shared across all waiters and must not be
 		// aborted by a single caller's cancellation.
-		go runRegionsFetch(context.WithoutCancel(ctx), fetch)
+		go cache.runRegionsFetch(context.WithoutCancel(ctx), fetch, url, embedded)
 	}
-	regionsCache.mu.Unlock()
+	cache.mu.Unlock()
 
 	select {
 	case <-ctx.Done():
@@ -122,23 +162,23 @@ func supportedRegionsForInit(ctx context.Context) ([]string, error) {
 //
 // ctx must not carry a cancellation that any single caller can trigger, since the
 // fetch result is shared. Callers pass context.WithoutCancel(callerCtx).
-func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
+func (cache *agentRegionsCache) runRegionsFetch(ctx context.Context, fetch *regionsFetch, url string, embedded []byte) {
 	// The fetch applies its own timeout (hostedAgentRegionsFetchTimeout).
-	regions, err := fetchHostedAgentRegionsFromURL(ctx, http.DefaultClient, hostedAgentRegionsURL)
+	regions, err := fetchAgentRegionsManifest(ctx, http.DefaultClient, url, cache.allowEmpty)
 
 	if err != nil {
-		if fallback, fbErr := parseEmbeddedHostedAgentRegions(); fbErr == nil && len(fallback) > 0 {
+		if fallback, fbErr := parseAgentRegions(embedded, cache.allowEmpty); fbErr == nil {
 			regions = fallback
 			err = nil
 		}
 	}
 
-	regionsCache.mu.Lock()
+	cache.mu.Lock()
 	if err == nil {
-		regionsCache.regions = regions
+		cache.regions = regions
 	}
-	regionsCache.inflight = nil
-	regionsCache.mu.Unlock()
+	cache.inflight = nil
+	cache.mu.Unlock()
 
 	fetch.regions = regions
 	fetch.err = err
@@ -148,8 +188,16 @@ func runRegionsFetch(ctx context.Context, fetch *regionsFetch) {
 // parseEmbeddedHostedAgentRegions decodes the embedded build-time manifest used
 // as a fallback when the live fetch fails.
 func parseEmbeddedHostedAgentRegions() ([]string, error) {
-	var manifest hostedAgentRegionsManifest
-	if err := json.Unmarshal(embeddedHostedAgentRegionsJSON, &manifest); err != nil {
+	return parseAgentRegionsManifest(embeddedHostedAgentRegionsJSON)
+}
+
+func parseAgentRegionsManifest(data []byte) ([]string, error) {
+	return parseAgentRegions(data, false)
+}
+
+func parseAgentRegions(data []byte, allowEmpty bool) ([]string, error) {
+	var manifest agentRegionsManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, err
 	}
 	regions := make([]string, 0, len(manifest.Regions))
@@ -157,6 +205,9 @@ func parseEmbeddedHostedAgentRegions() ([]string, error) {
 		if normalized := normalizeLocationName(r); normalized != "" {
 			regions = append(regions, normalized)
 		}
+	}
+	if len(regions) == 0 && (!allowEmpty || manifest.Regions == nil || len(manifest.Regions) > 0) {
+		return nil, fmt.Errorf("manifest contained no valid regions")
 	}
 	return regions, nil
 }
@@ -186,7 +237,11 @@ func supportedModelLocations(ctx context.Context, modelLocations []string) ([]st
 	return result, nil
 }
 
-func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url string) ([]string, error) {
+func fetchAgentRegionsFromURL(ctx context.Context, httpClient *http.Client, url string) ([]string, error) {
+	return fetchAgentRegionsManifest(ctx, httpClient, url, false)
+}
+
+func fetchAgentRegionsManifest(ctx context.Context, httpClient *http.Client, url string, allowEmpty bool) ([]string, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, hostedAgentRegionsFetchTimeout)
 	defer cancel()
 
@@ -195,7 +250,7 @@ func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client
 		return nil, regionsFetchError(err)
 	}
 
-	//nolint:gosec // URL is the hardcoded hostedAgentRegionsURL constant or test override
+	//nolint:gosec // URL is a hardcoded agent regions manifest URL or test override
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, regionsFetchError(err)
@@ -216,20 +271,9 @@ func fetchHostedAgentRegionsFromURL(ctx context.Context, httpClient *http.Client
 		))
 	}
 
-	var manifest hostedAgentRegionsManifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
+	regions, err := parseAgentRegions(body, allowEmpty)
+	if err != nil {
 		return nil, regionsFetchError(err)
-	}
-
-	regions := make([]string, 0, len(manifest.Regions))
-	for _, r := range manifest.Regions {
-		if normalized := normalizeLocationName(r); normalized != "" {
-			regions = append(regions, normalized)
-		}
-	}
-
-	if len(regions) == 0 {
-		return nil, regionsFetchError(fmt.Errorf("manifest contained no valid regions"))
 	}
 
 	return regions, nil

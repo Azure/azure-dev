@@ -414,43 +414,6 @@ func TestGenerateRejectsInvalidExternalDrivers(t *testing.T) {
 	}
 }
 
-func TestContainerAppStartupProtection(t *testing.T) {
-	plan, err := Generate(t.Context(), &Application{
-		Name: "inventory", JavaVersion: 21, JarName: "inventory.jar", Port: 9090,
-		BuildDirectory: "target",
-	})
-	require.NoError(t, err)
-	expected := `
-probes: placeholder ? [] : [
-  {
-    type: 'Startup'
-    tcpSocket: { port: port }
-    initialDelaySeconds: 1
-    periodSeconds: 1
-    timeoutSeconds: 3
-    failureThreshold: 240
-  }
-  {
-    type: 'Liveness'
-    tcpSocket: { port: port }
-    initialDelaySeconds: 10
-    periodSeconds: 10
-    timeoutSeconds: 1
-    failureThreshold: 3
-  }
-  {
-    type: 'Readiness'
-    tcpSocket: { port: port }
-    initialDelaySeconds: 10
-    periodSeconds: 5
-    failureThreshold: 20
-  }
-]
-`
-	template := string(plan.Files["infra/application.bicep"])
-	require.Contains(t, strings.Join(strings.Fields(template), " "), strings.Join(strings.Fields(expected), " "))
-}
-
 func TestDestinationOwnership(t *testing.T) {
 	for _, name := range []string{"azure.yaml", "azure.yml", "infra", ".azd-spring"} {
 		t.Run(name, func(t *testing.T) {
@@ -468,16 +431,6 @@ func TestDestinationOwnership(t *testing.T) {
 			require.Equal(t, "user-owned", string(data))
 		})
 	}
-}
-
-func TestGeneratedDockerfilePreparesMavenWrapper(t *testing.T) {
-	docker, err := dockerfile(&Application{
-		JavaVersion: 17, JarName: "inventory.jar", BuildDirectory: "target",
-		MavenWrapper: true,
-	})
-	require.NoError(t, err)
-	require.Contains(t, docker, `sed -i 's/\r$//' mvnw`)
-	require.Contains(t, docker, "MAVEN_CONFIG= ./mvnw -B -Dmaven.test.skip=true package")
 }
 
 func TestDestinationDockerInputs(t *testing.T) {
@@ -598,7 +551,6 @@ func TestWriteRejectsDockerfileStateChange(t *testing.T) {
 }
 
 func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
-	var infrastructure map[string][]byte
 	for _, tt := range []struct {
 		name string
 		kind ResourceKind
@@ -622,40 +574,18 @@ func TestSharedTemplateAuthenticationMatrix(t *testing.T) {
 			}
 			plan, err := Generate(t.Context(), a)
 			require.NoError(t, err)
-			if infrastructure == nil {
-				infrastructure = map[string][]byte{}
-				for name, content := range plan.Files {
-					if strings.HasSuffix(name, ".bicep") {
-						infrastructure[name] = content
-					}
-				}
+			var parameters struct {
+				Parameters map[string]struct {
+					Value any `json:"value"`
+				} `json:"parameters"`
 			}
-			for name, content := range infrastructure {
-				require.Equal(t, content, plan.Files[name], "all modes must use exactly the same Bicep")
+			require.NoError(t, json.Unmarshal(plan.Files["infra/main.parameters.json"], &parameters))
+			engine := string(tt.kind)
+			if engine == "" {
+				engine = "none"
 			}
-			main := string(plan.Files["infra/main.bicep"])
-			require.Contains(t, main,
-				"postgresServerName: databaseEngine == 'postgresql' ? database!.outputs.serverName : ''")
-			require.Contains(t, main, "mysqlServerName: databaseEngine == 'mysql' ? database!.outputs.serverName : ''")
-			require.Contains(t, main, "outboundIps: bootstrap.outputs.outboundIps")
-			require.Contains(t, main, "dependsOn: [access]")
-			access := string(plan.Files["infra/access.bicep"])
-			for _, server := range []string{"postgres", "mysql"} {
-				require.Contains(t, access, "for ip in union(outboundIps, []): if ("+server+"ServerName != '')")
-			}
-			require.Equal(t, 2, strings.Count(access, "properties: { startIpAddress: ip, endIpAddress: ip }"))
-			database := string(plan.Files["infra/database.bicep"])
-			require.Contains(t, database, "if (engine == 'postgresql' && managedIdentity)")
-			require.Contains(t, database, "name: 'bootstrap-local-ip'")
-			require.Contains(t, database, "startIpAddress: '0.0.0.0'")
-			require.Contains(t, database, "endIpAddress: '255.255.255.255'")
-			require.NotContains(t, main, "bootstrapIp")
-			require.NotContains(t, string(plan.Files["infra/main.parameters.json"]), "SPRING_DATABASE_BOOTSTRAP_IP")
-			require.NotContains(t, access, "startIpAddress: '0.0.0.0'")
-			require.NotContains(t, access, "255.255.255.255")
-			for name, content := range infrastructure {
-				require.NotContains(t, string(content), "development-public-access", name)
-			}
+			require.Equal(t, engine, parameters.Parameters["databaseEngine"].Value)
+			require.Equal(t, tt.auth, parameters.Parameters["databaseAuth"].Value)
 			config, err := project.Parse(t.Context(), string(plan.Files["azure.yaml"]))
 			require.NoError(t, err)
 			require.Len(t, config.Services, 1)

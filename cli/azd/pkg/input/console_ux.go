@@ -134,6 +134,7 @@ func newConfirmOptions(writer io.Writer, options ConsoleOptions) *uxlib.ConfirmO
 	return &uxlib.ConfirmOptions{
 		Writer:       writer,
 		Message:      options.Message,
+		IsWarning:    options.IsWarning,
 		HelpMessage:  options.Help,
 		DefaultValue: new(defaultValue),
 	}

@@ -27,17 +27,15 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Values referenced by `${NAME}` in `azure.yaml` | `azd env set NAME value` before running init, or existing azd environment values | Leaves unresolved optional references for explicit configuration and reports required missing values. |
 | `ai agent add` | Current project, Agent service key, and definition | Positional `<name>` and required `--file`; optional `--project` and `--source` | Accepts YAML or JSON definitions and writes a service-level root `$ref` to `--file`, relative to the directory containing `azure.yaml`. Runs without prompts or Azure authentication and rejects missing or multiple `azure.ai.project` services before writing. |
 | `ai agent deploy` | Build from the Dockerfile or use the configured pre-built image | `azd ai agent init --image <registry/image[:tag]>` persists the image choice; for an existing service with an image, run `azd env set AZD_AGENT_SKIP_ACR true` | Builds a new image from the Dockerfile. |
-| `ai agent eval generate` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Outside an azd project, required unresolved context fails without prompting. |
-| `ai agent eval generate` | Suite name, instruction, dataset, evaluators, model, sample count, and output | `--name`, `--gen-instruction`, `--gen-instruction-file`, `--dataset`, repeatable `--evaluator`, `--eval-model`, `--max-samples`, and `--out-file` | Uses documented defaults; required unresolved generation inputs fail with guidance. |
-| `ai agent eval generate` | Replace an existing config | `--reset-defaults` | Keeps the existing config unless reset was explicitly requested. |
-| `ai agent eval run` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Uses `eval.yaml` and azd environment state; outside a project the endpoint must be explicit. |
-| `ai agent eval run` | Run name and reuse of an existing eval | `--name`; existing eval state | Uses the config name and reuses the existing eval. |
-| `ai agent eval list`, `show` | Foundry project | `--project-endpoint` | Resolves the project endpoint from explicit or environment state and never prompts for an agent. |
-| `ai agent eval update` | Agent service and Foundry project | `--agent` and `--project-endpoint` | Resolves only from explicit/project/environment state and never prompts. |
-| `ai agent eval update` | Dataset and evaluator updates | `--dataset-only` or `--evaluator-only` | Updates every locally changed asset type when neither limiting flag is supplied. |
-| `ai agent optimize` | Agent, endpoint, models, dataset, evaluators, and candidate count | Positional agent or `--agent`; `--project-endpoint`; `--config`; `--dataset`; `--eval-model`; `--optimize-model`; repeatable `--evaluator`; `--max-candidates` | Uses config and detected project state; required unresolved values fail with guidance. |
-| `ai agent optimize` | Instruction and skills directory | Instruction/skill paths in the optimize config or detected agent metadata/project directories | Requires an instruction and auto-uses a detected skills directory, or no skills when none is found. |
+| `ai agent optimize` | Agent, endpoint, models, dataset, evaluators, and candidate count | Positional agent or `--agent`; `--project-endpoint`; GA v1 `--config`; `--eval-config`; `--eval`; `--dataset` as a local file or `name:version`; `--eval-model`; `--optimize-model`; repeatable `--evaluator`; `--max-candidates` | Uses config and detected project state; required unresolved values and ambiguous evaluation selections fail with guidance. |
+| `ai agent optimize` | Instruction and skills directory | GA baseline and optimization-space fields, or detected agent metadata/project directories | Preserves explicit GA request inputs; required unresolved baseline inputs fail with guidance. |
 | `ai agent delete` | Destructive confirmation | `--force` | Refuses deletion unless `--force` is present. |
+
+The deprecated `ai agent eval` command group contains migration-only stubs.
+Invocations exit non-zero with installation and replacement-command guidance,
+without prompts, authentication, service requests, or file changes. Old arguments
+are not forwarded; `--help` remains available. Use the standalone
+[`azure.ai.evaluations` extension](./azure.ai.evaluations/README.md) for evaluations.
 
 ## `azure.ai.projects`
 
@@ -45,4 +43,5 @@ no non-interactive equivalent is a bug.
 | --- | --- | --- | --- |
 | `microsoft.foundry` provisioning | Azure subscription | `AZURE_SUBSCRIPTION_ID` in the active azd environment | Returns actionable missing-subscription guidance. |
 | `microsoft.foundry` provisioning | Azure location | `AZURE_LOCATION` in the active azd environment | Returns actionable missing-location guidance. |
+| Projects provisioning and legacy agents provisioning | Model deployments for the current subscription/location | `AI_PROJECT_DEPLOYMENTS` JSON array in the active azd environment (`[]` means no deployments) | With `--no-prompt` / `AZD_NO_PROMPT=true`, saves YAML deployments unchanged when unset or blank. Existing environment overrides are preserved; embedded infrastructure uses them instead of YAML defaults. Ejected user parameters retain precedence. |
 | `azd down` with `microsoft.foundry` | Delete the Foundry resource group | `azd down --force` | Refuses deletion and instructs the caller to pass `--force`. |

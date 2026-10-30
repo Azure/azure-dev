@@ -4,7 +4,9 @@
 package exec
 
 import (
+	"errors"
 	osexec "os/exec"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -223,4 +225,46 @@ func TestExitError_SatisfiesErrorInterface(t *testing.T) {
 
 	// The error string is non-empty even without output.
 	require.NotEmpty(t, typedErr.Error())
+}
+
+func TestExitError_Interrupted(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, (&ExitError{ExitCode: 130}).Interrupted())
+	require.False(t, (&ExitError{ExitCode: 1}).Interrupted())
+	require.False(t, (*ExitError)(nil).Interrupted())
+}
+
+func TestExitError_InterruptedFromProcess(t *testing.T) {
+	t.Parallel()
+
+	var cmd *osexec.Cmd
+	var cmdName string
+	if runtime.GOOS == "windows" {
+		cmdName = "cmd"
+		cmd = osexec.CommandContext( //nolint:gosec // hardcoded test command
+			t.Context(),
+			cmdName,
+			"/c",
+			"exit",
+			"-1073741510",
+		)
+	} else {
+		cmdName = "sh"
+		cmd = osexec.CommandContext( //nolint:gosec // hardcoded test command
+			t.Context(),
+			cmdName,
+			"-c",
+			"kill -INT $$",
+		)
+	}
+
+	err := cmd.Run()
+	exitErr, ok := errors.AsType[*osexec.ExitError](err)
+	require.True(t, ok)
+
+	wrappedErr := NewExitError(*exitErr, cmdName, "", "", false)
+	typedErr, ok := errors.AsType[*ExitError](wrappedErr)
+	require.True(t, ok)
+	require.True(t, typedErr.Interrupted())
 }

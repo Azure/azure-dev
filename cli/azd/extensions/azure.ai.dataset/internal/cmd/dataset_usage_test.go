@@ -64,6 +64,7 @@ func serveStandInAzd(t *testing.T) *usageRecorder {
 
 	recorder := &usageRecorder{}
 	server := grpc.NewServer()
+	require.Equal(t, "azd.extensions.v1.TelemetryService", azdext.TelemetryService_ServiceDesc.ServiceName)
 	azdext.RegisterTelemetryServiceServer(server, recorder)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

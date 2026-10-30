@@ -1,7 +1,11 @@
 Evaluate and optimize AI agents — baseline scoring and iterative improvement.
 
 When run without a subcommand, submits an optimization job.
-Use --config for a custom YAML spec, or just provide the agent name to use sensible defaults.
+Use --eval to reuse an agent-targeted evaluation from an azure.ai.eval service,
+or --eval-config to select an evaluation configuration file.
+Use --config for an optimization request file (YAML or JSON).
+Omitted optional optimization settings use service defaults.
+Legacy agent eval.yaml files are not supported.
 
 Usage
   azd ai agent optimize [agent-name] [flags]
@@ -16,12 +20,14 @@ Available Commands
 
 Flags
   -a, --agent string            : Agent service name from azure.yaml, or Foundry agent name outside a project
-  -c, --config string           : Path to YAML config file (optional — values are prompted interactively if omitted)
-  -d, --dataset string          : Existing local file or registered dataset name
+  -c, --config string           : Optimization request file (YAML or JSON)
+  -d, --dataset string          : Local JSONL file or registered dataset as name:version
       --endpoint string         : Optimization service endpoint (for local dev)
+      --eval string             : Evaluation name to reuse from the selected evaluation configuration
+      --eval-config string      : Evaluation configuration from 'azd ai eval init'
   -m, --eval-model string       : Model for evaluation (required)
       --evaluator stringArray   : Built-in or custom evaluator name (repeatable; required when not set in config)
-      --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; default: 5)
+      --max-candidates int      : Maximum number of optimization candidates to generate (must be >= 1; service default when omitted)
       --no-wait                 : Submit job and return immediately without waiting for completion
       --optimize-model string   : Model for optimization reasoning (gpt-5 family recommended; required)
       --poll-interval int       : Polling interval in seconds (default 10)
@@ -33,7 +39,7 @@ Global Flags
   -e, --environment string : The name of the environment to use
   -h, --help               : help for optimize
       --no-prompt          : Runs without prompts. Uses existing values; fails if any required value or decision cannot be resolved automatically.
-  -o, --output string      : The output format (default "default")
+  -o, --output string      : The output format (supported: json, table) (default "table")
 
 Examples
   Optimize (auto-detect agent from azd project)
@@ -44,6 +50,9 @@ Examples
 
   Full control via config file
     azd ai agent optimize --config spec.yaml
+
+  Reuse an evaluation from the new evaluation workflow
+    azd ai agent optimize --eval quality --optimize-model optimizer-deployment
 
   Subcommands
     azd ai agent optimize status <id> --watch

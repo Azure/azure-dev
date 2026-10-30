@@ -1227,7 +1227,6 @@ func writeExistingProjectBicepTemplates(
 			bytes:   registry.Len(),
 		})
 		if acrMode == infraEjectAcrReuseConnect {
-			// The reuse-connect registry module grants pull access through this nested module.
 			files = append(files, struct {
 				source string
 				target string

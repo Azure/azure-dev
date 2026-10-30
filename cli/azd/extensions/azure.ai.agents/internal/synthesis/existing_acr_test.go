@@ -181,8 +181,9 @@ func TestGreenfieldACRMode(t *testing.T) {
 			endpoint: "registry.azurecr.io", want: "reuse-connect"},
 		{name: "mismatched registry output", id: id, group: "foundry",
 			project: projectID, endpoint: "other.azurecr.io", want: "reuse-connect"},
-		{name: "binding without legacy output variables", id: id, group: "foundry",
-			binding: &ACRBinding{Mode: "create", RegistryResourceID: id}, want: "create"},
+		{name: "binding without legacy output variables", group: "foundry",
+			binding: &ACRBinding{Version: 1, Mode: "create", RegistryResourceID: id,
+				ProjectResourceID: projectID, PrincipalID: "principal"}, want: "create"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			mode, err := GreenfieldACRMode(Input{
@@ -198,6 +199,62 @@ func TestGreenfieldACRMode(t *testing.T) {
 			})
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, mode)
+		})
+	}
+}
+
+func TestGreenfieldACRModeLegacyLoginHost(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/foundry/providers/Microsoft.ContainerRegistry/registries/registry"
+	const projectID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.CognitiveServices/accounts/account/projects/project"
+	for _, tt := range []struct {
+		name, endpoint string
+		legacy         bool
+	}{
+		{name: "public", endpoint: "registry.azurecr.io", legacy: true},
+		{name: "government", endpoint: "registry.azurecr.us", legacy: true},
+		{name: "china", endpoint: "registry.azurecr.cn", legacy: true},
+		{name: "case and whitespace", endpoint: " REGISTRY.AzureCR.IO ", legacy: true},
+		{name: "https", endpoint: "https://registry.azurecr.io/", legacy: true},
+		{name: "http", endpoint: "http://registry.azurecr.io/", legacy: true},
+		{name: "scheme case", endpoint: "HTTPS://REGISTRY.AZURECR.IO/", legacy: true},
+		{name: "absolute DNS", endpoint: "registry.azurecr.io.", legacy: true},
+		{name: "foreign domain", endpoint: "registry.example.com"},
+		{name: "appended suffix", endpoint: "registry.azurecr.io.example.com"},
+		{name: "extra label", endpoint: "registry.extra.azurecr.io"},
+		{name: "private link", endpoint: "registry.privatelink.azurecr.io"},
+		{name: "different registry", endpoint: "other.azurecr.io"},
+		{name: "name prefix", endpoint: "registry1.azurecr.io"},
+		{name: "unqualified", endpoint: "registry"},
+		//nolint:gosec // G101: synthetic rejection fixture
+		{name: "credentials", endpoint: "https://acr-user:acr-password@registry.azurecr.io"},
+		{name: "userinfo spoof", endpoint: "https://registry.azurecr.io@untrusted.example"},
+		{name: "query", endpoint: "registry.azurecr.io?sig=acr-secret"},
+		{name: "fragment", endpoint: "registry.azurecr.io#acr-secret"},
+		{name: "port", endpoint: "registry.azurecr.io:443"},
+		{name: "path", endpoint: "https://registry.azurecr.io/repository"},
+		{name: "double slash", endpoint: "https://registry.azurecr.io//"},
+		{name: "encoded host", endpoint: "registry.azurecr.%69%6f"},
+		{name: "unsupported scheme", endpoint: "ftp://registry.azurecr.io"},
+		{name: "double scheme", endpoint: "https://http://registry.azurecr.io"},
+		{name: "backslash", endpoint: `registry.azurecr.io\`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mode, err := GreenfieldACRMode(Input{
+				ResourceGroupName: "foundry",
+				Env: map[string]string{
+					"AZURE_SUBSCRIPTION_ID":                "sub",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+					"AZURE_AI_PROJECT_ID":                  projectID,
+					"AZURE_CONTAINER_REGISTRY_ENDPOINT":    tt.endpoint,
+				},
+			})
+			require.NoError(t, err)
+			want := "reuse-connect"
+			if tt.legacy {
+				want = "create"
+			}
+			assert.Equal(t, want, mode)
 		})
 	}
 }

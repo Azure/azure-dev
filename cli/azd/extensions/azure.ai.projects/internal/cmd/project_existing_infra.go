@@ -945,7 +945,6 @@ func writeExistingProjectBicep(
 				err)
 		}
 		if mode == projectEjectAcrReuseConnect {
-			// The reuse-connect registry module grants pull access through this nested module.
 			accessModule, err := fs.ReadFile(
 				synthesis.TemplatesFS(),
 				"templates/modules/acr-pull-role-assignment.bicep",

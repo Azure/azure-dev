@@ -1048,13 +1048,14 @@ services:
 		wantMain       string
 		wantRegistry   string
 		expectRegistry bool
+		wantAccess     bool
 	}{
 		{name: "create", env: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}, wantMode: "create", wantMain: "resource adjunctResourceGroup", wantRegistry: "resource registry ", expectRegistry: true},
 		{name: "reuse connect", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
-		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true},
+		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true, wantAccess: true},
 		{name: "reuse connect with AcrPull", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
@@ -1092,6 +1093,12 @@ services:
 				assert.Contains(t, string(registry), tt.wantRegistry)
 			} else {
 				assert.NoFileExists(t, registryPath)
+			}
+			accessPath := filepath.Join(dir, "infra", "modules", "acr-pull-role-assignment.bicep")
+			if tt.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
 			}
 
 			params, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec

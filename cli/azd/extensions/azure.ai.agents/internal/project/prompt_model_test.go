@@ -227,6 +227,9 @@ func TestResolvePromptAgentModelExpandsReferencedDeclarations(t *testing.T) {
 }
 
 func TestResolvePromptAgentModelWithOnDiskInfrastructure(t *testing.T) {
+	const foundryLayer = "    - name: foundry\n      provider: microsoft.foundry\n      path: infra/foundry\n"
+	const bicepLayer = "    - name: app\n      provider: bicep\n      path: infra/app\n"
+	const terraformLayer = "    - name: other\n      provider: terraform\n      path: infra/other\n"
 	for _, test := range []struct {
 		name   string
 		config string
@@ -277,6 +280,49 @@ func TestResolvePromptAgentModelWithOnDiskInfrastructure(t *testing.T) {
 			}, onDisk: true,
 		},
 		{
+			name: "multilayer match first", path: "infra/foundry",
+			config: "infra:\n  layers:\n" + foundryLayer + bicepLayer,
+			files:  map[string]string{"main.bicep": ""}, onDisk: true,
+		},
+		{
+			name: "multilayer match last", path: "infra/foundry",
+			config: "infra:\n  layers:\n" + bicepLayer + foundryLayer,
+			files:  map[string]string{"main.bicep": ""}, onDisk: true,
+		},
+		{
+			name: "multilayer match middle", path: "infra/foundry",
+			config: "infra:\n  layers:\n" + bicepLayer + foundryLayer + terraformLayer,
+			files:  map[string]string{"main.bicep": ""}, onDisk: true,
+		},
+		{
+			name: "multiple matching layers", path: "infra/foundry",
+			config: "infra:\n  layers:\n" + foundryLayer +
+				"    - name: models\n      provider: microsoft.foundry\n" +
+				"      path: infra/foundry\n      module: models.bicep\n",
+			files: map[string]string{"main.bicep": "", "models.bicepparam": ""}, onDisk: true,
+		},
+		{
+			name: "multilayer inherited provider", path: "infra/foundry",
+			config: "infra:\n  provider: microsoft.foundry\n  layers:\n" + bicepLayer +
+				"    - name: foundry\n      path: infra/foundry\n      module: models\n",
+			files: map[string]string{"models.bicepparam": ""}, onDisk: true,
+		},
+		{
+			name: "multilayer no matches", path: "infra/app",
+			config: "infra:\n  layers:\n" + bicepLayer + terraformLayer,
+			files:  map[string]string{"main.bicep": ""},
+		},
+		{
+			name: "unrecognized Terraform marker", path: "infra/foundry",
+			config: "infra:\n  layers:\n    - name: foundry\n      provider: terraform\n" +
+				"      path: infra/foundry\n",
+			files: map[string]string{
+				".azd-foundry": "other\n",
+				"main.tf": "resource \"azapi_resource\" \"foundry_account\" {}\n" +
+					"resource \"azapi_resource\" \"project\" {}\n",
+			},
+		},
+		{
 			name: "unrelated Bicep layer", path: "infra/app",
 			config: "infra:\n  layers:\n    - name: app\n      provider: bicep\n      path: infra/app\n",
 			files:  map[string]string{"main.bicep": ""},
@@ -315,6 +361,10 @@ func TestResolvePromptAgentModelWithOnDiskInfrastructure(t *testing.T) {
 					)
 					require.NoError(t, err)
 					require.Equal(t, "unrelated-default", got)
+					env["AI_PROJECT_DEPLOYMENT_BINDINGS"] = `{"chat":"selected-chat"}`
+					got, err = ResolvePromptAgentModel("${CHAT}", agent, services, root, env)
+					require.NoError(t, err)
+					require.Equal(t, "selected-chat", got)
 				} else if len(declarations) == 1 {
 					require.NoError(t, err)
 					require.Equal(t, "unrelated-default", got)
@@ -424,20 +474,49 @@ func TestResolvePromptAgentModelConflictingBindingCase(t *testing.T) {
 	}
 }
 
-func TestResolvePromptAgentModelExplicitBindingsUnsafeInfrastructure(t *testing.T) {
-	root := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
-		"infra:\n  path: ../outside\n",
-	), 0600))
-	agent, services := promptModelServices(t, "chat")
-	for _, replacement := range []string{"selected-chat", ""} {
-		t.Run("replacement="+replacement, func(t *testing.T) {
-			got, err := ResolvePromptAgentModel("chat", agent, services, root, map[string]string{
-				"AI_PROJECT_DEPLOYMENT_BINDINGS": `{"chat":"` + replacement + `"}`,
-			})
-			require.ErrorContains(t, err, "resolve azure.yaml infra.path")
-			require.ErrorContains(t, err, "must not contain '..'")
-			require.Empty(t, got)
+func TestResolvePromptAgentModelUnsafeInfrastructure(t *testing.T) {
+	const foundryLayer = "  layers:\n    - provider: microsoft.foundry\n      path: foundry\n"
+	for _, test := range []struct {
+		name  string
+		infra string
+		field string
+	}{
+		{name: "root path", infra: "  path: ../outside\n", field: "infra.path"},
+		{
+			name:  "unrelated second layer path",
+			infra: foundryLayer + "    - provider: bicep\n      path: ../outside\n",
+			field: "infra.layers[1].path",
+		},
+		{
+			name: "unrelated third layer module",
+			infra: foundryLayer + "    - provider: bicep\n      path: infra\n" +
+				"    - provider: bicep\n      module: ../outside/main\n",
+			field: "infra.layers[2].module",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte("infra:\n"+test.infra), 0600))
+			require.NoError(t, os.Mkdir(filepath.Join(root, "foundry"), 0700))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "foundry", "main.bicep"), nil, 0600))
+			agent, services := promptModelServices(t, "chat")
+			for _, binding := range []struct{ name, value string }{
+				{name: "unbound"},
+				{name: "bound", value: `{"chat":"selected-chat"}`},
+				{name: "skipped", value: `{"chat":""}`},
+			} {
+				t.Run(binding.name, func(t *testing.T) {
+					got, err := ResolvePromptAgentModel("chat", agent, services, root, map[string]string{
+						"AI_PROJECT_DEPLOYMENT_BINDINGS": binding.value,
+						"AI_PROJECT_DEPLOYMENTS":         "[]",
+						"AZURE_AI_MODEL_DEPLOYMENT_NAME": "unrelated-default",
+					})
+					require.ErrorContains(t, err, "resolve azure.yaml "+test.field)
+					require.ErrorContains(t, err, "must not contain '..'")
+					require.NotNil(t, errors.Unwrap(err))
+					require.Empty(t, got)
+				})
+			}
 		})
 	}
 }

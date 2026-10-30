@@ -347,11 +347,19 @@ in any order, any time.
 | `tier0/0.30-agent-add-wrong-host-collision.yaml` | `agent add` rejects a target service key owned by a non-Agent host without mutating `azure.yaml` |
 | `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
+| `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
 lifecycle behavior is covered by the extension's Go tests with scripted local servers; no successful
 cloud create/follow/cancel flow is claimed by these scenarios.
+
+The Tier 0 A2A version scenario checks offline validation and help explanations
+of A2A implementation-version inference versus public endpoint enablement,
+the translation convenience rationale, explicit file versions, and service-controlled
+affinity caveats. It does not exercise translation or A2A hosted agent execution,
+verify file bytes on the wire, or establish session/task lifecycle support. The
+shared Tier 2 agent is Responses-only and cannot validate A2A translation behavior.
 
 The Tier 0 State Store scenario is limited to offline help and invalid-input checks. It does not
 read or mutate stores, exercise a live store picker, or provision a hosted agent. A separate opt-in
@@ -382,6 +390,16 @@ and verifies the generated files, then stops before `azd provision`.
 | `tier1/1.10-init-harness-region-restrictions.yaml` | Microsoft Copilot harness region filtering, explicit-project validation, model-recovery guard, and plain prompt non-regression (opt-in `manual-seed`) |
 | `tier1/1.11-init-adopt-existing-model.yaml` | Adopt a template using a differently named live deployment; verify the empty managed list and explicit binding (opt-in `manual-seed`) |
 | `tier1/1.12-init-adopt-catalog-model.yaml` | Adopt a template with a catalog replacement; verify the selected tuple and retained template name (opt-in `manual-seed`) |
+| `tier1/1.11-init-native-a2a.yaml` | Existing-code init: A2A hosted agent (1.0) picker label, A2A-only configuration, and required application-route guidance; no server generation or cloud execution |
+
+The A2A hosted agent init scenario is a configuration-only specification. It is not
+an A2A server sample, deployment verifier, or execution test. Service onboarding
+and region support are required. The init picker has Go unit/mock coverage;
+this interactive scenario has **not** been executed. Do not run it without separate approval.
+Even after approval, stop after local init; do not provision, deploy, invoke, or delete
+retained resources. Init does not enable a subscription-level A2A service feature.
+Application `protocols` declare implementation capabilities; public
+`agentEndpoint.protocols` enablement alone does not establish an A2A implementation.
 
 `1.10` requires externally prepared, readable Foundry projects in both supported and
 unsupported harness regions, with a usable model deployment in the unsupported project.
@@ -482,9 +500,28 @@ checks the original shared files' checksums; it never deploys the fixture.
 | `tier2/2.16-endpoint-show.yaml` | `endpoint show` (agent endpoint details) |
 | `tier2/2.17-code-download.yaml` | `code download` (positive-path: downloads agent source code) |
 | `tier2/2.17a-deploy-preview.yaml` | `azd deploy --preview` (isolated authored diffs, readable/JSON values and credential protection; no deployment writes) |
+| `tier2/2.17b-deploy-rbac-warnings.yaml` | Opt-in: final readable/JSON RBAC warning retention with a restricted identity and a declared deployment outcome |
 | `tier2/2.18-delete.yaml` | `delete` (destroys the shared agent — run before teardown) |
 | `tier2/2.19-invoke-session-bound-metadata.yaml` | Opt-in: successful Invocations calls and 404 metadata routing in a separate externally seeded project |
 | `tier2/2.99-teardown-down.yaml` | `azd down --force --purge` (TEARDOWN) |
+
+**Opt-in RBAC prerequisite:** After `2.00` deploys the shared agent, an operator
+must prepare a restricted azd test identity and write `rbac-warning-seed.json`
+in that shared project. Include `runId`, `agentName`, `service`, `principalId`,
+project/registry identities, current-run ownership and read-only role evidence,
+`expectedMessage`, `expectedSuggestion`, and `expectedExitCode`; for a later
+failure also include `expectedDeploymentError`. The identity must reliably
+produce that warning without successfully auto-assigning itself a role.
+Do not remove roles or modify cloud permissions to manufacture a warning.
+Missing prerequisites are blocked coverage, not a passing skip.
+
+Scenario `2.17b` is `manual-seed` and excluded from ordinary sweeps. When opted in,
+it runs in the shared-agent serial lane before `2.18` deletes the shared agent.
+It reuses `2.00` / `2.99` resource ownership and
+cleanup, rather than creating another infrastructure lifecycle. Arrange
+authorized teardown with the original setup identity even if restricted deploy
+fails. Each seed declares one exact success or later-failure outcome. Coverage
+of both outcomes needs separate prepared runs and explicit Azure cost consent.
 
 The shared Tier 2 agent supports the Responses protocol only. Scenario `2.19` tests successful
 Invocations and metadata-session routing against a separate externally prepared agent, not that

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
@@ -84,6 +85,51 @@ func TestReconcileProjectEnvironmentRollbackRestoresValues(t *testing.T) {
 	assert.Equal(t, "true", envServer.values["USE_EXISTING_AI_PROJECT"])
 	assert.Equal(t, "", envServer.values["AZURE_AI_DEPLOYMENTS_LOCATION"])
 	assert.Equal(t, 5, envServer.calls)
+}
+
+func TestReconcileProjectEnvironmentRollbackRestoresReplacedDeployments(t *testing.T) {
+	const (
+		oldDeployments = `[{"name":"old-model"}]`
+		oldBindings    = `{"template-model":"old-model"}`
+		oldProjectID   = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
+			"Microsoft.CognitiveServices/accounts/old-account/projects/old-project"
+	)
+	envServer := &transactionEnvironmentServer{
+		values: map[string]string{
+			"AZURE_AI_PROJECT_NAME":          "old-project",
+			"FOUNDRY_PROJECT_ENDPOINT":       "https://old.services.ai.azure.com/api/projects/old-project",
+			"AZURE_AI_ACCOUNT_NAME":          "old-account",
+			"AZURE_AI_PROJECT_ID":            oldProjectID,
+			projectDeploymentsEnvKey:         oldDeployments,
+			"AI_PROJECT_DEPLOYMENT_BINDINGS": oldBindings,
+		},
+		failKey: "AZURE_AI_ACCOUNT_NAME",
+	}
+	client := newProjectEnvironmentClient(t, envServer)
+
+	_, _, err := reconcileProjectEnvironmentWithRollback(
+		t.Context(),
+		client,
+		"test",
+		projectModeExistingEndpoint,
+		&resolvedProject{
+			ProjectName: "new-project",
+			Endpoint:    "https://new.services.ai.azure.com/api/projects/new-project",
+		},
+		true,
+	)
+
+	require.ErrorContains(t, err, "clear project environment value AZURE_AI_ACCOUNT_NAME")
+	failureIndex := slices.Index(envServer.setLog, "AZURE_AI_ACCOUNT_NAME=")
+	require.NotEqual(t, -1, failureIndex)
+	beforeFailure := envServer.setLog[:failureIndex]
+	afterFailure := envServer.setLog[failureIndex+1:]
+	assert.Contains(t, beforeFailure, projectDeploymentsEnvKey+"=")
+	assert.Contains(t, beforeFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS=")
+	assert.Contains(t, afterFailure, projectDeploymentsEnvKey+"="+oldDeployments)
+	assert.Contains(t, afterFailure, "AI_PROJECT_DEPLOYMENT_BINDINGS="+oldBindings)
+	assert.Equal(t, oldDeployments, envServer.values[projectDeploymentsEnvKey])
+	assert.Equal(t, oldBindings, envServer.values["AI_PROJECT_DEPLOYMENT_BINDINGS"])
 }
 
 func TestReconcileProjectServiceRollbackRestoresSection(t *testing.T) {
@@ -956,9 +1002,11 @@ const provisioningFoundryProvider = "microsoft.foundry"
 
 type transactionEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	values map[string]string
-	failAt int
-	calls  int
+	values  map[string]string
+	failAt  int
+	failKey string
+	calls   int
+	setLog  []string
 }
 
 func (s *transactionEnvironmentServer) Select(
@@ -986,6 +1034,11 @@ func (s *transactionEnvironmentServer) SetValue(
 	request *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
 	s.calls++
+	s.setLog = append(s.setLog, request.GetKey()+"="+request.GetValue())
+	if s.failKey != "" && s.failKey == request.GetKey() {
+		s.failKey = ""
+		return nil, errors.New("environment write failed")
+	}
 	if s.failAt == s.calls {
 		return nil, errors.New("environment write failed")
 	}

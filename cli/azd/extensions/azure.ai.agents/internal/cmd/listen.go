@@ -59,7 +59,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+		WithBetaServiceEventHandler("predeploy", func(
+			ctx context.Context, args *azdext.ServiceEventArgs,
+		) (*azdext.BetaServiceEventResponse, error) {
 			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
 			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
 			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
@@ -341,15 +343,17 @@ func updateLegacyProjectDeployments(
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+func predeployHandler(
+	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
+) (*azdext.BetaServiceEventResponse, error) {
 	svc := args.Service
 
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
@@ -365,7 +369,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project.Services,
 		args.Project.Path,
 	); err != nil {
-		return err
+		return nil, err
 	}
 	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
@@ -373,7 +377,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// azd does not host.
 	if !project.ServiceIsPromptAgent(svc) {
 		if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			return nil, fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 		}
 	}
 	if err := envUpdate(
@@ -382,7 +386,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project,
 		svc,
 	); err != nil {
-		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+		return nil, fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
 	// Capture the current session so it can be resumed on the newly deployed
@@ -393,11 +397,8 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
-		return err
-	}
-
-	return nil
+	messages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
+	return &azdext.BetaServiceEventResponse{Messages: messages}, err
 }
 
 // isHostedAgentService checks if a service is a hosted (container) agent by

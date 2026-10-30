@@ -115,12 +115,18 @@ func previewHelp(cmd *cobra.Command, feature featureflags.Feature, long []string
 	}
 }
 
-// previewHelpText replaces existing Short/Long text while off.
+// previewHelpText replaces existing Short/Long/Example text while off.
 func previewHelpText(cmd *cobra.Command, feature featureflags.Feature, onText, offText string) {
-	if !strings.Contains(cmd.Short, onText) && !strings.Contains(cmd.Long, onText) {
+	if !strings.Contains(cmd.Short, onText) && !strings.Contains(cmd.Long, onText) &&
+		!strings.Contains(cmd.Example, onText) {
 		panic(fmt.Sprintf("help text for %q is not in %q", feature.ID, cmd.Name()))
 	}
-	setAnnotation(cmd, helpTextPrefix+feature.ID, onText+helpBlockSep+offText)
+	key := helpTextPrefix + feature.ID
+	replacements := onText + helpBlockSep + offText
+	if existing := cmd.Annotations[key]; existing != "" {
+		replacements = existing + helpBlockSep + replacements
+	}
+	setAnnotation(cmd, key, replacements)
 }
 
 func setAnnotation(cmd *cobra.Command, key, value string) {
@@ -269,12 +275,16 @@ func applyPreviewVisibility(root *cobra.Command, states map[string]bool) {
 		for key, value := range cmd.Annotations {
 			switch {
 			case strings.HasPrefix(key, helpTextPrefix) && off(strings.TrimPrefix(key, helpTextPrefix)):
-				onText, offText, ok := strings.Cut(value, helpBlockSep)
-				if !ok {
+				replacements := strings.Split(value, helpBlockSep)
+				if len(replacements)%2 != 0 {
 					panic(fmt.Sprintf("invalid preview help replacement on %q", cmd.Name()))
 				}
-				cmd.Short = strings.ReplaceAll(cmd.Short, onText, offText)
-				cmd.Long = strings.ReplaceAll(cmd.Long, onText, offText)
+				for i := 0; i < len(replacements); i += 2 {
+					onText, offText := replacements[i], replacements[i+1]
+					cmd.Short = strings.ReplaceAll(cmd.Short, onText, offText)
+					cmd.Long = strings.ReplaceAll(cmd.Long, onText, offText)
+					cmd.Example = strings.ReplaceAll(cmd.Example, onText, offText)
+				}
 			case strings.HasPrefix(key, helpLongPrefix) && off(strings.TrimPrefix(key, helpLongPrefix)):
 				cmd.Long = removeHelpBlocks(cmd.Long, value)
 			case strings.HasPrefix(key, helpExamplePrefix) && off(strings.TrimPrefix(key, helpExamplePrefix)):
@@ -284,6 +294,13 @@ func applyPreviewVisibility(root *cobra.Command, states map[string]bool) {
 		cmd.LocalFlags().VisitAll(func(flag *pflag.Flag) {
 			if usage := flag.Annotations[featureUsageAnnotation]; len(usage) == 2 && off(usage[0]) {
 				flag.Usage = usage[1]
+			}
+			// Init's protocol list depends on two independent previews. Keep its
+			// Voice annotations and full static metadata; render the combined list here.
+			if cmd.Name() == "init" && flag.Name == "protocol" {
+				flag.Usage = "Protocols supported by the agent (" +
+					strings.Join(protocolNames(states[featureflags.Voice.ID], states[featureflags.A2A.ID]), ", ") +
+					"). Can be specified multiple times."
 			}
 			ids := flag.Annotations[featureAnnotation]
 			if len(ids) == 0 || !off(ids[0]) {

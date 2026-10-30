@@ -703,7 +703,7 @@ Compatibility:
 --manifest / -m is deprecated and retained for compatibility. Use
 --template / -t instead.
 
-` + initVoiceHelp + `Agent Names:
+` + initA2AHelp + initVoiceHelp + `Agent Names:
 The agent name written to azure.yaml is the Foundry agent identity. Foundry
 agents are unique by name within a project, so deploying with an existing name
 creates a new version of that existing agent instead of a separate agent.
@@ -825,6 +825,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				}
 			}
 
+			if len(flags.protocols) > 0 {
+				if _, err := selectExplicitHostedProtocols(flags.protocols); err != nil {
+					return err
+				}
+			}
+
 			azdClient, err := azdext.NewAzdClient()
 			if err != nil {
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
@@ -859,6 +865,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				} else {
+					endLoading := inittelemetry.Start(ctx, inittelemetry.TemplateLoading)
+					defer endLoading()
+
 					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
@@ -883,6 +892,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 						return err
 					}
+					endLoading()
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -1348,13 +1358,12 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
-	_ = cmd.Flags().MarkHidden("harness")
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
 	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
 	previewFlag(cmd, "protocol", featureflags.Voice, "invocations_ws")
 	previewFlagUsage(cmd, "protocol", featureflags.Voice,
-		"Protocols supported by the agent ("+strings.Join(protocolNames(false), ", ")+"). Can be specified multiple times.")
+		"Protocols supported by the agent ("+strings.Join(protocolNames(false, true), ", ")+"). Can be specified multiple times.")
 	previewFlagUsage(cmd, "kind", featureflags.Voice,
 		"Agent runtime to initialize: 'hosted' (bring your own code/container) or 'prompt' "+
 			"(model + instructions; Foundry runs the agent). When omitted, the hosted runtime is used. "+
@@ -1366,6 +1375,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		"System instructions for a prompt agent. Written to azure.yaml; not supported for hosted agents.")
 	previewHelpText(cmd, featureflags.Voice, "a new prompt, hosted, or voice agent", "a new agent")
 	previewHelp(cmd, featureflags.Voice, []string{initVoiceHelp}, []string{initVoiceExamples})
+	previewHelp(cmd, featureflags.A2A, []string{initA2AHelp}, nil)
 	cmd.Flags().StringVar(&flags.infra, "infra", "",
 		"Eject infrastructure-as-code from azure.yaml. Existing infrastructure is preserved and "+
 			"Foundry files are generated as a separate infra/foundry layer. "+
@@ -2890,6 +2900,13 @@ func formatCreatedFolderMessage(originalCwd, createdFolder, createdFromTitle str
 	return msg
 }
 
+// initA2AHelp is removed from help while the A2A preview is off.
+const initA2AHelp = `Hosted protocols:
+Use --protocol a2a if your agent code serves A2A 1.0 directly. Init declares
+version 1.0.0 and enables its A2A endpoint; it does not generate an A2A server.
+
+`
+
 // initVoiceHelp and initVoiceExamples are removed from help while voice is off.
 const initVoiceHelp = `Voice Agents:
 Use --kind prompt-voice to initialize a managed prompt voice agent without
@@ -2907,7 +2924,8 @@ prompt-only or registry options are not supported by this voice initialization.
 
 Prompt voice services support modelType: managed or self_deployed (bring your own model
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+and telephony bindings (acs or twilio). Legacy handoff is not supported by the
+GA Voice Agent API; use telephony transferTargets where applicable. Hosted voice wrappers use
 conversationEngine.type: hosted_agent and conversationEngine.name to reference
 the hosted target service in azure.yaml. The old modelType: hosted_agent and
 targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample

@@ -456,7 +456,7 @@ func TestProjectDeploymentAddEnvironmentDeployments(t *testing.T) {
 	}
 }
 
-func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
+func TestProjectAddClearsReplacedDeploymentsBeforeDefaultSelection(t *testing.T) {
 	const (
 		endpoint = "https://old-account.services.ai.azure.com/api/projects/old-project"
 		oldID    = "/subscriptions/sub/resourceGroups/old-rg/providers/" +
@@ -482,24 +482,24 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name: "replacement uses environment list", override: "list",
-			initialName: "old-chat", wantName: "env-chat",
+			name: "replacement clears environment list", override: "list",
+			initialName: "old-chat", wantName: "yaml-chat",
 		},
 		{
-			name: "empty override stays empty", override: "empty",
-			initialName: "old-chat", wantName: "",
+			name: "empty replaced list uses yaml default", override: "empty",
+			initialName: "old-chat", wantName: "yaml-chat",
 		},
 		{
 			name: "missing override uses yaml", initialName: "old-chat",
 			wantName: "yaml-chat",
 		},
 		{
-			name: "malformed override rolls back", override: "malformed",
-			initialName: "old-chat", wantErr: true, wantName: "old-chat",
+			name: "malformed replacement value is discarded", override: "malformed",
+			initialName: "old-chat", wantName: "yaml-chat",
 		},
 		{
 			name: "default write failure restores previous name", override: "list",
-			initialName: "old-chat", failValue: "env-chat",
+			initialName: "old-chat", failValue: "yaml-chat",
 			wantErr: true, wantName: "old-chat",
 		},
 		{
@@ -563,14 +563,14 @@ func TestProjectAddRestoresDefaultDeploymentFromEnvironment(t *testing.T) {
 			}
 			assert.Equal(t, test.wantName, envServer.values["AZURE_AI_MODEL_DEPLOYMENT_NAME"])
 			if test.override == "list" {
-				assert.Contains(
+				assert.NotContains(
 					t,
 					envServer.setLog,
 					"AZURE_AI_MODEL_DEPLOYMENT_NAME=env-chat",
 				)
 			}
 			if test.override == "empty" {
-				assert.NotContains(
+				assert.Contains(
 					t,
 					envServer.setLog,
 					"AZURE_AI_MODEL_DEPLOYMENT_NAME=yaml-chat",

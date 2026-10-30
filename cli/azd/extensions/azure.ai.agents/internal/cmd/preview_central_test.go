@@ -217,7 +217,7 @@ func TestPreviewLocalValidatorsPreserveFlags(t *testing.T) {
 	flags := invokeFlags{message: "hi", version: " 3 ", clientHeaders: []string{"x-client-test: value"}}
 	before := flags
 	for range 2 {
-		require.NoError(t, validateInvokeArgs(invoke, &flags))
+		require.NoError(t, validateInvokeArgs(invoke, &flags, false))
 		require.Equal(t, before, flags)
 		value, err := invoke.Flags().GetString("version")
 		require.NoError(t, err)
@@ -352,7 +352,7 @@ func TestPreviewHelpHiddenWhenOff(t *testing.T) {
 			"--long-running", "--no-wait", "Long-running Invocations", "Run the long task", "Voice Agents",
 		}},
 		{[]string{"init"}, []string{
-			"--voice string", "--harness string", "'prompt-voice'", "--kind prompt-voice",
+			"--voice string", "'prompt-voice'", "--kind prompt-voice",
 			"Voice Agents", "support-voice", "Preview opt-ins",
 		}},
 		{[]string{"add"}, []string{"alpha.agents"}},
@@ -384,7 +384,7 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			[]string{"Voice Agents"}},
 		{featureflags.LongRunning, nil, []string{"\n  invocations"}, nil},
 		{featureflags.Voice, []string{"init"},
-			[]string{"--voice string", "prompt-voice", "Voice Agents", "support-voice"}, []string{"--harness string"}},
+			[]string{"--voice string", "prompt-voice", "Voice Agents", "support-voice"}, nil},
 		{featureflags.Voice, []string{"invoke"}, []string{"Voice Agents"}, []string{"--long-running"}},
 		{featureflags.Voice, []string{"init"},
 			[]string{"--image, and prompt-voice agents", "For new managed prompt voice agents"}, nil},
@@ -394,7 +394,7 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			[]string{"deployment), voice, or prompt-voice Agent."},
 			[]string{"Voice and prompt-voice Agent definitions are also supported."}},
 		{featureflags.ManagedHarness, []string{"init"},
-			[]string{"including one using --harness"}, []string{"--harness string", "--voice string"}},
+			[]string{"including one using --harness", "--harness string"}, []string{"--voice string"}},
 	} {
 		t.Run(tc.feature.ID+"/"+strings.Join(tc.path, "_"), func(t *testing.T) {
 			setPreviewProcess(t, "")
@@ -409,6 +409,27 @@ func TestPreviewHelpShownPerFeature(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreviewHelpTextReplacement(t *testing.T) {
+	command := &cobra.Command{
+		Use: "check", Short: "preview caption", Long: "preview details", Example: "preview example",
+	}
+	previewHelpText(command, featureflags.A2A, "preview caption", "legacy caption")
+	previewHelpText(command, featureflags.A2A, "preview details", "legacy details")
+	previewHelpText(command, featureflags.A2A, "preview example", "legacy example")
+	require.Panics(t, func() {
+		previewHelpText(command, featureflags.A2A, "missing example", "replacement")
+	})
+
+	applyPreviewVisibility(command, map[string]bool{featureflags.A2A.ID: true})
+	require.Equal(t, "preview caption", command.Short)
+	require.Equal(t, "preview details", command.Long)
+	require.Equal(t, "preview example", command.Example)
+	applyPreviewVisibility(command, map[string]bool{})
+	require.Equal(t, "legacy caption", command.Short)
+	require.Equal(t, "legacy details", command.Long)
+	require.Equal(t, "legacy example", command.Example)
 }
 
 func TestPreviewHelpEnabledPreservesStaticContent(t *testing.T) {
@@ -502,7 +523,7 @@ func TestAgentHelpPreviewsOffHidesPreviewTerms(t *testing.T) {
 	previous := color.NoColor
 	color.NoColor = true
 	t.Cleanup(func() { color.NoColor = previous })
-	terms := regexp.MustCompile(`(?i)\bvoice\b|prompt-voice|harness|long-running`)
+	terms := regexp.MustCompile(`(?i)\bvoice\b|prompt-voice|long-running`)
 	var walk func(*cobra.Command, []string)
 	walk = func(command *cobra.Command, path []string) {
 		t.Run(strings.Join(append([]string{"root"}, path...), "_"), func(t *testing.T) {

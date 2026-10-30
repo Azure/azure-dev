@@ -32,6 +32,9 @@ including those retries. A skipped branch produces no timing.
 
 `template_loading` covers the initial read and validation of both local explicit
 templates and remote inputs; cached local bytes are not loaded or timed again.
+For explicit remote `-t` inputs it wraps staging, the staged manifest read, and
+validation (including failures), and ends before later Init work. The nested
+`template_staging` sample still records download/staging separately.
 `project_scaffolding` covers core project initialization for both adopted templates
 and generated projects; an existing project emits no scaffolding sample, and
 delegation to another Init helper does not create a second sample.

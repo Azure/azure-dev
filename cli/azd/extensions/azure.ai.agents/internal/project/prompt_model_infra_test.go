@@ -16,14 +16,25 @@ import (
 )
 
 func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
-	for _, layered := range []bool{false, true} {
-		t.Run(fmt.Sprintf("layered=%t", layered), func(t *testing.T) {
+	for _, setup := range []struct {
+		layered bool
+		prefix  string
+	}{
+		{prefix: "none"},
+		{layered: true, prefix: "none"},
+		{layered: true, prefix: "marker"},
+		{layered: true, prefix: "source"},
+		{layered: true, prefix: "bicep"},
+		{layered: true, prefix: "bicepparam"},
+	} {
+		t.Run(fmt.Sprintf("layered=%t/prefix=%s", setup.layered, setup.prefix), func(t *testing.T) {
 			for _, tt := range []struct {
 				name     string
 				path     string
 				module   string
 				provider string
 				file     string
+				content  string
 				symlink  string
 				errField string
 				errText  string
@@ -65,11 +76,28 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					errField: "module", errText: "escapes project root",
 				},
 				{
+					name: "outside parameter file with matching module", file: "infra/main.bicep",
+					symlink: "infra/main.bicepparam", errField: "module", errText: "escapes project root",
+				},
+				{
+					name: "outside non-Foundry module file", provider: "bicep", symlink: "infra/main.bicep",
+					errField: "module", errText: "escapes project root",
+				},
+				{
+					name: "outside non-Foundry parameter file", provider: "bicep", symlink: "infra/main.bicepparam",
+					errField: "module", errText: "escapes project root",
+				},
+				{
 					name: "outside Terraform marker", provider: "terraform", symlink: "infra/.azd-foundry",
 					errField: "path", errText: "escapes project root",
 				},
 				{
 					name: "outside Terraform source", provider: "terraform", symlink: "infra/main.tf",
+					errField: "path", errText: "escapes project root",
+				},
+				{
+					name: "outside Terraform source with matching marker", provider: "terraform",
+					file: "infra/.azd-foundry", content: "terraform-v1\n", symlink: "infra/main.tf",
 					errField: "path", errText: "escapes project root",
 				},
 				{name: "defaults", file: "infra/main.bicep"},
@@ -90,9 +118,27 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					target := map[string]any{"provider": provider, "path": tt.path, "module": tt.module}
 					infra := target
 					field := "infra"
-					if layered {
-						infra = map[string]any{"layers": []any{target}}
-						field = "infra.layers[0]"
+					if setup.layered {
+						var layers []any
+						if setup.prefix != "none" {
+							provider := "microsoft.foundry"
+							file, content := "main."+setup.prefix, ""
+							switch setup.prefix {
+							case "marker":
+								provider, file, content = "terraform", ".azd-foundry", "terraform-v1\n"
+							case "source":
+								provider, file = "terraform", "main.tf"
+								content = "resource \"azapi_resource\" \"foundry_account\" {}\n" +
+									"resource \"azapi_resource\" \"project\" {}\n"
+							}
+							dir := filepath.Join(root, "foundry")
+							require.NoError(t, os.Mkdir(dir, 0700))
+							require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte(content), 0600))
+							layers = append(layers, map[string]any{"provider": provider, "path": "foundry"})
+						}
+						layers = append(layers, target)
+						infra = map[string]any{"layers": layers}
+						field = fmt.Sprintf("infra.layers[%d]", len(layers)-1)
 					}
 					config, err := yaml.Marshal(map[string]any{"infra": infra})
 					require.NoError(t, err)
@@ -100,7 +146,7 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					if tt.file != "" {
 						file := filepath.Join(root, filepath.FromSlash(tt.file))
 						require.NoError(t, os.MkdirAll(filepath.Dir(file), 0700))
-						require.NoError(t, os.WriteFile(file, nil, 0600))
+						require.NoError(t, os.WriteFile(file, []byte(tt.content), 0600))
 					}
 					if tt.symlink != "" {
 						target := outside
@@ -120,6 +166,9 @@ func TestPromptModelInfrastructureOnDiskPaths(t *testing.T) {
 					if tt.errField != "" {
 						require.ErrorContains(t, err, "azure.yaml "+field+"."+tt.errField)
 						require.ErrorContains(t, err, tt.errText)
+						if setup.layered && tt.provider == "terraform" && tt.symlink == "infra/main.tf" {
+							require.ErrorContains(t, err, "Terraform source")
+						}
 						require.NotNil(t, errors.Unwrap(err))
 						require.False(t, got)
 						return

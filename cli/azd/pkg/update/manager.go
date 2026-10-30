@@ -8,7 +8,6 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -276,6 +275,8 @@ func parseDailyBuildNumber(version string) (int, error) {
 //
 // Package manager installs (brew, winget, choco) cannot be pinned — the package manager
 // decides which version it makes available.
+//
+// ErrRestartRequired means the update was installed successfully but needs a Windows restart.
 func (m *Manager) Update(ctx context.Context, target *VersionInfo, writer io.Writer) error {
 	if err := target.validate(); err != nil {
 		return fmt.Errorf("cannot install update: %w", err)
@@ -537,87 +538,6 @@ func (m *Manager) updateViaPackageManager(
 	return nil
 }
 
-func (m *Manager) updateViaMSI(ctx context.Context, target *VersionInfo, writer io.Writer) error {
-	// Verify the install is the standard per-user MSI configuration.
-	// install-azd.ps1 installs with ALLUSERS=2 to %LOCALAPPDATA%\Programs\Azure Dev CLI.
-	// If the current install is non-standard, abort and advise the user.
-	if err := isStandardMSIInstall(); err != nil {
-		return err
-	}
-
-	//  1. Rename the running exe to temp (frees the path; process continues via the OS handle)
-	//  2. Copy it back as an unlocked safety net (if killed at any point, azd.exe still exists)
-	//  3. The MSI will overwrite the unlocked safety copy with the new version
-	fmt.Fprintf(writer, "Backing up current azd executable...\n")
-	originalPath, backupPath, err := backupCurrentExe()
-	if err != nil {
-		return newUpdateError(CodeReplaceFailed, fmt.Errorf("failed to backup current executable: %w", err))
-	}
-
-	// Track whether the install succeeded so we know whether to restore or clean up.
-	updateSucceeded := false
-	defer func() {
-		if updateSucceeded {
-			// Remove the temp backup directory. If this fails, the OS
-			// will clean it up eventually since it lives under %TEMP%.
-			_ = os.RemoveAll(filepath.Dir(backupPath))
-			return
-		}
-		// Update failed — restore the backup so the user has the original binary.
-		fmt.Fprintf(writer, "Restoring previous version...\n")
-		if restoreErr := restoreExeFromBackup(originalPath, backupPath); restoreErr != nil {
-			fmt.Fprintf(writer, "WARNING: failed to restore previous version: %v\n", restoreErr)
-			fmt.Fprintf(writer, "Your backup is at: %s\n", backupPath)
-			fmt.Fprintf(writer, "To recover manually, copy it to: %s\n", originalPath)
-		}
-	}()
-
-	// Run the install script synchronously. The MSI overwrites the unlocked
-	// safety copy at the original path with the new version.
-	psArgs, err := buildInstallScriptArgs(target)
-	if err != nil {
-		return newUpdateError(CodeReplaceFailed, err)
-	}
-
-	// Hash the safety copy before install so we can detect whether the MSI
-	// actually replaced the file.
-	preHash, hashErr := hashFile(originalPath)
-	if hashErr != nil {
-		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("failed to hash safety copy before install: %w", hashErr))
-	}
-
-	log.Printf("Running install script: powershell %s", strings.Join(psArgs, " "))
-	fmt.Fprintf(writer, "Installing azd %s channel...\n", target.Channel)
-
-	runArgs := exec.NewRunArgs("powershell", psArgs...).
-		WithStdOut(writer).
-		WithStdErr(writer)
-
-	if _, err := m.commandRunner.Run(ctx, runArgs); err != nil {
-		return newUpdateError(CodeReplaceFailed, fmt.Errorf("install script failed: %w", err))
-	}
-
-	// Verify the MSI actually replaced the binary by comparing the SHA-256
-	// content hash against the pre-install safety copy. If the hashes are
-	// identical the MSI did not write a new file (silent failure).
-	postHash, hashErr := hashFile(originalPath)
-	if hashErr != nil {
-		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but %s could not be read: %w", originalPath, hashErr))
-	}
-
-	if preHash == postHash {
-		return newUpdateError(CodeReplaceFailed,
-			fmt.Errorf("install script completed but the binary at %s was not updated."+
-				" MSI may have failed silently", originalPath))
-	}
-
-	updateSucceeded = true
-	log.Printf("Update completed successfully")
-	return nil
-}
-
 func (m *Manager) updateViaBinaryDownload(ctx context.Context, target *VersionInfo, writer io.Writer) error {
 	downloadURL, err := m.buildDownloadURL(target)
 	if err != nil {
@@ -781,31 +701,6 @@ func (m *Manager) verifyCodesignMac(ctx context.Context, binaryPath string, writ
 	return nil
 }
 
-func (m *Manager) verifyAuthenticode(ctx context.Context, binaryPath string, writer io.Writer) error {
-	// PowerShell script to check Authenticode signature status
-	script := fmt.Sprintf(
-		`$sig = Get-AuthenticodeSignature -FilePath '%s'; if ($sig.Status -ne 'Valid') { `+
-			`Write-Error "Signature status: $($sig.Status)"; exit 1 }`,
-		binaryPath,
-	)
-
-	runArgs := exec.NewRunArgs("powershell", "-NoProfile", "-Command", script)
-	result, err := m.commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		return newUpdateError(CodeSignatureInvalid, fmt.Errorf("Authenticode verification failed: %w", err))
-	}
-
-	if result.ExitCode != 0 {
-		return newUpdateError(CodeSignatureInvalid, fmt.Errorf(
-			"Authenticode signature verification failed for %s: %s",
-			binaryPath, result.Stderr,
-		))
-	}
-
-	fmt.Fprintf(writer, "Code signature verified.\n")
-	return nil
-}
-
 func (m *Manager) replaceBinary(ctx context.Context, newBinaryPath, currentBinaryPath string) error {
 	// Try direct replacement first
 	err := os.Rename(newBinaryPath, currentBinaryPath)
@@ -861,22 +756,6 @@ func currentExePath() (string, error) {
 		return "", fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 	return resolved, nil
-}
-
-// hashFile returns the hex-encoded SHA-256 digest of the file at path.
-func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
 func copyFile(src, dst string) error {

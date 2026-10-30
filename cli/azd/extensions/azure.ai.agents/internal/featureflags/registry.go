@@ -19,18 +19,30 @@ var (
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_VOICE",
 		Description: "Voice, prompt-voice, and hosted voice agents",
 	}
+	// A2A controls init selection, explicit A2A wire versions, and the 1.0 default.
+	A2A = Feature{
+		ID:          "agents.a2a",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_A2A",
+		Description: "A2A init selection, wire version selection, and the 1.0 message default",
+	}
 	// LongRunning controls starting background Responses invocations.
 	LongRunning = Feature{
 		ID:          "agents.long_running",
 		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING",
 		Description: "Long-running Responses invocations",
 	}
+	// MemorySnapshot controls hosted agent memory snapshot opt-in.
+	MemorySnapshot = Feature{
+		ID:          "agents.memory_snapshot",
+		EnvVar:      "AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT",
+		Description: "Hosted agent memory snapshots",
+	}
 )
 
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot}
 }
 
 // Lookup returns the declared feature with the given ID.

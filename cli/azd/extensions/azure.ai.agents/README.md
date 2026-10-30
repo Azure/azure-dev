@@ -2,13 +2,15 @@
 
 ## Preview feature opt-ins
 
-Three capabilities are off by default. Each one is turned on separately.
+Five capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
 | `agents.managed_harness` | Prompt agents using `microsoft_copilot_preview` or legacy `github_copilot_preview` harnesses | `AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS` |
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
+| `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -16,6 +18,8 @@ Set the desired variable in your shell or CI before running azd:
 export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
+export AZD_ALPHA_ENABLE_AGENTS_A2A=true
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 ```
 
 In PowerShell, for example:
@@ -70,6 +74,19 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
   extensions.
 
 See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
+## Experimental Voice definition overlay
+
+Voice services may opt in to forward-compatible GA definition fields with
+`definition_overlay` (or inline `definitionOverlay`). The value is an object whose
+local `$ref` values resolve relative to the containing YAML or JSON document.
+Overlay references have the same trust boundary and relative-path behavior as
+existing `$ref` references; only reference files you trust.
+The overlay can only add missing keys; objects recurse, while existing scalar or
+array keys conflict even when values match. New arrays are allowed. Null values
+and the reserved root keys `kind`, `model_type`, `model`, and
+`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
+must use GA wire names. Prompt and hosted agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -271,7 +288,9 @@ cost and is not run automatically.
 ## Extension telemetry API
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
-checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+The service `predeploy` listener uses the existing beta structured-message API
+to retain RBAC warnings; `postdeploy` and project listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -487,6 +506,36 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd deploy --all` deploys all services, with ordering defined by `uses`.
 - `azd up` provisions and deploys the project.
 
+### Retained developer RBAC warnings
+
+With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
+check remain in the final `azd deploy` / `azd up` output, including when a later
+deployment step fails. They are non-blocking: a warning does not change the
+deployment exit code, and deployment errors still fail the command.
+
+This covers Foundry User checks and failed automatic assignment, hosted-agent
+role-assignment-write checks, and Container Registry access checks (including
+classic and ABAC role guidance). Incomplete checks that already emitted a warning
+are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
+`LookupTenant` failure, or credential construction failure remain silent.
+Prompt and voice agents keep only the applicable Foundry
+checks; hosted-only checks and the existing skip behavior are unchanged.
+
+For automation, use `--no-prompt --output json` and consume the host's `messages`
+entries. Each retained warning has `kind: warning`, `extensionId:
+azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
+`suggestion`. Messages are scoped to each service invocation, not deduplicated
+across services. No new prompt is introduced. Transport diagnostics include only
+safe status information, not raw response bodies or credentials.
+
+This does not retain every extension log or hook message, and it does not change
+the read-only `azd deploy --preview` path, which skips deployment hooks.
+The opt-in [RBAC warning scenario](tests/cli-interactive-tester-scenarios/tier2/2.17b-deploy-rbac-warnings.yaml)
+requires an externally prepared restricted test identity and explicit Azure cost
+consent through `foundry-extension-scenario-orchestrator`; it is not run automatically.
+
+### Deployment guidance
+
 After a successful deployment, endpoint guidance recommends the standalone
 `azd extension install azure.ai.evaluations` followed by `azd ai eval init`
 when `azure.yaml` does not
@@ -534,6 +583,10 @@ authored model without inferring replacements from the managed deployment list.
 Set the agent's model explicitly or use
 `${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
 
+Deploy and invoke validate every configured layer's path and module before
+accepting on-disk infrastructure. An invalid later layer returns an error
+naming its index and field, even when an earlier layer matches.
+
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
 there is no separate definition-file deployment or sibling-Toolbox orchestration
@@ -567,6 +620,179 @@ The command validates the agent definition before reading deployment state.
 Missing, unknown, or malformed kinds return a structured validation error rather
 than falling back to hosted-agent behavior. Hosted Activity and session
 capabilities do not change the agent kind and follow the hosted behavior above.
+
+## Initializing an A2A hosted agent
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI before initializing
+an A2A hosted agent. With the preview off, init hides the `a2a` choice and rejects
+explicit `--protocol a2a` selections (including repeated or comma-separated flags)
+before authentication or writes. Responses remains the no-prompt default.
+`invocations_ws` independently requires the Voice preview. Existing declarations
+are not gated during deployment or lifecycle operations by this init selection check.
+
+Foundry forwards requests directly to A2A hosted agents instead of converting them
+to Responses requests. Select `a2a` during init and deselect `responses` if your
+agent does not support it. For non-interactive initialization:
+
+```bash
+azd ai agent init --src . --agent-name my-a2a-agent --protocol a2a \
+  --deploy-mode code --runtime python_3_13 --entry-point app.py \
+  --dep-resolution remote_build --no-prompt
+```
+
+Selecting only `a2a` generates:
+
+<!-- azd:doc-example partial -->
+```yaml
+services:
+  my-a2a-agent:
+    host: azure.ai.agent
+    kind: hosted
+    name: my-a2a-agent
+    protocols:
+      - protocol: a2a
+        version: 1.0.0
+    agentEndpoint:
+      protocols: [a2a]
+```
+
+`protocols` declares the agent's implementation; `agentEndpoint.protocols` enables
+its A2A endpoint. Foundry uses declaration `1.0.0`; public A2A requests use `1.0`.
+
+Your agent must serve:
+
+- `POST /a2a` and `POST /invocations/a2a` (hosted routing varies by runtime)
+- `GET /invocations/a2a/.well-known/agent-card.json`
+- `GET /readiness`
+
+Init writes configuration, not an A2A server. Service onboarding and region support
+are required separately.
+
+## Invoking agents over A2A
+
+Without the `agents.a2a` preview, messages and files use A2A 0.3. File bytes
+are sent unchanged; omit `--a2a-version`, which requires the preview:
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
+azd ai agent invoke -p a2a -f a2a-request-0.3.json
+```
+
+Enable `AZD_ALPHA_ENABLE_AGENTS_A2A=true` in your shell or CI for the
+version-selection behavior below. This changes the message default to 1.0
+and requires an explicit supported version for every A2A file invocation.
+
+Use `-p a2a` (`--protocol a2a`) with `--a2a-version` to invoke a deployed
+agent using public A2A version `1.0` or `0.3` through its Foundry A2A endpoint:
+
+```bash
+# Explicitly select the public A2A request version
+azd ai agent invoke -p a2a --a2a-version 1.0 "Hello!"
+azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"
+```
+
+These are public A2A protocol versions, not Foundry API versions or deployed
+agent versions. See the pinned [A2A 1.0 versioning specification](https://a2a-protocol.org/v1.0.0/specification/#36-versioning)
+and [A2A 0.3 specification](https://a2a-protocol.org/v0.3.0/specification/).
+
+For plain messages, azd composes both the version-specific JSON-RPC body and
+the `A2A-Version` header. Because azd controls both, `1.0` is a convenience
+default when `--a2a-version` is omitted. A deployed hosted A2A implementation must
+support `1.0` (`1.0.0` in deployment YAML) and match the requested wire version,
+regardless of other protocols. Local working-tree definitions are not authoritative
+for the deployed target, even when `--version` selects the current deployment.
+Local inspection failures and compatibility findings are advisory diagnostics
+shown with `--debug`; Foundry enforces deployed target support. Request and
+file-argument validation remain blocking. Translation availability and restrictions
+can vary by service rollout.
+
+```bash
+azd ai agent invoke -p a2a "Hello!"
+```
+
+With the preview disabled, plain messages use A2A 0.3. To preserve that behavior after enabling it, use
+`azd ai agent invoke -p a2a --a2a-version 0.3 "Hello!"`.
+
+Generated 0.3 requests leave execution and output modes unspecified, preserving the
+non-blocking default. A Task may still be in progress; azd prints the initial response
+without polling. A2A 1.0 uses its [synchronous default](https://a2a-protocol.org/v1.0.0/specification/#322-sendmessageconfiguration),
+waiting for a terminal state or an input/authentication request.
+
+**File input requires an explicit version.** When using `--input-file` (`-f`)
+with A2A, always pass `--a2a-version 0.3` or `--a2a-version 1.0`, even when
+A2A hosted agent YAML declares a version. No heuristic infers the version
+from agent configuration or the request body.
+
+The file must contain a complete public JSON-RPC request for the selected A2A
+version, not a version envelope. The CLI sends the file bytes unchanged; it
+does not wrap, rewrite, or convert the body. The caller must match the body
+to `--a2a-version`, which selects the `A2A-Version` header.
+
+Formatted output supports non-streaming JSON-RPC responses. For streaming methods
+(`message/stream` or `SendStreamingMessage`), use `--output raw` to stream the SSE
+response without parsing it.
+
+For example, save this complete A2A 1.0 request as `a2a-request-1.0.json`:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "hello-message-1",
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello!"}]
+    },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"],
+      "returnImmediately": false
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke -p a2a --a2a-version 1.0 --input-file a2a-request-1.0.json
+```
+
+For A2A 0.3, save this request as `a2a-request-0.3.json` instead:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "hello-1",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "kind": "message",
+      "messageId": "hello-message-1",
+      "role": "user",
+      "parts": [{"kind": "text", "text": "Hello!"}]
+    }
+  }
+}
+```
+
+```bash
+azd ai agent invoke -p a2a --a2a-version 0.3 --input-file a2a-request-0.3.json
+```
+
+`--a2a-version` is valid only for A2A; do not use it with Responses or
+Invocations. It is separate from `--version`, which continues to select a
+**deployed agent version**, not an A2A protocol version. This CLI does not
+support A2A invocation with `--local`; this is a CLI limitation, not a
+restriction of the A2A protocol.
+
+For completed Tasks in **both A2A 0.3 and 1.0**, default output prefers answer
+artifacts over generic status messages such as “Done.” Other Tasks prefer status
+messages so prompts, progress, and failure details remain visible, falling back to
+artifacts when no status text is present. History is the final text fallback.
+Use `--output raw` to inspect the complete HTTP response and JSON-RPC envelope.
+
+A2A hosted-agent session affinity is service-controlled, even with a session or
+context ID. In-memory task stores may return `TaskNotFound` on later requests.
 
 ## Invoke latency diagnostics
 
@@ -976,9 +1202,13 @@ infra:
 
 Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
 a new prompt voice agent and is rejected when the chosen init flow cannot use it.
-Advanced settings such as `audio`, `structuredInputs`,
-`tools`, `greeting`, `avatar`, and `handoff` are described by the
+Advanced settings such as `audio`, `structuredInputs`, `tools`, `greeting`, and
+`avatar` are described by the
 [agent service schema](schemas/azure.ai.agent.json).
+Use `audio.input.format.rate` or `audio.output.format.rate` only for PCM sample
+rate (`24000`); omit format rate for G.711. Use `audio.output.speed` for speech
+speed. Legacy `handoff` and `audio.output.voice.rate` values are unsupported by
+the GA API.
 See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
 and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
 
@@ -1211,6 +1441,9 @@ services:
       type: hosted_agent
       name: voice-target
       version: deployed
+    greeting:
+      type: template
+      text: Hello, how can I help?
     store: false
 ```
 
@@ -1287,6 +1520,52 @@ Details:
   Values outside that range are rejected at deploy time and by schema
   validation.
 
+## Memory snapshots
+
+Use an `azure.ai.agents` extension build or release that includes this setting.
+The feature flag is off by default. Enable it explicitly before deploying:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT="true"`.
+Opt in on a hosted agent service in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    enableMemorySnapshot: true
+```
+
+Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
+this boolean setting, including referenced definitions. Omission preserves
+existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
+The feature flag is required only for `true`. Missing or disabled flags reject the
+deployment rather than silently ignoring the setting.
+Unset `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` or set it to `false` to disable the feature.
+
+The subscription and region must be enabled for the preview, and the hosting SDK
+must support snapshot hooks. Python code deployment and invocation were verified
+with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
+Update dependencies and lock files yourself; rebuild container images when applicable.
+azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
+After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
+Snapshot opt-in does not add a separate activation wait budget. On activation
+failure, timeout, or cancellation, use the attempted-version link in the error;
+the environment may still refer to the previous successful deployment. Stopping
+the client wait does not cancel provisioning in Azure, and an activation timeout
+does not confirm that the version failed. Inspect that version's status before
+deploying again, since another deploy creates a new version.
+
+Snapshots reuse version initialization; they are not conversation or session-state
+backups. Snapshot capture, restore, and persistence guarantees belong to the hosting
+SDK and service.
+
 ## State Stores
 
 Use `azd ai agent state-stores` to inspect existing Foundry State Stores and read,
@@ -1298,6 +1577,8 @@ conditional writes with ETags, and pagination. Editing state does not resume or
 stop agent work.
 
 ## Session carry-over across deploys
+
+For A2A hosted agents, [session-affinity limitations](#invoking-agents-over-a2a) still apply.
 
 When a hosted agent is redeployed, Foundry assigns the agent a **new version** and
 sessions are bound to the version they were created on. By default, the first

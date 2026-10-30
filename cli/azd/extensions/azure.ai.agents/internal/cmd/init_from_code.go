@@ -12,6 +12,7 @@ import (
 	"azureaiagent/internal/project"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -164,6 +165,8 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		if err := a.addToProject(ctx, srcDir, localDefinition, isCodeDeploy); err != nil {
 			return fmt.Errorf("failed to add agent to azure.yaml: %w", err)
 		}
+
+		printNativeA2AGuidance(os.Stdout, localDefinition)
 
 		// Run post-init validations (advisory warnings only)
 		validatePostInit(srcDir, localDefinition.CodeConfiguration)
@@ -654,18 +657,8 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 	}
 
-	// An activity agent additionally advertises the friendly "activity" endpoint
-	// guarded by BotServiceRbac. We compose this into any existing agent_endpoint
-	// rather than overwriting it, so Activity can coexist with the other
-	// protocols the agent selected (responses/invocations). Injecting it here
-	// mirrors the manifest-based init so the generated azure.yaml is identical and
-	// `azd deploy` provisions the Azure Bot connector. Phase 1 covers the simple
-	// use case; digital-worker is a Phase 2 addition. No-op for non-activity agents.
-	if project.IsActivityProtocol(*definition) {
-		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
-			definition.AgentEndpoint, definition.Protocols,
-		)
-	}
+	// Enable public endpoints without replacing existing auth or routing settings.
+	composeLocalAgentEndpoint(definition)
 
 	// Add model resource if a model was selected
 	if existingDeployment != nil {
@@ -1056,6 +1049,44 @@ func (a *InitFromCodeAction) promptCodeConfiguration(ctx context.Context, srcDir
 	}, false)
 }
 
+// composeLocalAgentEndpoint enables selected endpoints while preserving auth and routing settings.
+func composeLocalAgentEndpoint(definition *agent_yaml.ContainerAgent) {
+	if project.IsActivityProtocol(*definition) {
+		definition.AgentEndpoint = project.ComposeActivityAgentEndpoint(
+			definition.AgentEndpoint, definition.Protocols,
+		)
+	}
+	if !hasNativeA2A(definition) {
+		return
+	}
+	if definition.AgentEndpoint == nil {
+		definition.AgentEndpoint = &agent_yaml.AgentEndpoint{}
+	}
+	for _, protocol := range definition.Protocols {
+		name := protocol.Protocol
+		if name == "activity_protocol" {
+			name = "activity"
+		}
+		if !slices.Contains(definition.AgentEndpoint.Protocols, name) {
+			definition.AgentEndpoint.Protocols = append(definition.AgentEndpoint.Protocols, name)
+		}
+	}
+}
+
+func hasNativeA2A(definition *agent_yaml.ContainerAgent) bool {
+	return slices.ContainsFunc(definition.Protocols, func(protocol agent_yaml.ProtocolVersionRecord) bool {
+		return protocol.Protocol == "a2a" && protocol.Version == "1.0.0"
+	})
+}
+
+func printNativeA2AGuidance(writer io.Writer, definition *agent_yaml.ContainerAgent) {
+	if hasNativeA2A(definition) {
+		fmt.Fprintln(writer, "\nA2A hosted agent (1.0) configured; init does not generate an A2A server.")
+		fmt.Fprintln(writer, "Your agent implementation must serve POST /a2a, POST /invocations/a2a, "+
+			"GET /invocations/a2a/.well-known/agent-card.json, and GET /readiness.")
+	}
+}
+
 // protocolInfo pairs a protocol name with the default generated version.
 type protocolInfo struct {
 	Name    string
@@ -1077,14 +1108,18 @@ var knownProtocols = []protocolInfo{
 	// forward), so new agents default to it, matching the latest-version
 	// convention responses uses.
 	{Name: "activity", Version: "2.0.0"},
+	// Foundry declares 1.0.0; public A2A headers use 1.0.
+	// https://a2a-protocol.org/v1.0.0/specification/#36-versioning.
+	{Name: "a2a", Version: "1.0.0"},
 }
 
-func protocolNames(voiceEnabled bool) []string {
+func protocolNames(voiceEnabled, a2aEnabled bool) []string {
 	names := make([]string, 0, len(knownProtocols))
 	for _, protocol := range knownProtocols {
-		if protocol.Name != "invocations_ws" || voiceEnabled {
-			names = append(names, protocol.Name)
+		if protocol.Name == "invocations_ws" && !voiceEnabled || protocol.Name == "a2a" && !a2aEnabled {
+			continue
 		}
+		names = append(names, protocol.Name)
 	}
 	return names
 }
@@ -1093,25 +1128,41 @@ func selectHostedProtocols(
 	ctx context.Context, client *azdext.AzdClient, noPrompt bool, explicit []string,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
 	if len(explicit) > 0 {
-		records, err := validateExplicitProtocols(explicit)
-		if err != nil {
-			return nil, err
-		}
-		if slices.Contains(explicit, "invocations_ws") {
-			if err := featureflags.Require(featureflags.Voice); err != nil {
-				return nil, err
-			}
-		}
-		return records, nil
+		return selectExplicitHostedProtocols(explicit)
 	}
 	if noPrompt {
-		return promptProtocols(ctx, nil, true, nil, false)
+		return promptProtocols(ctx, nil, true, nil, false, false)
 	}
-	enabled, err := featureflags.IsEnabled(featureflags.Voice)
+	voiceEnabled, err := featureflags.IsEnabled(featureflags.Voice)
 	if err != nil {
 		return nil, err
 	}
-	return promptProtocols(ctx, client.Prompt(), false, nil, enabled)
+	a2aEnabled, err := featureflags.IsEnabled(featureflags.A2A)
+	if err != nil {
+		return nil, err
+	}
+	return promptProtocols(ctx, client.Prompt(), false, nil, voiceEnabled, a2aEnabled)
+}
+
+// selectExplicitHostedProtocols validates parsed selections before authentication or writes.
+func selectExplicitHostedProtocols(explicit []string) ([]agent_yaml.ProtocolVersionRecord, error) {
+	records, err := validateExplicitProtocols(explicit)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		switch record.Protocol {
+		case "invocations_ws":
+			if err := featureflags.Require(featureflags.Voice); err != nil {
+				return nil, err
+			}
+		case "a2a":
+			if err := featureflags.Require(featureflags.A2A); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return records, nil
 }
 
 // promptProtocols asks the user which protocols their agent supports.
@@ -1122,7 +1173,7 @@ func promptProtocols(
 	promptClient azdext.PromptServiceClient,
 	noPrompt bool,
 	flagProtocols []string,
-	voiceEnabled bool,
+	voiceEnabled, a2aEnabled bool,
 ) ([]agent_yaml.ProtocolVersionRecord, error) {
 	defer inittelemetry.Start(ctx, inittelemetry.ProtocolSelection)()
 
@@ -1142,7 +1193,7 @@ func promptProtocols(
 	versionOf := make(map[string]string)
 	choices := make([]*azdext.MultiSelectChoice, 0, len(knownProtocols))
 	for _, p := range knownProtocols {
-		if p.Name == "invocations_ws" && !voiceEnabled {
+		if p.Name == "invocations_ws" && !voiceEnabled || p.Name == "a2a" && !a2aEnabled {
 			continue
 		}
 		versionOf[p.Name] = p.Version
@@ -1233,7 +1284,7 @@ func validateExplicitProtocols(flagProtocols []string) ([]agent_yaml.ProtocolVer
 
 // knownProtocolNames returns a comma-separated list of known protocol names.
 func knownProtocolNames() string {
-	return strings.Join(protocolNames(true), ", ")
+	return strings.Join(protocolNames(true, true), ", ")
 }
 
 // promptDeployMode asks the user to choose between code deploy and container deploy.

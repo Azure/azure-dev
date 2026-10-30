@@ -38,9 +38,16 @@ func resolveSkillContext(ctx context.Context, flagEndpoint string) (*skillContex
 }
 
 func newCredential() (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewAzureDeveloperCLICredential(
-		&azidentity.AzureDeveloperCLICredentialOptions{},
-	)
+	return newCredentialForTenant("")
+}
+
+func newCredentialForTenant(tenantID string) (azcore.TokenCredential, error) {
+	options := &azidentity.AzureDeveloperCLICredentialOptions{}
+	if tenantID != "" {
+		options.TenantID = tenantID
+		options.AdditionallyAllowedTenants = []string{"*"}
+	}
+	cred, err := azidentity.NewAzureDeveloperCLICredential(options)
 	if err != nil {
 		return nil, exterrors.Auth(
 			exterrors.CodeCredentialCreationFailed,

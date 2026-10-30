@@ -180,6 +180,18 @@ func Test_NewUpdateCmd(t *testing.T) {
 	assert.Equal(t, "update", cmd.Use)
 }
 
+func TestUpdatedMessage(t *testing.T) {
+	target := &update.VersionInfo{Channel: update.ChannelStable, Version: "1.28.1"}
+	message := updatedMessage(installer.InstallTypePs, target, false)
+	require.Equal(t, "Updated azd to version 1.28.1! Changes take effect on next invocation.", message.Header)
+	require.Equal(t, "Run `azd version` to confirm.", message.FollowUp)
+
+	message = updatedMessage(installer.InstallTypePs, target, true)
+	require.Equal(t, "Update installed. Restart Windows to complete the update.", message.Header)
+	require.Equal(t, "After restarting, run `azd version` to confirm.", message.FollowUp)
+	require.NotContains(t, message.Header, "next invocation")
+}
+
 func Test_UpdateFlags_Bind(t *testing.T) {
 	t.Parallel()
 	flags := &updateFlags{}

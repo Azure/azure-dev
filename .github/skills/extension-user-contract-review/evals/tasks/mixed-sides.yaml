@@ -1,0 +1,27 @@
+id: mixed-sides
+name: Independent removed and added flags retain their respective diff coordinates
+tags: [positive, deletion, anchoring]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Update independent export and download options".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/options.go, status modified.
+    Before: export supports --legacy; download has no --checksum flag.
+    After: export no longer supports --legacy; download now supports --checksum.
+    These are independent changes to separate commands, not a flag rename or one shared root cause.
+    Tests, help, docs, validation, and handlers correctly implement both changes.
+    The complete relevant diff has these anchors:
+    Deleted LEFT line 24 in the OLD file: export.Flags().BoolVar(&legacy, "legacy", false, "Use legacy output")
+    Added RIGHT line 58 in the NEW file: download.Flags().BoolVar(&checksum, "checksum", false, "Verify checksum")
+    There is no RIGHT changed line for the removed --legacy flag; RIGHT line 24 is unchanged unrelated code.
+    The host supports both LEFT and RIGHT inline comments.
+    Complete conversation and review history: empty, with no spec links or prior threads.
+graders:
+  - type: code
+    name: preserve-both-diff-sides
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 2"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.map(c => c.side + ':' + c.line).sort().join(',') === 'LEFT:24,RIGHT:58'"
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.every(c => c.path === 'cli/azd/extensions/example/internal/cmd/options.go' && c.body.includes('<!-- extension-user-contract-changes-reviewer -->') && c.body.includes('Please reply in this thread'))"
+        - "/complete.*1 files? inspected; 2 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

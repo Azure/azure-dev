@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // UpgradeStatus represents the outcome of a single extension upgrade attempt.
@@ -68,6 +69,9 @@ type UpgradeResult struct {
 	// Suggestion is an optional actionable hint shown alongside SkipReason or Error
 	// in interactive output. Not serialized to JSON; may contain ANSI formatting.
 	Suggestion string
+	// Warnings describes problems the upgrade caused without failing, such as an explicitly
+	// requested version that does not satisfy an installed extension's constraint.
+	Warnings []string
 	// DependencyUpgrades captures dependency reconciliation results, including
 	// skipped upgrades and failed metadata writes when dependency updates are disabled.
 	DependencyUpgrades []UpgradeResult
@@ -99,6 +103,7 @@ type upgradeResultJSON struct {
 	ToSource           string          `json:"toSource,omitempty"`
 	SkipReason         string          `json:"skipReason,omitempty"`
 	Error              string          `json:"error,omitempty"`
+	Warnings           []string        `json:"warnings,omitempty"`
 	DependencyUpgrades []UpgradeResult `json:"dependencyUpgrades,omitempty"`
 }
 
@@ -114,6 +119,7 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 		FromSource:         r.FromSource,
 		ToSource:           r.ToSource,
 		SkipReason:         r.SkipReason,
+		Warnings:           r.Warnings,
 		DependencyUpgrades: r.DependencyUpgrades,
 	}
 	if r.Error != nil {
@@ -123,7 +129,8 @@ func (r UpgradeResult) MarshalJSON() ([]byte, error) {
 }
 
 // UpgradeSummary holds aggregate counts from a batch upgrade operation.
-// DependencyUpgradesByStatus is for internal UI and telemetry counters.
+// DependencyUpgradesByStatus is for internal UI and telemetry counters. Dependency counters count
+// each dependency once per status, even when several parents report it.
 type UpgradeSummary struct {
 	Total                      int                   `json:"total"`
 	Upgraded                   int                   `json:"upgraded"`
@@ -146,6 +153,7 @@ func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 		Total:                      len(results),
 		DependencyUpgradesByStatus: map[UpgradeStatus]int{},
 	}
+	dependencies := map[UpgradeStatus]map[string]struct{}{}
 	for i := range results {
 		switch results[i].Status {
 		case UpgradeStatusUpgraded:
@@ -157,17 +165,24 @@ func NewUpgradeSummary(results []UpgradeResult) UpgradeSummary {
 		case UpgradeStatusFailed:
 			s.Failed++
 		}
-		s.DependencyUpgrades += CountDependencyUpgrades(results[i].DependencyUpgrades)
-		countDependencyUpgradesByStatus(results[i].DependencyUpgrades, s.DependencyUpgradesByStatus)
+		collectDependenciesByStatus(results[i].DependencyUpgrades, dependencies)
+	}
+	for status, ids := range dependencies {
+		s.DependencyUpgradesByStatus[status] = len(ids)
+		s.DependencyUpgrades += len(ids)
 	}
 	return s
 }
 
-// countDependencyUpgradesByStatus accumulates recursive dependency counts by status.
-func countDependencyUpgradesByStatus(results []UpgradeResult, counts map[UpgradeStatus]int) {
+// collectDependenciesByStatus records recursive dependency ids by status.
+func collectDependenciesByStatus(results []UpgradeResult, dependencies map[UpgradeStatus]map[string]struct{}) {
 	for i := range results {
-		counts[results[i].Status]++
-		countDependencyUpgradesByStatus(results[i].DependencyUpgrades, counts)
+		status := results[i].Status
+		if dependencies[status] == nil {
+			dependencies[status] = map[string]struct{}{}
+		}
+		dependencies[status][strings.ToLower(results[i].ExtensionId)] = struct{}{}
+		collectDependenciesByStatus(results[i].DependencyUpgrades, dependencies)
 	}
 }
 

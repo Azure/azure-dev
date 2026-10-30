@@ -145,6 +145,16 @@ requiredVersions:
 
 When multiple versions satisfy the constraint, `azd` selects the **highest** matching version. For example, if versions `1.0.0`, `1.1.0`, and `1.2.0` are available and the constraint is `^1.0.0`, version `1.2.0` is installed.
 
+### Constraints from installed extensions
+
+Installed extensions record the dependency constraints of their installed versions. When `azd` selects a version without an explicit `--version`, the version must also satisfy every constraint that installed extensions declare on that extension, plus the constraints of extensions that the same command is installing. Each constraint is checked separately.
+
+- **Updates and installs by name** keep an extension at the highest release that every installed dependent accepts. If that release is not newer than the installed version, the extension is skipped with a reason such as `1.1.0 is available, but microsoft.foundry requires "~1.0.0"`. Holding an extension back never downgrades it, so when a promotion to the main registry would require an older release, the extension stays on its current source. An install that switches sources asks for confirmation first, so it can select an older release from the new source.
+- **An explicit `--version`** is honored. If the requested version does not satisfy an installed extension's constraint, the command succeeds and shows a warning. With `--output json`, the warning appears in the result's `warnings` list.
+- **Dependency installs and updates** select the highest release that satisfies every known constraint. When no release satisfies all of them, `azd` still satisfies the extension being installed or updated if that breaks no constraint that the installed version satisfies, and reports the remaining conflict.
+
+For example, if `microsoft.foundry` requires `azure.ai.skills ~1.0.0` and Skills `1.1.0` is published, `azd extension update --all` keeps Skills at the newest `1.0.x` release until a Foundry release accepts `1.1.0`.
+
 ## azd Version Compatibility
 
 ### `requiredAzdVersion` Field
@@ -183,7 +193,7 @@ Once a version is resolved, installation proceeds through these steps:
 
 Installation progress updates in place in an interactive terminal. In redirected or non-TTY output, each uninterrupted install emits at most one `Installing <id>` progress line rather than animation frames. Progress resumes after a source-selection or replacement prompt, or a compatibility warning. Final statuses and dependency results are reported separately.
 
-Already-installed dependencies are kept when they satisfy the declared constraint. Otherwise, installation upgrades them to the highest published version that satisfies both the dependency constraint and the running azd version. Dependency upgrades preserve whether each member was installed explicitly or as a dependency. If satisfying a constraint would require a downgrade, installation fails without downgrading that member. Completed dependency updates are kept if a later step fails.
+Already-installed dependencies are kept when they satisfy the declared constraint. Otherwise, installation upgrades them to the highest published version that satisfies every [known constraint](#constraints-from-installed-extensions) and the running azd version. Dependency upgrades preserve whether each member was installed explicitly or as a dependency. If satisfying a constraint would require a downgrade, or no release satisfies every constraint, installation fails without changing that member. Before an extension is recorded as installed, `azd` checks that each of its dependencies satisfies its constraint. Completed dependency updates are kept, and listed, if a later step fails.
 
 ### Recovery after a failed update
 
@@ -238,13 +248,15 @@ Unused dependency cycles downstream of a removed target can remain installed bec
 
 Explicit installs, named `requiredVersions.extensions` entries, and independently auto-installed providers are kept when a pack is removed. Reusing an existing inferred provider does not change ownership. Updates preserve ownership.
 
-Legacy records are never auto-removed and have no known dependencies. Update backfills the target and directly reconciled children only when metadata matches the installed source and version. Deeper records gain metadata when directly updated, reconciled, or reinstalled. Ownership is never guessed.
+Legacy records are never auto-removed and have no known dependencies. Update backfills the target and directly reconciled children only when metadata matches the installed source and version. `azd extension update` and `azd extension install` (except bundle installs) first backfill every installed record this way, so their constraints apply to every version that `azd` selects. Deeper records gain metadata when directly updated, reconciled, or reinstalled. Ownership is never guessed.
 
 ## Update results
 
-Any extension or dependency failure returns a nonzero exit code, including with `--output json`. This includes metadata save failures. Completed updates are kept. The JSON summary counts top-level extensions; dependency outcomes appear in `dependencyUpgrades`. The same failure rule applies when installing over an existing extension.
+Any extension or dependency failure returns a nonzero exit code, including with `--output json`. This includes metadata save failures. Completed updates are kept. The JSON summary counts top-level extensions; dependency outcomes appear in `dependencyUpgrades`. Warnings, such as an explicit `--version` that an installed pack does not accept, appear in `warnings`. The same failure rule applies when installing over an existing extension.
 
-Dependency reconciliation never automatically downgrades a member. An installed version outside a pack's constraint that would need a downgrade is reported as a failed dependency, not a skipped update. This also applies to `azd extension update --all`, which can independently update a member beyond an installed pack's range. Align the member version explicitly or use a pack release with a compatible constraint.
+Dependency reconciliation never automatically downgrades a member. An installed version outside a pack's constraint that would need a downgrade, or a dependency whose constraints no release satisfies, is reported as a failed dependency with a suggested fix. Because automatic updates [stay within installed constraints](#constraints-from-installed-extensions), these conflicts come from an explicit `--version`, a manual install, or incompatible pack releases. After processing, `azd` also checks every constraint that involves an updated extension and reports each remaining conflict once. Retrying does not resolve a conflict, so the retry hint is shown only for other failures.
+
+With `--no-dependency-updates`, dependencies that a pack's constraints would update are reported as skipped. If a pack update adds a dependency that requires an installed dependency to be updated, the pack update fails instead.
 
 ## Self-Contained Bundles
 

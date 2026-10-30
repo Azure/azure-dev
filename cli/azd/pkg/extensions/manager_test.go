@@ -1234,7 +1234,7 @@ func Test_Install_PackDependency_ReconcilesInstalledVersion(t *testing.T) {
 		},
 		{
 			name: "downgrade refused", installed: "1.1.0", published: []string{"1.0.0", "1.1.0"},
-			wantVersion: "1.1.0", wantError: `version 1.1.0 does not satisfy test.pack's constraint "~1.0.0"`,
+			wantVersion: "1.1.0", wantError: `test.leaf 1.1.0 is installed, but test.pack requires "~1.0.0"`,
 		},
 		{
 			name: "no compatible release", installed: "1.0.0-beta.1", published: []string{"1.0.0-beta.1"},
@@ -1273,8 +1273,7 @@ func Test_Install_PackDependency_ReconcilesInstalledVersion(t *testing.T) {
 func Test_Install_PackDependency_NestedUpgradeFailure(t *testing.T) {
 	pack, child := packWithLeaf("1.0.0", "1.0.0-beta.1", "1.0.0")
 	pack.Versions[0].Dependencies[0].Version = "~1.0.0"
-	_, leaf := packWithLeaf("1.0.0", "1.0.0", "1.1.0")
-	leaf.Id = "test.nested"
+	leaf := constraintTestExtension("test.nested", ExtensionVersion{Version: "1.0.0"}, ExtensionVersion{Version: "1.1.0"})
 	child.Versions[1].Dependencies = []ExtensionDependency{{Id: leaf.Id, Version: "~1.0.0"}}
 	manager := newInstallTestManager(t, &mockSource{
 		name: MainRegistryName, extensions: []*ExtensionMetadata{pack, child, leaf},
@@ -1286,12 +1285,10 @@ func Test_Install_PackDependency_NestedUpgradeFailure(t *testing.T) {
 
 	_, err := manager.Install(t.Context(), pack, "")
 	require.ErrorContains(t, err, "dependency test.nested:")
-	require.ErrorContains(t, err, "does not satisfy test.leaf's constraint")
+	require.ErrorContains(t, err, `test.nested 1.1.0 is installed, but test.leaf requires "~1.0.0"`)
 	_, err = manager.GetInstalled(FilterOptions{Id: pack.Id})
 	require.ErrorIs(t, err, ErrInstalledExtensionNotFound)
-	installed, err := manager.GetInstalled(FilterOptions{Id: leaf.Id})
-	require.NoError(t, err)
-	require.Equal(t, "1.1.0", installed.Version)
+	requireInstalledVersion(t, manager, leaf.Id, "1.1.0")
 }
 
 func Test_Install_PackDependency_UsesCompatibleDependencyVersion(t *testing.T) {
@@ -3327,8 +3324,8 @@ func Test_Upgrade_DependencyUpgrade_RefusesToDowngradeOutsideConstraint(t *testi
 	require.Equal(t, UpgradeStatusFailed, depUpgrades[0].Status)
 	require.Equal(t, "2.0.0", depUpgrades[0].FromVersion)
 	require.ErrorAs(t, depUpgrades[0].Error, new(*DependencyVersionConflictError))
-	require.ErrorContains(t, depUpgrades[0].Error, "version 2.0.0 does not satisfy")
-	require.Contains(t, depUpgrades[0].Suggestion, "azd ext install test.child --source azd --version 1.0.0 --force")
+	require.ErrorContains(t, depUpgrades[0].Error, `test.child 2.0.0 is installed, but test.pack requires "~1.0.0"`)
+	require.Contains(t, depUpgrades[0].Suggestion, "azd extension install test.child --source azd --version 1.0.0 --force")
 	requireDependencyUpdateSpan(t, recorder, "test.child", "test.pack", codes.Error)
 
 	// Installed version should still be 2.0.0 — no downgrade happened.
@@ -4168,9 +4165,17 @@ func Test_Upgrade_DependencyUpgrade_ConstraintConflict(t *testing.T) {
 	require.Equal(t, "2.0.0", bEntry.ToVersion)
 
 	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
-	require.Error(t, cEntry.Error)
-	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
-	require.Contains(t, cEntry.Error.Error(), "leaf.c")
+	conflictErr, ok := errors.AsType[*DependencyConstraintsConflictError](cEntry.Error)
+	require.True(t, ok)
+	require.Equal(t, "leaf.c", conflictErr.DependencyId)
+	require.Equal(t, []DependencyConstraint{
+		{ParentId: "pack.a", Constraint: ">=2.0.0"},
+		{ParentId: "pack.b", Constraint: "~1.0.0"},
+	}, conflictErr.Constraints)
+	// leaf.c moves to satisfy pack.b because its installed version satisfied neither constraint.
+	require.Len(t, bEntry.DependencyUpgrades, 1)
+	require.Equal(t, UpgradeStatusUpgraded, bEntry.DependencyUpgrades[0].Status)
+	require.Equal(t, "1.0.0", bEntry.DependencyUpgrades[0].ToVersion)
 	requireDependencyUpdateSpan(t, recorder, "pack.b", "pack.a", codes.Ok)
 	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.b", codes.Ok)
 	requireDependencyUpdateSpan(t, recorder, "leaf.c", "pack.a", codes.Error)
@@ -4293,8 +4298,8 @@ func Test_Upgrade_DependencyUpgrade_NoOpStillPinsForSiblings(t *testing.T) {
 
 	require.NotNil(t, cEntry, "leaf.c dependency-upgrade entry expected")
 	require.Equal(t, UpgradeStatusFailed, cEntry.Status)
-	require.Error(t, cEntry.Error)
-	require.Contains(t, cEntry.Error.Error(), "constraint conflict")
+	require.ErrorAs(t, cEntry.Error, new(*DependencyConstraintsConflictError))
+	require.ErrorContains(t, cEntry.Error, `pack.a requires "~1.0.0", pack.b requires ">=2.0.0"`)
 
 	// leaf.c must remain at 1.0.0 — pack.a's earlier no-op visit pinned it.
 	cFinal, err := manager.GetInstalled(FilterOptions{Id: "leaf.c"})

@@ -477,10 +477,7 @@ func tryAutoInstallExtensionVersion(
 	if err != nil {
 		return false, fmt.Errorf("listing installed extensions: %w", err)
 	}
-	preInstalledVersions := make(map[string]string, len(installedBefore))
-	for id, installed := range installedBefore {
-		preInstalledVersions[id] = installed.Version
-	}
+	preInstalledVersions := installedVersionsById(installedBefore)
 
 	stepMessage := extensionTaskMessage("Installing", extension.Id)
 	console.ShowSpinner(ctx, stepMessage, input.Step)

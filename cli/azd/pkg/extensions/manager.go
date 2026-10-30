@@ -32,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
 
@@ -92,29 +91,6 @@ func (e *DependencyVersionNotFoundError) Suggestion() string {
 		"Install a version of %s that satisfies constraint %q before retrying, include a compatible version "+
 			"with %s, or update %s's dependency constraint.",
 		e.DependencyId, e.Constraint, e.ParentId, e.ParentId,
-	)
-}
-
-// DependencyVersionConflictError indicates that an installed dependency violates its parent's constraint.
-type DependencyVersionConflictError struct {
-	DependencyId     string
-	ParentId         string
-	Constraint       string
-	InstalledVersion string
-}
-
-func (e *DependencyVersionConflictError) Error() string {
-	return fmt.Sprintf(
-		"dependency %s version %s does not satisfy %s's constraint %q",
-		e.DependencyId, e.InstalledVersion, e.ParentId, e.Constraint,
-	)
-}
-
-// Suggestion returns guidance without authorizing an automatic downgrade.
-func (e *DependencyVersionConflictError) Suggestion() string {
-	return fmt.Sprintf(
-		"Install a version of %s that satisfies %q, or update %s to a compatible release.",
-		e.DependencyId, e.Constraint, e.ParentId,
 	)
 }
 
@@ -335,18 +311,34 @@ func matchesVersionConstraint(expr, candidate string) bool {
 	return constraint.Check(parsedVersion)
 }
 
+// compareVersions orders two versions. ok is false when either is not valid semver, because
+// non-semver tags have no defined order.
+func compareVersions(a, b string) (order int, ok bool) {
+	aSemver, err := semver.NewVersion(a)
+	if err != nil {
+		return 0, false
+	}
+	bSemver, err := semver.NewVersion(b)
+	if err != nil {
+		return 0, false
+	}
+	return aSemver.Compare(bSemver), true
+}
+
 // isDowngrade reports whether moving from current to target is a version regression.
 // Returns false if either version is not valid semver.
 func isDowngrade(current, target string) bool {
-	currentSemver, err := semver.NewVersion(current)
-	if err != nil {
-		return false
+	order, ok := compareVersions(target, current)
+	return ok && order < 0
+}
+
+// isNewerVersion reports whether candidate is newer than current. A different non-semver tag counts
+// as newer, consistent with isDowngrade never treating such a change as a regression.
+func isNewerVersion(candidate, current string) bool {
+	if order, ok := compareVersions(candidate, current); ok {
+		return order > 0
 	}
-	targetSemver, err := semver.NewVersion(target)
-	if err != nil {
-		return false
-	}
-	return targetSemver.LessThan(currentSemver)
+	return !strings.EqualFold(candidate, current)
 }
 
 // bestSatisfyingVersion returns the highest published version satisfying expr.
@@ -807,6 +799,10 @@ type InstallOptions struct {
 	// parent source from falling back to the main azd registry. Self-contained
 	// bundle installs use this to remain isolated from network sources.
 	SkipMainRegistryDependencyFallback bool
+	// SkipDependencyUpdates prevents the install from updating dependencies that are already
+	// installed. An installed dependency that does not satisfy a declared constraint then fails
+	// the install.
+	SkipDependencyUpdates bool
 }
 
 // InstallWithOptions installs an extension using the supplied options.
@@ -815,35 +811,35 @@ func (m *Manager) InstallWithOptions(
 	extension *ExtensionMetadata,
 	opts InstallOptions,
 ) (*ExtensionVersion, error) {
-	return m.installInternal(ctx, extension, opts, false, false, map[string]struct{}{})
+	version, _, err := m.installInternal(ctx, extension, opts, false, false, newDependencyWalk())
+	return version, err
 }
 
-// installInternal installs an extension and its dependencies.
+// installInternal installs an extension and its dependencies. It returns the results of updates to
+// dependencies that were already installed, including updates made by nested dependency installs.
 // deferDependencyUpdates defers installed-dependency reconciliation; it is set by the
 // upgrade flow so dependency reconciliation can run after the parent has been reinstalled.
 // asDependency records that the extension is being installed only because another extension
 // requires it; the flag is preserved across upgrades and consulted by PlanUninstall.
-// visited contains the ids currently in flight, which prevents dependency cycles.
 func (m *Manager) installInternal(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	opts InstallOptions,
 	deferDependencyUpdates bool,
 	asDependency bool,
-	visited map[string]struct{},
-) (extVersion *ExtensionVersion, err error) {
+	walk *dependencyWalk,
+) (extVersion *ExtensionVersion, dependencyResults []UpgradeResult, err error) {
 	if extension == nil {
-		return nil, fmt.Errorf("extension metadata cannot be nil")
+		return nil, nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	if _, inFlight := visited[extension.Id]; inFlight {
-		return nil, fmt.Errorf(
+	if !walk.startInstall(extension.Id) {
+		return nil, nil, fmt.Errorf(
 			"dependency cycle detected involving extension %s",
 			extension.Id,
 		)
 	}
-	visited[extension.Id] = struct{}{}
-	defer delete(visited, extension.Id)
+	defer walk.finishInstall(extension.Id)
 
 	ctx, span := tracing.Start(ctx, events.ExtensionInstallEvent)
 	// Set the extension id immediately so failure spans can be correlated to the
@@ -858,13 +854,13 @@ func (m *Manager) installInternal(
 
 	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
 	if err == nil && installed != nil {
-		return nil, fmt.Errorf("%s %w", extension.Id, ErrExtensionInstalled)
+		return nil, nil, fmt.Errorf("%s %w", extension.Id, ErrExtensionInstalled)
 	}
 
 	// Resolve to the latest published version that satisfies the preference.
 	selectedVersion, err := ResolveExtensionVersion(extension, opts.VersionPreference, m.azdVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Record the resolved version on the span so failures during install
@@ -874,7 +870,7 @@ func (m *Manager) installInternal(
 	// Binaries are optional as long as dependencies are provided
 	// This allows for extensions that are just extension packs
 	if len(selectedVersion.Artifacts) == 0 && len(selectedVersion.Dependencies) == 0 {
-		return nil, fmt.Errorf("no binaries or dependencies available for this version")
+		return nil, nil, fmt.Errorf("no binaries or dependencies available for this version")
 	}
 
 	// Install dependencies unless the caller opted out. Skipping bypasses both the
@@ -882,45 +878,11 @@ func (m *Manager) installInternal(
 	// target extension installs even when the registry's dependency graph is
 	// transiently inconsistent (e.g. during a coordinated multi-extension bump).
 	if !opts.SkipDependencies && len(selectedVersion.Dependencies) > 0 {
-		for _, dependency := range selectedVersion.Dependencies {
-			installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
-			if err == nil && installedDependency != nil {
-				if !deferDependencyUpdates &&
-					dependency.Version != "" &&
-					!matchesVersionConstraint(dependency.Version, installedDependency.Version) {
-					results := m.evaluateDependencyChanges(
-						ctx, extension, []ExtensionDependency{dependency}, UpgradeOptions{
-							UpgradeDependencies:                true,
-							SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
-						}, visited,
-					)
-					if err := DependencyUpgradeError(results); err != nil {
-						return nil, fmt.Errorf("failed to update dependencies for extension %s: %w", extension.Id, err)
-					}
-				}
-				continue
-			}
-
-			dependencyMetadata, err := m.resolveDependency(
-				ctx,
-				extension,
-				dependency,
-				!opts.SkipMainRegistryDependencyFallback,
-				m.azdVersion,
-			)
-			if err != nil {
-				return nil, err
-			}
-
-			dependencyOpts := InstallOptions{
-				VersionPreference:                  dependency.Version,
-				SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
-			}
-			if _, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, true, visited); err != nil {
-				if !errors.Is(err, ErrExtensionInstalled) {
-					return nil, fmt.Errorf("failed to install dependency: %w", err)
-				}
-			}
+		dependencyResults, err = m.installDependencies(
+			ctx, extension, selectedVersion.Dependencies, opts, deferDependencyUpdates, walk,
+		)
+		if err != nil {
+			return nil, dependencyResults, err
 		}
 	}
 
@@ -933,13 +895,13 @@ func (m *Manager) installInternal(
 		// Step 3: Find the artifact for the current OS
 		artifact, err := findArtifactForCurrentOS(selectedVersion)
 		if err != nil {
-			return nil, fmt.Errorf("failed to find artifact for current OS: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to find artifact for current OS: %w", err)
 		}
 
 		// Step 4: Download the artifact to a temp location
 		tempFilePath, err := m.downloadArtifact(ctx, artifact.URL)
 		if err != nil {
-			return nil, fmt.Errorf("failed to download artifact: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to download artifact: %w", err)
 		}
 
 		// Clean up the temp file after all scenarios
@@ -947,33 +909,33 @@ func (m *Manager) installInternal(
 
 		// Step 5: Validate the checksum if provided
 		if err := validateChecksum(tempFilePath, artifact.Checksum); err != nil {
-			return nil, fmt.Errorf("checksum validation failed: %w", err)
+			return nil, dependencyResults, fmt.Errorf("checksum validation failed: %w", err)
 		}
 
 		userConfigDir, err := config.GetUserConfigDir()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get user config directory: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to get user config directory: %w", err)
 		}
 
 		targetDir := filepath.Join(userConfigDir, "extensions", extension.Id)
 		if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("failed to create target directory: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to create target directory: %w", err)
 		}
 
 		// Step 6: Copy the artifact to the target directory
 		// Check if artifact is a zip file, if so extract it to the target directory
 		if strings.HasSuffix(tempFilePath, ".zip") {
 			if err := rzip.ExtractToDirectory(tempFilePath, targetDir); err != nil {
-				return nil, fmt.Errorf("failed to extract zip file: %w", err)
+				return nil, dependencyResults, fmt.Errorf("failed to extract zip file: %w", err)
 			}
 		} else if strings.HasSuffix(tempFilePath, ".tar.gz") {
 			if err := rzip.ExtractTarGzToDirectory(tempFilePath, targetDir); err != nil {
-				return nil, fmt.Errorf("failed to extract tar.gz file: %w", err)
+				return nil, dependencyResults, fmt.Errorf("failed to extract tar.gz file: %w", err)
 			}
 		} else {
 			targetPath = filepath.Join(targetDir, filepath.Base(tempFilePath))
 			if err := copyFile(tempFilePath, targetPath); err != nil {
-				return nil, fmt.Errorf("failed to copy artifact to target location: %w", err)
+				return nil, dependencyResults, fmt.Errorf("failed to copy artifact to target location: %w", err)
 			}
 		}
 
@@ -994,7 +956,7 @@ func (m *Manager) installInternal(
 
 		// Prevent path traversal attacks by ensuring entryPoint stays within the extension install directory
 		if !osutil.IsPathContained(targetDir, targetPath) {
-			return nil, fmt.Errorf(
+			return nil, dependencyResults, fmt.Errorf(
 				"invalid entry point path: entry point %q resolves outside extension directory. "+
 					"Use relative paths (e.g., 'bin/myext' or 'bin\\myext') without '..' sequences", entryPoint)
 		}
@@ -1002,19 +964,19 @@ func (m *Manager) installInternal(
 		// Need to set the executable permission for the binary
 		// This change is specifically required for Linux but will apply consistently across all platforms
 		if err := os.Chmod(targetPath, osutil.PermissionExecutableFile); err != nil {
-			return nil, fmt.Errorf("failed to set executable permission: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to set executable permission: %w", err)
 		}
 
 		relativeExtensionPath, err = filepath.Rel(userConfigDir, targetPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get relative path: %w", err)
+			return nil, dependencyResults, fmt.Errorf("failed to get relative path: %w", err)
 		}
 	}
 
 	// Step 7: Update the user config with the installed extension
 	extensions, err := m.ListInstalled()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list installed extensions: %w", err)
+		return nil, dependencyResults, fmt.Errorf("failed to list installed extensions: %w", err)
 	}
 
 	extensions[extension.Id] = &Extension{
@@ -1037,11 +999,11 @@ func (m *Manager) installInternal(
 	}
 
 	if err := m.userConfig.Set(installedConfigKey, extensions); err != nil {
-		return nil, fmt.Errorf("failed to set extensions section: %w", err)
+		return nil, dependencyResults, fmt.Errorf("failed to set extensions section: %w", err)
 	}
 
 	if err := m.configManager.Save(m.userConfig); err != nil {
-		return nil, fmt.Errorf("failed to save user config: %w", err)
+		return nil, dependencyResults, fmt.Errorf("failed to save user config: %w", err)
 	}
 
 	log.Printf(
@@ -1060,7 +1022,100 @@ func (m *Manager) installInternal(
 		}
 	}
 
-	return selectedVersion, nil
+	return selectedVersion, dependencyResults, nil
+}
+
+// installDependencies installs missing dependencies of parent and, unless deferDependencyUpdates is
+// set, updates installed dependencies that do not satisfy their constraints. Versions are selected
+// against every constraint known to the operation, so a dependency chosen for one extension stays
+// within the ranges declared by its siblings, its ancestors, and installed extensions.
+func (m *Manager) installDependencies(
+	ctx context.Context,
+	parent *ExtensionMetadata,
+	dependencies []ExtensionDependency,
+	opts InstallOptions,
+	deferDependencyUpdates bool,
+	walk *dependencyWalk,
+) ([]UpgradeResult, error) {
+	// Record every constraint before processing any dependency, so nested installs and updates
+	// also respect constraints on siblings that are processed later.
+	walk.setPending(parent.Id, dependencies)
+
+	allowFallback := !opts.SkipMainRegistryDependencyFallback
+	conflictError := func(dependency ExtensionDependency, installed *Extension) error {
+		// Metadata only improves the suggestion, so a lookup failure keeps the generic one.
+		metadata, _ := m.resolveDependency(ctx, parent, dependency, allowFallback, m.azdVersion)
+		return m.dependencyConflictError(parent.Id, dependency, installed, metadata, walk)
+	}
+
+	var results []UpgradeResult
+	for _, dependency := range dependencies {
+		installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
+		if err == nil && installedDependency != nil {
+			if deferDependencyUpdates || matchesVersionConstraint(dependency.Version, installedDependency.Version) {
+				continue
+			}
+			if opts.SkipDependencyUpdates {
+				return results, fmt.Errorf(
+					"dependency updates are disabled: %w", conflictError(dependency, installedDependency),
+				)
+			}
+			updates := m.evaluateDependencyChanges(ctx, parent, []ExtensionDependency{dependency}, UpgradeOptions{
+				UpgradeDependencies:                true,
+				SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
+			}, walk)
+			results = append(results, updates...)
+			if err := DependencyUpgradeError(updates); err != nil {
+				return results, fmt.Errorf("failed to update dependencies for extension %s: %w", parent.Id, err)
+			}
+			continue
+		}
+
+		dependencyMetadata, err := m.resolveDependency(ctx, parent, dependency, allowFallback, m.azdVersion)
+		if err != nil {
+			return results, err
+		}
+		constraints, err := m.dependencyConstraints(dependency.Id, walk)
+		if err != nil {
+			return results, err
+		}
+		// resolveDependency found a compatible release for this constraint alone, so no match
+		// means the constraints conflict.
+		version := bestVersionForConstraints(constraints, dependencyMetadata.Versions, m.azdVersion)
+		if version == nil {
+			return results, &DependencyConstraintsConflictError{
+				DependencyId: dependencyMetadata.Id,
+				Constraints:  constraints,
+			}
+		}
+
+		dependencyOpts := InstallOptions{
+			VersionPreference:                  version.Version,
+			SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
+			SkipDependencyUpdates:              opts.SkipDependencyUpdates,
+		}
+		_, nested, err := m.installInternal(ctx, dependencyMetadata, dependencyOpts, false, true, walk)
+		results = append(results, nested...)
+		if err != nil && !errors.Is(err, ErrExtensionInstalled) {
+			return results, fmt.Errorf("failed to install dependency: %w", err)
+		}
+	}
+
+	if deferDependencyUpdates {
+		return results, nil
+	}
+	// A nested install or update can change a dependency that was checked earlier. Validate the
+	// final versions before the parent is recorded as installed.
+	for _, dependency := range dependencies {
+		installedDependency, err := m.GetInstalled(FilterOptions{Id: dependency.Id})
+		if err != nil || matchesVersionConstraint(dependency.Version, installedDependency.Version) {
+			continue
+		}
+		return results, fmt.Errorf(
+			"dependencies of %s are not satisfied: %w", parent.Id, conflictError(dependency, installedDependency),
+		)
+	}
+	return results, nil
 }
 
 // Uninstall uninstalls an extension by name.
@@ -1148,8 +1203,7 @@ func (m *Manager) Upgrade(
 		return nil, nil, fmt.Errorf("extension metadata cannot be nil")
 	}
 
-	visited := map[string]struct{}{extension.Id: {}}
-	return m.upgradeInternal(ctx, extension, opts, visited)
+	return m.upgradeInternal(ctx, extension, opts, newDependencyWalk(extension.Id))
 }
 
 // ReconcileDependencies upgrades installed dependencies for the selected extension version.
@@ -1175,8 +1229,9 @@ func (m *Manager) ReconcileDependencies(
 		return nil, nil, err
 	}
 
-	visited := map[string]struct{}{extension.Id: {}}
-	results := m.evaluateDependencyChanges(ctx, extension, selectedVersion.Dependencies, opts, visited)
+	results := m.evaluateDependencyChanges(
+		ctx, extension, selectedVersion.Dependencies, opts, newDependencyWalk(extension.Id),
+	)
 	return selectedVersion, results, nil
 }
 
@@ -1210,6 +1265,48 @@ func (m *Manager) BackfillDependencies(id, source string, version *ExtensionVers
 	return nil
 }
 
+// BackfillInstalledDependencies records dependency snapshots for every installed record that
+// predates dependency tracking, so their constraints are known before a command selects versions.
+// It is best effort: records whose metadata cannot be found or saved are left unchanged, and the
+// commands that update them report their own failures.
+func (m *Manager) BackfillInstalledDependencies(ctx context.Context) {
+	installed, err := m.ListInstalled()
+	if err != nil {
+		log.Printf("skipping dependency backfill: %v", err)
+		return
+	}
+	candidates := slices.DeleteFunc(slices.Sorted(maps.Keys(installed)), func(id string) bool {
+		record := installed[id]
+		return len(record.Dependencies) > 0 || record.Source == "" || record.Source == BundleSourceName
+	})
+	if len(candidates) == 0 {
+		return
+	}
+
+	// An unfiltered lookup loads every source once and caches them for the rest of the command;
+	// filtered lookups would fetch a source again for each record.
+	available, err := m.FindExtensions(ctx, &FilterOptions{})
+	if err != nil {
+		log.Printf("skipping dependency backfill: %v", err)
+		return
+	}
+	bySourceAndId := make(map[[2]string]*ExtensionMetadata, len(available))
+	for _, extension := range available {
+		bySourceAndId[[2]string{strings.ToLower(extension.Source), strings.ToLower(extension.Id)}] = extension
+	}
+	for _, id := range candidates {
+		record := installed[id]
+		metadata := bySourceAndId[[2]string{strings.ToLower(record.Source), strings.ToLower(record.Id)}]
+		if metadata == nil {
+			continue
+		}
+		version := FindVersion(metadata.Versions, record.Version)
+		if err := m.BackfillDependencies(record.Id, metadata.Source, version); err != nil {
+			log.Printf("skipping dependency backfill for %s: %v", record.Id, err)
+		}
+	}
+}
+
 // MarkExplicitlyInstalled prevents automatic removal as an unused dependency.
 // Repeated calls are a no-op.
 func (m *Manager) MarkExplicitlyInstalled(id string) error {
@@ -1230,13 +1327,13 @@ func (m *Manager) MarkExplicitlyInstalled(id string) error {
 	return nil
 }
 
-// upgradeInternal performs the reinstall and any dependency upgrades.
-// visited prevents dependency cycles.
+// upgradeInternal performs the reinstall and any dependency upgrades. The returned results include
+// updates to installed dependencies that new dependencies required during the reinstall.
 func (m *Manager) upgradeInternal(
 	ctx context.Context,
 	extension *ExtensionMetadata,
 	opts UpgradeOptions,
-	visited map[string]struct{},
+	walk *dependencyWalk,
 ) (version *ExtensionVersion, results []UpgradeResult, err error) {
 	installed, err := m.GetInstalled(FilterOptions{Id: extension.Id})
 	if err != nil {
@@ -1260,27 +1357,28 @@ func (m *Manager) upgradeInternal(
 
 	// Skip the installed-dependency constraint check: the previous parent has just been
 	// uninstalled and any stale dependency will be reconciled by evaluateDependencyChanges below.
-	extensionVersion, err := m.installInternal(ctx, extension, InstallOptions{
+	extensionVersion, installResults, err := m.installInternal(ctx, extension, InstallOptions{
 		VersionPreference:                  opts.VersionPreference,
 		SkipDependencies:                   opts.SkipDependencies,
 		SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
-	}, true, asDependency, map[string]struct{}{})
+		SkipDependencyUpdates:              !opts.UpgradeDependencies,
+	}, true, asDependency, walk)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to install extension: %w", err)
+		return nil, installResults, fmt.Errorf("failed to install extension: %w", err)
 	}
 
 	// When dependencies are skipped, the reinstall above installs only the target
 	// extension; do not resolve or reconcile any dependency versions.
 	if opts.SkipDependencies {
-		return extensionVersion, nil, nil
+		return extensionVersion, installResults, nil
 	}
 
 	if extensionVersion == nil || len(extensionVersion.Dependencies) == 0 {
-		return extensionVersion, nil, nil
+		return extensionVersion, installResults, nil
 	}
 
-	depUpgrades := m.evaluateDependencyChanges(ctx, extension, extensionVersion.Dependencies, opts, visited)
-	return extensionVersion, depUpgrades, nil
+	depUpgrades := m.evaluateDependencyChanges(ctx, extension, extensionVersion.Dependencies, opts, walk)
+	return extensionVersion, append(installResults, depUpgrades...), nil
 }
 
 // prepareUpgradeRecovery preserves the target's files and installed record
@@ -1389,33 +1487,30 @@ func (m *Manager) prepareUpgradeRecovery(
 }
 
 // evaluateDependencyChanges reconciles installed dependencies against their declared constraints.
-// It selects the highest published version satisfying each dependency constraint.
+// It selects the highest published version that satisfies every constraint known to the operation:
+// the parent's, those of other installed extensions, and those of extensions pending in walk. It
+// never downgrades a dependency.
 func (m *Manager) evaluateDependencyChanges(
 	ctx context.Context,
 	parentExtension *ExtensionMetadata,
 	dependencies []ExtensionDependency,
 	opts UpgradeOptions,
-	visited map[string]struct{},
+	walk *dependencyWalk,
 ) []UpgradeResult {
 	var results []UpgradeResult
-
-	// These failures occur before an actual upgrade starts its own span.
-	recordFailure := func(result UpgradeResult) {
-		_, span := tracing.Start(ctx, events.ExtensionUpdateEvent)
-		span.SetAttributes(
-			fields.ExtensionId.String(result.ExtensionId),
-			fields.ExtensionDependencyOf.String(parentExtension.Id),
-			fields.ExtensionSourceCategory.String(string(result.FromSourceCategory)),
-		)
-		span.EndWithStatus(result.Error)
-		results = append(results, result)
-	}
 
 	for _, dep := range dependencies {
 		installed, err := m.GetInstalled(FilterOptions{Id: dep.Id})
 		if err != nil || installed == nil {
 			// Not installed — handled by the parent's Install dependency loop.
 			continue
+		}
+
+		// These failures occur before an actual upgrade starts its own span.
+		recordFailure := func(err error) {
+			result := dependencyFailure(installed, err)
+			TraceDependencyFailure(ctx, parentExtension.Id, result)
+			results = append(results, result)
 		}
 
 		// Dependency upgrades use the same parent-source then main-registry
@@ -1434,14 +1529,7 @@ func (m *Manager) evaluateDependencyChanges(
 		if findErr == nil {
 			installedRelease := FindVersion(childMetadata.Versions, installed.Version)
 			if err := m.BackfillDependencies(dep.Id, childMetadata.Source, installedRelease); err != nil {
-				recordFailure(UpgradeResult{
-					ExtensionId:        dep.Id,
-					Status:             UpgradeStatusFailed,
-					FromVersion:        installed.Version,
-					FromSource:         installed.Source,
-					FromSourceCategory: installed.SourceCategoryOrUnknown(),
-					Error:              err,
-				})
+				recordFailure(err)
 				continue
 			}
 		}
@@ -1451,91 +1539,57 @@ func (m *Manager) evaluateDependencyChanges(
 			continue
 		}
 
-		// Respect a sibling's compatible choice; otherwise surface a conflict.
-		if _, seen := visited[dep.Id]; seen {
+		// Respect the version this operation already chose; otherwise surface a conflict.
+		if walk.isSettled(dep.Id) {
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
-			conflictErr := fmt.Errorf(
-				"constraint conflict for %s: %s requires %q but another "+
-					"dependency already pinned it to %s",
-				dep.Id, parentExtension.Id, dep.Version, installed.Version,
-			)
-			recordFailure(UpgradeResult{
-				ExtensionId:        dep.Id,
-				Status:             UpgradeStatusFailed,
-				FromVersion:        installed.Version,
-				FromSource:         installed.Source,
-				FromSourceCategory: installed.SourceCategoryOrUnknown(),
-				Error:              conflictErr,
-			})
+			recordFailure(m.dependencyConflictError(parentExtension.Id, dep, installed, childMetadata, walk))
 			continue
 		}
 
-		// Mark visited up front so that any sibling pack processed later in this
-		// run goes through the seen-branch above and validates against the
-		// currently installed version — regardless of whether this iteration
-		// upgrades, skips, or fails.
-		visited[dep.Id] = struct{}{}
+		// Settle up front so that any extension processed later in this operation validates
+		// against the resulting version, whether this iteration upgrades, skips, or fails.
+		walk.settle(dep.Id)
 
 		if findErr != nil {
 			// Without registry data, only fail if the installed version violates the constraint.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
-			var suggestion string
-			if suggestionErr, ok := findErr.(interface{ Suggestion() string }); ok {
-				suggestion = suggestionErr.Suggestion()
-			}
-			recordFailure(UpgradeResult{
-				ExtensionId:        dep.Id,
-				Status:             UpgradeStatusFailed,
-				FromVersion:        installed.Version,
-				FromSource:         installed.Source,
-				FromSourceCategory: installed.SourceCategoryOrUnknown(),
-				Error:              findErr,
-				Suggestion:         suggestion,
-			})
+			recordFailure(findErr)
 			continue
 		}
 
-		bestVersion := bestSatisfyingVersionForAzd(dep.Version, childMetadata.Versions, m.azdVersion)
+		constraints, err := m.dependencyConstraints(dep.Id, walk)
+		if err != nil {
+			recordFailure(err)
+			continue
+		}
+		parentConstraint := DependencyConstraint{ParentId: parentExtension.Id, Constraint: dep.Version}
+		constraints = withConstraint(constraints, parentConstraint)
+
+		bestVersion := bestVersionForConstraints(constraints, childMetadata.Versions, m.azdVersion)
 		if bestVersion == nil {
-			// If no published version matches, keep a compatible installed version.
+			// No release satisfies every constraint. Keep an installed version that satisfies this
+			// parent; conflicts with other constraints are reported when the extensions declaring
+			// them are reconciled.
 			if matchesVersionConstraint(dep.Version, installed.Version) {
 				continue
 			}
-			var resultErr error
-			var suggestion string
-			publishedVersion := bestSatisfyingVersion(dep.Version, childMetadata.Versions)
-			if publishedVersion == nil {
-				versionErr := &DependencyVersionNotFoundError{
-					DependencyId: dep.Id,
-					ParentId:     parentExtension.Id,
-					Constraint:   dep.Version,
-				}
-				resultErr = versionErr
-				suggestion = versionErr.Suggestion()
-			} else {
-				compatibilityErr := &DependencyAzdVersionIncompatibleError{
-					DependencyId:       dep.Id,
-					ParentId:           parentExtension.Id,
-					Constraint:         dep.Version,
-					RequiredAzdVersion: publishedVersion.RequiredAzdVersion,
-				}
-				resultErr = compatibilityErr
-				suggestion = compatibilityErr.Suggestion()
+			// Otherwise satisfy this parent if that breaks no constraint the installed version
+			// satisfies.
+			bestVersion = bestVersionForConstraints(
+				withConstraint(satisfiedConstraints(constraints, installed.Version), parentConstraint),
+				childMetadata.Versions,
+				m.azdVersion,
+			)
+			// resolveDependency found a compatible release for this parent's constraint alone, so
+			// no match means the constraints conflict.
+			if bestVersion == nil {
+				recordFailure(&DependencyConstraintsConflictError{DependencyId: dep.Id, Constraints: constraints})
+				continue
 			}
-			recordFailure(UpgradeResult{
-				ExtensionId:        dep.Id,
-				Status:             UpgradeStatusFailed,
-				FromVersion:        installed.Version,
-				FromSource:         installed.Source,
-				FromSourceCategory: installed.SourceCategoryOrUnknown(),
-				Error:              resultErr,
-				Suggestion:         suggestion,
-			})
-			continue
 		}
 
 		// Already at the highest matching version — nothing to do.
@@ -1550,25 +1604,13 @@ func (m *Manager) evaluateDependencyChanges(
 				// Installed is newer but still satisfies the constraint — keep it, no-op.
 				continue
 			}
-			recordFailure(UpgradeResult{
-				ExtensionId:        dep.Id,
-				Status:             UpgradeStatusFailed,
-				FromVersion:        installed.Version,
-				FromSource:         installed.Source,
-				FromSourceCategory: installed.SourceCategoryOrUnknown(),
-				Error: &DependencyVersionConflictError{
-					DependencyId:     dep.Id,
-					ParentId:         parentExtension.Id,
-					Constraint:       dep.Version,
-					InstalledVersion: installed.Version,
-				},
-				Suggestion: fmt.Sprintf(
-					"Run %s to align with extension pack.",
-					output.WithHighLightFormat(
-						"azd ext install %s --source %s --version %s --force",
-						dep.Id, childMetadata.Source, bestVersion.Version,
-					),
-				),
+			recordFailure(&DependencyVersionConflictError{
+				DependencyId:      dep.Id,
+				ParentId:          parentExtension.Id,
+				Constraint:        dep.Version,
+				InstalledVersion:  installed.Version,
+				Source:            childMetadata.Source,
+				CompatibleVersion: bestVersion.Version,
 			})
 			continue
 		}
@@ -1607,12 +1649,13 @@ func (m *Manager) evaluateDependencyChanges(
 		)
 
 		childOpts := UpgradeOptions{
-			VersionPreference:                  dep.Version,
+			VersionPreference:                  bestVersion.Version,
 			UpgradeDependencies:                opts.UpgradeDependencies,
 			SkipMainRegistryDependencyFallback: opts.SkipMainRegistryDependencyFallback,
 		}
 
-		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, visited)
+		childVersion, nested, upErr := m.upgradeInternal(childCtx, childMetadata, childOpts, walk)
+		childResult.DependencyUpgrades = nested
 		if upErr != nil {
 			childResult.Status = UpgradeStatusFailed
 			childResult.Error = upErr
@@ -1623,7 +1666,6 @@ func (m *Manager) evaluateDependencyChanges(
 
 		childResult.Status = UpgradeStatusUpgraded
 		childResult.ToVersion = childVersion.Version
-		childResult.DependencyUpgrades = nested
 		span.SetAttributes(
 			fields.ExtensionVersionFrom.String(installed.Version),
 			fields.ExtensionVersionTo.String(childVersion.Version),

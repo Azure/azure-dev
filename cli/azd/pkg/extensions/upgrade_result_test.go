@@ -292,8 +292,9 @@ func TestNewUpgradeSummary(t *testing.T) {
 
 	t.Run("dependencyUpgrades_counted_recursively", func(t *testing.T) {
 		t.Parallel()
-		grandchild := UpgradeResult{Status: UpgradeStatusUpgraded}
+		grandchild := UpgradeResult{ExtensionId: "test.grandchild", Status: UpgradeStatusUpgraded}
 		child := UpgradeResult{
+			ExtensionId:        "test.child",
 			Status:             UpgradeStatusUpgraded,
 			DependencyUpgrades: []UpgradeResult{grandchild},
 		}
@@ -308,6 +309,20 @@ func TestNewUpgradeSummary(t *testing.T) {
 		assert.Equal(t, 2, s.Total)
 		assert.Equal(t, 2, s.Upgraded)
 		assert.Equal(t, 2, s.DependencyUpgrades, "dependency-upgrade count must include grandchildren")
+	})
+
+	t.Run("dependency_reported_by_two_parents_counted_once", func(t *testing.T) {
+		t.Parallel()
+		failed := UpgradeResult{ExtensionId: "test.child", Status: UpgradeStatusFailed}
+		results := []UpgradeResult{
+			{Status: UpgradeStatusSkipped, DependencyUpgrades: []UpgradeResult{failed}},
+			{Status: UpgradeStatusSkipped, DependencyUpgrades: []UpgradeResult{{
+				ExtensionId: "Test.Child", Status: UpgradeStatusFailed,
+			}}},
+		}
+		s := NewUpgradeSummary(results)
+		assert.Equal(t, 1, s.DependencyUpgrades)
+		assert.Equal(t, 1, s.DependencyUpgradesByStatus[UpgradeStatusFailed])
 	})
 }
 

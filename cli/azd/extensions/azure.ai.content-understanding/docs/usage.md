@@ -75,7 +75,6 @@ process overrides when switching resources.
 
 Microsoft Entra ID through azd is the default authentication method.
 Use `azd auth login` or supported noninteractive azd authentication.
-CU profile commands are not supported.
 
 For testing or automation, CU data-plane commands also accept a resource API
 key from the **process environment only**. Inject `CU_API_KEY` through a CI

@@ -70,6 +70,10 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 	require.NoError(t, schema.validate(map[string]any{
 		"$ref": "live.yaml", "subProtocol": "live",
 	}))
+	require.NoError(t, schema.validate(map[string]any{
+		"$ref": "live.yaml", "kind": "voice",
+		"audio": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+	}))
 	require.Error(t, schema.validate(map[string]any{
 		"subProtocol": "live",
 	}))

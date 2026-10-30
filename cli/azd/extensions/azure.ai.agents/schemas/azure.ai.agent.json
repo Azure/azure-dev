@@ -517,7 +517,12 @@
         "required": ["kind"],
         "not": { "required": ["conversationEngine"] },
         "anyOf": [
-          { "not": { "required": ["subProtocol"] } },
+          {
+            "allOf": [
+              { "not": { "required": ["subProtocol"] } },
+              { "not": { "required": ["$ref"] } }
+            ]
+          },
           {
             "properties": { "subProtocol": { "const": "realtime" } },
             "required": ["subProtocol"]

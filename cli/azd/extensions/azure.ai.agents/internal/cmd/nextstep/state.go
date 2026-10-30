@@ -658,10 +658,13 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	sawInvocations := false
 	sawActivity := false
 	sawInvocationsWS := false
+	sawA2A := false
 	for _, p := range hosted.Protocols {
 		switch strings.TrimSpace(p.Protocol) {
 		case ProtocolResponses:
 			return ProtocolResponses, multiProtocol
+		case ProtocolA2A:
+			sawA2A = true
 		case ProtocolInvocationsWS:
 			sawInvocationsWS = true
 		case ProtocolInvocations:
@@ -672,6 +675,9 @@ func loadServiceProtocolFromBytes(data []byte) (string, bool) {
 	}
 	if sawInvocations {
 		return ProtocolInvocations, multiProtocol
+	}
+	if sawA2A {
+		return ProtocolA2A, multiProtocol
 	}
 	if sawActivity {
 		return ProtocolActivity, multiProtocol

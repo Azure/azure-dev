@@ -275,7 +275,7 @@ overrides:
       - keychain
       - crusername
       - azurecr
-  - filename: pkg/exec/cmdtree_processes_darwin.go
+  - filename: pkg/exec/internal/process/discovery_darwin.go
     words:
       - Eproc
       - Kinfo
@@ -459,6 +459,9 @@ overrides:
   - filename: "{pkg/azapi/permissions.go,pkg/infra/provisioning/bicep/bicep_provider.go}"
     words:
       - ABAC
+  - filename: docs/design/provision-validation.md
+    words:
+      - ABAC
   - filename: extensions/azure.ai.models/internal/cmd/custom_create.go
     words:
       - Qwen
@@ -481,6 +484,9 @@ overrides:
   - filename: extensions/azure.ai.agents/internal/cmd/init_locations.go
     words:
       - swedencentral
+  - filename: "extensions/azure.ai.agents/internal/{cmd/optimize*.go,pkg/agents/optconfig/*.go}"
+    words:
+      - optconfig
   - filename: docs/code-coverage-guide.md
     words:
       - covdata
@@ -601,6 +607,37 @@ overrides:
       - elts
       - fset
       - unkeyed
+  - filename: extensions/azure.ai.content-understanding/internal/infra/{models,templates}.go
+    words:
+      - cuclient
+      - localio
+      - contentunderstanding
+      - noninteractive
+      - australiaeast
+      - japaneast
+      - northeurope
+      - southcentralus
+      - southeastasia
+      - uksouth
+      - westeurope
+  - filename: extensions/azure.ai.content-understanding/cu-rest-client/*.go
+    words:
+      - curestclient
+  - filename: extensions/azure.ai.content-understanding/internal/cuclient/rest.go
+    words:
+      - restclient
+  - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
+    words:
+      - testutil
+  - filename: pkg/update/msi_windows.go
+    words:
+      - norestart
+      - MSIRESTARTMANAGERCONTROL
+      - INSTALLEDBY
+  - filename: docs/design/azd-update.md
+    words:
+      - HKLM
+      - norestart
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

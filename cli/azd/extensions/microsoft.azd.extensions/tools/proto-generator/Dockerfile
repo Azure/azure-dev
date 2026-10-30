@@ -1,5 +1,5 @@
 # Run from cli/azd: mage generateProtos (prefers Docker, falls back to WSL Containers)
-FROM golang:1.26.4-bookworm AS go-tools
+FROM mcr.microsoft.com/oss/go/microsoft/golang:1.26.4 AS go-tools
 
 ARG PROTOC_GEN_GO_VERSION=v1.36.11
 ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1
@@ -7,7 +7,7 @@ ARG PROTOC_GEN_GO_GRPC_VERSION=v1.5.1
 RUN GOBIN=/out go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}" \
     && GOBIN=/out go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
 
-FROM node:24-bookworm-slim
+FROM mcr.microsoft.com/azurelinux/base/nodejs:24
 
 ARG GRPCIO_TOOLS_VERSION=1.71.0
 ARG GRPC_TOOLS_VERSION=1.13.1
@@ -15,15 +15,18 @@ ARG PROTOC_GEN_JS_VERSION=3.21.4
 ARG PROTOC_VERSION=32.1
 ARG TARGETARCH
 
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends \
+# Microsoft's Go crypto backend needs the C toolchain in the final image too.
+RUN tdnf install -y \
+        binutils \
         ca-certificates \
         curl \
+        gcc \
+        glibc-devel \
+        kernel-headers \
         make \
         python3 \
-        python3-venv \
         unzip \
-    && rm -rf /var/lib/apt/lists/* \
+    && tdnf clean all \
     && case "$TARGETARCH" in \
         amd64) protoc_arch=x86_64 ;; \
         arm64) protoc_arch=aarch_64 ;; \
@@ -44,6 +47,7 @@ COPY --from=go-tools /out/protoc-gen-go /usr/local/bin/protoc-gen-go
 COPY --from=go-tools /out/protoc-gen-go-grpc /usr/local/bin/protoc-gen-go-grpc
 COPY --from=go-tools /usr/local/go /usr/local/go
 
+ENV CGO_ENABLED=1
 ENV GOCACHE=/tmp/go-build
 ENV GOMODCACHE=/tmp/go-mod
 ENV HOME=/tmp

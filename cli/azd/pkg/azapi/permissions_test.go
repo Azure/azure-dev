@@ -18,6 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/stretchr/testify/require"
+
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
 
 // roleDefinitionProperties describes a role for use in test helpers.
@@ -95,6 +97,34 @@ func (f *fakeCredential) GetToken(
 	_ context.Context, _ policy.TokenRequestOptions,
 ) (azcore.AccessToken, error) {
 	return azcore.AccessToken{Token: "fake-token"}, nil
+}
+
+func TestHasRequiredPermissions_UsesSubscriptionScopeFilter(t *testing.T) {
+	mockContext := mocks.NewMockContext(t.Context())
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(request.URL.Path, "/providers/Microsoft.Authorization/roleAssignments")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		require.Equal(t,
+			"atScope() and assignedTo('principal-id')",
+			request.URL.Query().Get("$filter"))
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK,
+			map[string]any{"value": []any{}})
+	})
+
+	service := NewPermissionsService(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.ArmClientOptions,
+	)
+	result, err := service.HasRequiredPermissions(
+		t.Context(),
+		"subscription-id",
+		"principal-id",
+		[]string{"Microsoft.Authorization/roleAssignments/write"},
+	)
+
+	require.NoError(t, err)
+	require.False(t, result.HasPermission)
 }
 
 func TestActionMatches(t *testing.T) {

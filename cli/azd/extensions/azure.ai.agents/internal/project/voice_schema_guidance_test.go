@@ -37,6 +37,7 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 			}))
 			require.NoError(t, schema.validate(map[string]any{
 				"kind": kind, "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+				"greeting": map[string]any{"type": "template", "text": "Hello"},
 			}))
 			for _, legacy := range []map[string]any{
 				{"modelType": "hosted_agent"},
@@ -61,4 +62,49 @@ func TestVoiceSchemaAuthoringGuidance(t *testing.T) {
 		"codeConfiguration": map[string]any{"runtime": "python_3_13", "entryPoint": "app.py"},
 		"protocols":         []any{map[string]any{"protocol": "responses", "version": "1.0"}},
 	}))
+
+	handoff, ok := schema.property("handoff")
+	require.True(t, ok)
+	require.EqualValues(t, 0, handoff["maxProperties"])
+	require.NoError(t, schema.validate(map[string]any{
+		"kind": "voice", "model": map[string]any{"id": "gpt-realtime"}, "handoff": map[string]any{},
+	}))
+	require.Error(t, schema.validate(map[string]any{
+		"kind": "voice", "model": map[string]any{"id": "gpt-realtime"},
+		"handoff": map[string]any{"target": "agent"},
+	}))
+
+	voice := schema.resolve(map[string]any{"$ref": "#/definitions/VoiceConfig"})
+	rate := voice["properties"].(map[string]any)["rate"].(map[string]any)
+	require.Equal(t, []any{""}, rate["enum"])
+
+	for _, definition := range []map[string]any{
+		{"kind": "voice", "modelType": "managed", "model": map[string]any{"id": "gpt-realtime"}},
+		{"kind": "voice", "modelType": "self_deployed", "model": map[string]any{"id": "deployment"}},
+		{"kind": "voice", "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+			"greeting": map[string]any{"text": "Hello"}},
+	} {
+		for _, field := range []string{"inputSchema", "outputSchema"} {
+			definition[field] = map[string]any{}
+			require.Error(t, schema.validate(definition), "%s must be excluded from %v", field, definition)
+			delete(definition, field)
+		}
+		for _, field := range []string{
+			"subagent_config", "subagentConfig", "interim_response", "interimResponse",
+		} {
+			definition[field] = map[string]any{}
+			require.Error(t, schema.validate(definition), "%s must be excluded from %v", field, definition)
+			delete(definition, field)
+		}
+	}
+	hostedWrapper := map[string]any{
+		"kind": "voice", "conversationEngine": map[string]any{"type": "hosted_agent", "name": "target"},
+	}
+	for _, field := range []string{
+		"codeConfiguration", "sessionConfiguration", "environmentVariables", "policies", "protocols", "toolbox",
+	} {
+		hostedWrapper[field] = map[string]any{}
+		require.Error(t, schema.validate(hostedWrapper), "%s must be excluded from hosted voice", field)
+		delete(hostedWrapper, field)
+	}
 }

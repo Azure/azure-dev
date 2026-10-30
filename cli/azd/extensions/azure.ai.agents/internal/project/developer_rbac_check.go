@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,8 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	v1beta "github.com/azure/azure-dev/cli/azd/pkg/azdext/contracts/v1beta"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -105,13 +105,47 @@ var sufficientRoleAssignWriteRoles = []string{
 	roleFoundryOwner, // c883944f-...: includes Microsoft.Authorization/roleAssignments/write
 }
 
-// CheckDeveloperRBAC checks project access and hosted-only permissions when needed.
-// Missing roles are warnings so deployment can proceed when access is managed externally.
-func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHosted bool) error {
+type developerRBACOperations struct {
+	hasAnyRoleAssignment func(
+		context.Context, *azidentity.AzureDeveloperCLICredential, string, []string, string,
+	) (bool, error)
+	assignRoleToIdentity func(
+		context.Context, *azidentity.AzureDeveloperCLICredential,
+		string, string, string, string, armauthorization.PrincipalType,
+	) (bool, error)
+	resolveACRInfo func(
+		context.Context, *azidentity.AzureDeveloperCLICredential, string, string,
+	) (string, bool, error)
+	resolveACRInfoByResourceID func(
+		context.Context, *azidentity.AzureDeveloperCLICredential, string,
+	) (string, bool, error)
+}
+
+// CheckDeveloperRBAC returns non-blocking RBAC warnings.
+func CheckDeveloperRBAC(
+	ctx context.Context, azdClient *azdext.AzdClient, hasHosted bool,
+) ([]azdext.BetaServiceEventMessage, error) {
+	return checkDeveloperRBAC(ctx, azdClient, hasHosted, developerRBACOperations{
+		hasAnyRoleAssignment:       hasAnyRoleAssignment,
+		assignRoleToIdentity:       assignRoleToIdentity,
+		resolveACRInfo:             resolveACRInfo,
+		resolveACRInfoByResourceID: resolveACRInfoByResourceID,
+	})
+}
+
+func checkDeveloperRBAC(
+	ctx context.Context, azdClient *azdext.AzdClient, hasHosted bool, ops developerRBACOperations,
+) ([]azdext.BetaServiceEventMessage, error) {
+	var messages []azdext.BetaServiceEventMessage
+	warn := func(message, suggestion string) {
+		messages = append(messages, azdext.BetaServiceEventMessage{
+			Kind: azdext.BetaServiceEventMessageWarning, Message: message, Suggestion: suggestion,
+		})
+	}
 	envClient := azdClient.Environment()
 	envResp, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get current environment: %w", err)
+		return messages, fmt.Errorf("failed to get current environment: %w", err)
 	}
 	envName := envResp.Environment.Name
 
@@ -128,7 +162,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	}
 	if skip, parseErr := strconv.ParseBool(skipValue); parseErr == nil && skip {
 		fmt.Println("  (-) Skipping developer RBAC pre-flight check (AZD_AGENT_SKIP_ROLE_ASSIGNMENTS is set)")
-		return nil
+		return messages, nil
 	}
 
 	projectResp, err := envClient.GetValue(ctx, &azdext.GetEnvRequest{
@@ -137,19 +171,19 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 	})
 	if err != nil || projectResp.Value == "" {
 		// Can't check RBAC without the project ID; deployment will fail later with a clearer message.
-		return nil
+		return messages, nil
 	}
 
 	info, err := parseAgentIdentityInfo(projectResp.Value)
 	if err != nil {
-		return nil // Non-critical: let deployment handle parse errors.
+		return messages, nil
 	}
 
 	tenantResponse, err := azdClient.Account().LookupTenant(ctx, &azdext.LookupTenantRequest{
 		SubscriptionId: info.SubscriptionID,
 	})
 	if err != nil {
-		return nil // Non-critical: can't resolve tenant for pre-flight check.
+		return messages, nil
 	}
 
 	cred, err := azidentity.NewAzureDeveloperCLICredential(&azidentity.AzureDeveloperCLICredentialOptions{
@@ -157,44 +191,49 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		AdditionallyAllowedTenants: []string{"*"},
 	})
 	if err != nil {
-		return nil // Non-critical: auth issues will surface during deploy.
+		return messages, nil
 	}
 
 	fmt.Println()
 	fmt.Println("Developer RBAC pre-flight check")
 
-	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.AccountBeta(), info.SubscriptionID)
+	principalID, principalType, err := developerRBACPrincipal(ctx, azdClient.Account(), info.SubscriptionID)
 	if err != nil {
-		fmt.Printf("  ⚠ Could not resolve current principal: %s — skipping RBAC pre-flight check\n", err)
-		return nil
+		warn("Could not resolve current principal: "+developerRBACErrorSummary(err)+
+			"; skipping RBAC pre-flight check.", "Check your azd login and access to the selected subscription.")
+		return messages, nil
 	}
 
 	fmt.Printf("  Developer: %s (%s)\n", principalID, principalType)
 
 	// Check 1: Foundry User (or a superset) is sufficient to use the agent data plane.
-	hasAIAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
+	hasAIAccess, err := ops.hasAnyRoleAssignment(ctx, cred, principalID, sufficientAIUserRoles, info.ProjectScope)
 	if err != nil {
-		fmt.Printf("  ⚠ Could not check AI User role: %s\n", err)
+		warn("Could not check Foundry User role: "+developerRBACErrorSummary(err)+".",
+			"Check your access to read role assignments on the Foundry Project.")
 	} else if !hasAIAccess {
 		fmt.Println("  Foundry User role not found — attempting to auto-assign...")
-		if _, assignErr := assignRoleToIdentity(
+		if _, assignErr := ops.assignRoleToIdentity(
 			ctx, cred, principalID, roleAzureAIUser,
 			"Foundry User → Foundry Project", info.ProjectScope,
 			principalType,
 		); assignErr != nil {
 			if respErr, ok := errors.AsType[*azcore.ResponseError](assignErr); ok &&
 				respErr.StatusCode == http.StatusForbidden {
-				fmt.Printf("%s\n", output.WithWarningFormat(
+				warn(fmt.Sprintf(
 					"Your identity (%s) does not have the 'Foundry User' role on the Foundry Project %s/%s "+
-						"and auto-assign was denied.\n"+
-						"    Ask a subscription Owner or User Access Administrator to assign the role:\n"+
-						"      az role assignment create --assignee %s --role "+roleAzureAIUser+
-						" --scope %q  # Foundry User (formerly Azure AI User)",
+						"and auto-assign was denied.",
 					principalID, info.AccountName, info.ProjectName,
+				), fmt.Sprintf(
+					"Ask a subscription Owner or User Access Administrator to assign the role:\n"+
+						"az role assignment create --assignee %s --role "+roleAzureAIUser+
+						" --scope %q  # Foundry User (formerly Azure AI User)",
 					principalID, info.ProjectScope,
 				))
 			} else {
-				fmt.Printf("  ⚠ Foundry User auto-assign failed (non-auth error): %s — continuing\n", assignErr)
+				warn("Foundry User auto-assign failed (non-auth error): "+
+					developerRBACErrorSummary(assignErr)+"; continuing.",
+					"Ask a subscription Owner or User Access Administrator to assign Foundry User on the Foundry Project.")
 			}
 		} else {
 			fmt.Println("  ✓ Foundry User auto-assigned to developer identity")
@@ -203,22 +242,22 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		fmt.Println("  ✓ Foundry User on Foundry Project")
 	}
 	if !hasHosted {
-		return nil
+		return messages, nil
 	}
 
 	// Check 2: roleAssignments/write capability on Foundry Project scope.
 	// Required for the postdeploy hook to assign Foundry User to agent service principals.
 	// Note: Contributor cannot write role assignments (it is excluded from sufficientRoleAssignWriteRoles).
-	hasRoleWrite, err := hasAnyRoleAssignment(ctx, cred, principalID, sufficientRoleAssignWriteRoles, info.ProjectScope)
+	hasRoleWrite, err := ops.hasAnyRoleAssignment(ctx, cred, principalID, sufficientRoleAssignWriteRoles, info.ProjectScope)
 	if err != nil {
-		fmt.Printf("  ⚠ Could not check role-assignment-write capability: %s\n", err)
+		warn("Could not check role-assignment-write capability: "+developerRBACErrorSummary(err)+".",
+			"Check your access to read role assignments on the Foundry Project.")
 	} else if !hasRoleWrite {
-		// Warn rather than fail hard: deployment can still proceed, but the postdeploy
-		// step that assigns 'Foundry User' to agent service principals may return 403.
-		// Write with warning color so it appears as a yellow warning, not a red error.
-		fmt.Printf("%s\n", output.WithWarningFormat(
-			"Role assignment write not available on Foundry Project %s/%s.\n"+
-				"    The postdeploy step will attempt to assign 'Foundry User' to agent service principals,\n"+
+		warn(fmt.Sprintf(
+			"Role assignment write not available on Foundry Project %s/%s.",
+			info.AccountName, info.ProjectName,
+		), fmt.Sprintf(
+			"The postdeploy step will attempt to assign 'Foundry User' to agent service principals,\n"+
 				"    but may fail with a 403. To grant this permission, assign one of these roles:\n"+
 				"      • Owner\n"+
 				"      • User Access Administrator\n"+
@@ -228,7 +267,7 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 				"      az role assignment create --assignee %s "+
 				"--role \"Role Based Access Control Administrator\" --scope %q\n"+
 				"    Or, if roles are managed externally: AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true",
-			info.AccountName, info.ProjectName, principalID, info.ProjectScope,
+			principalID, info.ProjectScope,
 		))
 	} else {
 		fmt.Println("  ✓ Role assignment write on Foundry Project")
@@ -240,8 +279,9 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		Key:     "AZURE_CONTAINER_REGISTRY_ENDPOINT",
 	})
 	if err != nil || acrResp.Value == "" {
-		fmt.Println("  ⚠ AZURE_CONTAINER_REGISTRY_ENDPOINT not set — skipping ACR role check")
-		return nil
+		warn("AZURE_CONTAINER_REGISTRY_ENDPOINT not set; skipping ACR role check.",
+			"Set AZURE_CONTAINER_REGISTRY_ENDPOINT to your container registry login server.")
+		return messages, nil
 	}
 
 	// When AZURE_CONTAINER_REGISTRY_RESOURCE_ID is set (populated during init), use a targeted
@@ -255,13 +295,14 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		Key:     "AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 	})
 	if acrRidResp != nil && acrRidResp.Value != "" {
-		acrResourceID, isAbac, err = resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)
+		acrResourceID, isAbac, err = ops.resolveACRInfoByResourceID(ctx, cred, acrRidResp.Value)
 	} else {
-		acrResourceID, isAbac, err = resolveACRInfo(ctx, cred, info.SubscriptionID, acrResp.Value)
+		acrResourceID, isAbac, err = ops.resolveACRInfo(ctx, cred, info.SubscriptionID, acrResp.Value)
 	}
 	if err != nil {
-		fmt.Printf("  ⚠ Could not resolve ACR resource info: %s — skipping ACR role check\n", err)
-		return nil
+		warn("Could not resolve ACR resource info: "+developerRBACErrorSummary(err)+"; skipping ACR role check.",
+			"Check the container registry endpoint, resource ID, and your access to read the registry.")
+		return messages, nil
 	}
 
 	acrRolesToCheck := sufficientACRRoles
@@ -269,42 +310,45 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		acrRolesToCheck = sufficientACRAbacRoles
 	}
 
-	hasACRAccess, err := hasAnyRoleAssignment(ctx, cred, principalID, acrRolesToCheck, acrResourceID)
+	hasACRAccess, err := ops.hasAnyRoleAssignment(ctx, cred, principalID, acrRolesToCheck, acrResourceID)
 	if err != nil {
-		fmt.Printf("  ⚠ Could not check ACR role: %s\n", err)
-		return nil
+		warn("Could not check ACR role: "+developerRBACErrorSummary(err)+".",
+			"Check your access to read role assignments on the container registry.")
+		return messages, nil
 	}
 
 	if !hasACRAccess {
-		acrName := strings.TrimSuffix(normalizeLoginServer(acrResp.Value), ".azurecr.io")
+		acrName := developerRBACRegistryName(acrResp.Value)
 		if isAbac {
-			fmt.Printf("%s\n", output.WithWarningFormat(
+			warn(fmt.Sprintf(
 				"Your identity (%s) does not have the required role on the ABAC-mode Container Registry '%s' "+
-					"to push container images.\n"+
-					"    Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
+					"to push container images.",
+				principalID, acrName,
+			), fmt.Sprintf(
+				"Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
 					"      • Owner (broad access)\n"+
 					"      • Container Registry Repository Writer (ABAC push)\n"+
 					"      • Container Registry Repository Contributor (superset of Writer)\n\n"+
 					"      az role assignment create --assignee %s "+
 					"--role \"Container Registry Repository Writer\" --scope %q",
-				principalID, acrName,
 				principalID, acrResourceID,
 			))
 		} else {
-			fmt.Printf("%s\n", output.WithWarningFormat(
+			warn(fmt.Sprintf(
 				"Your identity (%s) does not have the required role on the Container Registry '%s' "+
-					"to build and push container images.\n"+
-					"    Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
+					"to build and push container images.",
+				principalID, acrName,
+			), fmt.Sprintf(
+				"Ask a subscription Owner or User Access Administrator to assign one of these roles:\n"+
 					"      • Owner or Contributor (broad access)\n"+
 					"      • AcrPush (push and pull images)\n"+
 					"      • Container Registry Tasks Contributor (remote build)\n"+
 					"      • Container Registry Repository Contributor (repository operations)\n\n"+
 					"      az role assignment create --assignee %s --role \"AcrPush\" --scope %q",
-				principalID, acrName,
 				principalID, acrResourceID,
 			))
 		}
-		return nil
+		return messages, nil
 	}
 
 	if isAbac {
@@ -313,16 +357,38 @@ func CheckDeveloperRBAC(ctx context.Context, azdClient *azdext.AzdClient, hasHos
 		fmt.Println("  ✓ Container Registry role on ACR")
 	}
 	fmt.Println()
-	return nil
+	return messages, nil
+}
+
+// Retained messages must not include raw HTTP bodies or credentials.
+func developerRBACErrorSummary(err error) string {
+	if response, ok := errors.AsType[*azcore.ResponseError](err); ok {
+		return fmt.Sprintf("HTTP %d", response.StatusCode)
+	}
+	if grpcStatus, ok := status.FromError(err); ok {
+		return grpcStatus.Code().String()
+	}
+	return "the operation failed"
+}
+
+func developerRBACRegistryName(endpoint string) string {
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "https://" + endpoint
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "(configured registry)"
+	}
+	return strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".azurecr.io")
 }
 
 func developerRBACPrincipal(
 	ctx context.Context,
-	account v1beta.AccountServiceClient,
+	account azdext.AccountServiceClient,
 	subscriptionID string,
 ) (string, armauthorization.PrincipalType, error) {
 	// The host resolves object IDs in the resource tenant for both user and app logins.
-	principal, err := account.GetCurrentPrincipal(ctx, &v1beta.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
+	principal, err := account.GetCurrentPrincipal(ctx, &azdext.GetCurrentPrincipalRequest{SubscriptionId: subscriptionID})
 	if err != nil {
 		return "", "", err
 	}
@@ -330,9 +396,9 @@ func developerRBACPrincipal(
 		return "", "", fmt.Errorf("the azd host returned an empty current principal object ID")
 	}
 	switch principal.GetPrincipalType() {
-	case v1beta.PrincipalType_PRINCIPAL_TYPE_USER:
+	case azdext.PrincipalType_PRINCIPAL_TYPE_USER:
 		return principal.GetObjectId(), armauthorization.PrincipalTypeUser, nil
-	case v1beta.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
+	case azdext.PrincipalType_PRINCIPAL_TYPE_SERVICE_PRINCIPAL:
 		return principal.GetObjectId(), armauthorization.PrincipalTypeServicePrincipal, nil
 	default:
 		return "", "", fmt.Errorf("the azd host returned an unsupported current principal type: %v", principal.GetPrincipalType())

@@ -191,6 +191,7 @@ func newInitHarnessWithCapabilities(
 	if betaAvailable {
 		registerInitBetaProject(t, server, harness.project)
 	}
+	require.Equal(t, "azd.extensions.v1.TelemetryService", azdext.TelemetryService_ServiceDesc.ServiceName)
 	azdext.RegisterTelemetryServiceServer(server, harness.usage)
 	if len(prompts) > 0 {
 		azdext.RegisterPromptServiceServer(server, prompts[0])

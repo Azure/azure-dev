@@ -36,6 +36,17 @@ param existingAcrConnectionName string = ''
 param acrPullAssigned bool = false
 param projectEndpoint string
 
+@allowed([
+  'none'
+  'create'
+  'reuse-connect'
+  'already-connected'
+])
+param monitoringMode string = 'none'
+param applicationInsightsResourceId string = ''
+param monitoringCreateConnection bool = true
+param monitoringConnectionName string = ''
+
 var projectIdParts = split(projectResourceId, '/')
 var projectSubscriptionId = projectIdParts[2]
 var projectResourceGroupName = projectIdParts[4]
@@ -44,6 +55,8 @@ var projectName = projectIdParts[10]
 var tokenSeed = '${subscription().subscriptionId}${resourceGroupName}${resourceTokenSalt}'
 var acrName = 'cr${toLower(uniqueString(tokenSeed))}'
 var createAcr = acrMode == 'create'
+var createMonitoring = monitoringMode == 'create'
+var createAdjunctGroup = createAcr || createMonitoring
 var reuseAcr = acrMode == 'reuse-connect' || acrMode == 'already-connected'
 var createAcrConnection = acrMode == 'create' || acrMode == 'reuse-connect'
 var effectiveAcrName = createAcr ? acrName : (reuseAcr ? last(split(existingAcrResourceId, '/')) : '')
@@ -54,7 +67,7 @@ var effectiveAcrResourceId = createAcr
   ? newContainerRegistry!.outputs.resourceId
   : (acrMode == 'reuse-connect' && !acrPullAssigned ? existingContainerRegistry!.outputs.resourceId : existingAcrResourceId)
 
-resource adjunctResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createAcr) {
+resource adjunctResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = if (createAdjunctGroup) {
   name: resourceGroupName
   location: location
   tags: tags
@@ -109,12 +122,29 @@ module projectResources 'modules/foundry-project.bicep' = {
   }
 }
 
+module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
+  name: 'foundry-monitoring'
+  scope: resourceGroup(createMonitoring ? subscription().subscriptionId : projectSubscriptionId, createMonitoring ? resourceGroupName : projectResourceGroupName)
+  params: {
+    mode: monitoringMode
+    location: location
+    tags: tags
+    projectResourceId: projectResourceId
+    applicationInsightsResourceId: applicationInsightsResourceId
+    createConnection: monitoringCreateConnection
+    existingConnectionName: monitoringConnectionName
+    environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
+    resourceTokenSalt: resourceTokenSalt
+  }
+  dependsOn: [adjunctResourceGroup]
+}
+
 output AZURE_AI_PROJECT_ID string = projectResourceId
 output AZURE_AI_ACCOUNT_NAME string = accountName
 output AZURE_AI_PROJECT_NAME string = projectName
 output AZURE_OPENAI_ENDPOINT string = 'https://${accountName}.openai.azure.com/'
 output FOUNDRY_PROJECT_ENDPOINT string = projectEndpoint
-output AZURE_FOUNDRY_RESOURCE_GROUP string = createAcr ? resourceGroupName : ''
+output AZURE_FOUNDRY_RESOURCE_GROUP string = createAdjunctGroup ? resourceGroupName : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = acrMode == 'none'
   ? ''
   : effectiveAcrEndpoint
@@ -123,3 +153,8 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = acrMode == 'none'
   : effectiveAcrResourceId
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = projectResources.outputs.acrConnectionName
 output AZD_FOUNDRY_ACR_MODE string = acrMode
+output AZURE_APPLICATION_INSIGHTS_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsResourceId : ''
+output AZURE_APPLICATION_INSIGHTS_APP_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsAppId : ''
+output AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.logAnalyticsWorkspaceResourceId : ''
+output AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME string = monitoringMode != 'none' ? monitoring!.outputs.projectConnectionName : ''
+output AZD_FOUNDRY_MONITORING_MODE string = monitoringMode

@@ -59,7 +59,7 @@ func TestEjectInfra_RefusesWhenAzureYamlMissing(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -81,7 +81,7 @@ func TestEjectInfra_MigratesExistingInfraToLayers(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing infrastructure\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.NoError(t, err)
 
 	existing, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec // temp test path
@@ -146,7 +146,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "existing"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "existing", "main.bicep"), "// existing\n")
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
 	require.NoError(t, err)
 	var doc struct {
@@ -188,7 +188,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
 	require.NoError(t, err)
 	var doc map[string]any
@@ -224,7 +224,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "main.bicep"), "// existing Foundry\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -251,7 +251,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -275,7 +275,7 @@ services:
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.tfvars.json"), "{}\n")
 	mustWriteFile(t, filepath.Join(dir, "infra", foundryTerraformMarker), foundryTerraformV1)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -298,7 +298,7 @@ services:
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "resource \"azurerm_resource_group\" \"app\" {}\n")
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.tfvars.json"), "{}\n")
 
-	require.NoError(t, ejectInfra(dir, "terraform"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "main.tf"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.tf"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", foundryTerraformMarker))
@@ -325,7 +325,7 @@ services:
 			mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "# user edited\n")
 			mustWriteFile(t, filepath.Join(dir, "infra", foundryTerraformMarker), marker)
 
-			err := ejectInfra(dir, "terraform")
+			err := ejectInfra(t.Context(), dir, "terraform")
 			require.Error(t, err)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
@@ -352,7 +352,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", foundryTerraformMarker), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.tf"), "# user edited\n")
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -374,7 +374,7 @@ services:
 `
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
 
-			err := ejectInfra(dir, "bicep")
+			err := ejectInfra(t.Context(), dir, "bicep")
 			require.Error(t, err)
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
 			require.True(t, ok)
@@ -395,7 +395,7 @@ func TestEjectInfra_RefusesExistingFoundryEject(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing project bicep\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -414,7 +414,7 @@ func TestEjectInfra_FoundryProjectWithEmptyInfraDirectoryUsesLegacyLayout(t *tes
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
 	assert.NoDirExists(t, filepath.Join(dir, "infra", "foundry"))
 
@@ -430,7 +430,7 @@ func TestEjectInfra_RefusesNonEmptyInfraWithoutEntrypoint(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "README.md"), "user-owned infrastructure notes\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -456,7 +456,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "platform"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "platform", "platform.bicep"), "// platform\n")
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
 
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
@@ -499,7 +499,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -522,7 +522,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "provider: custom.platform")
@@ -549,7 +549,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.bicep"))
 	assert.FileExists(t, filepath.Join(dir, "custom", "foundry", "project.parameters.json"))
 	assert.NoFileExists(t, filepath.Join(dir, "custom", "foundry", "main.bicep"))
@@ -575,7 +575,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "custom", "foundry"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "custom", "foundry", "README.md"), "user content\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -615,7 +615,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -643,7 +643,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
 	require.NoError(t, err)
 	var doc struct {
@@ -681,7 +681,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // temp test path
 	require.NoError(t, err)
 	var doc struct {
@@ -721,7 +721,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), yamlBody)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -747,7 +747,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -769,7 +769,7 @@ services:
     host: azure.ai.project
 `)
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
 }
 
@@ -790,7 +790,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "README.md"), "keep me\n")
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
 	readme, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "README.md")) //nolint:gosec
 	require.NoError(t, err)
@@ -818,7 +818,7 @@ services:
 		t.Skipf("symlink creation unavailable: %v", err)
 	}
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "symbolic link")
 	assert.NoFileExists(t, filepath.Join(outside, "foundry-project.bicep"))
@@ -855,7 +855,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "foundry"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "foundry", "main.bicep"), "// conflict\n")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -888,7 +888,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -926,7 +926,7 @@ infra:
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), tt.yaml)
 
-			err := ejectInfra(dir, "bicep")
+			err := ejectInfra(t.Context(), dir, "bicep")
 			require.Error(t, err)
 
 			localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -951,7 +951,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -975,7 +975,7 @@ services:
     deployments: []
 `)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.NoError(t, err)
 
 	template, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec
@@ -1079,7 +1079,7 @@ services:
 			env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/rg/providers/" +
 				"Microsoft.CognitiveServices/accounts/acct/projects/p1"
 
-			require.NoError(t, ejectInfra(dir, "bicep", env))
+			require.NoError(t, ejectInfra(t.Context(), dir, "bicep", env))
 			main, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep")) //nolint:gosec
 			require.NoError(t, err)
 			assert.Contains(t, string(main), "output AZD_FOUNDRY_ACR_MODE string = '"+tt.wantMode+"'")
@@ -1299,7 +1299,7 @@ services:
 			env["FOUNDRY_PROJECT_ENDPOINT"] = "https://acct.services.ai.azure.com/api/projects/p1"
 			env["AZURE_AI_PROJECT_ID"] = "/subscriptions/sub/resourceGroups/rg/providers/" +
 				"Microsoft.CognitiveServices/accounts/acct/projects/p1"
-			require.NoError(t, ejectInfra(dir, "bicep", env))
+			require.NoError(t, ejectInfra(t.Context(), dir, "bicep", env))
 
 			out := filepath.Join(t.TempDir(), "main.json")
 			cmd := exec.CommandContext(t.Context(), bicep, "build",
@@ -1341,7 +1341,7 @@ services:
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing infrastructure\n")
 
-	require.NoError(t, ejectInfra(dir, "bicep"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.bicep"))
 
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec
@@ -1379,7 +1379,7 @@ services:
       path: Dockerfile
 `)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.NoError(t, err)
 
 	for _, name := range []string{
@@ -1432,6 +1432,40 @@ services:
 	assert.Contains(t, string(tfvars), `"tenant_id": "${AZURE_TENANT_ID}"`)
 }
 
+func TestWriteExistingProjectTerraformTemplatesSeparatesAdjunctResourceGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []infraEjectAcrMode{
+		infraEjectAcrNone, infraEjectAcrCreate, infraEjectAcrReuseConnect, infraEjectAcrAlreadyConnected,
+	} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "infra")
+			artifacts, err := writeExistingProjectTerraformTemplates(dir, "infra", mode, false)
+			require.NoError(t, err)
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if mode == infraEjectAcrCreate {
+				adjunct, err := os.ReadFile(adjunctPath) //nolint:gosec // test-owned path
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				registry, err := os.ReadFile(filepath.Join(dir, "container-registry.tf")) //nolint:gosec
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+				assert.Contains(t, artifacts, ejectArtifact{
+					relPath: "infra/adjunct-resource-group.tf",
+					bytes:   len(adjunct),
+				})
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+				for _, artifact := range artifacts {
+					assert.NotEqual(t, "infra/adjunct-resource-group.tf", artifact.relPath)
+				}
+			}
+		})
+	}
+}
+
 func TestEjectInfra_ExistingProjectTerraformWithoutDockerOmitsAcr(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -1448,7 +1482,7 @@ services:
     image: registry.example.com/agent:latest
 `)
 
-	require.NoError(t, ejectInfra(dir, "terraform"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	assert.NoFileExists(t, filepath.Join(dir, "infra", "container-registry.tf"))
 	outputs, err := os.ReadFile(filepath.Join(dir, "infra", "outputs.tf")) //nolint:gosec
 	require.NoError(t, err)
@@ -1496,7 +1530,7 @@ services:
 				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": resourceID,
 			}
 
-			require.NoError(t, ejectInfra(dir, provider, env))
+			require.NoError(t, ejectInfra(t.Context(), dir, provider, env))
 			var output []byte
 			var err error
 			if provider == "bicep" {
@@ -1536,7 +1570,7 @@ services:
         sku: { name: GlobalStandard, capacity: 1 }
 `)
 
-	require.NoError(t, ejectInfra(dir, "terraform"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	data, err := os.ReadFile(filepath.Join(dir, "infra", "model-deployments.tf")) //nolint:gosec
 	require.NoError(t, err)
 	contents := string(data)
@@ -1569,7 +1603,7 @@ services:
 			"Microsoft.ContainerRegistry/registries/registry",
 	}
 
-	err := ejectInfra(dir, "terraform", env)
+	err := ejectInfra(t.Context(), dir, "terraform", env)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot adopt")
 	assert.NoDirExists(t, filepath.Join(dir, "infra"))
@@ -1629,7 +1663,7 @@ func TestEjectInfra_HappyPath_WritesExpectedFiles(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	stdout := withCapturedStdout(t, func() {
-		err := ejectInfra(dir, "bicep")
+		err := ejectInfra(t.Context(), dir, "bicep")
 		require.NoError(t, err)
 	})
 
@@ -1691,7 +1725,7 @@ func TestEjectInfra_HappyPath_ParametersFileShape(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -1752,7 +1786,7 @@ func TestEjectInfraPreservesAdoptionChoices(t *testing.T) {
 				"AZURE_AI_MODEL_DEPLOYMENT_NAME":   "unrelated-default",
 			}
 			withCapturedStdout(t, func() {
-				require.NoError(t, ejectInfra(dir, provider, env))
+				require.NoError(t, ejectInfra(t.Context(), dir, provider, env))
 			})
 			filename := "main.parameters.json"
 			if provider == "terraform" {
@@ -1806,7 +1840,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	})
 
 	// acr.bicep is still in the ejected tree -- the template is static.
@@ -1862,7 +1896,7 @@ func TestEjectInfra_DoesNotOwnDeclaredConnections(t *testing.T) {
 `
 					mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
 					withCapturedStdout(t, func() {
-						require.NoError(t, ejectInfra(dir, provider))
+						require.NoError(t, ejectInfra(t.Context(), dir, provider))
 					})
 					infraDir := filepath.Join(dir, "infra")
 					paramsName := "main.parameters.json"
@@ -1931,7 +1965,7 @@ services:
     %s: [{name: legacy, $ref: ./missing.yaml}]
 `, endpoint, field)
 					mustWriteFile(t, filepath.Join(dir, "azure.yaml"), config)
-					err := ejectInfra(dir, provider)
+					err := ejectInfra(t.Context(), dir, provider)
 					require.ErrorContains(t, err, "bundled declarations are no longer supported")
 					assert.NoDirExists(t, filepath.Join(dir, "infra"))
 					unchanged, err := azureYAMLUnchanged(filepath.Join(dir, "azure.yaml"), []byte(config))
@@ -2030,7 +2064,7 @@ func TestEjectInfra_IgnoresSplitConnectionCredentials(t *testing.T) {
 
 			var err error
 			stdout := withCapturedStdout(t, func() {
-				err = ejectInfra(dir, tt.provider)
+				err = ejectInfra(t.Context(), dir, tt.provider)
 			})
 			require.NoError(t, err)
 			assert.NotContains(t, stdout, secretValue)
@@ -2117,7 +2151,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -2178,7 +2212,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "bicep"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -2222,7 +2256,7 @@ func TestEjectInfra_RefusesWhenInfraIsAFile(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 	mustWriteFile(t, filepath.Join(dir, "infra"), "this is a file, not a dir")
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
@@ -2256,7 +2290,7 @@ services:
     host: azure.ai.project
 `)
 
-	err := ejectInfra(projectRoot, "bicep")
+	err := ejectInfra(t.Context(), projectRoot, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok)
@@ -2677,7 +2711,7 @@ services:
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
 			withCapturedStdout(t, func() {
-				require.NoError(t, ejectInfra(dir, "bicep"))
+				require.NoError(t, ejectInfra(t.Context(), dir, "bicep"))
 			})
 			assert.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
 		})
@@ -2704,7 +2738,7 @@ services:
 
 			dir := t.TempDir()
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), string(raw))
-			err = ejectInfra(dir, "bicep")
+			err = ejectInfra(t.Context(), dir, "bicep")
 			require.Error(t, err)
 			assert.NoDirExists(t, filepath.Join(dir, "infra"))
 		})
@@ -3045,7 +3079,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	require.NoError(t, ejectInfra(dir, "terraform"))
+	require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tf"))
 	assert.FileExists(t, filepath.Join(dir, "myinfra", "main.tfvars.json"))
 }
@@ -3143,7 +3177,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
@@ -3170,7 +3204,7 @@ services:
 `
 			mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-			require.NoError(t, ejectInfra(dir, provider))
+			require.NoError(t, ejectInfra(t.Context(), dir, provider))
 			if provider == "bicep" {
 				assert.FileExists(t, filepath.Join(dir, "infra", "platform.bicep"))
 				assert.FileExists(t, filepath.Join(dir, "infra", "platform.parameters.json"))
@@ -3193,7 +3227,7 @@ services:
 `
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), azureYAML)
 
-	err := ejectInfra(dir, "bicep")
+	err := ejectInfra(t.Context(), dir, "bicep")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected *azdext.LocalError, got %T", err)
@@ -3397,7 +3431,7 @@ func TestEjectInfra_Terraform_HappyPath_WritesExpectedFiles(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	stdout := withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	})
 
 	// Every embedded .tf under templates/terraform/ should be on disk under
@@ -3461,7 +3495,7 @@ func TestEjectInfra_Terraform_StampsProviderInAzureYaml(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "azure.yaml")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -3491,7 +3525,7 @@ func TestEjectInfra_Terraform_TfvarsShape(t *testing.T) {
 	mustWriteFile(t, filepath.Join(dir, "azure.yaml"), validFoundryAzureYAML)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	})
 
 	raw, err := os.ReadFile(filepath.Join(dir, "infra", "main.tfvars.json")) //nolint:gosec // G304: test file path from t.TempDir()
@@ -3537,7 +3571,7 @@ services:
 `)
 
 	withCapturedStdout(t, func() {
-		require.NoError(t, ejectInfra(dir, "terraform"))
+		require.NoError(t, ejectInfra(t.Context(), dir, "terraform"))
 	})
 
 	// acr.tf must NOT be written when no agent uses docker:.
@@ -3582,7 +3616,7 @@ func TestEjectInfra_Terraform_MigratesExistingInfraToLayers(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), 0o750))
 	mustWriteFile(t, filepath.Join(dir, "infra", "main.bicep"), "// existing infrastructure\n")
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.NoError(t, err)
 	assert.FileExists(t, filepath.Join(dir, "infra", "foundry", "main.tf"))
 	tfvars, err := os.ReadFile(filepath.Join(dir, "infra", "foundry", "main.tfvars.json")) //nolint:gosec
@@ -3622,7 +3656,7 @@ services:
         image: registry.io/myorg/myagent:latest
 `)
 
-	err := ejectInfra(dir, "terraform")
+	err := ejectInfra(t.Context(), dir, "terraform")
 	require.Error(t, err)
 	localErr, ok := errors.AsType[*azdext.LocalError](err)
 	require.True(t, ok, "expected structured azdext.LocalError, got %T", err)

@@ -5,8 +5,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.44.1.10279",
-      "templateHash": "3454889030173445970"
+      "version": "0.48.1.52935",
+      "templateHash": "10693747976918347539"
     }
   },
   "definitions": {
@@ -97,6 +97,28 @@
     },
     "projectEndpoint": {
       "type": "string"
+    },
+    "monitoringMode": {
+      "type": "string",
+      "defaultValue": "none",
+      "allowedValues": [
+        "none",
+        "create",
+        "reuse-connect",
+        "already-connected"
+      ]
+    },
+    "applicationInsightsResourceId": {
+      "type": "string",
+      "defaultValue": ""
+    },
+    "monitoringCreateConnection": {
+      "type": "bool",
+      "defaultValue": true
+    },
+    "monitoringConnectionName": {
+      "type": "string",
+      "defaultValue": ""
     }
   },
   "variables": {
@@ -108,6 +130,8 @@
     "tokenSeed": "[format('{0}{1}{2}', subscription().subscriptionId, parameters('resourceGroupName'), parameters('resourceTokenSalt'))]",
     "acrName": "[format('cr{0}', toLower(uniqueString(variables('tokenSeed'))))]",
     "createAcr": "[equals(parameters('acrMode'), 'create')]",
+    "createMonitoring": "[equals(parameters('monitoringMode'), 'create')]",
+    "createAdjunctGroup": "[or(variables('createAcr'), variables('createMonitoring'))]",
     "reuseAcr": "[or(equals(parameters('acrMode'), 'reuse-connect'), equals(parameters('acrMode'), 'already-connected'))]",
     "createAcrConnection": "[or(equals(parameters('acrMode'), 'create'), equals(parameters('acrMode'), 'reuse-connect'))]",
     "effectiveAcrName": "[if(variables('createAcr'), variables('acrName'), if(variables('reuseAcr'), last(split(parameters('existingAcrResourceId'), '/')), ''))]"
@@ -122,7 +146,7 @@
       "name": "[format('{0}/{1}', variables('accountName'), variables('projectName'))]"
     },
     "adjunctResourceGroup": {
-      "condition": "[variables('createAcr')]",
+      "condition": "[variables('createAdjunctGroup')]",
       "type": "Microsoft.Resources/resourceGroups",
       "apiVersion": "2021-04-01",
       "name": "[parameters('resourceGroupName')]",
@@ -171,8 +195,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "6653243440604077646"
+              "version": "0.48.1.52935",
+              "templateHash": "18435868242957612959"
             }
           },
           "parameters": {
@@ -300,8 +324,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "6653243440604077646"
+              "version": "0.48.1.52935",
+              "templateHash": "18435868242957612959"
             }
           },
           "parameters": {
@@ -433,8 +457,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "18160641037633062167"
+              "version": "0.48.1.52935",
+              "templateHash": "8439686740805277616"
             }
           },
           "definitions": {
@@ -576,6 +600,268 @@
         "existingContainerRegistry",
         "newContainerRegistry"
       ]
+    },
+    "monitoring": {
+      "condition": "[not(equals(parameters('monitoringMode'), 'none'))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "foundry-monitoring",
+      "subscriptionId": "[if(variables('createMonitoring'), subscription().subscriptionId, variables('projectSubscriptionId'))]",
+      "resourceGroup": "[if(variables('createMonitoring'), parameters('resourceGroupName'), variables('projectResourceGroupName'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "mode": {
+            "value": "[parameters('monitoringMode')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "projectResourceId": {
+            "value": "[parameters('projectResourceId')]"
+          },
+          "applicationInsightsResourceId": {
+            "value": "[parameters('applicationInsightsResourceId')]"
+          },
+          "createConnection": {
+            "value": "[parameters('monitoringCreateConnection')]"
+          },
+          "existingConnectionName": {
+            "value": "[parameters('monitoringConnectionName')]"
+          },
+          "environmentName": "[if(contains(parameters('tags'), 'azd-env-name'), createObject('value', string(parameters('tags')['azd-env-name'])), createObject('value', ''))]",
+          "resourceTokenSalt": {
+            "value": "[parameters('resourceTokenSalt')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "13442955573686093057"
+            }
+          },
+          "parameters": {
+            "mode": {
+              "type": "string",
+              "allowedValues": [
+                "none",
+                "create",
+                "reuse-connect",
+                "already-connected"
+              ]
+            },
+            "location": {
+              "type": "string"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "projectResourceId": {
+              "type": "string"
+            },
+            "applicationInsightsResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "createConnection": {
+              "type": "bool",
+              "defaultValue": true
+            },
+            "existingConnectionName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "environmentName": {
+              "type": "string"
+            },
+            "resourceTokenSalt": {
+              "type": "string",
+              "defaultValue": ""
+            }
+          },
+          "variables": {
+            "createResources": "[equals(parameters('mode'), 'create')]",
+            "token": "[uniqueString(parameters('projectResourceId'), resourceGroup().id, parameters('resourceTokenSalt'))]",
+            "projectParts": "[split(parameters('projectResourceId'), '/')]",
+            "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]",
+            "connectionName": "[format('azd-appinsights-{0}', take(replace(guid(toLower(variables('projectParts')[10])), '-', ''), 13))]",
+            "monitoringTags": "[union(parameters('tags'), createObject('azd-created-by', 'azure.ai.projects', 'azd-environment', parameters('environmentName'), 'azd-monitoring-project', parameters('projectResourceId')))]",
+            "effectiveComponentId": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])))]"
+          },
+          "resources": [
+            {
+              "condition": "[variables('createResources')]",
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('log-{0}', variables('token'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('monitoringTags')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "condition": "[variables('createResources')]",
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('appi-{0}', variables('token'))]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('monitoringTags')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('log-{0}', variables('token')))]"
+              ]
+            },
+            {
+              "condition": "[and(parameters('createConnection'), or(equals(parameters('mode'), 'create'), equals(parameters('mode'), 'reuse-connect')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "foundry-monitoring-connection",
+              "subscriptionId": "[variables('projectParts')[2]]",
+              "resourceGroup": "[variables('projectParts')[4]]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "accountName": {
+                    "value": "[variables('projectParts')[8]]"
+                  },
+                  "projectName": {
+                    "value": "[variables('projectParts')[10]]"
+                  },
+                  "applicationInsightsResourceId": {
+                    "value": "[variables('effectiveComponentId')]"
+                  },
+                  "environmentName": {
+                    "value": "[parameters('environmentName')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "languageVersion": "2.0",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.48.1.52935",
+                      "templateHash": "12065248471814645758"
+                    }
+                  },
+                  "parameters": {
+                    "accountName": {
+                      "type": "string"
+                    },
+                    "projectName": {
+                      "type": "string"
+                    },
+                    "applicationInsightsResourceId": {
+                      "type": "string"
+                    },
+                    "environmentName": {
+                      "type": "string"
+                    }
+                  },
+                  "variables": {
+                    "componentParts": "[split(parameters('applicationInsightsResourceId'), '/')]"
+                  },
+                  "resources": {
+                    "account::project": {
+                      "existing": true,
+                      "type": "Microsoft.CognitiveServices/accounts/projects",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[format('{0}/{1}', parameters('accountName'), parameters('projectName'))]"
+                    },
+                    "account": {
+                      "existing": true,
+                      "type": "Microsoft.CognitiveServices/accounts",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[parameters('accountName')]"
+                    },
+                    "component": {
+                      "existing": true,
+                      "type": "Microsoft.Insights/components",
+                      "apiVersion": "2020-02-02",
+                      "subscriptionId": "[variables('componentParts')[2]]",
+                      "resourceGroup": "[variables('componentParts')[4]]",
+                      "name": "[variables('componentParts')[8]]"
+                    },
+                    "connection": {
+                      "@options": {
+                        "onlyIfNotExists": []
+                      },
+                      "type": "Microsoft.CognitiveServices/accounts/projects/connections",
+                      "apiVersion": "2025-04-01-preview",
+                      "name": "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), format('azd-appinsights-{0}', take(replace(guid(toLower(parameters('projectName'))), '-', ''), 13)))]",
+                      "properties": {
+                        "category": "AppInsights",
+                        "authType": "ApiKey",
+                        "target": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])]",
+                        "credentials": {
+                          "key": "[reference('component').ConnectionString]"
+                        },
+                        "metadata": {
+                          "ApiType": "Azure",
+                          "ResourceId": "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8])]",
+                          "azd-created-by": "azure.ai.projects",
+                          "azd-environment": "[parameters('environmentName')]",
+                          "azd-monitoring-project": "[resourceId('Microsoft.CognitiveServices/accounts/projects', parameters('accountName'), parameters('projectName'))]"
+                        }
+                      },
+                      "dependsOn": [
+                        "component"
+                      ]
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "applicationInsightsResourceId": {
+              "type": "string",
+              "value": "[variables('effectiveComponentId')]"
+            },
+            "applicationInsightsAppId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), reference(resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), '2020-02-02').AppId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').AppId))]"
+            },
+            "logAnalyticsWorkspaceResourceId": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(variables('createResources'), reference(resourceId('Microsoft.Insights/components', format('appi-{0}', variables('token'))), '2020-02-02').WorkspaceResourceId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', variables('componentParts')[2], variables('componentParts')[4]), 'Microsoft.Insights/components', variables('componentParts')[8]), '2020-02-02').WorkspaceResourceId))]"
+            },
+            "projectConnectionName": {
+              "type": "string",
+              "value": "[if(equals(parameters('mode'), 'none'), '', if(and(parameters('createConnection'), not(equals(parameters('mode'), 'already-connected'))), variables('connectionName'), parameters('existingConnectionName')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "adjunctResourceGroup"
+      ]
     }
   },
   "outputs": {
@@ -601,7 +887,7 @@
     },
     "AZURE_FOUNDRY_RESOURCE_GROUP": {
       "type": "string",
-      "value": "[if(variables('createAcr'), parameters('resourceGroupName'), '')]"
+      "value": "[if(variables('createAdjunctGroup'), parameters('resourceGroupName'), '')]"
     },
     "AZURE_CONTAINER_REGISTRY_ENDPOINT": {
       "type": "string",
@@ -618,6 +904,26 @@
     "AZD_FOUNDRY_ACR_MODE": {
       "type": "string",
       "value": "[parameters('acrMode')]"
+    },
+    "AZURE_APPLICATION_INSIGHTS_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsResourceId.value, '')]"
+    },
+    "AZURE_APPLICATION_INSIGHTS_APP_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.applicationInsightsAppId.value, '')]"
+    },
+    "AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.logAnalyticsWorkspaceResourceId.value, '')]"
+    },
+    "AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME": {
+      "type": "string",
+      "value": "[if(not(equals(parameters('monitoringMode'), 'none')), reference('monitoring').outputs.projectConnectionName.value, '')]"
+    },
+    "AZD_FOUNDRY_MONITORING_MODE": {
+      "type": "string",
+      "value": "[parameters('monitoringMode')]"
     }
   }
 }

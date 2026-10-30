@@ -84,6 +84,7 @@ type FoundryProvisioningProvider struct {
 	foundryRGOwnerID string
 	foundryName      string
 	credential       azcore.TokenCredential
+	armClientOptions *arm.ClientOptions
 	tenantID         string          // resolved lazily by ensureCredential; surfaced as AZURE_TENANT_ID
 	armTemplate      map[string]any  // embedded ARM JSON; nil when on-disk Bicep is configured
 	onDiskSource     *templateSource // non-nil after on-disk Bicep has been compiled and validated
@@ -346,11 +347,17 @@ func (p *FoundryProvisioningProvider) Initialize(
 			existingResult.Parameters["deployments"] = deployments
 		}
 		if !existingProjectHasMutations(existingResult) {
-			p.brownfieldEndpoint = endpoint
-			p.existingProjectReuseOnly = true
-			p.synthResult = existingResult
-			p.foundryName = projectNameFromEndpoint(endpoint)
-			return nil
+			owner, err := p.envValue(ctx, envKeyFoundryRGOwner)
+			if err != nil {
+				return fmt.Errorf("read existing Foundry resource-group ownership: %w", err)
+			}
+			if owner == "" {
+				p.brownfieldEndpoint = endpoint
+				p.existingProjectReuseOnly = true
+				p.synthResult = existingResult
+				p.foundryName = projectNameFromEndpoint(endpoint)
+				return nil
+			}
 		}
 	}
 	return p.initializeInfrastructure(ctx, rawYAML, projectRoot, svcName, endpoint, onDisk)
@@ -371,11 +378,12 @@ func (p *FoundryProvisioningProvider) initializeInfrastructure(
 	}
 
 	input := synthesis.Input{
-		RawAzureYAML:  rawYAML,
-		ServiceName:   svcName,
-		AcceptedHosts: FoundryProvisioningServiceHosts,
-		Env:           p.networkEnvMap(ctx),
-		ProjectRoot:   projectRoot,
+		RawAzureYAML:                 rawYAML,
+		ServiceName:                  svcName,
+		AcceptedHosts:                FoundryProvisioningServiceHosts,
+		Env:                          p.networkEnvMap(ctx),
+		ProjectRoot:                  projectRoot,
+		InfrastructureOwnsMonitoring: onDisk,
 	}
 	var res *synthesis.Result
 	if endpoint != "" {
@@ -467,7 +475,8 @@ func (p *FoundryProvisioningProvider) refreshReuseOnlyDeployments(ctx context.Co
 func existingProjectHasMutations(result *synthesis.Result) bool {
 	includeAcr, _ := result.Parameters["includeAcr"].(bool)
 	deployments, _ := result.Parameters["deployments"].([]synthesis.Deployment)
-	return includeAcr || len(deployments) > 0
+	monitoringMode, _ := result.Parameters["monitoringMode"].(string)
+	return includeAcr || len(deployments) > 0 || (monitoringMode != "" && monitoringMode != "none")
 }
 
 func (p *FoundryProvisioningProvider) resolveExistingProjectResourceGroup(ctx context.Context) error {
@@ -816,9 +825,11 @@ func (p *FoundryProvisioningProvider) withTenantOutput(
 func (p *FoundryProvisioningProvider) normalizeOutputs(
 	outputs map[string]*azdext.ProvisioningOutputParameter,
 ) map[string]*azdext.ProvisioningOutputParameter {
-	trackSupportingResourceGroup := p.isLayer ||
-		(p.brownfieldEndpoint != "" && p.existingAcrMode == "create")
-	if trackSupportingResourceGroup {
+	monitoringMode := ""
+	if output := outputs["AZD_FOUNDRY_MONITORING_MODE"]; output != nil {
+		monitoringMode = output.Value
+	}
+	if p.tracksSupportingResourceGroup(monitoringMode) {
 		if outputs == nil {
 			outputs = map[string]*azdext.ProvisioningOutputParameter{}
 		}
@@ -828,8 +839,20 @@ func (p *FoundryProvisioningProvider) normalizeOutputs(
 		outputs[envKeyFoundryRGOwner] = &azdext.ProvisioningOutputParameter{
 			Type: "string", Value: p.foundryRGOwnerID,
 		}
+		// Incremental deployments retain the group after setup is disabled.
+		// Keep its existing ownership binding available for a later azd down.
+		if resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, p.rgName) {
+			outputs[envKeyFoundryRG] = &azdext.ProvisioningOutputParameter{
+				Type: "string", Value: p.rgName,
+			}
+		}
 	}
 	return outputs
+}
+
+func (p *FoundryProvisioningProvider) tracksSupportingResourceGroup(monitoringMode string) bool {
+	return p.isLayer || (p.brownfieldEndpoint != "" &&
+		(p.existingAcrMode == "create" || monitoringMode == "create" || p.foundryRGOwnerID != ""))
 }
 
 // projectNameFromEndpoint extracts the project name from a Foundry project
@@ -1229,9 +1252,29 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err != nil {
 		return nil, err
 	}
+	if err := p.prepareMonitoring(ctx, src, client, progress); err != nil {
+		return nil, err
+	}
+	monitoringMode, err := monitoringParameter(src, "monitoringMode")
+	if err != nil {
+		return nil, err
+	}
 	resourceGroupExisted := false
-	trackSupportingResourceGroup := p.isLayer ||
-		(p.brownfieldEndpoint != "" && p.existingProjectAcrMode(ctx) == "create")
+	trackSupportingResourceGroup := p.tracksSupportingResourceGroup(monitoringMode)
+	if trackSupportingResourceGroup && monitoringMode == "create" {
+		group, err := monitoringParameter(src, "resourceGroupName")
+		if err != nil {
+			return nil, err
+		}
+		if group == "" {
+			return nil, fmt.Errorf("monitoring creation requires the actual supporting resourceGroupName")
+		}
+		if p.foundryRGOwnerID != "" && !resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, group) {
+			return nil, fmt.Errorf("the authored monitoring graph selects a different owned supporting resource group; " +
+				"retain the existing group binding or explicitly clean it up before changing groups")
+		}
+		p.rgName = group
+	}
 	if trackSupportingResourceGroup && !resourceGroupIDMatches(p.foundryRGOwnerID, p.subID, p.rgName) {
 		resourceGroupExisted, err = p.resourceGroupExists(ctx)
 		if err != nil {
@@ -1244,17 +1287,12 @@ func (p *FoundryProvisioningProvider) Deploy(
 
 	poller, err := client.BeginCreateOrUpdateAtSubscriptionScope(ctx, name, dep, nil)
 	if err != nil {
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.deploymentFailure(ctx, err, trackSupportingResourceGroup && !resourceGroupExisted)
 	}
 
 	resp, err := pollWithProgress(ctx, poller, progress, "Foundry deployment in progress")
 	if err != nil {
-		if trackSupportingResourceGroup && !resourceGroupExisted {
-			if ownershipErr := p.persistCreatedResourceGroupOwnership(ctx); ownershipErr != nil {
-				log.Printf("[debug] recover Foundry resource-group ownership after deployment failure: %v", ownershipErr)
-			}
-		}
-		return nil, exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+		return nil, p.deploymentFailure(ctx, err, trackSupportingResourceGroup && !resourceGroupExisted)
 	}
 
 	progress("Foundry deployment complete")
@@ -1274,6 +1312,20 @@ func (p *FoundryProvisioningProvider) Deploy(
 			Outputs:    p.normalizeOutputs(p.withTenantOutput(armOutputsToProto(deploymentOutputs(resp.Properties)))),
 		},
 	}, nil
+}
+
+func (p *FoundryProvisioningProvider) deploymentFailure(ctx context.Context, err error, recoverOwnership bool) error {
+	deploymentErr := exterrors.ServiceFromAzure(err, exterrors.OpArmDeploymentCreate)
+	if recoverOwnership {
+		if ownershipErr := p.persistCreatedResourceGroupOwnership(ctx); ownershipErr != nil {
+			return errors.Join(exterrors.Internal(
+				exterrors.CodeEnvironmentValuesFailed,
+				fmt.Sprintf("Foundry deployment failed (%s) and supporting resource-group ownership "+
+					"could not be recorded: %s", monitoringReadError("deploy Foundry infrastructure", err), ownershipErr),
+			), err)
+		}
+	}
+	return deploymentErr
 }
 
 func (p *FoundryProvisioningProvider) existingProjectReuseOutputs() map[string]*azdext.ProvisioningOutputParameter {
@@ -1359,6 +1411,11 @@ func (p *FoundryProvisioningProvider) resolveTemplate(
 	if p.onDiskSource != nil {
 		log.Printf("[debug] foundry provider: using on-disk template at %s", p.onDiskSource.sourcePath)
 		hostParameters := parametersDeclaredByTemplate(p.armParameters(), p.onDiskSource.armTemplate)
+		for _, name := range []string{
+			"monitoringMode", "applicationInsightsResourceId", "monitoringCreateConnection", "monitoringConnectionName",
+		} {
+			delete(hostParameters, name)
+		}
 		merged := mergeParameters(p.onDiskSource.parameters, hostParameters)
 		return &templateSource{
 			mode:        p.onDiskSource.mode,
@@ -1508,6 +1565,10 @@ func (p *FoundryProvisioningProvider) Preview(
 		return nil, err
 	}
 
+	if err := p.prepareMonitoring(ctx, src, client, progress); err != nil {
+		return nil, err
+	}
+
 	whatIf := armresources.DeploymentWhatIf{
 		Location: new(p.location),
 		Properties: &armresources.DeploymentWhatIfProperties{
@@ -1580,11 +1641,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return &azdext.ProvisioningDestroyResult{}, nil
 		}
 		mode := p.existingProjectAcrMode(ctx)
-		if mode == "none" || mode == "already-connected" {
+		if (mode == "none" || mode == "already-connected") && p.foundryRGOwnerID == "" {
 			progress("Existing Foundry project resources are not owned by azd; leaving them in place")
 			return &azdext.ProvisioningDestroyResult{}, nil
 		}
-		if mode != "create" {
+		if mode != "create" && p.foundryRGOwnerID == "" {
 			return nil, exterrors.Validation(
 				exterrors.CodeInvalidServiceConfig,
 				"azd down cannot safely remove resources created inside an existing Foundry project",
@@ -1635,12 +1696,23 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
+	var monitoring monitoringCleanup
 	if p.brownfieldEndpoint != "" {
-		if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
+		var err error
+		monitoring, err = p.prepareMonitoringCleanup(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if p.existingAcrMode == "create" {
+			if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
+				return nil, err
+			}
+		}
+		if err := p.deleteMonitoringConnection(ctx, monitoring, progress); err != nil {
 			return nil, err
 		}
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -1682,7 +1754,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 			// account from a prior incomplete cleanup is out of scope --
 			// the user can purge it manually via `az cognitiveservices
 			// account purge`.
-			return p.destroyResult(), nil
+			return p.destroyResult(monitoring), nil
 		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
 	}
@@ -1700,7 +1772,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 		}
 	}
 
-	return p.destroyResult(), nil
+	return p.destroyResult(monitoring), nil
 }
 
 func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
@@ -1735,7 +1807,7 @@ func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
 			"re-run `azd ai agent init` against the configured existing project",
 		)
 	}
-	client, err := armcognitiveservices.NewProjectConnectionsClient(projectID.SubscriptionID, p.credential, nil)
+	client, err := armcognitiveservices.NewProjectConnectionsClient(projectID.SubscriptionID, p.credential, p.armClientOptions)
 	if err != nil {
 		return exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -1789,9 +1861,9 @@ func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
 	return nil
 }
 
-func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestroyResult {
+func (p *FoundryProvisioningProvider) destroyResult(monitoring monitoringCleanup) *azdext.ProvisioningDestroyResult {
 	if p.brownfieldEndpoint != "" {
-		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: []string{
+		keys := []string{
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
@@ -1799,7 +1871,11 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 			"AZD_FOUNDRY_ACR_MODE",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
 			envKeyFoundryRGOwner,
-		}}
+		}
+		if monitoring.ownsResources {
+			keys = append(keys, monitoringOutputKeys()...)
+		}
+		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: keys}
 	}
 	return invalidatedEnvKeysResult()
 }
@@ -1822,7 +1898,7 @@ func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestro
 func (p *FoundryProvisioningProvider) confirmDestroy(ctx context.Context) (bool, error) {
 	target := fmt.Sprintf("resource group %q and all resources inside it", p.rgName)
 	if p.brownfieldEndpoint != "" {
-		target += " plus its Container Registry connection inside the existing Foundry project"
+		target += " plus its azd-created Container Registry and monitoring connections inside the existing Foundry project"
 	}
 	forceRequired := exterrors.Validation(
 		exterrors.CodeDestroyRequiresForce,
@@ -1894,7 +1970,7 @@ func (p *FoundryProvisioningProvider) listAccountsInRG(
 	ctx context.Context,
 	progress grpcbroker.ProgressFunc,
 ) ([]*armcognitiveservices.Account, error) {
-	accountsClient, err := armcognitiveservices.NewAccountsClient(p.subID, p.credential, nil)
+	accountsClient, err := armcognitiveservices.NewAccountsClient(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2016,7 +2092,7 @@ func (p *FoundryProvisioningProvider) purgeCognitiveAccounts(
 // Deploy, so azd-core can clear them after a successful Destroy.
 func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 	return &azdext.ProvisioningDestroyResult{
-		InvalidatedEnvKeys: []string{
+		InvalidatedEnvKeys: append([]string{
 			"AZURE_AI_PROJECT_ID",
 			"AZURE_AI_ACCOUNT_NAME",
 			"AZURE_AI_PROJECT_NAME",
@@ -2029,7 +2105,7 @@ func invalidatedEnvKeysResult() *azdext.ProvisioningDestroyResult {
 			"AZD_FOUNDRY_ACR_MODE",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
 			envKeyFoundryRGOwner,
-		},
+		}, monitoringOutputKeys()...),
 	}
 }
 
@@ -2131,6 +2207,11 @@ var canonicalOutputNames = []string{
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
 	"AZD_FOUNDRY_ACR_MODE",
+	"AZURE_APPLICATION_INSIGHTS_RESOURCE_ID",
+	"AZURE_APPLICATION_INSIGHTS_APP_ID",
+	"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
+	"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
+	"AZD_FOUNDRY_MONITORING_MODE",
 }
 
 var greenfieldOutputNames = []string{
@@ -2146,6 +2227,11 @@ var greenfieldOutputNames = []string{
 	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 	"AZURE_FOUNDRY_NETWORK_MODE",
 	"AZURE_FOUNDRY_MANAGED_ISOLATION_MODE",
+	"AZURE_APPLICATION_INSIGHTS_RESOURCE_ID",
+	"AZURE_APPLICATION_INSIGHTS_APP_ID",
+	"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
+	"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
+	"AZD_FOUNDRY_MONITORING_MODE",
 }
 
 var existingProjectOutputNames = []string{
@@ -2159,6 +2245,11 @@ var existingProjectOutputNames = []string{
 	"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 	"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
 	"AZD_FOUNDRY_ACR_MODE",
+	"AZURE_APPLICATION_INSIGHTS_RESOURCE_ID",
+	"AZURE_APPLICATION_INSIGHTS_APP_ID",
+	"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
+	"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
+	"AZD_FOUNDRY_MONITORING_MODE",
 }
 
 // --- helpers ---
@@ -2169,7 +2260,7 @@ func (p *FoundryProvisioningProvider) deploymentsClient(ctx context.Context) (*a
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2414,7 +2505,7 @@ func (p *FoundryProvisioningProvider) lookupResourceGroupState(
 	if p.resourceGroupState != nil {
 		return p.resourceGroupState(ctx)
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return nil, false, exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2459,7 +2550,7 @@ func (p *FoundryProvisioningProvider) verifyLayerResourceGroupAzureOwnership(ctx
 	if err := p.ensureCredential(ctx); err != nil {
 		return err
 	}
-	factory, err := armresources.NewClientFactory(p.subID, p.credential, nil)
+	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
 	if err != nil {
 		return exterrors.Internal(
 			exterrors.CodeAzdClientFailed,
@@ -2594,7 +2685,7 @@ func armOutputsToProto(outputs any) map[string]*azdext.ProvisioningOutputParamet
 		}
 		typeStr, _ := entry["type"].(string)
 		out[canonicalizeOutputName(k)] = &azdext.ProvisioningOutputParameter{
-			Type:  typeStr,
+			Type:  strings.ToLower(typeStr),
 			Value: encodeParamValue(entry["value"]),
 		}
 	}

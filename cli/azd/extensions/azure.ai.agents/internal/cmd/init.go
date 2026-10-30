@@ -945,7 +945,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 					defer inittelemetry.Start(ctx, inittelemetry.InfraGeneration)()
-					return ejectInfra(gate.projectRoot, infraProvider, env)
+					return ejectInfra(ctx, gate.projectRoot, infraProvider, env)
 				}
 			}
 			endValidation()

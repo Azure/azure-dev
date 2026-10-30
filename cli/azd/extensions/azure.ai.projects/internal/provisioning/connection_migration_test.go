@@ -288,7 +288,9 @@ func findSystemAcrConnection(t *testing.T, template map[string]any) map[string]a
 	visit = func(value any) {
 		switch value := value.(type) {
 		case map[string]any:
-			if value["type"] == "Microsoft.CognitiveServices/accounts/projects/connections" {
+			properties, _ := value["properties"].(map[string]any)
+			if value["type"] == "Microsoft.CognitiveServices/accounts/projects/connections" &&
+				properties["category"] == "ContainerRegistry" {
 				connections = append(connections, value)
 			}
 			for _, child := range value {

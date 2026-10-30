@@ -63,6 +63,10 @@ type Input struct {
 	// provision path), ${VAR} is resolved here and a missing variable fails.
 	PreserveVarRefs bool
 
+	// InfrastructureOwnsMonitoring leaves monitoring to already-authored IaC.
+	// Export does not set this: it seeds the IaC from YAML exactly once.
+	InfrastructureOwnsMonitoring bool
+
 	// ProjectRoot is the directory holding azure.yaml. When set, $ref file
 	// includes in the service entry (and its deployment items) are resolved
 	// against it before synthesis, so refs become the actual content rather
@@ -82,6 +86,10 @@ type Result struct {
 	// NetworkMode is "none", "byo", or "managed" — derived from the
 	// network: block (or its absence). Exposed for telemetry.
 	NetworkMode string
+
+	// MonitoringExplicit distinguishes authored monitoring from the new-project
+	// default, so an upgrade cannot opt an already-provisioned project into setup.
+	MonitoringExplicit bool
 }
 
 // Deployment mirrors the deploymentType in main.bicep.
@@ -139,6 +147,7 @@ type projectService struct {
 	Deployments []Deployment  `yaml:"deployments,omitempty"`
 	Agents      []agentBlock  `yaml:"agents,omitempty"`
 	Network     *networkBlock `yaml:"network,omitempty"`
+	Monitoring  yaml.Node     `yaml:"monitoring,omitempty"`
 }
 
 // networkBlock mirrors the network: sub-tree on the service body.
@@ -241,10 +250,16 @@ func Synthesize(in Input) (*Result, error) {
 		"includeAcr":  includeAcr,
 	}
 	maps.Copy(params, netParams)
+	monitoring, err := monitoringParameters(svc.Monitoring, in, true)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(params, monitoring)
 
 	return &Result{
-		Parameters:  params,
-		NetworkMode: netMode,
+		Parameters:         params,
+		NetworkMode:        netMode,
+		MonitoringExplicit: !in.InfrastructureOwnsMonitoring && svc.Monitoring.Kind != 0,
 	}, nil
 }
 
@@ -287,10 +302,19 @@ func SynthesizeExistingProject(in Input) (*Result, error) {
 		deployments = []Deployment{}
 	}
 
-	return &Result{Parameters: map[string]any{
+	params := map[string]any{
 		"deployments": deployments,
 		"includeAcr":  includeAcr,
-	}, NetworkMode: NetworkModeNone}, nil
+	}
+	monitoring, err := monitoringParameters(svc.Monitoring, in, false)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(params, monitoring)
+	return &Result{
+		Parameters: params, NetworkMode: NetworkModeNone,
+		MonitoringExplicit: !in.InfrastructureOwnsMonitoring && svc.Monitoring.Kind != 0,
+	}, nil
 }
 
 // BrownfieldDeployments returns the model deployments declared on a brownfield

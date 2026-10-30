@@ -27,7 +27,7 @@ output "FOUNDRY_PROJECT_ENDPOINT" {
 }
 
 output "AZURE_FOUNDRY_RESOURCE_GROUP" {
-  value = {{ if eq .AcrMode "create" }}var.resource_group_name{{ else }}""{{ end }}
+  value = {{ if .IncludeAdjunct }}var.resource_group_name{{ else }}""{{ end }}
 }
 
 output "AZURE_CONTAINER_REGISTRY_ENDPOINT" {

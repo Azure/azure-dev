@@ -9,12 +9,6 @@ locals {
   acr_pull_role_id        = "7f951dda-4ed3-4680-a7ca-43fe172d538d"
 }
 
-resource "azurerm_resource_group" "adjunct" {
-  name     = var.resource_group_name
-  location = var.location
-  tags     = merge(var.tags, { "azd-env-name" = var.environment_name })
-}
-
 data "azapi_resource" "project" {
   type                   = "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview"
   resource_id            = local.normalized_project_id

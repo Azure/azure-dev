@@ -683,6 +683,20 @@ func TestWriteExistingProjectTerraformAcrModes(t *testing.T) {
 			} else {
 				assert.NoFileExists(t, registryPath)
 			}
+			adjunctPath := filepath.Join(dir, "adjunct-resource-group.tf")
+			if test.mode == projectEjectAcrCreate {
+				// #nosec G304
+				adjunct, err := os.ReadFile(adjunctPath)
+				require.NoError(t, err)
+				assert.Contains(t, string(adjunct), `resource "azurerm_resource_group" "adjunct"`)
+				// #nosec G304
+				registry, err := os.ReadFile(registryPath)
+				require.NoError(t, err)
+				assert.NotContains(t, string(registry), `resource "azurerm_resource_group"`)
+				assert.Contains(t, string(registry), "azurerm_resource_group.adjunct.name")
+			} else {
+				assert.NoFileExists(t, adjunctPath)
+			}
 			// #nosec G304
 			outputs, err := os.ReadFile(filepath.Join(dir, "outputs.tf"))
 			require.NoError(t, err)

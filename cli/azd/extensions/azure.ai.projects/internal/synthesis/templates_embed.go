@@ -34,7 +34,7 @@ var templatesFS embed.FS
 // generated at eject time.
 //
 //go:embed templates/terraform/*.tf
-//go:embed templates/terraform/outputs.tf.tmpl
+//go:embed templates/terraform/*.tf.tmpl
 var terraformTemplatesFS embed.FS
 
 //go:embed templates/terraform-existing-project/*.tf

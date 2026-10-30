@@ -19,7 +19,7 @@ func legacyConnectionTemplateError(sourcePath string) error {
 		fmt.Sprintf("on-disk Foundry template %q uses the removed generic Connection provisioning contract", sourcePath),
 		"remove the generic Foundry Connection modules/resources and their associated "+
 			"connections/connectionCredentials inputs from your on-disk Bicep and parameter files; "+
-			"keep unrelated parameters and keep the system ACR connection. "+
+			"keep unrelated parameters and keep the system ACR connection and protected system monitoring connection. "+
 			"Declare connections as services with host: azure.ai.connection, then run `azd deploy` "+
 			"after provisioning the Project. No templates or Azure resources have been changed",
 	)
@@ -32,10 +32,10 @@ func legacyConnectionTemplateError(sourcePath string) error {
 // Both Bicep entry paths run this before any template is sent to Azure. Linked
 // templates are not fetched; their parameter names do not identify their resources.
 func validateProjectTemplate(template map[string]any, sourcePath string) error {
-	return validateProjectResources(template["resources"], "", sourcePath)
+	return validateProjectResources(template["resources"], "", sourcePath, template)
 }
 
-func validateProjectResources(resources any, parentType, sourcePath string) error {
+func validateProjectResources(resources any, parentType, sourcePath string, template map[string]any) error {
 	validate := func(value any) error {
 		resource, ok := value.(map[string]any)
 		if !ok {
@@ -51,7 +51,7 @@ func validateProjectResources(resources any, parentType, sourcePath string) erro
 		case "microsoft.cognitiveservices/accounts/connections":
 			return legacyConnectionTemplateError(sourcePath)
 		case "microsoft.cognitiveservices/accounts/projects/connections":
-			if !isSystemAcrConnection(resource) {
+			if !isSystemAcrConnection(resource) && !isSystemMonitoringConnection(resource, template) {
 				return legacyConnectionTemplateError(sourcePath)
 			}
 		case "microsoft.resources/deployments":
@@ -61,7 +61,7 @@ func validateProjectResources(resources any, parentType, sourcePath string) erro
 				}
 			}
 		}
-		return validateProjectResources(resource["resources"], resourceType, sourcePath)
+		return validateProjectResources(resource["resources"], resourceType, sourcePath, template)
 	}
 
 	// ARM languageVersion 2.0 uses symbolic-name objects rather than arrays.
@@ -80,6 +80,59 @@ func validateProjectResources(resources any, parentType, sourcePath string) erro
 		}
 	}
 	return nil
+}
+
+// Only the protected project connection and its ARM-side credential lookup are
+// constrained. Workspace/component properties and enclosing modules remain editable.
+func isSystemMonitoringConnection(resource, template map[string]any) bool {
+	for _, field := range []string{"copy", "scope", "subscriptionId", "resourceGroup", "condition"} {
+		if _, exists := resource[field]; exists {
+			return false
+		}
+	}
+	if resource["name"] != "[format('{0}/{1}/{2}', parameters('accountName'), parameters('projectName'), "+
+		"format('azd-appinsights-{0}', take(replace(guid(toLower(parameters('projectName'))), '-', ''), 13)))]" {
+		return false
+	}
+	options, _ := resource["@options"].(map[string]any)
+	if !reflect.DeepEqual(options["onlyIfNotExists"], []any{}) {
+		return false
+	}
+	variables, _ := template["variables"].(map[string]any)
+	if variables["componentParts"] != "[split(parameters('applicationInsightsResourceId'), '/')]" {
+		return false
+	}
+	resources, _ := template["resources"].(map[string]any)
+	component, _ := resources["component"].(map[string]any)
+	if !reflect.DeepEqual(component, map[string]any{
+		"existing":       true,
+		"type":           "Microsoft.Insights/components",
+		"apiVersion":     "2020-02-02",
+		"subscriptionId": "[variables('componentParts')[2]]",
+		"resourceGroup":  "[variables('componentParts')[4]]",
+		"name":           "[variables('componentParts')[8]]",
+	}) {
+		return false
+	}
+	target := "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', " +
+		"variables('componentParts')[2], variables('componentParts')[4]), " +
+		"'Microsoft.Insights/components', variables('componentParts')[8])]"
+	return reflect.DeepEqual(resource["properties"], map[string]any{
+		"category": "AppInsights",
+		"authType": "ApiKey",
+		"target":   target,
+		"credentials": map[string]any{
+			"key": "[reference('component').ConnectionString]",
+		},
+		"metadata": map[string]any{
+			"ApiType":         "Azure",
+			"ResourceId":      target,
+			"azd-created-by":  "azure.ai.projects",
+			"azd-environment": "[parameters('environmentName')]",
+			"azd-monitoring-project": "[resourceId('Microsoft.CognitiveServices/accounts/projects', " +
+				"parameters('accountName'), parameters('projectName'))]",
+		},
+	})
 }
 
 // isSystemAcrConnection recognizes the registry connection emitted by acr.bicep

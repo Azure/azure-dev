@@ -57,6 +57,18 @@ param deployments deploymentsType = []
 @description('Include an Azure Container Registry. Set true when any agent uses docker:.')
 param includeAcr bool = false
 
+@description('Monitoring graph. None skips setup without deleting existing resources.')
+@allowed([
+  'none'
+  'create'
+  'reuse-connect'
+  'already-connected'
+])
+param monitoringMode string = 'create'
+param applicationInsightsResourceId string = ''
+param monitoringCreateConnection bool = true
+param monitoringConnectionName string = ''
+
 // Network isolation parameters (see modules/resources.bicep for semantics).
 // All default off so an absent network: block yields a public account.
 
@@ -129,6 +141,22 @@ module resources 'modules/resources.bicep' = {
   }
 }
 
+module monitoring 'modules/monitoring.bicep' = if (monitoringMode != 'none') {
+  name: 'foundry-monitoring'
+  scope: resourceGroup
+  params: {
+    mode: monitoringMode
+    location: location
+    tags: tags
+    projectResourceId: resources.outputs.AZURE_AI_PROJECT_ID
+    applicationInsightsResourceId: applicationInsightsResourceId
+    createConnection: monitoringCreateConnection
+    existingConnectionName: monitoringConnectionName
+    environmentName: contains(tags, 'azd-env-name') ? string(tags['azd-env-name']) : ''
+    resourceTokenSalt: resourceTokenSalt
+  }
+}
+
 // Outputs
 
 output AZURE_RESOURCE_GROUP string = resourceGroupName
@@ -143,3 +171,8 @@ output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = resources.outputs.AZURE_CON
 output AZURE_AI_PROJECT_ACR_CONNECTION_NAME string = resources.outputs.AZURE_AI_PROJECT_ACR_CONNECTION_NAME
 output AZURE_FOUNDRY_NETWORK_MODE string = resources.outputs.AZURE_FOUNDRY_NETWORK_MODE
 output AZURE_FOUNDRY_MANAGED_ISOLATION_MODE string = resources.outputs.AZURE_FOUNDRY_MANAGED_ISOLATION_MODE
+output AZURE_APPLICATION_INSIGHTS_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsResourceId : ''
+output AZURE_APPLICATION_INSIGHTS_APP_ID string = monitoringMode != 'none' ? monitoring!.outputs.applicationInsightsAppId : ''
+output AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID string = monitoringMode != 'none' ? monitoring!.outputs.logAnalyticsWorkspaceResourceId : ''
+output AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME string = monitoringMode != 'none' ? monitoring!.outputs.projectConnectionName : ''
+output AZD_FOUNDRY_MONITORING_MODE string = monitoringMode

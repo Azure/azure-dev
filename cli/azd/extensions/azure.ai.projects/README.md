@@ -131,6 +131,105 @@ declaration's binding to its managed name. For hand-edited agent bindings,
 update the JSON object with `azd env set AI_PROJECT_DEPLOYMENT_BINDINGS '<json>'`,
 or set it to `'{}'` to clear explicit bindings.
 
+### Application Insights
+
+New Foundry projects automatically receive a workspace-backed Application
+Insights component and a project-scoped `AppInsights` connection during normal
+provisioning. This includes projects created directly with `azd ai project add`
+and projects created for agents. No additional command, flag, or connection
+service is required. Existing projects are unchanged unless monitoring is
+explicitly configured; upgrading an environment does not opt an existing project
+into monitoring.
+
+To bring your own component, add the optional project setting:
+
+```yaml
+infra:
+  provider: microsoft.foundry
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      applicationInsightsResourceId: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Insights/components/<component>
+```
+
+The component must already reference an accessible Log Analytics workspace.
+It can belong to another resource group or subscription that the deploying
+identity can read. Provisioning references it without changing its tags,
+authentication, network settings, retention, or workspace, and creates only a
+missing project connection. Credentials are resolved during deployment, not
+stored in generated parameter files or azd environment outputs. A compatible
+existing project or shared account connection is preserved, including
+Managed Identity or Microsoft Entra authentication.
+
+Set `monitoring: { enabled: true }` to opt an existing project into creation.
+To skip new monitoring setup, use:
+
+```yaml
+services:
+  my-project:
+    host: azure.ai.project
+    monitoring:
+      enabled: false
+```
+
+For embedded infrastructure, this opt-out does not delete or disable an existing
+component, workspace, or connection. It also does not relinquish an existing
+azd-owned supporting resource group's cleanup binding.
+
+New connections use ApiKey authentication, are scoped to one project, and are
+named `azd-appinsights-<project-name-hash>` to stay within resource name limits.
+No monitoring RBAC roles are added.
+Discovery rejects conflicting destinations, protected names, ambiguous sharing,
+unreadable resources, and authentication or ingestion policies that would need
+to be weakened. ApiKey setup does not enable local authentication or configure
+private-network ingestion. Such failures can fail normal provisioning; there
+is no second best-effort deployment or agent deployment repair hook.
+
+Monitoring creates billable Azure resources and can store agent telemetry,
+including application-supplied content. Review your application's telemetry,
+data handling, and retention requirements before deployment. Newly created
+workspaces start with 30-day retention; existing workspaces are not changed.
+The normal `AZURE_APPLICATION_INSIGHTS_RESOURCE_ID`,
+`AZURE_APPLICATION_INSIGHTS_APP_ID`,
+`AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`,
+`AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME`, and
+`AZD_FOUNDRY_MONITORING_MODE` outputs describe provisioning configuration, not
+proof that an agent has emitted or ingested traces.
+
+#### Ejected infrastructure
+
+Monitoring is part of the main infrastructure graph, not an orphan template or
+a separate deployment. Before ejection, `azure.yaml` controls monitoring.
+After ejection, the Bicep files and their parameters, or Terraform files and
+their variables, are authoritative. Changing stale YAML monitoring values does
+not override those files. General configuration loading still requires valid
+YAML and resolvable local references, even for values no longer used by IaC.
+
+Generated Bicep calls `modules/monitoring.bicep`; Terraform declares monitoring
+in `monitoring.tf`. Monitoring modes are `none`, `create`, `reuse-connect`, and
+`already-connected`. The last mode references compatible external monitoring
+without managing its connection. Existing-project creation shares the normal
+supporting resource group used by ACR rather than creating a separate monitoring
+resource group. Native/Bicep preview uses normal ARM What-If.
+
+Monitoring-enabled Terraform exports require Terraform 1.11 or later and AzAPI
+2.7 or later (existing-project exports retain their higher provider baseline).
+They use an ephemeral credential read and a write-only connection field.
+Previously native-created resources are not implicitly imported into Terraform;
+reference the component explicitly for reuse or perform a deliberate state
+handoff. Terraform resources have normal removal and destroy semantics:
+changing managed monitoring to `none` or deleting its declarations can schedule
+resource deletion, unlike the embedded-provider YAML opt-out. Review the plan
+before applying changes. A reuse-only existing-project export cannot switch to
+creation until its owned supporting resource-group graph is declared.
+
+Export-time discovery selects a stable graph, and Terraform rechecks effective
+connections and policy during planning/apply. Managed resource counts do not
+depend on whether a connection happens to exist. Neither ARM nor Terraform
+provides a transaction across discovery and concurrent connection changes:
+avoid creating different monitoring connections concurrently with provisioning.
+
 ### Deployment preview
 
 `azd deploy --preview` performs no work for an `azure.ai.project` service, just
@@ -237,7 +336,8 @@ Split `host: azure.ai.connection` services are reconciled during deploy by the
 `azure.ai.connections` extension, never by Project provisioning. This applies
 to embedded templates and newly ejected Bicep/Terraform alike. Project synthesis
 does not read Connection or Toolbox payloads, environments, or credentials.
-The system ACR connection used by the Project's registry remains Project-owned.
+The system ACR connection and generated system AppInsights connection remain
+Project-owned.
 
 ### Breaking migration
 
@@ -250,8 +350,8 @@ or `connectionCredentials` are allowed and retain normal parameter substitution;
 parameter names alone do not identify the removed Foundry contract. Linked
 templates are not fetched or inspected by this validation.
 
-Only the generated system ACR connection's name, target, project identity and
-registry resource ID wiring are exempt. Other `ContainerRegistry` connections,
+Only generated system ACR and AppInsights connections with their expected name,
+target, project identity, and resource ID wiring are exempt. Other `ContainerRegistry` connections,
 including those using `ManagedIdentity`, belong in `azure.ai.connection` services.
 Preserve that generated wiring when customizing ejected Bicep, or regenerate it.
 
@@ -275,8 +375,8 @@ azd ai project add --project-id "<project-resource-id>" --infra=terraform
 
 The default format is Bicep. The generated infrastructure references the
 existing account and project without taking ownership of them. It manages only
-declared model deployments, the system ACR connection, and any required container
-registry resources. Endpoint-only setup cannot eject infrastructure; rerun
+declared model deployments, system ACR and explicitly enabled monitoring
+connections, and any required registry or monitoring resources. Endpoint-only setup cannot eject infrastructure; rerun
 `project add` with the full project resource ID.
 
 When an agent needs a registry, ejection preserves the registry state selected

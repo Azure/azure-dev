@@ -324,6 +324,83 @@ func TestExtensionHost_WithServiceTargetPreview(t *testing.T) {
 	}
 }
 
+func TestExtensionHost_ServiceTargetPreviewConcurrentStartup(t *testing.T) {
+	t.Parallel()
+
+	for _, beta := range []bool{false, true} {
+		t.Run(map[bool]string{false: "Stable", true: "DeprecatedBeta"}[beta], func(t *testing.T) {
+			t.Parallel()
+
+			serverHost := &fakePreviewHost{
+				registrations: make(chan *RegisterServiceTargetRequest, 2),
+				brokers:       make(chan *grpcbroker.MessageBroker[ServiceTargetMessage], 2),
+			}
+			listener := bufconn.Listen(1024 * 1024)
+			grpcServer := grpc.NewServer()
+			RegisterServiceTargetServiceServer(grpcServer, serverHost)
+			v1beta.RegisterServiceTargetServiceServer(grpcServer, &fakeBetaPreviewHost{host: serverHost})
+			go func() { _ = grpcServer.Serve(listener) }()
+			t.Cleanup(grpcServer.Stop)
+
+			connection, err := grpc.NewClient(
+				"passthrough:///bufnet",
+				grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+					return listener.DialContext(ctx)
+				}),
+				grpc.WithTransportCredentials(insecure.NewCredentials()),
+			)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, connection.Close()) })
+
+			ready := make(chan struct{})
+			extensionClient := &MockExtensionServiceClient{}
+			extensionClient.On("Ready", mock.Anything, mock.Anything, mock.Anything).
+				Run(func(mock.Arguments) { close(ready) }).
+				Return(&ReadyResponse{}, nil).Once()
+			client := &AzdClient{connection: connection, extensionClient: extensionClient}
+			host := NewExtensionHost(client)
+			if beta {
+				host.WithBetaServiceTargetPreview("custom", func() ServiceTargetProvider {
+					return &mockBetaServiceTargetPreviewProvider{}
+				})
+			} else {
+				host.WithServiceTargetPreview("custom", func() ServiceTargetProvider {
+					return &mockServiceTargetPreviewProvider{}
+				})
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			done := make(chan error, 1)
+			go func() { done <- host.Run(ctx) }()
+			t.Cleanup(func() {
+				cancel()
+				select {
+				case err := <-done:
+					require.NoError(t, err)
+				case <-time.After(10 * time.Second):
+					t.Error("extension host did not stop")
+				}
+			})
+
+			select {
+			case <-ready:
+			case <-ctx.Done():
+				t.Fatal("extension host did not become ready")
+			}
+
+			normalRegistration := <-serverHost.registrations
+			previewRegistration := <-serverHost.registrations
+			require.Equal(t, "custom", normalRegistration.GetHost())
+			require.False(t, normalRegistration.GetSupportsPreview())
+			require.Equal(t, "custom", previewRegistration.GetHost())
+			require.True(t, previewRegistration.GetSupportsPreview())
+			require.NotSame(t, <-serverHost.brokers, <-serverHost.brokers,
+				"normal deployment and preview must keep independent streams")
+			extensionClient.AssertExpectations(t)
+		})
+	}
+}
+
 func testExtensionHostWithServiceTargetPreview(t *testing.T, beta bool) {
 	t.Helper()
 

@@ -33,6 +33,7 @@ func (c *AzdClient) BetaServiceTarget() v1beta.ServiceTargetServiceClient {
 // AzdClient is the client for the `azd` gRPC server.
 type AzdClient struct {
 	connection          *grpc.ClientConn
+	clientMu            sync.Mutex // Protects lazy service client initialization.
 	projectClient       ProjectServiceClient
 	environmentClient   EnvironmentServiceClient
 	userConfigClient    UserConfigServiceClient
@@ -172,6 +173,9 @@ func (c *AzdClient) Close() {
 
 // Project returns the project service client.
 func (c *AzdClient) Project() ProjectServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.projectClient == nil {
 		c.projectClient = NewProjectServiceClient(c.connection)
 	}
@@ -187,6 +191,9 @@ func (c *AzdClient) ProjectBeta() v1beta.ProjectServiceClient {
 
 // Environment returns the environment service client.
 func (c *AzdClient) Environment() EnvironmentServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.environmentClient == nil {
 		c.environmentClient = NewEnvironmentServiceClient(c.connection)
 	}
@@ -196,6 +203,9 @@ func (c *AzdClient) Environment() EnvironmentServiceClient {
 
 // UserConfig returns the user config service client.
 func (c *AzdClient) UserConfig() UserConfigServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.userConfigClient == nil {
 		c.userConfigClient = NewUserConfigServiceClient(c.connection)
 	}
@@ -205,6 +215,9 @@ func (c *AzdClient) UserConfig() UserConfigServiceClient {
 
 // Prompt returns the prompt service client.
 func (c *AzdClient) Prompt() PromptServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.promptClient == nil {
 		c.promptClient = NewPromptServiceClient(c.connection)
 	}
@@ -214,6 +227,9 @@ func (c *AzdClient) Prompt() PromptServiceClient {
 
 // Deployment returns the deployment service client.
 func (c *AzdClient) Deployment() DeploymentServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.deploymentClient == nil {
 		c.deploymentClient = NewDeploymentServiceClient(c.connection)
 	}
@@ -223,6 +239,9 @@ func (c *AzdClient) Deployment() DeploymentServiceClient {
 
 // Events returns the event service client.
 func (c *AzdClient) Events() EventServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.eventsClient == nil {
 		c.eventsClient = NewEventServiceClient(c.connection)
 	}
@@ -232,6 +251,9 @@ func (c *AzdClient) Events() EventServiceClient {
 
 // EventsBeta returns the preview event service client.
 func (c *AzdClient) EventsBeta() v1beta.EventServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.betaEventsClient == nil {
 		c.betaEventsClient = v1beta.NewEventServiceClient(c.connection)
 	}
@@ -251,6 +273,9 @@ func (c *AzdClient) CommandResult() v1beta.CommandResultServiceClient {
 
 // Compose returns the preview compose service client.
 func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.composeClient == nil {
 		c.composeClient = v1beta.NewComposeServiceClient(c.connection)
 	}
@@ -260,6 +285,9 @@ func (c *AzdClient) Compose() v1beta.ComposeServiceClient {
 
 // Workflow returns the workflow service client.
 func (c *AzdClient) Workflow() WorkflowServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.workflowClient == nil {
 		c.workflowClient = NewWorkflowServiceClient(c.connection)
 	}
@@ -269,6 +297,9 @@ func (c *AzdClient) Workflow() WorkflowServiceClient {
 
 // ServiceTarget returns the service target service client.
 func (c *AzdClient) ServiceTarget() ServiceTargetServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.serviceTargetClient == nil {
 		c.serviceTargetClient = NewServiceTargetServiceClient(c.connection)
 	}
@@ -283,6 +314,9 @@ func (c *AzdClient) FrameworkService() FrameworkServiceClient {
 
 // Container returns the container service client.
 func (c *AzdClient) Container() ContainerServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.containerClient == nil {
 		c.containerClient = NewContainerServiceClient(c.connection)
 	}
@@ -291,6 +325,9 @@ func (c *AzdClient) Container() ContainerServiceClient {
 
 // Extension returns the extension service client.
 func (c *AzdClient) Extension() ExtensionServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.extensionClient == nil {
 		c.extensionClient = NewExtensionServiceClient(c.connection)
 	}
@@ -300,6 +337,9 @@ func (c *AzdClient) Extension() ExtensionServiceClient {
 
 // Account returns the account service client.
 func (c *AzdClient) Account() AccountServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.accountClient == nil {
 		c.accountClient = NewAccountServiceClient(c.connection)
 	}
@@ -316,6 +356,9 @@ func (c *AzdClient) AccountBeta() v1beta.AccountServiceClient {
 
 // Ai returns the AI model service client.
 func (c *AzdClient) Ai() AiModelServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.aiClient == nil {
 		c.aiClient = NewAiModelServiceClient(c.connection)
 	}
@@ -325,6 +368,9 @@ func (c *AzdClient) Ai() AiModelServiceClient {
 
 // Copilot returns the preview Copilot agent service client.
 func (c *AzdClient) Copilot() v1beta.CopilotServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.copilotClient == nil {
 		c.copilotClient = v1beta.NewCopilotServiceClient(c.connection)
 	}
@@ -334,6 +380,9 @@ func (c *AzdClient) Copilot() v1beta.CopilotServiceClient {
 
 // Provisioning returns the provisioning service client.
 func (c *AzdClient) Provisioning() ProvisioningServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.provisioningClient == nil {
 		c.provisioningClient = NewProvisioningServiceClient(c.connection)
 	}
@@ -343,6 +392,9 @@ func (c *AzdClient) Provisioning() ProvisioningServiceClient {
 
 // Validation returns the validation service client.
 func (c *AzdClient) Validation() ValidationServiceClient {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+
 	if c.validationClient == nil {
 		c.validationClient = NewValidationServiceClient(c.connection)
 	}

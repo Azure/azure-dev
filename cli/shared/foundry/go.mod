@@ -3,6 +3,7 @@ module github.com/azure/azure-dev/cli/shared/foundry
 go 1.26.4
 
 require (
+	github.com/braydonk/yaml v0.9.0
 	github.com/drone/envsubst v1.0.3
 	github.com/stretchr/testify v1.12.1
 )

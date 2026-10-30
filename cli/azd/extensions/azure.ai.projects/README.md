@@ -201,15 +201,80 @@ Use `--force` with an explicit `--project-id` or `--project-endpoint` when
 replacing a different configured project. The command rejects `--force`
 without an explicit target instead of silently ignoring the flag.
 
-Use `--new-project` when a new project must be created even if the workspace
-already has a project endpoint or project ID configured:
+Use `--new-project` for greenfield setup instead of adopting a workspace
+project endpoint or project ID:
 
 ```sh
 azd ai project add --new-project
 ```
 
 `--new-project` cannot be combined with `--project-id` or
-`--project-endpoint`.
+`--project-endpoint`. If the environment already has a deployed registry
+binding, repeating setup preserves that project identity. Use a new azd
+environment to create another project.
+
+### Reuse an external container registry
+
+This is supported with Bicep only. The registry must be in the Foundry project's
+subscription (`AZURE_SUBSCRIPTION_ID`) and outside the Foundry resource group
+because `azd down` deletes that group. Cross-subscription registry reuse is not
+supported. You are responsible for registry network connectivity and appropriate
+image push permissions.
+The registry and its images remain externally owned and are retained by
+`azd down`. Default and JSON output identify the selected registry and its
+external ownership.
+
+`project add --output json` includes an optional `containerRegistry` object
+when a registry resource ID is available. Its `resourceId` is the registry ARM
+ID. Its `externallyOwned` boolean is `true` for a reused registry or an
+already-connected registry on an existing project, and `false` for a registry
+managed by azd. Externally owned registries are retained by `azd down`.
+The object is omitted when no registry is known. This is an additive change:
+`schemaVersion` remains `1`, and existing fields retain their names and meanings.
+JSON consumers should tolerate unknown optional fields.
+
+Setting `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` selects the
+same external-registry workflow and reports the same ownership. A registry
+is not considered azd-managed merely because it is in the deployment resource
+group. Existing azd-created registries retain their deployed binding or matching
+legacy outputs; legacy ownership is verified against the previous Azure
+deployment before provisioning or deleting the group. Unreadable environment
+state or unverified ownership stops the operation instead of creating a
+replacement registry.
+For a partial deployment, a project connection alone does not establish registry
+ownership: recovery requires a successful registry creation operation in that
+environment's deployment history. Missing or ambiguous evidence stops teardown
+before any resources or access grants are deleted.
+
+You can select a registry before adding agents; the selection remains pending
+until a source-built agent requires it, including across project-only provisioning
+and teardown. Configured project or account names do not discard an unused
+selection. Source initialization validates environment-only selections against
+the root or Foundry-layer resource group retained by setup before changing files
+or environment values.
+
+Once a project has a deployed registry binding, registry migration is not
+supported. Repeating setup with the same selection preserves the deployed
+project identity and ownership even if legacy project and registry ID outputs
+are absent. Bicep eject uses the binding's recorded registry ID when no registry
+environment-variable reference is available. Use a new azd environment to choose
+a different registry; do not clear internal mode or ownership state to bypass
+this check.
+
+Provisioning preview checks existing pull access using the same read-only access
+plan as deployment. It does not create access grants or persist pending access
+operations.
+
+If deployment fails or is canceled, resource-group and registry-access ownership
+recovery are attempted independently. Recovery errors are reported without
+preventing the other ownership record from being recovered.
+
+Successful `azd down` also removes this environment's subscription-level Foundry
+deployment record before clearing registry lifecycle state, so provisioning again
+does not try to recover the deleted project. Failed cleanup preserves recovery
+state for a retry. Removing the deployment record does not delete external
+resources. Custom deployment roles must allow
+`Microsoft.Resources/deployments/delete` at the project subscription scope.
 
 To use an existing project in automation, initialize it with its full ARM
 resource ID. This stores the project identity in the active azd environment
@@ -284,6 +349,9 @@ during initialization: it creates a registry when none exists, connects an
 existing registry when needed, or references an existing project connection
 without managing it. Terraform registry output is always named
 `container-registry.tf`; Bicep uses `modules/container-registry.bicep`.
+Greenfield ejection persists `AZD_FOUNDRY_ACR_MODE` in the azd environment.
+On-disk Foundry initialization also records the mode for previously ejected
+projects, preserving external registry reuse during provisioning and `azd down`.
 Before writing generated files, existing registry endpoints are normalized to
 remove URL credentials, query parameters, and fragments.
 

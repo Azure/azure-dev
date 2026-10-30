@@ -1,5 +1,7 @@
 # AI extension non-interactive input reference
 
+<!-- cspell:ignore Abac ABAC -->
+
 `azd` may enable no-prompt mode automatically in CI and supported coding-agent
 environments. Every prompt in `azure.ai.agents` and `azure.ai.projects` must
 therefore have a deterministic alternative.
@@ -38,6 +40,75 @@ are not forwarded; `--help` remains available. Use the standalone
 [`azure.ai.evaluations` extension](./azure.ai.evaluations/README.md) for evaluations.
 
 ## `azure.ai.projects`
+
+Scripts can
+also set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
+ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
+Provisioning reuses it, grants the project identity pull access, and creates the
+project connection without changing the registry's networking. Classic registries
+receive `AcrPull`; registries with `AbacRepositoryPermissions` receive
+`Container Registry Repository Reader` instead (`AcrPull` is not honored there).
+Ensure the registry is reachable from the agent network. The registry must be
+in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside the
+Foundry resource group (which `azd down` deletes). Cross-subscription reuse is
+rejected, including environment-only selections and ejected parameters. This is
+supported by Bicep, not Terraform eject in reuse mode. `azd down` never deletes the
+external registry.
+
+Without a selection, provisioning creates a registry only when source builds
+need one. Code deployments and prebuilt images do not need a source-build
+registry.
+
+Registry selection uses one complete environment snapshot. A failed environment
+read stops provisioning rather than falling back to registry creation. A
+registry in the Foundry teardown group is rejected even during project-only
+setup, unless a deployed binding or matching legacy deployment outputs identify
+an azd-created registry. Legacy ownership is verified against Azure deployment
+state before provisioning or deleting the group.
+Source initialization validates against the root or Foundry-layer resource group
+retained by setup before changing project files or environment values. Locations
+chosen during provisioning prompts are applied when expanding
+`${AZURE_LOCATION}` in service configuration without rereading the registry
+selection.
+
+Project-only provisioning preserves a pending registry selection until source
+builds need it, including after project-only teardown. Configured project or
+account names do not discard an unused selection.
+Provisioning preview checks the same existing pull access as deployment without
+creating grants or persisting pending access operations.
+
+After a failed or canceled deployment, ownership recovery for the resource group
+and registry access grants is attempted independently. Errors are reported
+without skipping the other recovery operation.
+
+A deployed project keeps its registry choice across repeated provisioning.
+Registry migration is not supported: changing the selector or resetting
+`AZD_FOUNDRY_ACR_MODE` cannot switch a deployed project to another registry.
+Use a separate environment for a different deployment. After a successful
+`azd down`, a new deployment can select another registry. Down preserves the
+external registry and its images, and removes only access grants and related
+resources that azd can establish it owns. Administrator-managed grants remain.
+After successful teardown, azd removes this environment's subscription-level
+Foundry deployment record before clearing lifecycle state. A subsequent provision
+starts a new deployment instead of recovering the deleted project. Cleanup
+failures retain the recovery state for retry.
+Custom deployment roles need `Microsoft.Resources/deployments/delete` at the
+project subscription scope to retire that deployment record.
+
+The deployer needs permission to create role assignments on the external
+registry (for example, Owner, User Access Administrator, or Role Based Access
+Control Administrator scoped to the registry) to grant the project identity
+`AcrPull` or `Container Registry Repository Reader` (for ABAC registries). The
+image publisher also needs `AcrPush` (or `Container Registry Repository Writer`
+on ABAC registries) to push images.
+
+Ejected Bicep parameters include
+`existingAcrResourceId = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"` only in reuse
+mode, rather than embedding a literal registry ID. Eject uses the established
+registry choice when present, otherwise the same registry-ID decision rule.
+Create mode supports either Bicep or Terraform eject; reuse mode requires
+Bicep eject. Existing deployment bindings also apply to ejected infrastructure;
+editing the registry parameter does not enable migration.
 
 | Command or area | Interactive decision | Non-interactive input | Behavior when omitted in no-prompt mode |
 | --- | --- | --- | --- |

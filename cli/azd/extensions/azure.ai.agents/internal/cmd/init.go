@@ -49,6 +49,8 @@ import (
 
 type initFlags struct {
 	projectResourceId       string
+	acrResourceID           string
+	acrResourceIDSet        bool
 	acrConnection           string
 	modelDeployment         string
 	model                   string
@@ -836,6 +838,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
+			if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
+				return err
+			}
 			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
 				return err
 			}

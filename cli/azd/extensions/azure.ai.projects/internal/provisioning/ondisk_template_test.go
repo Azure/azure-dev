@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
+	"azure.ai.projects/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -177,6 +179,76 @@ func TestLoadOnDiskTemplateAt_CustomPathAndModule(t *testing.T) {
 	require.Len(t, stub.buildCalls, 1)
 	assert.Equal(t, bicepPath, stub.buildCalls[0])
 	require.Contains(t, got.parameters, "location")
+}
+
+func TestResolveTemplate_EjectedExistingRegistry(t *testing.T) {
+	t.Parallel()
+	const key = "AZURE_CONTAINER_REGISTRY_RESOURCE_ID"
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/sharedregistry"
+	result, err := synthesis.Synthesize(synthesis.Input{
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
+			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+		ServiceName:     "project",
+		Env:             map[string]string{key: id, "AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_SUBSCRIPTION_ID": "sub"},
+		PreserveVarRefs: true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "${"+key+"}", result.Parameters["existingAcrResourceId"])
+	armTemplate, err := synthesis.ARMTemplate()
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		name      string
+		env       map[string]string
+		want      string
+		wantError string
+	}{
+		{name: "reuse", env: map[string]string{key: id}, want: id},
+		{
+			name: "another environment",
+			env:  map[string]string{key: id + "other"},
+			want: id + "other",
+		},
+		{name: "empty disables reuse", env: map[string]string{key: ""}},
+		{name: "unset disables reuse"},
+		{name: "cross-subscription parameter", env: map[string]string{
+			key: strings.Replace(id, "/sub/", "/other-sub/", 1),
+		}, wantError: "same subscription"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			infraDir := filepath.Join(dir, onDiskInfraDir)
+			require.NoError(t, os.MkdirAll(infraDir, 0o750))
+			require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskBicepFile), []byte("// bicep\n"), 0o600))
+			params := minimalARMParametersFile(t, result.Parameters)
+			require.NoError(t, os.WriteFile(filepath.Join(infraDir, onDiskParamsFile), []byte(params), 0o600))
+			provider := &FoundryProvisioningProvider{
+				projectPath:      dir,
+				subID:            "sub",
+				virtualEnv:       tt.env,
+				bicepCliInstance: &stubCompiler{buildResult: bicep.BuildResult{Compiled: string(armTemplate)}},
+			}
+			got, err := provider.resolveTemplate(t.Context(), func(string) {})
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, templateModeBicep, got.mode)
+			if tt.env == nil {
+				assert.NotContains(t, got.parameters, "existingAcrResourceId")
+				declared, ok := got.armTemplate["parameters"].(map[string]any)
+				require.True(t, ok)
+				registry, ok := declared["existingAcrResourceId"].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, "", registry["defaultValue"])
+			} else {
+				assert.Equal(t, map[string]any{"value": tt.want}, got.parameters["existingAcrResourceId"])
+			}
+			assert.Equal(t, map[string]any{"value": true}, got.parameters["includeAcr"])
+		})
+	}
 }
 
 func TestLoadOnDiskTemplate_BicepparamPrecedence(t *testing.T) {

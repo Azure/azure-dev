@@ -3172,6 +3172,9 @@ func telephonyTransferTargetsEqual(a, b []agent_api.TelephonyTransferTarget) boo
 	slices.SortFunc(left, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	slices.SortFunc(right, func(x, y agent_api.TelephonyTransferTarget) int { return strings.Compare(x.Name, y.Name) })
 	for i := range left {
+		if len(left[i].Destination.RawObject) > 0 || len(right[i].Destination.RawObject) > 0 {
+			return false
+		}
 		if left[i].Name != right[i].Name || left[i].Description != right[i].Description ||
 			left[i].Destination.Kind != right[i].Destination.Kind ||
 			left[i].Destination.Value != right[i].Destination.Value {

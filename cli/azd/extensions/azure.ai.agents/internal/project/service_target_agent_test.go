@@ -1069,6 +1069,24 @@ func TestTelephonyErrorsDoNotExposeBindingIdentity(t *testing.T) {
 	require.NotContains(t, err.Error(), secret)
 }
 
+func TestTelephonyTransferTargetsEqual_DistinguishesUnknownRawDestination(t *testing.T) {
+	known := agent_api.TelephonyTransferTarget{
+		Name: "support", Description: "Support",
+		Destination: agent_api.TelephonyTransferDestination{
+			Kind: agent_api.TelephonyTransferDestinationPSTN, Value: "+14255550123",
+		},
+	}
+	unknown := known
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"type":"pstn","value":"+14255550123"}`),
+		&unknown.Destination,
+	))
+	require.False(t, telephonyTransferTargetsEqual(
+		[]agent_api.TelephonyTransferTarget{known},
+		[]agent_api.TelephonyTransferTarget{unknown},
+	))
+}
+
 type fakeTelephonyBindingClient struct {
 	listResults         [][]agent_api.GATelephonyBinding
 	listErr             error

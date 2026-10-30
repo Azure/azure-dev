@@ -360,7 +360,8 @@ func TestFinalizeAdoptedProjectUsesPlannedACRSubscription(t *testing.T) {
 
 type initACREnvironmentServer struct {
 	testEnvironmentServiceServer
-	binding []byte
+	binding      []byte
+	bindingReads int
 }
 
 func (s *initACREnvironmentServer) List(
@@ -374,6 +375,7 @@ func (s *initACREnvironmentServer) List(
 func (s *initACREnvironmentServer) GetConfig(
 	context.Context, *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
+	s.bindingReads++
 	return &azdext.GetConfigResponse{Found: s.binding != nil, Value: s.binding}, nil
 }
 
@@ -414,12 +416,17 @@ func TestInitACRBindingPreflight(t *testing.T) {
 		name     string
 		mode     string
 		selected string
+		template string
 		wantErr  bool
 	}{
-		{"same registry", "reuse-connect", testInitACRID, false},
-		{"different registry", "reuse-connect", testInitACRID + "other", true},
-		{"create to reuse", "create", testInitACRID, true},
-		{"explicit empty selector", "reuse-connect", "", true},
+		{"same registry", "reuse-connect", testInitACRID, "", false},
+		{"different registry", "reuse-connect", testInitACRID + "other", "", true},
+		{"create to reuse", "create", testInitACRID, "", true},
+		{"explicit empty selector", "reuse-connect", "", "", true},
+		{"template same registry", "reuse-connect", testInitACRID, "template.yaml", false},
+		{"template different registry", "reuse-connect", testInitACRID + "other", "template.yaml", true},
+		{"template create to reuse", "create", testInitACRID, "template.yaml", true},
+		{"template empty selector", "reuse-connect", "", "template.yaml", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -447,6 +454,7 @@ func TestInitACRBindingPreflight(t *testing.T) {
 			client := newTestAzdClient(t, server, &recordingProjectWorkflowServer{})
 			err = validateInitACRProject(t.Context(), client, &initFlags{
 				acrResourceIDSet: true, acrResourceID: tt.selected,
+				templatePointer: tt.template,
 			})
 			if tt.wantErr {
 				if tt.selected == "" {
@@ -461,6 +469,92 @@ func TestInitACRBindingPreflight(t *testing.T) {
 			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
 			require.NoError(t, err)
 			require.Equal(t, content, after)
+		})
+	}
+}
+
+func TestInitACRBindingFallbackPreflight(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		bindingMode string
+		values      map[string]string
+		selector    string
+		invalid     bool
+		wantError   string
+	}{
+		{name: "omitted aliases"},
+		{name: "omitted alias with reuse mode",
+			values: map[string]string{"AZD_FOUNDRY_ACR_MODE": "reuse-connect"}},
+		{name: "omitted create aliases", bindingMode: "create"},
+		{name: "invalid binding", invalid: true, wantError: "invalid deployed ACR binding"},
+		{name: "conflicting mode", values: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"},
+			wantError: "migration"},
+		{name: "conflicting registry", values: map[string]string{
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID + "other",
+		}, wantError: "migration"},
+		{name: "explicit selector with conflicting mode", selector: testInitACRID,
+			values: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}, wantError: "migration"},
+		{name: "explicit selector with conflicting alias", selector: testInitACRID,
+			values:    map[string]string{"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID + "other"},
+			wantError: "migration"},
+		{name: "matching registry spelling", values: map[string]string{
+			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": strings.ToUpper(testInitACRID),
+		}},
+		{name: "retained resource group", values: map[string]string{"AZURE_RESOURCE_GROUP": "registry-rg"},
+			wantError: "azd down deletes"},
+		{name: "different subscription", values: map[string]string{"AZURE_SUBSCRIPTION_ID": "other"},
+			wantError: "same subscription"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			mode := tt.bindingMode
+			if mode == "" {
+				mode = "reuse-connect"
+			}
+			binding, err := json.Marshal(synthesis.ACRBinding{
+				Version: 1, Mode: mode, RegistryResourceID: testInitACRID,
+				ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+					"Microsoft.CognitiveServices/accounts/account/projects/project",
+				PrincipalID: "principal",
+			})
+			require.NoError(t, err)
+			if tt.invalid {
+				binding = []byte("{")
+			}
+			values := map[string]string{
+				"AZURE_SUBSCRIPTION_ID": "sub",
+				"AZURE_RESOURCE_GROUP":  "foundry-rg",
+			}
+			maps.Copy(values, tt.values)
+			before := maps.Clone(values)
+			environments := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": values},
+				},
+				binding: binding,
+			}
+			workflow := &recordingProjectWorkflowServer{}
+			client := newTestAzdClient(t, environments, workflow)
+
+			err = validateInitACRProject(t.Context(), client, &initFlags{
+				acrResourceIDSet: tt.selector != "", acrResourceID: tt.selector,
+			})
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, 1, environments.bindingReads)
+			require.Equal(t, before, values)
+			require.Empty(t, environments.setKeys)
+			require.Empty(t, workflow.requests)
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
 		})
 	}
 }

@@ -237,20 +237,27 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 			values[synthesis.ACRBindingEnvKey] == "" {
 			return nil
 		}
+	}
+	if !flags.acrResourceIDSet || values[synthesis.ACRBindingEnvKey] != "" {
 		mode, id, err := synthesis.ResolveGreenfieldACRSelection(input)
 		if err != nil {
 			return exterrors.Validation(exterrors.CodeConflictingArguments, err.Error(),
 				"restore the deployed registry selection or use a new azd environment")
 		}
-		if mode != "reuse-connect" {
-			return nil
+		if !flags.acrResourceIDSet {
+			if mode != "reuse-connect" {
+				return nil
+			}
+			selectedID = id
 		}
-		selectedID = id
 	}
 	if flags.templatePointer != "" {
 		// A template can replace the manifest and teardown scope.
 		input.RawAzureYAML = nil
-		input.Env = map[string]string{"AZURE_SUBSCRIPTION_ID": values["AZURE_SUBSCRIPTION_ID"]}
+		input.Env = map[string]string{
+			"AZURE_SUBSCRIPTION_ID":    values["AZURE_SUBSCRIPTION_ID"],
+			synthesis.ACRBindingEnvKey: values[synthesis.ACRBindingEnvKey],
+		}
 	}
 	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, selectedID); err != nil {
 		return exterrors.Validation(

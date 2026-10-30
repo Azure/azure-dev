@@ -1393,7 +1393,8 @@ as externally owned without introducing a registry picker.
 Environment-only selections use the same validation, persisted reuse mode, and
 ownership output. An unreadable environment stops selection rather than
 defaulting to a new registry. A same-group registry ID alone is not evidence
-that azd owns the registry.
+that azd owns the registry. A deployed registry binding remains authoritative
+when legacy registry output variables are missing.
 
 The selector cannot be combined with `--image`, `--registry-connection`,
 `--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing

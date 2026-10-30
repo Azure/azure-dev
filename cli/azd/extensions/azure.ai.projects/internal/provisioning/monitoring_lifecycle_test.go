@@ -442,6 +442,89 @@ func TestMonitoringOwnedAdjunctPersistsAcrossProviders(t *testing.T) {
 	}
 }
 
+func TestMonitoringExplicitEnvironmentDoesNotDeleteDefaultOwnership(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "prod")
+	const endpoint = "https://account.services.ai.azure.com/api/projects/project"
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), []byte(
+		"services:\n  project:\n    host: azure.ai.project\n    endpoint: "+endpoint+
+			"\n    monitoring: {enabled: false}\n"), 0o600))
+	defaultEnv := &resolveEnvStubEnvServer{get: map[string]string{
+		envKeySubscriptionID: "sub", envKeyLocation: "westus3",
+		"AZURE_AI_PROJECT_ID": monitoringTestProject, "FOUNDRY_PROJECT_ENDPOINT": endpoint,
+		envKeyFoundryRG: "adjunct-rg", envKeyFoundryRGOwner: "/subscriptions/sub/resourceGroups/adjunct-rg",
+	}}
+	selectedEnv := &resolveEnvStubEnvServer{get: map[string]string{
+		envKeySubscriptionID: "sub", envKeyLocation: "westus3",
+		"AZURE_AI_PROJECT_ID": monitoringTestProject, "FOUNDRY_PROJECT_ENDPOINT": endpoint,
+	}}
+	env := &resolveEnvStubEnvServer{
+		envName: "test", environments: map[string]*resolveEnvStubEnvServer{
+			"test": defaultEnv, "prod": selectedEnv,
+		},
+	}
+	fixture := &monitoringCloudFixture{}
+	p := newMonitoringCloudFixture(t, fixture)
+	p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	require.NoError(t, p.Initialize(t.Context(), root,
+		&azdext.ProvisioningOptions{Provider: FoundryProviderName}))
+
+	result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "prod", p.envName)
+	assert.True(t, p.existingProjectReuseOnly)
+	assert.Empty(t, p.foundryRGOwnerID)
+	assert.Empty(t, result.InvalidatedEnvKeys)
+	assert.Empty(t, fixture.deletions, "the selected environment does not own the default environment's group")
+	assert.Empty(t, fixture.writes)
+	assert.Empty(t, defaultEnv.set)
+}
+
+func TestMonitoringPartialOwnershipPersistsToExplicitEnvironment(t *testing.T) {
+	t.Setenv("AZD_ENVIRONMENT", "prod")
+	const groupID = "/subscriptions/sub/resourceGroups/adjunct-rg"
+	defaultEnv := &resolveEnvStubEnvServer{get: map[string]string{}}
+	selectedEnv := &resolveEnvStubEnvServer{get: map[string]string{}}
+	env := &resolveEnvStubEnvServer{
+		envName: "test", environments: map[string]*resolveEnvStubEnvServer{
+			"test": defaultEnv, "prod": selectedEnv,
+		},
+	}
+	fixture := &monitoringCloudFixture{
+		deploymentStatus: http.StatusInternalServerError,
+		plannedChanges: []any{
+			map[string]any{"resourceId": groupID + "/providers/Microsoft.Insights/components/new", "changeType": "Create"},
+			map[string]any{
+				"resourceId": groupID + "/providers/Microsoft.OperationalInsights/workspaces/new", "changeType": "Create",
+			},
+		},
+	}
+	p := newMonitoringCloudFixture(t, fixture)
+	p.azdClient = newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{})
+	require.NoError(t, p.resolveEnvName(t.Context()))
+	p.brownfieldEndpoint = "https://account.services.ai.azure.com/api/projects/project"
+	p.existingProjectID = monitoringTestProject
+	p.onDiskSource = monitoringTestSource("create")
+	p.onDiskSource.mode = templateModeBicep
+	p.onDiskSource.parameters["resourceGroupName"] = map[string]any{"value": "adjunct-rg"}
+	reads := 0
+	p.resourceGroupState = func(context.Context) (map[string]*string, bool, error) {
+		reads++
+		return map[string]*string{"azd-env-name": new("prod")}, reads > 1, nil
+	}
+
+	result, err := p.Deploy(t.Context(), func(string) {})
+
+	require.Error(t, err)
+	assert.Nil(t, result)
+	require.Len(t, fixture.writes, 1, "deployment error: %v", err)
+	assert.Equal(t, groupID, selectedEnv.set[envKeyFoundryRGOwner])
+	assert.Equal(t, "adjunct-rg", selectedEnv.set[envKeyFoundryRG])
+	assert.Empty(t, defaultEnv.set)
+}
+
 func TestMonitoringOptOutRetainsSupportingResourceGroupBinding(t *testing.T) {
 	for _, test := range []struct {
 		name      string

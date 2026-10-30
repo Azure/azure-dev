@@ -657,13 +657,13 @@ func (p *FoundryProvisioningProvider) networkEnvMap(ctx context.Context) map[str
 		log.Printf("[debug] foundry provider: no environment client; network ${VAR} uses process env only")
 		return out
 	}
-	curr, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || curr.GetEnvironment() == nil {
+	envName, err := p.selectedEnvironmentName(ctx)
+	if err != nil {
 		log.Printf("[debug] foundry provider: no current azd environment (%v); "+
 			"network ${VAR} uses process env only", err)
 		return out
 	}
-	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: curr.GetEnvironment().GetName()})
+	resp, err := envClient.GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
 	if err != nil {
 		log.Printf("[debug] foundry provider: GetValues failed (%s); network ${VAR} uses process env only", err)
 		return out
@@ -895,17 +895,10 @@ func sameExistingProjectEndpoint(a, b string) bool {
 // resolveEnv pulls the env values the provider needs from azd-core. It does
 // no Azure work; credentials are deferred until needed.
 func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
-	envClient := p.azdClient.Environment()
-
-	currEnv, err := envClient.GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil {
-		return exterrors.Dependency(
-			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("get current azd environment: %s", err),
-			"run 'azd env new' to create an environment",
-		)
+	if err := p.resolveEnvName(ctx); err != nil {
+		return err
 	}
-	p.envName = currEnv.Environment.Name
+	envClient := p.azdClient.Environment()
 
 	get := func(key string) (string, error) {
 		if value := strings.TrimSpace(p.virtualEnv[key]); value != "" {
@@ -924,6 +917,7 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 	// A read error (env not found / corrupted / transport) is distinct from a
 	// key that is simply unset: GetValue returns ("", nil) for an absent key.
 	// Surface read failures; only prompt when the value is present-but-empty.
+	var err error
 	if p.subID, err = get(envKeySubscriptionID); err != nil {
 		return exterrors.Dependency(
 			exterrors.CodeEnvironmentValuesFailed,
@@ -1005,20 +999,32 @@ func (p *FoundryProvisioningProvider) resolveEnv(ctx context.Context) error {
 }
 
 func (p *FoundryProvisioningProvider) resolveEnvName(ctx context.Context) error {
-	currEnv, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
-	if err != nil || currEnv.GetEnvironment().GetName() == "" {
-		message := "current azd environment is empty"
-		if err != nil {
-			message = err.Error()
-		}
+	name, err := p.selectedEnvironmentName(ctx)
+	if err != nil {
 		return exterrors.Dependency(
 			exterrors.CodeEnvironmentNotFound,
-			fmt.Sprintf("get current azd environment: %s", message),
+			fmt.Sprintf("get current azd environment: %s", err),
 			"run 'azd env new' to create an environment",
 		)
 	}
-	p.envName = currEnv.GetEnvironment().GetName()
+	p.envName = name
 	return nil
+}
+
+func (p *FoundryProvisioningProvider) selectedEnvironmentName(ctx context.Context) (string, error) {
+	// The host forwards -e through AZD_ENVIRONMENT; GetCurrent returns the persisted default.
+	if name := strings.TrimSpace(os.Getenv("AZD_ENVIRONMENT")); name != "" {
+		return name, nil
+	}
+	current, err := p.azdClient.Environment().GetCurrent(ctx, &azdext.EmptyRequest{})
+	if err != nil {
+		return "", err
+	}
+	name := current.GetEnvironment().GetName()
+	if name == "" {
+		return "", fmt.Errorf("current azd environment is empty")
+	}
+	return name, nil
 }
 
 // promptSubscription asks the user to select an Azure subscription when

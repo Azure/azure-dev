@@ -27,11 +27,12 @@ import (
 // empty, which is what triggers the prompt path), and records SetValue writes.
 type resolveEnvStubEnvServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
-	envName string
-	get     map[string]string
-	getErr  map[string]error
-	set     map[string]string
-	process map[string]string
+	envName      string
+	get          map[string]string
+	getErr       map[string]error
+	set          map[string]string
+	process      map[string]string
+	environments map[string]*resolveEnvStubEnvServer
 }
 
 func (s *resolveEnvStubEnvServer) GetCurrent(
@@ -41,8 +42,15 @@ func (s *resolveEnvStubEnvServer) GetCurrent(
 }
 
 func (s *resolveEnvStubEnvServer) GetValue(
-	_ context.Context, req *azdext.GetEnvRequest,
+	ctx context.Context, req *azdext.GetEnvRequest,
 ) (*azdext.KeyValueResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValue(ctx, req)
+	}
 	if err := s.getErr[req.Key]; err != nil {
 		return nil, err
 	}
@@ -54,8 +62,15 @@ func (s *resolveEnvStubEnvServer) GetValue(
 }
 
 func (s *resolveEnvStubEnvServer) GetValues(
-	_ context.Context, _ *azdext.GetEnvironmentRequest,
+	ctx context.Context, req *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.GetValues(ctx, req)
+	}
 	values := make([]*azdext.KeyValue, 0, len(s.get))
 	for key, value := range s.get {
 		values = append(values, &azdext.KeyValue{Key: key, Value: value})
@@ -64,8 +79,15 @@ func (s *resolveEnvStubEnvServer) GetValues(
 }
 
 func (s *resolveEnvStubEnvServer) SetValue(
-	_ context.Context, req *azdext.SetEnvRequest,
+	ctx context.Context, req *azdext.SetEnvRequest,
 ) (*azdext.EmptyResponse, error) {
+	if s.environments != nil {
+		env, found := s.environments[req.GetEnvName()]
+		if !found {
+			return nil, status.Error(codes.NotFound, "environment not found")
+		}
+		return env.SetValue(ctx, req)
+	}
 	if s.set == nil {
 		s.set = map[string]string{}
 	}
@@ -133,6 +155,53 @@ func newResolveEnvTestClient(
 	t.Cleanup(func() { client.Close() })
 
 	return client
+}
+
+func TestResolveEnvSelectedEnvironment(t *testing.T) {
+	for _, selected := range []string{"", "prod", " prod ", "missing"} {
+		t.Run(fmt.Sprintf("selection=%q", selected), func(t *testing.T) {
+			t.Setenv("AZD_ENVIRONMENT", selected)
+			defaultEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "default-sub", envKeyLocation: "westus3",
+				envKeyResourceGroup: "default-group", "DESTINATION": "default-component",
+			}}
+			selectedEnv := &resolveEnvStubEnvServer{get: map[string]string{
+				envKeySubscriptionID: "selected-sub", envKeyLocation: "eastus2",
+				envKeyResourceGroup: "selected-group", "DESTINATION": "selected-component",
+			}}
+			env := &resolveEnvStubEnvServer{
+				envName: "test", environments: map[string]*resolveEnvStubEnvServer{
+					"test": defaultEnv, "prod": selectedEnv,
+				},
+			}
+			p := &FoundryProvisioningProvider{
+				azdClient: newResolveEnvTestClient(t, env, &resolveEnvStubPromptServer{}),
+			}
+			values := p.networkEnvMap(t.Context())
+			err := p.resolveEnv(t.Context())
+			if selected == "missing" {
+				require.ErrorContains(t, err, "environment not found")
+				assert.Empty(t, values)
+				assert.Empty(t, defaultEnv.set)
+				assert.Empty(t, selectedEnv.set)
+				return
+			}
+			require.NoError(t, err)
+			wantEnv, wantName := selectedEnv, "prod"
+			if selected == "" {
+				wantEnv, wantName = defaultEnv, "test"
+			}
+			assert.Equal(t, wantName, p.envName)
+			assert.Equal(t, wantEnv.get[envKeySubscriptionID], p.subID)
+			assert.Equal(t, wantEnv.get[envKeyResourceGroup], p.rgName)
+			assert.Equal(t, wantEnv.get["DESTINATION"], values["DESTINATION"])
+			require.NoError(t, p.setEnv(t.Context(), "OWNERSHIP", "selected-owner"))
+			assert.Equal(t, "selected-owner", wantEnv.set["OWNERSHIP"])
+			if selected != "" {
+				assert.Empty(t, defaultEnv.set)
+			}
+		})
+	}
 }
 
 func TestResolveEnv_PromptsAndPersistsSubscriptionAndLocation(t *testing.T) {

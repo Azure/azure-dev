@@ -884,6 +884,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 				} else {
+					endLoading := inittelemetry.Start(ctx, inittelemetry.TemplateLoading)
+					defer endLoading()
+
 					stagingDir, cleanup, err := stageAzureYamlTemplate(ctx, flags, azdClient, httpClient)
 					if err != nil {
 						if exterrors.IsCancellation(err) {
@@ -908,6 +911,7 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 					if err := requireStagedPreviewFeatures(stagingDir); err != nil {
 						return err
 					}
+					endLoading()
 				}
 				root := explicitTemplateDir
 				if root == "" {
@@ -1384,7 +1388,6 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			"'prompt' requires --agent-name and either --model or --model-deployment.")
 	cmd.Flags().StringVar(&flags.harness, "harness", "",
 		"Optional execution harness for --kind prompt: 'microsoft_copilot_preview' (Microsoft Copilot Brain+Hand).")
-	_ = cmd.Flags().MarkHidden("harness")
 	previewFlag(cmd, "harness", featureflags.ManagedHarness,
 		agent_api.ManagedAgentHarnessMicrosoftCopilot, agent_api.ManagedAgentHarnessGitHubCopilot)
 	previewFlag(cmd, "kind", featureflags.Voice, kindFlagPromptVoice)
@@ -2952,7 +2955,8 @@ prompt-only or registry options are not supported by this voice initialization.
 
 Prompt voice services support modelType: managed or self_deployed (bring your own model
 deployment), audio input/output, structured inputs, tools, greeting, avatar,
-handoff, and telephony bindings (acs or twilio). Hosted voice wrappers use
+and telephony bindings (acs or twilio). Legacy handoff is not supported by the
+GA Voice Agent API; use telephony transferTargets where applicable. Hosted voice wrappers use
 conversationEngine.type: hosted_agent and conversationEngine.name to reference
 the hosted target service in azure.yaml. The old modelType: hosted_agent and
 targetAgent settings are not supported; use conversationEngine instead. Initialize from a sample

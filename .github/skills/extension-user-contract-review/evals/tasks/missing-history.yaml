@@ -1,0 +1,22 @@
+id: missing-history
+name: Missing review history cannot become a clean review or invented spec request
+tags: [negative, blocked]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Output format".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/list.go.
+    Complete before behavior: list prints a table.
+    Complete after behavior: --format table|json selects validated machine output; all tests and docs match.
+    Added RIGHT line 42: cmd.Flags().StringVar(&format, "format", "table", "Output format")
+    Review history retrieval failed with access denied. It is not known whether existing contract threads or approved
+    spec replies exist. The harness has no additional history or tools capable of retrieving it.
+graders:
+  - type: code
+    name: explicit-evidence-blocker
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
+        - "/Extension user-contract review: blocked/i.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "/history|access denied/i.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"
+        - "!JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body.includes('Extension user-contract review: complete')"

@@ -219,12 +219,15 @@ func validateVoiceAgentServiceDefinition(
 	resolved *structpb.Struct,
 	projectRoot string,
 ) error {
-	_, found, err := VoiceAgentFromResolvedService(svc, projectRoot)
+	voiceAgent, found, err := VoiceAgentFromResolvedService(svc, projectRoot)
 	if err != nil {
 		return err
 	}
 	if !found {
 		return unsupportedAgentKindError(svc, agent_yaml.AgentKind(structKind(resolved)))
+	}
+	if err := agent_yaml.ValidateVoiceDefinitionOverlay(voiceAgent); err != nil {
+		return invalidAgentDefinitionError(svc, err)
 	}
 	if err := validateAgentActivitySettings(
 		svc,

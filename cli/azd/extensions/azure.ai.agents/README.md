@@ -2,7 +2,7 @@
 
 ## Preview feature opt-ins
 
-Four capabilities are off by default. Each one is turned on separately.
+Five capabilities are off by default. Each one is turned on separately.
 
 | Feature ID | Scope | Environment variable |
 | --- | --- | --- |
@@ -10,6 +10,7 @@ Four capabilities are off by default. Each one is turned on separately.
 | `agents.voice` | Voice / prompt-voice agents, including hosted voice bridges with `invocations_ws` | `AZD_ALPHA_ENABLE_AGENTS_VOICE` |
 | `agents.long_running` | Starting background Responses invocations with `--long-running` / `--no-wait` | `AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING` |
 | `agents.a2a` | A2A init selection, explicit wire versions, and the 1.0 message default; existing A2A 0.3 invocation remains available without opt-in | `AZD_ALPHA_ENABLE_AGENTS_A2A` |
+| `agents.memory_snapshot` | Hosted agent memory snapshot opt-in | `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` |
 
 Set the desired variable in your shell or CI before running azd:
 
@@ -18,6 +19,7 @@ export AZD_ALPHA_ENABLE_AGENTS_MANAGED_HARNESS=true
 export AZD_ALPHA_ENABLE_AGENTS_VOICE=true
 export AZD_ALPHA_ENABLE_AGENTS_LONG_RUNNING=true
 export AZD_ALPHA_ENABLE_AGENTS_A2A=true
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
 ```
 
 In PowerShell, for example:
@@ -72,6 +74,19 @@ authentication, including `$ref` definitions. Adoption reuses that directory.
   extensions.
 
 See [the design](docs/specs/preview-feature-flags.md) for source and error semantics.
+
+## Experimental Voice definition overlay
+
+Voice services may opt in to forward-compatible GA definition fields with
+`definition_overlay` (or inline `definitionOverlay`). The value is an object whose
+local `$ref` values resolve relative to the containing YAML or JSON document.
+Overlay references have the same trust boundary and relative-path behavior as
+existing `$ref` references; only reference files you trust.
+The overlay can only add missing keys; objects recurse, while existing scalar or
+array keys conflict even when values match. New arrays are allowed. Null values
+and the reserved root keys `kind`, `model_type`, `model`, and
+`conversation_engine` are rejected. The overlay is not OpenAPI-validated and
+must use GA wire names. Prompt and hosted agents do not accept this property.
 
 ## Hosted agent deployment preview
 
@@ -266,7 +281,9 @@ cost and is not run automatically.
 ## Extension telemetry API
 
 Requires azd 1.37.0 or later. Telemetry, deployment preview, and developer RBAC
-checks use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+principal lookup use stable v1 APIs, including `Account().GetCurrentPrincipal`.
+The service `predeploy` listener uses the existing beta structured-message API
+to retain RBAC warnings; `postdeploy` and project listeners remain stable.
 
 Extension code reports best-effort usage events through the shared
 `pkg/foundry/telemetry` reporter. Extension-owned event builders remain in
@@ -482,6 +499,36 @@ Deploy Agents through the normal azd project lifecycle:
 - `azd deploy --all` deploys all services, with ordering defined by `uses`.
 - `azd up` provisions and deploys the project.
 
+### Retained developer RBAC warnings
+
+With azd 1.37.0 or later, developer RBAC warnings from the service `predeploy`
+check remain in the final `azd deploy` / `azd up` output, including when a later
+deployment step fails. They are non-blocking: a warning does not change the
+deployment exit code, and deployment errors still fail the command.
+
+This covers Foundry User checks and failed automatic assignment, hosted-agent
+role-assignment-write checks, and Container Registry access checks (including
+classic and ABAC role guidance). Incomplete checks that already emitted a warning
+are also retained. Early exits for missing or invalid `AZURE_AI_PROJECT_ID`,
+`LookupTenant` failure, or credential construction failure remain silent.
+Prompt and voice agents keep only the applicable Foundry
+checks; hosted-only checks and the existing skip behavior are unchanged.
+
+For automation, use `--no-prompt --output json` and consume the host's `messages`
+entries. Each retained warning has `kind: warning`, `extensionId:
+azure.ai.agents`, the service key, `event: predeploy`, a `message`, and any
+`suggestion`. Messages are scoped to each service invocation, not deduplicated
+across services. No new prompt is introduced. Transport diagnostics include only
+safe status information, not raw response bodies or credentials.
+
+This does not retain every extension log or hook message, and it does not change
+the read-only `azd deploy --preview` path, which skips deployment hooks.
+The opt-in [RBAC warning scenario](tests/cli-interactive-tester-scenarios/tier2/2.17b-deploy-rbac-warnings.yaml)
+requires an externally prepared restricted test identity and explicit Azure cost
+consent through `foundry-extension-scenario-orchestrator`; it is not run automatically.
+
+### Deployment guidance
+
 After a successful deployment, endpoint guidance recommends the standalone
 `azd extension install azure.ai.evaluations` followed by `azd ai eval init`
 when `azure.yaml` does not
@@ -528,6 +575,10 @@ after ejection. Without such a binding, deploy and invoke expand the agent's
 authored model without inferring replacements from the managed deployment list.
 Set the agent's model explicitly or use
 `${AZURE_AI_MODEL_DEPLOYMENT_NAME}` for an environment-specific choice.
+
+Deploy and invoke validate every configured layer's path and module before
+accepting on-disk infrastructure. An invalid later layer returns an error
+naming its index and field, even when an earlier layer matches.
 
 **Breaking change:** `azd ai agent deploy [path]` has been removed. The extension
 still implements Agent deployment as a service target invoked by core azd;
@@ -1144,9 +1195,13 @@ infra:
 
 Edit existing voice settings in `azure.yaml`; `--voice` applies when initializing
 a new prompt voice agent and is rejected when the chosen init flow cannot use it.
-Advanced settings such as `audio`, `structuredInputs`,
-`tools`, `greeting`, `avatar`, and `handoff` are described by the
+Advanced settings such as `audio`, `structuredInputs`, `tools`, `greeting`, and
+`avatar` are described by the
 [agent service schema](schemas/azure.ai.agent.json).
+Use `audio.input.format.rate` or `audio.output.format.rate` only for PCM sample
+rate (`24000`); omit format rate for G.711. Use `audio.output.speed` for speech
+speed. Legacy `handoff` and `audio.output.voice.rate` values are unsupported by
+the GA API.
 See [hosted voice wrappers](#hosted-voice-wrapper-preview) for `conversationEngine`
 and [telephony bindings](#prompt-voice-telephony-bindings) for phone-provider setup.
 
@@ -1421,6 +1476,9 @@ services:
       type: hosted_agent
       name: voice-target
       version: deployed
+    greeting:
+      type: template
+      text: Hello, how can I help?
     store: false
 ```
 
@@ -1496,6 +1554,52 @@ Details:
 - `idleTimeoutSeconds` must be between **120 and 14400** seconds (**2–240 minutes**, inclusive).
   Values outside that range are rejected at deploy time and by schema
   validation.
+
+## Memory snapshots
+
+Use an `azure.ai.agents` extension build or release that includes this setting.
+The feature flag is off by default. Enable it explicitly before deploying:
+
+```bash
+export AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT="true"`.
+Opt in on a hosted agent service in `azure.yaml`:
+
+```yaml
+services:
+  my-agent:
+    host: azure.ai.agent
+    project: .
+    kind: hosted
+    name: my-agent
+    enableMemorySnapshot: true
+```
+
+Deploy with `azd deploy` or `azd up`. Code and container-image deployments support
+this boolean setting, including referenced definitions. Omission preserves
+existing behavior; explicit `true` or `false` maps to `definition.enable_memory_snapshot`.
+The feature flag is required only for `true`. Missing or disabled flags reject the
+deployment rather than silently ignoring the setting.
+Unset `AZD_ALPHA_ENABLE_AGENTS_MEMORY_SNAPSHOT` or set it to `false` to disable the feature.
+
+The subscription and region must be enabled for the preview, and the hosting SDK
+must support snapshot hooks. Python code deployment and invocation were verified
+with `azure-ai-agentserver-core==2.3.0b1` and `azure-ai-agentserver-responses==2.4.0b1`.
+Update dependencies and lock files yourself; rebuild container images when applicable.
+azd does not upgrade SDKs or retry a rejected deployment with snapshots disabled.
+After deployment, verify the agent with `azd ai agent invoke my-agent "Hello"`.
+Snapshot opt-in does not add a separate activation wait budget. On activation
+failure, timeout, or cancellation, use the attempted-version link in the error;
+the environment may still refer to the previous successful deployment. Stopping
+the client wait does not cancel provisioning in Azure, and an activation timeout
+does not confirm that the version failed. Inspect that version's status before
+deploying again, since another deploy creates a new version.
+
+Snapshots reuse version initialization; they are not conversation or session-state
+backups. Snapshot capture, restore, and persistence guarantees belong to the hosting
+SDK and service.
 
 ## State Stores
 

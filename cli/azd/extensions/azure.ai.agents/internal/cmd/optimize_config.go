@@ -56,6 +56,9 @@ func LoadOptimizeConfig(path string) (*OptimizeConfig, error) {
 		return nil, fmt.Errorf("legacy optimization/eval configuration is not supported; " +
 			"use an optimization request file or select an eval configured with 'azd ai eval init'")
 	}
+	if err := validateSkillTraceTimestampNumbers(values); err != nil {
+		return nil, fmt.Errorf("invalid optimization config file %s: %w", path, err)
+	}
 	encoded, err := json.Marshal(values)
 	if err != nil {
 		return nil, fmt.Errorf("encoding config file %s: %w", path, err)

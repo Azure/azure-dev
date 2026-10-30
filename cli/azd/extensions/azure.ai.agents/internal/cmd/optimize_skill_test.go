@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -31,7 +32,7 @@ const skillOptimizeTestConfig = `{
 		"type":"skill_optimization",
 		"context":[
 			{"type":"agent_traces","trace_window":{"type":"fixed",
-				"start_time":"2026-10-20T00:00:00Z","end_time":"2026-10-27T00:00:00Z","max_traces":10}},
+				"start_time":1792454400,"end_time":1793059200,"max_traces":10}},
 			{"type":"steering_prompt","prompt":"Prefer concise reusable procedures."},
 			{"type":"skill_references","skill_references":[]}
 		]
@@ -197,13 +198,15 @@ func TestSkillOptimizeInvalidConfigs(t *testing.T) {
 			r.OptimizationConfiguration.Context[0].TraceWindow = nil
 		}, "requires trace_window"},
 		{"invalid timestamp", func(r *optimize_api.OptimizeRequest) {
-			r.OptimizationConfiguration.Context[0].TraceWindow.StartTime = "2026-10-20"
+			r.OptimizationConfiguration.Context[0].TraceWindow.StartTime =
+				optimize_api.SkillTraceTimestamp(`"2026-10-20"`)
 		}, "timezone-aware ISO"},
 		{"inverted window", func(r *optimize_api.OptimizeRequest) {
-			r.OptimizationConfiguration.Context[0].TraceWindow.EndTime = "2026-10-19T00:00:00Z"
+			r.OptimizationConfiguration.Context[0].TraceWindow.EndTime = optimize_api.SkillTraceTimestamp(`1792368000`)
 		}, "end_time after start_time"},
 		{"future window", func(r *optimize_api.OptimizeRequest) {
-			r.OptimizationConfiguration.Context[0].TraceWindow.EndTime = time.Now().Add(24 * time.Hour).Format(time.RFC3339)
+			r.OptimizationConfiguration.Context[0].TraceWindow.EndTime =
+				optimize_api.SkillTraceTimestamp(strconv.FormatInt(time.Now().Add(24*time.Hour).Unix(), 10))
 		}, "not in the future"},
 		{"zero limit", func(r *optimize_api.OptimizeRequest) {
 			r.OptimizationConfiguration.Context[0].TraceWindow.MaxTraces = new(0)

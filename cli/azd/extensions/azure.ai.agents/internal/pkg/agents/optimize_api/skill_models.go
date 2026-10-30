@@ -15,12 +15,12 @@ type SkillTraceConnectionConfiguration struct {
 
 // SkillTraceWindow selects either a fixed half-open window or explicit trace IDs.
 type SkillTraceWindow struct {
-	Type          string   `json:"type"`
-	StartTime     string   `json:"start_time,omitempty"`
-	EndTime       string   `json:"end_time,omitempty"`
-	MaxTraces     *int     `json:"max_traces,omitempty"`
-	TraceIDs      []string `json:"trace_ids,omitzero"`
-	LookbackHours *int     `json:"lookback_hours,omitempty"`
+	Type          string              `json:"type"`
+	StartTime     SkillTraceTimestamp `json:"start_time,omitempty"`
+	EndTime       SkillTraceTimestamp `json:"end_time,omitempty"`
+	MaxTraces     *int                `json:"max_traces,omitempty"`
+	TraceIDs      []string            `json:"trace_ids,omitzero"`
+	LookbackHours *int                `json:"lookback_hours,omitempty"`
 }
 
 // FoundrySkillReference identifies an exact input skill version.

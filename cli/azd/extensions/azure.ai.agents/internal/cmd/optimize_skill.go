@@ -161,23 +161,47 @@ func validateSkillTraceConnection(
 	return nil
 }
 
+func validateSkillTraceTimestampNumbers(values map[string]any) error {
+	config, _ := values["optimization_configuration"].(map[string]any)
+	if config["type"] != optimize_api.SkillOptimizationType {
+		return nil
+	}
+	contexts, _ := config["context"].([]any)
+	for _, item := range contexts {
+		context, _ := item.(map[string]any)
+		if context["type"] != "agent_traces" {
+			continue
+		}
+		window, _ := context["trace_window"].(map[string]any)
+		for _, field := range []string{"start_time", "end_time"} {
+			// Generic YAML decoding would otherwise turn 1.0 into integer JSON before validation.
+			if _, fractional := window[field].(float64); fractional {
+				return fmt.Errorf(
+					"trace_window.%s timestamp requires integer Unix seconds, not floating-point values", field)
+			}
+		}
+	}
+	return nil
+}
+
 func validateSkillTraceWindow(window *optimize_api.SkillTraceWindow) error {
 	switch window.Type {
 	case "fixed":
 		if window.TraceIDs != nil || window.LookbackHours != nil {
 			return fmt.Errorf("a fixed trace_window cannot contain trace_ids or lookback_hours")
 		}
-		start, startErr := time.Parse(time.RFC3339Nano, window.StartTime)
-		end, endErr := time.Parse(time.RFC3339Nano, window.EndTime)
+		start, startErr := window.StartTime.Time()
+		end, endErr := window.EndTime.Time()
 		if startErr != nil || endErr != nil || start.Before(time.Unix(0, 0)) || !end.After(start) || end.After(time.Now()) {
-			return fmt.Errorf("fixed trace_window requires timezone-aware ISO start_time and end_time " +
+			return fmt.Errorf("fixed trace_window requires integer Unix seconds or timezone-aware ISO " +
+				"start_time and end_time " +
 				"with end_time after start_time and not in the future, and start_time on or after 1970-01-01")
 		}
 		if window.MaxTraces != nil && (*window.MaxTraces < 1 || *window.MaxTraces > 100) {
 			return fmt.Errorf("trace_window.max_traces must be between 1 and 100")
 		}
 	case "trace_ids":
-		if window.StartTime != "" || window.EndTime != "" || window.MaxTraces != nil {
+		if len(window.StartTime) != 0 || len(window.EndTime) != 0 || window.MaxTraces != nil {
 			return fmt.Errorf("a trace_ids window cannot contain start_time, end_time, or max_traces")
 		}
 		if len(window.TraceIDs) < 1 || len(window.TraceIDs) > 100 ||

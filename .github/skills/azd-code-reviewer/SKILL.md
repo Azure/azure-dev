@@ -58,9 +58,10 @@ Still in `findings.md`. Apply the voice rules to every finding's text. Build the
 ### Step 6: Mandatory contract completion audit
 
 For extension PRs, reconcile the contract coverage ledger with the complete changed-file list and the actual outgoing
-comments. Every distinct contract change must have one inline comment or a matching existing thread. Do not drop
-contract comments to satisfy an ordinary finding budget. Expose the companion skill's completion status and counts
-in the review body or supported result channel. An incomplete pass must say `blocked`, not imply a clean review.
+comments. Every distinct in-scope addition or removal must have one inline comment or a matching existing thread.
+Do not drop contract comments to satisfy an ordinary finding budget. Expose the companion skill's completion status
+and counts in the review body or supported result channel. An incomplete pass must say `blocked`, not imply a clean
+review.
 
 ## Principles
 

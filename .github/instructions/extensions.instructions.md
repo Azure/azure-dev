@@ -3,8 +3,10 @@ applyTo:
 ---
 - **Required PR review pass:** Before general review lenses, read and apply
   `.github/skills/extension-user-contract-review/SKILL.md` for every PR changing extension files, including fork PRs.
-  Inspect every changed extension file, not just apparent command or schema files. Audit that each distinct new
-  contract finding becomes an inline comment with experiences spec guidance, or matches an existing thread.
+  Inspect every changed extension file, not just apparent command or schema files. Audit that each distinct added or
+  removed command, positional parameter, flag, or YAML schema component becomes an inline comment with experiences
+  spec guidance, or matches an existing thread. Do not flag behavior-only changes such as defaults, validation,
+  prompts, output, or runtime semantics.
   Report completion status and counts; unavailable evidence or output capacity means `blocked`, not "no changes".
 
 - When accessing a `Subscription` from `PromptSubscription()`, always use

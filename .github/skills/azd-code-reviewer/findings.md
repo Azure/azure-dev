@@ -24,11 +24,11 @@ Dismiss a finding if ANY of these apply:
 - **Outside the diff** — references code unrelated to the PR. Missing companion changes required by the PR, including absent scaffold files, remain in scope.
 - **Hypothetical concern with no evidence** — "this could be a problem if..." where the scenario is unlikely given the context.
 
-**Extension contract exception.** Findings from `extension-user-contract-review` request the approved experiences spec
-for an evidenced contract change. Do not dismiss them as restating the PR description merely because the change is
-intentional or correctly implemented. Apply that skill's thread-specific duplicate and spec-link rules; an unanswered
-existing thread is not a reason to post another comment. Missing review history is an evidence limitation, not proof
-that a spec is missing.
+**Extension contract exception.** Findings from `extension-user-contract-review` request the approved experiences
+spec for an evidenced addition or removal of a command, positional parameter, flag, or YAML schema component. Do not
+dismiss them as restating the PR description merely because the change is intentional or correctly implemented.
+Apply that skill's thread-specific duplicate and spec-link rules; an unanswered existing thread is not a reason to
+post another comment. Missing review history is an evidence limitation, not proof that a spec is missing.
 
 Contract findings are mandatory policy checks, not optional suggestions for the ordinary 0-3 per-lens target.
 Reserve output capacity for them before optional findings. If the host's limit still prevents returning all retained

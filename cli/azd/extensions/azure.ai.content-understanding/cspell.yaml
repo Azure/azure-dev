@@ -3,6 +3,11 @@ words:
   - contentunderstanding
   - noninteractive
 overrides:
+  - filename: "internal/preview/{render,metadata}.go"
+    words:
+      - goldmark
+      - rowspan
+      - yuin
   - filename: "internal/**/*.go"
     words:
       - exterrors

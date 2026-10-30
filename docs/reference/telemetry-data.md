@@ -64,6 +64,7 @@ Commands follow the pattern `cmd.<command.path>` where spaces become dots.
 - `cmd.down` — resource teardown
 - `cmd.auth.login` — authentication
 - `cmd.env.new` / `cmd.env.select` — environment management
+- `cmd.env.unset` — environment-variable removal, outcome, and aggregate removed/missing-key counts
 - `cmd.pipeline.config` — CI/CD pipeline setup
 - `cmd.monitor` — monitoring
 - `cmd.restore` — dependency restoration
@@ -266,7 +267,7 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | Pattern | Category | Example |
 |---------|----------|---------|
 | `Success` | No error | — |
-| `user.canceled` | User cancelled the operation | — |
+| `user.canceled` | User cancelled the operation, including an extension command interrupted by the host or reporting a `user` / `canceled` (`cancelled`) local error | — |
 | `auth.<detail>` | Authentication error | `auth.login_required`, `auth.not_logged_in`, `auth.identity_failed` |
 | `service.arm.<statusCode>` | ARM service error | `service.arm.500`, `service.arm.409` |
 | `service.aad.<detail>` | Entra ID (AAD) error | `service.aad.failed` |
@@ -277,10 +278,11 @@ The `ResultCode` field classifies errors into categories. Understanding this tax
 | `ext.validation.*` | Extension validation error | `ext.validation.config` |
 | `ext.auth.*` | Extension auth error | `ext.auth.expired` |
 | `ext.dependency.*` | Extension dependency error | `ext.dependency.missing` |
+| `ext.run.failed` | Unclassified extension process failure that was not caused by cancellation or a deadline | — |
+| `internal.timeout` | Operation deadline exceeded, including service operations and deadlines transported through the extension gRPC boundary | — |
 | `internal.grpc.<status>` | Host-originated gRPC status without a more specific mapping | `internal.grpc.unavailable` |
 | `internal.mapper_conversion` | Conversion between registered Go mapper types failed | — |
 | `internal.extension_invalid_response` | Extension service target omitted a required deploy result or target resource | — |
-| `internal.timeout` | Operation timed out, including service publish or deploy | — |
 | `internal.unclassified` | Catch-all for unclassified errors | — |
 | `internal.errors_errorString` | Legacy catch-all (being replaced by `internal.unclassified`) | — |
 
@@ -398,8 +400,8 @@ Set **only when an external command-line tool invocation fails**, during error c
 
 | Field Key | Type | Description |
 |-----------|------|-------------|
-| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `skipped`, `error` |
-| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted |
+| `validation.provision.outcome` | string | `passed`, `warnings_accepted`, `canceled_by_errors`, `canceled_by_user`, `canceled_by_no_prompt` (critical warnings cannot be confirmed non-interactively; command fails), `skipped`, `error` |
+| `validation.provision.diagnostics` | string[] | Diagnostic IDs emitted, such as `role_assignment_missing`, `role_assignment_scope_unverified`, and `role_assignment_conditional` |
 | `validation.provision.rules` | string[] | Rule IDs executed |
 | `validation.provision.extension_rules` | string[] | Rule IDs executed from extension-provided validation checks |
 | `validation.provision.check_type` | string | Dispatch site that emitted the event: `arm-provision` (Bicep provider) or `provision` (provider-agnostic). Distinguishes the two emissions so Bicep provisions are not double-counted |
@@ -444,6 +446,15 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | Field Key | Type | Description |
 |-----------|------|-------------|
 | `env.count` | measurement | Number of environments that exist for the current project (`env list`) |
+| `env.unset.outcome` | string | `env unset` action result: `success`, `no_change`, `user_declined`, or `failed` |
+| `env.unset.removed_count` | measurement (number) | Distinct keys removed by a fully successful `env unset` save; zero for declined, no-change, or failed commands |
+| `env.unset.missing_count` | measurement (number) | Distinct requested keys observed missing, including keys that disappear during confirmation |
+
+The `env.unset.*` fields contain only a fixed outcome label and counts, never key names or stored values.
+They are attached directly to the `cmd.env.unset` span, not the process-global usage bag, so they do not leak onto other in-process commands.
+They are emitted when the action runs, including argument-validation failures; help and flag-parser failures do not run the action.
+Counts remain zero if validation or environment loading fails before keys can be inspected.
+`removed_count` describes a fully successful save, not the persisted state after a partial save failure or recovery attempt.
 </details>
 
 <details>
@@ -500,9 +511,12 @@ Emitted at provision start by the `microsoft.foundry` provisioning provider (the
 | `ext.agent.invoke.protocol` | string | Resolved remote agent invoke protocol, currently `responses`, `invocations`, or `a2a` (`agent.invoke.selected`) |
 | `ext.agent.invoke.long_running` | string | Whether remote invoke selected `--long-running`: string-encoded `true` or `false` (`agent.invoke.selected`) |
 | `ext.agent.invoke.no_wait` | string | Whether remote invoke selected `--no-wait`: string-encoded `true` or `false` (`agent.invoke.selected`) |
+| `ext.agent.init.step.id` | string | Fixed business-step identifier for `azd ai agent init`, such as `project_scaffolding`, `location_selection`, or `model_selection` (`agent.init.step`) |
+| `ext.agent.init.step.sequence` | string | String-encoded step start order within one agent Init, starting at 1; repeated calls have the same ID and different sequence numbers (`agent.init.step`) |
+| `ext.agent.init.step.duration_ms` | string | Monotonic elapsed milliseconds for an agent Init step, with three decimal places; includes loading, interaction, validation, and internal retries (`agent.init.step`) |
 | `ext.route` | string | Local-client route selected by `azure.ai.agents`: `inspector`, `playground`, or `suppressed` (`local_client.route.selected`) |
 | `ext.agent.kind` | string | Agent kind resolved by `azure.ai.agents`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown` (`agent.context.resolved`) |
-| `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, or `other` (`agent.context.resolved`) |
+| `ext.agent.harness` | string | Prompt-agent harness classification: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other` (`agent.context.resolved`); preserves the recognized Copilot harness name after lowercasing and trimming whitespace. Empty values emit `none`; unrecognized values emit `other` |
 | `ext.agent.operation` | string | Fixed extension command path associated with the resolved agent context, such as `deploy` or `files.upload` (`agent.context.resolved`) |
 | `ext.agent.container.mode` | string | Optional hosted-agent deployment configuration: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown` (`agent.context.resolved`); explicit `AGENT_DEFINITION_PATH` overrides report `unknown`, and non-hosted agents omit the field |
 | `ext.stage` | string | Agent Inspector funnel stage: currently `ui_ready` (`inspector.funnel.stage`) |
@@ -536,9 +550,12 @@ Service-target values are `service_target.initialize`, `service_target.package`,
 and `service_target.get_target_resource`.
 
 Each concrete first-party field has its own classification, purpose, and
-endpoint declaration. The currently declared fields are bounded enums
-classified as `SystemMetadata` for `FeatureInsight` with endpoint `N/A`; that
-is a decision about those fields, not a default for the whole `ext.*` class.
+endpoint declaration. Current declarations use `SystemMetadata` with endpoint
+`N/A`. Product classification enums use `FeatureInsight`; agent Init step IDs,
+sequence numbers, and elapsed milliseconds use `PerformanceAndHealth`. Sequence
+numbers and durations are string-encoded numbers, not bounded product enums or
+native telemetry measurements. These declarations describe the individual fields,
+not defaults for the whole `ext.*` class.
 Repository validation blocks undeclared or dynamically keyed
 attributes before release. Extension authors remain responsible for keeping
 values low cardinality and free of customer content, and for having them
@@ -552,8 +569,9 @@ Reviewed first-party extension usage events currently include:
 
 | Extension | `extension.event` | Trigger | Dynamic attributes |
 |-----------|-------------------|---------|--------------------|
-| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; reported once per distinct kind/harness/container-mode classification before completion | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional hosted `ext.agent.container.mode`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` includes existing or azd-created ACR, `passthrough` does not imply a public image, and `passthrough_auth` indicates a configured registry connection rather than successful authentication; no customer content |
+| `azure.ai.agents` | `agent.context.resolved` | An agent command or lifecycle operation resolves an `azure.ai.agent` service; reported once per distinct kind/harness/container-mode classification before completion | `ext.agent.kind`: `hosted`, `prompt`, `prompt-voice`, `voice`, `workflow`, or `unknown`; `ext.agent.harness`: `none`, `github_copilot_preview`, `microsoft_copilot_preview`, or `other`; `ext.agent.operation`: fixed extension command path; optional hosted `ext.agent.container.mode`: `build`, `code`, `passthrough`, `passthrough_auth`, or `unknown`. `build` includes existing or azd-created ACR, `passthrough` does not imply a public image, and `passthrough_auth` indicates a configured registry connection rather than successful authentication; no customer content |
 | `azure.ai.agents` | `agent.invoke.selected` | A remote invoke resolves its target after validation; project-backed routes must be hosted, while explicit `--agent-endpoint` routes have no project kind to check. Once per selected route before the invoke request, including later failures. Resolution can authenticate or probe Foundry for a brownfield agent first, so earlier failures are not counted. Excludes local and non-hosted project routes | `ext.agent.invoke.protocol`: resolved invocable protocol (currently `responses`, `invocations`, or `a2a`); `ext.agent.invoke.long_running`, `ext.agent.invoke.no_wait`: string-encoded `true` or `false`. `no_wait=true` requires `long_running=true`, supported only with remote Responses; no content or identifiers |
+| `azure.ai.agents` | `agent.init.step` | Completed business steps in `azd ai agent init`, buffered and reported on return, including failure and cancellation paths | `ext.agent.init.step.id`: fixed step ID; `ext.agent.init.step.sequence`: start order; `ext.agent.init.step.duration_ms`: elapsed milliseconds. All three are string properties; no answers, names, paths, or other customer content |
 | `microsoft.azd.demo` | `demo.telemetry.reported` | The user runs `azd demo telemetry` | `ext.demo.mode=sample`; `ext.demo.outcome=completed` |
 | `azure.ai.agents` | `local_client.route.selected` | `azd ai agent run` resolves the service and protocol profile; emitted before client availability, agent startup, and client launch | `ext.route`: `inspector`, `playground`, or `suppressed`; suppression takes precedence |
 | `azure.ai.agents` | `agent.operation.v1.<operation>.<category>.<telephony>` | Extension init fails in RunE or succeeds in post-run after the original context report; also agent preprovision/predeploy hooks | No additional attributes. Bounded operation/category/telephony tokens in existing `extension.event`; join existing command results, never marker success. See [vocabulary, query and coverage limits](../../cli/azd/extensions/azure.ai.agents/docs/operation-telemetry.md). |
@@ -714,6 +732,15 @@ The `agency` modifier is appended when `AGENCY_SESSION_ID` is non-empty, includi
 
 Important things to know when working with azd telemetry data. These are sourced from real investigations and issues.
 
+### Environment-Key Removal Outcomes
+
+`cmd.env.unset` distinguishes a fully successful removal save (`success`), no remaining matching keys (`no_change`),
+explicitly declined removal confirmation (`user_declined`), and errors (`failed`).
+The command span's `Success` is true for `success`, `no_change`, and `user_declined`; the outcome distinguishes these non-error paths.
+Successful recovery after a save failure still reports `failed`, because recovery does not make the original command succeed.
+`env.unset.missing_count` counts each requested key once, even if repeated on the command line.
+The existing `cmd.args.count` counts positional arguments, including duplicates, and `cmd.flags` records flag names, not values.
+
 ### `infra.provider` Is Multi-Valued and Type-Polymorphic (by design)
 
 `infra.provider` is intentionally emitted with different shapes depending on the command, so consumers must handle both:
@@ -843,6 +870,18 @@ To resolve template IDs to human-readable names, join with a template lookup tab
 
 ### Execution Time vs Duration
 
+`agent.init.step` is an `extension.event` value on `ext.usage`, not an additional
+Init command completion. Use `ext.agent.init.step.duration_ms`, converted to a number, for step
+percentiles; the native span duration measures reporting rather than the business
+step. Join on the operation ID to correlate steps with Init and continue counting
+Init samples from the existing completion records. Nested steps are inclusive,
+so their durations must not be added together. Standalone project commands do not
+emit these timings. The local 96-step buffer, one-second reporting batch deadline,
+and shared host 100-event budget can lose records; absence does not prove that a
+step did not run. Event emission and the detailed step timing guide are introduced
+separately in [the agent Init implementation PR](https://github.com/Azure/azure-dev/pull/10548);
+this schema registration alone does not enable reporting.
+
 `DurationMs` includes time the user spent at prompts (confirmations, selections). To compute actual execution time:
 ```kql
 | extend ExecutionTimeMs = DurationMs - toreal(Measurements['perf.interact_time'])
@@ -861,8 +900,10 @@ How to find telemetry for a given feature area. Start here if you know the featu
 | **Templates** | `cmd.init`, `cmd.up` | `project.template.id` (hashed — join with template lookup to resolve) | Template adoption, success by template |
 | **Provisioning (IaC)** | `cmd.provision`, `cmd.up`, `cmd.down`, `arm.deploy.*`, `arm.validate.*` | `infra.provider` (`bicep`/`terraform`/`arm`/`pulumi`/custom; slice of each distinct provider for multi-layer projects) | Provision success, ARM errors, duration |
 | **Authentication** | `cmd.auth.login` | `auth.method` | Auth method usage, failure rates |
+| **Environment-Key Removal** | `cmd.env.unset` | `env.unset.outcome`, `env.unset.removed_count`, `env.unset.missing_count`, `cmd.flags` | Removal adoption, no-change and declined operations, completed key removals, and missing-key counts |
 | **CI/CD Pipelines** | `cmd.pipeline.config` | `pipeline.provider` | Pipeline setup adoption |
 | **Extensions** | `ext.run`, `cmd.*`, `ext.install`, `ext.update`, `ext.uninstall`, `ext.usage` | `extension.id`, `extension.version`, `extension.installed`, `extension.grpc.legacy_call_count`, `extension.event` (lifecycle hooks and service-target operations), `error.chain.types`, `error.extension.cause_types`, `error.mapper.source.type`, `error.mapper.destination.type`, `error.tool.name`, dynamic `ext.*` fields | Extension adoption, command, lifecycle-hook, and service-target errors, usage events, and remaining legacy gRPC bridge use |
+| **Agent Init step timings** | `ext.usage` with `extension.event=agent.init.step` | `extension.id=azure.ai.agents`, `ext.agent.init.step.id`, `ext.agent.init.step.sequence`, `ext.agent.init.step.duration_ms` | Per-step elapsed-time percentiles including loading and interaction; no separate wait categories, step outcomes, or summaries |
 | **MCP** | `mcp.<tool_name>` | `mcp.client.name`, `mcp.client.version` | Tool usage by client |
 | **Agentic (Copilot)** | `copilot.initialize`, `copilot.session` | `copilot.mode`, `copilot.init.model`, `copilot.message.*` | Session counts, token usage |
 | **Agent Troubleshooting** | `agent.troubleshoot` | `agent.fix.attempts` | Auto-fix adoption, retry counts |

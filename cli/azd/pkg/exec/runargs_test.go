@@ -18,6 +18,8 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, []string{"login"}, runArgs.Args)
 		require.Equal(t, false, runArgs.Interactive)
 		require.Equal(t, false, runArgs.UseShell)
+		require.False(t, runArgs.shellSet)
+		require.Empty(t, runArgs.WindowsCommandLine)
 		require.Equal(t, "", runArgs.Cwd)
 		require.Nil(t, runArgs.DebugLogging)
 		require.Len(t, runArgs.Env, 0)
@@ -37,9 +39,16 @@ func TestNewRunArgs(t *testing.T) {
 		require.Equal(t, []string{"login", "param1", "param2"}, runArgs.Args)
 		require.Equal(t, true, runArgs.Interactive)
 		require.Equal(t, true, runArgs.UseShell)
+		require.True(t, runArgs.shellSet)
 		require.Equal(t, "cwd", runArgs.Cwd)
 		require.Equal(t, true, *runArgs.DebugLogging)
 		require.Len(t, runArgs.Env, 2)
 		require.Equal(t, runArgs.Env, []string{"foo", "bar"})
+	})
+
+	t.Run("ExplicitNoShell", func(t *testing.T) {
+		args := NewRunArgs("azd").WithShell(false)
+		require.False(t, args.UseShell)
+		require.True(t, args.shellSet)
 	})
 }

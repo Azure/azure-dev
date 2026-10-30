@@ -4,6 +4,13 @@ The Foundry service requires the initial version to ship with at least one
 tool entry, so 'create' takes its inputs from a JSON or YAML file via
 --from-file.
 
+For a verified matching active-environment project, create checks ARM roles
+before its first Foundry request and may assign project-scoped Foundry User.
+This can add the built-in role even when custom-role access already works.
+Set AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true to opt out. Provisioning, toolbox
+reuse, local authoring, reads, and other write commands do not assign roles.
+Custom-subdomain endpoints with an unverified ARM binding use existing access.
+
 JSON File Shape
 
   {

@@ -641,3 +641,45 @@ func TestAuthorCurrentFoundryProjectPreservesDeferredValues(t *testing.T) {
 	assert.Equal(t, "westus",
 		envServer.values["test"]["AZURE_AI_DEPLOYMENTS_LOCATION"])
 }
+
+func TestAdoptedProjectAddNoPromptWithModelDeployment(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name         string
+		flags        initFlags
+		wantNoPrompt bool
+	}{
+		{name: "interactive", flags: initFlags{}},
+		{name: "model deployment", flags: initFlags{modelDeployment: "existing"}, wantNoPrompt: true},
+		{name: "blank model deployment", flags: initFlags{modelDeployment: "  "}},
+		{name: "no prompt", flags: initFlags{noPrompt: true}, wantNoPrompt: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			workflowServer := &recordingProjectWorkflowServer{}
+			client := newProjectWorkflowClient(
+				t,
+				&recordingProjectServer{existing: map[string]*azdext.ServiceConfig{}},
+				workflowServer,
+			)
+			target := &FoundryProjectInfo{AccountName: "account", ProjectName: "project"}
+			projectRoot := t.TempDir()
+			flags := test.flags
+			require.NoError(t, authorFoundryProject(
+				t.Context(), client, target, projectRoot, projectAuthoringExisting,
+				adoptedProjectAddNoPrompt(&flags),
+			))
+
+			args := []string{"ai", "project", "add"}
+			if test.wantNoPrompt {
+				args = append(args, "--no-prompt")
+			}
+			args = append(args, "--output", "none",
+				"--project-endpoint", target.Endpoint(), "--force")
+			assert.Equal(t, expectedProjectWorkflowArgs(t, projectRoot, args...),
+				workflowArgs(t, workflowServer, 0))
+		})
+	}
+}

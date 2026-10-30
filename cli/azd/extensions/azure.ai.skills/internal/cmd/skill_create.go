@@ -6,14 +6,18 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"azureaiskills/internal/exterrors"
 	"azureaiskills/internal/pkg/skill_api"
+	"azureaiskills/internal/version"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
@@ -30,15 +34,66 @@ type createFlags struct {
 	output          string
 	projectEndpoint string
 
-	descriptionSet  bool
-	instructionsSet bool
+	descriptionSet     bool
+	instructionsSet    bool
+	fileSet            bool
+	projectEndpointSet bool
+
+	stdout io.Writer
+	stderr io.Writer
 }
 
 type createAction struct{ flags *createFlags }
 
+type skillCreateClient interface {
+	skillProbeReader
+	DeleteSkill(ctx context.Context, name string) (*skill_api.DeleteSkillResponse, error)
+	CreateVersionInline(ctx context.Context, name string, req skill_api.CreateVersionRequest) (*skill_api.SkillVersion, error)
+	CreateVersionFromZip(ctx context.Context, name, fileName string, archive io.Reader, makeDefault bool) (*skill_api.SkillVersion, error)
+}
+
+type preparedSkillCreateInput struct {
+	inline     *skill_api.SkillInlineContent
+	archive    *preparedSkillArchive
+	mismatchMd string
+}
+
 func (a *createAction) Run(ctx context.Context) error {
+	out := a.flags.stdout
+	if out == nil {
+		out = os.Stdout
+	}
+	errOut := a.flags.stderr
+	if errOut == nil {
+		errOut = os.Stderr
+	}
+	return a.runReporting(ctx, out, errOut, func(message string) {
+		fmt.Fprintln(errOut, message)
+	})
+}
+
+func (a *createAction) runReporting(
+	ctx context.Context,
+	out io.Writer,
+	errOut io.Writer,
+	report func(string),
+) error {
 	if err := validateSkillName(a.flags.name); err != nil {
 		return err
+	}
+	if a.flags.fileSet && strings.TrimSpace(a.flags.file) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--file must not be empty",
+			"provide a SKILL.md, .zip archive, or directory path with --file",
+		)
+	}
+	if a.flags.projectEndpointSet && strings.TrimSpace(a.flags.projectEndpoint) == "" {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--project-endpoint must not be empty",
+			"omit --project-endpoint to use the configured endpoint",
+		)
 	}
 
 	mode, err := selectCreateMode(a.flags)
@@ -60,11 +115,6 @@ func (a *createAction) Run(ctx context.Context) error {
 		mode = modeInline
 	}
 
-	skillCtx, err := resolveSkillContext(ctx, a.flags.projectEndpoint)
-	if err != nil {
-		return err
-	}
-
 	// --force is destructive: we delete the existing skill by positional name
 	// before any guarantee the supplied file targets the same one. For both
 	// package (.zip) and SKILL.md inputs, peek the embedded `name` and bail
@@ -75,120 +125,204 @@ func (a *createAction) Run(ctx context.Context) error {
 		}
 	}
 
-	if a.flags.force {
-		if _, delErr := skillCtx.client.DeleteSkill(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
-			return exterrors.ServiceFromAzure(delErr, exterrors.OpDeleteSkill)
-		}
+	prepared, err := a.prepareCreateInput(mode)
+	if err != nil {
+		return err
+	}
+	if prepared.archive != nil {
+		defer prepared.archive.Reader.Close()
 	}
 
+	endpoint, _, err := resolveSkillWriteEndpoint(ctx, a.flags.projectEndpoint)
+	if err != nil {
+		return err
+	}
+
+	var access *skillAccess
+	host, hostErr := azdext.NewAzdClient()
+	if cancelErr := skillAccessCancellation(ctx, hostErr); cancelErr != nil {
+		return cancelErr
+	}
+	if hostErr == nil {
+		defer host.Close()
+		access = newSkillAccess(host)
+	}
+	scope, err := access.resolve(ctx, endpoint)
+	if err != nil {
+		return err
+	}
+	tenantID := ""
+	if scope != nil {
+		tenantID = scope.tenantID
+	}
+	cred, err := newCredentialForTenant(tenantID)
+	if cancelErr := skillAccessCancellation(ctx, err); cancelErr != nil {
+		return cancelErr
+	}
+	if err != nil {
+		return exterrors.Auth(
+			exterrors.CodeCredentialCreationFailed,
+			"could not create the Foundry credential",
+			"run `azd auth login` to authenticate",
+		)
+	}
+	client := skill_api.NewClient(endpoint, cred, version.Version)
+
+	return a.createSkillFromPreparedInput(ctx, client, prepared, access, scope, out, errOut, report)
+}
+
+func (a *createAction) prepareCreateInput(mode createMode) (*preparedSkillCreateInput, error) {
 	switch mode {
 	case modeInline:
-		return a.runInline(ctx, skillCtx.client)
+		if strings.TrimSpace(a.flags.description) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeMissingRequiredField,
+				"inline mode requires --description",
+				"pass --description and --instructions, or use --file <path>",
+			)
+		}
+		if strings.TrimSpace(a.flags.instructions) == "" {
+			return nil, exterrors.Validation(
+				exterrors.CodeMissingRequiredField,
+				"inline mode requires --instructions",
+				"pass --description and --instructions, or use --file <path>",
+			)
+		}
+		return &preparedSkillCreateInput{
+			inline: &skill_api.SkillInlineContent{
+				Description:  a.flags.description,
+				Instructions: a.flags.instructions,
+			},
+		}, nil
+
 	case modeFileMd:
-		return a.runFileMd(ctx, skillCtx.client)
+		parsed, err := loadSkillMd(a.flags.file)
+		if err != nil {
+			return nil, err
+		}
+		return &preparedSkillCreateInput{
+			inline: &skill_api.SkillInlineContent{
+				Description:   parsed.Description,
+				Instructions:  parsed.Instructions,
+				Metadata:      parsed.Metadata,
+				License:       parsed.License,
+				Compatibility: parsed.Compatibility,
+				AllowedTools:  parsed.AllowedTools,
+			},
+			mismatchMd: parsed.Name,
+		}, nil
+
 	case modeFilePackage:
-		return a.runFilePackage(ctx, skillCtx.client)
+		info, statErr := os.Stat(a.flags.file)
+		if statErr != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("cannot stat %s: %s", a.flags.file, statErr),
+				"verify the path exists and is readable",
+			)
+		}
+		if info.IsDir() {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("--file %s is a directory; expected a .zip archive", a.flags.file),
+				"pass a single .zip archive path",
+			)
+		}
+		f, openErr := os.Open(a.flags.file) //nolint:gosec // user-supplied path opened on user's behalf
+		if openErr != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("cannot open %s: %s", a.flags.file, openErr),
+				"verify the file is readable",
+			)
+		}
+		return &preparedSkillCreateInput{
+			archive: &preparedSkillArchive{
+				Name:   filepath.Base(a.flags.file),
+				Reader: f,
+			},
+		}, nil
+
 	case modeFileDirectory:
-		return a.runFileDirectory(ctx, skillCtx.client)
+		if _, found, err := skill_api.LocateSkillMdInDir(a.flags.file); err != nil {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("cannot inspect SKILL.md in %s: %s", a.flags.file, err),
+				"verify the directory is readable and SKILL.md is a regular file",
+			)
+		} else if !found {
+			return nil, exterrors.Validation(
+				exterrors.CodeInvalidSkillFile,
+				fmt.Sprintf("--file %s is a directory without a SKILL.md at its root", a.flags.file),
+				"add a SKILL.md to the directory root (matches `azd ai skill download` output) or pass a .zip archive",
+			)
+		}
+		data, archiveErr := skill_api.ArchiveDirectory(a.flags.file, skill_api.ArchiveOptions{})
+		if archiveErr != nil {
+			return nil, classifyArchiveDirectoryError(archiveErr, a.flags.file)
+		}
+		return &preparedSkillCreateInput{
+			archive: &preparedSkillArchive{
+				Name:   filepath.Base(filepath.Clean(a.flags.file)) + ".zip",
+				Reader: io.NopCloser(bytes.NewReader(data)),
+			},
+		}, nil
 	}
-	return exterrors.Validation(
+
+	return nil, exterrors.Validation(
 		exterrors.CodeInvalidParameter,
 		"unsupported create mode",
 		"this is a bug; please file an issue",
 	)
 }
 
-func (a *createAction) runInline(ctx context.Context, client *skill_api.Client) error {
-	if strings.TrimSpace(a.flags.description) == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingRequiredField,
-			"inline mode requires --description",
-			"pass --description and --instructions, or use --file <path>",
-		)
-	}
-	if strings.TrimSpace(a.flags.instructions) == "" {
-		return exterrors.Validation(
-			exterrors.CodeMissingRequiredField,
-			"inline mode requires --instructions",
-			"pass --description and --instructions, or use --file <path>",
-		)
-	}
-
-	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
-		InlineContent: &skill_api.SkillInlineContent{
-			Description:  a.flags.description,
-			Instructions: a.flags.instructions,
-		},
-		Default: true,
-	})
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
-	}
-	return a.printCreateResult(ctx, client, version)
-}
-
-func (a *createAction) runFileMd(ctx context.Context, client *skill_api.Client) error {
-	parsed, err := loadSkillMd(a.flags.file)
-	if err != nil {
+func (a *createAction) createSkillFromPreparedInput(
+	ctx context.Context,
+	client skillCreateClient,
+	prepared *preparedSkillCreateInput,
+	access *skillAccess,
+	scope *skillAccessScope,
+	out io.Writer,
+	errOut io.Writer,
+	report func(string),
+) error {
+	if _, err := access.ensure(ctx, scope, client, a.flags.name, skillReadRequired, report); err != nil {
 		return err
 	}
 
-	if parsed.Name != "" && parsed.Name != a.flags.name && !shouldSuppressWarning(a.flags.noPrompt, a.flags.output) {
-		fmt.Fprintf(os.Stderr,
+	if a.flags.force {
+		if _, delErr := client.DeleteSkill(ctx, a.flags.name); delErr != nil && !isNotFound(delErr) {
+			return skillWriteError(ctx, delErr, exterrors.OpDeleteSkill, scope, "", "")
+		}
+	}
+
+	if prepared.mismatchMd != "" && prepared.mismatchMd != a.flags.name && !shouldSuppressWarning(a.flags.noPrompt, a.flags.output) {
+		fmt.Fprintf(errOut,
 			"Warning: SKILL.md front matter `name: %q` does not match positional argument %q; using %q\n",
-			parsed.Name, a.flags.name, a.flags.name,
+			prepared.mismatchMd, a.flags.name, a.flags.name,
 		)
 	}
 
-	version, err := client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
-		InlineContent: &skill_api.SkillInlineContent{
-			Description:   parsed.Description,
-			Instructions:  parsed.Instructions,
-			Metadata:      parsed.Metadata,
-			License:       parsed.License,
-			Compatibility: parsed.Compatibility,
-			AllowedTools:  parsed.AllowedTools,
-		},
-		Default: true,
-	})
+	var (
+		version *skill_api.SkillVersion
+		err     error
+	)
+	if prepared.archive != nil {
+		version, err = client.CreateVersionFromZip(ctx, a.flags.name, prepared.archive.Name, prepared.archive.Reader, true)
+	} else {
+		version, err = client.CreateVersionInline(ctx, a.flags.name, skill_api.CreateVersionRequest{
+			InlineContent: prepared.inline,
+			Default:       true,
+		})
+	}
 	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
+		return skillWriteError(ctx, err, exterrors.OpCreateSkill, scope, "", "")
 	}
-	return a.printCreateResult(ctx, client, version)
-}
-
-func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Client) error {
-	info, statErr := os.Stat(a.flags.file)
-	if statErr != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("cannot stat %s: %s", a.flags.file, statErr),
-			"verify the path exists and is readable",
-		)
-	}
-	if info.IsDir() {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("--file %s is a directory; expected a .zip archive", a.flags.file),
-			"pass a single .zip archive path",
-		)
+	if cancelErr := skillAccessCancellation(ctx, nil); cancelErr != nil {
+		return cancelErr
 	}
 
-	f, openErr := os.Open(a.flags.file) //nolint:gosec // user-supplied path opened on user's behalf
-	if openErr != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("cannot open %s: %s", a.flags.file, openErr),
-			"verify the file is readable",
-		)
-	}
-	defer f.Close()
-
-	version, err := client.CreateVersionFromZip(ctx, a.flags.name, filepath.Base(a.flags.file), f, true)
-	if err != nil {
-		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
-	}
-	return a.printCreateResult(ctx, client, version)
+	return a.printCreateResultTo(ctx, client, version, out, errOut)
 }
 
 // runFileDirectory packages the directory as an in-memory zip and uploads
@@ -196,28 +330,14 @@ func (a *createAction) runFilePackage(ctx context.Context, client *skill_api.Cli
 // contain a SKILL.md at its root (matching what `azd ai skill download`
 // writes by default), so the natural download → edit → create flow works
 // without any manual zip step.
-func (a *createAction) runFileDirectory(ctx context.Context, client *skill_api.Client) error {
-	if _, found, err := skill_api.LocateSkillMdInDir(a.flags.file); err != nil {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("cannot inspect SKILL.md in %s: %s", a.flags.file, err),
-			"verify the directory is readable and SKILL.md is a regular file",
-		)
-	} else if !found {
-		return exterrors.Validation(
-			exterrors.CodeInvalidSkillFile,
-			fmt.Sprintf("--file %s is a directory without a SKILL.md at its root", a.flags.file),
-			"add a SKILL.md to the directory root (matches `azd ai skill download` output) or pass a .zip archive",
-		)
+func (a *createAction) runFileDirectory(ctx context.Context, client skillCreateClient) error {
+	prepared, err := a.prepareCreateInput(modeFileDirectory)
+	if err != nil {
+		return err
 	}
+	defer prepared.archive.Reader.Close()
 
-	data, archiveErr := skill_api.ArchiveDirectory(a.flags.file, skill_api.ArchiveOptions{})
-	if archiveErr != nil {
-		return classifyArchiveDirectoryError(archiveErr, a.flags.file)
-	}
-
-	archiveName := filepath.Base(filepath.Clean(a.flags.file)) + ".zip"
-	version, err := client.CreateVersionFromZip(ctx, a.flags.name, archiveName, bytes.NewReader(data), true)
+	version, err := client.CreateVersionFromZip(ctx, a.flags.name, prepared.archive.Name, prepared.archive.Reader, true)
 	if err != nil {
 		return exterrors.ServiceFromAzure(err, exterrors.OpCreateSkill)
 	}
@@ -262,19 +382,76 @@ func classifyArchiveDirectoryError(err error, srcDir string) error {
 // printCreateResult prints either the created version envelope or, when the
 // caller wants a human-readable summary, the freshly-loaded Skill that the
 // version belongs to so users see default_version / latest_version.
-func (a *createAction) printCreateResult(ctx context.Context, client *skill_api.Client, version *skill_api.SkillVersion) error {
+func (a *createAction) printCreateResult(ctx context.Context, client skillProbeReader, version *skill_api.SkillVersion) error {
+	return a.printCreateResultTo(ctx, client, version, os.Stdout, os.Stderr)
+}
+
+func (a *createAction) printCreateResultTo(
+	ctx context.Context,
+	client skillProbeReader,
+	version *skill_api.SkillVersion,
+	out io.Writer,
+	errOut io.Writer,
+) error {
 	if a.flags.output == outputJSON {
-		return printJSON(version)
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		return enc.Encode(version)
 	}
-	fmt.Printf("Skill %q version %q created.\n", a.flags.name, version.Version)
+	fmt.Fprintf(out, "Skill %q version %q created.\n", a.flags.name, version.Version)
 	skill, err := client.GetSkill(ctx, a.flags.name)
 	if err != nil {
 		// Don't fail the create just because the follow-up GET failed; fall
 		// back to printing the version envelope instead.
-		fmt.Fprintf(os.Stderr, "Warning: could not fetch skill details: %v\n", err)
-		return printSkillVersionDetail(version, outputTable)
+		fmt.Fprintf(errOut, "Warning: could not fetch skill details: %v\n", err)
+		return writeSkillVersionDetail(out, version)
 	}
-	return printSkillDetail(skill, outputTable)
+	return writeSkillDetail(out, skill)
+}
+
+func writeSkillDetail(w io.Writer, s *skill_api.Skill) error {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	defer tw.Flush()
+	fmt.Fprintf(tw, "Name\t%s\n", s.Name)
+	if s.ID != "" {
+		fmt.Fprintf(tw, "ID\t%s\n", s.ID)
+	}
+	if s.Description != "" {
+		fmt.Fprintf(tw, "Description\t%s\n", s.Description)
+	}
+	if s.DefaultVersion != "" {
+		fmt.Fprintf(tw, "Default Version\t%s\n", s.DefaultVersion)
+	}
+	if s.LatestVersion != "" {
+		fmt.Fprintf(tw, "Latest Version\t%s\n", s.LatestVersion)
+	}
+	if s.CreatedAt != 0 {
+		fmt.Fprintf(tw, "Created At\t%s\n", formatUnix(s.CreatedAt))
+	}
+	return nil
+}
+
+func writeSkillVersionDetail(w io.Writer, v *skill_api.SkillVersion) error {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	defer tw.Flush()
+	fmt.Fprintf(tw, "Name\t%s\n", v.Name)
+	if v.Version != "" {
+		fmt.Fprintf(tw, "Version\t%s\n", v.Version)
+	}
+	if v.ID != "" {
+		fmt.Fprintf(tw, "Version ID\t%s\n", v.ID)
+	}
+	if v.SkillID != "" {
+		fmt.Fprintf(tw, "Skill ID\t%s\n", v.SkillID)
+	}
+	if v.Description != "" {
+		fmt.Fprintf(tw, "Description\t%s\n", v.Description)
+	}
+	if v.CreatedAt != 0 {
+		fmt.Fprintf(tw, "Created At\t%s\n", formatUnix(v.CreatedAt))
+	}
+	return nil
 }
 
 // verifyFileNameMatches refuses --force when the user-supplied file's embedded
@@ -519,7 +696,11 @@ skill of the same name before creating.`,
 			flags.noPrompt = extCtx.NoPrompt
 			flags.descriptionSet = cmd.Flags().Changed("description")
 			flags.instructionsSet = cmd.Flags().Changed("instructions")
+			flags.fileSet = cmd.Flags().Changed("file")
+			flags.projectEndpointSet = cmd.Flags().Changed("project-endpoint")
 			flags.projectEndpoint, _ = cmd.Flags().GetString("project-endpoint")
+			flags.stdout = cmd.OutOrStdout()
+			flags.stderr = cmd.ErrOrStderr()
 			return action.Run(azdext.WithAccessToken(cmd.Context()))
 		},
 	}

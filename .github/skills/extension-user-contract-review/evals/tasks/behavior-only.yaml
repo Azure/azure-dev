@@ -1,0 +1,20 @@
+id: behavior-only
+name: Behavior changes do not receive experiences spec comments
+tags: [negative, scope]
+inputs:
+  prompt: |
+    Review this synthetic PR. Complete metadata: title "Refine export behavior".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/export.go.
+    The command, positional parameters, flags, and YAML schema are unchanged.
+    The PR changes the --retries default from 3 to 5, rejects negative values earlier, revises prompt text,
+    adds a JSON output field, and changes retry runtime behavior. Tests, help, and docs match the new behavior.
+    RIGHT changed line 42: cmd.Flags().IntVar(&retries, "retries", 5, "Retry count")
+    Complete conversation and review history: empty.
+graders:
+  - type: code
+    name: no-behavior-only-comment
+    config:
+      language: javascript
+      assertions:
+        - "JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).comments.length === 0"
+        - "/complete.*1 files? inspected; 0 new contract comments; 0 existing threads/.test(JSON.parse(output.match(/\\{\\s*\"body\"[\\s\\S]*\\}/)[0]).body)"

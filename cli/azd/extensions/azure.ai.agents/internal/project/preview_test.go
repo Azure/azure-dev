@@ -124,6 +124,17 @@ func TestPreviewDefinitionSources(t *testing.T) {
 		{name: "bad reference", change: func(service *azdext.ServiceConfig, _ string) {
 			service.AdditionalProperties.Fields["metadata"], _ = structpb.NewValue(map[string]any{"$ref": "missing.yaml"})
 		}, code: exterrors.CodeInvalidServiceConfig},
+		{name: "invalid resource field", change: func(service *azdext.ServiceConfig, _ string) {
+			service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+				"resources": map[string]any{"core": "4", "memory": "8Gi"},
+			})
+		}, code: exterrors.CodeInvalidServiceConfig},
+		{name: "credential-bearing invalid resource", change: func(service *azdext.ServiceConfig, _ string) {
+			service.AdditionalProperties.Fields["container"], _ = structpb.NewValue(map[string]any{
+				// #nosec G101 -- Synthetic URL verifies that credentials are never disclosed.
+				"resources": map[string]any{"cpu": "https://private-user:private-password@host/?sig=private-signature"},
+			})
+		}, code: exterrors.CodeInvalidServiceConfig},
 		{name: "credential-bearing invalid image", change: func(service *azdext.ServiceConfig, _ string) {
 			service.Image = "https://private-user:private-password@host/agent?sig=private-signature#private-fragment"
 		}, code: exterrors.CodeInvalidServiceConfig},

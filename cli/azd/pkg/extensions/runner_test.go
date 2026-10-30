@@ -5,6 +5,7 @@ package extensions
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -408,6 +409,83 @@ func TestRunner_Invoke_CommandError_WrapsInExtensionRunError(t *testing.T) {
 	require.Equal(t, ext.Id, runErr.ExtensionId)
 	require.Equal(t, ext.Version, runErr.ExtensionVersion)
 	require.ErrorIs(t, runErr, cmdError)
+}
+
+func TestRunner_Invoke_PreCanceledContextReturnsCancellation(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.ExitCode)
+
+	var runErr *ExtensionRunError
+	require.ErrorAs(t, err, &runErr)
+	require.ErrorIs(t, runErr, context.Canceled)
+}
+
+func TestRunner_Invoke_CanceledContextPreservesCommandError(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cmdError := errors.New("process terminated")
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondContextFn(func(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+		cancel()
+		return exec.RunResult{ExitCode: 1}, errors.Join(cmdError, context.Cause(ctx))
+	})
+
+	_, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.ErrorIs(t, err, cmdError)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRunner_Invoke_PreCanceledContextPreservesDeadlineCause(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(context.DeadlineExceeded)
+
+	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, result.ExitCode)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotErrorIs(t, err, context.Canceled)
+}
+
+func TestRunner_Invoke_PreservesCommandRunnerDeadlineCause(t *testing.T) {
+	_, ext := setupConfigAndExtension(t)
+	cmdRunner := mockexec.NewMockCommandRunner()
+	runner := NewRunner(cmdRunner)
+
+	ctx, cancel := context.WithCancelCause(t.Context())
+
+	cmdRunner.When(func(args exec.RunArgs, command string) bool {
+		return true
+	}).RespondContextFn(func(ctx context.Context, args exec.RunArgs) (exec.RunResult, error) {
+		cancel(context.DeadlineExceeded)
+		return exec.RunResult{ExitCode: 1}, context.Cause(ctx)
+	})
+
+	result, err := runner.Invoke(ctx, ext, &InvokeOptions{})
+	require.Error(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.ExitCode)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.NotErrorIs(t, err, context.Canceled)
 }
 
 func TestRunner_Invoke_ExtensionPathResolution(t *testing.T) {

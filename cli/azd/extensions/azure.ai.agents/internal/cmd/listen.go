@@ -45,7 +45,7 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 
 	// IMPORTANT: service target name here must match the name used in the extension manifest.
 	host.
-		WithBetaServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
+		WithServiceTargetPreview(AiAgentHost, func() azdext.ServiceTargetProvider {
 			return project.NewAgentServiceTargetProvider(azdClient)
 		}).
 		WithProjectEventHandler("preprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
@@ -59,7 +59,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 		WithProjectEventHandler("postprovision", func(ctx context.Context, args *azdext.ProjectEventArgs) error {
 			return postprovisionHandler(ctx, azdClient, args)
 		}).
-		WithServiceEventHandler("predeploy", func(ctx context.Context, args *azdext.ServiceEventArgs) error {
+		WithBetaServiceEventHandler("predeploy", func(
+			ctx context.Context, args *azdext.ServiceEventArgs,
+		) (*azdext.BetaServiceEventResponse, error) {
 			telemetryReporter.reportService(ctx, azdClient.Telemetry(), args.Project, args.Service, "deploy")
 			usage := foundryTelemetry.NewReporter(azdClient.Telemetry(), nil)
 			operationReporter.report(ctx, usage, "deploy", []agentTelemetry.OperationClass{
@@ -80,6 +82,9 @@ func configureExtensionHostWithTelemetry(host *azdext.ExtensionHost, telemetryRe
 }
 
 func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
+	if err := requireProjectPreviewFeatures(args.Project); err != nil {
+		return err
+	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
 		return err
 	}
@@ -227,12 +232,22 @@ func currentEnvName(ctx context.Context, azdClient *azdext.AzdClient) (string, e
 	return resp.Environment.Name, nil
 }
 
+// legacyProjectDeploymentsMu serializes the environment read, prompt, and
+// write of AI_PROJECT_DEPLOYMENTS. Each legacy agent service runs predeploy
+// in parallel when an explicit uses graph allows it, and they share one
+// project-wide list. Overlapping handlers can both observe a missing value,
+// prompt separately, and let the last write discard the other selection.
+var legacyProjectDeploymentsMu sync.Mutex
+
 func updateLegacyProjectDeployments(
 	ctx context.Context,
 	azdClient *azdext.AzdClient,
 	services map[string]*azdext.ServiceConfig,
 	projectRoot string,
 ) error {
+	legacyProjectDeploymentsMu.Lock()
+	defer legacyProjectDeploymentsMu.Unlock()
+
 	deployments, err := collectLegacyProjectDeployments(
 		services,
 		projectRoot,
@@ -251,6 +266,68 @@ func updateLegacyProjectDeployments(
 			err,
 		)
 	}
+	response, err := azdClient.Environment().GetValues(ctx, &azdext.GetEnvironmentRequest{Name: envName})
+	if err != nil {
+		return fmt.Errorf("read environment for legacy deployments: %w", err)
+	}
+	values := map[string]string{}
+	for _, kv := range response.GetKeyValues() {
+		values[kv.GetKey()] = kv.GetValue()
+	}
+	if strings.TrimSpace(values["AI_PROJECT_DEPLOYMENTS"]) != "" {
+		return nil
+	}
+	if !azdext.DetectInteractive().NoPrompt {
+		location := values["AZURE_AI_DEPLOYMENTS_LOCATION"]
+		if location == "" {
+			location = values["AZURE_LOCATION"]
+		}
+		azureContext := &azdext.AzureContext{Scope: &azdext.AzureScope{
+			SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+			TenantId:       values["AZURE_TENANT_ID"],
+			Location:       location,
+		}}
+		resolved := make([]project.Deployment, 0, len(deployments))
+		for _, declaration := range deployments {
+			model, err := azdClient.Prompt().PromptAiModel(ctx, &azdext.PromptAiModelRequest{
+				AzureContext: azureContext,
+				DefaultValue: declaration.Model.Name,
+				Filter: &azdext.AiModelFilterOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy deployment model")
+			}
+			if model.GetModel().GetName() == "" {
+				return fmt.Errorf("no model selected for deployment %q", declaration.Name)
+			}
+			response, err := azdClient.Prompt().PromptAiDeployment(ctx, &azdext.PromptAiDeploymentRequest{
+				AzureContext: azureContext,
+				ModelName:    model.GetModel().GetName(),
+				Options: &azdext.AiModelDeploymentOptions{
+					Locations: []string{azureContext.Scope.Location},
+				},
+				Quota: &azdext.QuotaCheckOptions{MinRemainingCapacity: 1},
+			})
+			if err != nil {
+				return exterrors.FromPrompt(err, "select legacy model deployment")
+			}
+			selected := response.GetDeployment()
+			if selected.GetModelName() == "" || selected.GetVersion() == "" ||
+				selected.GetSku().GetName() == "" || selected.GetCapacity() <= 0 {
+				return fmt.Errorf("incomplete model selection for deployment %q", declaration.Name)
+			}
+			declaration.Model.Name = selected.GetModelName()
+			declaration.Model.Format = selected.GetFormat()
+			declaration.Model.Version = selected.GetVersion()
+			declaration.Sku.Name = selected.GetSku().GetName()
+			declaration.Sku.Capacity = int(selected.GetCapacity())
+			resolved = append(resolved, declaration)
+		}
+		deployments = resolved
+	}
 	return deploymentEnvUpdate(
 		ctx,
 		deployments,
@@ -266,11 +343,17 @@ func updateLegacyProjectDeployments(
 // for each colliding service.
 var duplicateAgentNameWarnOnce sync.Once
 
-func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs) error {
+func predeployHandler(
+	ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ServiceEventArgs,
+) (*azdext.BetaServiceEventResponse, error) {
 	svc := args.Service
 
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
-		return err
+		return nil, err
+	}
+
+	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
+		return nil, err
 	}
 
 	// Warn (once) when multiple agent services resolve to the same Foundry agent
@@ -286,7 +369,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project.Services,
 		args.Project.Path,
 	); err != nil {
-		return err
+		return nil, err
 	}
 	// Prompt (kind=prompt) agents have no container settings — the harness owns
 	// the runtime. Without this guard SetAgentContainerSettings writes default
@@ -294,7 +377,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 	// azd does not host.
 	if !project.ServiceIsPromptAgent(svc) {
 		if err := prepareContainerSettings(svc, args.Project.Path); err != nil {
-			return fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
+			return nil, fmt.Errorf("failed to populate container settings for service %q: %w", svc.Name, err)
 		}
 	}
 	if err := envUpdate(
@@ -303,7 +386,7 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		args.Project,
 		svc,
 	); err != nil {
-		return fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
+		return nil, fmt.Errorf("failed to update environment for service %q: %w", svc.Name, err)
 	}
 
 	// Capture the current session so it can be resumed on the newly deployed
@@ -314,11 +397,8 @@ func predeployHandler(ctx context.Context, azdClient *azdext.AzdClient, args *az
 		captureSessionForCarryover(ctx, azdClient, svc)
 	}
 
-	if err := project.CheckDeveloperRBAC(ctx, azdClient, hosted); err != nil {
-		return err
-	}
-
-	return nil
+	messages, err := project.CheckDeveloperRBAC(ctx, azdClient, hosted)
+	return &azdext.BetaServiceEventResponse{Messages: messages}, err
 }
 
 // isHostedAgentService checks if a service is a hosted (container) agent by
@@ -1014,6 +1094,9 @@ func prepareContainerSettings(
 			"failed to normalize agent config: %w",
 			err,
 		)
+	}
+	if err := project.ResolveAgentContainerSettings(svc, projectRoot); err != nil {
+		return err
 	}
 	foundryAgentConfig, err := project.LoadServiceTargetAgentConfig(svc)
 	if err != nil {

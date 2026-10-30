@@ -647,6 +647,16 @@ func validateTelephonyTransferTargets(
 		if utf8.RuneCountInString(target.Description) > 1024 {
 			return fmt.Errorf("invalid telephony %s transfer target at index %d: description is too long", source, i)
 		}
+		if len(target.Destination.RawObject) > 0 {
+			if strictKinds {
+				return fmt.Errorf(
+					"invalid telephony %s transfer target at index %d: unsupported raw destination type",
+					source,
+					i,
+				)
+			}
+			continue
+		}
 		switch target.Destination.Kind {
 		case TelephonyTransferDestinationPSTN:
 			if target.Destination.Value == "" {
@@ -699,6 +709,12 @@ func validateTelephonyTransferTargets(
 		}
 	}
 	return nil
+}
+
+// ValidateTelephonyTransferTargetsForWrite validates a complete transfer-target
+// singleton using the same rules as ReplaceTelephonyTransferTargets.
+func ValidateTelephonyTransferTargetsForWrite(targets []TelephonyTransferTarget) error {
+	return validateTelephonyTransferTargets(&TelephonyTransferTargets{TransferTargets: targets}, "request", true)
 }
 
 func validateConnectionName(value string) error {

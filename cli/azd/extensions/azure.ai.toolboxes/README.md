@@ -1,6 +1,10 @@
 # Foundry Toolboxes
 
+<!-- cspell:ignore strconv -->
+
 Manage Microsoft Foundry Toolboxes from your terminal. (Preview)
+
+Requires azd 1.37.0 or later.
 
 ## Deploy a toolbox through `azure.yaml`
 
@@ -64,6 +68,46 @@ For direct resource operations:
 
 Removing a service from `azure.yaml` stops managing the toolbox but does not
 delete the remote resource; use `azd ai toolbox delete` to delete it.
+
+### Project access for deploy and create
+
+Managed `azure.ai.toolbox` deployment and standalone `azd ai toolbox create`
+validate local inputs, then inspect ARM roles **before the first Foundry request**
+(including connection resolution). For a verified matching active-environment
+project, they reuse sufficient inherited data-plane roles or attempt to assign
+**Foundry User** to the signed-in user or service principal at that exact project
+scope. Azure subscription Owner and Contributor alone are not data-plane roles.
+New grants get an initial 15-second settling delay before readiness is probed;
+access propagation and project synchronization polling are bounded to five minutes.
+
+This ARM-first ordering avoids priming Foundry's negative authorization cache,
+but can add the built-in role even when a custom role already provides access.
+ARM inspection or assignment failures do not block working custom-role access
+and produce no advisory warning on success. When ARM cannot confirm a sufficient
+role and a readiness read is forbidden by an authorization failure, managed
+deployment attempts the actual write, preserving write-only custom-role access.
+Standalone create still requires its read to check whether the toolbox exists.
+Other readiness failures and confirmed-role propagation checks remain blocking.
+Actual write failures include project-access remediation when applicable.
+Deployment reports transient status through azd progress; standalone create
+writes status to stderr so JSON on stdout remains machine-readable.
+
+Automatic grants require the selected endpoint to match the active environment's
+`FOUNDRY_PROJECT_ENDPOINT` (falling back to `AZURE_AI_PROJECT_ENDPOINT` when blank),
+an exact `AZURE_AI_PROJECT_ID` under
+`Microsoft.CognitiveServices/accounts/projects`, and a consistent
+`AZURE_SUBSCRIPTION_ID`. An explicit matching `--project-endpoint` participates;
+an unrelated endpoint never borrows the active project's grant scope or tenant.
+The offline identity check verifies ordinary account-name hostnames. A custom
+subdomain that differs from the ARM account name cannot be verified this way,
+so automatic grants are conservatively skipped without rejecting that endpoint.
+Missing or unverified identity also uses existing access.
+
+Set `AZD_AGENT_SKIP_ROLE_ASSIGNMENTS=true` to opt out. A nonempty active-environment
+value overrides the process value; only values parsed as true by Go's
+`strconv.ParseBool` opt out (`true`, `TRUE`, `True`, `1`, `t`, or `T`).
+Provisioning, bring-your-own toolbox endpoint reuse, local authoring, read/list/show/delete,
+and other standalone write verbs do not invoke automatic grants.
 
 ## Extension telemetry API
 

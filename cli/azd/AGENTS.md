@@ -53,6 +53,10 @@ When investigating a pipeline:
 - Inspect the failed or running job logs first. Distinguish the root failure from secondary warnings, infrastructure noise, or downstream failures.
 - For releases, distinguish publishing from validation using the source branch and template parameters. For the core CLI pipeline, `DoPublish=true` identifies a publishing release run.
 
+For an end-to-end core release roadmap, version correlation, and known recovery procedures, read
+[Tracking and recovering an azd core release](../../docs/guides/releasing-azd.md).
+Changelog preparation alone does not establish release completion.
+
 ## Development
 
 Commands assume you are in `cli/azd`.
@@ -498,3 +502,18 @@ When adding or changing GitHub API access in a pipeline:
 ## Copilot Code Review
 
 When reviewing code in Copilot Code Review, also use the azd-code-reviewer skill to look for azd-specific criteria.
+
+### Required extension contract review
+
+For every PR review, including fork PRs, inspect the complete changed-file list first. If any file under
+`cli/azd/extensions/` changed, you MUST read and apply
+[extension-user-contract-review](../../.github/skills/extension-user-contract-review/SKILL.md) before general review lenses.
+Do not wait until a contract change is already suspected. This requirement applies even when
+`azd-code-reviewer` is not otherwise loaded.
+
+Return one inline comment for each distinct new or removed command, positional parameter, flag, or YAML schema
+component, preserving existing-thread deduplication and per-thread approved experiences spec tracking. Do not use
+this pass for behavior-only changes such as defaults, validation, prompts, output, or runtime semantics. Before
+finishing, audit that coverage and comments survived triage. Include the contract pass's completion status and
+counts in the review summary or supported result channel; if required evidence or output capacity is unavailable,
+explicitly report `blocked`, not a clean review.

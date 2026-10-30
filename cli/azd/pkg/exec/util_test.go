@@ -6,6 +6,7 @@ package exec
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"regexp"
 	"runtime"
@@ -65,46 +66,32 @@ func TestRunCommand(t *testing.T) {
 	}
 }
 
-func TestKillCommand(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
-	defer cancel()
-
-	s := time.Now()
-
-	runner := NewCommandRunner(nil)
-	var args RunArgs
-	if runtime.GOOS == "windows" {
-		args = RunArgs{
-			Cmd: "pwsh",
-			Args: []string{
-				"-c",
-				"sleep",
-				"10000",
-			},
+func TestRunWithoutShell(t *testing.T) {
+	if os.Getenv("AZD_TEST_NATIVE_ARGS") == "1" {
+		for i, arg := range os.Args {
+			if arg == "--" {
+				data, err := json.Marshal(os.Args[i+1:])
+				require.NoError(t, err)
+				t.Logf("native arguments: %s", data)
+				return
+			}
 		}
-	} else {
-		args = RunArgs{
-			Cmd: "sh",
-			Args: []string{
-				"-c",
-				"sleep 10",
-			},
-		}
+		t.Fatal("missing argument separator")
 	}
-
-	_, err := runner.Run(ctx, args)
-
-	if runtime.GOOS == "windows" {
-		// on Windows terminating the process doesn't register as an error
-		require.NoError(t, err)
-	} else {
-		require.ErrorContains(t, err, "signal: killed")
-	}
-	// should be pretty much instant since our context was already cancelled
-	// but we'll give a little wiggle room (as long as it's < 10000 seconds, which is
-	// what we're sleeping on in the powershell)
-	since := time.Since(s)
-	require.LessOrEqual(t, since, 10*time.Second)
+	exePath, err := os.Executable()
+	require.NoError(t, err)
+	expected := []string{`INSTALLDIR=C:\Tools&More`, `%SYSTEMROOT%`, `O'Connor | Tools`, `value="quoted"`}
+	args := NewRunArgs(exePath, "-test.run=^TestRunWithoutShell$", "-test.v", "--").
+		AppendParams(expected...).
+		WithShell(false).
+		WithEnv([]string{"AZD_TEST_NATIVE_ARGS=1"})
+	result, err := NewCommandRunner(nil).Run(t.Context(), args)
+	require.NoError(t, err)
+	match := regexp.MustCompile(`native arguments: (.+)`).FindStringSubmatch(result.Stdout)
+	require.Len(t, match, 2)
+	var actual []string
+	require.NoError(t, json.Unmarshal([]byte(match[1]), &actual))
+	require.Equal(t, expected, actual)
 }
 
 func TestAppendEnv(t *testing.T) {
@@ -142,6 +129,23 @@ func TestRunList(t *testing.T) {
 	if !regexp.MustCompile(`git version\s+\d+\.\d+\.\d+`).Match([]byte(res.Stdout)) {
 		t.Errorf("stdout did not contain 'git version' output")
 	}
+}
+
+func TestKillCommandList(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+
+	command := "sleep 10"
+	if runtime.GOOS == "windows" {
+		command = "ping -n 11 127.0.0.1 > nul"
+	}
+
+	start := time.Now()
+	runner := NewCommandRunner(nil)
+	_, _ = runner.RunList(ctx, []string{command}, RunArgs{})
+
+	require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+	require.Less(t, time.Since(start), 5*time.Second)
 }
 
 func TestRunCapturingStderr(t *testing.T) {

@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -522,6 +523,95 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env, mock.Anything)
 	})
+}
+
+func TestEnvManagerSaveSelectedKeys(t *testing.T) {
+	t.Parallel()
+	mockContext := mocks.NewMockContext(t.Context())
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	local := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	seed := NewWithValues("test", map[string]string{
+		"KEY": "remove-me", "KEEP": "original", "DYLD_KEEP": "raw-unrelated",
+	})
+	require.NoError(t, seed.Config.Set("app.enabled", true))
+	require.NoError(t, local.Save(t.Context(), seed, nil))
+	env, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent, err := local.Get(t.Context(), "test")
+	require.NoError(t, err)
+	concurrent.DotenvSet("KEEP", "concurrent-value")
+	concurrent.DotenvSet("ADDED", "concurrent-addition")
+	require.NoError(t, concurrent.Config.Set("app.enabled", false))
+	require.NoError(t, local.Save(t.Context(), concurrent, nil))
+	env.DotenvDelete("KEY")
+	env.DotenvSet("PENDING", "pending")
+	env.DotenvSet("DYLD_PENDING", "raw-pending")
+	require.NoError(t, env.Config.Set("app.pending", true))
+	options := &SaveOptions{DotenvKeys: []string{"KEY"}}
+	remote := &MockDataStore{}
+	remote.On("Save", t.Context(), mock.MatchedBy(func(saved *Environment) bool {
+		return saved != env
+	}), options).Run(func(args mock.Arguments) {
+		saved, ok := args.Get(1).(*Environment)
+		require.True(t, ok)
+		require.NotNil(t, saved)
+		marshalled, err := marshallDotEnv(saved)
+		require.NoError(t, err)
+		values, err := godotenv.Unmarshal(marshalled)
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{
+			"KEEP": "concurrent-value", "ADDED": "concurrent-addition", "DYLD_KEEP": "raw-unrelated",
+		}, values)
+		require.Equal(t, map[string]any{"app": map[string]any{"enabled": false}}, saved.Config.Raw())
+	}).Return(nil).Once()
+
+	manager := newManagerForTest(azdCtx, mockContext.Console, local, remote)
+	require.NoError(t, manager.SaveWithOptions(t.Context(), env, options))
+	require.Equal(t, "pending", env.Getenv("PENDING"))
+	value, exists := env.LookupDotenv("DYLD_PENDING")
+	require.True(t, exists)
+	require.Equal(t, "raw-pending", value)
+	require.Equal(t, map[string]any{"app": map[string]any{"enabled": true, "pending": true}}, env.Config.Raw())
+	remote.AssertExpectations(t)
+}
+
+func TestEnvManagerSaveSelectedKeysRemoteErrors(t *testing.T) {
+	t.Parallel()
+	for _, stage := range []string{"LocalRead", "RemoteSave"} {
+		t.Run(stage, func(t *testing.T) {
+			t.Parallel()
+			mockContext := mocks.NewMockContext(t.Context())
+			azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+			local := &MockDataStore{}
+			remote := &MockDataStore{}
+			env := New("test")
+			env.DotenvSet("PENDING", "pending")
+			env.DotenvDelete("KEY")
+			saved := New("test")
+			options := &SaveOptions{DotenvKeys: []string{"KEY"}}
+			saveErr := errors.New("save failed")
+			local.On("Save", t.Context(), env, options).Return(nil).Once()
+			errorText := "saving remote environment"
+			if stage == "LocalRead" {
+				local.On("Get", t.Context(), "test").Return(nil, saveErr).Once()
+				errorText = "loading saved local environment for remote persistence"
+			} else {
+				local.On("Get", t.Context(), "test").Return(saved, nil).Once()
+				remote.On("Save", t.Context(), saved, options).Return(saveErr).Once()
+			}
+
+			manager := newManagerForTest(azdCtx, mockContext.Console, local, remote)
+			err := manager.SaveWithOptions(t.Context(), env, options)
+			require.ErrorIs(t, err, saveErr)
+			require.ErrorContains(t, err, errorText)
+			require.Equal(t, "pending", env.Getenv("PENDING"))
+			local.AssertExpectations(t)
+			remote.AssertExpectations(t)
+			if stage == "LocalRead" {
+				remote.AssertNotCalled(t, "Save", mock.Anything, mock.Anything, mock.Anything)
+			}
+		})
+	}
 }
 
 func Test_EnvManager_CreateFromContainer(t *testing.T) {

@@ -645,6 +645,85 @@ func TestResolveServiceRunContext_RejectsMissingRuntimeDefinitions(t *testing.T)
 	}
 }
 
+func TestResolveServiceRunContext_RejectsInvalidTargetConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name      string
+		resources map[string]any
+		wantError string
+	}{
+		{"unknown cpu field", map[string]any{"core": "4", "memory": "8Gi"}, "core"},
+		{"numeric cpu", map[string]any{"cpu": 4, "memory": "8Gi"}, "string"},
+		{"invalid memory", map[string]any{"cpu": "4", "memory": "8GiB"}, "pattern"},
+	} {
+		for _, source := range []string{"inline", "root-ref", "resources-ref"} {
+			t.Run(tt.name+"/"+source, func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				values := map[string]any{
+					"kind":           "hosted",
+					"name":           "hosted-agent",
+					"startupCommand": "python custom.py",
+					"container":      map[string]any{"resources": tt.resources},
+				}
+				var referencedPath string
+				var referencedContent []byte
+				if source != "inline" {
+					referencedValues := any(values)
+					referencedPath = filepath.Join(root, "definition.yaml")
+					if source == "resources-ref" {
+						referencedValues = tt.resources
+						referencedPath = filepath.Join(root, "resources.yaml")
+						values["container"] = map[string]any{
+							"resources": map[string]any{"$ref": "resources.yaml"},
+						}
+					} else {
+						values = map[string]any{"$ref": "definition.yaml"}
+					}
+					var err error
+					referencedContent, err = goyaml.Marshal(referencedValues)
+					require.NoError(t, err)
+					require.NoError(t, os.WriteFile(referencedPath, referencedContent, 0o600))
+				}
+				properties, err := structpb.NewStruct(values)
+				require.NoError(t, err)
+				svc := &azdext.ServiceConfig{
+					Name:                 "agent",
+					Host:                 AiAgentHost,
+					RelativePath:         ".",
+					AdditionalProperties: properties,
+				}
+				prompt := &helpersPromptServer{}
+				client := newHelpersTestAzdClient(t, &helpersProjectServer{project: &azdext.ProjectConfig{
+					Path: root,
+					Services: map[string]*azdext.ServiceConfig{
+						svc.Name: svc,
+					},
+				}}, prompt)
+
+				runContext, err := resolveServiceRunContext(t.Context(), client, "agent", true)
+
+				require.Nil(t, runContext, "invalid config must not fall through to startup-command auto-detection")
+				localErr, ok := errors.AsType[*azdext.LocalError](err)
+				require.True(t, ok, "expected resource validation error, got %v", err)
+				require.Equal(t, exterrors.CodeInvalidServiceConfig, localErr.Code)
+				require.Contains(t, localErr.Message, "agent")
+				require.Contains(t, localErr.Message, tt.wantError)
+				require.Contains(t, localErr.Suggestion, "container.resources")
+				require.Zero(t, prompt.promptCalls.Load())
+				require.Zero(t, prompt.selectCalls.Load())
+				if referencedPath != "" {
+					content, err := os.ReadFile(referencedPath)
+					require.NoError(t, err)
+					require.Equal(t, referencedContent, content)
+				}
+			})
+		}
+	}
+}
+
 func TestResolveServiceRunContext_SupportedDefinitions(t *testing.T) {
 	hostedProps, err := projectpkg.AgentDefinitionToServiceProperties(agent_yaml.ContainerAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
@@ -653,6 +732,7 @@ func TestResolveServiceRunContext_SupportedDefinitions(t *testing.T) {
 		},
 	}, nil)
 	require.NoError(t, err)
+	hostedProps.Fields["startupCommand"] = structpb.NewStringValue("python custom.py")
 	promptProps, err := projectpkg.PromptAgentDefinitionToServiceProperties(agent_yaml.PromptAgent{
 		AgentDefinition: agent_yaml.AgentDefinition{
 			Kind: agent_yaml.AgentKindPrompt,
@@ -667,12 +747,26 @@ func TestResolveServiceRunContext_SupportedDefinitions(t *testing.T) {
 		properties     *structpb.Struct
 		referencedYAML string
 		wantDefinition bool
+		wantStartup    string
 	}{
-		{name: "direct hosted", properties: hostedProps, wantDefinition: true},
+		{
+			name:           "direct hosted",
+			properties:     hostedProps,
+			wantDefinition: true,
+			wantStartup:    "python custom.py",
+		},
 		{
 			name:           "referenced hosted",
-			referencedYAML: "kind: hosted\nname: referenced-agent\n",
+			referencedYAML: "kind: hosted\nname: referenced-agent\nstartupCommand: python custom.py\n",
 			wantDefinition: true,
+			wantStartup:    "python custom.py",
+		},
+		{
+			name: "hosted with configured resources",
+			referencedYAML: "kind: hosted\nname: referenced-agent\nstartupCommand: python custom.py\n" +
+				"container:\n  resources:\n    cpu: \"16\"\n    memory: 32Gi\n",
+			wantDefinition: true,
+			wantStartup:    "python custom.py",
 		},
 		{name: "direct prompt", properties: promptProps},
 	} {
@@ -705,6 +799,7 @@ func TestResolveServiceRunContext_SupportedDefinitions(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, runContext)
+			require.Equal(t, tt.wantStartup, runContext.StartupCommand)
 			if tt.wantDefinition {
 				require.NotNil(t, runContext.Definition)
 			} else {

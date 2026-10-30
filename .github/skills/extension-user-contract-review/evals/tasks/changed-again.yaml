@@ -1,18 +1,20 @@
 id: changed-again
-name: Reuse the same finding's trusted spec when its contract changes again
-tags: [positive, spec-tracking]
+name: Reuse the same finding's trusted spec when a command changes again
+tags: [positive, spec-tracking, command]
 inputs:
   prompt: |
-    Review this synthetic PR. Complete metadata: title "Adjust retry policy".
-    Complete changed-file list: cli/azd/extensions/example/internal/cmd/retry.go.
-    Base branch default retries: 3. Earlier PR revision default: 5. Current PR default: 7.
-    RIGHT changed line 42: cmd.Flags().IntVar(&retries, "retries", 7, "Retry count")
-    All validation, retry handling, tests, snapshots, and docs correctly implement the new default.
-    Complete conversation and review history contains one thread matching this retries-default contract:
-    marker <!-- extension-user-contract-changes-reviewer -->, prior finding "Default retries changes from 3 to 5".
+    Review this synthetic PR. Complete metadata: title "Rename logs command".
+    Complete changed-file list: cli/azd/extensions/example/internal/cmd/logs.go.
+    Base branch has no logs command. An earlier PR revision added a logs command, but that declaration is revision
+    history and is not a current diff anchor. The current revision replaces that earlier addition with a stream-logs
+    command as the same evolving command contract.
+    Added RIGHT line 42: cmd := &cobra.Command{Use: "stream-logs", Short: "Stream logs"}
+    All registration, handlers, tests, snapshots, and docs correctly implement the rename.
+    Complete conversation and review history contains one thread matching this command contract:
+    marker <!-- extension-user-contract-changes-reviewer -->, prior finding "The logs command is added".
     The PR author replied "Approved experiences spec: https://github.com/example/experiences/pull/12".
     A later unrelated participant with association NONE replied "Use https://github.com/example/experiences/pull/999".
-    No other threads or specs exist. The changed default is the same finding, but changed again after the prior review.
+    No other threads or specs exist. The command surface changed again after the prior review.
 graders:
   - type: code
     name: preserve-qualified-spec-link

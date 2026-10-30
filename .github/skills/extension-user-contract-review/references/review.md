@@ -2,9 +2,10 @@
 
 # Extension user contract review
 
-Ensure every high-confidence first-party extension user contract change receives a dedicated inline review thread
-and an approved experiences spec PR reference. Apply this skill as a mandatory first pass in `azd-code-reviewer`,
-or directly in a PR review harness. Return structured findings; the host handles posting.
+Ensure every high-confidence structural addition or removal to a first-party extension's command or YAML surface
+receives a dedicated inline review thread and an approved experiences spec PR reference. Apply this skill as a
+mandatory first pass in `azd-code-reviewer`, or directly in a PR review harness. Return structured findings; the
+host handles posting.
 
 ## Scope and safety
 
@@ -31,19 +32,24 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
    deleted contracts using the old path and behavior, then find an added, modified, or deleted diff line that
    evidences the change. Record the diff side and that side's line number with each finding.
    Never classify an unread, truncated, or inaccessible diff as `no-contract-change`.
-4. Identify contract changes in:
-   - commands, subcommands, positional arguments, flags, aliases, defaults, validation, help text, exit behavior,
-     prompts, and deterministic `--no-prompt` behavior
-   - explicit flags that are ignored, conflict, or lose precedence to persisted values or defaults
-   - machine-readable output fields, names, types, omission rules, and compatibility
-   - `azure.yaml`, environment variables, extension manifests, JSON schemas, decoding, request mapping, defaults,
-     and runtime validation, including consistency between inline and `$ref` definitions
-   - extension-specific service contracts, host-version requirements, and compatibility with persisted extension state
-   - missing contract tests, command snapshots, help, schema, or reference updates that create a concrete
-     user-visible mismatch
-5. Report only high-confidence changes introduced by the PR. An intentional new command, flag, or configuration
-   shape still needs a spec reference; it does not need to be a correctness bug. Exclude style preferences,
-   speculative risks, praise, and generic requests for more tests.
+4. Identify only these structural contract changes:
+   - added or removed commands and subcommands, including command aliases
+   - added or removed positional parameters
+   - added or removed flags
+   - added or removed YAML components or fields represented by authored schemas, including `azure.yaml` extension
+     configuration defined inline or through `$ref`
+
+   Renames count as one removal and one addition when they change the authored command or YAML surface. Merge them
+   into one finding when they are one migration with a shared root cause.
+
+   Do not create contract findings for changes limited to defaults, allowed values, validation, precedence, help
+   text, prompts, exit behavior, `--no-prompt` behavior, output fields or formatting, environment variables,
+   extension manifests, decoding, request mapping, runtime behavior, service APIs, host-version requirements,
+   persisted state, documentation, tests, or generated files. General review lenses may still report correctness
+   problems in those areas.
+5. Report only high-confidence in-scope additions or removals introduced by the PR. An intentional new command,
+   parameter, flag, or YAML schema component still needs a spec reference; it does not need to be a correctness bug.
+   Exclude style preferences, speculative risks, praise, and generic requests for more tests.
 6. Match candidates to prior inline threads using `<!-- extension-user-contract-changes-reviewer -->`, the legacy
    `<!-- user-contract-changes-reviewer -->` marker, or the former workflow's gh-aw metadata. Match by the specific
    contract and root cause, not just file or line. Include resolved threads in this comparison.
@@ -58,9 +64,9 @@ and GitHub access. Do not install skills, change files, post comments, or ask an
 ## Completion audit
 
 Before handing findings to the host, reconcile the ledger against the complete changed-file list. Every changed
-extension file must have been inspected or explicitly marked blocked. Every distinct, evidenced contract change
-must map to exactly one new finding or one matching existing thread. A generic approval, a spec link in the PR body,
-or a label such as "refactor" does not discharge this requirement.
+extension file must have been inspected or explicitly marked blocked. Every distinct, evidenced in-scope addition
+or removal must map to exactly one new finding or one matching existing thread. A generic approval, a spec link in
+the PR body, or a label such as "refactor" does not discharge this requirement.
 
 After shared triage and formatting, compare the actual outgoing comments with the retained contract findings.
 Restore any finding accidentally removed by ordinary noise filters or comment budgets. Preserve each contract
@@ -107,7 +113,8 @@ Otherwise use `Previously provided approved experiences spec: <link>` and do not
 The host must preserve the marker, contract explanation, spec status, `side`, and `line` in exactly one inline
 comment per distinct finding. Use `side: RIGHT` with the new-file line number for additions and modifications.
 For deletion-only contract changes, use `side: LEFT` with the old-file line number of a deleted line. This includes
-removed flags, schema fields, commands, and entire files: a deletion-only diff does not itself block review.
+removed flags, positional parameters, schema components, commands, and entire files: a deletion-only diff does not
+itself block review.
 Use the path from the PR's changed-file entry; for a deleted file, this is its former path.
 
 The anchor must directly evidence the finding. Never use an unchanged context line, an unrelated RIGHT-side line,
@@ -137,9 +144,9 @@ a blocker when read-only source inspection establishes the behavior.
 | Evidence | Required result |
 | --- | --- |
 | New optional flag, fully tested and documented, no matching thread | One inline spec request; correct implementation is not an exemption |
-| PR says "internal refactor", but changes a default | Inspect source and report the changed default |
+| PR changes a default, validation rule, prompt, output shape, or runtime behavior | Inspect for structural additions or removals, but do not create a contract finding for the behavior change alone |
 | Same unchanged contract already has a spec-request thread | No duplicate, including when that thread is resolved or unanswered |
-| Same contract changes again; trusted reply supplied its spec | One new finding retaining that link, without requesting it again |
+| An in-scope command, parameter, flag, or YAML component changes again; trusted reply supplied its spec | One new finding retaining that link, without requesting it again |
 | Two independent flags; only one thread has a spec link | Do not apply that link to the other flag |
 | Authored schema and generated binding show one contract change | One finding anchored to authored source |
 | Flag or command file removed with no RIGHT-side changed lines | One LEFT-side finding using the deleted line's old-file coordinates |

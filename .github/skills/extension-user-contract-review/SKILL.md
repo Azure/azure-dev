@@ -3,7 +3,7 @@ name: extension-user-contract-review
 description: "**WORKFLOW SKILL** - Inspect every first-party azd extension PR diff for user contract changes before general code review. USE FOR: review extension PR, check extension contract changes, request experiences spec, review extension flags or schemas, audit contract review coverage. DO NOT USE FOR: core-only PRs, implementing extensions, running tests, or protobuf generation outside PR review."
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
 ---
 
 # Extension user contract review
@@ -18,7 +18,7 @@ This is a mandatory review pass, not an optional lens selected after spotting a 
 Read and apply [the review procedure](references/review.md) in full. Use the complete diff and review history to:
 
 1. Account for every changed extension file in an internal coverage ledger.
-2. Identify observable contract changes, including intentional, correctly implemented additions.
+2. Identify only new or removed commands, positional parameters, flags, and YAML schema components.
 3. Match existing threads and approved experiences spec links per finding.
 4. Return one diff-line inline finding per distinct new contract change, preserving `side` and `line`:
    `RIGHT` uses new-file coordinates; deletion-only `LEFT` uses old-file coordinates.
@@ -26,7 +26,8 @@ Read and apply [the review procedure](references/review.md) in full. Use the com
    with file, new-comment, and existing-thread counts.
 
 The host posts comments and exposes the completion status. Do not execute PR code or mutate GitHub.
-Do not treat a "refactor" label, tests, documentation, or a spec link in another thread as an exemption.
+Do not treat a "refactor" label, tests, documentation, or a spec link in another thread as an exemption for those
+structural additions or removals.
 Preserve findings through ordinary noise filters and comment limits.
 
 ## Error handling
@@ -36,5 +37,6 @@ Never silently skip the pass, fabricate a missing spec, or claim a clean review.
 
 ## Examples
 
-A tested new flag still needs a spec thread. An unchanged finding already reported needs no duplicate.
+A tested new flag still needs a spec thread. A changed default, validation rule, prompt, or output shape does not.
+An unchanged finding already reported needs no duplicate.
 A genuine internal refactor produces no contract comment after inspection.

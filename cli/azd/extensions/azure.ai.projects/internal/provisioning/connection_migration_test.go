@@ -264,11 +264,12 @@ func TestValidateProjectTemplateRejectsModifiedSystemAcr(t *testing.T) {
 					var template map[string]any
 					require.NoError(t, json.Unmarshal(raw, &template))
 					connections := findSystemAcrConnections(template)
-					expected := 1
 					if load.name == "greenfield" {
-						expected = 2
+						require.Len(t, connections, 2)
+					} else {
+						require.Len(t, connections, 1)
 					}
-					require.Len(t, connections, expected)
+
 					for _, connection := range connections {
 						require.True(t, isSystemAcrConnection(connection))
 						object := connection
@@ -277,14 +278,14 @@ func TestValidateProjectTemplateRejectsModifiedSystemAcr(t *testing.T) {
 							require.True(t, ok, "generated connection must contain object %s", key)
 							object = child
 						}
-						key := tt.path[len(tt.path)-1]
-						original, existed := object[key]
-						object[key] = tt.value
+						leafKey := tt.path[len(tt.path)-1]
+						original, existed := object[leafKey]
+						object[leafKey] = tt.value
 						requireConnectionMigrationError(t, validateProjectTemplate(template, "project.bicep"))
 						if existed {
-							object[key] = original
+							object[leafKey] = original
 						} else {
-							delete(object, key)
+							delete(object, leafKey)
 						}
 					}
 				})

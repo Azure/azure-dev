@@ -21,6 +21,7 @@ import (
 	"azureaiagent/internal/pkg/agents/optimize_api"
 	"azureaiagent/internal/pkg/envkey"
 	"azureaiagent/internal/project"
+	"azureaiagent/internal/synthesis"
 	agentTelemetry "azureaiagent/internal/telemetry"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -86,6 +87,9 @@ func preprovisionHandler(ctx context.Context, azdClient *azdext.AzdClient, args 
 		return err
 	}
 	if err := validateRuntimeAgentServices(args.Project, true); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 
@@ -353,6 +357,9 @@ func predeployHandler(
 	}
 
 	if err := project.RequireAgentFeatures(svc, args.Project.GetPath()); err != nil {
+		return nil, err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
 		return nil, err
 	}
 
@@ -728,6 +735,9 @@ func validateRuntimeAgentServices(proj *azdext.ProjectConfig, validateDeployment
 // Best-effort throughout — a harness failure is logged but never blocks down.
 func predownHandler(ctx context.Context, azdClient *azdext.AzdClient, args *azdext.ProjectEventArgs) error {
 	if err := validateRuntimeAgentServices(args.Project, false); err != nil {
+		return err
+	}
+	if err := synthesis.RequireACRReuseForProject(ctx, azdClient, args.Project); err != nil {
 		return err
 	}
 

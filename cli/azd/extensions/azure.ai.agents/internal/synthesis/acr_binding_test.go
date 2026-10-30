@@ -45,6 +45,7 @@ func TestACRBindingSelection(t *testing.T) {
 }
 
 func TestACRBindingSynthesisGuard(t *testing.T) {
+	t.Setenv(ACRReuseEnvVar, "true")
 	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
 	in := Input{
 		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +

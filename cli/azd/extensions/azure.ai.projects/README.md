@@ -215,6 +215,29 @@ environment to create another project.
 
 ### Reuse an external container registry
 
+This preview is **off by default**. Enable the shared process switch before
+running either the projects or agents extension:
+
+```sh
+export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true
+```
+
+In PowerShell, use `$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'`.
+Set the same variable in each CI job that operates on the reused registry.
+The switch uses `strconv.ParseBool`; `on` and `yes` do not enable it.
+Core `azd config` alpha settings do not enable this preview. The evaluator
+reads the current process, including values already injected by the azd host;
+it does not open dotenv files itself.
+
+With the switch off, reuse setup and all reuse lifecycle operations fail with
+enablement guidance before changing project files, environment values, saved
+context, or Azure resources. This includes **preview, down, recovery, and
+eject**, even if the environment already has a reuse binding or unfinished
+access cleanup and its legacy registry variables are absent. Re-enable the
+switch to clean up; turning it off does not delete or convert ownership.
+Ordinary automatic registry creation and existing project connection workflows
+without new reuse intent remain available.
+
 For source-built hosted agents in a new Foundry project, select an existing
 Azure Container Registry by its full ARM resource ID:
 
@@ -227,6 +250,12 @@ subscription (`AZURE_SUBSCRIPTION_ID`) and outside the Foundry resource group
 because `azd down` deletes that group. Cross-subscription registry reuse is not
 supported. You are responsible for registry network connectivity and appropriate
 image push permissions.
+Embedded and currently generated ejected Bicep keep the
+`microsoft.foundry` provider, which enforces the switch for provision, preview,
+and down. **Manually changing `infra.provider` to core `bicep` is unsupported**:
+its preview skips extension lifecycle hooks, so it is outside this enforcement
+contract. Arbitrary direct Bicep/ARM execution is also outside the contract.
+Do not change the provider to bypass the switch.
 The registry and its images remain externally owned and are retained by
 `azd down`. Default and JSON output identify the selected registry and its
 external ownership.

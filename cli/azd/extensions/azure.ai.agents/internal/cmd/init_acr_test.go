@@ -70,7 +70,7 @@ func TestInitACRRejectsInvalidInputsBeforeSideEffects(t *testing.T) {
 }
 
 func TestAuthorFoundryProjectForwardsACRSelector(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, mode := range []projectAuthoringMode{projectAuthoringNew, projectAuthoringCurrent} {
 		t.Run(string(mode), func(t *testing.T) {
 			workflow := &recordingProjectWorkflowServer{}
@@ -98,7 +98,7 @@ func TestAuthorFoundryProjectRejectsExistingProjectACRSelector(t *testing.T) {
 }
 
 func TestInitACRManifestSourceBuildValidation(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name    string
 		service string
@@ -129,7 +129,7 @@ func TestInitACRManifestSourceBuildValidation(t *testing.T) {
 }
 
 func TestInitACRManifestResolvesRefs(t *testing.T) {
-	t.Parallel()
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "agent.yaml"),
 		[]byte("kind: prompt\n"), 0o600))
@@ -140,6 +140,7 @@ func TestInitACRManifestResolvesRefs(t *testing.T) {
 }
 
 func TestPreflightAzdTemplateRejectsUnsupportedACRBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	for _, tt := range []struct {
@@ -193,6 +194,7 @@ func (s *initACRPromptServer) PromptSubscription(
 }
 
 func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []string{"azure.yaml", "repository"} {
 		for _, declaration := range []string{"inline", "reference"} {
 			t.Run(route+"/"+declaration, func(t *testing.T) {
@@ -245,6 +247,7 @@ func TestInitACRTemplateRejectsExistingProjectBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, route := range []string{"azure.yaml", "repository"} {
 		for _, tt := range []struct {
 			name, subscription, wantError string
@@ -300,6 +303,7 @@ func TestInitACRTemplateValidatesSubscriptionBeforeScaffolding(t *testing.T) {
 }
 
 func TestInitACRTemplateRetainsPlannedSubscriptionWithoutWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	root := t.TempDir()
 	t.Chdir(root)
 	templateDir := t.TempDir()
@@ -361,6 +365,7 @@ func TestFinalizeAdoptedProjectUsesPlannedACRSubscription(t *testing.T) {
 type initACREnvironmentServer struct {
 	testEnvironmentServiceServer
 	binding      []byte
+	pending      []byte
 	bindingReads int
 }
 
@@ -373,13 +378,17 @@ func (s *initACREnvironmentServer) List(
 }
 
 func (s *initACREnvironmentServer) GetConfig(
-	context.Context, *azdext.GetConfigRequest,
+	_ context.Context, request *azdext.GetConfigRequest,
 ) (*azdext.GetConfigResponse, error) {
+	if request.GetPath() == synthesis.ACRPendingConfigKey {
+		return &azdext.GetConfigResponse{Found: s.pending != nil, Value: s.pending}, nil
+	}
 	s.bindingReads++
 	return &azdext.GetConfigResponse{Found: s.binding != nil, Value: s.binding}, nil
 }
 
 func TestPlanInitACRSubscriptionUsesConfiguredSubscription(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, subscription := range []string{"SUB", "other"} {
 		t.Run(subscription, func(t *testing.T) {
 			root := t.TempDir()
@@ -412,6 +421,7 @@ func TestPlanInitACRSubscriptionUsesConfiguredSubscription(t *testing.T) {
 }
 
 func TestInitACRBindingPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name     string
 		mode     string
@@ -474,6 +484,7 @@ func TestInitACRBindingPreflight(t *testing.T) {
 }
 
 func TestInitACRBindingFallbackPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name        string
 		bindingMode string
@@ -560,6 +571,7 @@ func TestInitACRBindingFallbackPreflight(t *testing.T) {
 }
 
 func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, template := range []string{"", "template.yaml"} {
 		t.Run(template, func(t *testing.T) {
 			root := t.TempDir()
@@ -590,6 +602,7 @@ func TestInitACRRejectsCrossSubscriptionBeforeWrites(t *testing.T) {
 }
 
 func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name       string
 		infra      string
@@ -637,6 +650,7 @@ func TestInitACRRejectsTeardownScopeBeforeWrites(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, tt := range []struct {
 		name       string
 		layer      bool
@@ -716,6 +730,7 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	for _, canonical := range []bool{false, true} {
 		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {
 			root := t.TempDir()

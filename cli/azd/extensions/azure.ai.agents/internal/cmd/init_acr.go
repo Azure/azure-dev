@@ -18,6 +18,15 @@ import (
 
 const initACRSubscriptionMessage = "Select an Azure subscription to provision your agent and Foundry project resources."
 
+const initACRHelp = `Use --acr-resource-id to select an externally owned Azure Container Registry
+for source builds in a new Foundry project. Project setup saves the selection
+for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
+image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
+
+`
+
 func initACRConflict(input string) error {
 	return exterrors.Validation(
 		exterrors.CodeConflictingArguments,
@@ -54,7 +63,7 @@ func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
 	if strings.EqualFold(flags.infra, "terraform") {
 		return initACRConflict("--infra terraform")
 	}
-	return nil
+	return synthesis.RequireACRReuse()
 }
 
 func validateInitACRManifest(content []byte, root string, flags *initFlags) error {
@@ -89,7 +98,7 @@ func validateInitACRManifestInEnvironment(
 	if !needsACR {
 		return initACRConflict("an agent configuration without hosted-container source builds")
 	}
-	return nil
+	return synthesis.RequireACRReuse()
 }
 
 func readInitACREnvironment(
@@ -141,6 +150,9 @@ func planInitACRSubscription(
 	if !flags.acrResourceIDSet {
 		return nil, nil
 	}
+	if err := synthesis.RequireACRReuse(); err != nil {
+		return nil, err
+	}
 	_, values, err := readInitACREnvironment(ctx, client, flags)
 	if err != nil {
 		return nil, err
@@ -175,9 +187,6 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 				"--acr-resource-id: "+err.Error(), "provide an external registry ARM resource ID")
 		}
 	}
-	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || flags.templatePointer != "") {
-		return nil
-	}
 	root, err := azdext.GetProjectDir()
 	if errors.Is(err, azdext.ErrProjectNotFound) {
 		return nil
@@ -188,6 +197,22 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 	content, err := readProjectAzureYAML(root)
 	if err != nil {
 		return fmt.Errorf("read project registry configuration: %w", err)
+	}
+	envName, values, err := readInitACREnvironment(ctx, client, flags)
+	if err != nil {
+		return err
+	}
+	values["AZURE_ENV_NAME"] = envName
+	if !flags.acrResourceIDSet && flags.projectResourceId != "" &&
+		values["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect" {
+		values["USE_EXISTING_AI_PROJECT"] = "true"
+	}
+	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, client, envName, input); err != nil {
+		return err
+	}
+	if !flags.acrResourceIDSet && (flags.projectResourceId != "" || flags.templatePointer != "") {
+		return nil
 	}
 	if !flags.acrResourceIDSet && flags.infra != "" {
 		provider, err := parseInfraProvider(flags.infra)
@@ -203,13 +228,7 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 			return nil
 		}
 	}
-	envName, values, err := readInitACREnvironment(ctx, client, flags)
-	if err != nil {
-		return err
-	}
 	selectedID := flags.acrResourceID
-	values["AZURE_ENV_NAME"] = envName
-	input := synthesis.Input{RawAzureYAML: content, ProjectRoot: root, Env: values}
 	if !flags.acrResourceIDSet {
 		selectedID = values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 		if strings.EqualFold(values["USE_EXISTING_AI_PROJECT"], "true") {

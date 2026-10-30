@@ -559,6 +559,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		// on-disk provision flow resolves them from the azd environment.
 		PreserveVarRefs: true,
 	}
+	if err := synthesis.RequireACRReuseForInput(synthesisInput); err != nil {
+		return err
+	}
 	if !existingProject {
 		environment = maps.Clone(environment)
 		if environment == nil {
@@ -585,6 +588,9 @@ func ejectInfra(projectRoot, provider string, environments ...map[string]string)
 		res, err = synthesis.Synthesize(synthesisInput)
 	}
 	if err != nil {
+		if local, ok := errors.AsType[*azdext.LocalError](err); ok {
+			return local
+		}
 		// Reuse the provider's vocabulary so eject and provision report
 		// consistent codes for the same azure.yaml problems.
 		return exterrors.Validation(
@@ -2217,6 +2223,10 @@ func readInfraEjectEnvironment(ctx context.Context, azdClient *azdext.AzdClient)
 	}
 	if binding.GetFound() {
 		result[synthesis.ACRBindingEnvKey] = string(binding.GetValue())
+	}
+	if err := synthesis.RequireACRReuseForEnvironment(ctx, azdClient, current.Environment.Name,
+		synthesis.Input{Env: result}); err != nil {
+		return nil, err
 	}
 	return result, nil
 }

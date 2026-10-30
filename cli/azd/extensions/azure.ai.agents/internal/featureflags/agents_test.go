@@ -36,3 +36,19 @@ func TestRequireUsesProcessSwitch(t *testing.T) {
 func TestRequirePreservesDeclarationErrors(t *testing.T) {
 	require.ErrorContains(t, Require(Feature{}), "feature ID and EnvVar must not be empty")
 }
+
+func TestFoundryACRReuseIsIndependent(t *testing.T) {
+	for _, feature := range All() {
+		t.Setenv(feature.EnvVar, "")
+	}
+	t.Setenv(FoundryACRReuse.EnvVar, "true")
+	require.NoError(t, Require(FoundryACRReuse))
+	require.ErrorContains(t, Require(Voice), Voice.ID)
+	t.Setenv(FoundryACRReuse.EnvVar, "")
+	for _, feature := range All() {
+		if feature != FoundryACRReuse {
+			t.Setenv(feature.EnvVar, "true")
+		}
+	}
+	require.ErrorContains(t, Require(FoundryACRReuse), FoundryACRReuse.EnvVar)
+}

@@ -5,8 +5,16 @@
 
 package featureflags
 
-// Every agents preview feature is declared here and listed by All.
+import "azureaiagent/internal/synthesis"
+
+// Every agents and shared Foundry preview is listed by All.
 var (
+	// FoundryACRReuse controls external registries for new projects.
+	FoundryACRReuse = Feature{
+		ID:          synthesis.ACRReuseFeatureID,
+		EnvVar:      synthesis.ACRReuseEnvVar,
+		Description: "External ACR reuse for new Foundry projects, including cleanup",
+	}
 	// ManagedHarness controls prompt agents using a Copilot harness.
 	ManagedHarness = Feature{
 		ID:          "agents.managed_harness",
@@ -42,7 +50,7 @@ var (
 // All returns every declared feature in a stable order.
 // The slice is a fresh copy, so callers may change it.
 func All() []Feature {
-	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot}
+	return []Feature{ManagedHarness, Voice, LongRunning, A2A, MemorySnapshot, FoundryACRReuse}
 }
 
 // Lookup returns the declared feature with the given ID.

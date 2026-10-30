@@ -73,6 +73,7 @@ func acrTestSource() *templateSource {
 }
 
 func acrTestProvider(t *testing.T) (*FoundryProvisioningProvider, *resolveEnvStubEnvServer) {
+	t.Setenv(synthesis.ACRReuseEnvVar, "true")
 	t.Helper()
 	env := &resolveEnvStubEnvServer{envName: "test"}
 	return &FoundryProvisioningProvider{

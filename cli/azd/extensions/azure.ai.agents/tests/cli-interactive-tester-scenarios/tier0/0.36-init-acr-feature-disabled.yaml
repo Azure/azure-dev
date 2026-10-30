@@ -1,0 +1,37 @@
+# Tier 0: valid reuse input requires its own preview, before any write.
+name: "init-acr-feature-disabled"
+command: >-
+  azd ai agent init --acr-resource-id
+  "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+  --no-prompt
+cwd: "~/working/azd-agents-acr-feature-off-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+  AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE: "false"
+  AZD_ALPHA_ENABLE_AGENTS_VOICE: "true"
+  AZURE_DEV_COLLECT_TELEMETRY: "no"
+  AZD_SKIP_UPDATE_CHECK: "true"
+  NO_COLOR: "1"
+pre:
+  - run: 'rm -rf -- "$HOME/working/azd-agents-acr-feature-off-{instance}"'
+    cwd: "~/working"
+    name: "reset the dedicated offline directory"
+goals:
+  - >-
+    OFFLINE CONTRACT: No product prompts are allowed. Do not obtain credentials,
+    install extensions, fetch files, contact Azure, or create cloud resources.
+    Run only the literal init command and use read-only inspection afterward.
+  - >-
+    Confirm init exits non-zero with a disabled foundry.acr_reuse compatibility
+    error naming AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true. The unrelated Voice
+    switch must not enable registry reuse. No source-input, credential, network,
+    or daemon error satisfies this goal.
+  - >-
+    Confirm no authentication, subscription, location, project, registry, or
+    agent wizard prompt appears. Confirm no azure.yaml, .azure directory,
+    agent files, infrastructure, or deployment state is created.
+  - >-
+    Take a best-effort screenshot of the error. Capture failure does not block
+    the product assertions. Report a finding for any different error, prompt,
+    success, Azure access, or local mutation; do not retry or work around it.

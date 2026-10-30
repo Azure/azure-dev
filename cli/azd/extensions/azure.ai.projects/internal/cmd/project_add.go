@@ -96,23 +96,14 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 		Use:   "add",
 		Short: "Add or update a Microsoft Foundry project.",
 		Long: "Add or update a Microsoft Foundry project.\n\n" +
-			"Use --new-project --acr-resource-id to reuse an external registry for\n" +
-			"source-built agents with Bicep. Project-only setup saves the selection\n" +
-			"until agents are added. Code, prebuilt-image, and non-container-only\n" +
-			"projects cannot use the selector. A deployed registry binding cannot\n" +
-			"be changed; repeating the same selection preserves the project.\n" +
-			"The registry must be in the project's subscription and outside its\n" +
-			"resource group. Cross-subscription reuse is not supported.",
+			projectACRHelp,
 		Example: `  # Configure a Foundry project interactively
   azd ai project add
 
   # Connect an existing project by its ARM resource ID
   azd ai project add --project-id "<project-resource-id>"
 
-  # Reuse an externally owned registry for source-built agents (Bicep only)
-  azd ai project add --new-project --acr-resource-id "<registry-resource-id>"
-
-  # Eject the configured infrastructure as Bicep
+` + projectACRExample + `  # Eject the configured infrastructure as Bicep
   azd ai project add --infra=bicep`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -203,6 +194,9 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			if err := validateProjectACRInfrastructure(raw, projectRoot); err != nil {
 				return err
 			}
+		}
+		if err := synthesis.RequireACRReuse(); err != nil {
+			return err
 		}
 	}
 

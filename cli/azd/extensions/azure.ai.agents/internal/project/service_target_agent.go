@@ -332,6 +332,7 @@ func (p *AgentServiceTargetProvider) loadProjectPath(ctx context.Context) error 
 		)
 	}
 	p.projectPath = proj.GetProject().GetPath()
+	p.projectServices = proj.GetProject().GetServices()
 	return nil
 }
 

@@ -1383,6 +1383,30 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
+Existing ACR reuse is a **default-off preview**, shared with the projects
+extension. Set `AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true` in the process running
+azd. For PowerShell:
+
+```powershell
+$env:AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE = 'true'
+```
+
+For POSIX shells use `export AZD_ALPHA_ENABLE_FOUNDRY_ACR_REUSE=true`; set the
+same variable in CI jobs. Only `strconv.ParseBool` true forms enable it, not
+`on`, `yes`, or core `azd config` alpha settings. Host-injected process values
+are honored; the evaluator does not open dotenv files.
+
+When disabled, `--acr-resource-id` and its help examples are hidden but still
+parse and return explicit enablement guidance. Environment-only selections,
+saved reuse bindings without legacy aliases, and unfinished access operations
+also require the switch. Re-enable it for **preview, down, recovery, and
+eject**, as well as setup, provision, package, publish, and deploy using reuse.
+Disabled operations leave project files, environment values, saved context,
+and Azure resources unchanged; they never fall back to creating a registry.
+Automatic registry creation and code, prebuilt-image, and old connection
+workflows without new reuse intent are unchanged. Other preview switches
+cannot enable ACR reuse.
+
 For hosted-container source builds in a new Foundry project, select an existing
 registry during setup:
 
@@ -1424,6 +1448,12 @@ administrator-managed grants, and cleans up only
 access grants and related resources it can establish it owns. Customers manage
 network reachability and image-publisher push permissions. See
 [non-interactive configuration](../ai-non-interactive.md#azureaiprojects).
+
+Keep the generated Foundry layer on `microsoft.foundry`, including after
+Bicep eject. Manually switching it to core `infra.provider: bicep` is
+unsupported and outside this flag's enforcement contract, as is running
+external IaC directly. Core Bicep preview does not run extension lifecycle
+hooks; it cannot provide this extension's mandatory gate.
 
 ### Hosted voice wrapper (preview)
 

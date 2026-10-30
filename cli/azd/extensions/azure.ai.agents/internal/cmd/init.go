@@ -694,14 +694,7 @@ Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
 project document as the project manifest.
 
-Use --acr-resource-id to select an externally owned Azure Container Registry
-for source builds in a new Foundry project. Project setup saves the selection
-for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
-image, and does not migrate an already deployed project's registry.
-The registry must be in the project's subscription and outside its resource
-group. Cross-subscription reuse is not supported.
-
-Azure.yaml projects:
+` + initACRHelp + `Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
 services with host: azure.ai.project / azure.ai.agent / ..., that azure.yaml
 is adopted as the project manifest and its referenced files are placed at the
@@ -852,8 +845,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				return exterrors.Internal(exterrors.CodeAzdClientFailed, fmt.Sprintf("failed to create azd client: %s", err))
 			}
 			defer azdClient.Close()
-			if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
-				return err
+			if flags.acrResourceIDSet || flags.templatePointer == "" && flags.infra == "" {
+				if err := validateInitACRProject(ctx, azdClient, flags); err != nil {
+					return err
+				}
 			}
 			if err := validateInitHarnessFlag(cmd, flags.harness); err != nil {
 				return err
@@ -1309,6 +1304,8 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 		&flags.acrResourceID, "acr-resource-id", "",
 		"Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)",
 	)
+	previewFlag(cmd, "acr-resource-id", featureflags.FoundryACRReuse)
+	previewHelp(cmd, featureflags.FoundryACRReuse, []string{initACRHelp}, nil)
 	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
 		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
@@ -1437,6 +1434,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 
 func validateInitPreviewArgs(cmd *cobra.Command, args []string, flags initFlags) error {
 	if err := validateTemplateFlagAliases(cmd); err != nil {
+		return err
+	}
+	flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+	if err := validateInitACRInput(cmd, &flags); err != nil {
 		return err
 	}
 	isPromptVoice := flags.templatePointer == "" &&

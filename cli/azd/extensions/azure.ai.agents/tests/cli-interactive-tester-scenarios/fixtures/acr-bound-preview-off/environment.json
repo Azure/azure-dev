@@ -1,0 +1,13 @@
+{
+  "extensions": {
+    "ai-projects": {
+      "acrBinding": {
+        "version": 1,
+        "mode": "reuse-connect",
+        "registryResourceId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry",
+        "projectResourceId": "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/foundry-rg/providers/Microsoft.CognitiveServices/accounts/account/projects/project",
+        "principalId": "00000000-0000-0000-0000-000000000002"
+      }
+    }
+  }
+}

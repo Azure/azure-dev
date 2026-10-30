@@ -24,5 +24,14 @@
       "nemotron3_ultra_disable_thinking",
       "nemotron3_ultra_preserve_thinking"
     ]
+  },
+  {
+    "model": "Qwen/Qwen3.5-9B",
+    "renderers": [
+      "qwen3_5_ext",
+      "qwen3_5_ext_disable_thinking",
+      "qwen3_5",
+      "qwen3_5_disable_thinking"
+    ]
   }
 ]

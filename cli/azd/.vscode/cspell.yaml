@@ -629,6 +629,15 @@ overrides:
   - filename: extensions/azure.ai.content-understanding/internal/testutil/tempdir.go
     words:
       - testutil
+  - filename: pkg/update/msi_windows.go
+    words:
+      - norestart
+      - MSIRESTARTMANAGERCONTROL
+      - INSTALLEDBY
+  - filename: docs/design/azd-update.md
+    words:
+      - HKLM
+      - norestart
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

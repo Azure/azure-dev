@@ -1688,11 +1688,11 @@ func ensureProject(
 
 		// Scaffold a minimal project via `azd init -t <empty dir> <targetDir>`.
 		// We use an empty template dir rather than `--minimal` (which can't
-		// take a positional target) or `-C` (a no-op on workflow re-entry,
-		// since azd-core parses global flags once at startup). The empty
-		// template skips the network call and produces just azure.yaml +
-		// .azure/<env>/ + git init; writeFoundryProvider then stamps the
-		// provider name onto azure.yaml.
+		// take a positional target). Prefer the positional target over `-C`
+		// so init creates the nested folder even when the parent process
+		// already used -C/--cwd. The empty template skips the network call
+		// and produces just azure.yaml + .azure/<env>/ + git init;
+		// writeFoundryProvider then stamps the provider name onto azure.yaml.
 		emptyTemplateDir, err := os.MkdirTemp("", "azd-foundry-empty-*")
 		if err != nil {
 			return nil, exterrors.Dependency(

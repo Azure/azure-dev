@@ -61,6 +61,8 @@ func newRootCmd(
 	registerDependencies bool,
 ) *cobra.Command {
 	prevDir := ""
+	prevOptsCwd := ""
+	cwdStepOverride := false
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {
@@ -90,6 +92,26 @@ func newRootCmd(
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
 			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
 				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
+			}
+
+			// Workflow steps can override the sticky parent's CWD.
+			// Pre-parse flags for extensions that bypass Cobra.
+			prevOptsCwd = opts.Cwd
+			cwdStepOverride = false
+			cwdFlag := cmd.Root().PersistentFlags().Lookup("cwd")
+			if cmd.DisableFlagParsing {
+				globalFlags, err := parseGlobalFlagSet(args)
+				if err != nil {
+					return err
+				}
+				cwdFlag = globalFlags.Lookup("cwd")
+			}
+			if cwdFlag != nil && cwdFlag.Changed {
+				flagCwd := cwdFlag.Value.String()
+				if flagCwd != opts.Cwd {
+					cwdStepOverride = true
+				}
+				opts.Cwd = flagCwd
 			}
 
 			if opts.Cwd != "" {
@@ -169,6 +191,9 @@ func newRootCmd(
 				if err := os.Chdir(prevDir); err != nil {
 					return err
 				}
+			}
+			if cwdStepOverride {
+				opts.Cwd = prevOptsCwd
 			}
 
 			// Clear context from the executed command to prevent stale context issues.

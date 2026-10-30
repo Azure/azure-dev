@@ -86,11 +86,6 @@ func (f *byoARMFake) Do(request *http.Request) (*http.Response, error) {
 		return f.response(request, 200, map[string]any{"location": "eastus"}), nil
 	}
 	path := "/subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + f.provider.deploymentName()
-	if request.Method == http.MethodGet && request.URL.Path == path {
-		return f.response(request, 200, map[string]any{
-			"properties": map[string]any{"parameters": f.parameters},
-		}), nil
-	}
 	require.NotNil(f.t, request.Body, "unexpected ARM request: %s %s", request.Method, request.URL.Path)
 	var submitted struct {
 		Properties struct {
@@ -181,9 +176,7 @@ func TestBYODeployReturnsStandardProjectOutputs(t *testing.T) {
 		"GET /subscriptions/target-sub/resourcegroups/target-rg",
 		"PUT /subscriptions/target-sub/providers/Microsoft.Resources/deployments/" + p.deploymentName(),
 	}, fake.requests)
-	assert.Equal(t, map[string]string{
-		envKeyBYOProtectedRGs: `["/subscriptions/target-sub/resourceGroups/target-rg"]`,
-	}, server.set, "provisioning persists the resource-group deletion protection")
+	assert.Empty(t, server.set)
 	assert.Empty(t, compiler.buildCalls)
 	assert.Empty(t, compiler.buildParamCalls, "embedded provisioning must not invoke a Bicep naming probe")
 	assert.Contains(t, fake.parameters, "kubeletObjectId")
@@ -212,9 +205,7 @@ func TestBYOFailedDeploymentCanBeRetried(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, fake.writes)
 	assert.Len(t, fake.requests, 8)
-	assert.Equal(t, map[string]string{
-		envKeyBYOProtectedRGs: `["/subscriptions/target-sub/resourceGroups/target-rg"]`,
-	}, p.virtualEnv, "failed deployments and retries retain deletion protection")
+	assert.Empty(t, p.virtualEnv)
 }
 
 func TestBYOAllowsCustomizedOnDiskTemplateAndParameters(t *testing.T) {
@@ -422,33 +413,5 @@ func TestBYODeployAndPreviewRejectDisabledFeatureBeforeAuthentication(t *testing
 			assert.Empty(t, fake.requests)
 			assert.Empty(t, p.virtualEnv)
 		})
-	}
-}
-
-func TestBYODownPreservesExistingClusterAndNetwork(t *testing.T) {
-	for _, removedHosting := range []bool{false, true} {
-		t.Run(map[bool]string{false: "configured hosting", true: "hosting removed from YAML"}[removedHosting],
-			func(t *testing.T) {
-				p, fake := offlineBYOProvider(t)
-				t.Setenv(synthesis.BYOAKSEnvVar, "")
-				if removedHosting {
-					source, err := p.resolveTemplate(t.Context(), func(string) {})
-					require.NoError(t, err)
-					require.NoError(t, p.persistBYODownProtection(t.Context(), source))
-					protection := p.virtualEnv[envKeyBYOProtectedRGs]
-					p.azdClient = newResolveEnvTestClient(t, &resolveEnvStubEnvServer{get: map[string]string{
-						envKeyBYOProtectedRGs: protection,
-					}}, &resolveEnvStubPromptServer{})
-					p.virtualEnv = nil
-					p.projectPath = t.TempDir()
-					p.synthResult.Hosting = nil
-				}
-				p.rgExplicit = true
-				result, err := p.Destroy(t.Context(), &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
-				require.ErrorContains(t, err, "azd down is not supported")
-				assert.Nil(t, result)
-				assert.Zero(t, fake.writes)
-				assert.Empty(t, fake.requests, "deletion protection does not depend on the deployment name or record")
-			})
 	}
 }

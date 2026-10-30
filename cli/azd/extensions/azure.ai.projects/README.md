@@ -168,7 +168,7 @@ The independent `agents.byo_aks` opt-in uses the process environment. Only `1`, 
 
 The provider checks the opt-in before prompting or persisting environment values, including for on-disk Bicep. It also checks before authentication or AKS reads in provision and preview. Agents init/adoption, preprovision/predeploy, and infrastructure eject enforce the same opt-in. A disabled preview returns `feature_not_enabled` with the variable to set.
 
-Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the opt-in and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before saving deletion protection or submitting ARM requests.
+Provision and preview inspect the effective `agentHosting` value after parameter merging, including template defaults when no value is supplied. Enabled hosting requires the opt-in and a matching `agentHosting.clusterResourceId` declaration in `azure.yaml`; removing the YAML declaration does not bypass validation. The hosting value must be a locally readable literal object, not an ARM expression. Invalid combinations are rejected before submitting ARM requests.
 
 Set `agentHosting.clusterResourceId` on the `azure.ai.project` service to use an existing AKS cluster when creating a **new** Foundry account and project:
 
@@ -199,9 +199,7 @@ Only the existing cluster is selectable: supplied Storage accounts, hosting/work
 
 `azd provision --preview` resolves the host bindings and returns the standard ARM what-if changes without creating resources. `azd provision` uses the same ARM deployment path as a project without AKS hosting. The Bicep template derives the supporting resource names and creates them with the required grants. Successful provisioning returns the standard Project ID, endpoint and registry outputs used by `azd deploy`.
 
-**`azd down` is refused for BYO AKS**. Before submitting a hosting deployment, the provider saves `AZD_FOUNDRY_BYO_AKS_RESOURCE_GROUP_IDS` in the azd environment as a JSON array of protected resource-group ARM IDs. This protection is independent of the project path, survives failed deployments and removal of hosting from YAML, and is not written by preview. Keep it with the environment when moving the project.
-
-For older environments without this protection, the provider also checks the ARM deployment's hosting parameters. If that deployment record is missing, an existing group can only be deleted when its saved azd ownership ID and environment tag match; a missing record alone does not authorize deletion. Use explicit resource-scoped cleanup; do not delete a group containing existing AKS or networking resources.
+`azd down` uses the standard Foundry teardown path, including its confirmation and `--force` behavior. It deletes model deployments and the target resource group with all resources inside it, including pre-existing resources; cleanup is not limited to resources created by the ARM deployment. An existing AKS cluster or network in the target resource group is deleted along with the group. Resources in other resource groups are outside this group-deletion scope. Infrastructure layers retain the standard Foundry resource-group ownership checks.
 
 Embedded provisioning and Bicep eject are supported through `microsoft.foundry`; Terraform eject is rejected before changing files. On-disk Bicep templates and parameter files remain editable. Keep the AKS hosting, network and registry inputs consistent with the declared hosting configuration.
 

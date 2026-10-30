@@ -78,7 +78,8 @@ provision/preview authentication or AKS reads. Ordinary Foundry provisioning is 
 - Agent read and cleanup commands stay available with features off. This includes
   show, endpoint show, invocations show, follow, and cancel, delete, and down.
   BYO AKS provider initialization, including infrastructure state queries, requires
-  its opt-in, and `azd down` remains unsupported for BYO AKS infrastructure.
+  its opt-in. BYO AKS infrastructure uses the standard Foundry `azd down`
+  path, which deletes the target resource group and all resources inside it.
 - These checks do not govern requests from the evaluations or routines
   extensions.
 

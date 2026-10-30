@@ -82,7 +82,7 @@ The BYO AKS identity and environment key are shared through the aligned synthesi
 
 The Projects extension owns `microsoft.foundry` and applies the same `strconv.ParseBool` process-environment rule before initializing a BYO AKS provider, prompting, or persisting environment values. Provision and preview check again before AKS reads or authentication. Disabled checks return the same `feature_not_enabled` compatibility error and shell/CI suggestion. Foundry projects without `agentHosting` do not require this switch; the resource graph and standard provisioning outputs are unchanged.
 
-Provider initialization, including infrastructure state queries, requires the opt-in for BYO AKS configuration. BYO AKS infrastructure remains unsupported by `azd down`, regardless of opt-in state.
+Provider initialization, including infrastructure state queries, requires the opt-in for BYO AKS configuration. BYO AKS infrastructure uses the standard Foundry `azd down` path, including its confirmation, `--force` behavior, and target resource-group deletion.
 
 ### A2A compatibility policy
 
@@ -187,7 +187,7 @@ Extension metadata and shell completion are built from the complete static tree.
 
 An explicit HTTP `--agent-endpoint` carries no kind or harness information. It remains unclassified, with no additional authenticated definition lookup, so managed-harness enforcement cannot cover that route. The deterministic long-running check applies to every endpoint before invocation, authentication, or conversation/session persistence. Text invoke does not accept voice WebSocket endpoints.
 
-Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS provider initialization requires its opt-in, and BYO AKS infrastructure does not support `azd down`. There is no state migration or automatic enablement. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim beyond the matching Projects BYO AKS gate.
+Agent read, show, endpoint discovery, invocation show/follow/cancel, delete, and down retain access when opt-ins are disabled. BYO AKS provider initialization requires its opt-in; infrastructure teardown follows the standard Foundry `azd down` path and deletes the target resource group with all resources inside it. There is no state migration or automatic enablement. Agents-private checks do not intercept evaluations or routines sending generic requests to existing agents. Those extensions cannot import this package, and this design makes no cross-extension enforcement claim beyond the matching Projects BYO AKS gate.
 
 ## Compatibility and future framework adoption
 

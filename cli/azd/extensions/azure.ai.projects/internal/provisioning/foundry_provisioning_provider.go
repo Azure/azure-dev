@@ -44,14 +44,13 @@ var _ azdext.ProvisioningProvider = (*FoundryProvisioningProvider)(nil)
 
 // Env keys consumed and produced by the Foundry provisioning provider.
 const (
-	envKeySubscriptionID  = "AZURE_SUBSCRIPTION_ID"
-	envKeyLocation        = "AZURE_LOCATION"
-	envKeyResourceGroup   = "AZURE_RESOURCE_GROUP"
-	envKeyFoundryRG       = "AZURE_FOUNDRY_RESOURCE_GROUP"
-	envKeyFoundryRGOwner  = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
-	envKeyBYOProtectedRGs = "AZD_FOUNDRY_BYO_AKS_RESOURCE_GROUP_IDS"
-	envKeyTenantID        = "AZURE_TENANT_ID"
-	envKeyProjectName     = "AZURE_AI_PROJECT_NAME"
+	envKeySubscriptionID = "AZURE_SUBSCRIPTION_ID"
+	envKeyLocation       = "AZURE_LOCATION"
+	envKeyResourceGroup  = "AZURE_RESOURCE_GROUP"
+	envKeyFoundryRG      = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	envKeyFoundryRGOwner = "AZD_FOUNDRY_RESOURCE_GROUP_ID"
+	envKeyTenantID       = "AZURE_TENANT_ID"
+	envKeyProjectName    = "AZURE_AI_PROJECT_NAME"
 )
 
 const (
@@ -1235,9 +1234,6 @@ func (p *FoundryProvisioningProvider) Deploy(
 	if err := p.prepareBYO(ctx, src); err != nil {
 		return nil, err
 	}
-	if err := p.persistBYODownProtection(ctx, src); err != nil {
-		return nil, err
-	}
 
 	dep := armresources.Deployment{
 		Location: new(p.location),
@@ -1603,9 +1599,6 @@ func (p *FoundryProvisioningProvider) Destroy(
 	options *azdext.ProvisioningDestroyOptions,
 	progress grpcbroker.ProgressFunc,
 ) (*azdext.ProvisioningDestroyResult, error) {
-	if p.synthResult != nil && p.synthResult.Hosting != nil {
-		return nil, byoDestroyError()
-	}
 	if p.brownfieldEndpoint != "" {
 		if p.existingProjectReuseOnly {
 			progress("Existing Foundry project is not owned by azd; leaving it in place")
@@ -1650,6 +1643,9 @@ func (p *FoundryProvisioningProvider) Destroy(
 		if err := verifyLayerResourceGroupOwnership(p.foundryRGOwnerID, p.subID, p.rgName); err != nil {
 			return nil, err
 		}
+		if err := p.verifyLayerResourceGroupAzureOwnership(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	if !options.GetForce() {
@@ -1661,27 +1657,8 @@ func (p *FoundryProvisioningProvider) Destroy(
 			return nil, exterrors.Cancelled("destroy cancelled")
 		}
 	}
-	protectedGroups, err := p.byoProtectedResourceGroups(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, resourceGroupID := range protectedGroups {
-		if resourceGroupIDMatches(resourceGroupID, p.subID, p.rgName) {
-			return nil, byoDestroyError()
-		}
-	}
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
-	}
-	if p.isLayer {
-		if err := p.verifyLayerResourceGroupAzureOwnership(ctx); err != nil {
-			return nil, err
-		}
-	}
-	if p.brownfieldEndpoint == "" {
-		if err := p.refuseBYODeploymentDestroy(ctx); err != nil {
-			return nil, err
-		}
 	}
 	if p.brownfieldEndpoint != "" {
 		if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {

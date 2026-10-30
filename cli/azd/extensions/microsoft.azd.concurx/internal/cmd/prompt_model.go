@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Maximum number of visible items in select/multiselect lists
@@ -71,7 +71,7 @@ func newPromptModel(req *PromptRequest) promptModel {
 	ti := textinput.New()
 	ti.Focus()
 	ti.CharLimit = 256
-	ti.Width = 50
+	ti.SetWidth(50)
 
 	// Set default value for text input
 	if req.Options.DefaultValue != nil {
@@ -159,7 +159,7 @@ func (m promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.cancelled = true
@@ -248,7 +248,7 @@ func (m promptModel) Update(msg tea.Msg) (promptModel, tea.Cmd) {
 
 	// Handle typing for filter in select/multiselect
 	if m.promptType == PromptTypeSelect || m.promptType == PromptTypeMultiSelect {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			// Only handle printable characters for filter
 			if len(keyMsg.String()) == 1 && keyMsg.String() >= " " {
 				m.filterText += keyMsg.String()

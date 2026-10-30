@@ -15,8 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // ConcurrentDeployer orchestrates the concurrent deployment of multiple services

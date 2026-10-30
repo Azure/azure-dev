@@ -6,6 +6,9 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
+	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -533,6 +536,167 @@ func TestCreateDefinitionFromLocalAgent_NoPromptMissingAzureContextDefers(t *tes
 				t.Fatalf("deferred model configuration should not add %s", envVar.Name)
 			}
 		}
+	}
+}
+
+type sourceInitACRPromptServer struct {
+	initACRPromptServer
+	locationCalls int
+}
+
+func (s *sourceInitACRPromptServer) PromptLocation(
+	context.Context, *azdext.PromptLocationRequest,
+) (*azdext.PromptLocationResponse, error) {
+	s.locationCalls++
+	return &azdext.PromptLocationResponse{Location: &azdext.Location{Name: "eastus2"}}, nil
+}
+
+func (s *sourceInitACRPromptServer) Select(
+	_ context.Context, req *azdext.SelectRequest,
+) (*azdext.SelectResponse, error) {
+	for i, choice := range req.GetOptions().GetChoices() {
+		if choice.GetValue() == "skip" {
+			return &azdext.SelectResponse{Value: new(int32(i))}, nil
+		}
+	}
+	return nil, status.Error(codes.FailedPrecondition, "unexpected source init selection")
+}
+
+type sourceInitACRAccountServer struct {
+	azdext.UnimplementedAccountServiceServer
+	subscriptions []string
+}
+
+func (s *sourceInitACRAccountServer) LookupTenant(
+	_ context.Context, req *azdext.LookupTenantRequest,
+) (*azdext.LookupTenantResponse, error) {
+	s.subscriptions = append(s.subscriptions, req.GetSubscriptionId())
+	return &azdext.LookupTenantResponse{TenantId: "user-tenant"}, nil
+}
+
+func TestInitFromCodeValidatesACRBeforeSetupWrites(t *testing.T) {
+	for _, tt := range []struct {
+		name                   string
+		subscription           string
+		promptedSubscription   string
+		wantError              string
+		freshProject, noPrompt bool
+		withoutSelector        bool
+		wantPrompts            int
+	}{
+		{name: "prompted mismatch", promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "fresh prompted mismatch", freshProject: true, promptedSubscription: "other",
+			wantError: "same subscription", wantPrompts: 1},
+		{name: "configured mismatch", subscription: "other", wantError: "same subscription"},
+		{name: "matching prompted choice", promptedSubscription: "SUB", wantPrompts: 1},
+		{name: "matching configured choice", subscription: "sub"},
+		{name: "headless selector defers", noPrompt: true},
+		{name: "ordinary headless init defers", noPrompt: true, withoutSelector: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			source := []byte("print('hello')\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "main.py"), source, 0o600))
+			manifest := []byte("name: test\nservices: {}\n")
+			projects := &recordingProjectServer{projectPath: root}
+			if tt.freshProject {
+				projects.getProjectErr = status.Error(codes.NotFound, initScopeNoProject)
+			} else {
+				require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), manifest, 0o600))
+			}
+			values := map[string]string{}
+			if tt.subscription != "" {
+				values["AZURE_SUBSCRIPTION_ID"] = tt.subscription
+			}
+			before := maps.Clone(values)
+			environments := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					environments: map[string]*azdext.Environment{"test": {Name: "test"}},
+					values:       map[string]map[string]string{"test": values},
+				},
+			}
+			prompts := &sourceInitACRPromptServer{initACRPromptServer: initACRPromptServer{
+				subscription: &azdext.Subscription{
+					Id: tt.promptedSubscription, TenantId: "resource-tenant", UserTenantId: "user-tenant",
+				},
+			}}
+			account := &sourceInitACRAccountServer{}
+			workflow := &recordingProjectWorkflowServer{}
+			if tt.freshProject {
+				workflow.err = errors.New("source init reached project scaffolding")
+			}
+			server := grpc.NewServer()
+			azdext.RegisterProjectServiceServer(server, projects)
+			azdext.RegisterEnvironmentServiceServer(server, environments)
+			azdext.RegisterPromptServiceServer(server, prompts)
+			azdext.RegisterAccountServiceServer(server, account)
+			azdext.RegisterWorkflowServiceServer(server, workflow)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go func() { _ = server.Serve(listener) }()
+			t.Cleanup(func() { server.Stop(); _ = listener.Close() })
+			client, err := azdext.NewAzdClient(azdext.WithAddress(listener.Addr().String()))
+			require.NoError(t, err)
+			t.Cleanup(func() { client.Close() })
+			flags := &initFlags{
+				src: ".", env: "test", agentName: "test-agent",
+				protocols: []string{"responses"}, noPrompt: tt.noPrompt,
+				acrResourceIDSet: !tt.withoutSelector,
+			}
+			if !tt.withoutSelector {
+				flags.acrResourceID = testInitACRID
+			}
+			action := &InitFromCodeAction{azdClient: client, flags: flags}
+
+			err = action.Run(t.Context())
+			require.Equal(t, tt.wantPrompts, prompts.calls)
+			if tt.wantError != "" {
+				require.ErrorContains(t, err, tt.wantError)
+				require.Equal(t, before, values)
+				require.Empty(t, environments.setKeys)
+				require.Zero(t, prompts.locationCalls)
+				require.Empty(t, workflow.requests)
+				require.Empty(t, projects.added)
+				require.NoFileExists(t, filepath.Join(root, ".agentignore"))
+				require.NoDirExists(t, filepath.Join(root, ".azure"))
+			} else {
+				require.NoError(t, err)
+				require.Len(t, projects.added, 1)
+				require.Len(t, workflow.requests, 1)
+				if tt.noPrompt {
+					require.Nil(t, action.credential)
+					require.Zero(t, prompts.locationCalls)
+					require.Empty(t, values["AZURE_SUBSCRIPTION_ID"])
+				} else {
+					require.Equal(t, 1, prompts.locationCalls)
+					require.NotNil(t, action.credential)
+					require.True(t, strings.EqualFold("sub", values["AZURE_SUBSCRIPTION_ID"]))
+					require.Equal(t, "user-tenant", values["AZURE_TENANT_ID"])
+					require.Equal(t, "user-tenant", action.azureContext.Scope.TenantId)
+					require.Equal(t, []string{values["AZURE_SUBSCRIPTION_ID"]}, account.subscriptions)
+					require.Equal(t, "eastus2", values["AZURE_LOCATION"])
+				}
+				if !tt.withoutSelector {
+					require.Equal(t, "docker", projects.added[0].Language)
+					args := []string{"ai", "project", "add"}
+					if tt.noPrompt {
+						args = append(args, "--no-prompt")
+					}
+					args = append(args, "--output", "none", "--new-project", "--acr-resource-id", testInitACRID)
+					require.Equal(t, expectedProjectWorkflowArgs(t, root, args...), workflowArgs(t, workflow, 0))
+				}
+			}
+			after, readErr := os.ReadFile(filepath.Join(root, "main.py"))
+			require.NoError(t, readErr)
+			require.Equal(t, source, after)
+			if !tt.freshProject {
+				after, readErr = os.ReadFile(filepath.Join(root, "azure.yaml"))
+				require.NoError(t, readErr)
+				require.Equal(t, manifest, after)
+			}
+		})
 	}
 }
 

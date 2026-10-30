@@ -1402,8 +1402,9 @@ the deployed registry; switching an already provisioned project's registry is
 not supported.
 
 When adopting a template, init rejects an existing Foundry project endpoint
-before scaffolding. Interactive setup also checks the chosen subscription
-against the registry before creating project files or saving environment values.
+before scaffolding. Interactive source and template setup check the chosen
+subscription against the registry before creating project files or saving
+environment values.
 A successful preflight carries that subscription into setup without asking again.
 Headless setup with missing Azure context continues to defer configuration.
 

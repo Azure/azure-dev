@@ -42,6 +42,7 @@ type InitFromCodeAction struct {
 	createdFolderPath   string
 	serviceNameOverride string
 	sourceValidated     bool
+	acrSubscription     *azdext.AzureScope
 
 	// selectedFoundryProject holds the existing Foundry project resolved during
 	// init (nil when creating a new project). It carries NetworkInjected so
@@ -90,6 +91,10 @@ func (a *InitFromCodeAction) Run(ctx context.Context) error {
 		return err
 	}
 	protocols, err := selectHostedProtocols(ctx, a.azdClient, a.flags.noPrompt, a.flags.protocols)
+	if err != nil {
+		return err
+	}
+	a.acrSubscription, err = planInitACRSubscription(ctx, a.azdClient, a.flags)
 	if err != nil {
 		return err
 	}
@@ -324,6 +329,10 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		}
 		a.azureContext = azureContext
 	}
+	if a.acrSubscription != nil {
+		a.azureContext.Scope.SubscriptionId = a.acrSubscription.SubscriptionId
+		a.azureContext.Scope.TenantId = a.acrSubscription.TenantId
+	}
 	// TODO: Prompt user for agent kind
 	agentKind := agent_yaml.AgentKindHosted
 
@@ -435,7 +444,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	} else if a.flags.noPrompt || a.flags.acrResourceIDSet {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
-			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
+			a.flags.acrResourceID,
 		)
 		if err != nil {
 			return nil, err

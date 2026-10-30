@@ -1453,10 +1453,13 @@ func configureNewProjectForNoPrompt(
 	azdClient *azdext.AzdClient,
 	envName string,
 	azureContext *azdext.AzureContext,
-	subscriptionMessage string,
+	acrResourceID string,
 ) (azcore.TokenCredential, error) {
-	newCred, err := ensureSubscriptionAndLocation(ctx, azdClient, azureContext, envName, subscriptionMessage)
+	newCred, err := ensureInitACRSubscription(ctx, azdClient, azureContext, envName, acrResourceID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
 		return nil, err
 	}
 

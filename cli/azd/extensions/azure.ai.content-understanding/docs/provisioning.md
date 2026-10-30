@@ -209,6 +209,21 @@ Existing CU environment configuration is preserved unless generation used
 `--force`. `CU_DISABLE_AUTO_CONFIG=true` skips automatic CU configuration,
 not model setup.
 
+The hook reads `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE` from the
+explicitly selected azd environment, not from arbitrary shell overrides:
+
+| Saved environment setting | Purpose |
+| --- | --- |
+| `CU_MODEL_SELECTION` | `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Use `azd env set CU_MODEL_SELECTION recommended` for unattended selection, or `none` to skip model deployment. |
+| `CU_CONFIG_SETUP_FORCE` | Allows the hook to replace existing CU environment configuration. Generation saves `true` when `--force` is supplied, otherwise `false`. Accepted enabling values are `1`, `true`, `yes`, and `on`, case-insensitively; other values disable it. Setting this value alone does not reset completed model setup. |
+
+Successful model setup records the boolean `cu.modelSetupComplete` in azd
+environment configuration. The generated legacy `CU_MODEL_SETUP_COMPLETE`
+environment value is preserved but is not used as the completion marker.
+Inspect the active marker and model mappings with `azd env config get cu`.
+Generated resource selectors and deployment outputs are listed in the
+[central environment-variable reference](../../../docs/environment-variables.md#generated-project-settings-and-outputs).
+
 Verify the selected environment from the generated directory:
 
 ```bash

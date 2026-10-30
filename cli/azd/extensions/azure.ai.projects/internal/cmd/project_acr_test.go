@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const testExternalRegistryID = "/subscriptions/subscription/resourceGroups/external/providers/" +
@@ -968,6 +969,126 @@ func TestProjectAddACRManifestValidationBeforeMutation(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, body, string(persisted))
 			assert.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
+	}
+}
+
+func TestProjectAddEnvironmentACRManifestValidation(t *testing.T) {
+	const source = "  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+	const prebuilt = "  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n"
+	const projectID = "/subscriptions/subscription/resourceGroups/project/providers/" +
+		"Microsoft.CognitiveServices/accounts/account/projects/project"
+	for _, tt := range []struct {
+		name, provider, agent, want string
+		binding, missingManifest    bool
+	}{
+		{name: "prebuilt", agent: prebuilt, want: "prebuilt-image"},
+		{name: "code", agent: "  agent:\n    host: azure.ai.agent\n    codeConfiguration:\n      runtime: python\n",
+			want: "code"},
+		{name: "Terraform source", provider: "terraform", agent: source, want: "Terraform"},
+		{name: "Bicep source", agent: source},
+		{name: "Bicep pending project"},
+		{name: "canonical prebuilt", agent: prebuilt, binding: true, want: "prebuilt-image"},
+		{name: "canonical Bicep source", agent: source, binding: true},
+		{name: "canonical pending project", binding: true},
+		{name: "missing manifest", missingManifest: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, run := range []bool{false, true} {
+				t.Run(map[bool]string{false: "preflight", true: "Run"}[run], func(t *testing.T) {
+					root := t.TempDir()
+					t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+					provider := tt.provider
+					if provider == "" {
+						provider = "microsoft.foundry"
+					}
+					raw := []byte("name: test\ninfra:\n  provider: " + provider +
+						"\nservices:\n  project:\n    host: azure.ai.project\n" + tt.agent)
+					path := filepath.Join(root, "azure.yaml")
+					client, project, env, ai, workflow := newSelfInitializingDeploymentClient(t, root)
+					if !tt.missingManifest {
+						require.NoError(t, os.WriteFile(path, raw, 0o600))
+						project.project.Infra = &azdext.InfraOptions{Provider: provider}
+						project.project.Services["project"] = &azdext.ServiceConfig{Name: "project", Host: aiProjectHost}
+						project.services["project"] = map[string]any{"host": aiProjectHost}
+						if tt.agent != "" {
+							project.project.Services["agent"] = &azdext.ServiceConfig{Name: "agent", Host: "azure.ai.agent"}
+							project.services["agent"] = map[string]any{"host": "azure.ai.agent"}
+						}
+					}
+					env.values["AZURE_AI_ACCOUNT_NAME"] = "configured-account"
+					env.values["AZURE_AI_PROJECT_NAME"] = "configured-project"
+					if tt.binding {
+						binding, err := json.Marshal(synthesis.ACRBinding{
+							Version: 1, Mode: "reuse-connect", RegistryResourceID: testExternalRegistryID,
+							ProjectResourceID: projectID, PrincipalID: "principal",
+						})
+						require.NoError(t, err)
+						env.config = map[string][]byte{synthesis.ACRBindingConfigKey: binding}
+						env.values["AZURE_RESOURCE_GROUP"] = "project"
+						env.values["AZURE_AI_ACCOUNT_NAME"] = "account"
+						env.values["AZURE_AI_PROJECT_NAME"] = "project"
+					} else {
+						env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = testExternalRegistryID
+					}
+					if tt.want != "" {
+						delete(env.values, "AZURE_TENANT_ID")
+					}
+					beforeValues := maps.Clone(env.values)
+					beforeConfig := maps.Clone(env.config)
+					beforeCurrent := env.current
+					beforeProject := proto.Clone(project.project)
+					beforeServices := make(map[string]map[string]any, len(project.services))
+					for name, body := range project.services {
+						beforeServices[name] = maps.Clone(body)
+					}
+					action := &ProjectAddAction{
+						client: client,
+						flags:  &projectAddFlags{newProject: true, noPrompt: true, output: "none"},
+						extCtx: &azdext.ExtensionContext{Environment: "test"},
+					}
+					var err error
+					if run {
+						err = action.Run(t.Context())
+					} else {
+						err = action.preflightProjectACR(t.Context(), root)
+					}
+					if tt.want != "" {
+						require.ErrorContains(t, err, tt.want)
+						assert.NotContains(t, err.Error(), "Unimplemented")
+					} else {
+						require.NoError(t, err)
+						if run {
+							assert.Equal(t, testExternalRegistryID, env.values["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"])
+							assert.Equal(t, "reuse-connect", env.values["AZD_FOUNDRY_ACR_MODE"])
+						}
+						if tt.binding {
+							assert.Equal(t, projectID, action.flags.preserveProjectID)
+						}
+					}
+					if tt.want != "" || !run {
+						assert.Equal(t, beforeValues, env.values)
+						assert.Equal(t, beforeCurrent, env.current)
+						assert.True(t, proto.Equal(beforeProject, project.project))
+						assert.Equal(t, beforeServices, project.services)
+						assert.Empty(t, env.setLog)
+						assert.False(t, project.providerSet)
+						assert.False(t, project.deploymentSet)
+						assert.Empty(t, workflow.args)
+						assert.Zero(t, ai.calls)
+						assert.NoDirExists(t, filepath.Join(root, ".azure"))
+					}
+					assert.Equal(t, beforeConfig, env.config)
+					if !tt.missingManifest {
+						// #nosec G304 -- test-owned path.
+						persisted, readErr := os.ReadFile(path)
+						require.NoError(t, readErr)
+						assert.Equal(t, raw, persisted)
+					} else if !run {
+						assert.NoFileExists(t, path)
+					}
+				})
+			}
 		})
 	}
 }

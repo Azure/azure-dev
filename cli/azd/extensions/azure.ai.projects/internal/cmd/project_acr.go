@@ -202,9 +202,10 @@ func (a *ProjectAddAction) preflightProjectACR(ctx context.Context, root string)
 	if selection != "" && a.flags.infra == provisioning.TerraformProviderName {
 		return projectACRValidation("external registry reuse is not supported with --infra=terraform")
 	}
-	if len(raw) == 0 || !a.flags.acrResourceIDSet {
+	if len(raw) == 0 || (!a.flags.acrResourceIDSet && selection == "") {
 		return nil
 	}
+	project.ACRResourceID = selection
 	effective := applyProjectEnvironmentPlan(values,
 		planProjectEnvironment(values, projectModeNew, project, projectIdentityChanged(values, "", project)))
 	return validateProjectACRManifest(raw, root, effective)

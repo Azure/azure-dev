@@ -16,9 +16,8 @@ var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
-// Container Registry Repository Reader — required when the registry
-// uses AbacRepositoryPermissions (AcrPull is not honored in
-// that mode).
+// Container Registry Repository Reader — required when the registry uses
+// AbacRepositoryPermissions (AcrPull is not honored in that mode).
 var repositoryReaderRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'b93aa761-3e63-49ed-ac28-beffa264f7ac'
@@ -55,9 +54,8 @@ resource newRegistryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' 
   }
 }
 
-// Nested so roleDefinitionId can be chosen from the registry's
-// roleAssignmentMode. Bicep forbids runtime existing-resource
-// properties in resource conditions/names.
+// Nested so roleDefinitionId can be chosen from the registry's roleAssignmentMode
+// (Bicep forbids runtime existing-resource properties in resource conditions/names).
 module existingRegistryAccess 'acr-pull-role-assignment.bicep' = if (mode == 'reuse-connect' && !pullAssigned) {
   name: empty(accessOperationId) ? 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}' : 'azd-acr-access-${accessOperationId}'
   params: {

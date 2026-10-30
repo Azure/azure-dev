@@ -48,9 +48,8 @@ resource registryAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 {{- else }}
-// Nested so roleDefinitionId can be chosen from the registry's
-// roleAssignmentMode. Bicep forbids runtime existing-resource
-// properties in resource conditions/names.
+// Nested so roleDefinitionId can be chosen from the registry's roleAssignmentMode
+// (Bicep forbids runtime existing-resource properties in resource conditions/names).
 module registryAccess 'acr-pull-role-assignment.bicep' = {
   name: 'existing-acr-access-${uniqueString(projectPrincipalId, registryName)}'
   params: {

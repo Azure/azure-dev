@@ -41,6 +41,35 @@ func TestACRBindingSelection(t *testing.T) {
 	}
 }
 
+func TestACRBindingSynthesisGuard(t *testing.T) {
+	const id = "/subscriptions/sub/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/registry"
+	in := Input{
+		RawAzureYAML: []byte("services:\n  project:\n    host: azure.ai.project\n" +
+			"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"),
+		ServiceName: "project",
+		Env: map[string]string{
+			"AZD_FOUNDRY_ACR_MODE": "reuse-connect", "AZURE_CONTAINER_REGISTRY_RESOURCE_ID": id,
+		},
+		ACRBinding: &ACRBinding{Mode: "reuse-connect", RegistryResourceID: id},
+	}
+	_, err := Synthesize(in)
+	require.NoError(t, err)
+	in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] = id + "other"
+	_, err = Synthesize(in)
+	require.ErrorContains(t, err, "migration")
+	in.Env["AZD_FOUNDRY_ACR_MODE"] = "create"
+	_, err = Synthesize(in)
+	require.ErrorContains(t, err, "migration")
+	in.ACRBinding = nil
+	in.Env["AZD_FOUNDRY_ACR_MODE"] = "none"
+	mode, err := GreenfieldACRMode(in)
+	require.NoError(t, err)
+	assert.Equal(t, "reuse-connect", mode)
+	in.Env[ACRBindingEnvKey] = "{}"
+	_, err = GreenfieldACRMode(in)
+	require.ErrorContains(t, err, "invalid deployed ACR binding")
+}
+
 func TestACRRequirementsBeforeProjectSetup(t *testing.T) {
 	for _, tt := range []struct {
 		name, service string

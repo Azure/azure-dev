@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -34,17 +35,23 @@ import (
 )
 
 type projectAddFlags struct {
-	projectID       string
-	projectEndpoint string
-	newProject      bool
-	infra           string
-	force           bool
-	forceSet        bool
-	noPrompt        bool
-	output          string
+	deployedBinding   *synthesis.ACRBinding
+	preserveProjectID string
+	acrResourceID     string
+	acrResourceIDSet  bool
+	projectID         string
+	projectEndpoint   string
+	newProject        bool
+	infra             string
+	force             bool
+	forceSet          bool
+	noPrompt          bool
+	output            string
 }
 
 type resolvedProject struct {
+	ACRResourceID       string
+	PreserveDeployed    bool
 	Mode                projectMode
 	ResourceId          string
 	SubscriptionId      string
@@ -76,6 +83,8 @@ type ProjectAddAction struct {
 	client *azdext.AzdClient
 	flags  *projectAddFlags
 	extCtx *azdext.ExtensionContext
+	stdout io.Writer
+	stderr io.Writer
 }
 
 func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
@@ -97,7 +106,10 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 			flags.forceSet = cmd.Flags().Changed("force")
-			action := &ProjectAddAction{flags: flags, extCtx: extCtx}
+			action := &ProjectAddAction{
+				flags: flags, extCtx: extCtx,
+				stdout: cmd.OutOrStdout(), stderr: cmd.ErrOrStderr(),
+			}
 			return action.Run(cmd.Context())
 		},
 	}
@@ -120,6 +132,12 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 }
 
 func (a *ProjectAddAction) Run(ctx context.Context) error {
+	if a.stdout == nil {
+		a.stdout = os.Stdout
+	}
+	if a.stderr == nil {
+		a.stderr = os.Stderr
+	}
 	if a.flags == nil {
 		a.flags = &projectAddFlags{}
 	}
@@ -152,6 +170,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	projectRoot := projectRootPath()
 
 	client := a.client
 	if client == nil {
@@ -167,7 +186,9 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	}
 	a.client = client
 
-	projectRoot := projectRootPath()
+	if err := a.preflightProjectACR(ctx, projectRoot); err != nil {
+		return err
+	}
 	project, _, err := ensureProjectWithEnvironment(
 		ctx,
 		client,
@@ -210,6 +231,23 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if a.flags.acrResourceIDSet {
+		target.ACRResourceID = a.flags.acrResourceID
+	}
+	if a.flags.preserveProjectID != "" && target.Mode == projectModeNew {
+		target.PreserveDeployed = true
+		target.ResourceId = a.flags.preserveProjectID
+	}
+	if id := a.flags.preserveProjectID; id != "" && target.Mode != projectModeNew {
+		boundProject, err := projectFromResourceID(id)
+		if err != nil {
+			return projectACRValidation("deployed registry binding has an invalid project resource ID")
+		}
+		if (target.ResourceId != "" && !strings.EqualFold(target.ResourceId, id)) ||
+			(target.Endpoint != "" && !equalProjectEndpoint(target.Endpoint, boundProject.Endpoint)) {
+			return projectACRValidation("cannot replace a project while its deployed registry binding is still in use")
+		}
+	}
 	if err := confirmExplicitProjectReplacement(
 		ctx, client, target, service, oldValues, a.flags,
 	); err != nil {
@@ -219,6 +257,18 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		ctx, client, target, oldValues, a.flags.noPrompt,
 	); err != nil {
 		return err
+	}
+	if target.Mode == projectModeNew {
+		raw, err := readProjectACRManifest(projectRoot)
+		if err != nil {
+			return err
+		}
+		target.ACRResourceID, err = projectACRSelection(
+			raw, projectRoot, envName, oldValues, target, a.flags.deployedBinding,
+		)
+		if err != nil {
+			return err
+		}
 	}
 	if target.Mode == projectModeExistingEndpoint {
 		if err := validateExistingEndpointMode(
@@ -388,6 +438,8 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		}
 	}
 	if infra := a.flags.infra; infra != "" {
+		ejectValues := maps.Clone(effectiveValues)
+		ejectValues["AZURE_ENV_NAME"] = envName
 		if err := ejectProjectInfraWithTarget(
 			ctx,
 			client,
@@ -396,7 +448,7 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			infra,
 			target.Endpoint,
 			target.ResourceId,
-			effectiveValues,
+			ejectValues,
 		); err != nil {
 			return rollbackProjectAdd(
 				err,
@@ -418,30 +470,24 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		Endpoint:        target.Endpoint,
 		ResourceID:      target.ResourceId,
 	}
-	result.Mutation = projectAddMutation(mutation, reconciledChanged)
+	if id := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; id != "" {
+		result.ContainerRegistry = &projectRegistryOutput{
+			ResourceID:      id,
+			ExternallyOwned: effectiveValues["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect",
+		}
+	}
+	registryChanged := target.ACRResourceID != "" &&
+		(!strings.EqualFold(oldValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"], target.ACRResourceID) ||
+			oldValues["AZD_FOUNDRY_ACR_MODE"] != "reuse-connect")
+	result.Mutation = projectAddMutation(mutation, reconciledChanged || registryChanged)
 	writeProjectEndpointWarning(
-		os.Stderr,
+		a.stderr,
 		target.EndpointPathWarning,
 		a.flags.output,
 		a.flags.noPrompt,
 	)
 
-	if a.flags.output == "none" {
-		return nil
-	}
-	if a.flags.output == "json" {
-		return json.NewEncoder(os.Stdout).Encode(result)
-	}
-	if result.Mutation == "unchanged" {
-		fmt.Printf("Foundry project configuration unchanged (%s).\n", serviceName)
-	} else {
-		fmt.Printf(
-			"Foundry project configuration %s in services.%s.\n",
-			result.Mutation,
-			serviceName,
-		)
-	}
-	return nil
+	return writeProjectAddOutput(a.stdout, a.flags.output, result)
 }
 
 func projectAddMutation(mutation string, reconciledChanged bool) string {
@@ -1795,14 +1841,46 @@ func ejectProjectInfra(
 	if len(environments) > 0 {
 		environment = environments[0]
 	}
-	result, err := synthesis.Synthesize(synthesis.Input{
-		RawAzureYAML:    raw,
-		ServiceName:     serviceName,
-		AcceptedHosts:   provisioning.FoundryProvisioningServiceHosts,
-		Env:             environment,
-		ProjectRoot:     projectRoot,
-		PreserveVarRefs: true,
-	})
+	environment = maps.Clone(environment)
+	if environment == nil {
+		environment = map[string]string{}
+	}
+	groupKey := "AZURE_RESOURCE_GROUP"
+	if target.layer {
+		groupKey = "AZURE_FOUNDRY_RESOURCE_GROUP"
+	}
+	group := environment[groupKey]
+	if group == "" && environment["AZURE_ENV_NAME"] != "" {
+		group = "rg-" + environment["AZURE_ENV_NAME"]
+		if target.layer {
+			group += "-foundry"
+		}
+	}
+	binding, err := readProjectACRBinding(ctx, client, environment["AZURE_ENV_NAME"])
+	if err != nil {
+		return err
+	}
+	input := synthesis.Input{
+		RawAzureYAML:      raw,
+		ServiceName:       serviceName,
+		AcceptedHosts:     provisioning.FoundryProvisioningServiceHosts,
+		Env:               environment,
+		ResourceGroupName: group,
+		ProjectRoot:       projectRoot,
+		PreserveVarRefs:   true,
+		ACRBinding:        binding,
+	}
+	mode, err := synthesis.GreenfieldACRMode(input)
+	if err != nil {
+		return projectACRValidation(err.Error())
+	}
+	environment["AZD_FOUNDRY_ACR_MODE"] = mode
+	if provider == provisioning.TerraformProviderName && mode == "reuse-connect" {
+		return projectACRValidation(
+			"external registry reuse mode with AZURE_CONTAINER_REGISTRY_RESOURCE_ID is not supported with Terraform eject",
+		)
+	}
+	result, err := synthesis.Synthesize(input)
 	if err != nil {
 		return exterrors.Validation(
 			exterrors.CodeInvalidAzureYaml,
@@ -1929,6 +2007,23 @@ func ejectProjectInfra(
 			if err := unsetProjectConfigValue(ctx, client, "infra.path"); err != nil {
 				return rollback(fmt.Errorf("remove infra.path: %w", err))
 			}
+		}
+	}
+	if envName := environment["AZURE_ENV_NAME"]; client != nil && envName != "" {
+		mode := result.ACRMode
+		if mode == "none" {
+			if binding != nil {
+				mode = binding.Mode
+			} else if environment["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect" {
+				mode = "reuse-connect"
+			}
+		}
+		if _, err := client.Environment().SetValue(ctx, &azdext.SetEnvRequest{
+			EnvName: envName,
+			Key:     "AZD_FOUNDRY_ACR_MODE",
+			Value:   mode,
+		}); err != nil {
+			return rollback(fmt.Errorf("persist ACR mode after infrastructure ejection: %w", err))
 		}
 	}
 	return nil

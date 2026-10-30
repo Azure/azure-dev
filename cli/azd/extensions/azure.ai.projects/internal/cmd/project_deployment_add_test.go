@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -150,11 +152,21 @@ type selfInitializingEnvironmentServer struct {
 	azdext.UnimplementedEnvironmentServiceServer
 	current string
 	values  map[string]string
+	config  map[string][]byte
 	failKey string
 	// failValue, when non-nil, fails only a write of that exact value for failKey.
 	// A nil failValue keeps the first write of failKey as the failure.
-	failValue *string
-	setLog    []string
+	failValue   *string
+	setLog      []string
+	projectRoot string
+	readErr     error
+}
+
+func (s *selfInitializingEnvironmentServer) GetConfig(
+	_ context.Context, request *azdext.GetConfigRequest,
+) (*azdext.GetConfigResponse, error) {
+	value, found := s.config[request.GetPath()]
+	return &azdext.GetConfigResponse{Value: value, Found: found}, nil
 }
 
 func (s *selfInitializingEnvironmentServer) GetCurrent(
@@ -178,6 +190,19 @@ func (s *selfInitializingEnvironmentServer) GetValues(
 	_ context.Context,
 	_ *azdext.GetEnvironmentRequest,
 ) (*azdext.KeyValueListResponse, error) {
+	if s.readErr != nil {
+		return nil, s.readErr
+	}
+	if s.projectRoot != "" {
+		exists, err := projectFileExists(s.projectRoot)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, status.Error(codes.Unknown,
+				"no project exists; to create a new project, run `azd init`")
+		}
+	}
 	response := &azdext.KeyValueListResponse{}
 	for key, value := range s.values {
 		response.KeyValues = append(response.KeyValues, &azdext.KeyValue{

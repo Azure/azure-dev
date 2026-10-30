@@ -505,9 +505,10 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 		ResourceID:      target.ResourceId,
 	}
 	if id := effectiveValues["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]; id != "" {
+		mode := effectiveValues["AZD_FOUNDRY_ACR_MODE"]
 		result.ContainerRegistry = &projectRegistryOutput{
 			ResourceID:      id,
-			ExternallyOwned: effectiveValues["AZD_FOUNDRY_ACR_MODE"] == "reuse-connect",
+			ExternallyOwned: mode == "reuse-connect" || mode == "already-connected",
 		}
 	}
 	registryChanged := target.ACRResourceID != "" &&

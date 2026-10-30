@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1047,13 +1048,14 @@ services:
 		wantMain       string
 		wantRegistry   string
 		expectRegistry bool
+		wantAccess     bool
 	}{
 		{name: "create", env: map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}, wantMode: "create", wantMain: "resource adjunctResourceGroup", wantRegistry: "resource registry ", expectRegistry: true},
 		{name: "reuse connect", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ContainerRegistry/registries/registry",
-		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true},
+		}, wantMode: "reuse-connect", wantMain: "scope: resourceGroup(split(existingAcrResourceId", wantRegistry: "existing =", expectRegistry: true, wantAccess: true},
 		{name: "reuse connect with AcrPull", env: map[string]string{
 			"AZD_FOUNDRY_ACR_MODE":                 "reuse-connect",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED":        "true",
@@ -1091,6 +1093,12 @@ services:
 				assert.Contains(t, string(registry), tt.wantRegistry)
 			} else {
 				assert.NoFileExists(t, registryPath)
+			}
+			accessPath := filepath.Join(dir, "infra", "modules", "acr-pull-role-assignment.bicep")
+			if tt.wantAccess {
+				assert.FileExists(t, accessPath)
+			} else {
+				assert.NoFileExists(t, accessPath)
 			}
 
 			params, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json")) //nolint:gosec
@@ -2595,9 +2603,12 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 	for _, tt := range []struct {
 		name, mode, invalid, wantError string
 		readErr                        error
+		missingAliases                 bool
 	}{
 		{name: "created binding", mode: "create"},
 		{name: "external binding", mode: "reuse-connect"},
+		{name: "created binding without aliases", mode: "create", missingAliases: true},
+		{name: "external binding without aliases", mode: "reuse-connect", missingAliases: true},
 		{name: "invalid binding", invalid: `{"version":2}`, wantError: "invalid deployed ACR binding"},
 		{name: "unreadable binding", readErr: errors.New("binding read failed"), wantError: "binding read failed"},
 	} {
@@ -2629,6 +2640,9 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 				config:    map[string][]byte{synthesis.ACRBindingConfigKey: binding},
 				configErr: tt.readErr,
 			}
+			if tt.missingAliases {
+				delete(env.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
 			client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
 			withCapturedStdout(t, func() {
 				err = ejectInfraAfterInit(t.Context(), "bicep", client)
@@ -2649,11 +2663,61 @@ func TestEjectInfraAfterInit_RegistryBinding(t *testing.T) {
 				if tt.mode == "create" {
 					assert.NotContains(t, document.Parameters, "existingAcrResourceId")
 				} else {
-					assert.Equal(t, "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}",
-						document.Parameters["existingAcrResourceId"].Value)
+					expected := "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
+					if tt.missingAliases {
+						expected = id
+					}
+					assert.Equal(t, expected, document.Parameters["existingAcrResourceId"].Value)
 				}
 			}
 			assert.Empty(t, env.setKeys)
+			if tt.missingAliases {
+				assert.NotContains(t, env.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				assert.NotContains(t, env.values["test"], "AZURE_AI_PROJECT_ID")
+			}
+		})
+	}
+}
+
+func TestEjectInfraAfterInit_RegistryDefaultGroupWithoutDotenvName(t *testing.T) {
+	for _, layer := range []bool{false, true} {
+		t.Run(strconv.FormatBool(layer), func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			raw := "name: test\nservices:\n  project:\n    host: azure.ai.project\n" +
+				"  agent:\n    host: azure.ai.agent\n    kind: hosted\n"
+			group := "rg-dev"
+			if layer {
+				raw += "infra:\n  layers:\n    - name: app\n      provider: bicep\n      path: infra/app\n" +
+					"    - name: foundry\n" +
+					"      provider: microsoft.foundry\n      path: infra/foundry\n"
+				group += "-foundry"
+			}
+			path := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(raw), 0o600))
+			env := &testEnvironmentServiceServer{
+				current: &azdext.Environment{Name: "dev"},
+				values: map[string]map[string]string{"dev": {
+					"AZURE_SUBSCRIPTION_ID": "sub",
+					"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "/subscriptions/sub/resourceGroups/" + group +
+						"/providers/Microsoft.ContainerRegistry/registries/shared",
+				}},
+			}
+			client := newTestAzdClient(t, env, &testWorkflowServiceServer{})
+			values, err := readInfraEjectEnvironment(t.Context(), client)
+			require.NoError(t, err)
+			assert.Equal(t, "dev", values["AZURE_ENV_NAME"])
+			withCapturedStdout(t, func() {
+				err = ejectInfraAfterInit(t.Context(), "bicep", client)
+			})
+			require.ErrorContains(t, err, "azd down deletes")
+			assert.NoDirExists(t, filepath.Join(root, "infra"))
+			assert.NoDirExists(t, filepath.Join(root, ".azure"))
+			assert.Empty(t, env.setKeys)
+			assert.NotContains(t, env.values["dev"], "AZURE_ENV_NAME")
+			persisted, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			assert.Equal(t, raw, string(persisted))
 		})
 	}
 }

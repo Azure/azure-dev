@@ -401,6 +401,181 @@ func TestACRUnverifiedLegacyOutputCannotDeleteResourceGroup(t *testing.T) {
 	assert.Nil(t, p.credential, "unverified ownership must fail before destructive Azure operations")
 }
 
+func TestACRPartialConnectionRecoveryRequiresCreationEvidence(t *testing.T) {
+	const resourcesID = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.Resources/deployments/foundry-resources"
+	const acrID = "/subscriptions/sub/resourceGroups/foundry/providers/Microsoft.Resources/deployments/acr"
+	const ownedRegistry = "/subscriptions/sub/resourceGroups/foundry/" +
+		"providers/Microsoft.ContainerRegistry/registries/registry"
+	operation := func(id, resourceType, kind, state string) map[string]any {
+		return map[string]any{"properties": map[string]any{
+			"targetResource":        map[string]any{"id": id, "resourceType": resourceType},
+			"provisioningOperation": kind,
+			"provisioningState":     state,
+		}}
+	}
+	for _, tt := range []struct {
+		name, wantMode, wantError string
+		pending                   bool
+	}{
+		{name: "owned legacy", wantMode: "create"},
+		{name: "owned partial", pending: true, wantMode: "create"},
+		{name: "canceled deployment", pending: true, wantMode: "create"},
+		{name: "paginated evidence", wantMode: "create"},
+		{name: "external other group", pending: true, wantMode: "reuse-connect"},
+		{name: "external same group", pending: true, wantError: "no successful creation operation"},
+		{name: "missing evidence", pending: true, wantError: "cannot establish ownership"},
+		{name: "missing history", wantError: "cannot establish ownership"},
+		{name: "missing evidence page", wantError: "verify partially deployed registry ownership"},
+		{name: "repeated evidence page", wantError: "pagination repeated a page"},
+		{name: "missing operation kind", wantError: "no successful creation operation"},
+		{name: "failed creation", wantError: "no successful creation operation"},
+		{name: "different registry", wantError: "cannot establish ownership"},
+		{name: "ambiguous evidence", wantError: "multiple registry creation operations"},
+		{name: "ambiguous connections", wantError: "multiple deployed registry connections"},
+		{name: "unavailable evidence", pending: true, wantError: "verify partially deployed registry ownership"},
+		{name: "canceled recovery", pending: true, wantError: "context canceled"},
+	} {
+		for _, action := range []string{"recover", "down partial", "down legacy"} {
+			if action != "recover" && tt.wantError == "" {
+				continue
+			}
+			t.Run(tt.name+"/"+action, func(t *testing.T) {
+				p, env := acrTestProvider(t)
+				rootID := "/subscriptions/sub/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+				p.rgExplicit = true
+				p.credential = acrOfflineCredential{}
+				if tt.pending {
+					p.acrPending = acrTestPending()
+					require.NoError(t, p.writeACRConfig(t.Context(), acrPendingConfigKey, p.acrPending))
+				}
+				pending := p.acrPending
+				before := maps.Clone(env.config)
+				p.synthesisEnv = map[string]string{}
+				if action == "down legacy" {
+					p.synthesisEnv = map[string]string{
+						"AZURE_SUBSCRIPTION_ID":                "sub",
+						"AZURE_AI_PROJECT_ID":                  testACRProject,
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": ownedRegistry,
+						"AZURE_CONTAINER_REGISTRY_ENDPOINT":    "registry.azurecr.io",
+					}
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				p.acrRequest = func(_ context.Context, method, path, _ string, out any) error {
+					require.Equal(t, http.MethodGet, method, "recovery must not mutate Azure resources or access")
+					switch path {
+					case rootID:
+						state := "Failed"
+						if tt.name == "canceled deployment" {
+							state = "Canceled"
+						}
+						return acrTestReply(out, map[string]any{"properties": map[string]any{
+							"provisioningState": state,
+							"parameters":        map[string]any{"resourceTokenSalt": map[string]any{"value": "salt"}},
+						}})
+					case resourcesID + "/operations":
+						return acrTestReply(out, map[string]any{"value": []any{
+							operation(testACRProject, "Microsoft.CognitiveServices/accounts/projects", "Create", "Succeeded"),
+							operation(acrID, "Microsoft.Resources/deployments", "Create", "Failed"),
+						}})
+					case testACRProject:
+						return acrTestReply(out, map[string]any{"identity": map[string]any{"principalId": "principal"}})
+					case testACRProject + "/connections":
+						registryID := ownedRegistry
+						if tt.name == "external other group" {
+							registryID = testACRID
+						}
+						connections := []any{map[string]any{"properties": map[string]any{
+							"category": "ContainerRegistry", "metadata": map[string]string{"ResourceId": registryID},
+						}}}
+						if tt.name == "ambiguous connections" {
+							connections = append(connections, map[string]any{"properties": map[string]any{
+								"category": "ContainerRegistry", "metadata": map[string]string{"ResourceId": registryID + "other"},
+							}})
+						}
+						return acrTestReply(out, map[string]any{"value": connections})
+					case rootID + "/operations":
+						switch tt.name {
+						case "missing history":
+							return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+						case "unavailable evidence":
+							return &azcore.ResponseError{StatusCode: http.StatusForbidden}
+						case "canceled recovery":
+							cancel()
+						}
+						return acrTestReply(out, map[string]any{"value": []any{
+							operation(resourcesID, "Microsoft.Resources/deployments", "Create", "Failed"),
+						}})
+					case acrID + "/operations", acrID + "/operations?after=first":
+						registryID, kind, state := ownedRegistry, "Create", "Succeeded"
+						switch tt.name {
+						case "external same group":
+							kind = "Read"
+						case "missing evidence":
+							return acrTestReply(out, map[string]any{"value": []any{}})
+						case "missing operation kind":
+							kind = ""
+						case "failed creation":
+							state = "Failed"
+						case "different registry":
+							registryID += "other"
+						case "paginated evidence", "missing evidence page", "repeated evidence page":
+							if !strings.Contains(path, "?") {
+								next := acrID + "/operations?after=first"
+								if tt.name == "repeated evidence page" {
+									next = path
+								}
+								return acrTestReply(out, map[string]any{
+									"value": []any{}, "nextLink": next,
+								})
+							}
+							if tt.name == "missing evidence page" {
+								return &azcore.ResponseError{StatusCode: http.StatusNotFound}
+							}
+						}
+						created := operation(registryID, "Microsoft.ContainerRegistry/registries", kind, state)
+						operations := []any{created}
+						if tt.name == "ambiguous evidence" {
+							operations = append(operations, created)
+						}
+						return acrTestReply(out, map[string]any{"value": operations})
+					default:
+						t.Fatalf("unexpected recovery request: %s %s", method, path)
+						return nil
+					}
+				}
+				var err error
+				if action == "recover" {
+					err = p.recoverDeployedACRBinding(ctx)
+				} else {
+					_, err = p.Destroy(ctx, &azdext.ProvisioningDestroyOptions{Force: true}, func(string) {})
+				}
+				if tt.wantError != "" {
+					require.ErrorContains(t, err, tt.wantError)
+					if tt.name == "canceled recovery" {
+						require.ErrorIs(t, err, context.Canceled)
+					}
+					assert.Nil(t, p.acrBinding)
+					assert.False(t, p.acrBindingRecovered)
+				} else {
+					require.NoError(t, err)
+					require.NotNil(t, p.acrBinding)
+					assert.Equal(t, tt.wantMode, p.acrBinding.Mode)
+					assert.Equal(t, testACRProject, p.acrBinding.ProjectResourceID)
+					assert.Equal(t, "principal", p.acrBinding.PrincipalID)
+					assert.Equal(t, "salt", p.acrBinding.DeploymentSalt)
+					assert.Empty(t, p.acrBinding.OwnedAssignments)
+					assert.True(t, p.acrBindingRecovered)
+				}
+				assert.Same(t, pending, p.acrPending)
+				assert.Equal(t, before, env.config)
+				assert.Empty(t, env.set)
+			})
+		}
+	}
+}
+
 func TestACRPendingIntentDoesNotFreezeUndeployedRegistry(t *testing.T) {
 	p, env := acrTestProvider(t)
 	p.acrPending = acrTestPending()

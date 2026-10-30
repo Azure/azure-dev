@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -418,6 +419,7 @@ func TestInitACRBindingPreflight(t *testing.T) {
 		{"same registry", "reuse-connect", testInitACRID, false},
 		{"different registry", "reuse-connect", testInitACRID + "other", true},
 		{"create to reuse", "create", testInitACRID, true},
+		{"explicit empty selector", "reuse-connect", "", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -447,7 +449,11 @@ func TestInitACRBindingPreflight(t *testing.T) {
 				acrResourceIDSet: true, acrResourceID: tt.selected,
 			})
 			if tt.wantErr {
-				require.ErrorContains(t, err, "migration")
+				if tt.selected == "" {
+					require.ErrorContains(t, err, "--acr-resource-id")
+				} else {
+					require.ErrorContains(t, err, "migration")
+				}
 			} else {
 				require.NoError(t, err)
 			}
@@ -543,6 +549,7 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 		rootGroup  string
 		layerGroup string
 		registry   string
+		binding    bool
 		wantErr    bool
 	}{
 		{name: "retained root group", rootGroup: "registry-rg", registry: testInitACRID, wantErr: true},
@@ -554,6 +561,13 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 		{name: "default root group", registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test/", 1),
 			wantErr: true},
 		{name: "default layer group", layer: true,
+			registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-foundry/", 1), wantErr: true},
+		{name: "canonical retained root group", rootGroup: "registry-rg", registry: testInitACRID,
+			binding: true, wantErr: true},
+		{name: "canonical external root registry", rootGroup: "foundry-rg", registry: testInitACRID, binding: true},
+		{name: "canonical default root group", binding: true,
+			registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test/", 1), wantErr: true},
+		{name: "canonical default layer group", layer: true, binding: true,
 			registry: strings.Replace(testInitACRID, "/registry-rg/", "/rg-test-foundry/", 1), wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -576,6 +590,18 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 					}},
 				},
 			}
+			if tt.binding {
+				binding, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "reuse-connect", RegistryResourceID: tt.registry,
+					ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				})
+				require.NoError(t, err)
+				server.binding = binding
+				delete(server.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+				delete(server.values["test"], "AZD_FOUNDRY_ACR_MODE")
+			}
 			before := maps.Clone(server.values["test"])
 			workflow := &recordingProjectWorkflowServer{}
 			client := newTestAzdClient(t, server, workflow)
@@ -596,35 +622,53 @@ func TestInitACREnvironmentSelectorPreflight(t *testing.T) {
 }
 
 func TestInitACREnvironmentSelectorRejectsBeforeSourceInit(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-	content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
-	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
-	source := filepath.Join(root, "src")
-	require.NoError(t, os.Mkdir(source, 0o750))
-	server := &initACREnvironmentServer{
-		testEnvironmentServiceServer: testEnvironmentServiceServer{
-			values: map[string]map[string]string{"test": {
-				"AZURE_SUBSCRIPTION_ID":                "sub",
-				"AZURE_LOCATION":                       "eastus2",
-				"AZURE_RESOURCE_GROUP":                 "registry-rg",
-				"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
-			}},
-		},
+	for _, canonical := range []bool{false, true} {
+		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {
+			root := t.TempDir()
+			t.Chdir(root)
+			content := []byte("name: test\nservices:\n  foundry:\n    host: azure.ai.project\n")
+			require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), content, 0o600))
+			source := filepath.Join(root, "src")
+			require.NoError(t, os.Mkdir(source, 0o750))
+			server := &initACREnvironmentServer{
+				testEnvironmentServiceServer: testEnvironmentServiceServer{
+					values: map[string]map[string]string{"test": {
+						"AZURE_SUBSCRIPTION_ID":                "sub",
+						"AZURE_LOCATION":                       "eastus2",
+						"AZURE_RESOURCE_GROUP":                 "registry-rg",
+						"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": testInitACRID,
+					}},
+				},
+			}
+			if canonical {
+				binding, err := json.Marshal(synthesis.ACRBinding{
+					Version: 1, Mode: "reuse-connect", RegistryResourceID: testInitACRID,
+					ProjectResourceID: "/subscriptions/sub/resourceGroups/foundry-rg/providers/" +
+						"Microsoft.CognitiveServices/accounts/account/projects/project",
+					PrincipalID: "principal",
+				})
+				require.NoError(t, err)
+				server.binding = binding
+				delete(server.values["test"], "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")
+			}
+			before := maps.Clone(server.values["test"])
+			workflow := &recordingProjectWorkflowServer{}
+			t.Setenv("AZD_SERVER", newTestAzdServer(t, server, workflow))
+			cmd := newInitCommand(&azdext.ExtensionContext{NoPrompt: true, Environment: "test"})
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs([]string{"--src", source})
+			require.ErrorContains(t, cmd.Execute(), "azd down deletes")
+			require.Equal(t, before, server.values["test"])
+			require.Empty(t, server.setKeys)
+			require.Empty(t, workflow.requests)
+			//nolint:gosec // Test-owned path.
+			after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
+			require.NoError(t, err)
+			require.Equal(t, content, after)
+			require.NoDirExists(t, filepath.Join(root, ".azure"))
+		})
 	}
-	workflow := &recordingProjectWorkflowServer{}
-	t.Setenv("AZD_SERVER", newTestAzdServer(t, server, workflow))
-	cmd := newInitCommand(&azdext.ExtensionContext{NoPrompt: true, Environment: "test"})
-	cmd.SetOut(io.Discard)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--src", source})
-	require.ErrorContains(t, cmd.Execute(), "azd down deletes")
-	require.Empty(t, server.setKeys)
-	require.Empty(t, workflow.requests)
-	after, err := os.ReadFile(filepath.Join(root, "azure.yaml"))
-	require.NoError(t, err)
-	require.Equal(t, content, after)
-	require.NoDirExists(t, filepath.Join(root, ".azure"))
 }
 
 func TestInitACREnvironmentSelectorPreservesOtherProjectFlows(t *testing.T) {

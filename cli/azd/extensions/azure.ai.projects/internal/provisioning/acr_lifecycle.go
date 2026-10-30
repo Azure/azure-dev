@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
 	"github.com/google/uuid"
 )
@@ -936,6 +937,10 @@ func (p *FoundryProvisioningProvider) clearACRLifecycle(ctx context.Context) err
 }
 
 func (p *FoundryProvisioningProvider) recoverDeployedACRBinding(ctx context.Context) error {
+	return p.recoverACRBinding(ctx, true)
+}
+
+func (p *FoundryProvisioningProvider) recoverACRBinding(ctx context.Context, recoverProjectIdentity bool) error {
 	if p.brownfieldEndpoint != "" || p.acrBinding != nil {
 		return nil
 	}
@@ -973,6 +978,9 @@ func (p *FoundryProvisioningProvider) recoverDeployedACRBinding(ctx context.Cont
 		}
 	}
 	if registry == nil || registry.Value == "" {
+		if !recoverProjectIdentity && state == "Succeeded" && p.acrPending == nil {
+			return nil
+		}
 		project := outputs["AZURE_AI_PROJECT_ID"]
 		if project != nil && project.Value != "" {
 			var actual acrResource
@@ -1035,50 +1043,122 @@ func (p *FoundryProvisioningProvider) partialProjectIdentity(ctx context.Context
 		}
 		subscription, group, name = scope.SubscriptionID, scope.ResourceGroupName, p.acrPending.ProjectName
 	}
-	path := "/subscriptions/" + subscription + "/resourceGroups/" + group +
-		"/providers/Microsoft.Resources/deployments/foundry-resources/operations"
-	for path != "" {
-		var operations struct {
-			Value []struct {
-				Properties struct {
-					TargetResource struct {
-						ID           string `json:"id"`
-						ResourceType string `json:"resourceType"`
-					} `json:"targetResource"`
-				} `json:"properties"`
-			} `json:"value"`
-			NextLink string `json:"nextLink"`
+	deploymentID := "/subscriptions/" + subscription + "/resourceGroups/" + group +
+		"/providers/Microsoft.Resources/deployments/foundry-resources"
+	operations, err := p.acrDeploymentOperations(ctx, deploymentID)
+	if err != nil {
+		return "", "", fmt.Errorf("recover partially deployed project identity: %w", err)
+	}
+	for _, operation := range operations {
+		if operation == nil || operation.Properties == nil || operation.Properties.TargetResource == nil {
+			continue
 		}
-		err := p.acrARM(ctx, http.MethodGet, path, "2022-09-01", &operations)
+		target := operation.Properties.TargetResource
+		if target.ID == nil || target.ResourceType == nil ||
+			!strings.EqualFold(*target.ResourceType, "Microsoft.CognitiveServices/accounts/projects") {
+			continue
+		}
+		id, err := arm.ParseResourceID(*target.ID)
+		if err != nil || !strings.EqualFold(id.SubscriptionID, subscription) ||
+			!strings.EqualFold(id.ResourceGroupName, group) || !strings.EqualFold(id.Name, name) {
+			continue
+		}
+		var project acrResource
+		err = p.acrARM(ctx, http.MethodGet, *target.ID, "2025-10-01-preview", &project)
 		if isNotFound(err) {
-			return "", "", nil
+			continue
 		}
 		if err != nil {
-			return "", "", fmt.Errorf("recover partially deployed project identity: %w", err)
+			return "", "", err
 		}
-		for _, operation := range operations.Value {
-			target := operation.Properties.TargetResource
-			if !strings.EqualFold(target.ResourceType, "Microsoft.CognitiveServices/accounts/projects") {
-				continue
-			}
-			id, err := arm.ParseResourceID(target.ID)
-			if err != nil || !strings.EqualFold(id.SubscriptionID, subscription) ||
-				!strings.EqualFold(id.ResourceGroupName, group) || !strings.EqualFold(id.Name, name) {
-				continue
-			}
-			var project acrResource
-			err = p.acrARM(ctx, http.MethodGet, target.ID, "2025-10-01-preview", &project)
-			if isNotFound(err) {
-				continue
-			}
-			if err != nil {
-				return "", "", err
-			}
-			return target.ID, project.Identity.PrincipalID, nil
-		}
-		path = operations.NextLink
+		return *target.ID, project.Identity.PrincipalID, nil
 	}
 	return "", "", nil
+}
+
+func (p *FoundryProvisioningProvider) acrDeploymentOperations(
+	ctx context.Context, deploymentID string,
+) ([]*armresources.DeploymentOperation, error) {
+	path := deploymentID + "/operations"
+	var result []*armresources.DeploymentOperation
+	pages := map[string]bool{}
+	for path != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if pages[path] {
+			return nil, errors.New("deployment operations pagination repeated a page")
+		}
+		pages[path] = true
+		var operations struct {
+			Value    []*armresources.DeploymentOperation `json:"value"`
+			NextLink string                              `json:"nextLink"`
+		}
+		err := p.acrARM(ctx, http.MethodGet, path, "2022-09-01", &operations)
+		if isNotFound(err) && path == deploymentID+"/operations" {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, operations.Value...)
+		path = operations.NextLink
+	}
+	return result, ctx.Err()
+}
+
+func (p *FoundryProvisioningProvider) deploymentCreatedACR(
+	ctx context.Context, deploymentID, registryID string, visited map[string]bool,
+) (bool, error) {
+	key := strings.ToLower(deploymentID)
+	if visited[key] {
+		return false, errors.New("repeated deployment prevents safe registry ownership recovery")
+	}
+	visited[key] = true
+	operations, err := p.acrDeploymentOperations(ctx, deploymentID)
+	if err != nil {
+		return false, err
+	}
+	created := false
+	for _, operation := range operations {
+		if operation == nil || operation.Properties == nil || operation.Properties.TargetResource == nil {
+			continue
+		}
+		properties := operation.Properties
+		target := properties.TargetResource
+		if target.ID == nil || target.ResourceType == nil {
+			continue
+		}
+		ownsRegistry := false
+		if strings.EqualFold(*target.ID, registryID) {
+			if !strings.EqualFold(*target.ResourceType, "Microsoft.ContainerRegistry/registries") ||
+				properties.ProvisioningOperation == nil ||
+				*properties.ProvisioningOperation != armresources.ProvisioningOperationCreate ||
+				properties.ProvisioningState == nil || !strings.EqualFold(*properties.ProvisioningState, "Succeeded") {
+				return false, errors.New("registry has no successful creation operation in the owning deployment")
+			}
+			ownsRegistry = true
+		} else if strings.EqualFold(*target.ResourceType, "Microsoft.Resources/deployments") &&
+			properties.ProvisioningOperation != nil &&
+			*properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
+			id, err := arm.ParseResourceID(*target.ID)
+			if err != nil || !strings.EqualFold(id.SubscriptionID, p.subID) ||
+				(id.ResourceGroupName != "" && !strings.EqualFold(id.ResourceGroupName, p.rgName)) {
+				continue
+			}
+			ownsRegistry, err = p.deploymentCreatedACR(ctx, *target.ID, registryID, visited)
+			if err != nil {
+				return false, err
+			}
+		}
+		if ownsRegistry {
+			if created {
+				return false, errors.New("multiple registry creation operations prevent safe ownership recovery")
+			}
+			created = true
+		}
+	}
+	return created, ctx.Err()
 }
 
 func (p *FoundryProvisioningProvider) recoverPartialACRBinding(ctx context.Context, salt string) error {
@@ -1135,6 +1215,16 @@ func (p *FoundryProvisioningProvider) recoverPartialACRBinding(ctx context.Conte
 	parts := strings.Split(registryID, "/")
 	mode := "reuse-connect"
 	if strings.EqualFold(parts[2], p.subID) && strings.EqualFold(parts[4], p.rgName) {
+		deploymentID := "/subscriptions/" + p.subID +
+			"/providers/Microsoft.Resources/deployments/" + p.deploymentName()
+		created, err := p.deploymentCreatedACR(ctx, deploymentID, registryID, map[string]bool{})
+		if err != nil {
+			return fmt.Errorf("verify partially deployed registry ownership: %w", err)
+		}
+		if !created {
+			return errors.New("cannot establish ownership of the partially deployed registry: " +
+				"the owning deployment has no successful registry creation operation; refusing unsafe recovery")
+		}
 		mode = "create"
 	}
 	binding := &synthesis.ACRBinding{

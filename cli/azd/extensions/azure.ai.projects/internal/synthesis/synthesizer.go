@@ -270,7 +270,7 @@ func Synthesize(in Input) (*Result, error) {
 	}
 	if existingAcrResourceID != "" {
 		params["existingAcrResourceId"] = existingAcrResourceID
-		if in.PreserveVarRefs {
+		if in.PreserveVarRefs && in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"] != "" {
 			params["existingAcrResourceId"] = "${AZURE_CONTAINER_REGISTRY_RESOURCE_ID}"
 		}
 	}
@@ -285,36 +285,43 @@ func Synthesize(in Input) (*Result, error) {
 
 // GreenfieldACRMode distinguishes selectors from deployed outputs.
 func GreenfieldACRMode(in Input) (string, error) {
+	mode, _, err := ResolveGreenfieldACRSelection(in)
+	return mode, err
+}
+
+// ResolveGreenfieldACRSelection returns the mode and effective ID.
+// A binding supplies the ID when legacy aliases are absent.
+// Unbound selectors still require ValidateACRSelector.
+func ResolveGreenfieldACRSelection(in Input) (mode, registryID string, err error) {
 	env := in.Env
-	mode := env["AZD_FOUNDRY_ACR_MODE"]
+	mode = env["AZD_FOUNDRY_ACR_MODE"]
 	id := env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
 	binding := in.ACRBinding
 	if binding == nil {
-		var err error
 		binding, err = ParseACRBinding(env[ACRBindingEnvKey])
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 	if binding != nil {
 		if err := ValidateACRBinding(binding, mode, id); err != nil {
-			return "", err
+			return "", "", err
 		}
-		return binding.Mode, nil
+		return binding.Mode, binding.RegistryResourceID, nil
 	}
 	switch mode {
 	case "", "none", "create":
 	case "reuse-connect":
-		return mode, nil
+		return mode, id, nil
 	default:
-		return "", fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
+		return "", "", fmt.Errorf("synthesis: AZD_FOUNDRY_ACR_MODE has unsupported greenfield value %q", mode)
 	}
 	if id == "" {
-		return "create", nil
+		return "create", "", nil
 	}
 	group, err := GreenfieldACRResourceGroup(in)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	// Legacy environments retain outputs instead of a binding.
 	// A same-group registry ID alone is still an external input.
@@ -322,15 +329,31 @@ func GreenfieldACRMode(in Input) (string, error) {
 	if containerRegistryIDPattern.MatchString(id) && projectResourceIDPattern.MatchString(projectID) &&
 		!strings.EqualFold(env["USE_EXISTING_AI_PROJECT"], "true") {
 		registry, project := strings.Split(id, "/"), strings.Split(projectID, "/")
-		host, _, hasDomain := strings.Cut(env["AZURE_CONTAINER_REGISTRY_ENDPOINT"], ".")
 		if group != "" && strings.EqualFold(registry[4], group) &&
 			strings.EqualFold(registry[2], env["AZURE_SUBSCRIPTION_ID"]) &&
 			strings.EqualFold(project[2], registry[2]) && strings.EqualFold(project[4], group) &&
-			hasDomain && strings.EqualFold(host, registry[8]) {
-			return "create", nil
+			legacyACRLoginHostMatches(env["AZURE_CONTAINER_REGISTRY_ENDPOINT"], registry[8]) {
+			return "create", id, nil
 		}
 	}
-	return "reuse-connect", nil
+	return "reuse-connect", id, nil
+}
+
+func legacyACRLoginHostMatches(endpoint, registryName string) bool {
+	host := strings.ToLower(strings.TrimSpace(endpoint))
+	if scheme, address, ok := strings.Cut(host, "://"); ok {
+		if scheme != "https" && scheme != "http" {
+			return false
+		}
+		host = address
+	}
+	host = strings.TrimSuffix(strings.TrimSuffix(host, "/"), ".")
+	for _, suffix := range []string{"azurecr.io", "azurecr.us", "azurecr.cn"} {
+		if host == strings.ToLower(registryName)+"."+suffix {
+			return true
+		}
+	}
+	return false
 }
 
 var containerRegistryIDPattern = regexp.MustCompile(
@@ -339,7 +362,10 @@ var containerRegistryIDPattern = regexp.MustCompile(
 )
 
 func existingContainerRegistry(in Input) (string, error) {
-	id := in.Env["AZURE_CONTAINER_REGISTRY_RESOURCE_ID"]
+	_, id, err := ResolveGreenfieldACRSelection(in)
+	if err != nil {
+		return "", err
+	}
 	if id == "" {
 		return "", errors.New("synthesis: AZD_FOUNDRY_ACR_MODE reuse-connect requires " +
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID; set it to an external registry ARM ID or use create mode")

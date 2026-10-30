@@ -1453,10 +1453,13 @@ func configureNewProjectForNoPrompt(
 	azdClient *azdext.AzdClient,
 	envName string,
 	azureContext *azdext.AzureContext,
-	subscriptionMessage string,
+	acrResourceID string,
 ) (azcore.TokenCredential, error) {
-	newCred, err := ensureSubscriptionAndLocation(ctx, azdClient, azureContext, envName, subscriptionMessage)
+	newCred, err := ensureInitACRSubscription(ctx, azdClient, azureContext, envName, acrResourceID)
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureLocation(ctx, azdClient, azureContext, envName); err != nil {
 		return nil, err
 	}
 
@@ -1487,6 +1490,19 @@ func ensureSubscription(
 	envName string,
 	promptMessage string,
 ) (azcore.TokenCredential, error) {
+	if err := resolveSubscription(ctx, azdClient, azureContext, promptMessage); err != nil {
+		return nil, err
+	}
+	return persistSubscription(ctx, azdClient, azureContext, envName)
+}
+
+// resolveSubscription selects a subscription without persisting it.
+func resolveSubscription(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	promptMessage string,
+) error {
 	defer inittelemetry.Start(ctx, inittelemetry.SubscriptionSelection)()
 
 	if azureContext.Scope.SubscriptionId == "" {
@@ -1495,7 +1511,7 @@ func ensureSubscription(
 		subscriptionResponse, err := azdClient.Prompt().PromptSubscription(ctx, &azdext.PromptSubscriptionRequest{})
 		if err != nil {
 			if exterrors.IsCancellation(err) {
-				return nil, exterrors.Cancelled("subscription selection was cancelled")
+				return exterrors.Cancelled("subscription selection was cancelled")
 			}
 			// Only attach the AZURE_SUBSCRIPTION_ID-specific guidance when the
 			// failure is the no-prompt / "prompt required" path. Other prompt
@@ -1503,14 +1519,14 @@ func ensureSubscription(
 			// don't mislead the user into setting an env var that wouldn't have
 			// helped.
 			if exterrors.IsPromptRequired(err) {
-				return nil, exterrors.Dependency(
+				return exterrors.Dependency(
 					exterrors.CodeMissingAzureSubscription,
 					fmt.Sprintf("failed to select an Azure subscription: %s", err),
 					"set AZURE_SUBSCRIPTION_ID in your azd environment "+
 						"(run `azd env set AZURE_SUBSCRIPTION_ID <id>`), or run interactively to pick one",
 				)
 			}
-			return nil, exterrors.Dependency(
+			return exterrors.Dependency(
 				exterrors.CodeMissingAzureSubscription,
 				fmt.Sprintf("failed to select an Azure subscription: %s", err),
 				"retry, or run interactively to pick one",
@@ -1524,7 +1540,7 @@ func ensureSubscription(
 			SubscriptionId: azureContext.Scope.SubscriptionId,
 		})
 		if err != nil {
-			return nil, exterrors.Auth(
+			return exterrors.Auth(
 				exterrors.CodeTenantLookupFailed,
 				fmt.Sprintf("failed to lookup tenant for subscription %s: %s", azureContext.Scope.SubscriptionId, err),
 				"verify your Azure login with 'azd auth login'",
@@ -1532,7 +1548,15 @@ func ensureSubscription(
 		}
 		azureContext.Scope.TenantId = tenantResponse.TenantId
 	}
+	return nil
+}
 
+func persistSubscription(
+	ctx context.Context,
+	azdClient *azdext.AzdClient,
+	azureContext *azdext.AzureContext,
+	envName string,
+) (azcore.TokenCredential, error) {
 	// Persist to environment
 	if err := setEnvValue(ctx, azdClient, envName, "AZURE_SUBSCRIPTION_ID", azureContext.Scope.SubscriptionId); err != nil {
 		return nil, err

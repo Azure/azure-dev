@@ -694,6 +694,13 @@ Use 'azd ai agent add <name> --file <path>' to add one file-backed Agent
 service to the current project. Use --template / -t to adopt an azure.yaml
 project document as the project manifest.
 
+Use --acr-resource-id to select an externally owned Azure Container Registry
+for source builds in a new Foundry project. Project setup saves the selection
+for azd up. This requires Bicep, cannot be used with code deploy or a prebuilt
+image, and does not migrate an already deployed project's registry.
+The registry must be in the project's subscription and outside its resource
+group. Cross-subscription reuse is not supported.
+
 Azure.yaml projects:
 When -t points at an azure.yaml project document that declares
 services with host: azure.ai.project / azure.ai.agent / ..., that azure.yaml
@@ -757,6 +764,9 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 			defer func() {
 				if runErr != nil {
 					reportInitOperation(ctx)
+				} else if flags.acrResourceIDSet &&
+					extCtx.OutputFormat != "none" && extCtx.OutputFormat != "json" {
+					fmt.Fprintf(cmd.OutOrStdout(), "Source-build registry: %s (externally owned).\n", flags.acrResourceID)
 				}
 			}()
 			endValidation := inittelemetry.Start(ctx, inittelemetry.InputValidation)
@@ -780,6 +790,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 				if err := applyPositionalArg(args[0], flags, cmd); err != nil {
 					return err
 				}
+			}
+			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+			if err := validateInitACRInput(cmd, flags); err != nil {
+				return err
 			}
 			if flags.templatePointer == "" && flags.kind != "" {
 				recordInitProperties(ctx, map[string]any{"kind": flags.kind})
@@ -898,6 +912,13 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 						return err
 					}
 					endLoading()
+				}
+				root := explicitTemplateDir
+				if root == "" {
+					root = filepath.Dir(flags.templatePointer)
+				}
+				if err := validateInitACRManifest(content, root, flags); err != nil {
+					return err
 				}
 				cachedExplicitAzureYaml = content
 			}
@@ -1284,6 +1305,10 @@ from code-deploy ZIP packaging (uses .gitignore syntax).`,
 	cmd.Flags().StringVarP(&flags.projectResourceId, "project-id", "p", "",
 		"Existing Microsoft Foundry Project Id to initialize your azd environment with")
 
+	cmd.Flags().StringVar(
+		&flags.acrResourceID, "acr-resource-id", "",
+		"Existing ACR ARM resource ID for source builds in a new Foundry project (same subscription only)",
+	)
 	acrConnectionUsage := "Foundry Azure Container Registry connection name to use for an existing project; " +
 		"incompatible with code deploy"
 	cmd.Flags().StringVar(&flags.acrConnection, "acr-connection", "",
@@ -1573,7 +1598,7 @@ func validateVoiceInitOptions(cmd *cobra.Command, positionalSource bool) error {
 	}
 	for _, name := range []string{
 		"src", "protocol", "deploy-mode", "runtime", "entry-point", "dep-resolution",
-		"image", "acr-connection", "registry-connection", "harness", "instructions",
+		"image", "acr-connection", "acr-resource-id", "registry-connection", "harness", "instructions",
 		"description", "rai-policy", "model-deployment",
 	} {
 		if cmd.Flags().Changed(name) {
@@ -2131,6 +2156,7 @@ func (a *InitAction) addVoiceAgentToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}

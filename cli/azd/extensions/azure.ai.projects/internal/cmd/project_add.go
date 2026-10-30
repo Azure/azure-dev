@@ -35,18 +35,20 @@ import (
 )
 
 type projectAddFlags struct {
-	deployedBinding   *synthesis.ACRBinding
-	preserveProjectID string
-	acrResourceID     string
-	acrResourceIDSet  bool
-	projectID         string
-	projectEndpoint   string
-	newProject        bool
-	infra             string
-	force             bool
-	forceSet          bool
-	noPrompt          bool
-	output            string
+	deployedBinding    *synthesis.ACRBinding
+	preserveProjectID  string
+	acrResourceID      string
+	acrResourceIDSet   bool
+	projectIDSet       bool
+	projectEndpointSet bool
+	projectID          string
+	projectEndpoint    string
+	newProject         bool
+	infra              string
+	force              bool
+	forceSet           bool
+	noPrompt           bool
+	output             string
 }
 
 type resolvedProject struct {
@@ -93,11 +95,22 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add or update a Microsoft Foundry project.",
+		Long: "Add or update a Microsoft Foundry project.\n\n" +
+			"Use --new-project --acr-resource-id to reuse an external registry for\n" +
+			"source-built agents with Bicep. Project-only setup saves the selection\n" +
+			"until agents are added. Code, prebuilt-image, and non-container-only\n" +
+			"projects cannot use the selector. A deployed registry binding cannot\n" +
+			"be changed; repeating the same selection preserves the project.\n" +
+			"The registry must be in the project's subscription and outside its\n" +
+			"resource group. Cross-subscription reuse is not supported.",
 		Example: `  # Configure a Foundry project interactively
   azd ai project add
 
   # Connect an existing project by its ARM resource ID
   azd ai project add --project-id "<project-resource-id>"
+
+  # Reuse an externally owned registry for source-built agents (Bicep only)
+  azd ai project add --new-project --acr-resource-id "<registry-resource-id>"
 
   # Eject the configured infrastructure as Bicep
   azd ai project add --infra=bicep`,
@@ -106,6 +119,9 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 			flags.output = extCtx.OutputFormat
 			flags.noPrompt = extCtx.NoPrompt
 			flags.forceSet = cmd.Flags().Changed("force")
+			flags.acrResourceIDSet = cmd.Flags().Changed("acr-resource-id")
+			flags.projectIDSet = cmd.Flags().Changed("project-id")
+			flags.projectEndpointSet = cmd.Flags().Changed("project-endpoint")
 			action := &ProjectAddAction{
 				flags: flags, extCtx: extCtx,
 				stdout: cmd.OutOrStdout(), stderr: cmd.ErrOrStderr(),
@@ -116,6 +132,10 @@ func newProjectAddCommand(extCtx *azdext.ExtensionContext) *cobra.Command {
 	cmd.Flags().StringVar(&flags.projectID, "project-id", "", "Existing Foundry project ARM resource ID")
 	cmd.Flags().StringVar(&flags.projectEndpoint, "project-endpoint", "", "Existing Foundry project endpoint")
 	cmd.Flags().BoolVar(&flags.newProject, "new-project", false, "Create a new Foundry project")
+	cmd.Flags().StringVar(
+		&flags.acrResourceID, "acr-resource-id", "",
+		"External registry ARM resource ID for --new-project source builds (same subscription; Bicep only; no migration)",
+	)
 	cmd.Flags().StringVar(
 		&flags.infra, "infra", "", "Eject Bicep or Terraform infrastructure (optional value)",
 	)
@@ -170,7 +190,21 @@ func (a *ProjectAddAction) Run(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := validateProjectACRFlags(a.flags); err != nil {
+		return err
+	}
 	projectRoot := projectRootPath()
+	if a.flags.acrResourceIDSet {
+		raw, err := readProjectACRManifest(projectRoot)
+		if err != nil {
+			return err
+		}
+		if len(raw) > 0 {
+			if err := validateProjectACRInfrastructure(raw, projectRoot); err != nil {
+				return err
+			}
+		}
+	}
 
 	client := a.client
 	if client == nil {

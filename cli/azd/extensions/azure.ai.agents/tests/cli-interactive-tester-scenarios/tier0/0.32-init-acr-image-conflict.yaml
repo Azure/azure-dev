@@ -1,0 +1,17 @@
+# Tier 0: source-build ACR selection cannot select a prebuilt image.
+name: "init-acr-image-conflict"
+command: 'azd ai agent init --acr-resource-id /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/shared/providers/Microsoft.ContainerRegistry/registries/shared --image example.azurecr.io/agent:v1 --no-prompt'
+cwd: "~/working/azd-agents-acr-image-{instance}"
+tags: ["tier:0", "cmd:init", "negative-path", "parallel-safe"]
+env:
+  AZD_DISABLE_AGENT_DETECT: "1"
+pre:
+  - run: "rm -rf ~/working/azd-agents-acr-image-{instance}"
+    cwd: "~/working"
+    name: "reset isolated validation directory"
+goals:
+  - "Confirm the process exits non-zero with an error naming both --acr-resource-id and --image as conflicting inputs."
+  - "Confirm no authentication, subscription, project, registry, or agent wizard prompt appears."
+  - "Confirm no azure.yaml, .azure environment directory, or infrastructure files are created."
+  - "Take a screenshot of the error output; screenshot failure does not block the product assertions."
+  - "Report a finding if the command silently ignores either selector, prompts, succeeds, or writes project files."

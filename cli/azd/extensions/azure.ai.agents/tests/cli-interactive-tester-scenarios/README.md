@@ -348,6 +348,7 @@ in any order, any time.
 | `tier0/0.31-init-adopt-headless-replacement.yaml` | Ambiguous `init --no-prompt --model-deployment` fails before copying files or creating an environment |
 | `tier0/0.32-init-adopt-cancel-replacement.yaml` | Cancelling the template replacement picker leaves no project files or environment |
 | `tier0/0.33-invoke-a2a-version-validation.yaml` | A2A preview help and gating, explicit file versions when enabled, unsupported/empty versions, and rejection on non-A2A protocols |
+| `tier0/0.35-init-acr-existing-project-template.yaml` | `init --acr-resource-id` rejects a template's referenced existing project endpoint before creating project files or an environment |
 
 The invocation lifecycle scenarios above are offline help/validation checks, not live execution tests.
 They do not require a deployed long-running agent or add Tier 2 provisioning dependencies. Actual HTTP
@@ -784,6 +785,10 @@ the orchestrator auto-derives from the scenarios directory path:
 ```sh
 cp -r "{fixtures_dir}/from-code/." "$cwd"
 ```
+
+`fixtures/acr-existing-project/` contains a source-build template whose project
+service references an existing endpoint. The Tier 0 ACR validation scenario
+asserts that init rejects this combination without authentication or local writes.
 
 The orchestrator computes `fixtures_dir` as the tester-side absolute path of the
 `fixtures/` subdirectory inside the scenarios directory (WSL-translated on Windows,

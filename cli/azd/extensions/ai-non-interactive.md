@@ -25,6 +25,7 @@ no non-interactive equivalent is a bug.
 | `ai agent init` | Protocols | Repeatable `--protocol` | Uses the documented default protocol set. |
 | `ai agent init` | Existing model deployment or new model | `--model-deployment`, `--model`, and `--project-id` | Uses the supplied deployment/model; required unresolved model choices return guidance. |
 | `ai agent init` | Azure Container Registry connection | `--acr-connection` with `--project-id` or a persisted `AZURE_AI_PROJECT_ID`; persisted `AZURE_AI_PROJECT_ACR_CONNECTION_NAME`; or persisted `AZURE_CONTAINER_REGISTRY_ENDPOINT` / `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Reuses persisted state. With multiple remaining connections, selects the first connection alphabetically. With none, creates a registry during provisioning. |
+| `ai agent init` | Source-build registry for a new Foundry project | `--acr-resource-id` or persisted `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` | Creates a registry when source builds need one. An explicit selector is saved by project setup without a registry picker. |
 | `ai agent init` | Application Insights | Foundry project service configuration | The current init flow delegates creation or reconciliation to the provisioning provider without prompting. |
 | `ai agent init` | Values referenced by `${NAME}` in `azure.yaml` | `azd env set NAME value` before running init, or existing azd environment values | Leaves unresolved optional references for explicit configuration and reports required missing values. |
 | `ai agent add` | Current project, Agent service key, and definition | Positional `<name>` and required `--file`; optional `--project` and `--source` | Accepts YAML or JSON definitions and writes a service-level root `$ref` to `--file`, relative to the directory containing `azure.yaml`. Runs without prompts or Azure authentication and rejects missing or multiple `azure.ai.project` services before writing. |
@@ -41,7 +42,11 @@ are not forwarded; `--help` remains available. Use the standalone
 
 ## `azure.ai.projects`
 
-Scripts can
+For a new Foundry project that builds hosted-agent images from source, pass
+`--acr-resource-id "<registry-arm-id>"` to `azd ai agent init`, or use
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"`.
+The projects extension saves the choice in the active environment. An explicit
+flag takes precedence over the environment's selection before provisioning. Scripts can
 also set `AZURE_CONTAINER_REGISTRY_RESOURCE_ID` with `azd env set` to the full
 ARM ID of an existing `Microsoft.ContainerRegistry/registries` resource.
 Provisioning reuses it, grants the project identity pull access, and creates the
@@ -57,14 +62,17 @@ external registry.
 
 Without a selection, provisioning creates a registry only when source builds
 need one. Code deployments and prebuilt images do not need a source-build
-registry.
+registry. Explicit empty or malformed IDs, code/prebuilt-only configurations,
+conflicting connection selectors, and Terraform reuse fail rather than silently
+ignoring the selection. No registry picker is added.
 
 Registry selection uses one complete environment snapshot. A failed environment
 read stops provisioning rather than falling back to registry creation. A
 registry in the Foundry teardown group is rejected even during project-only
 setup, unless a deployed binding or matching legacy deployment outputs identify
 an azd-created registry. Legacy ownership is verified against Azure deployment
-state before provisioning or deleting the group.
+state before provisioning or deleting the group. Environment-only selections
+are reported as externally owned just like flag-based selections.
 Source initialization validates against the root or Foundry-layer resource group
 retained by setup before changing project files or environment values. Locations
 chosen during provisioning prompts are applied when expanding
@@ -73,7 +81,9 @@ selection.
 
 Project-only provisioning preserves a pending registry selection until source
 builds need it, including after project-only teardown. Configured project or
-account names do not discard an unused selection.
+account names do not discard an unused selection. Interactive setup revalidates
+the selector after resolving the subscription, before saving project services
+or environment values.
 Provisioning preview checks the same existing pull access as deployment without
 creating grants or persisting pending access operations.
 

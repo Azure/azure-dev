@@ -1383,10 +1383,38 @@ the whole body is then moderated and no paths are needed for that direction.
 
 ### Reuse a source-build registry
 
+For hosted-container source builds in a new Foundry project, select an existing
+registry during setup:
+
+```powershell
+azd ai agent init --src . --acr-resource-id "<registry-arm-id>"
+```
+
+The projects extension saves the selection in the active azd environment.
+`azd ai project add --new-project --acr-resource-id "<registry-arm-id>"` provides
+the same project-level setup. Before provisioning, a setup flag overrides the environment's
+`AZURE_CONTAINER_REGISTRY_RESOURCE_ID`; without either input, provisioning creates
+a registry only when source builds need one. Setup displays the selected registry
+as externally owned without introducing a registry picker.
+
 Environment-only selections use the same validation, persisted reuse mode, and
 ownership output. An unreadable environment stops selection rather than
 defaulting to a new registry. A same-group registry ID alone is not evidence
-that azd owns the registry.
+that azd owns the registry. A deployed registry binding remains authoritative
+when legacy registry output variables are missing.
+
+The selector cannot be combined with `--image`, `--registry-connection`,
+`--acr-connection`, `--project-id`, or code/prompt/voice deployment. Existing
+connection-selection flows keep their meanings. Repeated provisioning retains
+the deployed registry; switching an already provisioned project's registry is
+not supported.
+
+When adopting a template, init rejects an existing Foundry project endpoint
+before scaffolding. Interactive source and template setup check the chosen
+subscription against the registry before creating project files or saving
+environment values.
+A successful preflight carries that subscription into setup without asking again.
+Headless setup with missing Azure context continues to defer configuration.
 
 Reuse supports embedded Bicep and Bicep eject, not Terraform. The registry must
 be in the Foundry project's subscription (`AZURE_SUBSCRIPTION_ID`) and outside

@@ -13,7 +13,84 @@ import (
 	"azureaiagent/internal/synthesis"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdext"
+	"github.com/spf13/cobra"
 )
+
+const initACRSubscriptionMessage = "Select an Azure subscription to provision your agent and Foundry project resources."
+
+func initACRConflict(input string) error {
+	return exterrors.Validation(
+		exterrors.CodeConflictingArguments,
+		"--acr-resource-id cannot be combined with "+input,
+		"use --acr-resource-id for hosted-container source builds in a new Foundry project",
+	)
+}
+
+func validateInitACRInput(cmd *cobra.Command, flags *initFlags) error {
+	if !flags.acrResourceIDSet {
+		return nil
+	}
+	if err := synthesis.ValidateACRSelector(flags.acrResourceID, "", ""); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidParameter,
+			"--acr-resource-id must be a non-empty ACR ARM resource ID",
+			"use /subscriptions/<id>/resourceGroups/<group>/providers/Microsoft.ContainerRegistry/registries/<name>",
+		)
+	}
+	for _, name := range []string{
+		"project-id", "acr-connection", "image", "registry-connection",
+		"runtime", "entry-point", "dep-resolution",
+	} {
+		if cmd.Flags().Changed(name) {
+			return initACRConflict("--" + name)
+		}
+	}
+	if strings.EqualFold(flags.deployMode, "code") {
+		return initACRConflict("--deploy-mode code")
+	}
+	if flags.kind != "" && !strings.EqualFold(flags.kind, "hosted") {
+		return initACRConflict("--kind " + flags.kind)
+	}
+	if strings.EqualFold(flags.infra, "terraform") {
+		return initACRConflict("--infra terraform")
+	}
+	return nil
+}
+
+func validateInitACRManifest(content []byte, root string, flags *initFlags) error {
+	return validateInitACRManifestInEnvironment(content, root, flags, nil)
+}
+
+func validateInitACRManifestInEnvironment(
+	content []byte, root string, flags *initFlags, values map[string]string,
+) error {
+	if !flags.acrResourceIDSet {
+		return nil
+	}
+	input := synthesis.Input{
+		RawAzureYAML: content,
+		ProjectRoot:  root,
+		Env:          values,
+	}
+	if err := synthesis.ValidateGreenfieldACRSelectionForInput(input, flags.acrResourceID); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments, err.Error(),
+			"use --acr-resource-id with source builds in a new Foundry project",
+		)
+	}
+	needsACR, err := synthesis.RequiresACR(input)
+	if err != nil {
+		return exterrors.Validation(
+			exterrors.CodeInvalidAgentManifest,
+			fmt.Sprintf("cannot apply --acr-resource-id: %s", err),
+			"fix the source-build agent configuration and retry",
+		)
+	}
+	if !needsACR {
+		return initACRConflict("an agent configuration without hosted-container source builds")
+	}
+	return nil
+}
 
 func readInitACREnvironment(
 	ctx context.Context, client *azdext.AzdClient, flags *initFlags,
@@ -43,6 +120,52 @@ func readInitACREnvironment(
 		}
 	}
 	return envName, values, nil
+}
+
+func validateInitACRSubscription(registryID, subscriptionID string) error {
+	if registryID == "" {
+		return nil
+	}
+	if err := synthesis.ValidateACRSelector(registryID, subscriptionID, ""); err != nil {
+		return exterrors.Validation(
+			exterrors.CodeConflictingArguments, err.Error(),
+			"use a registry in the Foundry project's subscription",
+		)
+	}
+	return nil
+}
+
+func planInitACRSubscription(
+	ctx context.Context, client *azdext.AzdClient, flags *initFlags,
+) (*azdext.AzureScope, error) {
+	if !flags.acrResourceIDSet {
+		return nil, nil
+	}
+	_, values, err := readInitACREnvironment(ctx, client, flags)
+	if err != nil {
+		return nil, err
+	}
+	scope := &azdext.AzureScope{
+		SubscriptionId: values["AZURE_SUBSCRIPTION_ID"],
+		TenantId:       values["AZURE_TENANT_ID"],
+	}
+	if err := validateInitACRSubscription(flags.acrResourceID, scope.SubscriptionId); err != nil {
+		return nil, err
+	}
+	if scope.SubscriptionId == "" {
+		if flags.noPrompt {
+			return nil, nil
+		}
+		if err := resolveSubscription(
+			ctx, client, &azdext.AzureContext{Scope: scope}, initACRSubscriptionMessage,
+		); err != nil {
+			return nil, err
+		}
+		if err := validateInitACRSubscription(flags.acrResourceID, scope.SubscriptionId); err != nil {
+			return nil, err
+		}
+	}
+	return scope, nil
 }
 
 func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags *initFlags) error {
@@ -125,6 +248,17 @@ func validateInitACRProject(ctx context.Context, client *azdext.AzdClient, flags
 			"use a registry in the Foundry project's subscription, outside its resource group; "+
 				"deployed registry migration is not supported",
 		)
+	}
+	if canReuseExistingAgentConfiguration(flags, false, flags.src != "") {
+		info, err := inspectAzureYaml(content, root)
+		if err != nil {
+			return err
+		}
+		if info.hasAgentService {
+			if err := validateInitACRManifestInEnvironment(content, root, flags, values); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

@@ -27,6 +27,101 @@ import (
 const testExternalRegistryID = "/subscriptions/subscription/resourceGroups/external/providers/" +
 	"Microsoft.ContainerRegistry/registries/shared"
 
+func TestProjectAddACRInvalidFlagsBeforeDaemon(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"empty", []string{"--new-project", "--acr-resource-id="}, "cannot be empty"},
+		{"invalid ID", []string{"--new-project", "--acr-resource-id=shared"}, "full ARM ID"},
+		{"query suffix", []string{"--new-project", "--acr-resource-id=" +
+			testExternalRegistryID + "?sig=secret"}, "full ARM ID"},
+		{"missing new project", []string{"--acr-resource-id=" + testExternalRegistryID}, "requires --new-project"},
+		{"existing empty ID", []string{"--new-project", "--project-id=", "--acr-resource-id=" +
+			testExternalRegistryID}, "--project-id"},
+		{"existing empty endpoint", []string{"--new-project", "--project-endpoint=", "--acr-resource-id=" +
+			testExternalRegistryID}, "--project-endpoint"},
+		{"explicit force false", []string{"--new-project", "--force=false", "--acr-resource-id=" +
+			testExternalRegistryID}, "--force"},
+		{"Terraform", []string{"--new-project", "--infra=terraform", "--acr-resource-id=" +
+			testExternalRegistryID}, "--infra=terraform"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command := newProjectAddCommand(&azdext.ExtensionContext{NoPrompt: true})
+			command.SetContext(t.Context())
+			require.NoError(t, command.ParseFlags(tt.args))
+			err := command.RunE(command, nil)
+			require.ErrorContains(t, err, tt.want)
+			assert.NotContains(t, err.Error(), "daemon")
+		})
+	}
+}
+
+func TestProjectAddACRTerraformManifestBeforeDaemon(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+	raw := []byte("name: test\ninfra:\n  provider: terraform\nservices: {}\n")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "azure.yaml"), raw, 0600))
+	action := &ProjectAddAction{flags: &projectAddFlags{
+		newProject: true, acrResourceIDSet: true, acrResourceID: testExternalRegistryID,
+	}}
+	require.ErrorContains(t, action.Run(t.Context()), "Terraform")
+	assert.Nil(t, action.client)
+}
+
+func TestProjectACRManifestRequirements(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		env  map[string]string
+		want string
+	}{
+		{"pending project", "services:\n  project:\n    host: azure.ai.project\n", nil, ""},
+		{"source build", "services:\n  agent:\n    host: azure.ai.agent\n    kind: hosted\n", nil, ""},
+		{"prebuilt", "services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n", nil, "prebuilt-image"},
+		{"code", "services:\n  agent:\n    host: azure.ai.agent\n    codeConfiguration:\n      runtime: python\n",
+			nil, "code"},
+		{"prompt", "services:\n  agent:\n    host: azure.ai.agent\n    kind: prompt\n", nil, "non-container"},
+		{"legacy prebuilt", "services:\n  agent:\n    host: azure.ai.agent\n    agents:\n" +
+			"      - name: test\n        image: registry/image:v1\n", nil, "prebuilt-image"},
+		{"conditional source disabled", "services:\n  source:\n    host: azure.ai.agent\n" +
+			"    condition: ${BUILD_ENABLED}\n  prebuilt:\n    host: azure.ai.agent\n    image: registry/image:v1\n",
+			map[string]string{"BUILD_ENABLED": "false"}, "prebuilt-image"},
+		{"conditional source enabled", "services:\n  source:\n    host: azure.ai.agent\n" +
+			"    condition: ${BUILD_ENABLED}\n  prebuilt:\n    host: azure.ai.agent\n    image: registry/image:v1\n",
+			map[string]string{"BUILD_ENABLED": "true"}, ""},
+		{"Terraform", "infra:\n  provider: terraform\nservices: {}\n", nil, "Terraform"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateProjectACRManifest([]byte(tt.body), t.TempDir(), tt.env)
+			if tt.want != "" {
+				require.ErrorContains(t, err, tt.want)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestProjectACRManifestReference(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "agent.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"host: azure.ai.agent\nconfig:\n  kind: hosted\n  image: registry/image:v1\n"), 0600))
+	raw := []byte("services:\n  agent:\n    $ref: agent.yaml\n")
+	// #nosec G304 -- path is within the test project.
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.ErrorContains(t, validateProjectACRManifest(raw, root, nil), "prebuilt-image")
+	// #nosec G304 -- path is within the test project.
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
 func TestProjectACRSelectionOverridesUndeployedDefaults(t *testing.T) {
 	old := map[string]string{
 		"AZURE_CONTAINER_REGISTRY_RESOURCE_ID": "old-default",
@@ -654,6 +749,42 @@ func TestProjectRegistryOutput(t *testing.T) {
 				assert.Contains(t, output.String(), "externally owned")
 				assert.Contains(t, output.String(), testExternalRegistryID)
 			}
+		})
+	}
+}
+
+func TestProjectAddACRManifestValidationBeforeMutation(t *testing.T) {
+	for _, body := range []string{
+		"services:\n  agent:\n    host: azure.ai.agent\n    image: registry/image:v1\n",
+		"services:\n  agent:\n    host: azure.ai.agent\n    codeConfiguration:\n      runtime: python\n",
+		"infra:\n  provider: terraform\nservices: {}\n",
+	} {
+		t.Run(body, func(t *testing.T) {
+			root := t.TempDir()
+			t.Setenv("AZD_EXEC_PROJECT_DIR", root)
+			path := filepath.Join(root, "azure.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(body), 0600))
+			old := map[string]string{"AZD_FOUNDRY_ACR_MODE": "create"}
+			server := &acrPreflightEnvironmentServer{
+				transactionEnvironmentServer: transactionEnvironmentServer{values: maps.Clone(old)},
+			}
+			action := &ProjectAddAction{
+				client: newProjectEnvironmentClient(t, server),
+				flags: &projectAddFlags{
+					newProject: true, acrResourceIDSet: true, acrResourceID: testExternalRegistryID,
+				},
+				extCtx: &azdext.ExtensionContext{Environment: "test"},
+			}
+			err := action.Run(t.Context())
+			require.Error(t, err)
+			assert.NotContains(t, err.Error(), "Unimplemented")
+			assert.Zero(t, server.calls)
+			assert.Equal(t, old, server.values)
+			// #nosec G304 -- path is within the test project.
+			persisted, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, body, string(persisted))
+			assert.NoDirExists(t, filepath.Join(root, ".azure"))
 		})
 	}
 }

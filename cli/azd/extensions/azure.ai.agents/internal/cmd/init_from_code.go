@@ -335,7 +335,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 	}
 	showCodeDeploy := supportsCodeDeploy(srcDir)
 	requestedDeployMode := a.flags.deployMode
-	if strings.TrimSpace(a.flags.image) != "" {
+	if strings.TrimSpace(a.flags.image) != "" || a.flags.acrResourceIDSet {
 		requestedDeployMode = "container"
 	}
 	deployMode, err := promptDeployMode(
@@ -350,7 +350,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 		return nil, err
 	}
 
-	if a.flags.projectResourceId == "" {
+	if a.flags.projectResourceId == "" && !a.flags.acrResourceIDSet {
 		projectResourceId, err := getEnvValue(ctx, a.azdClient, a.environment.Name, "AZURE_AI_PROJECT_ID")
 		if err != nil {
 			return nil, fmt.Errorf("failed to read AZURE_AI_PROJECT_ID: %w", err)
@@ -432,7 +432,7 @@ func (a *InitFromCodeAction) createDefinitionFromLocalAgent(
 			return nil, err
 		}
 		deferredAzureContext = true
-	} else if a.flags.noPrompt {
+	} else if a.flags.noPrompt || a.flags.acrResourceIDSet {
 		newCred, err := configureNewProjectForNoPrompt(
 			ctx, a.azdClient, a.environment.Name, a.azureContext,
 			"Select an Azure subscription to look up available models and provision your Foundry project resources.",
@@ -1017,6 +1017,7 @@ func (a *InitFromCodeAction) addToProject(
 			return projectAuthoringCurrent
 		}(),
 		a.flags.noPrompt,
+		a.flags.acrResourceID,
 	); err != nil {
 		return err
 	}

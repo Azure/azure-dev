@@ -208,6 +208,7 @@ func runInitManaged(
 			return projectAuthoringCurrent
 		}(),
 		flags.noPrompt,
+		"",
 	); err != nil {
 		return err
 	}

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/stretchr/testify/require"
 )

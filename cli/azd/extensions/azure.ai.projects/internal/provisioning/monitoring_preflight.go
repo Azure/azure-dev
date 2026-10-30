@@ -10,9 +10,21 @@ import (
 	"fmt"
 	"strings"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/grpcbroker"
 )
+
+func monitoringOutputKeys() []string {
+	return []string{
+		"AZURE_APPLICATION_INSIGHTS_RESOURCE_ID",
+		"AZURE_APPLICATION_INSIGHTS_APP_ID",
+		"AZURE_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID",
+		"AZURE_AI_PROJECT_APPINSIGHTS_CONNECTION_NAME",
+		"AZD_FOUNDRY_MONITORING_MODE",
+	}
+}
 
 func templateParameter(source *templateSource, name string) (any, bool) {
 	if envelope, ok := source.parameters[name].(map[string]any); ok {
@@ -66,11 +78,12 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 	if err != nil {
 		return err
 	}
-	project, err := monitoringResourceID(projectID, "Microsoft.CognitiveServices/accounts/projects")
+	project, err := synthesis.MonitoringResourceID(projectID, "Microsoft.CognitiveServices/accounts/projects")
 	if err != nil || project.Parent == nil {
 		return fmt.Errorf("monitoring target must identify a Foundry project")
 	}
-	projectResource, projectExists, err := p.monitoringResource(ctx, project, "2025-04-01-preview")
+	resolver := synthesis.MonitoringResolver{Credential: p.credential, ClientOptions: p.armClientOptions}
+	projectResource, projectExists, err := resolver.Resource(ctx, project, "2025-04-01-preview")
 	if err != nil {
 		return err
 	}
@@ -81,20 +94,20 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		source.parameters["monitoringMode"] = map[string]any{"value": "none"}
 		return nil
 	}
-	account, accountExists, err := p.monitoringResource(ctx, project.Parent, "2025-04-01-preview")
+	account, accountExists, err := resolver.Resource(ctx, project.Parent, "2025-04-01-preview")
 	if err != nil {
 		return err
 	}
 	if projectExists && !accountExists {
 		return fmt.Errorf("monitoring target account could not be verified")
 	}
-	connection, err := p.discoverMonitoringConnection(ctx, project, projectExists, accountExists)
+	connection, err := resolver.DiscoverConnection(ctx, project, projectExists, accountExists)
 	if err != nil {
 		return err
 	}
 	owned := previous != nil && previous.owned
 	if connection != nil {
-		if componentID != "" && !strings.EqualFold(componentID, connection.target) {
+		if componentID != "" && !strings.EqualFold(componentID, connection.Target) {
 			return fmt.Errorf("the selected component conflicts with the effective AppInsights connection")
 		}
 		if owned && mode == "create" {
@@ -106,15 +119,15 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 				"monitoringMode already-connected and its applicationInsightsResourceId in the authored infrastructure")
 		} else {
 			mode = "already-connected"
-			componentID = connection.target
+			componentID = connection.Target
 		}
-		if err := p.validateMonitoringComponent(ctx, connection.target, mode == "create"); err != nil {
+		if err := resolver.ValidateComponent(ctx, connection.Target, mode == "create"); err != nil {
 			return err
 		}
 		source.parameters["monitoringMode"] = map[string]any{"value": mode}
 		source.parameters["applicationInsightsResourceId"] = map[string]any{"value": componentID}
 		source.parameters["monitoringCreateConnection"] = map[string]any{"value": false}
-		source.parameters["monitoringConnectionName"] = map[string]any{"value": connection.name}
+		source.parameters["monitoringConnectionName"] = map[string]any{"value": connection.Name}
 		return nil
 	}
 	if mode == "already-connected" {
@@ -128,16 +141,16 @@ func (p *FoundryProvisioningProvider) prepareMonitoring(
 		if resource == nil {
 			continue
 		}
-		properties, err := monitoringProperties(resource)
+		properties, err := synthesis.MonitoringProperties(resource)
 		if err != nil {
 			return err
 		}
-		if err := monitoringNetworkPolicy(properties); err != nil {
+		if err := synthesis.MonitoringNetworkPolicy(properties); err != nil {
 			return err
 		}
 	}
 	if mode == "reuse-connect" {
-		if err := p.validateMonitoringComponent(ctx, componentID, true); err != nil {
+		if err := resolver.ValidateComponent(ctx, componentID, true); err != nil {
 			return err
 		}
 	}
@@ -166,7 +179,7 @@ func (p *FoundryProvisioningProvider) resolveMonitoringTarget(
 	var previous *monitoringTargetBinding
 	response, err := client.GetAtSubscriptionScope(ctx, p.deploymentName(), nil)
 	if err != nil && !isNotFound(err) {
-		return "", nil, monitoringReadError("read previous Foundry deployment", err)
+		return "", nil, synthesis.MonitoringReadError("read previous Foundry deployment", err)
 	}
 	if err == nil {
 		previous = previousMonitoringTarget(bindingParameters, response.Properties, p.subID)
@@ -193,11 +206,11 @@ func (p *FoundryProvisioningProvider) resolveMonitoringTarget(
 		},
 	}, nil)
 	if err != nil {
-		return "", nil, monitoringReadError("resolve monitoring target with ARM What-If", err)
+		return "", nil, synthesis.MonitoringReadError("resolve monitoring target with ARM What-If", err)
 	}
 	result, err := pollWithProgress(ctx, poller, progress, "Resolving Foundry monitoring target")
 	if err != nil {
-		return "", nil, monitoringReadError("resolve monitoring target with ARM What-If", err)
+		return "", nil, synthesis.MonitoringReadError("resolve monitoring target with ARM What-If", err)
 	}
 	if err := whatIfFailure(result.WhatIfOperationResult); err != nil {
 		return "", nil, err
@@ -230,7 +243,7 @@ func (p *FoundryProvisioningProvider) resolveMonitoringTarget(
 	if !previous.owned && mode == "create" && monitoringFailedCreateAttempt(bindingParameters, response.Properties) {
 		exported, err := client.ExportTemplateAtSubscriptionScope(ctx, p.deploymentName(), nil)
 		if err != nil {
-			return "", nil, monitoringReadError("verify the previous failed monitoring graph", err)
+			return "", nil, synthesis.MonitoringReadError("verify the previous failed monitoring graph", err)
 		}
 		before, beforeErr := json.Marshal(exported.Template)
 		after, afterErr := json.Marshal(source.armTemplate)

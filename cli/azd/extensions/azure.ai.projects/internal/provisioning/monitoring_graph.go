@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -44,7 +44,7 @@ func monitoringPlannedResource(
 		}
 		if after, ok := change.After.(map[string]any); ok {
 			if properties, ok := after["properties"].(map[string]any); ok {
-				if err := monitoringKeyPolicy(properties); err != nil {
+				if err := synthesis.MonitoringKeyPolicy(properties); err != nil {
 					return "", err
 				}
 			}
@@ -61,7 +61,7 @@ func validateMonitoringConnectionPlan(result *armresources.WhatIfOperationResult
 	if result == nil || result.Properties == nil {
 		return nil
 	}
-	project, err := monitoringResourceID(projectID, "Microsoft.CognitiveServices/accounts/projects")
+	project, err := synthesis.MonitoringResourceID(projectID, "Microsoft.CognitiveServices/accounts/projects")
 	if err != nil {
 		return err
 	}
@@ -86,12 +86,13 @@ func validateMonitoringConnectionPlan(result *armresources.WhatIfOperationResult
 // Check the ARM-resolved names before allowing ordinary resource PUTs. A stable
 // generated name alone never authorizes adopting a pre-existing component.
 func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
-	ctx context.Context, source *templateSource, binding *monitoringTargetBinding, connection *monitoringConnection,
+	ctx context.Context, source *templateSource, binding *monitoringTargetBinding, connection *synthesis.MonitoringConnection,
 ) error {
 	group, err := monitoringParameter(source, "resourceGroupName")
 	if err != nil {
 		return err
 	}
+	resolver := synthesis.MonitoringResolver{Credential: p.credential, ClientOptions: p.armClientOptions}
 	outputs := armOutputsToProto(binding.outputs)
 	for _, resource := range []struct {
 		resourceType string
@@ -106,14 +107,14 @@ func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
 			return err
 		}
 		if connection != nil && resource.resourceType == "Microsoft.Insights/components" &&
-			!strings.EqualFold(connection.target, id) {
+			!strings.EqualFold(connection.Target, id) {
 			return fmt.Errorf("the authored creation graph would replace the effective monitoring destination")
 		}
-		parsed, err := monitoringResourceID(id, resource.resourceType)
+		parsed, err := synthesis.MonitoringResourceID(id, resource.resourceType)
 		if err != nil {
 			return err
 		}
-		existing, found, err := p.monitoringResource(ctx, parsed, resource.version)
+		existing, found, err := resolver.Resource(ctx, parsed, resource.version)
 		if err != nil {
 			return err
 		}
@@ -125,11 +126,11 @@ func (p *FoundryProvisioningProvider) validateMonitoringCreateGraph(
 			return fmt.Errorf("a monitoring resource already occupies the planned name and is not owned by this deployment; " +
 				"use applicationInsightsResourceId to reuse it without adopting or changing it")
 		}
-		properties, err := monitoringProperties(existing)
+		properties, err := synthesis.MonitoringProperties(existing)
 		if err != nil {
 			return err
 		}
-		if err := monitoringKeyPolicy(properties); err != nil {
+		if err := synthesis.MonitoringKeyPolicy(properties); err != nil {
 			return err
 		}
 	}

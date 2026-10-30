@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices/v2"
@@ -1633,7 +1633,7 @@ func TestDestroyResultForExistingProjectOnlyClearsAdjunctState(t *testing.T) {
 	p := &FoundryProvisioningProvider{
 		brownfieldEndpoint: "https://account.services.ai.azure.com/api/projects/project",
 	}
-	result := p.destroyResult(monitoringCleanup{})
+	result := p.destroyResult()
 	assert.NotContains(t, result.InvalidatedEnvKeys, "AZURE_AI_PROJECT_ID")
 	assert.NotContains(t, result.InvalidatedEnvKeys, "FOUNDRY_PROJECT_ENDPOINT")
 	assert.Contains(t, result.InvalidatedEnvKeys, "AZURE_CONTAINER_REGISTRY_RESOURCE_ID")

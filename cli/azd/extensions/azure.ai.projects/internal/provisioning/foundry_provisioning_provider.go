@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"azure.ai.projects/internal/exterrors"
-	"azure.ai.projects/internal/synthesis"
+	"azure.ai.projects/synthesis"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -1327,7 +1327,7 @@ func (p *FoundryProvisioningProvider) deploymentFailure(ctx context.Context, err
 			return errors.Join(exterrors.Internal(
 				exterrors.CodeEnvironmentValuesFailed,
 				fmt.Sprintf("Foundry deployment failed (%s) and supporting resource-group ownership "+
-					"could not be recorded: %s", monitoringReadError("deploy Foundry infrastructure", err), ownershipErr),
+					"could not be recorded: %s", synthesis.MonitoringReadError("deploy Foundry infrastructure", err), ownershipErr),
 			), err)
 		}
 	}
@@ -1702,20 +1702,11 @@ func (p *FoundryProvisioningProvider) Destroy(
 	if err := p.ensureCredential(ctx); err != nil {
 		return nil, err
 	}
-	var monitoring monitoringCleanup
 	if p.brownfieldEndpoint != "" {
-		var err error
-		monitoring, err = p.prepareMonitoringCleanup(ctx)
-		if err != nil {
-			return nil, err
-		}
 		if p.existingAcrMode == "create" {
 			if err := p.deleteExistingProjectAcrConnection(ctx, progress); err != nil {
 				return nil, err
 			}
-		}
-		if err := p.deleteMonitoringConnection(ctx, monitoring, progress); err != nil {
-			return nil, err
 		}
 	}
 	factory, err := armresources.NewClientFactory(p.subID, p.credential, p.armClientOptions)
@@ -1760,7 +1751,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 			// account from a prior incomplete cleanup is out of scope --
 			// the user can purge it manually via `az cognitiveservices
 			// account purge`.
-			return p.destroyResult(monitoring), nil
+			return p.destroyResult(), nil
 		}
 		return nil, exterrors.ServiceFromAzure(err, exterrors.OpResourceGroupDelete)
 	}
@@ -1778,7 +1769,7 @@ func (p *FoundryProvisioningProvider) Destroy(
 		}
 	}
 
-	return p.destroyResult(monitoring), nil
+	return p.destroyResult(), nil
 }
 
 func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
@@ -1867,9 +1858,9 @@ func (p *FoundryProvisioningProvider) deleteExistingProjectAcrConnection(
 	return nil
 }
 
-func (p *FoundryProvisioningProvider) destroyResult(monitoring monitoringCleanup) *azdext.ProvisioningDestroyResult {
+func (p *FoundryProvisioningProvider) destroyResult() *azdext.ProvisioningDestroyResult {
 	if p.brownfieldEndpoint != "" {
-		keys := []string{
+		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: []string{
 			"AZURE_CONTAINER_REGISTRY_ENDPOINT",
 			"AZURE_CONTAINER_REGISTRY_RESOURCE_ID",
 			"AZURE_AI_PROJECT_ACR_CONNECTION_NAME",
@@ -1877,11 +1868,7 @@ func (p *FoundryProvisioningProvider) destroyResult(monitoring monitoringCleanup
 			"AZD_FOUNDRY_ACR_MODE",
 			"AZD_FOUNDRY_ACR_PULL_ASSIGNED",
 			envKeyFoundryRGOwner,
-		}
-		if monitoring.ownsResources {
-			keys = append(keys, monitoringOutputKeys()...)
-		}
-		return &azdext.ProvisioningDestroyResult{InvalidatedEnvKeys: keys}
+		}}
 	}
 	return invalidatedEnvKeysResult()
 }

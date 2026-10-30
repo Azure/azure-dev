@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 )
@@ -47,7 +49,7 @@ func previousMonitoringTarget(
 		if !strings.EqualFold(existingID, project.Value) {
 			return nil
 		}
-		if _, err := monitoringResourceID(existingID, "Microsoft.CognitiveServices/accounts/projects"); err != nil {
+		if _, err := synthesis.MonitoringResourceID(existingID, "Microsoft.CognitiveServices/accounts/projects"); err != nil {
 			return nil
 		}
 	} else if !monitoringProjectMatches(project.Value, subscriptionID, group, name) {

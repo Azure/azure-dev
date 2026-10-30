@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"testing"
 
+	"azure.ai.projects/synthesis"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -141,7 +143,10 @@ func TestTerraformMonitoringExportDiscovery(t *testing.T) {
 			parameters := map[string]any{
 				"monitoringMode": tt.mode, "applicationInsightsResourceId": tt.component,
 			}
-			err := provider.monitoringResolver().ResolveTerraformExport(
+			resolver := synthesis.MonitoringResolver{
+				Credential: provider.credential, ClientOptions: provider.armClientOptions,
+			}
+			err := resolver.ResolveTerraformExport(
 				t.Context(), parameters, monitoringTestProject, tt.environment)
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
@@ -173,7 +178,8 @@ func TestTerraformMonitoringExportCancellation(t *testing.T) {
 	provider := newMonitoringCloudFixture(t, &monitoringCloudFixture{})
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	err := provider.monitoringResolver().ResolveTerraformExport(ctx, map[string]any{
+	resolver := synthesis.MonitoringResolver{Credential: provider.credential, ClientOptions: provider.armClientOptions}
+	err := resolver.ResolveTerraformExport(ctx, map[string]any{
 		"monitoringMode": "create", "applicationInsightsResourceId": "",
 	}, monitoringTestProject, nil)
 	assert.ErrorIs(t, err, context.Canceled)

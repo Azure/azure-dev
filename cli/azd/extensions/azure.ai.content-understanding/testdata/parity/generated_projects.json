@@ -11,7 +11,9 @@
       "tests/parity/generated_projects/canonical.json": "96164cb2d82fff0deb60db1e6d6c785b85757a6df7c3c5fa0068c38860e5b99f"
     },
     "adaptations": [
-      "Native README documents Go/Entra-only operation rather than Python/key setup. This complete-tree content replacement remains unapproved; retain the source README hash.",
+      "Native README documents azd provisioning, CU-prefixed outputs, and saved postprovision config. Retain the source README hash alongside the native expectation.",
+      "Native generation writes literal resource parameters and postprovision choices in per-environment config rather than dedicated environment variables. Retain source hashes alongside native expectations.",
+      "Native Bicep emits CU-prefixed resource, project, and model outputs without a duplicate endpoint output.",
       "Native Go JSON sorts keys; source preserves version/defaultEnvironment insertion order. Retain both byte-level hashes and compare complete parsed JSON separately, not filtered keys.",
       "Native hooks pass AZURE_ENV_NAME explicitly as --environment and reject missing names. Retain the source hook hashes and arguments alongside native expectations."
     ]
@@ -44,6 +46,11 @@
       "infra/modules/foundry.bicep": "18fd2b5d1ca12e75946ae317a08857f61fc5cdb05b329337036345521630c212"
     },
     "native_hashes": {
+      ".azure/dev/.env": "0b62209a4b7c3b117c24e6c08ccbbb784dddd633876c3fb72fb733305daf666b",
+      ".azure/dev/config.json": "ec8b659dd4265e128c8bf99cca72327d80756421243d1f7b91127d542164dbac",
+      "README.md": "c4a074806ddd7628c36b03f3f21e8ea0a2ae803f71cd411b1f56edb9725b5b48",
+      "infra/main.bicep": "1c720ef1f8e9ef5c5b85a7a4e85cadd6598bc60336b6241ed3a5e6a213ad4c9f",
+      "infra/main.parameters.json": "527aa3a8b47ca26e68646f5558db8759b838ecb88bb0f0f6f8d1defe0cfe2a47",
       "hooks/postprovision.ps1": "c52122fa5d528fc481c8d28a41ce652abad9c0562bfa707d4a8c83718cffead6",
       "hooks/postprovision.sh": "8929a55610183fd0400af38463d7812a17c979a207de8d346068f721e07f59f8"
     },

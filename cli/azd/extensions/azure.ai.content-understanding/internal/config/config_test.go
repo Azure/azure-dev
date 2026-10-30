@@ -173,8 +173,6 @@ func TestResolveInvalidConfiguration(t *testing.T) {
 		{"empty persisted key", Options{}, nil, map[string]string{"CU_API_KEY": ""}, "", "persisted_api_key"},
 		{"persisted config key", Options{}, nil, nil, `{"apiKey":"private-value"}`, "persisted_api_key"},
 		{"legacy config key", Options{}, nil, nil, `{"api_key":"private-value"}`, "persisted_api_key"},
-		{"persisted auth mode", Options{}, nil, map[string]string{"CU_AUTH_MODE": "key"},
-			"", "unsupported_authentication"},
 		{"model array", Options{}, nil, nil, `{"modelDeployments":[]}`, "invalid_model_deployments"},
 		{"model null", Options{}, nil, nil, `{"modelDeployments":null}`, "invalid_model_deployments"},
 		{"numeric deployment", Options{}, nil, nil, `{"modelDeployments":{"gpt":5}}`, "invalid_model_deployments"},
@@ -217,29 +215,61 @@ func TestResolveModelDeployments(t *testing.T) {
 
 func TestRuntimeAuthentication(t *testing.T) {
 	for _, process := range []map[string]string{
-		{"CU_API_KEY": "private-value"}, {"CU_API_KEY": ""},
-		{"CU_AUTH_MODE": "key"}, {"CU_AUTH_MODE": "private-value"}, {"CU_AUTH_MODE": "LOGIN"},
-		{"CU_AUTH_MODE": "login", "CU_API_KEY": "private-value"},
+		{"CU_API_KEY": ""}, {"CU_API_KEY": " "}, {"CU_API_KEY": "private-value\n"},
+		{"CU_API_KEY": "private value"}, {"CU_API_KEY": "\x00private-value"},
 	} {
 		err := validateRuntime(process)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "API-key authentication is not enabled")
 		assert.NotContains(t, err.Error(), "private-value")
 	}
 	assert.NoError(t, validateRuntime(nil))
-	assert.NoError(t, validateRuntime(map[string]string{"CU_AUTH_MODE": "login"}))
+	assert.NoError(t, validateRuntime(map[string]string{"CU_API_KEY": "private-value"}))
+}
+
+func TestResolveIgnoresLegacyAuthenticationMode(t *testing.T) {
+	for _, test := range []struct{ name, mode string }{
+		{"empty", ""}, {"login", "login"}, {"key", "key"},
+		{"uppercase", "LOGIN"}, {"unsupported", "private-value\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, key := range []string{"", "private-api-key"} {
+				process := map[string]string{"CU_AUTH_MODE": test.mode}
+				if key != "" {
+					process["CU_API_KEY"] = key
+				}
+				result, err := resolve(Options{Endpoint: "https://resource.services.ai.azure.com"},
+					process, map[string]string{"CU_AUTH_MODE": test.mode}, nil, nil)
+				require.NoError(t, err)
+				assert.Equal(t, key, result.APIKey)
+				assert.NotContains(t, result.Sources, "CU_AUTH_MODE")
+			}
+		})
+	}
+}
+
+func TestResolveProcessKeyNeverSerializesSecret(t *testing.T) {
+	result, err := resolve(Options{Endpoint: "https://resource.services.ai.azure.com"},
+		map[string]string{"CU_API_KEY": "private-value"}, nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "private-value", result.APIKey)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "private-value")
+	assert.NotContains(t, string(encoded), "APIKey")
 }
 
 func TestProcessValues(t *testing.T) {
 	t.Setenv("CU_ENDPOINT", "https://process.services.ai.azure.com")
 	t.Setenv("AZURE_TENANT_ID", "process-tenant")
 	t.Setenv("AZD_ENVIRONMENT", "dev")
+	t.Setenv("CU_AUTH_MODE", "private-legacy-mode")
 	t.Setenv("UNRELATED_PRIVATE_KEY", "private-value")
 	result := ProcessValues()
 	assert.Equal(t, "https://process.services.ai.azure.com", result["CU_ENDPOINT"])
 	assert.Equal(t, "process-tenant", result["AZURE_TENANT_ID"])
 	assert.Equal(t, "dev", result["AZD_ENVIRONMENT"])
 	assert.NotContains(t, result, "UNRELATED_PRIVATE_KEY")
+	assert.NotContains(t, result, "CU_AUTH_MODE")
 }
 
 func TestUserDefaultsPrecedenceAndSources(t *testing.T) {

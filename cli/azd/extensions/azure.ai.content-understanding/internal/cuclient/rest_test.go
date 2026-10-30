@@ -13,9 +13,144 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRESTKeyAuthenticationAndRedaction(t *testing.T) {
+	const key = "private-resource-key"
+	var messages []string
+	log.SetListener(func(_ log.Event, message string) { messages = append(messages, message) })
+	log.SetEvents(log.EventRequest, log.EventResponse)
+	t.Cleanup(func() { log.SetListener(nil); log.SetEvents() })
+	for _, status := range []int{http.StatusOK, http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			calls := 0
+			client, err := NewRESTTransportWithKeyCredential("https://resource.test", azcore.NewKeyCredential(key),
+				&TransportOptions{Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
+					calls++
+					assert.Equal(t, key, request.Header.Get("Ocp-Apim-Subscription-Key"))
+					assert.Empty(t, request.Header.Get("Authorization"))
+					body := `{"modelDeployments":{}}`
+					if status != http.StatusOK {
+						body = `{"error":{"code":"Unauthorized","message":"` + key + `"}}`
+					}
+					return restResponse(request, status, body), nil
+				})})
+			require.NoError(t, err)
+			_, err = client.GetDefaults(t.Context())
+			if status == http.StatusOK {
+				require.NoError(t, err)
+			} else {
+				var domain *Error
+				require.ErrorAs(t, err, &domain)
+				assert.Equal(t, ErrorAuthentication, domain.Kind)
+				assert.Contains(t, domain.Suggestion, "CU_API_KEY")
+				assert.NotContains(t, err.Error(), key)
+			}
+			assert.Equal(t, 1, calls, "key failures must not retry with another authentication method")
+		})
+	}
+	assert.NotEmpty(t, messages)
+	assert.NotContains(t, strings.Join(messages, "\n"), key)
+}
+
+func TestRESTKeyCredentialRequired(t *testing.T) {
+	_, err := NewRESTTransportWithKeyCredential("https://resource.services.ai.azure.com", nil, nil)
+	require.ErrorContains(t, err, "A CU credential is required")
+}
+
+func TestRESTKeyPersistsAcrossPagingAndPolling(t *testing.T) {
+	for _, operation := range []string{"paging", "polling"} {
+		t.Run(operation, func(t *testing.T) {
+			calls := 0
+			client, err := NewRESTTransportWithKeyCredential("https://resource.test",
+				azcore.NewKeyCredential("private-resource-key"), &TransportOptions{
+					Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
+						calls++
+						assert.Equal(t, "resource.test", request.URL.Host)
+						assert.Equal(t, "private-resource-key", request.Header.Get("Ocp-Apim-Subscription-Key"))
+						assert.Empty(t, request.Header.Get("Authorization"))
+						if operation == "paging" {
+							body := `{"value":[{"analyzerId":"two","status":"ready"}]}`
+							if calls == 1 {
+								body = `{"value":[{"analyzerId":"one","status":"ready"}],` +
+									`"nextLink":"https://resource.test/contentunderstanding/analyzers?skip=1"}`
+							}
+							return restResponse(request, http.StatusOK, body), nil
+						}
+						if calls == 1 {
+							response := restResponse(request, http.StatusAccepted, `{"id":"op","status":"Running"}`)
+							response.Header.Set("Operation-Location",
+								"https://resource.test/contentunderstanding/analyzerResults/op")
+							return response, nil
+						}
+						return restResponse(request, http.StatusOK,
+							`{"id":"op","status":"Succeeded","result":{"analyzerId":"one",`+
+								`"apiVersion":"2025-11-01","contents":[]}}`), nil
+					}),
+				})
+			require.NoError(t, err)
+			client.pollInterval = 0
+			if operation == "paging" {
+				analyzers, err := client.ListAnalyzers(t.Context())
+				require.NoError(t, err)
+				assert.Len(t, analyzers, 2)
+			} else {
+				_, err := client.Analyze(t.Context(), AnalyzeRequest{
+					AnalyzerID: "one", Mode: AnalysisModeAsync, Input: Input{URL: "https://example.test/a.pdf"},
+				})
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 2, calls)
+		})
+	}
+}
+
+func TestRESTKeyNeverFollowsForeignContinuation(t *testing.T) {
+	for _, operation := range []string{"paging", "polling", "redirect"} {
+		t.Run(operation, func(t *testing.T) {
+			calls := 0
+			client, err := NewRESTTransportWithKeyCredential("https://resource.test",
+				azcore.NewKeyCredential("private-resource-key"), &TransportOptions{
+					Transport: transportFunc(func(request *http.Request) (*http.Response, error) {
+						calls++
+						assert.Equal(t, "resource.test", request.URL.Host)
+						switch operation {
+						case "paging":
+							return restResponse(request, http.StatusOK,
+								`{"value":[],"nextLink":"https://other.test/contentunderstanding/analyzers"}`), nil
+						case "polling":
+							response := restResponse(request, http.StatusAccepted, `{"id":"op","status":"Running"}`)
+							response.Header.Set("Operation-Location",
+								"https://other.test/contentunderstanding/analyzerResults/op")
+							return response, nil
+						default:
+							response := restResponse(request, http.StatusTemporaryRedirect, "")
+							response.Header.Set("Location", "https://other.test")
+							return response, nil
+						}
+					}),
+				})
+			require.NoError(t, err)
+			switch operation {
+			case "paging":
+				_, err = client.ListAnalyzers(t.Context())
+			case "polling":
+				_, err = client.Analyze(t.Context(), AnalyzeRequest{
+					AnalyzerID: "one", Mode: AnalysisModeAsync, Input: Input{URL: "https://example.test/a.pdf"},
+				})
+			default:
+				_, err = client.GetDefaults(t.Context())
+			}
+			require.Error(t, err)
+			assert.Equal(t, 1, calls)
+			assert.NotContains(t, err.Error(), "private-resource-key")
+		})
+	}
+}
 
 func newRESTTransport(
 	t *testing.T, apiVersion string, fn transportFunc,

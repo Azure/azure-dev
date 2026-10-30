@@ -8,7 +8,8 @@ the separate [Microsoft Foundry provisioning guide](https://github.com/Azure/azu
 ## Connect to Microsoft Foundry and check setup
 
 You need a Microsoft Foundry resource endpoint and an identity with access to
-Content Understanding. LLM-based prebuilt analyzers and custom analyzers also
+Content Understanding, or a resource API key for data-plane commands.
+LLM-based prebuilt analyzers and custom analyzers also
 require supported language and embeddings model deployments plus Content
 Understanding defaults.
 
@@ -27,7 +28,8 @@ Endpoint-only use delegates tenant selection to azd authentication unless you
 configure a tenant or subscription. To select a tenant explicitly, set
 `AZURE_TENANT_ID` (`export AZURE_TENANT_ID="<tenant-id>"` in Bash or
 `$env:AZURE_TENANT_ID = "<tenant-id>"` in PowerShell). An endpoint and tenant ID
-do not replace `azd auth login` or supported noninteractive azd authentication.
+do not replace `azd auth login` or supported noninteractive azd authentication
+when using Entra ID.
 
 To persist a global CU user default without creating an azd project using
 `azd init`:
@@ -71,13 +73,41 @@ Use `azd env new dev` if the project does not yet have that environment.
 Explicit options and process inputs take precedence over saved settings; clear
 process overrides when switching resources.
 
-The extension only supports Microsoft Entra ID authentication through azd.
+Microsoft Entra ID through azd is the default authentication method.
 Use `azd auth login` or supported noninteractive azd authentication.
-API-key authentication and CU profile
-commands are not supported.
 
-`CU_API_KEY` and saved API-key entries are rejected rather than used, even when
-empty. `CU_AUTH_MODE`, if set, must be `login`.
+For testing or automation, CU data-plane commands also accept a resource API
+key from the **process environment only**. Inject `CU_API_KEY` through a CI
+secret, or enter it without putting its value in shell history:
+
+```bash
+export CU_ENDPOINT="https://<resource-name>.services.ai.azure.com/"
+read -r -s -p "CU resource API key: " CU_API_KEY
+printf '\n'
+export CU_API_KEY
+azd ai cu doctor
+# Remove the key to return to azd / Entra authentication.
+unset CU_API_KEY
+```
+
+In PowerShell, inject the secret as `$env:CU_API_KEY`; remove it with
+`Remove-Item Env:CU_API_KEY`. Key mode does not request an Entra token or resolve
+a tenant. It does not require azd sign-in, but commands still run through the
+azd extension host. `doctor` reports the selected authentication method without
+printing the key.
+
+An explicitly present empty `CU_API_KEY`, or one containing whitespace or
+control characters, is an error, not a request to fall back to Entra ID.
+A failed key request does not retry through Entra.
+
+Do not save keys with `azd env set`, `azd config`, or `azd ai cu config`.
+Persisted `CU_API_KEY` and API-key configuration entries are rejected, including
+empty entries. The CU config shortcut still supports only `CU_ENDPOINT`,
+`CU_DEFAULT_ANALYZER`, and `CU_API_VERSION`; there is no `--api-key` flag.
+The key is restricted to the configured CU endpoint. Same-resource analyzer
+copy without resource selectors works with a key; copy resource discovery
+and cross-resource copy require Entra ID. Infrastructure provisioning and
+postprovision setup also continue to use Entra ID, not `CU_API_KEY`.
 
 `doctor` shows human-readable checks for configuration, authentication, service
 access, and model defaults, with effective `CU_*` settings and their sources.
@@ -88,8 +118,7 @@ A readiness warning (`ready: false` in JSON) with missing model requirements can
 successfully: non-generative analyzers may remain usable. Authentication,
 configuration, and service failures return nonzero. Inspect the report rather
 than using the exit code alone as a generative-readiness gate.
-Scripts that previously parsed default `doctor` output should explicitly pass
-`--output json`.
+For scripts that parse `doctor` output, pass `--output json`.
 
 ## Analyze content
 
@@ -173,6 +202,14 @@ writes. Analysis dry runs still require resolved endpoint and analyzer
 configuration. Select inputs using one mode: positional inputs, `--file`,
 `--source`, or `--url`.
 
+Analysis failures include safe reasons and guidance for the first failed inputs
+in discovery order, identified by input number without echoing file paths or URLs.
+Long diagnostics are shortened; use `--report-file` on the original run to retain
+all per-input outcomes. Diagnosing a failure does not issue another analysis request.
+Missing-resource errors suggest checking the endpoint and available analyzers;
+creation conflicts suggest inspecting the existing analyzer and choosing an unused ID.
+Service response bodies and authored content remain hidden.
+
 - Batch concurrency defaults to 4; `--concurrency` accepts 1-32.
 - More than 50 selected inputs require confirmation or explicit `--yes`.
 - Existing results fail by default. Use `--on-existing skip` to keep them or
@@ -222,6 +259,11 @@ azd ai cu analyzer validate \
 ```
 
 Validation is offline and does not require an azd project, endpoint, or sign-in.
+Errors in valid JSON identify the property by its one-based source line and column,
+without displaying authored field names or rejected values. Columns count Unicode
+characters; tabs count as one character. Missing properties point to their
+containing object when available. Ambiguous dotted paths list all matching source
+locations. Successful validation output retains its existing structured paths.
 
 Create a new analyzer from the reviewed definition:
 
@@ -379,11 +421,12 @@ Invalid effective values fail instead of falling back to a lower-priority source
 Public-cloud resource endpoints must use HTTPS with a resource hostname under
 `services.ai.azure.com` or `cognitiveservices.azure.com`, on the default port or
 explicit port `443`. Arbitrary hosts, IP addresses, and other ports are rejected
-before service authentication to prevent sending access tokens to an untrusted server.
+before service authentication to prevent sending credentials to an untrusted server.
 This applies to endpoints supplied through flags, process variables, azd environments,
 user defaults, and Azure resource discovery.
 Explicitly empty command flags are rejected; empty process/environment values
-are treated as unset. `config set` rejects empty values; use `config unset` to
+are treated as unset, except that an explicitly present empty `CU_API_KEY` is
+rejected. `config set` rejects empty values; use `config unset` to
 remove a user default.
 
 `config get` and `config list` show only stored CU user defaults, not merged
@@ -397,6 +440,7 @@ from resource-level model defaults managed by `azd ai cu defaults`.
 Offline schema templates and validation remain independent of resource settings
 and user defaults; they use their existing explicit/API-version process inputs.
 
+The following tenant rules apply to Entra ID, not API-key authentication.
 When tenant selection is delegated to azd, `azd auth token` uses its normal
 resolution: the current project's subscription, process `AZURE_SUBSCRIPTION_ID`,
 then the signed-in identity's home tenant. Being inside a project can therefore
@@ -417,11 +461,33 @@ For guest or cross-tenant access, the signed-in identity must have access throug
 the appropriate tenant. A tenant ID does not grant resource permissions, and the
 extension does not infer a tenant from the endpoint.
 
-Use `azd ai cu env-var list` to inspect supported process inputs with sensitive
+### Environment-variable reference
+
+Use `azd ai cu env-var` or `azd ai cu env-var --help` to list **all** supported
+process variables, including unset variables, with descriptions, accepted
+values, defaults, scopes, and precedence. This help is offline and never reads
+or prints credential values.
+
+Use `azd ai cu env-var list` to inspect currently set supported process inputs with sensitive
 values redacted. It does not dump saved azd environment settings or unrelated
 variables. `CU_ON_EXISTS` supplies the analysis existing-result policy when
-`--on-existing` is absent. `FOUNDRY_ENDPOINT` remains an infrastructure output,
-not an alias for `CU_ENDPOINT` in service-command configuration.
+`--on-existing` is absent. Legacy `FOUNDRY_ENDPOINT` values are not an alias for
+`CU_ENDPOINT` in service-command configuration. Infrastructure choices are
+generated from flags into Bicep parameters and azd environment config; see
+[provisioning settings](provisioning.md#generated-post-provision-behavior).
+
+| Variable | Purpose and default |
+| --- | --- |
+| `CU_ENDPOINT` | CU HTTPS resource endpoint; required unless supplied by another configuration source. |
+| `CU_API_VERSION` | Service API version; defaults to `2025-11-01`. |
+| `CU_DEFAULT_ANALYZER` | Analysis default; `prebuilt-layout` when no override is configured. |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane requests; unset means Entra ID. Always redacted. |
+| `CU_ON_EXISTS` | Existing-result policy: `error` (default), `skip`, or `reanalyze`; `--on-existing` takes precedence. |
+| `CU_DISABLE_AUTO_CONFIG` | Skip automatic postprovision CU configuration, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Default: disabled. |
+| `AZD_ENVIRONMENT` | Project-environment selection; `--environment` takes precedence. |
+| `AZURE_TENANT_ID` | Entra user-access tenant; not looked up in API-key mode. |
+| `AZURE_SUBSCRIPTION_ID` | Azure resource scope and Entra tenant lookup. |
+| `AZURE_RESOURCE_GROUP` | Azure resource scope for discovery. |
 
 The azd extension SDK also reads these inherited process inputs. Corresponding
 explicit flags take precedence over the SDK environment defaults:
@@ -453,7 +519,8 @@ set `NO_COLOR=1` for plain text.
 ## Usage guidance
 
 - Supported output formats are `default`, `json`, and `none`. Analysis defaults
-  to readable LLM-input text, and `doctor` defaults to readable diagnostics.
+  to readable LLM-input text, `doctor` defaults to readable diagnostics, and
+  `infra generate` defaults to a readable project summary.
   Other commands, analysis summaries, dry runs, and
   `--usage` wrappers use JSON. Use `--output json` for complete analysis JSON.
 - `--output none` suppresses successful stdout, not service operations, requested
@@ -512,7 +579,7 @@ The extension uses a [Content Understanding client](https://github.com/Azure/azu
 maintained for this extension. It is an extension-internal dependency, not a
 separately published package.
 CI tests and lints both modules. Ordinary tests use fakes, local
-servers, and strict recordings; they do not call Azure or require Python.
+servers, and strict recordings; they do not call Azure.
 Reused assets retain their [fixture provenance](../testdata/parity/fixtures.yaml).
 Extension-local LF rules keep byte-level fixture and embedded-asset hashes stable
 across platforms.

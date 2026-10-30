@@ -237,6 +237,23 @@ Metadata requests are unauthenticated when no matching token is set.
 | `ENABLE_CONTAINER_AGENTS` | If set, indicates that container agents are enabled for the current azd environment. |
 | `AGENT_DEFINITION_PATH` | Unsupported for AI agent runtime workflows. Non-empty values are rejected; put the definition on the `azure.ai.agent` service in `azure.yaml` or use its explicit root `$ref`. |
 
+### azure.ai.content-understanding
+
+| Variable | Description |
+| --- | --- |
+| `CU_ENDPOINT` | Process/config input for the CU resource HTTPS endpoint under `services.ai.azure.com` or `cognitiveservices.azure.com`, on port 443. `--endpoint` takes precedence; `FOUNDRY_ENDPOINT` and project endpoints are not substitutes. See [CU configuration precedence](../extensions/azure.ai.content-understanding/docs/usage.md#configuration-and-api-versions). |
+| `CU_API_VERSION` | Process/config input for the CU API version: `2025-11-01` (default) or `YYYY-MM-DD-preview`. `--api-version` takes precedence. Offline schema commands read only the flag and process variable. |
+| `CU_DEFAULT_ANALYZER` | Process/config input for the default analysis analyzer; defaults to `prebuilt-layout`. `--analyzer` takes precedence. |
+| `CU_API_KEY` | Optional process-only resource key for CU data-plane commands. Must be nonempty and contain no whitespace or controls. Not accepted in saved azd configuration or environments, and never used for provisioning or cross-resource copy. Unset it to use Entra ID. |
+| `CU_ON_EXISTS` | Process-only policy for existing analysis result files: `error` (default), `skip`, or `reanalyze`. `--on-existing` takes precedence. |
+| `CU_DISABLE_AUTO_CONFIG` | Process-only switch to skip automatic CU configuration during postprovision, not model setup. `1`, `true`, `yes`, or `on` enable it, case-insensitively; other values disable it. Disabled by default. |
+| `CU_RESOURCE_NAME` | Bicep output containing the created or adopted account name, used by postprovision model setup. Existing projects' `FOUNDRY_RESOURCE_NAME` is read only when this output is absent. |
+| `CU_PROJECT_NAME` | Bicep output containing the project name when available; may be empty when using an existing resource. |
+| `CU_PROJECT_ENDPOINT` | Bicep output containing the project-scoped endpoint when available. It is not the resource endpoint required by CU commands. |
+| `CU_MODEL_DEPLOYMENTS` | Bicep output listing declared model deployments, not the CU service-default mappings. Subsequent live hook selections are saved in `infra/models.json`. |
+| `CU_MODEL_SELECTION` | Legacy saved-environment input, read only when `cu.modelSelection` is absent. New projects save `--models` in azd environment config instead. See [postprovision settings and compatibility](../extensions/azure.ai.content-understanding/docs/provisioning.md#generated-post-provision-behavior). |
+| `CU_CONFIG_SETUP_FORCE` | Legacy saved-environment input, read only when `cu.forceConfigurationSetup` is absent. New projects save the boolean `--force` choice in azd environment config instead. |
+
 ### azure.ai.routines
 
 | Variable | Description |

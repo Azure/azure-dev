@@ -98,6 +98,9 @@ func Load(
 			result.Sources[name] = source + ": " + environment
 		}
 	}
+	if result.APIKey != "" {
+		return result, nil
+	}
 	if result.TenantID == "" && useDefault {
 		// Deployment RPCs always use azd's default environment, never a named selection.
 		deployment, err := client.Deployment().GetDeploymentContext(ctx, &azdext.EmptyRequest{})

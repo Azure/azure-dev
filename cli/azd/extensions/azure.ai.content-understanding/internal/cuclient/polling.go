@@ -56,6 +56,7 @@ func operationError(operation, status string, problem *wireDiagnostic) *Error {
 	if problem != nil {
 		if serviceCodePattern.MatchString(problem.Code) {
 			result.Code = problem.Code
+			result.Message += fmt.Sprintf(" Service code: %s.", problem.Code)
 		}
 		result.Details = diagnostics(problem.Details, true)
 	}

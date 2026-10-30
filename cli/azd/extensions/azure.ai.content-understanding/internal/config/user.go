@@ -67,6 +67,11 @@ func ReadUserDefaults(ctx context.Context, client *azdext.AzdClient) (map[string
 		return nil, invalid("invalid_user_config",
 			"azd user configuration extensions.ai-content-understanding must be a JSON object.")
 	}
+	for name := range settings {
+		if isAPIKeySetting(name) {
+			return nil, persistedKey()
+		}
+	}
 	return settings, nil
 }
 

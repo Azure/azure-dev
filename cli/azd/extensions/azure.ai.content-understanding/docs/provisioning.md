@@ -33,8 +33,10 @@ sign in through Azure Developer CLI:
 azd auth login
 ```
 
-Both the extension and `azd up` use azd authentication. Python, a CU profile,
-and API-key authentication are not required or used by the extension.
+Infrastructure commands, postprovision setup, and `azd up` use azd / Entra ID
+authentication. They do not use `CU_API_KEY`. Separate CU data-plane commands
+can optionally use a process-only resource key as described in the
+[usage guide](usage.md#connect-to-microsoft-foundry-and-check-setup).
 
 ## Azure permissions
 
@@ -47,10 +49,12 @@ data-plane access are separate.
 | Create a resource without assigning roles | Contributor on the selected subscription, or equivalent permissions to deploy the resource group, Foundry resource, project, and models. |
 | Create a resource and assign a data-plane role | Deployment permissions plus permission to create role assignments, such as Owner, or Contributor combined with Role Based Access Control Administrator or User Access Administrator. |
 | Deploy models to an existing resource | Permission for the subscription-scope deployment and the required model deployment actions on that resource. |
-| Call Content Understanding | Cognitive Services User on the Foundry resource, or equivalent data-plane permissions. Contributor alone does not grant this access. |
+| Call Content Understanding with Entra ID | Cognitive Services User on the Foundry resource, or equivalent data-plane permissions. Contributor alone does not grant this access. |
 
-Role assignment is disabled by default. Pass `--assign-roles` to opt in when
-creating a resource and when your identity has the required permissions.
+Role assignment defaults to No. Interactive generation asks when neither role
+flag is supplied for a new resource. Pass `--assign-roles` to opt in when
+creating a resource and when your identity has the required permissions, or
+`--no-assign-roles` to skip the question.
 Otherwise, have an administrator grant data-plane access once the resource
 exists, then rerun `azd up` to complete Content Understanding setup.
 
@@ -59,7 +63,6 @@ identity access through the resource's **Access control (IAM)** page.
 `--assign-roles` is supported only for new resources and cannot be combined with
 `--foundry-endpoint`, including when explicitly set to `--assign-roles=false`.
 Omit that flag when targeting an existing resource.
-There is no API-key fallback.
 
 See [Azure built-in privileged roles](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged)
 and [Cognitive Services User](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/ai-machine-learning#cognitive-services-user)
@@ -75,14 +78,34 @@ cd provision
 azd up
 ```
 
-Generation selects a subscription through azd. Defaults are environment `dev`,
-region `eastus2`, and interactive model selection. The model prompt runs during
-post-provision setup, after the resource exists.
+Generation selects a subscription through azd. For a new resource, its wizard
+asks for an environment name, optional resource prefix, supported region, and
+whether to assign a data-plane role. Explicit flags skip the corresponding
+questions, including `--assign-roles=false` and `--foundry-prefix ""`.
+An inherited `AZD_ENVIRONMENT` also skips the environment question.
+Defaults are environment `dev` (or the inherited environment), region `eastus2`,
+an automatically generated resource name, and no role assignment.
+There is no additional new/existing-resource question: use `--foundry-endpoint`
+explicitly to target an existing resource.
+
+The wizard generates state in the output directory; it does not read deployment
+settings from another project's selected environment. For existing resources,
+generation skips the prefix, region, and role questions. An omitted region uses
+the discovered resource region when available.
+
+Generation prints the directory, environment, files written, reuse status, and
+next commands. Scripts that parse the result must pass `--output json`; its
+structured result is unchanged. Both `--output json` and `--no-prompt` skip
+the new wizard questions and use explicit inputs, environment context, and
+defaults. JSON output alone does not disable the existing subscription selector;
+use `--no-prompt` for unattended execution.
+
+Omitting `--models` retains interactive model selection during post-provision
+setup, after the resource exists; generation itself never deploys models.
 
 The new-resource path creates a resource group, a Microsoft Foundry resource,
 a Foundry project, and selected model deployments. The azd environment identifies
 the deployment stack; its state is stored under `provision/.azure/<environment>/`.
-It is not a CU CLI profile.
 
 For explicit choices with recommended models:
 
@@ -115,9 +138,15 @@ configured default, it uses a host-marked default or the sole accessible
 subscription; ambiguous choices require configuration or interactive generation.
 This command writes project files only; it does not provision resources.
 
-Recognized generated projects preserve editable assets and environment settings
-unless `--force` is supplied. Force replaces known generated assets and resets
-model/configuration setup; unrelated files are not deleted.
+Generation writes resource choices directly into
+`infra/main.parameters.json` under `parameters.<name>.value`; it does not
+introduce environment-variable inputs for prefix, resource selectors, or role
+assignment. Recognized projects retain editable templates and model files
+unless `--force` is supplied. Regeneration updates the four managed resource
+parameters and selected environment settings, preserving other parameter fields.
+Force replaces known generated assets, including `infra/models.json`, and
+allows CU configuration replacement; unrelated files are not deleted.
+The existing model-setup completion marker is preserved.
 
 ## Deploy models and configure defaults
 
@@ -143,6 +172,16 @@ hook deploys the selected models and configures defaults.
 `--models` also accepts comma-separated `model@version` selectors. The live
 CU-supported catalog validates selections during model setup.
 `--foundry-endpoint` and `--foundry-prefix` cannot be combined.
+
+Interactive model setup shows the live catalog together, including model name,
+version, kind, and SKU. Recommended models are marked and preselected when an
+unambiguous recommendation is available. Review and submit the selection, then explicitly confirm deployment (default
+No), or clear all selections to deploy no models. Declining confirmation
+cancels model setup rather than silently accepting recommendations. If recommendations
+are ambiguous, the picker explains why nothing is preselected. Selecting
+multiple versions of one family keeps the picker open for correction;
+cancellation starts no model deployment. It does not roll back resources that
+`azd up` already provisioned.
 
 ## Generated post-provision behavior
 
@@ -172,6 +211,30 @@ Existing CU environment configuration is preserved unless generation used
 `--force`. `CU_DISABLE_AUTO_CONFIG=true` skips automatic CU configuration,
 not model setup.
 
+Generation saves postprovision choices in the selected environment's
+`cu` configuration, not in dedicated environment variables:
+
+| Saved environment setting | Purpose |
+| --- | --- |
+| `cu.modelSelection` | Generated from `--models`: `prompt` (default), `recommended`, `none`, or comma-separated `model@version` selectors. Use `azd env config set cu.modelSelection recommended` for unattended selection, or `none` to skip model deployment. |
+| `cu.forceConfigurationSetup` | Boolean allowing the hook to replace existing CU environment configuration. Generation saves `true` with `--force`, otherwise `false`. Does not reset completed model setup. |
+
+Successful model setup records the boolean `cu.modelSetupComplete` in azd
+environment configuration. Generation no longer writes `CU_MODEL_SETUP_COMPLETE`;
+any existing legacy value is preserved but is not used as the completion marker.
+Inspect the active marker and model mappings with `azd env config get cu`.
+Deployment outputs are listed in the
+[central environment-variable reference](../../../docs/environment-variables.md#azureaicontent-understanding).
+
+Existing generated projects remain supported: when the new config fields are
+absent, the hook reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE`.
+New fields take precedence, including explicit `false` values; malformed new
+fields fail rather than falling back. The hook accepts legacy
+`FOUNDRY_RESOURCE_NAME` only when `CU_RESOURCE_NAME` is absent.
+Regeneration updates legacy parameter substitutions to literal values while
+preserving old environment entries and editable templates. Use `--force` only
+when you also intend to replace those templates with the new CU-prefixed outputs.
+
 Verify the selected environment from the generated directory:
 
 ```bash
@@ -179,8 +242,7 @@ azd ai cu doctor --environment dev
 azd ai cu defaults show --environment dev
 ```
 
-Replace `dev` if you generated a different environment. No separate CU profile
-is created.
+Replace `dev` if you generated a different environment.
 
 ## Configure an existing ready resource
 

@@ -33,12 +33,24 @@ var _ Client = (*RESTTransport)(nil)
 func NewRESTTransport(
 	endpoint string, credential azcore.TokenCredential, options *TransportOptions,
 ) (*RESTTransport, error) {
+	return newRESTTransportWithCredential(endpoint, credential, nil, options)
+}
+
+func NewRESTTransportWithKeyCredential(
+	endpoint string, credential *azcore.KeyCredential, options *TransportOptions,
+) (*RESTTransport, error) {
+	return newRESTTransportWithCredential(endpoint, nil, credential, options)
+}
+
+func newRESTTransportWithCredential(
+	endpoint string, credential azcore.TokenCredential, key *azcore.KeyCredential, options *TransportOptions,
+) (*RESTTransport, error) {
 	normalized, err := normalizeEndpoint(endpoint, options != nil && options.Transport != nil)
 	if err != nil {
 		return nil, err
 	}
-	if credential == nil {
-		return nil, validationError("missing_credential", "An azd-backed Azure credential is required.")
+	if credential == nil && key == nil {
+		return nil, validationError("missing_credential", "A CU credential is required.")
 	}
 	settings, err := normalizeOptions(options)
 	if err != nil {
@@ -49,23 +61,26 @@ func NewRESTTransport(
 		transport = newHTTPTransport(settings.RequestTimeout)
 	}
 	retryOptions := policy.RetryOptions{MaxRetries: 2, TryTimeout: settings.RequestTimeout}
-	client, err := restclient.NewClient(
-		strings.TrimSuffix(normalized, "/contentunderstanding"),
-		safeTokenCredential{inner: credential},
-		&restclient.ClientOptions{
-			APIVersion: settings.APIVersion,
-			ClientOptions: azcore.ClientOptions{
-				Transport: &boundedErrorTransport{inner: transport},
-				Retry:     retryOptions,
-				PerCallPolicies: []policy.Policy{
-					&restPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
-					azsdk.NewMsClientRequestIdPolicy(),
-					azsdk.NewMsCorrelationPolicy(),
-					azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
-				},
+	clientOptions := &restclient.ClientOptions{
+		APIVersion: settings.APIVersion,
+		ClientOptions: azcore.ClientOptions{
+			Transport: &boundedErrorTransport{inner: transport},
+			Retry:     retryOptions,
+			PerCallPolicies: []policy.Policy{
+				&restPolicy{endpoint: normalized, apiVersion: settings.APIVersion, retry: retryOptions},
+				azsdk.NewMsClientRequestIdPolicy(),
+				azsdk.NewMsCorrelationPolicy(),
+				azsdk.NewUserAgentPolicy("azd-ext-azure-ai-content-understanding/" + settings.Version),
 			},
 		},
-	)
+	}
+	resourceEndpoint := strings.TrimSuffix(normalized, "/contentunderstanding")
+	var client *restclient.Client
+	if key != nil {
+		client, err = restclient.NewClientWithKeyCredential(resourceEndpoint, key, clientOptions)
+	} else {
+		client, err = restclient.NewClient(resourceEndpoint, safeTokenCredential{inner: credential}, clientOptions)
+	}
 	if err != nil {
 		return nil, restDomainError(err)
 	}

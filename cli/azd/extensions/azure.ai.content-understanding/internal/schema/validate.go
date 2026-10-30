@@ -17,6 +17,8 @@ import (
 type Finding struct {
 	Path    string `json:"path"`
 	Message string `json:"msg"`
+
+	sourcePath string
 }
 
 // DiagnosticPath keeps contract-defined locations, never customer-authored property names.
@@ -50,6 +52,7 @@ func Validate(data []byte, version string, spec bool) (ValidationResult, error) 
 		return result, nil
 	}
 	result.root(root, version)
+	result.resolveAuthoringLocations(root)
 	if spec {
 		findings, err := validateSpec(data, version)
 		if err != nil {
@@ -62,11 +65,11 @@ func Validate(data []byte, version string, spec bool) (ValidationResult, error) 
 }
 
 func (r *ValidationResult) fail(path, message string) {
-	r.Errors = append(r.Errors, Finding{path, message})
+	r.Errors = append(r.Errors, Finding{Path: path, Message: message})
 }
 
 func (r *ValidationResult) warn(path, message string) {
-	r.Warnings = append(r.Warnings, Finding{path, message})
+	r.Warnings = append(r.Warnings, Finding{Path: path, Message: message})
 }
 
 func (r *ValidationResult) root(root map[string]json.RawMessage, version string) {
@@ -249,10 +252,14 @@ func (r *ValidationResult) depth(path string, depth int) {
 // primary container/value falls back to the alias. Spec validation still checks
 // the original, unmodified body and rejects values outside the service contract.
 func authoringAlias(root map[string]json.RawMessage, primary, secondary string) json.RawMessage {
+	return root[authoringAliasName(root, primary, secondary)]
+}
+
+func authoringAliasName(root map[string]json.RawMessage, primary, secondary string) string {
 	raw := root[primary]
 	var value any
 	if json.Unmarshal(raw, &value) != nil {
-		return raw
+		return primary
 	}
 	empty := value == nil
 	switch value := value.(type) {
@@ -268,7 +275,7 @@ func authoringAlias(root map[string]json.RawMessage, primary, secondary string) 
 		empty = len(value) == 0
 	}
 	if empty {
-		return root[secondary]
+		return secondary
 	}
-	return raw
+	return primary
 }

@@ -2,7 +2,7 @@
 
 This preview extension adds Azure Content Understanding commands under
 `azd ai cu`. Analyze documents and media, manage analyzers, and configure model
-defaults using Azure Developer CLI authentication and environments.
+defaults for Microsoft Foundry resources.
 
 ## Content Understanding concepts
 
@@ -35,8 +35,8 @@ azd ai cu --help
 
 ## Connect to Microsoft Foundry and check setup
 
-You need a Microsoft Foundry resource endpoint and an identity with Content
-Understanding access.
+You need a Microsoft Foundry resource endpoint and either an identity with
+Content Understanding access or a resource API key for data-plane commands.
 
 | Your resource state | Next step |
 | --- | --- |
@@ -60,8 +60,21 @@ azd ai cu doctor
 
 These examples use Bash. In PowerShell, set the endpoint with
 `$env:CU_ENDPOINT = "https://<resource-name>.services.ai.azure.com/"`.
-Normal endpoint-only use does not require a tenant ID; the extension uses azd
-authentication. API-key authentication is not supported.
+Normal endpoint-only use does not require a tenant ID; the extension defaults
+to azd authentication.
+
+For testing or automation with a resource API key, set `CU_API_KEY` in the
+current process environment, for example through a CI secret. CU data-plane
+commands then use that key without requiring `azd auth login`. The key is never
+saved by `azd ai cu config`; saved API-key entries in azd configuration or
+environments are rejected. Unset `CU_API_KEY` to return to Entra ID.
+Provisioning and resource discovery for
+cross-resource copy still require Entra ID; a key is never reused for another
+endpoint or used as an automatic fallback after an Entra failure.
+
+Use `azd ai cu env-var` or `azd ai cu env-var --help` for the full supported
+environment-variable reference. `azd ai cu env-var list` shows only currently
+set supported process variables, with API keys redacted.
 
 `doctor` shows human-readable configuration, authentication, service access, and
 model readiness checks, including effective CU settings and their sources.
@@ -249,6 +262,11 @@ The test summarizes field population and confidence, not extraction accuracy
 against labeled ground truth. See [custom analyzer guidance](https://github.com/Azure/azure-dev/blob/main/cli/azd/extensions/azure.ai.content-understanding/docs/usage.md#create-a-custom-analyzer)
 for validation rules and test options.
 
+Validation errors identify source line/column locations. Authoring checks locate
+the alias they actually use (for example, `field_schema` when `fieldSchema` is
+empty); `--spec` findings retain locations in the original service-contract body.
+Structured finding paths remain unchanged.
+
 ## Command overview
 
 | Command | Purpose |
@@ -260,7 +278,8 @@ for validation rules and test options.
 | `azd ai cu config` | Set, get, list, or unset global CU user defaults in azd configuration. |
 | `azd ai cu infra generate` | Generate an azd/Bicep project. Run `azd up` separately to provision it. |
 | `azd ai cu doctor` | Check connectivity and readiness. |
-| `azd ai cu env-var list` | Inspect supported process inputs with sensitive values redacted. |
+| `azd ai cu env-var` | Show all supported environment variables, values, defaults, and precedence. |
+| `azd ai cu env-var list` | Inspect currently set supported process inputs with sensitive values redacted. |
 | `azd ai cu version` | Show the installed extension version. |
 
 Run `azd ai cu <command> --help` for options and examples with descriptions.

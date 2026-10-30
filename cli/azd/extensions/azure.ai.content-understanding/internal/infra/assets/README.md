@@ -8,7 +8,7 @@ deployments enable prebuilt analyzers such as `prebuilt-invoice` and custom
 analyzers. The template also configures Content Understanding defaults that map
 model names to deployment names. It is purpose-built as a launchpad for
 **Azure Content Understanding in Foundry Tools** workflows and the
-native Go `azd ai cu` extension.
+`azd ai cu` extension.
 
 ```sh
 azd auth login
@@ -32,12 +32,13 @@ project, and selected model deployments.
 Contributor cannot create Azure role assignments. If the deployment should
 also assign the generated data-plane role, the identity additionally needs
 **Role Based Access Control Administrator**, **User Access Administrator**, or
-**Owner** on the subscription. If you have Contributor only, set
-`AZD_ASSIGN_ROLES` to `false`; the post-provision hook then requires an existing
+**Owner** on the subscription. If you have Contributor only, omit
+`--assign-roles` when generating the project; the post-provision hook requires an existing
 data-plane role assignment. It never retrieves or persists a resource key.
-The native extension is Entra-only, including projectless commands. Role assignment defaults to
-`false`; pass `--assign-roles`
-when generating the project.
+Provisioning and postprovision setup use azd / Entra ID authentication.
+`CU_API_KEY` applies only to separate CU data-plane commands, not to `azd up`.
+Role assignment defaults to `false`; pass `--assign-roles` when generating the
+project.
 
 With Entra authentication, `azd ai cu` also requires **Cognitive Services User** on
 the Microsoft Foundry resource to configure defaults and create, manage, and run
@@ -58,8 +59,8 @@ The resource endpoint is `https://<resource-name>.services.ai.azure.com/` — th
 host that serves `/contentunderstanding/...`, `/openai/...`, and the Foundry
 project API.
 
-If `FOUNDRY_EXISTING_ENDPOINT` is set, this template skips resource and project
-creation and performs the same live discovery against that existing resource.
+Generate with `--foundry-endpoint` to skip resource and project creation and
+perform the same live discovery against that existing resource.
 
 ## Microsoft Foundry resource naming
 
@@ -69,18 +70,23 @@ public DNS hostname:
 `https://<resource-name>.services.ai.azure.com/`
 
 By default, this template uses `aif-<unique-suffix>`. To make the name more
-meaningful, set an optional prefix and azd will construct:
+meaningful, pass `--foundry-prefix` during generation and azd will construct:
 
 `<prefix>-<unique-suffix>`
 
 Example:
 
 ```sh
-azd env set FOUNDRY_RESOURCE_PREFIX my-cu
+azd ai cu infra generate --foundry-prefix my-cu --output-dir provision
+cd provision
 azd up
 ```
 
 This produces resource names following the pattern `my-cu-<unique-suffix>`.
+Generation writes resource choices into `infra/main.parameters.json` under
+`parameters.<name>.value`, not dedicated environment variables. Edit those
+parameter values to change choices before deployment. Regeneration updates
+the four managed resource parameters while preserving other parameter fields.
 
 ## Live model setup
 
@@ -94,29 +100,30 @@ with an empty `infra/models.json`. The post-provision hook then:
 5. Deploys the selection and writes it to `infra/models.json`, making subsequent
    Bicep runs repeatable.
 
-Decline every model confirmation to deploy no models. In that mode, `prebuilt-digitalParse`,
+For setup without model deployments, generate the project with `--models none`.
+In that mode, `prebuilt-digitalParse`,
 `prebuilt-read`, and `prebuilt-layout` are available without language or
 embeddings model deployments.
-Set `CU_MODEL_SELECTION=recommended` for noninteractive selection or
-`CU_MODEL_SELECTION=none` for deterministic setup without model deployments.
 
 The generated hook runs a versioned internal postprovision contract through
 `azd ai cu`, so keep azd and the Azure Content Understanding extension installed
-when running `azd up`. A saved `prompt` selection
-requires an interactive terminal; set `CU_MODEL_SELECTION=recommended`, `none`,
-or explicit `model@version` selectors for unattended runs. Model setup failures
+when running `azd up`. The default `prompt` selection requires an interactive
+terminal. For unattended runs, save `recommended`, `none`, or comma-separated
+`model@version` selectors with `azd env config set cu.modelSelection <selection>`.
+Model setup failures
 are reported without blocking azd environment configuration. Resolve the model
 deployment issue and rerun `azd up`; `prebuilt-digitalParse`, `prebuilt-read`,
 and `prebuilt-layout` remain available without language or embeddings models.
 
 Successful model setup is recorded in the selected environment's
-`cu.modelSetupComplete` configuration setting. The legacy
-`CU_MODEL_SETUP_COMPLETE` environment value is not the completion marker used
-by this extension.
+`cu.modelSetupComplete` configuration setting. Generation saves `--models` in
+`cu.modelSelection` and the `--force` choice in the boolean
+`cu.forceConfigurationSetup`; neither requires a dedicated environment variable.
+Regeneration preserves the completion marker and other existing config.
 
 Generated projects use the `_postprovision-v1` contract. Check extension release
 notes before upgrading and regenerate the project if a later release does not
-retain that contract. The hook does not require Python or the standalone `cu` CLI.
+retain that contract.
 
 ## Auto-configuring the azd environment
 
@@ -164,7 +171,7 @@ repair action and retains the `prebuilt-layout` sanity check.
 
 Configuration setup is automatic. To opt out, set
 `CU_DISABLE_AUTO_CONFIG=true` before `azd up`. This does not disable live
-model setup; use `azd env set CU_MODEL_SELECTION none` to skip model deployments.
+model setup; use `azd env config set cu.modelSelection none` to skip model deployments.
 
 ## Cleanup
 
@@ -182,20 +189,25 @@ After `azd up`, `azd env get-values` exposes:
 
 | Variable | Notes |
 | --- | --- |
-| `FOUNDRY_ENDPOINT` | `https://<resource-name>.services.ai.azure.com/` |
-| `FOUNDRY_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
-| `FOUNDRY_RESOURCE_NAME` | Account name (also the custom subdomain) |
-| `FOUNDRY_PROJECT_NAME` | Project name when created by this deployment |
-| `CU_ENDPOINT` | Resource endpoint used by CU commands; those commands do not fall back to `FOUNDRY_ENDPOINT` |
+| `CU_PROJECT_ENDPOINT` | Project-scoped URL when this project creates a Foundry project |
+| `CU_RESOURCE_NAME` | Created or adopted account name (also the custom subdomain) |
+| `CU_PROJECT_NAME` | Project name when created by this deployment |
+| `CU_ENDPOINT` | Resource endpoint used by CU commands |
 | `CU_DEFAULT_ANALYZER` | Saved by the hook as `prebuilt-layout`, unless existing CU configuration is preserved |
-| `MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
+| `CU_MODEL_DEPLOYMENTS` | Models declared in the Bicep deployment; subsequent hook selections are saved to `infra/models.json` |
 
-Generation also saves inputs such as `CU_API_VERSION`, `CU_MODEL_SELECTION`,
-and any existing-resource selectors in the azd environment. These are not Bicep
-outputs. Use `azd env get-values` to inspect `CU_DEFAULT_ANALYZER`, and
-`azd env config get cu` for `modelDeployments` and the `modelSetupComplete`
+Generation also saves `CU_API_VERSION` and standard Azure scope values in the
+azd environment. These are not Bicep outputs. Use `azd env get-values` to inspect
+`CU_DEFAULT_ANALYZER`, and `azd env config get cu` for postprovision choices,
+`modelDeployments`, and the `modelSetupComplete`
 marker set by successful setup. Hooks update only the selected azd environment,
 never CU user defaults in global azd configuration.
+
+Existing projects remain supported. When new config fields are absent, the hook
+reads saved `CU_MODEL_SELECTION` and `CU_CONFIG_SETUP_FORCE` values. It reads
+`FOUNDRY_RESOURCE_NAME` only when `CU_RESOURCE_NAME` is absent. New values always
+take precedence; invalid new values fail rather than using legacy settings.
+Old environment entries are preserved during regeneration.
 
 ## Layout
 

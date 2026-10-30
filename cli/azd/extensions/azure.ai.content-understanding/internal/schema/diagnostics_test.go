@@ -20,13 +20,13 @@ func TestValidationOrderedDiagnosticsAndSafePaths(t *testing.T) {
 	}`
 	expected := ValidationResult{
 		Errors: []Finding{
-			{"config.enableSegment", "The value must be a boolean."},
-			{"config.contentCategories", "Content categories must be a nonempty object."},
-			{"fieldSchema.fields.a-private.$ref", "References are unsupported; inline the field definition."},
-			{"fieldSchema.fields.z-private.items", "Array fields require an items object."},
+			{Path: "config.enableSegment", Message: "The value must be a boolean."},
+			{Path: "config.contentCategories", Message: "Content categories must be a nonempty object."},
+			{Path: "fieldSchema.fields.a-private.$ref", Message: "References are unsupported; inline the field definition."},
+			{Path: "fieldSchema.fields.z-private.items", Message: "Array fields require an items object."},
 		},
 		Warnings: []Finding{
-			{"models.completion", "Field extraction needs a completion model, for example gpt-5.2."},
+			{Path: "models.completion", Message: "Field extraction needs a completion model, for example gpt-5.2."},
 		},
 	}
 	for _, version := range []string{"2025-11-01", "2026-06-01-preview"} {

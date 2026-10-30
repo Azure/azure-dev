@@ -36,6 +36,25 @@ func renderHelp(t *testing.T, cmd *cobra.Command) string {
 	return stdout.String()
 }
 
+func TestHelpUsesFullExtensionNamespace(t *testing.T) {
+	setHelpColor(t, false)
+	root := NewRootCommand()
+	for _, path := range [][]string{nil, {"analyze"}, {"analyzer"}, {"analyzer", "validate"}} {
+		command, _, err := root.Find(path)
+		require.NoError(t, err)
+		text := renderHelp(t, command)
+		expected := "azd ai cu"
+		if len(path) != 0 {
+			expected += " " + strings.Join(path, " ")
+		}
+		require.Contains(t, text, "  "+expected)
+		require.NotContains(t, text, "\n  cu ")
+		if command.HasAvailableSubCommands() {
+			require.Contains(t, text, "Use "+expected+" [command] --help")
+		}
+	}
+}
+
 func TestHelpPreservesSDKFlagOptions(t *testing.T) {
 	setHelpColor(t, false)
 	root, _ := azdext.NewExtensionRootCommand(azdext.ExtensionCommandOptions{Name: "cu"})

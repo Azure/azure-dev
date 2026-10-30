@@ -536,10 +536,12 @@ consent through `foundry-extension-scenario-orchestrator`; it is not run automat
 
 ### Deployment guidance
 
-After a successful deployment, endpoint guidance recommends the standalone
-`azd extension install azure.ai.evaluations` followed by `azd ai eval init`
-when `azure.yaml` does not
-declare an `azure.ai.eval` service. When an evaluation service is already
+After a successful deployment, endpoint guidance recommends installing the
+latest released evaluations extension from the default `azd` registry with
+`azd extension install azure.ai.evaluations --source azd`, followed by
+`azd ai eval init`, when `azure.yaml` does not declare an `azure.ai.eval`
+service. Naming the source avoids ambiguity when additional extension
+registries are configured. When an evaluation service is already
 declared, the setup guidance is omitted. This note never recommends any
 nested `azd ai agent eval` subcommand. A service README replaces the invocation
 documentation link, not the evaluation setup guidance.

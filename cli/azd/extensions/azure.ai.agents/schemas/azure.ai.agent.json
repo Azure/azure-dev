@@ -406,7 +406,12 @@
             }
           }
         },
-        "required": ["kind", "modelType", "model"],
+        "allOf": [
+          {
+            "if": { "not": { "required": ["$ref"] } },
+            "then": { "required": ["kind", "modelType", "model"] }
+          }
+        ],
         "not": {
           "anyOf": [
             { "required": ["conversationEngine"] }, { "required": ["targetAgent"] },

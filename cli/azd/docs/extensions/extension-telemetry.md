@@ -245,9 +245,10 @@ rules below remain your responsibility as the extension author:
 
 | Status | Cause |
 |---|---|
-| `Unauthenticated` | The request did not carry the host-issued extension token |
+| `Unauthenticated` | The request did not carry a valid host-issued extension token |
 | `InvalidArgument` | The event name is missing, or a per-event bound was exceeded. Checked before installation and source eligibility |
 | `PermissionDenied` | The calling extension is not installed |
+| `Internal` | The host could not read the installed extension record |
 | `Unimplemented` | The `azd` host predates this service |
 
 Error messages do not echo attribute values. When a valid key has an oversized
@@ -258,12 +259,13 @@ in [Diagnosing dropped reports](#diagnosing-dropped-reports).
 
 ## When your event is not recorded
 
-Two outcomes are deliberately **not** errors. The call succeeds and
+The following outcomes are deliberately **not** errors. The call succeeds and
 `ReportUsageResponse.Accepted` is `false`:
 
 | Cause | Why |
 |---|---|
 | The extension is not eligible for telemetry recording | Recording is limited to reviewed official-registry installations |
+| The host could not verify the configured registry source | The event is dropped when source eligibility cannot be determined |
 | The per-invocation event budget is spent | `ReportUsage` can be called in a loop, and the per-event bounds do not limit how many events arrive |
 
 Run `azd` with `--debug` to see which one applied. Hosts that support
